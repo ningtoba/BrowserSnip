@@ -56,13 +56,20 @@ export function cropCommand(
   params: CropParams
 ): string[] {
   if (params.mode === 'pad') {
-    const [w, h] = params.aspectRatio.split(':').map(Number);
-    const targetW = 1080;
-    const targetH = Math.round(1080 * (h / w));
+    const [aw, ah] = params.aspectRatio.split(':').map(Number);
+    // Fit the longer dimension within 1080px
+    const targetW = aw >= ah ? 1080 : Math.round(1080 * (aw / ah));
+    const targetH = ah >= aw ? 1080 : Math.round(1080 * (ah / aw));
+    // Scale original to fit inside the target, preserving aspect ratio.
+    // -2 ensures height is even (required by some codecs).
+    // boxblur=10 is fast enough in WASM while still looking good.
     return [
       '-i', inputName,
       '-vf',
-      `split[original][copy];[copy]scale=${targetW}:${targetH},boxblur=20:20[blurred];[blurred][original]overlay=(W-w)/2:(H-h)/2`,
+      `[0:v]split[orig][bg];` +
+      `[bg]scale=${targetW}:${targetH}:force_original_aspect_ratio=disable,boxblur=10[blurred];` +
+      `[orig]scale=w=${targetW}:h=${targetH}:force_original_aspect_ratio=decrease[scaled];` +
+      `[blurred][scaled]overlay=(W-w)/2:(H-h)/2`,
       '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
       '-threads', threads(),
       '-c:a', 'aac',
