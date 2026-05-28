@@ -44,7 +44,7 @@ export function CompressTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, `Compressed to ${params.targetSizeMB} MB`, `compressed_${params.targetSizeMB}mb`);
     } finally {
       setRunning(false);
     }

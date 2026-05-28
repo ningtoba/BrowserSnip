@@ -5,6 +5,8 @@ import { downloadBlob } from '@/lib/utils/download';
 export function OutputActions() {
   const outputBlob = useProcessStore((s) => s.outputBlob);
   const outputUrl = useProcessStore((s) => s.outputUrl);
+  const label = useProcessStore((s) => s.label);
+  const suffix = useProcessStore((s) => s.suffix);
   const fileName = useFileStore((s) => s.file?.name ?? 'output');
 
   const handleDownload = () => {
@@ -15,7 +17,7 @@ export function OutputActions() {
         ? 'mp3'
         : 'mp4';
     const base = fileName.replace(/\.[^/.]+$/, '');
-    downloadBlob(outputBlob, `${base}_processed.${ext}`);
+    downloadBlob(outputBlob, `${base}_${suffix}.${ext}`);
   };
 
   if (!outputBlob || !outputUrl) return null;
@@ -24,9 +26,9 @@ export function OutputActions() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>Output ready</span>
-        <span className="font-mono">{sizeMB} MB</span>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-emerald-400">{label}</span>
+        <span className="font-mono text-zinc-500">{sizeMB} MB</span>
       </div>
 
       <button

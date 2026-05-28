@@ -15,10 +15,12 @@ export function useFFmpeg() {
       inputFile: File,
       outputFileName: string,
       metadata: VideoMetadata,
+      label: string,
+      suffix: string,
       extraSetup?: (ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) => Promise<void>
     ): Promise<Blob | null> => {
       const store = useProcessStore.getState();
-      store.startProcessing();
+      store.startProcessing(label, suffix);
       logBufferRef.current = [];
       lastProcessedTimeRef.current = 0;
 

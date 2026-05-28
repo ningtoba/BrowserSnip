@@ -29,7 +29,7 @@ export function GifTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, `GIF ${params.width}w ${params.fps}fps`, `gif_${params.width}w`);
     } finally {
       setRunning(false);
     }

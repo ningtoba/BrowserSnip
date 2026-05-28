@@ -60,6 +60,8 @@ export function StitchTool() {
           fileSize: files.reduce((sum, f) => sum + f.size, 0),
           fileName: 'merged.mp4',
         },
+        'Merged video',
+        'merged',
         async (ffmpeg) => {
           // Write all files and the concat list
           for (let i = 0; i < files.length; i++) {

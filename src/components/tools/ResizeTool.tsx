@@ -50,6 +50,9 @@ export function ResizeTool() {
     setRunning(true);
     try {
       const args = resizeCommand('input.mp4', 'output.mp4', params);
+      const resolution = params.preset === 'custom'
+        ? `${params.width}x${params.height}`
+        : params.preset;
       await process(args, file, 'output.mp4', {
         duration: 60,
         width: 1920,
@@ -57,7 +60,7 @@ export function ResizeTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, `Resized to ${resolution}`, `resized_${resolution}`);
     } finally {
       setRunning(false);
     }

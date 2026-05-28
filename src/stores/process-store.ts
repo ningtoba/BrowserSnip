@@ -9,6 +9,8 @@ interface ProcessSlot {
   outputBlob: Blob | null;
   outputUrl: string | null;
   error: string | null;
+  label: string;
+  suffix: string;
 }
 
 interface ProcessState {
@@ -21,9 +23,11 @@ interface ProcessState {
   outputBlob: Blob | null;
   outputUrl: string | null;
   error: string | null;
+  label: string;
+  suffix: string;
 
   setActiveTool: (tool: ToolId | null) => void;
-  startProcessing: () => void;
+  startProcessing: (label: string, suffix: string) => void;
   updateProgress: (p: FFmpegProgress, percent: number) => void;
   appendLog: (line: string) => void;
   setOutput: (blob: Blob, url: string) => void;
@@ -39,6 +43,8 @@ const emptySlot = (): ProcessSlot => ({
   outputBlob: null,
   outputUrl: null,
   error: null,
+  label: '',
+  suffix: '',
 });
 
 export const useProcessStore = create<ProcessState>((set, get) => ({
@@ -51,6 +57,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   outputBlob: null,
   outputUrl: null,
   error: null,
+  label: '',
+  suffix: '',
 
   setActiveTool: (tool) => {
     const state = get();
@@ -66,6 +74,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
             outputBlob: s.outputBlob,
             outputUrl: s.outputUrl,
             error: s.error,
+            label: s.label,
+            suffix: s.suffix,
           },
         },
       }));
@@ -80,10 +90,12 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       outputBlob: slot?.outputBlob ?? null,
       outputUrl: slot?.outputUrl ?? null,
       error: slot?.error ?? null,
+      label: slot?.label ?? '',
+      suffix: slot?.suffix ?? '',
     });
   },
 
-  startProcessing: () =>
+  startProcessing: (label, suffix) =>
     set({
       isProcessing: true,
       progress: 0,
@@ -92,6 +104,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       outputBlob: null,
       outputUrl: null,
       error: null,
+      label,
+      suffix,
     }),
 
   updateProgress: (p, percent) =>

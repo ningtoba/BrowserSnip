@@ -81,7 +81,7 @@ export function TrimTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, 'Trimmed video', 'trimmed');
     } finally {
       setRunning(false);
     }

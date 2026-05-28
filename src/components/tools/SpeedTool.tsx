@@ -24,7 +24,7 @@ export function SpeedTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, `Speed ${params.speed}x`, `speed_${params.speed}x`);
     } finally {
       setRunning(false);
     }

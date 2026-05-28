@@ -17,6 +17,12 @@ export function AudioTool() {
       const ext = params.mode === 'extract' ? 'mp3' : 'mp4';
       const outName = `output.${ext}`;
       const args = audioCommand('input.mp4', outName, params);
+      const label = params.mode === 'mute'
+        ? 'Muted video' : params.mode === 'extract'
+        ? 'Extracted MP3' : `Volume ${Math.round(params.volume * 100)}%`;
+      const slug = params.mode === 'mute'
+        ? 'muted' : params.mode === 'extract'
+        ? 'audio' : `volume_${Math.round(params.volume * 100)}`;
       await process(args, file, outName, {
         duration: 60,
         width: 1920,
@@ -24,7 +30,7 @@ export function AudioTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, label, slug);
     } finally {
       setRunning(false);
     }

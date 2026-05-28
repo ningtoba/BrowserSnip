@@ -24,6 +24,12 @@ export function CropTool() {
     setRunning(true);
     try {
       const args = cropCommand('input.mp4', 'output.mp4', params);
+      const desc = params.mode === 'crop'
+        ? `Cropped to ${params.aspectRatio}`
+        : `Padded to ${params.aspectRatio}`;
+      const slug = params.mode === 'crop'
+        ? `cropped_${params.aspectRatio.replace(':', 'x')}`
+        : `padded_${params.aspectRatio.replace(':', 'x')}`;
       await process(args, file, 'output.mp4', {
         duration: 60,
         width: 1920,
@@ -31,7 +37,7 @@ export function CropTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, desc, slug);
     } finally {
       setRunning(false);
     }

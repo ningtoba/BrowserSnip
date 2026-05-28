@@ -20,7 +20,7 @@ export function MetadataTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      });
+      }, 'Metadata stripped', 'stripped');
     } finally {
       setRunning(false);
     }
