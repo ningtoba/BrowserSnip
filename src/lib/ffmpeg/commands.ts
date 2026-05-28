@@ -42,7 +42,7 @@ export function resizeCommand(
   return [
     '-i', inputName,
     '-vf', `scale=${params.width}:${params.height}`,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '18',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
     '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
@@ -63,7 +63,7 @@ export function cropCommand(
       '-i', inputName,
       '-vf',
       `split[original][copy];[copy]scale=${targetW}:${targetH},boxblur=20:20[blurred];[blurred][original]overlay=(W-w)/2:(H-h)/2`,
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '18',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
       '-threads', threads(),
       '-c:a', 'aac',
       '-movflags', '+faststart',
@@ -75,7 +75,7 @@ export function cropCommand(
   return [
     '-i', inputName,
     '-vf', `crop=ih*${w}/${h}:ih`,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '18',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
     '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
@@ -94,7 +94,7 @@ export function compressCommand(
 
   return [
     '-i', inputName,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+    '-c:v', 'libx264', '-preset', 'ultrafast',
     '-b:v', `${Math.round(bitrate)}k`,
     '-bufsize', `${Math.round(bufsize)}k`,
     '-threads', threads(),
@@ -135,7 +135,7 @@ export function audioCommand(
       return [
         '-i', inputName,
         '-af', `volume=${params.volume}`,
-        '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast', '-tune', 'zerolatency',
+        '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
         '-threads', threads(),
         '-c:a', 'aac',
         '-movflags', '+faststart',
@@ -156,7 +156,7 @@ export function speedCommand(
     '-i', inputName,
     '-vf', `setpts=${ptsFactor}*PTS`,
     '-af', `atempo=${atempo}`,
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast', '-tune', 'zerolatency',
+    '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
     '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
