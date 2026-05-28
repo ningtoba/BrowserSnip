@@ -1,50 +1,61 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
+let initError: string | null = null;
 
-const CORE_VERSION = '0.12.6';
-const BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist`;
+const CORE_VERSION = '0.12.9';
+const MT_BASE_URL = `https://unpkg.com/@ffmpeg/core-mt@${CORE_VERSION}/dist/umd`;
 
 export async function getFFmpeg(): Promise<FFmpeg> {
-  if (ffmpeg && ffmpeg.loaded) return ffmpeg;
+  if (ffmpeg?.loaded) return ffmpeg;
+  if (initError) throw new Error(initError);
 
   const instance = new FFmpeg();
 
-  instance.on('log', ({ message }) => {
-    // Handled by the hook, not here
-  });
+  try {
+    const mtSupported =
+      typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-  const mt = await supportsMultiThread();
-  const coreURL = mt
-    ? await toBlobURL(`${BASE_URL}/umd/ffmpeg-core.js`, 'text/javascript')
-    : await toBlobURL(`${BASE_URL}/esm/ffmpeg-core.js`, 'text/javascript');
-  const wasmURL = mt
-    ? await toBlobURL(`${BASE_URL}/umd/ffmpeg-core.wasm`, 'application/wasm')
-    : await toBlobURL(`${BASE_URL}/esm/ffmpeg-core.wasm`, 'application/wasm');
+    if (mtSupported) {
+      // Multi-threaded: load the MT core explicitly
+      const coreURL = await toBlobURL(
+        `${MT_BASE_URL}/ffmpeg-core.js`,
+        'text/javascript'
+      );
+      const wasmURL = await toBlobURL(
+        `${MT_BASE_URL}/ffmpeg-core.wasm`,
+        'application/wasm'
+      );
+      await instance.load({ coreURL, wasmURL });
+    } else {
+      // Single-threaded: use the package defaults
+      await instance.load();
+    }
 
-  await instance.load({ coreURL, wasmURL });
-  ffmpeg = instance;
-  return instance;
+    ffmpeg = instance;
+    return instance;
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : 'Failed to load FFmpeg core';
+    initError = msg;
+    console.error('[BrowserSnip] FFmpeg core load failed:', err);
+    throw new Error(msg);
+  }
 }
 
 export async function terminateFFmpeg(): Promise<void> {
   if (ffmpeg) {
-    ffmpeg.terminate();
+    try {
+      ffmpeg.terminate();
+    } catch {
+      // Terminate may throw if WASM is already dead
+    }
     ffmpeg = null;
-    // Allow GC to collect terminated WASM memory
-    await new Promise((r) => setTimeout(r, 100));
+    initError = null;
   }
 }
 
 export function getFFmpegInstance(): FFmpeg | null {
   return ffmpeg;
-}
-
-async function supportsMultiThread(): Promise<boolean> {
-  try {
-    return typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
-  } catch {
-    return false;
-  }
 }

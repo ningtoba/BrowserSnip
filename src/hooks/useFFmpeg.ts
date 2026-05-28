@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { getFFmpeg, terminateFFmpeg } from '@/lib/ffmpeg/core';
 import { parseLogLine, calculateProgress } from '@/lib/ffmpeg/log-parser';
 import { useProcessStore } from '@/stores/process-store';
@@ -6,7 +6,8 @@ import type { VideoMetadata } from '@/types';
 
 export function useFFmpeg() {
   const logBufferRef = useRef<string[]>([]);
-  const timerRef = useRef<number>(0);
+  const lastProcessedTimeRef = useRef(0);
+  const logCallbackRef = useRef<((event: { message: string }) => void) | null>(null);
 
   const process = useCallback(
     async (
@@ -19,11 +20,17 @@ export function useFFmpeg() {
       const store = useProcessStore.getState();
       store.startProcessing();
       logBufferRef.current = [];
+      lastProcessedTimeRef.current = 0;
 
       try {
         const ffmpeg = await getFFmpeg();
 
-        ffmpeg.on('log', ({ message }) => {
+        // Remove previous log callback to prevent listener stacking
+        if (logCallbackRef.current) {
+          ffmpeg.off('log', logCallbackRef.current);
+        }
+
+        logCallbackRef.current = ({ message }: { message: string }) => {
           logBufferRef.current.push(message);
 
           const parsed = parseLogLine(message);
@@ -32,31 +39,40 @@ export function useFFmpeg() {
             const secs = parseInt(h) * 3600 + parseInt(m) * 60 + parseFloat(s);
             const pct = calculateProgress(secs, metadata.duration);
 
-            useProcessStore.getState().updateProgress(
-              {
-                percent: pct,
-                time: parsed.time,
-                frame: parsed.frame ?? 0,
-                fps: parsed.fps ?? 0,
-                eta: '',
-              },
-              pct
-            );
+            const now = Date.now();
+            if (now - lastProcessedTimeRef.current >= 100) {
+              lastProcessedTimeRef.current = now;
+              useProcessStore.getState().updateProgress(
+                {
+                  percent: pct,
+                  time: parsed.time,
+                  frame: parsed.frame ?? 0,
+                  fps: parsed.fps ?? 0,
+                  eta: '',
+                },
+                pct
+              );
+            }
           }
-          // Throttle log updates to ~200ms
+
           if (logBufferRef.current.length % 10 === 0) {
             useProcessStore.getState().appendLog(message);
           }
-        });
+        };
 
-        const inputName = 'input_' + inputFile.name;
-        await ffmpeg.writeFile(inputName, await fetchFile(inputFile));
+        ffmpeg.on('log', logCallbackRef.current);
+
+        // Write input — use a fixed name matching what command builders expect
+        const inputName = 'input.mp4';
+        const inputData = new Uint8Array(await inputFile.arrayBuffer());
+        await ffmpeg.writeFile(inputName, inputData);
 
         if (extraSetup) {
           await extraSetup(ffmpeg);
         }
 
-        await ffmpeg.exec(commandArgs);
+        // Prepend -y to auto-overwrite any stale output in MEMFS
+        await ffmpeg.exec(['-y', ...commandArgs]);
 
         const data = await ffmpeg.readFile(outputFileName);
         const mimeType = outputFileName.endsWith('.gif')
@@ -70,13 +86,23 @@ export function useFFmpeg() {
 
         useProcessStore.getState().setOutput(blob, url);
 
-        // Clean up
-        await ffmpeg.deleteFile(inputName);
-        await ffmpeg.deleteFile(outputFileName);
+        // Best-effort MEMFS cleanup
+        try {
+          await ffmpeg.deleteFile(inputName);
+          await ffmpeg.deleteFile(outputFileName);
+        } catch {
+          // MEMFS will be cleared on terminate
+        }
 
         return blob;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Processing failed';
+        console.error('[BrowserSnip] Processing error:', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : 'Processing failed — check the browser console for details';
         useProcessStore.getState().setError(message);
         return null;
       }
@@ -89,13 +115,4 @@ export function useFFmpeg() {
   }, []);
 
   return { process, terminate };
-}
-
-function fetchFile(file: File): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
 }
