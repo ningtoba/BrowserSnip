@@ -4,7 +4,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     id: 'trim',
     name: 'Trim & Cut',
-    description: 'Frame-accurate trimming with lossless or accurate re-encode modes',
+    description: 'Instant trim via stream copy — no re-encoding, preserves original quality and bitrate',
     icon: '✂',
   },
   {

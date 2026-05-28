@@ -149,8 +149,13 @@ export function TrimTool() {
         }}
       />
 
-      <p className="text-xs text-zinc-600">
-        Stream copy — instant, 1:1 quality. Cuts snap to nearest keyframe.
+      <p className="text-xs leading-relaxed text-zinc-500">
+        Uses <span className="text-zinc-400">stream copy</span> — copies the
+        original video data directly without decoding or re-encoding. Near-instant,
+        preserves the exact quality and bitrate of your source. Unlike most video
+        tools that re-encode, your trimmed file is a byte-for-byte slice of the
+        original. Cut points may shift slightly (usually &lt;1s) to align with
+        keyframes in the source video.
       </p>
 
       <button
