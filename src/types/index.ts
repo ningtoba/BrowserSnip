@@ -22,7 +22,6 @@ export interface ToolParams {
 export interface TrimParams {
   startTime: number;
   endTime: number;
-  mode: 'copy' | 'encode';
 }
 
 export interface ResizeParams {
