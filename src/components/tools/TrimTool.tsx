@@ -17,19 +17,14 @@ export function TrimTool() {
   const [params, setParams] = useState<TrimParams>({
     startTime: 0,
     endTime: 60,
-    mode: 'accurate',
   });
   const [running, setRunning] = useState(false);
 
-  // Separate text state so users can freely edit (delete / retype)
   const [startText, setStartText] = useState(formatInput(0));
   const [endText, setEndText] = useState(formatInput(60));
-
-  // Track whether each input is focused — don't overwrite while editing
   const startFocusedRef = useRef(false);
   const endFocusedRef = useRef(false);
 
-  // Sync external changes (scrubber, file load) into text inputs
   useEffect(() => {
     if (!startFocusedRef.current) setStartText(formatInput(params.startTime));
   }, [params.startTime]);
@@ -45,7 +40,7 @@ export function TrimTool() {
     video.onloadedmetadata = () => {
       const dur = video.duration;
       setDuration(dur);
-      setParams({ startTime: 0, endTime: dur, mode: 'lossless' });
+      setParams({ startTime: 0, endTime: dur });
       setStartText(formatInput(0));
       setEndText(formatInput(dur));
       URL.revokeObjectURL(video.src);
@@ -94,7 +89,6 @@ export function TrimTool() {
 
   return (
     <div className="mt-4 space-y-4">
-      {/* Time inputs */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-zinc-400">
@@ -134,7 +128,6 @@ export function TrimTool() {
         </div>
       </div>
 
-      {/* Duration readout */}
       <div className="flex justify-between rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs">
         <span className="text-zinc-500">Selected Duration</span>
         <span className="font-mono text-indigo-300">
@@ -142,7 +135,6 @@ export function TrimTool() {
         </span>
       </div>
 
-      {/* Scrubber */}
       <TrimScrubber
         duration={duration}
         startTime={params.startTime}
@@ -156,38 +148,6 @@ export function TrimTool() {
           setEndText(formatInput(t));
         }}
       />
-
-      {/* Mode */}
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Cut Mode</label>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setParams({ ...params, mode: 'lossless' })}
-            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-              params.mode === 'lossless'
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
-            }`}
-          >
-            Lossless (Fast)
-          </button>
-          <button
-            onClick={() => setParams({ ...params, mode: 'accurate' })}
-            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-              params.mode === 'accurate'
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
-            }`}
-          >
-            Accurate (Recommended)
-          </button>
-        </div>
-        <p className="text-xs text-zinc-600">
-          {params.mode === 'lossless'
-            ? 'Stream copy — near-instant, zero quality loss. Cuts snap to nearest keyframe (may start slightly before/after your mark).'
-            : 'Re-encode at CRF 18 ultrafast — frame-precise cuts, visually identical quality, fast encode.'}
-        </p>
-      </div>
 
       <button
         onClick={handleProcess}
