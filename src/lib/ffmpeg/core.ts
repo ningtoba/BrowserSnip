@@ -1,11 +1,12 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
 
-const CORE_PATH = '/ffmpeg/core/ffmpeg-core';
-const MT_CORE_PATH = '/ffmpeg/core-mt/ffmpeg-core';
+const CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
+const CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
+const MT_CORE_JS = '/ffmpeg/core-mt/ffmpeg-core.js';
+const MT_CORE_WASM = '/ffmpeg/core-mt/ffmpeg-core.wasm';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -17,10 +18,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     const mtSupported =
       typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-    const base = mtSupported ? MT_CORE_PATH : CORE_PATH;
-
-    const coreURL = await toBlobURL(`${base}.js`, 'text/javascript');
-    const wasmURL = await toBlobURL(`${base}.wasm`, 'application/wasm');
+    const coreURL = mtSupported ? MT_CORE_JS : CORE_JS;
+    const wasmURL = mtSupported ? MT_CORE_WASM : CORE_WASM;
 
     await instance.load({ coreURL, wasmURL });
 
