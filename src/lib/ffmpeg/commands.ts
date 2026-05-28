@@ -19,25 +19,32 @@ export function trimCommand(
   const duration = formatTime(params.endTime - params.startTime);
 
   if (params.mode === 'lossless') {
-    // Input seeking: -ss before -i seeks to nearest keyframe before the cut
-    // point so the first copied packet is a proper I-frame. Uses -t (duration)
-    // for reliable stream copy segment length.
+    // Stream copy: fast, zero quality loss, but cuts snap to nearest keyframe.
+    // -ss before -i seeks to the keyframe before the cut point. -c copy
+    // copies raw packets. -avoid_negative_ts shifts timestamps so the output
+    // starts cleanly at 0. -movflags +faststart moves the moov atom to the
+    // front so the player can start immediately.
     return [
       '-ss', start,
       '-i', inputName,
       '-t', duration,
       '-c', 'copy',
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', '+faststart',
       outputName,
     ];
   }
-  // Accurate: input seeking + re-encode at CRF 18 (visually lossless).
-  // The re-encode generates a proper I-frame at exactly the cut point.
+  // Re-encode: frame-precise cuts, visually lossless quality (CRF 18).
+  // -preset ultrafast is ~5-10x faster than veryfast with only a small
+  // file size increase at the same CRF. The re-encode generates a proper
+  // I-frame at exactly the cut point so playback is always clean.
   return [
     '-ss', start,
     '-i', inputName,
     '-t', duration,
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast',
+    '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
     '-c:a', 'aac',
+    '-movflags', '+faststart',
     outputName,
   ];
 }

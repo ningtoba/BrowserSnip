@@ -17,7 +17,7 @@ export function TrimTool() {
   const [params, setParams] = useState<TrimParams>({
     startTime: 0,
     endTime: 60,
-    mode: 'lossless',
+    mode: 'accurate',
   });
   const [running, setRunning] = useState(false);
 
@@ -169,7 +169,7 @@ export function TrimTool() {
                 : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
             }`}
           >
-            Lossless
+            Lossless (Fast)
           </button>
           <button
             onClick={() => setParams({ ...params, mode: 'accurate' })}
@@ -179,13 +179,13 @@ export function TrimTool() {
                 : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
             }`}
           >
-            Accurate
+            Accurate (Recommended)
           </button>
         </div>
         <p className="text-xs text-zinc-600">
           {params.mode === 'lossless'
-            ? 'Stream copy — instant but cuts at nearest keyframes.'
-            : 'Re-encode — frame-precise but slower.'}
+            ? 'Stream copy — near-instant, zero quality loss. Cuts snap to nearest keyframe (may start slightly before/after your mark).'
+            : 'Re-encode at CRF 18 ultrafast — frame-precise cuts, visually identical quality, fast encode.'}
         </p>
       </div>
 
