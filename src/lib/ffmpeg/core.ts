@@ -1,11 +1,17 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
+
+// Vite's ?url suffix returns the asset URL processed through the module
+// pipeline — a real URL that Emscripten pthread workers can load from.
+// Unlike blob URLs (toBlobURL), these work with both import() and
+// importScripts(), enabling multi-threading.
+import stCoreJS from '/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js?url';
+import stCoreWasm from '/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm?url';
+import mtCoreJS from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.js?url';
+import mtCoreWasm from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.wasm?url';
+import mtWorkerJS from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.worker.js?url';
 
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
-
-const CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
-const CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -14,14 +20,18 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   const instance = new FFmpeg();
 
   try {
-    // Single-threaded only. Multi-threading via @ffmpeg/core-mt requires
-    // spawning pthread workers which cannot load from blob URLs. Since we
-    // must use blob URLs to bypass Vite's dev-server import resolver,
-    // MT is not feasible in this setup.
-    const coreURL = await toBlobURL(CORE_JS, 'text/javascript');
-    const wasmURL = await toBlobURL(CORE_WASM, 'application/wasm');
+    const mtSupported =
+      typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-    await instance.load({ coreURL, wasmURL });
+    const coreURL = mtSupported ? mtCoreJS : stCoreJS;
+    const wasmURL = mtSupported ? mtCoreWasm : stCoreWasm;
+
+    const config: Record<string, string> = { coreURL, wasmURL };
+    if (mtSupported) {
+      config.workerURL = mtWorkerJS;
+    }
+
+    await instance.load(config);
 
     ffmpeg = instance;
     return instance;
