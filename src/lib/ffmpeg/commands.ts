@@ -56,18 +56,15 @@ export function cropCommand(
   params: CropParams
 ): string[] {
   const [w, h] = params.aspectRatio.split(':').map(Number);
-  const ratio = w / h;
+  // Crop the longer dimension to match the target ratio.
+  // For landscape sources: 9:16/1:1 crop by height, 21:9 crop by width.
+  const expr = w > h
+    ? `iw:iw*${h}/${w}`   // target wider → crop height from width
+    : `ih*${w}/${h}:ih`;  // target taller → crop width from height
 
-  // Crop to target ratio while staying within source bounds.
-  // If source is wider than target → crop_w = h * ratio, crop_h = h.
-  // If source is taller than target → crop_w = w, crop_h = w / ratio.
   return [
     '-i', inputName,
-    '-vf',
-    `crop=` +
-    `if(gt(iw/ih,${ratio}), ih*${ratio}, iw)` +
-    `:` +
-    `if(gt(iw/ih,${ratio}), ih, iw/${ratio})`,
+    '-vf', `crop=${expr}`,
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
     '-threads', threads(),
     '-c:a', 'aac',
