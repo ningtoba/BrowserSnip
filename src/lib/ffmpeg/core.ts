@@ -4,12 +4,8 @@ import { toBlobURL } from '@ffmpeg/util';
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
 
-const ST_CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
-const ST_CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
-
-const MT_CORE_JS = '/ffmpeg/core-mt/ffmpeg-core.js';
-const MT_CORE_WASM = '/ffmpeg/core-mt/ffmpeg-core.wasm';
-const MT_CORE_WORKER = '/ffmpeg/core-mt/ffmpeg-core.worker.js';
+const CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
+const CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -18,28 +14,14 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   const instance = new FFmpeg();
 
   try {
-    const mtSupported =
-      typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
+    // Single-threaded only. Multi-threading via @ffmpeg/core-mt requires
+    // spawning pthread workers which cannot load from blob URLs. Since we
+    // must use blob URLs to bypass Vite's dev-server import resolver,
+    // MT is not feasible in this setup.
+    const coreURL = await toBlobURL(CORE_JS, 'text/javascript');
+    const wasmURL = await toBlobURL(CORE_WASM, 'application/wasm');
 
-    const coreURL = await toBlobURL(
-      mtSupported ? MT_CORE_JS : ST_CORE_JS,
-      'text/javascript'
-    );
-    const wasmURL = await toBlobURL(
-      mtSupported ? MT_CORE_WASM : ST_CORE_WASM,
-      'application/wasm'
-    );
-
-    const config: { coreURL: string; wasmURL: string; workerURL?: string } = {
-      coreURL,
-      wasmURL,
-    };
-
-    if (mtSupported) {
-      config.workerURL = await toBlobURL(MT_CORE_WORKER, 'text/javascript');
-    }
-
-    await instance.load(config);
+    await instance.load({ coreURL, wasmURL });
 
     ffmpeg = instance;
     return instance;
