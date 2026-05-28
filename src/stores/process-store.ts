@@ -1,7 +1,19 @@
 import { create } from 'zustand';
-import type { FFmpegProgress } from '@/types';
+import type { FFmpegProgress, ToolId } from '@/types';
+
+interface ProcessSlot {
+  isProcessing: boolean;
+  progress: number;
+  currentProgress: FFmpegProgress | null;
+  logs: string[];
+  outputBlob: Blob | null;
+  outputUrl: string | null;
+  error: string | null;
+}
 
 interface ProcessState {
+  activeTool: ToolId | null;
+  sessions: Partial<Record<ToolId, ProcessSlot>>;
   isProcessing: boolean;
   progress: number;
   currentProgress: FFmpegProgress | null;
@@ -10,6 +22,7 @@ interface ProcessState {
   outputUrl: string | null;
   error: string | null;
 
+  setActiveTool: (tool: ToolId | null) => void;
   startProcessing: () => void;
   updateProgress: (p: FFmpegProgress, percent: number) => void;
   appendLog: (line: string) => void;
@@ -18,7 +31,7 @@ interface ProcessState {
   reset: () => void;
 }
 
-export const useProcessStore = create<ProcessState>((set, get) => ({
+const emptySlot = (): ProcessSlot => ({
   isProcessing: false,
   progress: 0,
   currentProgress: null,
@@ -26,6 +39,49 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   outputBlob: null,
   outputUrl: null,
   error: null,
+});
+
+export const useProcessStore = create<ProcessState>((set, get) => ({
+  activeTool: null,
+  sessions: {},
+  isProcessing: false,
+  progress: 0,
+  currentProgress: null,
+  logs: [],
+  outputBlob: null,
+  outputUrl: null,
+  error: null,
+
+  setActiveTool: (tool) => {
+    const state = get();
+    if (state.activeTool && state.activeTool !== tool) {
+      set((s) => ({
+        sessions: {
+          ...s.sessions,
+          [state.activeTool!]: {
+            isProcessing: s.isProcessing,
+            progress: s.progress,
+            currentProgress: s.currentProgress,
+            logs: s.logs,
+            outputBlob: s.outputBlob,
+            outputUrl: s.outputUrl,
+            error: s.error,
+          },
+        },
+      }));
+    }
+    const slot = tool ? state.sessions[tool] : null;
+    set({
+      activeTool: tool ?? undefined,
+      isProcessing: slot?.isProcessing ?? false,
+      progress: slot?.progress ?? 0,
+      currentProgress: slot?.currentProgress ?? null,
+      logs: slot?.logs ?? [],
+      outputBlob: slot?.outputBlob ?? null,
+      outputUrl: slot?.outputUrl ?? null,
+      error: slot?.error ?? null,
+    });
+  },
 
   startProcessing: () =>
     set({
@@ -63,14 +119,6 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
     const prev = get().outputUrl;
     if (prev) URL.revokeObjectURL(prev);
 
-    set({
-      isProcessing: false,
-      progress: 0,
-      currentProgress: null,
-      logs: [],
-      outputBlob: null,
-      outputUrl: null,
-      error: null,
-    });
+    set(emptySlot());
   },
 }));

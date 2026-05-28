@@ -41,14 +41,15 @@ export function ToolWorkspace() {
   const { isProcessing, outputUrl, outputBlob, error } = useProcessStore();
   const showLogs = useUIStore((s) => s.showLogMonitor);
 
-  const setActiveTool = useFileStore((s) => s.setActiveTool);
-  const resetProcess = useProcessStore((s) => s.reset);
+  const setFileSession = useFileStore((s) => s.setActiveTool);
+  const setProcessSession = useProcessStore((s) => s.setActiveTool);
 
   // Switch to this tool's session on mount / tool change
   useEffect(() => {
-    setActiveTool((toolId as ToolId) ?? null);
-    resetProcess();
-  }, [toolId, setActiveTool, resetProcess]);
+    const id = (toolId as ToolId) ?? null;
+    setFileSession(id);
+    setProcessSession(id);
+  }, [toolId, setFileSession, setProcessSession]);
 
   const tool = TOOLS.find((t) => t.id === toolId);
   const ToolComponent = toolId ? TOOL_COMPONENTS[toolId] : null;
