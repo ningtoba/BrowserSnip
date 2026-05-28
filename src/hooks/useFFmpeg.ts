@@ -100,6 +100,9 @@ export function useFFmpeg() {
         return blob;
       } catch (err) {
         console.error('[BrowserSnip] Processing error:', err);
+        // Terminate the WASM instance on error — it may have stale
+        // MEMFS data or be in a broken state after a failed operation.
+        await terminateFFmpeg();
         const message =
           err instanceof Error
             ? err.message

@@ -56,17 +56,18 @@ export function cropCommand(
   params: CropParams
 ): string[] {
   const [w, h] = params.aspectRatio.split(':').map(Number);
+  const ratio = w / h;
 
   // Crop to target ratio while staying within source bounds.
-  // If source is wider than target → crop width = height * w/h.
-  // If source is taller than target → crop height = width * h/w.
+  // If source is wider than target → crop_w = h * ratio, crop_h = h.
+  // If source is taller than target → crop_w = w, crop_h = w / ratio.
   return [
     '-i', inputName,
     '-vf',
     `crop=` +
-    `if(gt(iw/ih,${w}/${h}), ih*${w}/${h}, iw)` +
+    `if(gt(iw/ih,${ratio}), ih*${ratio}, iw)` +
     `:` +
-    `if(gt(iw/ih,${w}/${h}), ih, iw*${h}/${w})`,
+    `if(gt(iw/ih,${ratio}), ih, iw/${ratio})`,
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
     '-threads', threads(),
     '-c:a', 'aac',
