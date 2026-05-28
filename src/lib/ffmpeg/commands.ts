@@ -18,6 +18,20 @@ export function trimCommand(
   const start = formatTime(params.startTime);
   const duration = formatTime(params.endTime - params.startTime);
 
+  if (params.mode === 'copy') {
+    // Stream copy: near-instant, 1:1 quality, same bitrate/codec.
+    // Cuts snap to nearest keyframe before the mark (typically <2s).
+    return [
+      '-ss', start,
+      '-i', inputName,
+      '-t', duration,
+      '-c', 'copy',
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', '+faststart',
+      outputName,
+    ];
+  }
+  // Re-encode: frame-precise cuts. Use when exact timing matters.
   return [
     '-ss', start,
     '-i', inputName,

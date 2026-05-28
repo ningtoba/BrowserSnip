@@ -17,6 +17,7 @@ export function TrimTool() {
   const [params, setParams] = useState<TrimParams>({
     startTime: 0,
     endTime: 60,
+    mode: 'copy',
   });
   const [running, setRunning] = useState(false);
 
@@ -40,7 +41,7 @@ export function TrimTool() {
     video.onloadedmetadata = () => {
       const dur = video.duration;
       setDuration(dur);
-      setParams({ startTime: 0, endTime: dur });
+      setParams({ startTime: 0, endTime: dur, mode: 'copy' });
       setStartText(formatInput(0));
       setEndText(formatInput(dur));
       URL.revokeObjectURL(video.src);
@@ -148,6 +149,37 @@ export function TrimTool() {
           setEndText(formatInput(t));
         }}
       />
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-zinc-400">Mode</label>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setParams({ ...params, mode: 'copy' })}
+            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+              params.mode === 'copy'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+            }`}
+          >
+            Stream Copy
+          </button>
+          <button
+            onClick={() => setParams({ ...params, mode: 'encode' })}
+            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+              params.mode === 'encode'
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+            }`}
+          >
+            Re-encode
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">
+          {params.mode === 'copy'
+            ? 'Near-instant, 1:1 quality and bitrate. Cuts snap to nearest keyframe (~1s).'
+            : 'Frame-precise cut at CRF 18. Slightly slower, re-encodes the segment.'}
+        </p>
+      </div>
 
       <button
         onClick={handleProcess}
