@@ -33,7 +33,6 @@ export interface ResizeParams {
 
 export interface CropParams {
   aspectRatio: '9:16' | '1:1' | '21:9' | 'custom';
-  mode: 'crop' | 'pad';
 }
 
 export interface CompressParams {

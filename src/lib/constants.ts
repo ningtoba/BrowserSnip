@@ -16,7 +16,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     id: 'crop',
     name: 'Crop & Reframe',
-    description: 'Crop or pad to social media formats (9:16, 1:1, 21:9)',
+    description: 'Crop to social media aspect ratios (9:16, 1:1, 21:9)',
     icon: '⊞',
   },
   {

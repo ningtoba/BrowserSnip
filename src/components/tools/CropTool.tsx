@@ -15,7 +15,6 @@ export function CropTool() {
   const file = useFileStore((s) => s.file);
   const [params, setParams] = useState<CropParams>({
     aspectRatio: '9:16',
-    mode: 'crop',
   });
   const [running, setRunning] = useState(false);
 
@@ -24,12 +23,7 @@ export function CropTool() {
     setRunning(true);
     try {
       const args = cropCommand('input.mp4', 'output.mp4', params);
-      const desc = params.mode === 'crop'
-        ? `Cropped to ${params.aspectRatio}`
-        : `Padded to ${params.aspectRatio}`;
-      const slug = params.mode === 'crop'
-        ? `cropped_${params.aspectRatio.replace(':', 'x')}`
-        : `padded_${params.aspectRatio.replace(':', 'x')}`;
+      const slug = `cropped_${params.aspectRatio.replace(':', 'x')}`;
       await process(args, file, 'output.mp4', {
         duration: 60,
         width: 1920,
@@ -37,7 +31,7 @@ export function CropTool() {
         codec: 'h264',
         fileSize: file.size,
         fileName: file.name,
-      }, desc, slug);
+      }, `Cropped to ${params.aspectRatio}`, slug);
     } finally {
       setRunning(false);
     }
@@ -51,7 +45,7 @@ export function CropTool() {
           {ASPECT_RATIOS.map((ar) => (
             <button
               key={ar.value}
-              onClick={() => setParams({ ...params, aspectRatio: ar.value })}
+              onClick={() => setParams({ aspectRatio: ar.value })}
               className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
                 params.aspectRatio === ar.value
                   ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
@@ -64,43 +58,16 @@ export function CropTool() {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Mode</label>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setParams({ ...params, mode: 'crop' })}
-            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-              params.mode === 'crop'
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
-            }`}
-          >
-            Direct Crop
-          </button>
-          <button
-            onClick={() => setParams({ ...params, mode: 'pad' })}
-            className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-              params.mode === 'pad'
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
-            }`}
-          >
-            Blurred Padding
-          </button>
-        </div>
-        <p className="text-xs text-zinc-600">
-          {params.mode === 'crop'
-            ? 'Crops the video to fit the target aspect ratio.'
-            : 'Adds blurred sidebars to fit the target aspect ratio without losing content.'}
-        </p>
-      </div>
+      <p className="text-xs text-zinc-600">
+        Crops the video to the selected aspect ratio, centered on the original frame.
+      </p>
 
       <button
         onClick={handleProcess}
         disabled={running}
         className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
       >
-        {running ? 'Processing...' : 'Apply Crop / Reframe'}
+        {running ? 'Processing...' : 'Crop Video'}
       </button>
     </div>
   );
