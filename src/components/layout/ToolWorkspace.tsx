@@ -94,7 +94,7 @@ export function ToolWorkspace() {
 
           {isLargeFile && <MemoryWarning />}
 
-          {file && !isProcessing && ToolComponent && <ToolComponent />}
+          {file && ToolComponent && <ToolComponent />}
         </div>
 
         <div className="border-t border-zinc-800 p-5">
