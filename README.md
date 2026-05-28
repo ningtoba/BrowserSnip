@@ -93,7 +93,7 @@ ffmpeg.wasm runs a full FFmpeg binary compiled to WebAssembly. This gives Browse
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/browsersnip.git
+git clone git@github.com:ningtoba/BrowserSnip.git
 cd browsersnip
 
 # Install dependencies
