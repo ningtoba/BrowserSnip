@@ -1,14 +1,17 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 
-// Vite's ?url suffix returns the asset URL processed through the module
-// pipeline — a real URL that Emscripten pthread workers can load from.
-// Unlike blob URLs (toBlobURL), these work with both import() and
-// importScripts(), enabling multi-threading.
+// ?url imports go through Vite's module pipeline → real URLs that
+// work with import(). Used for the core JS + WASM which the main
+// module worker loads via import().
 import stCoreJS from '/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js?url';
 import stCoreWasm from '/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm?url';
 import mtCoreJS from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.js?url';
 import mtCoreWasm from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.wasm?url';
-import mtWorkerJS from '/node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.worker.js?url';
+
+// Worker file must be served as-is (no Vite transforms) because
+// Emscripten creates classic workers (new Worker(url) without
+// type:'module'). Served from public/ where Vite leaves files raw.
+const MT_WORKER = '/mt-worker.js';
 
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
@@ -28,7 +31,7 @@ export async function getFFmpeg(): Promise<FFmpeg> {
 
     const config: Record<string, string> = { coreURL, wasmURL };
     if (mtSupported) {
-      config.workerURL = mtWorkerJS;
+      config.workerURL = MT_WORKER;
     }
 
     await instance.load(config);
