@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TrimParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { trimCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
 import { TrimScrubber } from '@/components/player/TrimScrubber';
 import { formatDisplayTime } from '@/lib/utils/time';
+
+function formatInput(seconds: number): string {
+  return seconds.toFixed(3);
+}
 
 export function TrimTool() {
   const { process } = useFFmpeg();
@@ -17,38 +21,58 @@ export function TrimTool() {
   });
   const [running, setRunning] = useState(false);
 
+  // Separate text state so users can freely edit (delete / retype)
+  const [startText, setStartText] = useState(formatInput(0));
+  const [endText, setEndText] = useState(formatInput(60));
+
+  // Track whether each input is focused — don't overwrite while editing
+  const startFocusedRef = useRef(false);
+  const endFocusedRef = useRef(false);
+
+  // Sync external changes (scrubber, file load) into text inputs
+  useEffect(() => {
+    if (!startFocusedRef.current) setStartText(formatInput(params.startTime));
+  }, [params.startTime]);
+
+  useEffect(() => {
+    if (!endFocusedRef.current) setEndText(formatInput(params.endTime));
+  }, [params.endTime]);
+
   useEffect(() => {
     if (!file) return;
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.onloadedmetadata = () => {
-      setDuration(video.duration);
-      setParams((p) => ({ ...p, endTime: video.duration }));
+      const dur = video.duration;
+      setDuration(dur);
+      setParams({ startTime: 0, endTime: dur, mode: 'lossless' });
+      setStartText(formatInput(0));
+      setEndText(formatInput(dur));
       URL.revokeObjectURL(video.src);
     };
     video.src = URL.createObjectURL(file);
   }, [file]);
 
-  const clamp = useCallback(
-    (value: number, min: number, max: number) => Math.max(min, Math.min(max, value)),
-    []
-  );
+  const clamp = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, v));
 
-  const handleStartInput = useCallback(
-    (value: number) => {
-      const t = clamp(value, 0, params.endTime - 0.001);
-      setParams({ ...params, startTime: t });
-    },
-    [params, clamp]
-  );
+  const commitStart = useCallback(() => {
+    const raw = parseFloat(startText);
+    const t = Number.isFinite(raw)
+      ? clamp(raw, 0, params.endTime - 0.001)
+      : params.startTime;
+    setParams((p) => ({ ...p, startTime: t }));
+    setStartText(formatInput(t));
+  }, [startText, params.endTime, params.startTime]);
 
-  const handleEndInput = useCallback(
-    (value: number) => {
-      const t = clamp(value, params.startTime + 0.001, duration);
-      setParams({ ...params, endTime: t });
-    },
-    [params, duration, clamp]
-  );
+  const commitEnd = useCallback(() => {
+    const raw = parseFloat(endText);
+    const t = Number.isFinite(raw)
+      ? clamp(raw, params.startTime + 0.001, duration)
+      : params.endTime;
+    setParams((p) => ({ ...p, endTime: t }));
+    setEndText(formatInput(t));
+  }, [endText, params.startTime, duration, params.endTime]);
 
   const handleProcess = async () => {
     if (!file) return;
@@ -73,14 +97,17 @@ export function TrimTool() {
       {/* Time inputs */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400">Start Time</label>
+          <label className="text-xs font-medium text-zinc-400">
+            Start Time (seconds)
+          </label>
           <input
-            type="number"
-            min={0}
-            max={params.endTime - 0.001}
-            step={0.001}
-            value={params.startTime.toFixed(3)}
-            onChange={(e) => handleStartInput(parseFloat(e.target.value) || 0)}
+            type="text"
+            inputMode="decimal"
+            value={startText}
+            onChange={(e) => setStartText(e.target.value)}
+            onFocus={() => { startFocusedRef.current = true; }}
+            onBlur={() => { startFocusedRef.current = false; commitStart(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitStart(); }}
             className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
           />
           <p className="font-mono text-xs text-zinc-600">
@@ -88,14 +115,17 @@ export function TrimTool() {
           </p>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400">End Time</label>
+          <label className="text-xs font-medium text-zinc-400">
+            End Time (seconds)
+          </label>
           <input
-            type="number"
-            min={params.startTime + 0.001}
-            max={duration}
-            step={0.001}
-            value={params.endTime.toFixed(3)}
-            onChange={(e) => handleEndInput(parseFloat(e.target.value) || duration)}
+            type="text"
+            inputMode="decimal"
+            value={endText}
+            onChange={(e) => setEndText(e.target.value)}
+            onFocus={() => { endFocusedRef.current = true; }}
+            onBlur={() => { endFocusedRef.current = false; commitEnd(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitEnd(); }}
             className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
           />
           <p className="font-mono text-xs text-zinc-600">
@@ -117,8 +147,14 @@ export function TrimTool() {
         duration={duration}
         startTime={params.startTime}
         endTime={params.endTime}
-        onStartChange={(t) => setParams({ ...params, startTime: t })}
-        onEndChange={(t) => setParams({ ...params, endTime: t })}
+        onStartChange={(t) => {
+          setParams((p) => ({ ...p, startTime: t }));
+          setStartText(formatInput(t));
+        }}
+        onEndChange={(t) => {
+          setParams((p) => ({ ...p, endTime: t }));
+          setEndText(formatInput(t));
+        }}
       />
 
       {/* Mode */}

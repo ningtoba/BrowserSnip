@@ -4,8 +4,8 @@ import { toBlobURL } from '@ffmpeg/util';
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
 
-const CORE_VERSION = '0.12.9';
-const MT_BASE_URL = `https://unpkg.com/@ffmpeg/core-mt@${CORE_VERSION}/dist/umd`;
+const CORE_PATH = '/ffmpeg/core/ffmpeg-core';
+const MT_CORE_PATH = '/ffmpeg/core-mt/ffmpeg-core';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -17,21 +17,12 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     const mtSupported =
       typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-    if (mtSupported) {
-      // Multi-threaded: load the MT core explicitly
-      const coreURL = await toBlobURL(
-        `${MT_BASE_URL}/ffmpeg-core.js`,
-        'text/javascript'
-      );
-      const wasmURL = await toBlobURL(
-        `${MT_BASE_URL}/ffmpeg-core.wasm`,
-        'application/wasm'
-      );
-      await instance.load({ coreURL, wasmURL });
-    } else {
-      // Single-threaded: use the package defaults
-      await instance.load();
-    }
+    const base = mtSupported ? MT_CORE_PATH : CORE_PATH;
+
+    const coreURL = await toBlobURL(`${base}.js`, 'text/javascript');
+    const wasmURL = await toBlobURL(`${base}.wasm`, 'application/wasm');
+
+    await instance.load({ coreURL, wasmURL });
 
     ffmpeg = instance;
     return instance;
