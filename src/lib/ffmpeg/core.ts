@@ -6,8 +6,6 @@ let initError: string | null = null;
 
 const CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
 const CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
-const MT_CORE_JS = '/ffmpeg/core-mt/ffmpeg-core.js';
-const MT_CORE_WASM = '/ffmpeg/core-mt/ffmpeg-core.wasm';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -16,18 +14,11 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   const instance = new FFmpeg();
 
   try {
-    const mtSupported =
-      typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
-
-    const coreJS = mtSupported ? MT_CORE_JS : CORE_JS;
-    const coreWasm = mtSupported ? MT_CORE_WASM : CORE_WASM;
-
-    // toBlobURL fetches the file and creates a blob: URL. This is required
-    // because the FFmpeg module worker does import(blobURL) which bypasses
-    // Vite's module resolver. Direct paths to /public/ files cannot be
-    // imported — they can only be fetched.
-    const coreURL = await toBlobURL(coreJS, 'text/javascript');
-    const wasmURL = await toBlobURL(coreWasm, 'application/wasm');
+    // Use single-threaded core only. The multi-threaded core spawns
+    // internal pthread workers that fail when loaded from blob URLs
+    // because they use import.meta.url in a classic worker context.
+    const coreURL = await toBlobURL(CORE_JS, 'text/javascript');
+    const wasmURL = await toBlobURL(CORE_WASM, 'application/wasm');
 
     await instance.load({ coreURL, wasmURL });
 
