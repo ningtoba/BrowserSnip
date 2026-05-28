@@ -10,6 +10,10 @@ import type {
 import { calculateBitrate } from '@/lib/utils/bitrate';
 import { formatTime } from '@/lib/utils/time';
 
+function threads(): string {
+  return Math.max(2, navigator.hardwareConcurrency || 4).toString();
+}
+
 export function trimCommand(
   inputName: string,
   outputName: string,
@@ -37,7 +41,8 @@ export function resizeCommand(
   return [
     '-i', inputName,
     '-vf', `scale=${params.width}:${params.height}`,
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+    '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
     outputName,
@@ -57,7 +62,8 @@ export function cropCommand(
       '-i', inputName,
       '-vf',
       `split[original][copy];[copy]scale=${targetW}:${targetH},boxblur=20:20[blurred];[blurred][original]overlay=(W-w)/2:(H-h)/2`,
-      '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+      '-threads', threads(),
       '-c:a', 'aac',
       '-movflags', '+faststart',
       outputName,
@@ -68,7 +74,8 @@ export function cropCommand(
   return [
     '-i', inputName,
     '-vf', `crop=ih*${w}/${h}:ih`,
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+    '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
     outputName,
@@ -89,6 +96,7 @@ export function compressCommand(
     '-c:v', 'libx264', '-preset', 'ultrafast',
     '-b:v', `${Math.round(bitrate)}k`,
     '-bufsize', `${Math.round(bufsize)}k`,
+    '-threads', threads(),
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',
     outputName,
@@ -127,6 +135,7 @@ export function audioCommand(
         '-i', inputName,
         '-af', `volume=${params.volume}`,
         '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+        '-threads', threads(),
         '-c:a', 'aac',
         '-movflags', '+faststart',
         outputName,
@@ -147,6 +156,7 @@ export function speedCommand(
     '-vf', `setpts=${ptsFactor}*PTS`,
     '-af', `atempo=${atempo}`,
     '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+    '-threads', threads(),
     '-c:a', 'aac',
     '-movflags', '+faststart',
     outputName,
