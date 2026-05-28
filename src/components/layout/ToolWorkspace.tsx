@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TOOLS } from '@/lib/constants';
 import { FileDropZone } from '@/components/ui/FileDropZone';
@@ -18,6 +19,7 @@ import { StitchTool } from '@/components/tools/StitchTool';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { useUIStore } from '@/stores/ui-store';
+import type { ToolId } from '@/types';
 
 const TOOL_COMPONENTS: Record<string, React.ComponentType> = {
   trim: TrimTool,
@@ -38,6 +40,15 @@ export function ToolWorkspace() {
   const isLargeFile = useFileStore((s) => s.isLargeFile);
   const { isProcessing, outputUrl, outputBlob, error } = useProcessStore();
   const showLogs = useUIStore((s) => s.showLogMonitor);
+
+  const setActiveTool = useFileStore((s) => s.setActiveTool);
+  const resetProcess = useProcessStore((s) => s.reset);
+
+  // Switch to this tool's session on mount / tool change
+  useEffect(() => {
+    setActiveTool((toolId as ToolId) ?? null);
+    resetProcess();
+  }, [toolId, setActiveTool, resetProcess]);
 
   const tool = TOOLS.find((t) => t.id === toolId);
   const ToolComponent = toolId ? TOOL_COMPONENTS[toolId] : null;

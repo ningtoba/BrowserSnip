@@ -1,24 +1,71 @@
 import { create } from 'zustand';
-import type { VideoMetadata } from '@/types';
+import type { VideoMetadata, ToolId } from '@/types';
 
-interface FileState {
+interface ToolSlot {
   file: File | null;
   files: File[];
   metadata: VideoMetadata | null;
   isLargeFile: boolean;
+}
+
+interface FileState {
+  activeTool: ToolId | null;
+  sessions: Partial<Record<ToolId, ToolSlot>>;
+  file: File | null;
+  files: File[];
+  metadata: VideoMetadata | null;
+  isLargeFile: boolean;
+
+  setActiveTool: (tool: ToolId | null) => void;
   setFile: (file: File | null) => void;
   addFile: (file: File) => void;
   removeFile: (index: number) => void;
   reorderFiles: (from: number, to: number) => void;
   setMetadata: (meta: VideoMetadata | null) => void;
-  clearFiles: () => void;
+  clearCurrent: () => void;
 }
 
-export const useFileStore = create<FileState>((set) => ({
+const emptySlot = (): ToolSlot => ({
   file: null,
   files: [],
   metadata: null,
   isLargeFile: false,
+});
+
+export const useFileStore = create<FileState>((set, get) => ({
+  activeTool: null,
+  sessions: {},
+  file: null,
+  files: [],
+  metadata: null,
+  isLargeFile: false,
+
+  setActiveTool: (tool) => {
+    const state = get();
+    if (state.activeTool && state.activeTool !== tool) {
+      // Save current state to its slot before switching
+      set((s) => ({
+        sessions: {
+          ...s.sessions,
+          [state.activeTool!]: {
+            file: s.file,
+            files: s.files,
+            metadata: s.metadata,
+            isLargeFile: s.isLargeFile,
+          },
+        },
+      }));
+    }
+    // Load the new tool's slot (or empty)
+    const slot = tool ? state.sessions[tool] : null;
+    set({
+      activeTool: tool ?? undefined,
+      file: slot?.file ?? null,
+      files: slot?.files ?? [],
+      metadata: slot?.metadata ?? null,
+      isLargeFile: slot?.isLargeFile ?? false,
+    });
+  },
 
   setFile: (file) =>
     set({
@@ -28,14 +75,10 @@ export const useFileStore = create<FileState>((set) => ({
     }),
 
   addFile: (file) =>
-    set((state) => ({
-      files: [...state.files, file],
-    })),
+    set((state) => ({ files: [...state.files, file] })),
 
   removeFile: (index) =>
-    set((state) => ({
-      files: state.files.filter((_, i) => i !== index),
-    })),
+    set((state) => ({ files: state.files.filter((_, i) => i !== index) })),
 
   reorderFiles: (from, to) =>
     set((state) => {
@@ -47,5 +90,5 @@ export const useFileStore = create<FileState>((set) => ({
 
   setMetadata: (meta) => set({ metadata: meta }),
 
-  clearFiles: () => set({ file: null, files: [], metadata: null, isLargeFile: false }),
+  clearCurrent: () => set({ file: null, files: [], metadata: null, isLargeFile: false }),
 }));

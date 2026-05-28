@@ -5,7 +5,7 @@ import { useFileStore } from '@/stores/file-store';
 
 export function StitchTool() {
   const { process } = useFFmpeg();
-  const { files, addFile, removeFile, reorderFiles, clearFiles } = useFileStore();
+  const { files, addFile, removeFile, reorderFiles, clearCurrent } = useFileStore();
   const [running, setRunning] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
 
@@ -106,7 +106,7 @@ export function StitchTool() {
               File Queue ({files.length})
             </span>
             <button
-              onClick={clearFiles}
+              onClick={clearCurrent}
               className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
             >
               Clear all
