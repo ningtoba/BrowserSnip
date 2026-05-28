@@ -11,7 +11,8 @@ import { calculateBitrate } from '@/lib/utils/bitrate';
 import { formatTime } from '@/lib/utils/time';
 
 function threads(): string {
-  return Math.max(2, navigator.hardwareConcurrency || 4).toString();
+  // More than 4 threads in WASM causes OOM hangs, not speedups
+  return Math.min(4, navigator.hardwareConcurrency || 2).toString();
 }
 
 export function trimCommand(

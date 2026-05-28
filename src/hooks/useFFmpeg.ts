@@ -71,8 +71,9 @@ export function useFFmpeg() {
           await extraSetup(ffmpeg);
         }
 
-        // Prepend -y to auto-overwrite any stale output in MEMFS
-        await ffmpeg.exec(['-y', ...commandArgs]);
+        // ffmpeg.wasm already prepends -nostdin -y by default.
+        // Timeout after 5 min — prevents infinite hangs from WASM OOM.
+        await ffmpeg.exec(commandArgs, 300_000);
 
         const data = await ffmpeg.readFile(outputFileName);
         const mimeType = outputFileName.endsWith('.gif')

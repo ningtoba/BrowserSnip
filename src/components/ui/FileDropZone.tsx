@@ -1,10 +1,20 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
+import { useProcessStore } from '@/stores/process-store';
 
 export function FileDropZone() {
   const { file, setFile } = useFileStore();
+  const resetProcess = useProcessStore((s) => s.reset);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(
+    (f: File | null) => {
+      resetProcess();
+      setFile(f);
+    },
+    [setFile, resetProcess]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -12,18 +22,18 @@ export function FileDropZone() {
       setIsDragging(false);
       const f = e.dataTransfer.files[0];
       if (f && f.type.startsWith('video/')) {
-        setFile(f);
+        handleFile(f);
       }
     },
-    [setFile]
+    [handleFile]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const f = e.target.files?.[0];
-      if (f) setFile(f);
+      if (f) handleFile(f);
     },
-    [setFile]
+    [handleFile]
   );
 
   if (file) {
@@ -36,7 +46,7 @@ export function FileDropZone() {
             <p className="text-xs text-zinc-500">{sizeMB} MB</p>
           </div>
           <button
-            onClick={() => setFile(null)}
+            onClick={() => handleFile(null)}
             className="ml-2 shrink-0 text-xs text-zinc-500 hover:text-red-400 transition-colors"
           >
             Remove
