@@ -16,23 +16,26 @@ export function trimCommand(
   params: TrimParams
 ): string[] {
   const start = formatTime(params.startTime);
-  const end = formatTime(params.endTime);
+  const duration = formatTime(params.endTime - params.startTime);
 
   if (params.mode === 'lossless') {
-    // Output seeking with stream copy: decode from start but only mux from -ss.
-    // Cleaner timestamps than input seeking and preserves 1:1 quality.
+    // Input seeking: -ss before -i seeks to nearest keyframe before the cut
+    // point so the first copied packet is a proper I-frame. Uses -t (duration)
+    // for reliable stream copy segment length.
     return [
+      '-ss', start,
       '-i', inputName,
-      '-ss', start, '-to', end,
+      '-t', duration,
       '-c', 'copy',
-      '-avoid_negative_ts', 'make_zero',
       outputName,
     ];
   }
-  // Accurate: output seeking for frame-precise cuts, visually lossless encode.
+  // Accurate: input seeking + re-encode at CRF 18 (visually lossless).
+  // The re-encode generates a proper I-frame at exactly the cut point.
   return [
+    '-ss', start,
     '-i', inputName,
-    '-ss', start, '-to', end,
+    '-t', duration,
     '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast',
     '-c:a', 'aac',
     outputName,
