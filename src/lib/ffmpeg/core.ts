@@ -1,4 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
@@ -18,8 +19,15 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     const mtSupported =
       typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-    const coreURL = mtSupported ? MT_CORE_JS : CORE_JS;
-    const wasmURL = mtSupported ? MT_CORE_WASM : CORE_WASM;
+    const coreJS = mtSupported ? MT_CORE_JS : CORE_JS;
+    const coreWasm = mtSupported ? MT_CORE_WASM : CORE_WASM;
+
+    // toBlobURL fetches the file and creates a blob: URL. This is required
+    // because the FFmpeg module worker does import(blobURL) which bypasses
+    // Vite's module resolver. Direct paths to /public/ files cannot be
+    // imported — they can only be fetched.
+    const coreURL = await toBlobURL(coreJS, 'text/javascript');
+    const wasmURL = await toBlobURL(coreWasm, 'application/wasm');
 
     await instance.load({ coreURL, wasmURL });
 
