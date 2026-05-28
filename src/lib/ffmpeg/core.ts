@@ -4,8 +4,12 @@ import { toBlobURL } from '@ffmpeg/util';
 let ffmpeg: FFmpeg | null = null;
 let initError: string | null = null;
 
-const CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
-const CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
+const ST_CORE_JS = '/ffmpeg/core/ffmpeg-core.js';
+const ST_CORE_WASM = '/ffmpeg/core/ffmpeg-core.wasm';
+
+const MT_CORE_JS = '/ffmpeg/core-mt/ffmpeg-core.js';
+const MT_CORE_WASM = '/ffmpeg/core-mt/ffmpeg-core.wasm';
+const MT_CORE_WORKER = '/ffmpeg/core-mt/ffmpeg-core.worker.js';
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg?.loaded) return ffmpeg;
@@ -14,13 +18,28 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   const instance = new FFmpeg();
 
   try {
-    // Use single-threaded core only. The multi-threaded core spawns
-    // internal pthread workers that fail when loaded from blob URLs
-    // because they use import.meta.url in a classic worker context.
-    const coreURL = await toBlobURL(CORE_JS, 'text/javascript');
-    const wasmURL = await toBlobURL(CORE_WASM, 'application/wasm');
+    const mtSupported =
+      typeof SharedArrayBuffer !== 'undefined' && crossOriginIsolated;
 
-    await instance.load({ coreURL, wasmURL });
+    const coreURL = await toBlobURL(
+      mtSupported ? MT_CORE_JS : ST_CORE_JS,
+      'text/javascript'
+    );
+    const wasmURL = await toBlobURL(
+      mtSupported ? MT_CORE_WASM : ST_CORE_WASM,
+      'application/wasm'
+    );
+
+    const config: { coreURL: string; wasmURL: string; workerURL?: string } = {
+      coreURL,
+      wasmURL,
+    };
+
+    if (mtSupported) {
+      config.workerURL = await toBlobURL(MT_CORE_WORKER, 'text/javascript');
+    }
+
+    await instance.load(config);
 
     ffmpeg = instance;
     return instance;
