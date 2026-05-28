@@ -19,12 +19,21 @@ export function trimCommand(
   const end = formatTime(params.endTime);
 
   if (params.mode === 'lossless') {
-    return ['-ss', start, '-to', end, '-i', inputName, '-c', 'copy', outputName];
+    // Output seeking with stream copy: decode from start but only mux from -ss.
+    // Cleaner timestamps than input seeking and preserves 1:1 quality.
+    return [
+      '-i', inputName,
+      '-ss', start, '-to', end,
+      '-c', 'copy',
+      '-avoid_negative_ts', 'make_zero',
+      outputName,
+    ];
   }
+  // Accurate: output seeking for frame-precise cuts, visually lossless encode.
   return [
-    '-ss', start, '-to', end,
     '-i', inputName,
-    '-c:v', 'libx264', '-crf', '23',
+    '-ss', start, '-to', end,
+    '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast',
     '-c:a', 'aac',
     outputName,
   ];
