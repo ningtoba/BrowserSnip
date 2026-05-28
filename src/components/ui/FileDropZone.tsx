@@ -27,7 +27,7 @@ export function FileDropZone() {
   );
 
   if (file) {
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    const sizeMB = (file.size / 1_000_000).toFixed(1);
     return (
       <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
         <div className="flex items-center justify-between">

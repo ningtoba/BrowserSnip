@@ -31,7 +31,7 @@ export function OutputActions() {
 
   if (!outputBlob || !outputUrl) return null;
 
-  const sizeMB = (outputBlob.size / (1024 * 1024)).toFixed(1);
+  const sizeMB = (outputBlob.size / 1_000_000).toFixed(1);
 
   return (
     <div className="space-y-3">
