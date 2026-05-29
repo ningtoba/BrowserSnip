@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { getFFmpeg, terminateFFmpeg } from '@/lib/ffmpeg/core';
@@ -80,17 +80,17 @@ export function FileDropZone() {
   if (file) {
     const sizeMB = (file.size / 1_000_000).toFixed(1);
     return (
-      <div className="rounded-doodle border-2 border-cream-border bg-cream-light/50 p-3">
-        <div className="flex items-center justify-between">
+      <div className="rounded-doodle-md border border-cream-border bg-cream-light/60 p-3">
+        <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-extrabold text-ink">{file.name}</p>
-            <p className="text-xs text-ink-muted">
+            <p className="truncate text-[11px] font-semibold text-ink">{file.name}</p>
+            <p className="text-[11px] text-ink-muted">
               {probing ? 'Probing codec...' : `${sizeMB} MB`}
             </p>
           </div>
           <button
             onClick={() => handleFile(null)}
-            className="ml-2 shrink-0 text-xs font-bold text-ink-muted hover:text-danger transition-colors"
+            className="shrink-0 text-[11px] font-medium text-ink-muted hover:text-danger transition-colors px-1"
           >
             Remove
           </button>
@@ -108,10 +108,10 @@ export function FileDropZone() {
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       onClick={() => inputRef.current?.click()}
-      className={`cursor-pointer rounded-doodle-md border-2 border-dashed p-8 text-center transition-all duration-200 ${
+      className={`cursor-pointer rounded-doodle-md border border-dashed p-6 sm:p-8 text-center transition-all duration-200 ${
         isDragging
-          ? 'border-accent bg-cream-light scale-[1.02]'
-          : 'border-cream-border hover:border-cream-border hover:bg-cream/50'
+          ? 'border-accent bg-accent/5 scale-[1.01]'
+          : 'border-cream-border hover:border-ink-muted/40 hover:bg-cream-light/40'
       }`}
     >
       <input
@@ -121,12 +121,12 @@ export function FileDropZone() {
         onChange={handleChange}
         className="hidden"
       />
-      <div className="mb-2 text-3xl">📁</div>
-      <p className="text-sm font-bold text-ink">
-        Drop a video file here or click to browse
+      <div className="mb-2 text-2xl opacity-40">📁</div>
+      <p className="text-xs font-medium text-ink-soft">
+        Drop a video file or click to browse
       </p>
-      <p className="mt-1 text-xs text-ink-muted">
-        Max recommended size: 500 MB
+      <p className="mt-1 text-[11px] text-ink-muted">
+        Max recommended: 500 MB
       </p>
     </div>
   );

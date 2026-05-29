@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TOOLS } from '@/lib/constants';
 import { FileDropZone } from '@/components/ui/FileDropZone';
@@ -45,6 +45,8 @@ export function ToolWorkspace() {
   const persistFile = useFileStore((s) => s.persistCurrent);
   const persistProcess = useProcessStore((s) => s.persistCurrent);
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
     const id = (toolId as ToolId) ?? null;
     setFileSession(id);
@@ -55,17 +57,19 @@ export function ToolWorkspace() {
     };
   }, [toolId, setFileSession, setProcessSession, persistFile, persistProcess]);
 
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+
   const tool = TOOLS.find((t) => t.id === toolId);
   const ToolComponent = toolId ? TOOL_COMPONENTS[toolId] : null;
 
   if (!tool) {
     return (
       <div className="flex h-screen items-center justify-center bg-cream">
-        <div className="text-center">
-          <p className="mb-4 text-ink-soft text-lg">Tool not found.</p>
+        <div className="text-center animate-doodle-pop">
+          <p className="mb-4 text-ink-soft text-base">Tool not found.</p>
           <button
             onClick={() => navigate('/')}
-            className="text-sm font-bold text-accent hover:underline"
+            className="text-sm font-medium text-accent hover:text-accent-hover transition-colors"
           >
             &larr; Back to Dashboard
           </button>
@@ -75,95 +79,152 @@ export function ToolWorkspace() {
   }
 
   return (
-    <div className="flex h-screen flex-col lg:flex-row bg-cream">
-      {/* Sidebar */}
-      <aside className="flex w-full shrink-0 flex-col border-b-2 border-cream-border bg-white lg:w-80 lg:border-b-0 lg:border-r-2">
-        <div className="flex items-center gap-3 border-b-2 border-cream-border px-5 py-4">
-          <button
-            onClick={() => navigate('/')}
-            className="text-sm font-bold text-ink-muted hover:text-accent transition-colors"
-          >
-            &larr; Tools
-          </button>
-          <span className="text-cream-border font-bold">/</span>
-          <span className="flex items-center gap-1.5 text-sm font-extrabold text-ink">
-            <span className="text-lg">{tool.icon}</span>
-            {tool.name}
-          </span>
-        </div>
+    <div className="flex h-screen flex-col bg-cream overflow-hidden">
+      {/* Top header bar */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-cream-border bg-cream-light/80 backdrop-blur-subtle px-4 z-20">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-1.5 text-xs font-medium text-ink-muted hover:text-ink transition-colors shrink-0"
+        >
+          <span className="text-base leading-none">&larr;</span>
+          <span className="hidden sm:inline">Dashboard</span>
+        </button>
+        <span className="text-cream-border text-xs font-bold">/</span>
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-ink truncate">
+          <span className="text-sm">{tool.icon}</span>
+          <span className="truncate">{tool.name}</span>
+        </span>
 
-        <div className="flex-1 overflow-y-auto p-5">
-          <p className="mb-4 text-sm text-ink-soft leading-relaxed">{tool.description}</p>
+        {/* Spacer */}
+        <div className="flex-1" />
 
-          <FileDropZone />
-
-          {isLargeFile && <MemoryWarning />}
-          {codecWarning && (
-            <div className="mt-3 rounded-doodle border-2 border-warn/30 bg-warn/10 p-3">
-              <p className="text-xs font-bold text-warn">{codecWarning}</p>
-            </div>
-          )}
-
-          {file && ToolComponent && <ToolComponent />}
-        </div>
-
-        <div className="border-t-2 border-cream-border p-5">
-          <button
-            onClick={() => useUIStore.getState().toggleLogMonitor()}
-            className="w-full text-left text-xs font-bold text-ink-muted hover:text-accent transition-colors"
-          >
-            {showLogs ? 'Hide' : 'Show'} FFmpeg Log Monitor
-          </button>
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6">
-          {file && (
-            <VideoPreview />
-          )}
-
-          {!file && !isProcessing && (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center animate-doodle-pop">
-                <div className="mb-4 text-6xl">{tool.icon}</div>
-                <p className="text-lg text-ink-muted font-bold">
-                  Import a video file to start
-                </p>
-                <p className="mt-1 text-sm text-ink-muted">
-                  Drag and drop or click the upload area in the sidebar
-                </p>
-              </div>
-            </div>
-          )}
-
-          {isProcessing && (
-            <div className="mx-auto mt-8 max-w-md">
-              <ProgressBar />
-            </div>
-          )}
-
-          {error && (
-            <div className="mx-auto mt-8 max-w-md rounded-doodle border-2 border-danger/30 bg-danger/10 p-4">
-              <p className="text-sm font-extrabold text-danger">Processing Error</p>
-              <p className="mt-1 text-xs text-danger/80">{error}</p>
-            </div>
-          )}
-
-          {outputUrl && outputBlob && !isProcessing && (
-            <div className="mx-auto mt-8 max-w-md">
-              <OutputActions />
-            </div>
-          )}
-        </div>
-
-        {showLogs && (
-          <div className="h-48 shrink-0 border-t-2 border-cream-border">
-            <LogMonitor />
+        {/* Process button (desktop) */}
+        {file && ToolComponent && (
+          <div className="hidden lg:block">
+            <button
+              onClick={() => {
+                const toolEl = document.getElementById('tool-process-btn');
+                if (toolEl) toolEl.click();
+              }}
+              className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors px-3 py-1 rounded-doodle bg-accent/5 border border-accent/20"
+            >
+              Process
+            </button>
           </div>
         )}
-      </main>
+
+        {/* Mobile menu toggle */}
+        <button
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          className="lg:hidden flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink transition-colors"
+        >
+          <span className="text-sm leading-none">{mobileMenuOpen ? '✕' : '☰'}</span>
+          <span>{mobileMenuOpen ? 'Close' : 'Options'}</span>
+        </button>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Sidebar — desktop always visible, mobile slides in */}
+        <aside
+          className={`
+            absolute inset-y-0 left-0 z-10 w-72 lg:w-80
+            flex shrink-0 flex-col border-r border-cream-border bg-cream-light
+            transform transition-transform duration-300 ease-in-out
+            lg:relative lg:translate-x-0 lg:z-auto
+            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+        >
+          {/* Sidebar scroll area */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <p className="mb-4 text-xs text-ink-soft leading-relaxed">{tool.description}</p>
+
+            <FileDropZone />
+
+            {isLargeFile && <MemoryWarning />}
+            {codecWarning && (
+              <div className="mt-3 rounded-doodle-md border border-warn/20 bg-warn/5 p-3">
+                <p className="text-[11px] font-medium text-warn leading-relaxed">{codecWarning}</p>
+              </div>
+            )}
+
+            {file && ToolComponent && (
+              <div className="mt-4" onClick={closeMobileMenu}>
+                <ToolComponent />
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-cream-border p-4">
+            <button
+              onClick={() => {
+                useUIStore.getState().toggleLogMonitor();
+                closeMobileMenu();
+              }}
+              className="w-full text-left text-[11px] font-medium text-ink-muted hover:text-accent transition-colors"
+            >
+              {showLogs ? 'Hide' : 'Show'} FFmpeg Log Monitor
+            </button>
+          </div>
+        </aside>
+
+        {/* Mobile overlay backdrop */}
+        {mobileMenuOpen && (
+          <div
+            className="fixed inset-0 z-[5] bg-black/50 lg:hidden"
+            onClick={closeMobileMenu}
+          />
+        )}
+
+        {/* Main content */}
+        <main className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+            {file && (
+              <VideoPreview />
+            )}
+
+            {!file && !isProcessing && (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center animate-doodle-pop">
+                  <div className="mb-4 text-5xl opacity-30">{tool.icon}</div>
+                  <p className="text-sm font-medium text-ink-soft">
+                    Import a video to get started
+                  </p>
+                  <p className="mt-1.5 text-xs text-ink-muted">
+                    Drag and drop a file or use the upload area
+                    <span className="lg:hidden"> in the options panel</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isProcessing && (
+              <div className="mx-auto mt-8 max-w-md animate-fade-in">
+                <ProgressBar />
+              </div>
+            )}
+
+            {error && (
+              <div className="mx-auto mt-8 max-w-md rounded-doodle-md border border-danger/20 bg-danger/5 p-4 animate-fade-in">
+                <p className="text-xs font-semibold text-danger">Processing Error</p>
+                <p className="mt-1 text-[11px] text-danger/80 leading-relaxed">{error}</p>
+              </div>
+            )}
+
+            {outputUrl && outputBlob && !isProcessing && (
+              <div className="mx-auto mt-8 max-w-lg animate-slide-up">
+                <OutputActions />
+              </div>
+            )}
+          </div>
+
+          {/* Log monitor */}
+          {showLogs && (
+            <div className="h-44 shrink-0 border-t border-cream-border bg-cream-light/60">
+              <LogMonitor />
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

@@ -14,18 +14,18 @@ export function VideoPreview() {
   if (!inputUrl) return null;
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="sketch-border overflow-hidden bg-ink">
+    <div className="mx-auto max-w-3xl animate-fade-in">
+      <div className="sketch-border">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <video
           src={inputUrl}
           controls
-          className={`w-full ${isProcessing ? 'opacity-50' : ''}`}
+          className={`w-full block ${isProcessing ? 'opacity-40' : ''}`}
         >
           Your browser does not support the video element.
         </video>
       </div>
-      <p className="mt-2 text-center text-xs font-bold text-ink-muted">
+      <p className="mt-2 text-center text-[11px] font-medium text-ink-muted">
         Original source
       </p>
     </div>

@@ -25,18 +25,15 @@ export function OutputActions() {
   const sizeMB = (outputBlob.size / 1_000_000).toFixed(1);
 
   return (
-    <div className="animate-doodle-pop space-y-4">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-extrabold text-success flex items-center gap-1.5">
+    <div className="space-y-4 animate-doodle-pop">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-success flex items-center gap-1.5">
           <span>✓</span> {label}
         </span>
-        <span className="font-mono font-bold text-ink-muted">{sizeMB} MB</span>
+        <span className="font-mono font-medium text-ink-muted">{sizeMB} MB</span>
       </div>
 
-      <button
-        onClick={handleDownload}
-        className="doodle-btn"
-      >
+      <button onClick={handleDownload} className="doodle-btn">
         Download File
       </button>
 

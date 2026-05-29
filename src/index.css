@@ -5,23 +5,27 @@
 @layer base {
   * {
     scrollbar-width: thin;
-    scrollbar-color: #796f91 #f5eccd;
+    scrollbar-color: #2a2d42 #0a0b10;
   }
 
   *::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
   }
   *::-webkit-scrollbar-track {
-    background: #f5eccd;
-    border-radius: 3px;
+    background: #0a0b10;
   }
   *::-webkit-scrollbar-thumb {
-    background: #796f91;
+    background: #2a2d42;
     border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #3a3d52;
   }
 
   body {
-    font-family: 'Comic Sans MS', 'Trebuchet MS', sans-serif;
+    background: #0a0b10;
+    color: #eeeff5;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -31,125 +35,217 @@
     appearance: none;
     background: transparent;
     cursor: pointer;
+    width: 100%;
   }
 
   input[type='range']::-webkit-slider-runnable-track {
-    height: 6px;
+    height: 4px;
     border-radius: 999px;
-    background: #f5eccd;
-    border: 1px solid #eadfba;
+    background: #1e2035;
   }
 
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 999px;
-    background: #ff6b00;
-    margin-top: -7px;
-    box-shadow: 0 2px 8px rgba(255, 107, 0, 0.35);
+    background: #6366f1;
+    margin-top: -6px;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     transition: box-shadow 150ms ease, transform 150ms ease;
+    cursor: pointer;
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    box-shadow: 0 4px 16px rgba(255, 107, 0, 0.5);
-    transform: scale(1.1);
+    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.25);
+    transform: scale(1.15);
+  }
+
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: #1e2035;
+    border: none;
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: #6366f1;
+    border: none;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
   }
 
   input[type='text'],
   input[type='number'],
   input[type='file'],
-  textarea {
-    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  textarea,
+  select {
+    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+
+  input[type='checkbox'] {
+    accent-color: #6366f1;
+  }
+
+  ::selection {
+    background: rgba(99, 102, 241, 0.3);
+    color: #eeeff5;
   }
 }
 
 @layer components {
-  .glow-border {
-    box-shadow: 0 0 12px rgba(255, 107, 0, 0.25);
+  .doodle-btn {
+    @apply relative w-full overflow-hidden rounded-doodle-md font-semibold
+           px-4 py-2.5 text-sm transition-all duration-200
+           active:scale-[0.98];
+    background: linear-gradient(135deg, #6366f1, #5558e6);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  }
+  .doodle-btn:hover:not(:disabled) {
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.45);
+    transform: translateY(-1px);
+  }
+  .doodle-btn:active:not(:disabled) {
+    box-shadow: 0 1px 4px rgba(99, 102, 241, 0.2);
+    transform: translateY(0) scale(0.98);
+  }
+  .doodle-btn:disabled {
+    @apply opacity-40 cursor-not-allowed;
+    transform: none;
+    box-shadow: none;
   }
 
+  .doodle-btn-secondary {
+    @apply w-full rounded-doodle-md px-4 py-2.5 text-sm font-semibold
+           transition-all duration-200 active:scale-[0.98];
+    background: #161922;
+    color: #eeeff5;
+    border: 1px solid #1e2035;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+  .doodle-btn-secondary:hover:not(:disabled) {
+    border-color: #2a2d42;
+    background: #1c1f30;
+  }
+  .doodle-btn-secondary:disabled {
+    @apply opacity-40 cursor-not-allowed;
+    transform: none;
+  }
+
+  .doodle-input {
+    @apply w-full rounded-doodle px-3 py-2 text-sm
+           transition-all duration-150 outline-none;
+    background: #0d0f17;
+    color: #eeeff5;
+    border: 1px solid #1e2035;
+    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+  .doodle-input:hover {
+    border-color: #2a2d42;
+  }
+  .doodle-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  }
+  .doodle-input::placeholder {
+    color: #5c6080;
+  }
+
+  .doodle-chip {
+    @apply flex-1 rounded-doodle border px-3 py-2 text-xs font-medium
+           transition-all duration-150 cursor-pointer select-none;
+  }
+  .doodle-chip-active {
+    background: rgba(99, 102, 241, 0.12);
+    color: #a5b4fc;
+    border-color: rgba(99, 102, 241, 0.35);
+  }
+  .doodle-chip-inactive {
+    background: #11131c;
+    color: #5c6080;
+    border-color: #1e2035;
+  }
+  .doodle-chip-inactive:hover {
+    color: #a8adc4;
+    border-color: #2a2d42;
+    background: #161922;
+  }
+
+  .doodle-section {
+    @apply rounded-doodle-md p-4;
+    background: #11131c;
+    border: 1px solid #1e2035;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .sketch-border {
+    border: 1px solid #1e2035;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  .tool-card {
+    @apply cursor-pointer rounded-doodle-md p-5 h-full flex flex-col
+           transition-all duration-250;
+    background: #11131c;
+    border: 1px solid #1e2035;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  .tool-card:hover {
+    border-color: #6366f1;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.15);
+    transform: translateY(-2px);
+  }
+  .tool-card:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .log-line {
+    @apply font-mono text-xs leading-relaxed;
+    color: #5c6080;
+    border-bottom: 1px solid #1e2035;
+    padding: 2px 0;
+  }
+
+  .glow-border {
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.25);
+  }
   .glow-border-active {
     animation: pulse-glow 2s ease-in-out infinite;
   }
 
-  .log-line {
-    @apply font-mono text-xs leading-relaxed text-ink-muted;
+  .backdrop-blur-subtle {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
-  .tool-card {
-    @apply rounded-doodle-md border-2 border-cream-border bg-white p-6
-           shadow-doodle
-           transition-all duration-200 ease-out
-           hover:border-accent hover:shadow-doodle-hover
-           hover:-translate-y-0.5;
+  .bg-glass {
+    background: rgba(17, 19, 28, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
-  .tool-card:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 0 rgba(29, 24, 54, 0.04);
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    background-position: center center;
   }
+}
 
-  .doodle-input {
-    @apply w-full rounded-doodle border-2 border-cream-border bg-cream/30 px-3 py-2
-           text-sm text-ink font-mono
-           focus:border-accent focus:outline-none focus:shadow-doodle-focus
-           transition-all duration-150;
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
-
-  .doodle-btn {
-    @apply w-full rounded-doodle border-2 border-accent/30 bg-accent hover:bg-accent-hover
-           px-4 py-2.5 text-sm font-bold text-white
-           shadow-doodle hover:shadow-doodle-hover
-           transition-all duration-200
-           active:scale-[0.98] active:shadow-none;
-  }
-
-  .doodle-btn:disabled {
-    @apply opacity-50 cursor-not-allowed hover:bg-accent hover:shadow-doodle active:scale-100;
-  }
-
-  .doodle-btn-secondary {
-    @apply w-full rounded-doodle border-2 border-cream-border bg-white
-           px-4 py-2.5 text-sm font-bold text-ink
-           shadow-doodle hover:shadow-doodle-hover
-           transition-all duration-200
-           active:scale-[0.98] active:shadow-none;
-  }
-
-  .doodle-chip {
-    @apply flex-1 rounded-doodle border-2 px-3 py-2 text-xs font-bold
-           transition-all duration-150;
-  }
-
-  .doodle-chip-active {
-    @apply border-accent bg-cream-light text-accent;
-  }
-
-  .doodle-chip-inactive {
-    @apply border-cream-border bg-white text-ink-muted hover:text-ink hover:border-ink-muted/30;
-  }
-
-  .doodle-section {
-    @apply rounded-doodle-md border-2 border-cream-border bg-white p-4 shadow-doodle;
-  }
-
-  .sketch-border {
-    border-style: solid;
-    border-color: #1d1836;
-    border-width: 2px;
-    border-radius: 12px;
-    position: relative;
-  }
-
-  .sketch-border::after {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border: 2px dashed rgba(29, 24, 54, 0.15);
-    border-radius: 16px;
-    pointer-events: none;
-    z-index: -1;
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }
