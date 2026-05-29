@@ -167,11 +167,21 @@ These platforms support custom headers. Configure the following in your deployme
 
 ### GitHub Pages
 
-GitHub Pages does not allow setting custom HTTP headers. As a workaround, BrowserSnip includes [`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker) — a service worker that intercepts all requests and injects the cross-origin isolation headers client-side.
+BrowserSnip is ready for GitHub Pages with two accommodations built in:
 
-This file (`public/coi-serviceworker.js`) is loaded automatically in `index.html`. No additional configuration is needed when deploying to GitHub Pages.
+1. **Hash-based routing** — URLs use `/#/tool/trim` instead of `/tool/trim`. This works on any static host without server-side redirect configuration.
+2. **coi-serviceworker** — GitHub Pages cannot set custom HTTP headers. The included service worker injects `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` client-side, enabling SharedArrayBuffer for FFmpeg.wasm.
 
-**Known trade-off:** The service worker approach adds a brief initialization delay on first visit (~100-200ms while the worker registers). Subsequent visits are fast since the worker is cached.
+**Deployment steps:**
+
+```bash
+npm run build
+# Push the repo to GitHub, enable Pages from the main branch or /docs or /dist
+```
+
+No extra configuration needed — the service worker and hash routing handle everything automatically.
+
+**Known trade-off:** The service worker adds ~100-200ms initialization on first visit. Subsequent visits are instant since the worker is cached. SharedArrayBuffer will not be available on the very first page load (before the worker activates); a page refresh resolves it.
 
 ---
 
