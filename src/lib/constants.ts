@@ -49,10 +49,4 @@ export const TOOLS: ToolDefinition[] = [
     description: 'Strip all metadata, location tags, and creation markers instantly',
     icon: '🛡',
   },
-  {
-    id: 'stitch',
-    name: 'Stitch & Merge',
-    description: 'Concatenate multiple videos in sequence with drag-and-drop ordering',
-    icon: '⊕',
-  },
 ];

@@ -16,7 +16,6 @@ export interface ToolParams {
   audio: AudioParams;
   speed: SpeedParams;
   metadata: MetadataParams;
-  stitch: StitchParams;
 }
 
 export interface TrimParams {
@@ -56,10 +55,6 @@ export interface SpeedParams {
 }
 
 export interface MetadataParams {
-  _: null;
-}
-
-export interface StitchParams {
   _: null;
 }
 

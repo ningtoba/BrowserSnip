@@ -15,7 +15,6 @@ import { GifTool } from '@/components/tools/GifTool';
 import { AudioTool } from '@/components/tools/AudioTool';
 import { SpeedTool } from '@/components/tools/SpeedTool';
 import { MetadataTool } from '@/components/tools/MetadataTool';
-import { StitchTool } from '@/components/tools/StitchTool';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -30,17 +29,14 @@ const TOOL_COMPONENTS: Record<string, React.ComponentType> = {
   audio: AudioTool,
   speed: SpeedTool,
   metadata: MetadataTool,
-  stitch: StitchTool,
 };
 
 export function ToolWorkspace() {
   const { toolId } = useParams<{ toolId: string }>();
   const navigate = useNavigate();
   const file = useFileStore((s) => s.file);
-  const files = useFileStore((s) => s.files);
   const isLargeFile = useFileStore((s) => s.isLargeFile);
   const codecWarning = useFileStore((s) => s.codecWarning);
-  const hasInput = toolId === 'stitch' ? files.length > 0 : !!file;
   const { isProcessing, outputUrl, outputBlob, error } = useProcessStore();
   const showLogs = useUIStore((s) => s.showLogMonitor);
 
@@ -100,7 +96,7 @@ export function ToolWorkspace() {
         <div className="flex-1 overflow-y-auto p-5">
           <p className="mb-4 text-xs text-zinc-500">{tool.description}</p>
 
-          {toolId !== 'stitch' && <FileDropZone />}
+          <FileDropZone />
 
           {isLargeFile && <MemoryWarning />}
           {codecWarning && (
@@ -109,7 +105,7 @@ export function ToolWorkspace() {
             </div>
           )}
 
-          {(file || toolId === 'stitch') && ToolComponent && <ToolComponent />}
+          {file && ToolComponent && <ToolComponent />}
         </div>
 
         <div className="border-t border-zinc-800 p-5">
@@ -125,11 +121,11 @@ export function ToolWorkspace() {
       {/* Main */}
       <main className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
-          {file && toolId !== 'stitch' && (
+          {file && (
             <VideoPreview />
           )}
 
-          {!hasInput && !isProcessing && (
+          {!file && !isProcessing && (
             <div className="flex h-full items-center justify-center">
               <div className="text-center">
                 <div className="mb-3 text-5xl">{tool.icon}</div>

@@ -162,35 +162,3 @@ export function metadataCommand(inputName: string, outputName: string): string[]
   return ['-i', inputName, '-map_metadata', '-1', '-c', 'copy', outputName];
 }
 
-export function concatCommand(
-  inputFiles: string[],
-  outputName: string
-): string[] {
-  const listName = 'concat_list.txt';
-  const fileList = inputFiles.map((f) => `file '${f}'`).join('\n');
-  return {
-    args: ['-f', 'concat', '-safe', '0', '-i', listName, '-c', 'copy', outputName],
-    listName,
-    listContent: fileList,
-  } as unknown as string[];
-}
-
-export function buildConcatArgs(
-  inputFiles: string[],
-  outputName: string
-): { args: string[]; listName: string; listContent: string } {
-  const listName = 'concat_list.txt';
-  const fileList = inputFiles.map((f) => `file '${f}'`).join('\n');
-  return {
-    args: [
-      '-f', 'concat', '-safe', '0', '-i', listName,
-      '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
-      '-threads', threads(),
-      '-c:a', 'aac',
-      '-movflags', '+faststart',
-      outputName,
-    ],
-    listName,
-    listContent: fileList,
-  };
-}
