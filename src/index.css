@@ -191,7 +191,7 @@
 
   .tool-card {
     @apply cursor-pointer rounded-doodle-md p-5 h-full flex flex-col
-           transition-all duration-250;
+           transition-all duration-200;
     background: #11131c;
     border: 1px solid #1e2035;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
