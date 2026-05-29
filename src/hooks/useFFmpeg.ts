@@ -105,8 +105,8 @@ export function useFFmpeg() {
         const allLogs = logBufferRef.current.join('\n');
         let message: string;
 
-        if (allLogs.includes('av1_frame_split') || allLogs.includes('av1')) {
-          message = 'This video uses the AV1 codec which is not fully supported by ffmpeg.wasm. Try a video encoded with H.264 instead.';
+        if (allLogs.includes('av1') || allLogs.includes('av01')) {
+          message = 'AV1 video decoding is not supported by ffmpeg.wasm. Stream-copy operations (Trim, Mute, Metadata Strip, Extract Audio) work fine. Re-encode operations (Resize, Crop, Volume, Speed, GIF, Compress) require video decoding and will fail with AV1 files. Use an H.264 video instead.';
         } else if (allLogs.includes('Invalid data found when processing input')) {
           message = 'The video file may be corrupted or use an unsupported codec.';
         } else if (err instanceof Error) {
