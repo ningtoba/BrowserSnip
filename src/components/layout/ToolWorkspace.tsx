@@ -38,6 +38,7 @@ export function ToolWorkspace() {
   const navigate = useNavigate();
   const file = useFileStore((s) => s.file);
   const isLargeFile = useFileStore((s) => s.isLargeFile);
+  const codecWarning = useFileStore((s) => s.codecWarning);
   const { isProcessing, outputUrl, outputBlob, error } = useProcessStore();
   const showLogs = useUIStore((s) => s.showLogMonitor);
 
@@ -100,6 +101,11 @@ export function ToolWorkspace() {
           <FileDropZone />
 
           {isLargeFile && <MemoryWarning />}
+          {codecWarning && (
+            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-xs text-amber-300">{codecWarning}</p>
+            </div>
+          )}
 
           {file && ToolComponent && <ToolComponent />}
         </div>

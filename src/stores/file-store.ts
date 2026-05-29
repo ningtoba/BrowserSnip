@@ -7,6 +7,7 @@ interface ToolSlot {
   metadata: VideoMetadata | null;
   isLargeFile: boolean;
   params: Record<string, unknown>;
+  codecWarning: string | null;
 }
 
 interface FileState {
@@ -17,6 +18,7 @@ interface FileState {
   metadata: VideoMetadata | null;
   isLargeFile: boolean;
   params: Record<string, unknown>;
+  codecWarning: string | null;
 
   setActiveTool: (tool: ToolId | null) => void;
   setFile: (file: File | null) => void;
@@ -25,6 +27,7 @@ interface FileState {
   reorderFiles: (from: number, to: number) => void;
   setMetadata: (meta: VideoMetadata | null) => void;
   setParams: (params: Record<string, unknown>) => void;
+  setCodecWarning: (warning: string | null) => void;
   persistCurrent: () => void;
   clearCurrent: () => void;
 }
@@ -35,6 +38,7 @@ const emptySlot = (): ToolSlot => ({
   metadata: null,
   isLargeFile: false,
   params: {},
+  codecWarning: null,
 });
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -45,6 +49,7 @@ export const useFileStore = create<FileState>((set, get) => ({
   metadata: null,
   isLargeFile: false,
   params: {},
+  codecWarning: null,
 
   setActiveTool: (tool) => {
     const state = get();
@@ -58,6 +63,7 @@ export const useFileStore = create<FileState>((set, get) => ({
             metadata: s.metadata,
             isLargeFile: s.isLargeFile,
             params: s.params,
+            codecWarning: s.codecWarning,
           },
         },
       }));
@@ -70,6 +76,7 @@ export const useFileStore = create<FileState>((set, get) => ({
       metadata: slot?.metadata ?? null,
       isLargeFile: slot?.isLargeFile ?? false,
       params: slot?.params ?? {},
+      codecWarning: slot?.codecWarning ?? null,
     });
   },
 
@@ -78,6 +85,7 @@ export const useFileStore = create<FileState>((set, get) => ({
       file,
       isLargeFile: (file?.size ?? 0) > 500 * 1024 * 1024,
       metadata: null,
+      codecWarning: null,
     }),
 
   addFile: (file) =>
@@ -98,6 +106,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   setParams: (params) => set({ params }),
 
+  setCodecWarning: (warning) => set({ codecWarning: warning }),
+
   persistCurrent: () => {
     const state = get();
     if (!state.activeTool) return;
@@ -110,10 +120,14 @@ export const useFileStore = create<FileState>((set, get) => ({
           metadata: s.metadata,
           isLargeFile: s.isLargeFile,
           params: s.params,
+          codecWarning: s.codecWarning,
         },
       },
     }));
   },
 
-  clearCurrent: () => set({ file: null, files: [], metadata: null, isLargeFile: false, params: {} }),
+  clearCurrent: () => set({
+    file: null, files: [], metadata: null, isLargeFile: false,
+    params: {}, codecWarning: null,
+  }),
 }));

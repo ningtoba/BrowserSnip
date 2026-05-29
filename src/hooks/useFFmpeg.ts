@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { getFFmpeg, terminateFFmpeg } from '@/lib/ffmpeg/core';
 import { parseLogLine, calculateProgress } from '@/lib/ffmpeg/log-parser';
 import { useProcessStore } from '@/stores/process-store';
+import { useFileStore } from '@/stores/file-store';
 import type { VideoMetadata } from '@/types';
 
 export function useFFmpeg() {
@@ -106,7 +107,8 @@ export function useFFmpeg() {
         let message: string;
 
         if (allLogs.includes('av1') || allLogs.includes('av01')) {
-          message = 'AV1 video decoding is not supported by ffmpeg.wasm. Stream-copy operations (Trim, Mute, Metadata Strip, Extract Audio) work fine. Re-encode operations (Resize, Crop, Volume, Speed, GIF, Compress) require video decoding and will fail with AV1 files. Use an H.264 video instead.';
+          message = 'AV1 video detected — video decoding is not supported by ffmpeg.wasm. Stream-copy tools (Trim, Mute, Metadata Strip, Extract Audio) will work. Re-encode tools (Resize, Crop, Volume, Speed, GIF, Compress) will fail.';
+          useFileStore.getState().setCodecWarning(message);
         } else if (allLogs.includes('Invalid data found when processing input')) {
           message = 'The video file may be corrupted or use an unsupported codec.';
         } else if (err instanceof Error) {
