@@ -24,7 +24,6 @@ export function CropTool() {
       : DEFAULT_PARAMS) as CropParams
   );
 
-  // Sync local params to store whenever they change
   useEffect(() => {
     setStoreParams(params as unknown as Record<string, unknown>);
   }, [params, setStoreParams]);
@@ -53,16 +52,16 @@ export function CropTool() {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Aspect Ratio</label>
+        <label className="text-xs font-extrabold text-ink-soft">Aspect Ratio</label>
         <div className="flex gap-1">
           {ASPECT_RATIOS.map((ar) => (
             <button
               key={ar.value}
               onClick={() => setParams({ aspectRatio: ar.value })}
-              className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
+              className={`doodle-chip text-xs ${
                 params.aspectRatio === ar.value
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+                  ? 'doodle-chip-active'
+                  : 'doodle-chip-inactive'
               }`}
             >
               {ar.label}
@@ -71,15 +70,11 @@ export function CropTool() {
         </div>
       </div>
 
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-ink-muted leading-relaxed">
         Crops the video to the selected aspect ratio, centered on the original frame.
       </p>
 
-      <button
-        onClick={handleProcess}
-        disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
-      >
+      <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Crop Video'}
       </button>
     </div>

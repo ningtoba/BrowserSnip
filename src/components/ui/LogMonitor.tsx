@@ -10,19 +10,19 @@ export function LogMonitor() {
   }, [logs.length]);
 
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950 p-4">
+    <div className="h-full overflow-y-auto bg-cream p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-500">FFmpeg Log</span>
-        <span className="font-mono text-xs text-zinc-600">
+        <span className="text-xs font-extrabold text-ink-soft">FFmpeg Log</span>
+        <span className="font-mono text-xs text-ink-muted">
           {logs.length} lines
         </span>
       </div>
       <div className="font-mono text-xs leading-relaxed">
         {logs.length === 0 && (
-          <p className="text-zinc-700">Waiting for FFmpeg output...</p>
+          <p className="text-ink-muted italic">Waiting for FFmpeg output...</p>
         )}
         {logs.slice(-100).map((line, i) => (
-          <div key={i} className="log-line">
+          <div key={i} className="log-line border-b border-cream-border/50 py-0.5">
             {line}
           </div>
         ))}

@@ -45,8 +45,6 @@ export function ToolWorkspace() {
   const persistFile = useFileStore((s) => s.persistCurrent);
   const persistProcess = useProcessStore((s) => s.persistCurrent);
 
-  // Switch to this tool's session on mount / tool change.
-  // Cleanup saves the session before navigating away or unmounting.
   useEffect(() => {
     const id = (toolId as ToolId) ?? null;
     setFileSession(id);
@@ -62,12 +60,12 @@ export function ToolWorkspace() {
 
   if (!tool) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center bg-cream">
         <div className="text-center">
-          <p className="mb-4 text-zinc-500">Tool not found.</p>
+          <p className="mb-4 text-ink-soft text-lg">Tool not found.</p>
           <button
             onClick={() => navigate('/')}
-            className="text-sm text-indigo-400 hover:text-indigo-300"
+            className="text-sm font-bold text-accent hover:underline"
           >
             &larr; Back to Dashboard
           </button>
@@ -77,41 +75,42 @@ export function ToolWorkspace() {
   }
 
   return (
-    <div className="flex h-screen flex-col lg:flex-row">
+    <div className="flex h-screen flex-col lg:flex-row bg-cream">
       {/* Sidebar */}
-      <aside className="flex w-full shrink-0 flex-col border-b border-zinc-800 bg-zinc-900/50 lg:w-80 lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 border-b border-zinc-800 px-5 py-4">
+      <aside className="flex w-full shrink-0 flex-col border-b-2 border-cream-border bg-white lg:w-80 lg:border-b-0 lg:border-r-2">
+        <div className="flex items-center gap-3 border-b-2 border-cream-border px-5 py-4">
           <button
             onClick={() => navigate('/')}
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-sm font-bold text-ink-muted hover:text-accent transition-colors"
           >
             &larr; Tools
           </button>
-          <span className="text-zinc-700">/</span>
-          <span className="text-sm font-medium text-zinc-200">
-            {tool.icon} {tool.name}
+          <span className="text-cream-border font-bold">/</span>
+          <span className="flex items-center gap-1.5 text-sm font-extrabold text-ink">
+            <span className="text-lg">{tool.icon}</span>
+            {tool.name}
           </span>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          <p className="mb-4 text-xs text-zinc-500">{tool.description}</p>
+          <p className="mb-4 text-sm text-ink-soft leading-relaxed">{tool.description}</p>
 
           <FileDropZone />
 
           {isLargeFile && <MemoryWarning />}
           {codecWarning && (
-            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="text-xs text-amber-300">{codecWarning}</p>
+            <div className="mt-3 rounded-doodle border-2 border-warn/30 bg-warn/10 p-3">
+              <p className="text-xs font-bold text-warn">{codecWarning}</p>
             </div>
           )}
 
           {file && ToolComponent && <ToolComponent />}
         </div>
 
-        <div className="border-t border-zinc-800 p-5">
+        <div className="border-t-2 border-cream-border p-5">
           <button
             onClick={() => useUIStore.getState().toggleLogMonitor()}
-            className="w-full text-left text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="w-full text-left text-xs font-bold text-ink-muted hover:text-accent transition-colors"
           >
             {showLogs ? 'Hide' : 'Show'} FFmpeg Log Monitor
           </button>
@@ -127,10 +126,13 @@ export function ToolWorkspace() {
 
           {!file && !isProcessing && (
             <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <div className="mb-3 text-5xl">{tool.icon}</div>
-                <p className="text-zinc-600">
-                  Import a video file to start using {tool.name}
+              <div className="text-center animate-doodle-pop">
+                <div className="mb-4 text-6xl">{tool.icon}</div>
+                <p className="text-lg text-ink-muted font-bold">
+                  Import a video file to start
+                </p>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Drag and drop or click the upload area in the sidebar
                 </p>
               </div>
             </div>
@@ -143,9 +145,9 @@ export function ToolWorkspace() {
           )}
 
           {error && (
-            <div className="mx-auto mt-8 max-w-md rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-              <p className="text-sm font-medium text-red-400">Processing Error</p>
-              <p className="mt-1 text-xs text-red-300/80">{error}</p>
+            <div className="mx-auto mt-8 max-w-md rounded-doodle border-2 border-danger/30 bg-danger/10 p-4">
+              <p className="text-sm font-extrabold text-danger">Processing Error</p>
+              <p className="mt-1 text-xs text-danger/80">{error}</p>
             </div>
           )}
 
@@ -157,7 +159,7 @@ export function ToolWorkspace() {
         </div>
 
         {showLogs && (
-          <div className="h-48 shrink-0 border-t border-zinc-800">
+          <div className="h-48 shrink-0 border-t-2 border-cream-border">
             <LogMonitor />
           </div>
         )}

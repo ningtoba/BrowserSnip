@@ -16,7 +16,6 @@ async function probeCodec(file: File): Promise<string | null> {
     const inputName = 'probe_input';
     await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
 
-    // Read headers only — no encoding, just stream detection
     await ffmpeg.exec(['-i', inputName, '-f', 'null', '-']);
 
     ffmpeg.off('log', handler);
@@ -29,7 +28,6 @@ async function probeCodec(file: File): Promise<string | null> {
     }
     return null;
   } catch {
-    // Probe failed — let the actual processing surface any issues
     return null;
   } finally {
     await terminateFFmpeg();
@@ -82,17 +80,17 @@ export function FileDropZone() {
   if (file) {
     const sizeMB = (file.size / 1_000_000).toFixed(1);
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
+      <div className="rounded-doodle border-2 border-cream-border bg-cream-light/50 p-3">
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-zinc-200">{file.name}</p>
-            <p className="text-xs text-zinc-500">
+            <p className="truncate text-xs font-extrabold text-ink">{file.name}</p>
+            <p className="text-xs text-ink-muted">
               {probing ? 'Probing codec...' : `${sizeMB} MB`}
             </p>
           </div>
           <button
             onClick={() => handleFile(null)}
-            className="ml-2 shrink-0 text-xs text-zinc-500 hover:text-red-400 transition-colors"
+            className="ml-2 shrink-0 text-xs font-bold text-ink-muted hover:text-danger transition-colors"
           >
             Remove
           </button>
@@ -110,10 +108,10 @@ export function FileDropZone() {
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       onClick={() => inputRef.current?.click()}
-      className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+      className={`cursor-pointer rounded-doodle-md border-2 border-dashed p-8 text-center transition-all duration-200 ${
         isDragging
-          ? 'border-indigo-400 bg-indigo-500/10'
-          : 'border-zinc-700 hover:border-zinc-500'
+          ? 'border-accent bg-cream-light scale-[1.02]'
+          : 'border-cream-border hover:border-cream-border hover:bg-cream/50'
       }`}
     >
       <input
@@ -123,10 +121,11 @@ export function FileDropZone() {
         onChange={handleChange}
         className="hidden"
       />
-      <p className="text-sm text-zinc-400">
+      <div className="mb-2 text-3xl">📁</div>
+      <p className="text-sm font-bold text-ink">
         Drop a video file here or click to browse
       </p>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-ink-muted">
         Max recommended size: 500 MB
       </p>
     </div>

@@ -31,11 +31,16 @@ export function MetadataTool() {
       <button
         onClick={handleStrip}
         disabled={running}
-        className="w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+        className="w-full rounded-doodle border-2 border-success/30 bg-success hover:bg-success/90
+                   px-4 py-3 text-sm font-bold text-white
+                   shadow-doodle hover:shadow-doodle-hover
+                   transition-all duration-200
+                   active:scale-[0.98] active:shadow-none
+                   disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
       >
         {running ? 'Stripping...' : 'Strip Metadata'}
       </button>
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-ink-muted leading-relaxed">
         Removes all EXIF data, location tags, creation markers, and hidden
         metadata tracks. Uses stream copy for near-instant execution.
       </p>

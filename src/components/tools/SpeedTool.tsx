@@ -44,16 +44,14 @@ export function SpeedTool() {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Playback Speed</label>
+        <label className="text-xs font-extrabold text-ink-soft">Playback Speed</label>
         <div className="grid grid-cols-3 gap-1">
           {PRESETS.map((speed) => (
             <button
               key={speed}
               onClick={() => setParams({ speed })}
-              className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                params.speed === speed
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              className={`doodle-chip ${
+                params.speed === speed ? 'doodle-chip-active' : 'doodle-chip-inactive'
               }`}
             >
               {speed}x
@@ -61,21 +59,23 @@ export function SpeedTool() {
           ))}
         </div>
 
-        <div className="flex gap-2 text-xs text-zinc-500">
-          <span className={params.speed < 1 ? 'text-cyan-400' : ''}>
-            {params.speed < 1 ? 'Slow motion' : ''}
-          </span>
-          <span className={params.speed > 1 ? 'text-amber-400' : ''}>
-            {params.speed > 1 ? 'Timelapse' : ''}
-          </span>
-          {params.speed === 1 && <span>Normal speed (no change)</span>}
+        <div className="flex gap-2 text-xs font-bold">
+          {params.speed < 1 && (
+            <span className="text-accent">🐢 Slow motion</span>
+          )}
+          {params.speed > 1 && (
+            <span className="text-warn">🐇 Timelapse</span>
+          )}
+          {params.speed === 1 && (
+            <span className="text-ink-muted">Normal speed (no change)</span>
+          )}
         </div>
       </div>
 
       <button
         onClick={handleProcess}
         disabled={running || params.speed === 1.0}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
+        className="doodle-btn"
       >
         {running ? 'Processing...' : 'Apply Speed Change'}
       </button>

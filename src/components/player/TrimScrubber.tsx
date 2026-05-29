@@ -61,7 +61,7 @@ export function TrimScrubber({
 
   return (
     <div className="mt-4 space-y-2">
-      <div className="flex justify-between text-xs text-zinc-500 font-mono">
+      <div className="flex justify-between text-xs text-ink-muted font-mono">
         <span>{formatDisplayTime(startTime)}</span>
         <span>{formatDisplayTime(endTime)}</span>
       </div>
@@ -71,25 +71,25 @@ export function TrimScrubber({
         className="relative h-8 w-full cursor-pointer select-none rounded"
       >
         {/* Track background */}
-        <div className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded bg-zinc-700" />
+        <div className="absolute top-1/2 h-2 w-full -translate-y-1/2 rounded-full border border-cream-border bg-cream-light" />
 
         {/* Selected range */}
         <div
-          className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-indigo-500"
+          className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-accent"
           style={{ left: `${startPct}%`, width: `${endPct - startPct}%` }}
         />
 
         {/* Start handle */}
         <div
           onPointerDown={(e) => handlePointerDown(e, 'start')}
-          className="absolute top-1/2 h-7 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded bg-indigo-400 shadow-lg hover:bg-indigo-300 touch-none"
+          className="absolute top-1/2 h-7 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded border-2 border-accent bg-white shadow-md hover:scale-110 hover:border-ink transition-all touch-none"
           style={{ left: `${startPct}%` }}
         />
 
         {/* End handle */}
         <div
           onPointerDown={(e) => handlePointerDown(e, 'end')}
-          className="absolute top-1/2 h-7 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded bg-indigo-400 shadow-lg hover:bg-indigo-300 touch-none"
+          className="absolute top-1/2 h-7 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded border-2 border-accent bg-white shadow-md hover:scale-110 hover:border-ink transition-all touch-none"
           style={{ left: `${endPct}%` }}
         />
       </div>

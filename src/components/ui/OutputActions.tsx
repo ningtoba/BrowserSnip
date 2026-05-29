@@ -25,15 +25,17 @@ export function OutputActions() {
   const sizeMB = (outputBlob.size / 1_000_000).toFixed(1);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-emerald-400">{label}</span>
-        <span className="font-mono text-zinc-500">{sizeMB} MB</span>
+    <div className="animate-doodle-pop space-y-4">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-extrabold text-success flex items-center gap-1.5">
+          <span>✓</span> {label}
+        </span>
+        <span className="font-mono font-bold text-ink-muted">{sizeMB} MB</span>
       </div>
 
       <button
         onClick={handleDownload}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+        className="doodle-btn"
       >
         Download File
       </button>
@@ -42,14 +44,14 @@ export function OutputActions() {
         <img
           src={outputUrl}
           alt="Processed GIF"
-          className="w-full rounded-lg border border-zinc-800"
+          className="w-full sketch-border"
         />
       ) : outputBlob.type.includes('mpeg') ? null : (
         /* eslint-disable-next-line jsx-a11y/media-has-caption */
         <video
           src={outputUrl}
           controls
-          className="w-full rounded-lg border border-zinc-800"
+          className="w-full sketch-border"
         />
       )}
     </div>

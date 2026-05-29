@@ -15,7 +15,7 @@ export function VideoPreview() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="overflow-hidden rounded-lg border border-zinc-800 bg-black">
+      <div className="sketch-border overflow-hidden bg-ink">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <video
           src={inputUrl}
@@ -25,7 +25,7 @@ export function VideoPreview() {
           Your browser does not support the video element.
         </video>
       </div>
-      <p className="mt-2 text-center text-xs text-zinc-500">
+      <p className="mt-2 text-center text-xs font-bold text-ink-muted">
         Original source
       </p>
     </div>

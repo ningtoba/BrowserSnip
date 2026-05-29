@@ -50,16 +50,14 @@ export function AudioTool() {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Mode</label>
+        <label className="text-xs font-extrabold text-ink-soft">Mode</label>
         <div className="flex gap-1">
           {(['mute', 'extract', 'volume'] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setParams({ ...params, mode })}
-              className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                params.mode === mode
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              className={`doodle-chip ${
+                params.mode === mode ? 'doodle-chip-active' : 'doodle-chip-inactive'
               }`}
             >
               {mode === 'mute' ? 'Mute' : mode === 'extract' ? 'Extract MP3' : 'Volume'}
@@ -70,9 +68,9 @@ export function AudioTool() {
 
       {params.mode === 'volume' && (
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-zinc-500">
-            <span>Volume</span>
-            <span className="font-mono">{(params.volume * 100).toFixed(0)}%</span>
+          <div className="flex justify-between text-xs">
+            <span className="font-extrabold text-ink-soft">Volume</span>
+            <span className="font-mono text-ink">{(params.volume * 100).toFixed(0)}%</span>
           </div>
           <input
             type="range"
@@ -83,7 +81,7 @@ export function AudioTool() {
             onChange={(e) => setParams({ ...params, volume: parseFloat(e.target.value) })}
             className="w-full"
           />
-          <div className="flex justify-between text-xs text-zinc-700">
+          <div className="flex justify-between font-mono text-xs text-ink-muted">
             <span>0%</span>
             <span>100%</span>
             <span>300%</span>
@@ -91,11 +89,7 @@ export function AudioTool() {
         </div>
       )}
 
-      <button
-        onClick={handleProcess}
-        disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
-      >
+      <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Apply Audio Changes'}
       </button>
     </div>

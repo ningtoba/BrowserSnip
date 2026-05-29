@@ -71,8 +71,8 @@ export function CompressTool() {
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
-          <span className="font-medium text-zinc-400">Target Size</span>
-          <span className="font-mono text-indigo-300">
+          <span className="font-extrabold text-ink-soft">Target Size</span>
+          <span className="font-mono font-bold text-accent">
             {params.targetSizeMB} MB ({pct}% of original)
           </span>
         </div>
@@ -86,7 +86,7 @@ export function CompressTool() {
           onChange={(e) => setParams({ targetSizeMB: parseInt(e.target.value) })}
           className="w-full"
         />
-        <div className="flex justify-between text-xs text-zinc-700">
+        <div className="flex justify-between font-mono text-xs text-ink-muted">
           <span>~{Math.max(1, Math.round(originalSizeMB * 0.05))} MB</span>
           <span>~{Math.round(originalSizeMB * 0.95)} MB</span>
         </div>
@@ -100,10 +100,8 @@ export function CompressTool() {
             <button
               key={p}
               onClick={() => handlePctPreset(p)}
-              className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
-                active
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              className={`doodle-chip ${
+                active ? 'doodle-chip-active' : 'doodle-chip-inactive'
               }`}
             >
               {p}% (~{size} MB)
@@ -112,26 +110,22 @@ export function CompressTool() {
         })}
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1">
+      <div className="doodle-section space-y-2">
         <div className="flex justify-between text-xs">
-          <span className="text-zinc-500">Original</span>
-          <span className="font-mono text-zinc-200">{originalSizeMB.toFixed(1)} MB</span>
+          <span className="text-ink-soft font-bold">Original</span>
+          <span className="font-mono text-ink">{originalSizeMB.toFixed(1)} MB</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-zinc-500">Duration</span>
-          <span className="font-mono text-zinc-200">{duration.toFixed(1)}s</span>
+          <span className="text-ink-soft font-bold">Duration</span>
+          <span className="font-mono text-ink">{duration.toFixed(1)}s</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-zinc-500">Target bitrate</span>
-          <span className="font-mono text-indigo-300">{targetBitrate} kbps</span>
+          <span className="text-ink-soft font-bold">Target bitrate</span>
+          <span className="font-mono font-extrabold text-accent">{targetBitrate} kbps</span>
         </div>
       </div>
 
-      <button
-        onClick={handleProcess}
-        disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
-      >
+      <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Compressing...' : 'Compress Video'}
       </button>
     </div>

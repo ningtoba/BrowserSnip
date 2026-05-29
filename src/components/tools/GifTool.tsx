@@ -44,9 +44,9 @@ export function GifTool() {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-zinc-500">
-          <span>Start Time</span>
-          <span className="font-mono">{params.startTime.toFixed(1)}s</span>
+        <div className="flex justify-between text-xs">
+          <span className="font-extrabold text-ink-soft">Start Time</span>
+          <span className="font-mono text-ink">{params.startTime.toFixed(1)}s</span>
         </div>
         <input
           type="range"
@@ -60,9 +60,9 @@ export function GifTool() {
       </div>
 
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-zinc-500">
-          <span>Duration (max {MAX_DURATION}s)</span>
-          <span className="font-mono">{params.duration.toFixed(1)}s</span>
+        <div className="flex justify-between text-xs">
+          <span className="font-extrabold text-ink-soft">Duration (max {MAX_DURATION}s)</span>
+          <span className="font-mono text-ink">{params.duration.toFixed(1)}s</span>
         </div>
         <input
           type="range"
@@ -76,19 +76,17 @@ export function GifTool() {
       </div>
 
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-zinc-500">
-          <span>FPS</span>
-          <span className="font-mono">{params.fps}</span>
+        <div className="flex justify-between text-xs">
+          <span className="font-extrabold text-ink-soft">FPS</span>
+          <span className="font-mono text-ink">{params.fps}</span>
         </div>
         <div className="flex gap-1">
           {[10, 15, 20, 30].map((fps) => (
             <button
               key={fps}
               onClick={() => setParams({ ...params, fps })}
-              className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
-                params.fps === fps
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              className={`doodle-chip ${
+                params.fps === fps ? 'doodle-chip-active' : 'doodle-chip-inactive'
               }`}
             >
               {fps}
@@ -98,9 +96,9 @@ export function GifTool() {
       </div>
 
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-zinc-500">
-          <span>Width</span>
-          <span className="font-mono">{params.width}px</span>
+        <div className="flex justify-between text-xs">
+          <span className="font-extrabold text-ink-soft">Width</span>
+          <span className="font-mono text-ink">{params.width}px</span>
         </div>
         <input
           type="range"
@@ -111,18 +109,14 @@ export function GifTool() {
           onChange={(e) => setParams({ ...params, width: parseInt(e.target.value) })}
           className="w-full"
         />
-        <div className="flex justify-between text-xs text-zinc-700">
+        <div className="flex justify-between font-mono text-xs text-ink-muted">
           <span>240</span>
           <span>480</span>
           <span>720</span>
         </div>
       </div>
 
-      <button
-        onClick={handleProcess}
-        disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
-      >
+      <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Converting...' : 'Convert to GIF'}
       </button>
     </div>

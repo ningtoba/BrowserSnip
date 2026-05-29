@@ -99,7 +99,7 @@ export function TrimTool() {
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400">
+          <label className="text-xs font-extrabold text-ink-soft">
             Start Time (seconds)
           </label>
           <input
@@ -110,14 +110,14 @@ export function TrimTool() {
             onFocus={() => { startFocusedRef.current = true; }}
             onBlur={() => { startFocusedRef.current = false; commitStart(); }}
             onKeyDown={(e) => { if (e.key === 'Enter') commitStart(); }}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+            className="doodle-input"
           />
-          <p className="font-mono text-xs text-zinc-600">
+          <p className="font-mono text-xs text-ink-muted">
             {formatDisplayTime(params.startTime)}
           </p>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400">
+          <label className="text-xs font-extrabold text-ink-soft">
             End Time (seconds)
           </label>
           <input
@@ -128,17 +128,17 @@ export function TrimTool() {
             onFocus={() => { endFocusedRef.current = true; }}
             onBlur={() => { endFocusedRef.current = false; commitEnd(); }}
             onKeyDown={(e) => { if (e.key === 'Enter') commitEnd(); }}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none"
+            className="doodle-input"
           />
-          <p className="font-mono text-xs text-zinc-600">
+          <p className="font-mono text-xs text-ink-muted">
             {formatDisplayTime(params.endTime)}
           </p>
         </div>
       </div>
 
-      <div className="flex justify-between rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs">
-        <span className="text-zinc-500">Selected Duration</span>
-        <span className="font-mono text-indigo-300">
+      <div className="flex justify-between rounded-doodle border-2 border-cream-border bg-cream-light px-3 py-2">
+        <span className="text-xs font-bold text-ink-soft">Selected Duration</span>
+        <span className="font-mono text-xs font-extrabold text-accent">
           {(params.endTime - params.startTime).toFixed(3)}s
         </span>
       </div>
@@ -157,19 +157,16 @@ export function TrimTool() {
         }}
       />
 
-      <p className="text-xs leading-relaxed text-zinc-500">
-        Uses <span className="text-zinc-400">stream copy</span> — copies the
+      <p className="text-xs leading-relaxed text-ink-muted">
+        Uses <span className="font-bold text-ink-soft">stream copy</span> — copies the
         original video data directly without decoding or re-encoding. Near-instant,
-        preserves the exact quality and bitrate of your source. Unlike most video
-        tools that re-encode, your trimmed file is a byte-for-byte slice of the
-        original. Cut points may shift slightly (usually &lt;1s) to align with
-        keyframes in the source video.
+        preserves the exact quality and bitrate of your source.
       </p>
 
       <button
         onClick={handleProcess}
         disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
+        className="doodle-btn"
       >
         {running ? 'Cutting...' : 'Trim Video'}
       </button>

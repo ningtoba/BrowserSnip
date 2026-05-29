@@ -75,16 +75,14 @@ export function ResizeTool() {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">Preset</label>
+        <label className="text-xs font-extrabold text-ink-soft">Preset</label>
         <div className="flex gap-1">
           {PRESET_OPTIONS.map((p) => (
             <button
               key={p}
               onClick={() => handlePreset(p)}
-              className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
-                params.preset === p
-                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              className={`doodle-chip ${
+                params.preset === p ? 'doodle-chip-active' : 'doodle-chip-inactive'
               }`}
             >
               {p}
@@ -95,40 +93,36 @@ export function ResizeTool() {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label className="text-xs text-zinc-500">Width</label>
+          <label className="text-xs font-extrabold text-ink-soft">Width</label>
           <input
             type="number"
             value={params.width}
             onChange={(e) => handleWidth(parseInt(e.target.value) || 0)}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 font-mono focus:border-indigo-500 focus:outline-none"
+            className="doodle-input"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-zinc-500">Height</label>
+          <label className="text-xs font-extrabold text-ink-soft">Height</label>
           <input
             type="number"
             value={params.height}
             onChange={(e) => handleHeight(parseInt(e.target.value) || 0)}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 font-mono focus:border-indigo-500 focus:outline-none"
+            className="doodle-input"
           />
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-xs text-zinc-500">
+      <label className="flex items-center gap-2 text-xs font-bold text-ink-soft cursor-pointer">
         <input
           type="checkbox"
           checked={params.lockAspectRatio}
           onChange={(e) => setParams({ ...params, lockAspectRatio: e.target.checked })}
-          className="rounded border-zinc-700 bg-zinc-800 accent-indigo-500"
+          className="h-4 w-4 rounded border-2 border-cream-border accent-accent"
         />
         Lock aspect ratio
       </label>
 
-      <button
-        onClick={handleProcess}
-        disabled={running}
-        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
-      >
+      <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Resize Video'}
       </button>
     </div>

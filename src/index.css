@@ -5,18 +5,25 @@
 @layer base {
   * {
     scrollbar-width: thin;
-    scrollbar-color: #3f3f46 #18181b;
+    scrollbar-color: #796f91 #f5eccd;
   }
 
   *::-webkit-scrollbar {
     width: 6px;
   }
   *::-webkit-scrollbar-track {
-    background: #18181b;
+    background: #f5eccd;
+    border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb {
-    background: #3f3f46;
+    background: #796f91;
     border-radius: 3px;
+  }
+
+  body {
+    font-family: 'Comic Sans MS', 'Trebuchet MS', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   input[type='range'] {
@@ -27,31 +34,40 @@
   }
 
   input[type='range']::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 2px;
-    background: #3f3f46;
+    height: 6px;
+    border-radius: 999px;
+    background: #f5eccd;
+    border: 1px solid #eadfba;
   }
 
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #6366f1;
-    margin-top: -6px;
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-    transition: box-shadow 150ms ease;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: #ff6b00;
+    margin-top: -7px;
+    box-shadow: 0 2px 8px rgba(255, 107, 0, 0.35);
+    transition: box-shadow 150ms ease, transform 150ms ease;
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    box-shadow: 0 0 16px rgba(99, 102, 241, 0.6);
+    box-shadow: 0 4px 16px rgba(255, 107, 0, 0.5);
+    transform: scale(1.1);
+  }
+
+  input[type='text'],
+  input[type='number'],
+  input[type='file'],
+  textarea {
+    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   }
 }
 
 @layer components {
   .glow-border {
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 12px rgba(255, 107, 0, 0.25);
   }
 
   .glow-border-active {
@@ -59,13 +75,81 @@
   }
 
   .log-line {
-    @apply font-mono text-xs leading-relaxed text-zinc-400;
+    @apply font-mono text-xs leading-relaxed text-ink-muted;
   }
 
   .tool-card {
-    @apply rounded-xl border border-zinc-800 bg-zinc-900/80 p-6
+    @apply rounded-doodle-md border-2 border-cream-border bg-white p-6
+           shadow-doodle
            transition-all duration-200 ease-out
-           hover:border-indigo-500/40 hover:bg-zinc-900
-           hover:shadow-[0_0_20px_rgba(99,102,241,0.15)];
+           hover:border-accent hover:shadow-doodle-hover
+           hover:-translate-y-0.5;
+  }
+
+  .tool-card:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 0 rgba(29, 24, 54, 0.04);
+  }
+
+  .doodle-input {
+    @apply w-full rounded-doodle border-2 border-cream-border bg-cream/30 px-3 py-2
+           text-sm text-ink font-mono
+           focus:border-accent focus:outline-none focus:shadow-doodle-focus
+           transition-all duration-150;
+  }
+
+  .doodle-btn {
+    @apply w-full rounded-doodle border-2 border-accent/30 bg-accent hover:bg-accent-hover
+           px-4 py-2.5 text-sm font-bold text-white
+           shadow-doodle hover:shadow-doodle-hover
+           transition-all duration-200
+           active:scale-[0.98] active:shadow-none;
+  }
+
+  .doodle-btn:disabled {
+    @apply opacity-50 cursor-not-allowed hover:bg-accent hover:shadow-doodle active:scale-100;
+  }
+
+  .doodle-btn-secondary {
+    @apply w-full rounded-doodle border-2 border-cream-border bg-white
+           px-4 py-2.5 text-sm font-bold text-ink
+           shadow-doodle hover:shadow-doodle-hover
+           transition-all duration-200
+           active:scale-[0.98] active:shadow-none;
+  }
+
+  .doodle-chip {
+    @apply flex-1 rounded-doodle border-2 px-3 py-2 text-xs font-bold
+           transition-all duration-150;
+  }
+
+  .doodle-chip-active {
+    @apply border-accent bg-cream-light text-accent;
+  }
+
+  .doodle-chip-inactive {
+    @apply border-cream-border bg-white text-ink-muted hover:text-ink hover:border-ink-muted/30;
+  }
+
+  .doodle-section {
+    @apply rounded-doodle-md border-2 border-cream-border bg-white p-4 shadow-doodle;
+  }
+
+  .sketch-border {
+    border-style: solid;
+    border-color: #1d1836;
+    border-width: 2px;
+    border-radius: 12px;
+    position: relative;
+  }
+
+  .sketch-border::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 2px dashed rgba(29, 24, 54, 0.15);
+    border-radius: 16px;
+    pointer-events: none;
+    z-index: -1;
   }
 }
