@@ -38,12 +38,20 @@ export function OutputActions() {
         Download File
       </button>
 
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video
-        src={outputUrl}
-        controls
-        className="w-full rounded-lg border border-zinc-800"
-      />
+      {outputBlob.type.includes('gif') ? (
+        <img
+          src={outputUrl}
+          alt="Processed GIF"
+          className="w-full rounded-lg border border-zinc-800"
+        />
+      ) : outputBlob.type.includes('mpeg') ? null : (
+        /* eslint-disable-next-line jsx-a11y/media-has-caption */
+        <video
+          src={outputUrl}
+          controls
+          className="w-full rounded-lg border border-zinc-800"
+        />
+      )}
     </div>
   );
 }
