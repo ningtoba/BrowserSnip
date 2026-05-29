@@ -182,7 +182,14 @@ export function buildConcatArgs(
   const listName = 'concat_list.txt';
   const fileList = inputFiles.map((f) => `file '${f}'`).join('\n');
   return {
-    args: ['-f', 'concat', '-safe', '0', '-i', listName, '-c', 'copy', outputName],
+    args: [
+      '-f', 'concat', '-safe', '0', '-i', listName,
+      '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
+      '-threads', threads(),
+      '-c:a', 'aac',
+      '-movflags', '+faststart',
+      outputName,
+    ],
     listName,
     listContent: fileList,
   };

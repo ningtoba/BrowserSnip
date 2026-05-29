@@ -19,6 +19,7 @@ interface FileState {
   isLargeFile: boolean;
   params: Record<string, unknown>;
   codecWarning: string | null;
+  probing: boolean;
 
   setActiveTool: (tool: ToolId | null) => void;
   setFile: (file: File | null) => void;
@@ -28,6 +29,7 @@ interface FileState {
   setMetadata: (meta: VideoMetadata | null) => void;
   setParams: (params: Record<string, unknown>) => void;
   setCodecWarning: (warning: string | null) => void;
+  setProbing: (probing: boolean) => void;
   persistCurrent: () => void;
   clearCurrent: () => void;
 }
@@ -50,6 +52,7 @@ export const useFileStore = create<FileState>((set, get) => ({
   isLargeFile: false,
   params: {},
   codecWarning: null,
+  probing: false,
 
   setActiveTool: (tool) => {
     const state = get();
@@ -107,6 +110,8 @@ export const useFileStore = create<FileState>((set, get) => ({
   setParams: (params) => set({ params }),
 
   setCodecWarning: (warning) => set({ codecWarning: warning }),
+
+  setProbing: (probing) => set({ probing }),
 
   persistCurrent: () => {
     const state = get();

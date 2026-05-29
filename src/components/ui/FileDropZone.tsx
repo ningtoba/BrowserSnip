@@ -37,10 +37,9 @@ async function probeCodec(file: File): Promise<string | null> {
 }
 
 export function FileDropZone() {
-  const { file, setFile, setCodecWarning } = useFileStore();
+  const { file, setFile, setCodecWarning, setProbing, probing } = useFileStore();
   const resetProcess = useProcessStore((s) => s.reset);
   const [isDragging, setIsDragging] = useState(false);
-  const [probing, setProbing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(

@@ -20,6 +20,12 @@ export function useFFmpeg() {
       suffix: string,
       extraSetup?: (ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) => Promise<void>
     ): Promise<Blob | null> => {
+      // Block processing while codec probe is running
+      if (useFileStore.getState().probing) {
+        useProcessStore.getState().setError('Codec probe in progress — wait a moment and try again.');
+        return null;
+      }
+
       const store = useProcessStore.getState();
       store.startProcessing(label, suffix);
       logBufferRef.current = [];
