@@ -100,15 +100,23 @@ export function useFFmpeg() {
         return blob;
       } catch (err) {
         console.error('[BrowserSnip] Processing error:', err);
-        // Terminate the WASM instance on error — it may have stale
-        // MEMFS data or be in a broken state after a failed operation.
         await terminateFFmpeg();
-        const message =
-          err instanceof Error
-            ? err.message
-            : typeof err === 'string'
-              ? err
-              : 'Processing failed — check the browser console for details';
+
+        const allLogs = logBufferRef.current.join('\n');
+        let message: string;
+
+        if (allLogs.includes('av1_frame_split') || allLogs.includes('av1')) {
+          message = 'This video uses the AV1 codec which is not fully supported by ffmpeg.wasm. Try a video encoded with H.264 instead.';
+        } else if (allLogs.includes('Invalid data found when processing input')) {
+          message = 'The video file may be corrupted or use an unsupported codec.';
+        } else if (err instanceof Error) {
+          message = err.message;
+        } else if (typeof err === 'string') {
+          message = err;
+        } else {
+          message = 'Processing failed — check the browser console for details';
+        }
+
         useProcessStore.getState().setError(message);
         return null;
       }
