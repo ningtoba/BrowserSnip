@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ResizeParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { resizeCommand } from '@/lib/ffmpeg/commands';
@@ -10,13 +10,19 @@ const PRESET_OPTIONS = ['1080p', '720p', '480p', '360p', 'custom'] as const;
 export function ResizeTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<ResizeParams>({
-    width: 1920,
-    height: 1080,
-    lockAspectRatio: true,
-    preset: '1080p',
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<ResizeParams>(() => {
+    const p = storeParams as unknown as ResizeParams;
+    if (p.preset) return p;
+    return { width: 1920, height: 1080, lockAspectRatio: true, preset: '1080p' };
   });
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
 
   const handlePreset = (preset: ResizeParams['preset']) => {
     if (preset === 'custom') {

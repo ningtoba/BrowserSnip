@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { SpeedParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { speedCommand } from '@/lib/ffmpeg/commands';
@@ -9,8 +9,19 @@ const PRESETS = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0];
 export function SpeedTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<SpeedParams>({ speed: 1.0 });
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<SpeedParams>(() => {
+    const p = storeParams as unknown as SpeedParams;
+    if (p.speed) return p;
+    return { speed: 1.0 };
+  });
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
 
   const handleProcess = async () => {
     if (!file || params.speed === 1.0) return;

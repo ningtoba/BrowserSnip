@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { CropParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { cropCommand } from '@/lib/ffmpeg/commands';
@@ -10,12 +10,25 @@ const ASPECT_RATIOS: { value: CropParams['aspectRatio']; label: string }[] = [
   { value: '21:9', label: '21:9 (Cinematic)' },
 ];
 
+const DEFAULT_PARAMS: CropParams = { aspectRatio: '9:16' };
+
 export function CropTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<CropParams>({
-    aspectRatio: '9:16',
-  });
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<CropParams>(
+    (storeParams.aspectRatio
+      ? storeParams
+      : DEFAULT_PARAMS) as CropParams
+  );
+
+  // Sync local params to store whenever they change
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
+
   const [running, setRunning] = useState(false);
 
   const handleProcess = async () => {

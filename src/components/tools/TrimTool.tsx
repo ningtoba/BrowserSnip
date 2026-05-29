@@ -13,15 +13,23 @@ function formatInput(seconds: number): string {
 export function TrimTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
   const [duration, setDuration] = useState(60);
-  const [params, setParams] = useState<TrimParams>({
-    startTime: 0,
-    endTime: 60,
+  const [params, setParams] = useState<TrimParams>(() => {
+    const p = storeParams as unknown as TrimParams;
+    if (p.startTime !== undefined && p.endTime !== undefined) return p;
+    return { startTime: 0, endTime: 60 };
   });
   const [running, setRunning] = useState(false);
 
-  const [startText, setStartText] = useState(formatInput(0));
-  const [endText, setEndText] = useState(formatInput(60));
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
+
+  const [startText, setStartText] = useState(formatInput(params.startTime));
+  const [endText, setEndText] = useState(formatInput(params.endTime));
   const startFocusedRef = useRef(false);
   const endFocusedRef = useRef(false);
 

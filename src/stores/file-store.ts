@@ -6,6 +6,7 @@ interface ToolSlot {
   files: File[];
   metadata: VideoMetadata | null;
   isLargeFile: boolean;
+  params: Record<string, unknown>;
 }
 
 interface FileState {
@@ -15,6 +16,7 @@ interface FileState {
   files: File[];
   metadata: VideoMetadata | null;
   isLargeFile: boolean;
+  params: Record<string, unknown>;
 
   setActiveTool: (tool: ToolId | null) => void;
   setFile: (file: File | null) => void;
@@ -22,6 +24,7 @@ interface FileState {
   removeFile: (index: number) => void;
   reorderFiles: (from: number, to: number) => void;
   setMetadata: (meta: VideoMetadata | null) => void;
+  setParams: (params: Record<string, unknown>) => void;
   clearCurrent: () => void;
 }
 
@@ -30,6 +33,7 @@ const emptySlot = (): ToolSlot => ({
   files: [],
   metadata: null,
   isLargeFile: false,
+  params: {},
 });
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -39,11 +43,11 @@ export const useFileStore = create<FileState>((set, get) => ({
   files: [],
   metadata: null,
   isLargeFile: false,
+  params: {},
 
   setActiveTool: (tool) => {
     const state = get();
     if (state.activeTool && state.activeTool !== tool) {
-      // Save current state to its slot before switching
       set((s) => ({
         sessions: {
           ...s.sessions,
@@ -52,11 +56,11 @@ export const useFileStore = create<FileState>((set, get) => ({
             files: s.files,
             metadata: s.metadata,
             isLargeFile: s.isLargeFile,
+            params: s.params,
           },
         },
       }));
     }
-    // Load the new tool's slot (or empty)
     const slot = tool ? state.sessions[tool] : null;
     set({
       activeTool: tool ?? undefined,
@@ -64,6 +68,7 @@ export const useFileStore = create<FileState>((set, get) => ({
       files: slot?.files ?? [],
       metadata: slot?.metadata ?? null,
       isLargeFile: slot?.isLargeFile ?? false,
+      params: slot?.params ?? {},
     });
   },
 
@@ -90,5 +95,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   setMetadata: (meta) => set({ metadata: meta }),
 
-  clearCurrent: () => set({ file: null, files: [], metadata: null, isLargeFile: false }),
+  setParams: (params) => set({ params }),
+
+  clearCurrent: () => set({ file: null, files: [], metadata: null, isLargeFile: false, params: {} }),
 }));

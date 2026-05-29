@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { GifParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { gifCommand } from '@/lib/ffmpeg/commands';
@@ -9,13 +9,19 @@ const MAX_DURATION = 10;
 export function GifTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<GifParams>({
-    startTime: 0,
-    duration: 3,
-    fps: 15,
-    width: 480,
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<GifParams>(() => {
+    const p = storeParams as unknown as GifParams;
+    if (p.fps) return p;
+    return { startTime: 0, duration: 3, fps: 15, width: 480 };
   });
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
 
   const handleProcess = async () => {
     if (!file) return;

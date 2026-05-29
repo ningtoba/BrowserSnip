@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { AudioParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { audioCommand } from '@/lib/ffmpeg/commands';
@@ -7,8 +7,19 @@ import { useFileStore } from '@/stores/file-store';
 export function AudioTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<AudioParams>({ mode: 'mute', volume: 1.0 });
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<AudioParams>(() => {
+    const p = storeParams as unknown as AudioParams;
+    if (p.mode) return p;
+    return { mode: 'mute', volume: 1.0 };
+  });
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
 
   const handleProcess = async () => {
     if (!file) return;

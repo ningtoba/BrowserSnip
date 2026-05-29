@@ -10,9 +10,20 @@ const SIZE_PRESETS = [10, 25, 50, 100, 250];
 export function CompressTool() {
   const { process } = useFFmpeg();
   const file = useFileStore((s) => s.file);
-  const [params, setParams] = useState<CompressParams>({ targetSizeMB: 25 });
+  const storeParams = useFileStore((s) => s.params);
+  const setStoreParams = useFileStore((s) => s.setParams);
+
+  const [params, setParams] = useState<CompressParams>(() => {
+    const p = storeParams as unknown as CompressParams;
+    if (p.targetSizeMB) return p;
+    return { targetSizeMB: 25 };
+  });
   const [duration, setDuration] = useState(60);
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    setStoreParams(params as unknown as Record<string, unknown>);
+  }, [params, setStoreParams]);
 
   // Try to get real duration from video element
   const getDuration = () => {
