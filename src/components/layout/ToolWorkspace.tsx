@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TOOLS } from '@/lib/constants';
 import { FileDropZone } from '@/components/ui/FileDropZone';
@@ -45,7 +45,6 @@ export function ToolWorkspace() {
   const persistFile = useFileStore((s) => s.persistCurrent);
   const persistProcess = useProcessStore((s) => s.persistCurrent);
 
-  const [showSideTools, setShowSideTools] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,8 +76,13 @@ export function ToolWorkspace() {
     );
   }
 
+  const triggerProcess = () => {
+    const el = document.getElementById('tool-process-btn');
+    if (el) el.click();
+  };
+
   return (
-    <div className="flex h-screen flex-col bg-[#0a0b10] overflow-hidden">
+    <div className="flex h-screen flex-col bg-[#0a0b10] overflow-hidden" ref={mainRef}>
       {/* ── Top bar ── */}
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[#1e2035] bg-[#0d0f17]/90 backdrop-blur-subtle px-3 sm:px-4 z-20">
         <button
@@ -96,41 +100,26 @@ export function ToolWorkspace() {
 
         <div className="flex-1" />
 
-        {/* Desktop: process quick-action */}
         {file && ToolComponent && (
           <button
-            onClick={() => {
-              const el = document.getElementById('tool-process-btn');
-              if (el) el.click();
-            }}
-            className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors px-2.5 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/20"
+            onClick={triggerProcess}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors px-2.5 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/20"
           >
             Process
           </button>
         )}
 
-        {/* Log toggle */}
         <button
           onClick={() => useUIStore.getState().toggleLogMonitor()}
           className="text-[11px] font-medium text-[#5c6080] hover:text-[#a8adc4] transition-colors shrink-0"
         >
           {showLogs ? 'Hide Log' : 'Log'}
         </button>
-
-        {/* Mobile: Show tool options toggle (only when file is loaded) */}
-        {file && ToolComponent && (
-          <button
-            onClick={() => setShowSideTools((v) => !v)}
-            className="sm:hidden text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors shrink-0"
-          >
-            {showSideTools ? 'Done' : 'Options'}
-          </button>
-        )}
       </header>
 
-      {/* ── Body: desktop has sidebar + main; mobile stacks inline ── */}
-      <div className="flex flex-1 overflow-hidden" ref={mainRef}>
-        {/* Sidebar — desktop: permanent 320px panel */}
+      {/* ── Body: desktop sidebar + main; mobile stacks vertically ── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Desktop sidebar */}
         <aside className="hidden sm:flex w-72 lg:w-80 shrink-0 flex-col border-r border-[#1e2035] bg-[#0d0f17]">
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <FileDropZone />
@@ -146,18 +135,24 @@ export function ToolWorkspace() {
 
         {/* Main content area */}
         <main className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Mobile: inline upload + tools area (no drawer!) */}
+          {/* ────────────── Mobile layout ────────────── */}
           <div className="sm:hidden flex flex-col flex-1 overflow-hidden min-h-0">
-            {/* File drop zone always visible inline */}
-            <div className="shrink-0 p-3 pb-0">
+            <div className="shrink-0 px-3 pt-3 pb-2">
               <FileDropZone />
-              {isLargeFile && <div className="mt-2"><MemoryWarning /></div>}
-              {codecWarning && (
-                <div className="mt-2 rounded-md border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-2.5">
+            </div>
+
+            {isLargeFile && (
+              <div className="shrink-0 px-3 pb-1">
+                <MemoryWarning />
+              </div>
+            )}
+            {codecWarning && (
+              <div className="shrink-0 px-3 pb-1">
+                <div className="rounded-md border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-2">
                   <p className="text-[10px] font-medium text-[#f59e0b] leading-relaxed">{codecWarning}</p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {!file && !isProcessing && (
               <div className="flex flex-1 items-center justify-center p-4">
@@ -172,14 +167,12 @@ export function ToolWorkspace() {
 
             {file && (
               <>
-                {/* Video preview — takes remaining space */}
-                <div className="flex-1 min-h-0 p-3 flex items-center justify-center overflow-hidden">
+                <div className="flex-1 min-h-0 px-3 pb-2 flex items-center justify-center overflow-hidden">
                   <VideoPreview />
                 </div>
 
-                {/* Tool options — slides up as bottom sheet when toggled */}
                 {ToolComponent && (
-                  <div className={`shrink-0 border-t border-[#1e2035] bg-[#0d0f17] transition-all duration-300 ${showSideTools ? 'max-h-[60vh] overflow-y-auto' : 'max-h-0 overflow-hidden'}`}>
+                  <div className="shrink-0 border-t border-[#1e2035] bg-[#0d0f17] overflow-y-auto max-h-[42vh]">
                     <div className="p-3">
                       <ToolComponent />
                     </div>
@@ -188,39 +181,35 @@ export function ToolWorkspace() {
               </>
             )}
 
-            {/* Processing progress */}
             {isProcessing && (
-              <div className="shrink-0 p-3 border-t border-[#1e2035]">
+              <div className="shrink-0 border-t border-[#1e2035] bg-[#0d0f17] p-3">
                 <ProgressBar />
               </div>
             )}
 
-            {/* Error */}
             {error && (
-              <div className="shrink-0 p-3 border-t border-[#dc2626]/20">
-                <div className="rounded-md border border-[#dc2626]/20 bg-[#dc2626]/5 p-3">
+              <div className="shrink-0 border-t border-[#dc2626]/20 bg-[#0d0f17] p-3">
+                <div className="rounded-md border border-[#dc2626]/20 bg-[#dc2626]/5 p-2.5">
                   <p className="text-[11px] font-semibold text-[#dc2626]">Processing Error</p>
-                  <p className="mt-1 text-[11px] text-[#dc2626]/80 leading-relaxed">{error}</p>
+                  <p className="mt-1 text-[10px] text-[#dc2626]/80 leading-relaxed">{error}</p>
                 </div>
               </div>
             )}
 
-            {/* Output */}
             {outputUrl && outputBlob && !isProcessing && (
-              <div className="shrink-0 p-3 border-t border-[#1e2035] overflow-y-auto max-h-[45vh]">
+              <div className="shrink-0 border-t border-[#1e2035] bg-[#0d0f17] overflow-y-auto max-h-[45vh] p-3">
                 <OutputActions />
               </div>
             )}
 
-            {/* Log monitor (compact on mobile) */}
             {showLogs && (
-              <div className="h-36 shrink-0 border-t border-[#1e2035] bg-[#0d0f17]">
+              <div className="h-32 shrink-0 border-t border-[#1e2035] bg-[#0d0f17]">
                 <LogMonitor />
               </div>
             )}
           </div>
 
-          {/* Desktop: main content */}
+          {/* ────────────── Desktop layout ────────────── */}
           <div className="hidden sm:flex flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto p-6 lg:p-8">
               {file && <VideoPreview />}
