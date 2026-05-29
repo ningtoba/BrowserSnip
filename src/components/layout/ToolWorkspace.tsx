@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TOOLS } from '@/lib/constants';
 import { FileDropZone } from '@/components/ui/FileDropZone';
@@ -45,7 +45,8 @@ export function ToolWorkspace() {
   const persistFile = useFileStore((s) => s.persistCurrent);
   const persistProcess = useProcessStore((s) => s.persistCurrent);
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showSideTools, setShowSideTools] = useState(false);
+  const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = (toolId as ToolId) ?? null;
@@ -57,19 +58,17 @@ export function ToolWorkspace() {
     };
   }, [toolId, setFileSession, setProcessSession, persistFile, persistProcess]);
 
-  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
-
   const tool = TOOLS.find((t) => t.id === toolId);
   const ToolComponent = toolId ? TOOL_COMPONENTS[toolId] : null;
 
   if (!tool) {
     return (
-      <div className="flex h-screen items-center justify-center bg-cream">
-        <div className="text-center animate-doodle-pop">
-          <p className="mb-4 text-ink-soft text-base">Tool not found.</p>
+      <div className="flex h-screen items-center justify-center bg-[#0a0b10]">
+        <div className="text-center animate-fade-in">
+          <p className="mb-4 text-sm text-[#5c6080]">Tool not found.</p>
           <button
             onClick={() => navigate('/')}
-            className="text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+            className="text-xs font-medium text-[#6366f1] hover:text-[#818cf8] transition-colors"
           >
             &larr; Back to Dashboard
           </button>
@@ -79,150 +78,193 @@ export function ToolWorkspace() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-cream overflow-hidden">
-      {/* Top header bar */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-cream-border bg-cream-light/80 backdrop-blur-subtle px-4 z-20">
+    <div className="flex h-screen flex-col bg-[#0a0b10] overflow-hidden">
+      {/* ── Top bar ── */}
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[#1e2035] bg-[#0d0f17]/90 backdrop-blur-subtle px-3 sm:px-4 z-20">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-xs font-medium text-ink-muted hover:text-ink transition-colors shrink-0"
+          className="flex items-center gap-1 text-[11px] font-medium text-[#5c6080] hover:text-[#a8adc4] transition-colors shrink-0"
         >
-          <span className="text-base leading-none">&larr;</span>
+          <span className="text-sm leading-none">&larr;</span>
           <span className="hidden sm:inline">Dashboard</span>
         </button>
-        <span className="text-cream-border text-xs font-bold">/</span>
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-ink truncate">
+        <span className="text-[#1e2035] text-xs font-bold">/</span>
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[#eeeff5] truncate">
           <span className="text-sm">{tool.icon}</span>
           <span className="truncate">{tool.name}</span>
         </span>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Process button (desktop) */}
+        {/* Desktop: process quick-action */}
         {file && ToolComponent && (
-          <div className="hidden lg:block">
-            <button
-              onClick={() => {
-                const toolEl = document.getElementById('tool-process-btn');
-                if (toolEl) toolEl.click();
-              }}
-              className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors px-3 py-1 rounded-doodle bg-accent/5 border border-accent/20"
-            >
-              Process
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              const el = document.getElementById('tool-process-btn');
+              if (el) el.click();
+            }}
+            className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors px-2.5 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/20"
+          >
+            Process
+          </button>
         )}
 
-        {/* Mobile menu toggle */}
+        {/* Log toggle */}
         <button
-          onClick={() => setMobileMenuOpen((v) => !v)}
-          className="lg:hidden flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink transition-colors"
+          onClick={() => useUIStore.getState().toggleLogMonitor()}
+          className="text-[11px] font-medium text-[#5c6080] hover:text-[#a8adc4] transition-colors shrink-0"
         >
-          <span className="text-sm leading-none">{mobileMenuOpen ? '✕' : '☰'}</span>
-          <span>{mobileMenuOpen ? 'Close' : 'Options'}</span>
+          {showLogs ? 'Hide Log' : 'Log'}
         </button>
+
+        {/* Mobile: Show tool options toggle (only when file is loaded) */}
+        {file && ToolComponent && (
+          <button
+            onClick={() => setShowSideTools((v) => !v)}
+            className="sm:hidden text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors shrink-0"
+          >
+            {showSideTools ? 'Done' : 'Options'}
+          </button>
+        )}
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar — desktop always visible, mobile slides in */}
-        <aside
-          className={`
-            absolute inset-y-0 left-0 z-10 w-72 lg:w-80
-            flex shrink-0 flex-col border-r border-cream-border bg-cream-light
-            transform transition-transform duration-300 ease-in-out
-            lg:relative lg:translate-x-0 lg:z-auto
-            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-          `}
-        >
-          {/* Sidebar scroll area */}
-          <div className="flex-1 overflow-y-auto p-4">
-            <p className="mb-4 text-xs text-ink-soft leading-relaxed">{tool.description}</p>
-
+      {/* ── Body: desktop has sidebar + main; mobile stacks inline ── */}
+      <div className="flex flex-1 overflow-hidden" ref={mainRef}>
+        {/* Sidebar — desktop: permanent 320px panel */}
+        <aside className="hidden sm:flex w-72 lg:w-80 shrink-0 flex-col border-r border-[#1e2035] bg-[#0d0f17]">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <FileDropZone />
-
             {isLargeFile && <MemoryWarning />}
             {codecWarning && (
-              <div className="mt-3 rounded-doodle-md border border-warn/20 bg-warn/5 p-3">
-                <p className="text-[11px] font-medium text-warn leading-relaxed">{codecWarning}</p>
+              <div className="rounded-md border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-3">
+                <p className="text-[11px] font-medium text-[#f59e0b] leading-relaxed">{codecWarning}</p>
               </div>
             )}
-
-            {file && ToolComponent && (
-              <div className="mt-4" onClick={closeMobileMenu}>
-                <ToolComponent />
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-cream-border p-4">
-            <button
-              onClick={() => {
-                useUIStore.getState().toggleLogMonitor();
-                closeMobileMenu();
-              }}
-              className="w-full text-left text-[11px] font-medium text-ink-muted hover:text-accent transition-colors"
-            >
-              {showLogs ? 'Hide' : 'Show'} FFmpeg Log Monitor
-            </button>
+            {file && ToolComponent && <ToolComponent />}
           </div>
         </aside>
 
-        {/* Mobile overlay backdrop */}
-        {mobileMenuOpen && (
-          <div
-            className="fixed inset-0 z-[5] bg-black/50 lg:hidden"
-            onClick={closeMobileMenu}
-          />
-        )}
-
-        {/* Main content */}
+        {/* Main content area */}
         <main className="flex flex-1 flex-col overflow-hidden min-w-0">
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-            {file && (
-              <VideoPreview />
-            )}
+          {/* Mobile: inline upload + tools area (no drawer!) */}
+          <div className="sm:hidden flex flex-col flex-1 overflow-hidden min-h-0">
+            {/* File drop zone always visible inline */}
+            <div className="shrink-0 p-3 pb-0">
+              <FileDropZone />
+              {isLargeFile && <div className="mt-2"><MemoryWarning /></div>}
+              {codecWarning && (
+                <div className="mt-2 rounded-md border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-2.5">
+                  <p className="text-[10px] font-medium text-[#f59e0b] leading-relaxed">{codecWarning}</p>
+                </div>
+              )}
+            </div>
 
             {!file && !isProcessing && (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center animate-doodle-pop">
-                  <div className="mb-4 text-5xl opacity-30">{tool.icon}</div>
-                  <p className="text-sm font-medium text-ink-soft">
+              <div className="flex flex-1 items-center justify-center p-4">
+                <div className="text-center opacity-40">
+                  <div className="mb-3 text-4xl">{tool.icon}</div>
+                  <p className="text-xs font-medium text-[#5c6080]">
                     Import a video to get started
-                  </p>
-                  <p className="mt-1.5 text-xs text-ink-muted">
-                    Drag and drop a file or use the upload area
-                    <span className="lg:hidden"> in the options panel</span>
                   </p>
                 </div>
               </div>
             )}
 
+            {file && (
+              <>
+                {/* Video preview — takes remaining space */}
+                <div className="flex-1 min-h-0 p-3 flex items-center justify-center overflow-hidden">
+                  <VideoPreview />
+                </div>
+
+                {/* Tool options — slides up as bottom sheet when toggled */}
+                {ToolComponent && (
+                  <div className={`shrink-0 border-t border-[#1e2035] bg-[#0d0f17] transition-all duration-300 ${showSideTools ? 'max-h-[60vh] overflow-y-auto' : 'max-h-0 overflow-hidden'}`}>
+                    <div className="p-3">
+                      <ToolComponent />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Processing progress */}
             {isProcessing && (
-              <div className="mx-auto mt-8 max-w-md animate-fade-in">
+              <div className="shrink-0 p-3 border-t border-[#1e2035]">
                 <ProgressBar />
               </div>
             )}
 
+            {/* Error */}
             {error && (
-              <div className="mx-auto mt-8 max-w-md rounded-doodle-md border border-danger/20 bg-danger/5 p-4 animate-fade-in">
-                <p className="text-xs font-semibold text-danger">Processing Error</p>
-                <p className="mt-1 text-[11px] text-danger/80 leading-relaxed">{error}</p>
+              <div className="shrink-0 p-3 border-t border-[#dc2626]/20">
+                <div className="rounded-md border border-[#dc2626]/20 bg-[#dc2626]/5 p-3">
+                  <p className="text-[11px] font-semibold text-[#dc2626]">Processing Error</p>
+                  <p className="mt-1 text-[11px] text-[#dc2626]/80 leading-relaxed">{error}</p>
+                </div>
               </div>
             )}
 
+            {/* Output */}
             {outputUrl && outputBlob && !isProcessing && (
-              <div className="mx-auto mt-8 max-w-lg animate-slide-up">
+              <div className="shrink-0 p-3 border-t border-[#1e2035] overflow-y-auto max-h-[45vh]">
                 <OutputActions />
+              </div>
+            )}
+
+            {/* Log monitor (compact on mobile) */}
+            {showLogs && (
+              <div className="h-36 shrink-0 border-t border-[#1e2035] bg-[#0d0f17]">
+                <LogMonitor />
               </div>
             )}
           </div>
 
-          {/* Log monitor */}
-          {showLogs && (
-            <div className="h-44 shrink-0 border-t border-cream-border bg-cream-light/60">
-              <LogMonitor />
+          {/* Desktop: main content */}
+          <div className="hidden sm:flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+              {file && <VideoPreview />}
+
+              {!file && !isProcessing && (
+                <div className="flex h-full items-center justify-center">
+                  <div className="text-center opacity-40">
+                    <div className="mb-4 text-5xl">{tool.icon}</div>
+                    <p className="text-sm font-medium text-[#5c6080]">
+                      Import a video to get started
+                    </p>
+                    <p className="mt-1.5 text-xs text-[#5c6080]/70">
+                      Drag & drop a file or use the upload area on the left
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {isProcessing && (
+                <div className="mx-auto mt-8 max-w-md animate-fade-in">
+                  <ProgressBar />
+                </div>
+              )}
+
+              {error && (
+                <div className="mx-auto mt-8 max-w-md rounded-md border border-[#dc2626]/20 bg-[#dc2626]/5 p-4 animate-fade-in">
+                  <p className="text-xs font-semibold text-[#dc2626]">Processing Error</p>
+                  <p className="mt-1 text-[11px] text-[#dc2626]/80 leading-relaxed">{error}</p>
+                </div>
+              )}
+
+              {outputUrl && outputBlob && !isProcessing && (
+                <div className="mx-auto mt-8 max-w-2xl animate-slide-up">
+                  <OutputActions />
+                </div>
+              )}
             </div>
-          )}
+
+            {showLogs && (
+              <div className="h-44 shrink-0 border-t border-[#1e2035] bg-[#0d0f17]/60">
+                <LogMonitor />
+              </div>
+            )}
+          </div>
         </main>
       </div>
     </div>

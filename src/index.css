@@ -22,7 +22,13 @@
     background: #3a3d52;
   }
 
+  html {
+    height: -webkit-fill-available;
+  }
+
   body {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     background: #0a0b10;
     color: #eeeff5;
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
@@ -98,7 +104,7 @@
 
 @layer components {
   .doodle-btn {
-    @apply relative w-full overflow-hidden rounded-doodle-md font-semibold
+    @apply relative w-full overflow-hidden rounded-md font-semibold
            px-4 py-2.5 text-sm transition-all duration-200
            active:scale-[0.98];
     background: linear-gradient(135deg, #6366f1, #5558e6);
@@ -120,7 +126,7 @@
   }
 
   .doodle-btn-secondary {
-    @apply w-full rounded-doodle-md px-4 py-2.5 text-sm font-semibold
+    @apply w-full rounded-md px-4 py-2.5 text-sm font-semibold
            transition-all duration-200 active:scale-[0.98];
     background: #161922;
     color: #eeeff5;
@@ -137,7 +143,7 @@
   }
 
   .doodle-input {
-    @apply w-full rounded-doodle px-3 py-2 text-sm
+    @apply w-full rounded px-3 py-2 text-sm
            transition-all duration-150 outline-none;
     background: #0d0f17;
     color: #eeeff5;
@@ -156,7 +162,7 @@
   }
 
   .doodle-chip {
-    @apply flex-1 rounded-doodle border px-3 py-2 text-xs font-medium
+    @apply flex-1 rounded border px-3 py-2 text-xs font-medium
            transition-all duration-150 cursor-pointer select-none;
   }
   .doodle-chip-active {
@@ -176,7 +182,7 @@
   }
 
   .doodle-section {
-    @apply rounded-doodle-md p-4;
+    @apply rounded-md p-4;
     background: #11131c;
     border: 1px solid #1e2035;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -190,7 +196,7 @@
   }
 
   .tool-card {
-    @apply cursor-pointer rounded-doodle-md p-5 h-full flex flex-col
+    @apply cursor-pointer rounded-md p-5 h-full flex flex-col
            transition-all duration-200;
     background: #11131c;
     border: 1px solid #1e2035;
@@ -241,6 +247,10 @@
 }
 
 @layer utilities {
+  .h-screen-safe {
+    height: 100dvh;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
