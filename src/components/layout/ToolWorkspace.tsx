@@ -98,7 +98,7 @@ export function ToolWorkspace() {
         <div className="flex-1 overflow-y-auto p-5">
           <p className="mb-4 text-xs text-zinc-500">{tool.description}</p>
 
-          <FileDropZone />
+          {toolId !== 'stitch' && <FileDropZone />}
 
           {isLargeFile && <MemoryWarning />}
           {codecWarning && (
