@@ -109,7 +109,7 @@ export function ToolWorkspace() {
             </div>
           )}
 
-          {file && ToolComponent && <ToolComponent />}
+          {(file || toolId === 'stitch') && ToolComponent && <ToolComponent />}
         </div>
 
         <div className="border-t border-zinc-800 p-5">
