@@ -32,6 +32,7 @@ interface ProcessState {
   appendLog: (line: string) => void;
   setOutput: (blob: Blob, url: string) => void;
   setError: (error: string) => void;
+  persistCurrent: () => void;
   reset: () => void;
 }
 
@@ -128,6 +129,27 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
 
   setError: (error) =>
     set({ isProcessing: false, error }),
+
+  persistCurrent: () => {
+    const state = get();
+    if (!state.activeTool) return;
+    set((s) => ({
+      sessions: {
+        ...s.sessions,
+        [state.activeTool!]: {
+          isProcessing: s.isProcessing,
+          progress: s.progress,
+          currentProgress: s.currentProgress,
+          logs: s.logs,
+          outputBlob: s.outputBlob,
+          outputUrl: s.outputUrl,
+          error: s.error,
+          label: s.label,
+          suffix: s.suffix,
+        },
+      },
+    }));
+  },
 
   reset: () => {
     const prev = get().outputUrl;

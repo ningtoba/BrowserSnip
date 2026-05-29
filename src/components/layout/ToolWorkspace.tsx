@@ -43,13 +43,20 @@ export function ToolWorkspace() {
 
   const setFileSession = useFileStore((s) => s.setActiveTool);
   const setProcessSession = useProcessStore((s) => s.setActiveTool);
+  const persistFile = useFileStore((s) => s.persistCurrent);
+  const persistProcess = useProcessStore((s) => s.persistCurrent);
 
-  // Switch to this tool's session on mount / tool change
+  // Switch to this tool's session on mount / tool change.
+  // Cleanup saves the session before navigating away or unmounting.
   useEffect(() => {
     const id = (toolId as ToolId) ?? null;
     setFileSession(id);
     setProcessSession(id);
-  }, [toolId, setFileSession, setProcessSession]);
+    return () => {
+      persistFile();
+      persistProcess();
+    };
+  }, [toolId, setFileSession, setProcessSession, persistFile, persistProcess]);
 
   const tool = TOOLS.find((t) => t.id === toolId);
   const ToolComponent = toolId ? TOOL_COMPONENTS[toolId] : null;

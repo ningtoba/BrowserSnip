@@ -25,6 +25,7 @@ interface FileState {
   reorderFiles: (from: number, to: number) => void;
   setMetadata: (meta: VideoMetadata | null) => void;
   setParams: (params: Record<string, unknown>) => void;
+  persistCurrent: () => void;
   clearCurrent: () => void;
 }
 
@@ -96,6 +97,23 @@ export const useFileStore = create<FileState>((set, get) => ({
   setMetadata: (meta) => set({ metadata: meta }),
 
   setParams: (params) => set({ params }),
+
+  persistCurrent: () => {
+    const state = get();
+    if (!state.activeTool) return;
+    set((s) => ({
+      sessions: {
+        ...s.sessions,
+        [state.activeTool!]: {
+          file: s.file,
+          files: s.files,
+          metadata: s.metadata,
+          isLargeFile: s.isLargeFile,
+          params: s.params,
+        },
+      },
+    }));
+  },
 
   clearCurrent: () => set({ file: null, files: [], metadata: null, isLargeFile: false, params: {} }),
 }));
