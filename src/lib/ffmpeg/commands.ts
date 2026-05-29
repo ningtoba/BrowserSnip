@@ -102,11 +102,15 @@ export function gifCommand(
   const start = formatTime(params.startTime);
   const dur = formatTime(params.duration);
 
+  // -2 ensures even height (required by GIF palette). Input seeking
+  // (-ss before -i) for fast segment extraction. Dual-pass palette
+  // generation for smooth colors without banding.
   return [
     '-ss', start, '-t', dur,
     '-i', inputName,
     '-vf',
-    `fps=${params.fps},scale=${params.width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`,
+    `fps=${params.fps},scale=${params.width}:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`,
+    '-f', 'gif',
     outputName,
   ];
 }
