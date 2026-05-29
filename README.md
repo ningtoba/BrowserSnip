@@ -120,9 +120,12 @@ If you see errors about `SharedArrayBuffer` being undefined, verify the dev serv
 
 ```bash
 npm run build
+npx vite preview
 ```
 
 The output lands in `dist/` and can be deployed to any static host.
+
+> **Important**: Do not open `dist/index.html` directly from your filesystem (`file://`). The app requires a real HTTP server — ES modules, SharedArrayBuffer, and service workers are all blocked on `file://` URLs. Use `npx vite preview` to test the build locally, or deploy to any static host.
 
 ---
 
