@@ -37,8 +37,10 @@ export function ToolWorkspace() {
   const { toolId } = useParams<{ toolId: string }>();
   const navigate = useNavigate();
   const file = useFileStore((s) => s.file);
+  const files = useFileStore((s) => s.files);
   const isLargeFile = useFileStore((s) => s.isLargeFile);
   const codecWarning = useFileStore((s) => s.codecWarning);
+  const hasInput = toolId === 'stitch' ? files.length > 0 : !!file;
   const { isProcessing, outputUrl, outputBlob, error } = useProcessStore();
   const showLogs = useUIStore((s) => s.showLogMonitor);
 
@@ -123,11 +125,11 @@ export function ToolWorkspace() {
       {/* Main */}
       <main className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
-          {file && (
+          {file && toolId !== 'stitch' && (
             <VideoPreview />
           )}
 
-          {!file && !isProcessing && (
+          {!hasInput && !isProcessing && (
             <div className="flex h-full items-center justify-center">
               <div className="text-center">
                 <div className="mb-3 text-5xl">{tool.icon}</div>
