@@ -128,10 +128,10 @@ export function audioCommand(
     case 'volume':
       return [
         '-i', inputName,
-        '-filter:a', `volume=${params.volume}`,
+        '-af', `volume=${params.volume}`,
         '-c:v', 'libx264', '-crf', '18', '-preset', 'ultrafast',
         '-threads', threads(),
-        '-c:a', 'aac', '-b:a', '128k',
+        '-c:a', 'aac',
         '-movflags', '+faststart',
         outputName,
       ];
