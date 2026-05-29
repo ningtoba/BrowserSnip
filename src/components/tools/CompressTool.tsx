@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { CompressParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { compressCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
 import { calculateBitrate } from '@/lib/utils/bitrate';
 
-const SIZE_PRESETS = [10, 25, 50, 100, 250];
+const PCT_PRESETS = [25, 50, 75];
 
 export function CompressTool() {
   const { process } = useFFmpeg();
@@ -16,7 +16,7 @@ export function CompressTool() {
   const [params, setParams] = useState<CompressParams>(() => {
     const p = storeParams as unknown as CompressParams;
     if (p.targetSizeMB) return p;
-    return { targetSizeMB: 25 };
+    return { targetSizeMB: 10 };
   });
   const [duration, setDuration] = useState(60);
   const [running, setRunning] = useState(false);
@@ -37,9 +37,15 @@ export function CompressTool() {
   }, [file]);
 
   const originalSizeMB = file ? file.size / 1_000_000 : 0;
-  const originalBitrate = duration > 0 ? (originalSizeMB * 8000) / duration : 0;
   const targetBitrate = calculateBitrate(params.targetSizeMB, duration);
-  const isLarger = params.targetSizeMB >= originalSizeMB;
+  const pct = originalSizeMB > 0
+    ? Math.round((params.targetSizeMB / originalSizeMB) * 100)
+    : 100;
+
+  const handlePctPreset = useCallback((p: number) => {
+    const size = Math.max(1, Math.round((originalSizeMB * p) / 100));
+    setParams({ targetSizeMB: size });
+  }, [originalSizeMB]);
 
   const handleProcess = async () => {
     if (!file) return;
@@ -59,38 +65,56 @@ export function CompressTool() {
     }
   };
 
+  if (!file || originalSizeMB === 0) return null;
+
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-2">
-        <label className="text-xs font-medium text-zinc-400">
-          Target File Size
-        </label>
-        <div className="flex gap-1">
-          {SIZE_PRESETS.map((size) => {
-            const tooBig = size >= originalSizeMB;
-            return (
-              <button
-                key={size}
-                onClick={() => setParams({ targetSizeMB: size })}
-                disabled={tooBig}
-                className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
-                  params.targetSizeMB === size
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                    : tooBig
-                      ? 'bg-zinc-800/30 text-zinc-700 border border-zinc-800 cursor-not-allowed'
-                      : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
-                }`}
-              >
-                {size}MB
-              </button>
-            );
-          })}
+        <div className="flex justify-between text-xs">
+          <span className="font-medium text-zinc-400">Target Size</span>
+          <span className="font-mono text-indigo-300">
+            {params.targetSizeMB} MB ({pct}% of original)
+          </span>
         </div>
+
+        <input
+          type="range"
+          min={Math.max(1, Math.round(originalSizeMB * 0.05))}
+          max={Math.round(originalSizeMB * 0.95)}
+          step={1}
+          value={params.targetSizeMB}
+          onChange={(e) => setParams({ targetSizeMB: parseInt(e.target.value) })}
+          className="w-full"
+        />
+        <div className="flex justify-between text-xs text-zinc-700">
+          <span>~{Math.max(1, Math.round(originalSizeMB * 0.05))} MB</span>
+          <span>~{Math.round(originalSizeMB * 0.95)} MB</span>
+        </div>
+      </div>
+
+      <div className="flex gap-1">
+        {PCT_PRESETS.map((p) => {
+          const size = Math.max(1, Math.round((originalSizeMB * p) / 100));
+          const active = params.targetSizeMB === size;
+          return (
+            <button
+              key={p}
+              onClick={() => handlePctPreset(p)}
+              className={`flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:text-zinc-300'
+              }`}
+            >
+              {p}% (~{size} MB)
+            </button>
+          );
+        })}
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1">
         <div className="flex justify-between text-xs">
-          <span className="text-zinc-500">Original size</span>
+          <span className="text-zinc-500">Original</span>
           <span className="font-mono text-zinc-200">{originalSizeMB.toFixed(1)} MB</span>
         </div>
         <div className="flex justify-between text-xs">
@@ -98,25 +122,14 @@ export function CompressTool() {
           <span className="font-mono text-zinc-200">{duration.toFixed(1)}s</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-zinc-500">Target</span>
-          <span className={`font-mono ${isLarger ? 'text-amber-400' : 'text-indigo-300'}`}>
-            {targetBitrate} kbps
-          </span>
+          <span className="text-zinc-500">Target bitrate</span>
+          <span className="font-mono text-indigo-300">{targetBitrate} kbps</span>
         </div>
       </div>
 
-      {isLarger && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-          <p className="text-xs text-amber-300">
-            Target ({params.targetSizeMB} MB) is larger than the original ({originalSizeMB.toFixed(1)} MB).
-            Select a smaller target to reduce file size.
-          </p>
-        </div>
-      )}
-
       <button
         onClick={handleProcess}
-        disabled={running || isLarger}
+        disabled={running}
         className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
       >
         {running ? 'Compressing...' : 'Compress Video'}
