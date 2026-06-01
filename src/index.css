@@ -244,6 +244,39 @@
     background-size: 40px 40px;
     background-position: center center;
   }
+
+  .rainbow-border {
+    position: relative;
+    border-radius: 10px;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--rainbow-angle, 0deg),
+      #f87171,
+      #fbbf24,
+      #34d399,
+      #38bdf8,
+      #818cf8,
+      #f472b6,
+      #f87171
+    );
+    animation: rainbow-cycle 6s linear infinite;
+  }
+  .rainbow-border-inner {
+    background: #11131c;
+    border-radius: 8px;
+  }
+}
+
+@property --rainbow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rainbow-cycle {
+  to {
+    --rainbow-angle: 360deg;
+  }
 }
 
 @layer utilities {

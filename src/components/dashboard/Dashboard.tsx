@@ -36,6 +36,36 @@ export function Dashboard() {
           </div>
         </header>
 
+        <a
+          href="https://blur.browsersnip.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-6 block animate-slide-up group"
+          style={{ animationFillMode: 'both' }}
+        >
+          <div className="rainbow-border">
+            <div className="rainbow-border-inner p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-doodle-lg bg-accent/10 text-3xl transition-transform duration-300 group-hover:scale-110">
+                ◎
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg sm:text-xl font-bold text-ink mb-1.5">
+                  Blur
+                </h2>
+                <p className="text-sm leading-relaxed text-ink-muted">
+                  AI-powered face detection and one-click privacy blur. Automatically finds faces in any image and lets you obscure them — no uploads, runs entirely in your browser.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <span className="inline-flex items-center gap-2 rounded-doodle-md bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition-all duration-200 group-hover:bg-accent/20 group-hover:gap-2.5">
+                  Try it
+                  <span className="text-sm leading-none transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </a>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {TOOLS.map((tool, i) => (
             <div
