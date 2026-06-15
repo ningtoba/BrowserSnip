@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' rx='18' fill='%230a0b10'/%3E%3Ctext x='40' y='56' text-anchor='middle' font-size='40'%3E%E2%9C%82%3C/text%3E%3C/svg%3E">
-    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' rx='18' fill='%230a0b10'/%3E%3Ctext x='40' y='56' text-anchor='middle' font-size='40'%3E%E2%9C%82%3C/text%3E%3C/svg%3E" alt="BrowserSnip" width="80" height="80">
-  </picture>
+  <img src="public/logo.svg" alt="BrowserSnip" width="64" height="64">
 </p>
 
 <h1 align="center">Browser<span style="color:#6366f1">Snip</span></h1>
