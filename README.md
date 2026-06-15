@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logo.svg" alt="BrowserSnip" width="64" height="64">
+  <img src="public/logo.png" alt="BrowserSnip" width="64" height="64">
 </p>
 
 <h1 align="center">Browser<span style="color:#6366f1">Snip</span></h1>
