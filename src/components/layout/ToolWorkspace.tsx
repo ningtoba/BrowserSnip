@@ -228,22 +228,30 @@ export function ToolWorkspace() {
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop sidebar */}
-        <aside className="hidden sm:flex w-72 lg:w-80 shrink-0 flex-col border-r border-cream-border bg-cream-light">
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <aside className="hidden sm:flex w-72 lg:w-80 shrink-0 flex-col border-r border-cream-border bg-cream-light overflow-hidden">
+          <div className="flex flex-col flex-1 min-h-0 p-4 gap-2.5">
             {!isNoFileTool && (
-              <FileDropZone
-                multiple={isMultiFile}
-                {...dropZoneProps}
-              />
-            )}
-            {isLargeFile && <MemoryWarning />}
-            {isVideo && codecWarning && (
-              <div className="rounded-md border border-warn/20 bg-warn/5 p-3">
-                <p className="text-[11px] font-medium text-warn leading-relaxed">{codecWarning}</p>
+              <div className="shrink-0">
+                <FileDropZone
+                  multiple={isMultiFile}
+                  {...dropZoneProps}
+                />
               </div>
             )}
-            {isPDF && hasFiles && !ToolMainComponent && !isImageTool && <ThumbnailStrip />}
-            {(hasFiles || ToolMainComponent || isNoFileTool) && ToolComponent && <ToolComponent />}
+            {isLargeFile && <div className="shrink-0"><MemoryWarning /></div>}
+            {isVideo && codecWarning && (
+              <div className="shrink-0 rounded-md border border-warn/20 bg-warn/5 p-2.5">
+                <p className="text-[10px] font-medium text-warn leading-relaxed">{codecWarning}</p>
+              </div>
+            )}
+            {isPDF && hasFiles && !ToolMainComponent && !isImageTool && (
+              <div className="shrink-0"><ThumbnailStrip /></div>
+            )}
+            {(hasFiles || ToolMainComponent || isNoFileTool) && ToolComponent && (
+              <div className="flex-1 min-h-0">
+                <ToolComponent />
+              </div>
+            )}
           </div>
         </aside>
 
@@ -323,7 +331,7 @@ export function ToolWorkspace() {
                     ) : null}
 
                     {ToolComponent && (
-                      <div className="shrink-0 border-t border-cream-border bg-cream-light overflow-y-auto max-h-[42vh]">
+                      <div className="shrink-0 border-t border-cream-border bg-cream-light">
                         <div className="p-3">
                           <ToolComponent />
                         </div>
