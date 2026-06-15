@@ -8,7 +8,7 @@ export function Landing() {
         <section className="py-20 sm:py-28 text-center">
           <div className="mb-6 inline-flex items-center justify-center gap-3">
             <div className="flex h-16 w-16 items-center justify-center rounded-doodle-lg bg-accent/10 ring-1 ring-accent/20">
-              <span className="text-3xl">✂</span>
+              <img src="/logo.png" alt="BrowserSnip" className="h-8 w-8" />
             </div>
           </div>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-ink">

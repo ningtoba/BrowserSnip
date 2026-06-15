@@ -25,9 +25,10 @@ export function AppLayout() {
           {/* Left: Logo */}
           <Link
             to="/"
-            className="flex shrink-0 items-center gap-0 font-display text-sm font-bold text-ink"
+            className="flex shrink-0 items-center gap-2 font-display text-sm font-bold text-ink"
             onClick={closeMobile}
           >
+            <img src="/logo.png" alt="" className="h-6 w-6" />
             Browser<span className="text-accent">Snip</span>
           </Link>
 
