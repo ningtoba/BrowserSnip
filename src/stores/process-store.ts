@@ -8,6 +8,8 @@ interface ProcessSlot {
   logs: string[];
   outputBlob: Blob | null;
   outputUrl: string | null;
+  outputBlobs: Blob[];
+  outputUrls: string[];
   error: string | null;
   label: string;
   suffix: string;
@@ -22,6 +24,8 @@ interface ProcessState {
   logs: string[];
   outputBlob: Blob | null;
   outputUrl: string | null;
+  outputBlobs: Blob[];
+  outputUrls: string[];
   error: string | null;
   label: string;
   suffix: string;
@@ -31,6 +35,7 @@ interface ProcessState {
   updateProgress: (p: FFmpegProgress, percent: number) => void;
   appendLog: (line: string) => void;
   setOutput: (blob: Blob, url: string) => void;
+  addOutput: (blob: Blob, url: string) => void;
   setError: (error: string) => void;
   persistCurrent: () => void;
   reset: () => void;
@@ -43,6 +48,8 @@ const emptySlot = (): ProcessSlot => ({
   logs: [],
   outputBlob: null,
   outputUrl: null,
+  outputBlobs: [],
+  outputUrls: [],
   error: null,
   label: '',
   suffix: '',
@@ -57,6 +64,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   logs: [],
   outputBlob: null,
   outputUrl: null,
+  outputBlobs: [],
+  outputUrls: [],
   error: null,
   label: '',
   suffix: '',
@@ -74,6 +83,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
             logs: s.logs,
             outputBlob: s.outputBlob,
             outputUrl: s.outputUrl,
+            outputBlobs: s.outputBlobs,
+            outputUrls: s.outputUrls,
             error: s.error,
             label: s.label,
             suffix: s.suffix,
@@ -90,6 +101,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       logs: slot?.logs ?? [],
       outputBlob: slot?.outputBlob ?? null,
       outputUrl: slot?.outputUrl ?? null,
+      outputBlobs: slot?.outputBlobs ?? [],
+      outputUrls: slot?.outputUrls ?? [],
       error: slot?.error ?? null,
       label: slot?.label ?? '',
       suffix: slot?.suffix ?? '',
@@ -104,6 +117,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       logs: [],
       outputBlob: null,
       outputUrl: null,
+      outputBlobs: [],
+      outputUrls: [],
       error: null,
       label,
       suffix,
@@ -124,8 +139,16 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       progress: 100,
       outputBlob: blob,
       outputUrl: url,
+      outputBlobs: [blob],
+      outputUrls: [url],
     });
   },
+
+  addOutput: (blob, url) =>
+    set((state) => ({
+      outputBlobs: [...state.outputBlobs, blob],
+      outputUrls: [...state.outputUrls, url],
+    })),
 
   setError: (error) =>
     set({ isProcessing: false, error }),
@@ -143,6 +166,8 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
           logs: s.logs,
           outputBlob: s.outputBlob,
           outputUrl: s.outputUrl,
+          outputBlobs: s.outputBlobs,
+          outputUrls: s.outputUrls,
           error: s.error,
           label: s.label,
           suffix: s.suffix,
@@ -152,8 +177,10 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   },
 
   reset: () => {
-    const prev = get().outputUrl;
-    if (prev) URL.revokeObjectURL(prev);
+    const prevOutputs = get().outputUrls;
+    for (const url of prevOutputs) {
+      URL.revokeObjectURL(url);
+    }
 
     set(emptySlot());
   },

@@ -85,6 +85,7 @@
   }
 
   input[type='text'],
+  input[type='password'],
   input[type='number'],
   input[type='file'],
   textarea,
@@ -140,6 +141,18 @@
   .doodle-btn-secondary:disabled {
     @apply opacity-40 cursor-not-allowed;
     transform: none;
+  }
+
+  .doodle-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-doodle
+           font-body font-medium text-sm
+           bg-danger/15 text-danger border border-danger/20
+           transition-all duration-200 ease-out
+           hover:bg-danger/25 hover:border-danger/40
+           active:scale-[0.97]
+           disabled:opacity-40 disabled:pointer-events-none
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40
+           cursor-pointer select-none;
   }
 
   .doodle-input {

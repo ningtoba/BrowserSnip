@@ -7,30 +7,46 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dev:phone": "VITE_HTTPS=true vite"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.9",
     "@ffmpeg/core-mt": "^0.12.9",
     "@ffmpeg/ffmpeg": "^0.12.10",
+    "@maxwbh/pdf-lib": "^1.18.1",
+    "@pdfsmaller/pdf-decrypt-lite": "^1.0.0",
+    "@pdfsmaller/pdf-encrypt-lite": "^1.0.2",
+    "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-select": "^2.1.6",
     "@radix-ui/react-slider": "^1.2.3",
     "@radix-ui/react-toggle": "^1.1.2",
     "@radix-ui/react-toggle-group": "^1.1.2",
     "@radix-ui/react-tooltip": "^1.1.8",
     "clsx": "^2.1.1",
+    "docx": "^9.7.1",
+    "html2canvas": "^1.4.1",
+    "onnxruntime-web": "^1.26.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.0.379",
+    "ppu-paddle-ocr": "^5.8.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^3.4.15",
     "typescript": "~5.6.2",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.8"
   }
 }

@@ -1,361 +1,436 @@
-# BrowserSnip
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' rx='18' fill='%230a0b10'/%3E%3Ctext x='40' y='56' text-anchor='middle' font-size='40'%3E%E2%9C%82%3C/text%3E%3C/svg%3E">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' rx='18' fill='%230a0b10'/%3E%3Ctext x='40' y='56' text-anchor='middle' font-size='40'%3E%E2%9C%82%3C/text%3E%3C/svg%3E" alt="BrowserSnip" width="80" height="80">
+  </picture>
+</p>
 
-**100% client-side video utility sandbox. No uploads, no servers, total privacy.**
+<h1 align="center">Browser<span style="color:#6366f1">Snip</span></h1>
 
-BrowserSnip is a modular suite of high-velocity video micro-tools that run entirely inside your browser tab using WebAssembly. Every operation — trimming, resizing, cropping, compressing, converting — happens locally on your machine. Zero video data is sent to any server.
+<p align="center">
+  <strong>100% client-side video &amp; PDF utility sandbox.<br>No uploads. No servers. Total privacy.</strong>
+</p>
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
-![React](https://img.shields.io/badge/React-18-61dafb)
-![Vite](https://img.shields.io/badge/Vite-6-646cff)
+<p align="center">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+  <a href="#tech-stack"><img src="https://img.shields.io/badge/TypeScript-5.6-3178c6" alt="TypeScript 5.6"></a>
+  <a href="#tech-stack"><img src="https://img.shields.io/badge/React-18-61dafb" alt="React 18"></a>
+  <a href="#tech-stack"><img src="https://img.shields.io/badge/Vite-6-646cff" alt="Vite 6"></a>
+  <a href="#browser-support"><img src="https://img.shields.io/badge/WebAssembly-✓-34d399" alt="WebAssembly"></a>
+  <a href="#philosophy"><img src="https://img.shields.io/badge/privacy-first-6366f1" alt="Privacy First"></a>
+</p>
 
----
-
-## Table of Contents
-
-- [Philosophy](#philosophy)
-- [Features](#features)
-- [Screenshot](#screenshot)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-- [Deployment](#deployment)
-- [Architecture](#architecture)
-- [How It Works](#how-it-works)
-- [Module Reference](#module-reference)
-- [Browser Support](#browser-support)
-- [Known Limitations](#known-limitations)
-- [Contributing](#contributing)
-- [License](#license)
+<br>
 
 ---
 
-## Philosophy
-
-BrowserSnip is **not** a timeline-based video editor (like CapCut, Premiere, or iMovie). It is a **Video Utility Sandbox** — a collection of focused, single-purpose micro-tools. Each tool solves one everyday video task instantly and securely.
-
-### Core Principles
-
-- **No server footprint.** All transcoding, cutting, and manipulation runs in your browser via [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm). Your files never leave your device.
-- **Instant start, fast execution.** The UI avoids heavy abstractions. It should feel like a lightning-fast native utility, not a bloated web app.
-- **Frictionless output.** One-click copy-to-clipboard, drag-to-export, instant download. Get your processed file and move on.
+> **✂ Snip, process, and secure your media — all inside your browser tab.**  
+> BrowserSnip is a collection of **34 focused micro-tools** for video and PDF work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
 
 ---
 
-## Features
+<br>
 
-### 9 Micro-Tools
+## What is BrowserSnip?
+
+BrowserSnip is **not** a timeline-based video editor like CapCut or Premiere. It's not a desktop PDF suite like Acrobat. It's a **utility sandbox** — a curated set of single-purpose tools that each do one thing well and do it fast.
+
+| | | |
+|---|---|---|
+| 🎬 **Video Tools** | 8 FFmpeg-powered micro-tools | Trim, resize, crop, compress, GIF, audio, speed, metadata |
+| 📄 **PDF Tools** | 26 tools across 6 categories | Merge, split, convert, edit, sign, encrypt, OCR, redact |
+| 🔒 **Privacy-first** | Runs entirely in your browser | WebAssembly + SharedArrayBuffer. Zero server footprint |
+| ⚡ **Instant results** | Stream-copy where possible | Lossless operations finish in seconds, not minutes |
+| 🌑 **Dark mode** | Developer-grade aesthetic | Indigo accent on zinc/slate, designed for long sessions |
+| 📱 **Responsive** | Works on desktop and mobile | Hamburger nav, stacked layouts, touch-friendly controls |
+
+<br>
+
+---
+
+## 🎬 Video Tools
+
+Eight focused tools powered by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) — a full FFmpeg binary compiled to WebAssembly.
+
+| Tool | What it does | Best for |
+|------|-------------|----------|
+| **Trim & Cut** ✂ | Frame-accurate trimming with dual-handle scrub bar | Cutting intros, removing sections, clipping highlights |
+| **Resize** ↔ | Scale to standard resolutions or custom dimensions | Preparing video for specific platforms (YouTube, TikTok) |
+| **Crop & Reframe** ⊞ | Convert aspect ratios with direct crop or blurred padding | Repurposing landscape video to vertical short-form |
+| **Compress** ↓ | Target specific file sizes with automatic bitrate calculation | Hitting Discord, Slack, email, or messaging limits |
+| **GIF Converter** ◉ | Short clips to high-quality GIFs with palette optimization | Memes, reaction GIFs, product demos |
+| **Audio Tools** ♪ | Mute, extract MP3, or adjust volume (0%–300%) | Podcast clips, ringtones, boosting quiet recordings |
+| **Speed Control** ⏱ | Timelapse and slow-motion from 0.25× to 4.0× | Speed ramps, instructional videos, artistic effects |
+| **Privacy Purge** 🛡 | Strip all metadata, EXIF, and location tags | Sharing video safely without leaking creation data |
+
+<br>
+
+## 📄 PDF Tools
+
+Twenty-six tools across six categories. Powered by [pdf-lib](https://github.com/Hopding/pdf-lib), [PDF.js](https://github.com/mozilla/pdf.js), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), and [ONNX Runtime](https://github.com/microsoft/onnxruntime).
+
+### 📑 Organize PDF
 
 | Tool | Description |
 |------|-------------|
-| **Trim & Cut** | Frame-accurate trimming with dual-handle scrub bar. Lossless stream copy (near-instant) or accurate re-encode modes. |
-| **Resize** | Scale video to standard resolutions (1080p, 720p, 480p, 360p) or custom dimensions. Locks aspect ratio by default. |
-| **Crop & Reframe** | Convert horizontal video to vertical (9:16 TikTok/Reels), square (1:1), or cinematic (21:9). Direct crop or blurred sidebar padding. |
-| **Compress** | Target specific file size limits (10MB, 25MB, 50MB, 100MB, 250MB). Automatically calculates the required video bitrate from duration. |
-| **GIF Converter** | Convert short clips to high-quality looping GIFs with dual-pass palette generation. Capped at 10 seconds for memory safety. |
-| **Audio Tools** | Mute/strip audio layers, extract standalone MP3, or adjust volume from 0% to 300%. |
-| **Speed Control** | Create timelapse or slow-motion. Presets at 0.25x, 0.5x, 1.5x, 2.0x, and 4.0x. Synchronizes PTS and audio tempo. |
-| **Privacy Purge** | Strip all metadata, EXIF, location tags, and creation markers. Near-instant stream copy — no re-encode needed. |
-| **Stitch & Merge** | Concatenate multiple videos in sequence. Drag-and-drop file queue with reorder. |
+| **Merge PDF** | Combine multiple PDFs with drag-and-drop ordering |
+| **Split PDF** | Extract by page range, every page, or odd/even separation |
+| **Remove Pages** | Delete unwanted pages with a visual page selector |
+| **Extract Pages** | Pull out selected pages and save as a new document |
+| **Organize PDF** | Drag-and-drop to reorder, duplicate, insert blanks, or delete |
+| **Rotate PDF** | Rotate individual pages or the entire document 90°/180°/270° |
+| **Scan to PDF** | Camera capture with edge detection and perspective correction |
 
-### Cross-Cutting Features
+### ⚡ Optimize PDF
 
-- **Live FFmpeg log streaming** — Real-time progress bar with parsed timecode, frame count, and FPS
-- **Copy to Clipboard** — Paste processed video directly into Slack, Discord, or Teams without saving to disk
-- **Memory guardrails** — Polite warning banner for files over 500MB to prevent WASM out-of-memory crashes
-- **Dark mode** — Developer-grade dark aesthetic with zinc/slate backgrounds and indigo interactive elements
+| Tool | Description |
+|------|-------------|
+| **Compress PDF** | Three-level compression (low/medium/high) with image re-encoding |
+| **Repair PDF** | Three-strategy recovery for damaged or corrupted files |
+
+### 📥 Convert to PDF
+
+| Tool | Description |
+|------|-------------|
+| **Image to PDF** | JPG, PNG, WEBP, GIF, AVIF, and TIFF images to PDF |
+| **Digitize Document** | OCR a photo of a document into searchable digital PDF |
+| **HTML to PDF** | Convert HTML files or rendered web content to PDF |
+
+### 📤 Convert from PDF
+
+| Tool | Description |
+|------|-------------|
+| **PDF to Image** | Export pages as JPG, PNG, or WEBP at configurable resolution |
+| **PDF to Word** | Extract text and structure into editable .docx format |
+| **PDF to Excel** | Extract tables into structured .xlsx spreadsheet data |
+| **PDF to PDF/A** | Convert to PDF/A-2b for long-term archival compliance |
+
+### ✏️ Edit PDF
+
+| Tool | Description |
+|------|-------------|
+| **Add Watermark** | Text or image watermarks with opacity, rotation, tiling, and positioning |
+| **Page Numbers** | Custom page numbers with font, size, and position controls |
+| **Crop PDF** | Visual crop handles or precise numeric margin input |
+
+### 🔒 PDF Security
+
+| Tool | Description |
+|------|-------------|
+| **Protect PDF** | Password encryption with 7 fine-grained permissions (AES-128/256, RC4-128) |
+| **Unlock PDF** | Remove password protection from encrypted documents |
+| **Sign PDF** | Hand-drawn, image, or text signatures with visual drag-and-drop placement |
+| **Redact PDF** | True raster-burn redaction — permanent data removal, not visual masking |
+| **Compare PDF** | Side-by-side pixel-diff comparison with configurable sensitivity |
+
+<br>
 
 ---
 
-## Tech Stack
+## 🧬 How It Works
 
-| Concern | Technology |
-|---------|-----------|
-| Framework | React 18 with TypeScript |
-| Build Tool | Vite 6 (static bundler) |
-| Video Engine | `@ffmpeg/ffmpeg` v0.12+ (multi-threaded WebAssembly) |
-| State Management | Zustand v5 |
-| Styling | TailwindCSS 3 |
-| Routing | React Router v6 |
+### Video Pipeline
 
-ffmpeg.wasm runs a full FFmpeg binary compiled to WebAssembly. This gives BrowserSnip access to the same codecs, filters, and processing pipelines as native FFmpeg — entirely inside the browser sandbox.
+```
+Your video file
+  → FileReader → ArrayBuffer
+    → ffmpeg.wasm writes to in-memory filesystem (MEMFS)
+      → FFmpeg executes your chosen operation
+        → Log parser reads stderr for real-time progress
+          → Output read back as Uint8Array → Blob → Object URL
+            → Preview in-browser with one-click download
+```
+
+### PDF Pipeline
+
+```
+Your PDF file
+  → FileReader → ArrayBuffer
+    → pdf-lib loads + parses the document
+      → Pure function applies the transformation (merge, split, sign, etc.)
+        → Document serialized back to Uint8Array → Blob → Object URL
+          → PDF.js renders pages to canvas for live preview
+            → Download, copy to clipboard, or preview in-browser
+```
+
+### Why WebAssembly?
+
+| | Traditional SaaS | BrowserSnip |
+|---|---|---|
+| **Where data lives** | Uploaded to remote servers | Stays in your browser tab |
+| **Processing speed** | Native (fast) | 5–10× slower than native (acceptable for one-off tasks) |
+| **Privacy model** | Trust the provider | Verify nothing leaves — open DevTools Network tab |
+| **File size limits** | Provider-defined | ~500 MB soft limit (WebAssembly memory ceiling) |
+| **Availability** | Requires internet | Works offline after first load |
+
+<br>
 
 ---
 
-## Getting Started
+## 🏗 Tech Stack
+
+| Layer | Technology | What it powers |
+|-------|-----------|----------------|
+| **UI Framework** | React 18 + TypeScript 5.6 | Component architecture, type safety |
+| **Build** | Vite 6 | Dev server, bundling, code splitting |
+| **Routing** | React Router v6 (hash) | Static-host-friendly navigation |
+| **State** | Zustand v5 | Stores for files, processing, and UI with session persistence |
+| **Styling** | TailwindCSS 3 | Utility-first dark theme with custom design tokens |
+| **Video Engine** | `@ffmpeg/ffmpeg` v0.12 | FFmpeg compiled to WebAssembly (single + multi-threaded cores) |
+| **PDF Manipulation** | `pdf-lib` v1.17 | Create, modify, merge, split, sign, watermark PDFs |
+| **PDF Rendering** | `pdfjs-dist` v4.0 | Canvas-based page preview, thumbnails, text extraction |
+| **PDF Encryption** | `@pdfsmaller/*-lite` | RC4 128-bit encrypt/decrypt |
+| **OCR** | `ppu-paddle-ocr` v5.8 + `onnxruntime-web` v1.26 | Text detection and recognition from document images |
+| **Document Export** | `docx` v9.7, `xlsx` v0.18, `html2canvas` v1.4 | Word/Excel generation, HTML→Image conversion |
+
+<br>
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- **Node.js** 18 or later
-- **npm** 9 or later
-- A modern browser (Chrome 91+, Firefox 90+, Edge 91+, Safari 16.4+)
+- **Node.js** 18+  •  **npm** 9+  •  A modern browser (Chrome 91+, Firefox 90+, Edge 91+, Safari 16.4+)
 
 ### Quick Start
 
 ```bash
-# Clone the repository
 git clone git@github.com:ningtoba/BrowserSnip.git
 cd browsersnip
-
-# Install dependencies
 npm install
-
-# Start the dev server
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser.
+Open `http://localhost:5173`. Drop a video or PDF to get started.
 
-### Important: Cross-Origin Isolation
+### Camera Access (Scan to PDF)
 
-ffmpeg.wasm requires `SharedArrayBuffer`, which browsers only expose when the page is **cross-origin isolated**. The Vite dev server is pre-configured to serve the required headers:
+```bash
+npm run dev:phone   # Starts Vite with self-signed HTTPS cert
+```
+
+### Production Build
+
+```bash
+npm run build       # TypeScript check + Vite bundle
+npx vite preview    # Serve the built dist/
+```
+
+> ⚠️ Don't open `dist/index.html` directly from disk (`file://`). ES modules, SharedArrayBuffer, and service workers require a real HTTP server.
+
+### Cross-Origin Isolation
+
+Both ffmpeg.wasm and PDF.js need `SharedArrayBuffer`, which browsers gate behind cross-origin isolation. The dev server is pre-configured:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-If you see errors about `SharedArrayBuffer` being undefined, verify the dev server is running (not a static file open) and check that the headers are present in the Network tab.
+If you see `SharedArrayBuffer is not defined`, your server isn't sending these headers.
 
-### Build for Production
-
-```bash
-npm run build
-npx vite preview
-```
-
-The output lands in `dist/` and can be deployed to any static host.
-
-> **Important**: Do not open `dist/index.html` directly from your filesystem (`file://`). The app requires a real HTTP server — ES modules, SharedArrayBuffer, and service workers are all blocked on `file://` URLs. Use `npx vite preview` to test the build locally, or deploy to any static host.
+<br>
 
 ---
 
-## Deployment
+## 🌐 Deployment
 
-### Vercel / Cloudflare Pages / Netlify
+BrowserSnip deploys to any static host. The app uses **hash routing** (`/#/tool/trim`) and includes a **coi-serviceworker** polyfill for platforms that can't set custom headers (GitHub Pages).
 
-These platforms support custom headers. Configure the following in your deployment settings:
+### Platform-specific config
 
-| Platform | Configuration |
-|----------|--------------|
-| **Vercel** | Add a `vercel.json` with the `headers` array (see below) |
-| **Cloudflare Pages** | Add a `_headers` file in the output directory |
-| **Netlify** | Add a `netlify.toml` or `_headers` file |
-
-**vercel.json:**
+<details>
+<summary><strong>Vercel</strong></summary>
 
 ```json
+// vercel.json
 {
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
-      ]
-    }
-  ]
+  "headers": [{
+    "source": "/(.*)",
+    "headers": [
+      { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+      { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+    ]
+  }]
 }
 ```
+</details>
 
-**Cloudflare Pages `_headers`:**
+<details>
+<summary><strong>Cloudflare Pages</strong></summary>
 
 ```
+# _headers file in output directory
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
 ```
+</details>
 
-### GitHub Pages
+<details>
+<summary><strong>GitHub Pages</strong></summary>
 
-BrowserSnip is ready for GitHub Pages with two accommodations built in:
-
-1. **Hash-based routing** — URLs use `/#/tool/trim` instead of `/tool/trim`. This works on any static host without server-side redirect configuration.
-2. **coi-serviceworker** — GitHub Pages cannot set custom HTTP headers. The included service worker injects `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` client-side, enabling SharedArrayBuffer for FFmpeg.wasm.
-
-**Deployment steps:**
+No extra config needed. The built-in service worker injects the headers client-side. On first visit the page may need a refresh after the worker activates (~100–200ms).
 
 ```bash
 npm run build
-# Push the repo to GitHub, enable Pages from the main branch or /docs or /dist
+# Push the repo → Settings → Pages → deploy from main branch / /docs / /dist
 ```
+</details>
 
-No extra configuration needed — the service worker and hash routing handle everything automatically.
-
-**Known trade-off:** The service worker adds ~100-200ms initialization on first visit. Subsequent visits are instant since the worker is cached. SharedArrayBuffer will not be available on the very first page load (before the worker activates); a page refresh resolves it.
+<br>
 
 ---
 
-## Architecture
+## 🧭 Architecture
 
-### Directory Structure
+```
+/                    Landing page (hero, category cards, Blur promo)
+/video               Video Tools dashboard (8 tools)
+/pdf                 PDF Tools dashboard (26 tools in 6 categories)
+/tool/:toolId        Unified ToolWorkspace — dispatches video vs PDF by category
+```
+
+All routes share an `AppLayout` shell with a persistent top navigation bar. Mobile uses a hamburger drawer.
+
+### Directory Map
 
 ```
 src/
-├── main.tsx                    # Application entry point
-├── App.tsx                     # Router: / (Dashboard) → /tool/:toolId (Workspace)
-├── index.css                   # Tailwind directives + custom styles
-│
+├── main.tsx                       Entry — HashRouter + StrictMode
+├── App.tsx                        Nested routes with AppLayout <Outlet />
+├── index.css                      Tailwind layers + custom component classes
 ├── lib/
-│   ├── ffmpeg/
-│   │   ├── core.ts             # FFmpeg WASM instance management
-│   │   ├── commands.ts         # FFmpeg argument builders for all 9 tools
-│   │   ├── log-parser.ts       # Regex-based progress extraction from stderr
-│   │   └── types.ts            # FFmpeg-specific type definitions
-│   ├── utils/
-│   │   ├── time.ts             # HH:MM:SS.ms formatting and parsing
-│   │   ├── bitrate.ts          # Target-size bitrate calculator
-│   │   ├── clipboard.ts        # Clipboard API wrapper + download helper
-│   │   └── aspect-ratio.ts     # Resolution presets and ratio calculations
-│   └── constants.ts            # Tool definitions (id, name, description, icon)
-│
-├── stores/
-│   ├── file-store.ts           # Input file(s), metadata, large-file detection
-│   ├── process-store.ts        # FFmpeg progress, logs, output blob, errors
-│   └── ui-store.ts             # Active tool, sidebar state, log monitor toggle
-│
-├── hooks/
-│   └── useFFmpeg.ts            # Primary hook: orchestrate FFmpeg lifecycle
-│
-├── types/
-│   └── index.ts                # Shared TypeScript interfaces
-│
-├── components/
-│   ├── dashboard/
-│   │   ├── Dashboard.tsx       # Landing page with 9 tool cards
-│   │   └── ToolCard.tsx        # Individual tool card with glow hover effect
-│   ├── layout/
-│   │   └── ToolWorkspace.tsx   # Split view: sidebar (import + params) + main (preview + output)
-│   ├── player/
-│   │   ├── VideoPreview.tsx    # HTML5 video element with input/output source
-│   │   └── TrimScrubber.tsx    # Dual-handle range slider with pointer capture
-│   ├── tools/
-│   │   ├── TrimTool.tsx        # Module 1: Trim & Cut
-│   │   ├── ResizeTool.tsx      # Module 2: Resolution Scaling
-│   │   ├── CropTool.tsx        # Module 3: Crop & Reframe
-│   │   ├── CompressTool.tsx    # Module 4: Target-Size Compressor
-│   │   ├── GifTool.tsx         # Module 5: Video-to-GIF Converter
-│   │   ├── AudioTool.tsx       # Module 6: Audio Manipulation
-│   │   ├── SpeedTool.tsx       # Module 7: Playback Speed
-│   │   ├── MetadataTool.tsx    # Module 8: Privacy Purge
-│   │   └── StitchTool.tsx      # Module 9: Linear Video Stitcher
-│   └── ui/
-│       ├── FileDropZone.tsx    # Drag-and-drop file import with >500MB detection
-│       ├── MemoryWarning.tsx   # Yellow banner for large file warnings
-│       ├── ProgressBar.tsx     # Animated progress with FFmpeg time/frame/fps stats
-│       ├── LogMonitor.tsx      # Scrollable monospaced FFmpeg log viewer
-│       └── OutputActions.tsx   # Download + Copy to Clipboard buttons with preview
+│   ├── constants.ts               Tool registry (34 tools + 7 categories)
+│   ├── ffmpeg/                    FFmpeg WASM — core, commands, log-parser
+│   ├── pdf-engine/                pdf-lib — core, commands (~1500 loc pure functions)
+│   ├── renderer/                  PDF.js wrapper — page render, thumbnails, text
+│   ├── ocr/                       PaddleOCR + ONNX Runtime — init, preprocess, recognize
+│   └── utils/                     time, bitrate, download, aspect-ratio
+├── stores/                        Zustand — file-store, process-store, ui-store
+├── hooks/                         useFFmpeg, usePDFEngine, usePDFRenderer
+├── types/                         Shared interfaces — ToolId, params, metadata
+└── components/
+    ├── landing/Landing.tsx        Home page
+    ├── layout/
+    │   ├── AppLayout.tsx          Top nav + mobile drawer + <Outlet />
+    │   └── ToolWorkspace.tsx      Unified sidebar+main split (video & PDF dispatch)
+    ├── dashboard/                 VideoDashboard, PdfDashboard, ToolCard
+    ├── player/                    VideoPreview, TrimScrubber
+    ├── viewer/                    PDFViewer, ThumbnailStrip
+    ├── tools/                     Video tools (8 files)
+    ├── tools/pdf/                 PDF tools (7 subdirectories, 31 files)
+    └── ui/                        FileDropZone, ProgressBar, OutputActions, etc.
 ```
 
 ### Data Flow
 
 ```
-User drops file
-    │
-    ▼
-FileDropZone → file-store (File + isLargeFile)
-    │
-    ▼
-User selects tool on Dashboard → navigates to /tool/:toolId
-    │
-    ▼
-ToolWorkspace renders the tool component (e.g., TrimTool)
-    │
-    ▼
-User adjusts parameters → local React state
-    │
-    ▼
-User clicks "Process" → useFFmpeg hook:
-    │  1. Creates FFmpeg WASM instance
-    │  2. Writes input file to MEMFS (in-memory filesystem)
-    │  3. Runs FFmpeg command with tool-specific arguments
-    │  4. Parses stderr log stream → process-store (progress, logs)
-    │  5. Reads output file from MEMFS → Blob → Object URL
-    │  6. Sets output in process-store
-    │
-    ▼
-OutputActions renders Download + Copy to Clipboard buttons
+FileDropZone → file-store
+    ↓
+Dashboard → navigate to /tool/:toolId
+    ↓
+ToolWorkspace dispatches on tool.category:
+    ├─ Video → VideoPreview + useFFmpeg().process()
+    └─ PDF   → PDFViewer/ThumbnailStrip + usePDFEngine().process()
+    ↓
+OutputActions → Download / Copy / Preview
 ```
 
 ### State Management
 
-Three Zustand stores isolate different concerns:
+| Store | Concern | Key state |
+|-------|---------|-----------|
+| `file-store` | Input files | `file`, `files[]`, `metadata`, `isLargeFile`, `previewFileIndex`, `codecWarning` |
+| `process-store` | Processing | `isProcessing`, `progress`, `logs[]`, `outputBlob`, `outputUrl`, `outputBlobs[]`, `error` |
+| `ui-store` | UI toggles | `activeTool`, `sidebarOpen`, `showLogMonitor` |
 
-| Store | Purpose | Key Keys |
-|-------|---------|----------|
-| `file-store` | Input file management | `file`, `files[]`, `metadata`, `isLargeFile` |
-| `process-store` | FFmpeg lifecycle | `isProcessing`, `progress`, `logs[]`, `outputBlob`, `outputUrl`, `error` |
-| `ui-store` | UI state | `activeTool`, `sidebarOpen`, `showLogMonitor` |
+**Session persistence:** Each tool's file and process state is cached when switching tools. Returning to a previously-used tool restores your files and parameters.
 
-Zustand was chosen because it minimizes re-renders — critical when FFmpeg's log stream fires at high frequency. The log parsing hook accumulates lines in a plain array and only pushes batched updates to the store every ~10 log lines to prevent React render thrashing.
+<br>
 
 ---
 
-## How It Works
+## 🧬 Under the Hood
 
-### FFmpeg WebAssembly
+<details>
+<summary><strong>Video processing details</strong></summary>
 
-When you first process a video, BrowserSnip downloads the ffmpeg.wasm core (~31 MB compressed). It is cached by the browser, so subsequent operations start faster. The core is loaded from [unpkg.com](https://unpkg.com) by default.
+### FFmpeg WebAssembly lifecycle
 
-The application detects whether your browser supports multi-threaded WebAssembly (`SharedArrayBuffer` + `crossOriginIsolated`) and loads the optimized multi-threaded core if available, or falls back to single-threaded.
+1. On first use, the ffmpeg.wasm core downloads (~31 MB compressed). Cached by the browser thereafter.
+2. The app detects multi-threading support (`SharedArrayBuffer` + `crossOriginIsolated`) and loads the optimized core, or falls back to single-threaded.
+3. Processing pipeline: `ArrayBuffer → MEMFS write → exec() → stderr parse → MEMFS read → Blob → Object URL`
+4. The instance is terminated (`ffmpeg.terminate()`) between operations to fully release WASM memory.
 
-### Processing Pipeline
-
-1. **Input** — The file is read into an `ArrayBuffer` using the FileReader API
-2. **Write to MEMFS** — `ffmpeg.writeFile()` copies the binary into FFmpeg's in-memory virtual filesystem
-3. **Execute** — `ffmpeg.exec()` runs the FFmpeg command inside the WASM sandbox
-4. **Monitor** — `ffmpeg.on('log')` fires for each stderr line; the log parser extracts `time=HH:MM:SS.ms` and converts it to a progress percentage
-5. **Read output** — `ffmpeg.readFile()` reads the processed file back as `Uint8Array`
-6. **Create Blob** — A `Blob` is created with the appropriate MIME type (`video/mp4`, `image/gif`, or `audio/mpeg`)
-7. **Object URL** — `URL.createObjectURL(blob)` creates a local URL for preview and download
-
-### Memory Management
-
-Browser WebAssembly has a ~4 GB addressable memory ceiling per tab. To prevent crashes:
-
-- Files over **500 MB** trigger a yellow warning banner advising the user to compress or scale down first
-- The FFmpeg instance is terminated via `ffmpeg.terminate()` between operations to fully release WASM memory
-- Old Object URLs are revoked via `URL.revokeObjectURL()` when new output replaces previous output
-- The GIF converter caps input segments at **10 seconds** to keep palette generation within safe memory bounds
-
-### Bitrate Calculation (Compress Tool)
-
-The Compress tool uses a two-pass bitrate formula:
+### Bitrate formula (Compress tool)
 
 ```
 B_v = (S_t × 1024 × 8 / D) - B_a
+
+B_v = target video bitrate (kbps)
+S_t = target file size (MB)
+D   = duration (seconds)
+B_a = audio bitrate (fixed 128 kbps)
 ```
 
-Where:
-- `B_v` = target video bitrate (kbps)
-- `S_t` = target file size (MB)
-- `D` = video duration (seconds)
-- `B_a` = audio bitrate (fixed at 128 kbps)
+A buffer size of `2 × B_v` is applied for rate control stability.
 
-A buffer size of `2 × B_v` is used for rate control stability. The result is displayed in real-time as the user adjusts the target size.
+### Codec support
+
+- **Input:** Any format decodable by ffmpeg.wasm (H.264, H.265/HEVC, VP8, VP9, AV1, MP3, AAC, etc.)
+- **Output:** H.264 + AAC in MP4 container. Exceptions: GIF (`.gif`), MP3 extract (`.mp3`)
+
+</details>
+
+<details>
+<summary><strong>PDF processing details</strong></summary>
+
+### Dual-engine design
+
+- **pdf-lib** handles all document manipulation (create, modify, merge, split, sign, encrypt, watermark)
+- **PDF.js** handles all rendering (page preview, thumbnails, text extraction, image export)
+- The two engines never overlap — manipulation is pdf-lib only, display is PDF.js only
+
+### Redaction: true data destruction
+
+Unlike visual-masking approaches that draw black boxes over content (the original text remains in the file), BrowserSnip's redaction tool rasterizes each page at 2× resolution, burns opaque rectangles into the pixel data, and re-embeds the result as JPEG pages in a new PDF. The original vector text is irreversibly destroyed.
+
+### OCR pipeline
+
+1. Document image loaded to canvas
+2. Grayscale conversion + contrast stretch + sharpen preprocessing
+3. PaddleOCR ONNX model performs text detection and recognition
+4. Recognized text placed as an invisible text layer over the original image in the output PDF (searchable)
+
+### Supported PDF versions
+
+PDF 1.0 through 2.0. Encrypted PDFs require the correct password. Some PDF/A-3 extended features may not be fully supported.
+
+</details>
+
+<br>
 
 ---
 
-## Module Reference
+## 📋 Tool Reference
 
-### Trim & Cut
+### Video Tool Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `startTime` | Trim start in seconds (0 to duration) |
-| `endTime` | Trim end in seconds (startTime to duration) |
-| `mode` | `lossless` — stream copy at nearest keyframes (fast, no quality loss) |
-| | `accurate` — re-encode for frame-precise cuts (slower, slight quality loss) |
+<details>
+<summary><strong>Trim & Cut</strong></summary>
 
-FFmpeg equivalent:
-```bash
-# Lossless
-ffmpeg -ss 00:00:01.500 -to 00:00:30.000 -i input.mp4 -c copy output.mp4
+| Parameter | Range | Notes |
+|-----------|-------|-------|
+| `startTime` | 0 – duration | Trim start (seconds) |
+| `endTime` | startTime – duration | Trim end (seconds) |
 
-# Accurate
-ffmpeg -ss 00:00:01.500 -to 00:00:30.000 -i input.mp4 -c:v libx264 -crf 23 -c:a aac output.mp4
-```
+Uses stream copy (`-c copy`) for near-instant lossless cuts at keyframe boundaries.
+</details>
 
-### Resize
+<details>
+<summary><strong>Resize</strong></summary>
 
 | Preset | Resolution |
 |--------|------------|
@@ -363,176 +438,164 @@ ffmpeg -ss 00:00:01.500 -to 00:00:30.000 -i input.mp4 -c:v libx264 -crf 23 -c:a 
 | 720p | 1280 × 720 |
 | 480p | 854 × 480 |
 | 360p | 640 × 360 |
-| Custom | User-defined width × height |
+| Custom | User-defined dimensions |
 
-### Crop & Reframe
+Aspect ratio locked by default. Toggle to unlock for freeform dimensions.
+</details>
 
-| Aspect Ratio | Use Case |
-|--------------|----------|
-| 9:16 | TikTok, Instagram Reels, YouTube Shorts |
-| 1:1 | Instagram square posts, profile pictures |
+<details>
+<summary><strong>Crop & Reframe</strong></summary>
+
+| Aspect Ratio | Target platform |
+|--------------|----------------|
+| 9:16 | TikTok, Reels, Shorts |
+| 1:1 | Instagram square |
 | 21:9 | Cinematic widescreen |
 
-Two modes:
-- **Direct Crop** — Physically removes pixels outside the target frame
-- **Blurred Padding** — Scales and blurs the original as a background layer behind the cropped frame (preserves all original content)
+Two modes: direct crop (removes pixels) or blurred padding (preserves all content behind cropped frame).
+</details>
 
-### Compress
+<details>
+<summary><strong>Compress</strong></summary>
 
-| Target Size | Typical Use |
-|-------------|-------------|
-| 10 MB | Email attachment limits |
-| 25 MB | Free Discord tier, WhatsApp |
+| Target Size | Typical use case |
+|-------------|-----------------|
+| 10 MB | Email attachments |
+| 25 MB | Discord free tier, WhatsApp |
 | 50 MB | Standard Discord, Telegram |
 | 100 MB | Slack, Microsoft Teams |
 | 250 MB | Large file transfers |
+</details>
 
-### GIF Converter
+<details>
+<summary><strong>GIF Converter</strong></summary>
 
-| Parameter | Range | Default | Notes |
-|-----------|-------|---------|-------|
-| Start Time | 0 – 60s | 0s | Where to begin the clip |
-| Duration | 0.5 – 10s | 3s | Capped at 10s for WASM memory safety |
-| FPS | 10, 15, 20, 30 | 15 | Lower FPS = smaller file |
-| Width | 240 – 720px | 480px | Height auto-calculated maintaining aspect ratio |
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| Start Time | 0 – 60s | 0s |
+| Duration | 0.5 – 10s | 3s |
+| FPS | 10, 15, 20, 30 | 15 |
+| Width | 240 – 720px | 480px |
 
-Uses FFmpeg's two-pass palette generation (`palettegen` + `paletteuse`) with Lanczos scaling for smooth downscaling and reduced color banding.
+Dual-pass palette generation (`palettegen` + `paletteuse`) with Lanczos scaling. Capped at 10s for WASM memory safety.
+</details>
 
-### Audio Tools
+<details>
+<summary><strong>Audio Tools</strong></summary>
 
-| Mode | Output | Use Case |
-|------|--------|----------|
-| Mute | MP4 (no audio) | Remove unwanted background noise, prepare for voiceover |
-| Extract MP3 | MP3 | Isolate audio track for podcasts, ringtones, sampling |
-| Volume | MP4 | Boost quiet audio (up to 300%) or reduce loud audio |
+| Mode | Output | Typical use |
+|------|--------|-------------|
+| Mute | MP4 (no audio) | Remove background noise, prep for voiceover |
+| Extract MP3 | MP3 audio | Podcast clips, ringtones, audio sampling |
+| Volume | MP4 (adjusted) | Boost quiet audio (up to 300%) or reduce loud audio |
+</details>
 
-### Speed Control
+<details>
+<summary><strong>Speed Control</strong></summary>
 
-| Speed | Effect | PTS Factor | Audio Tempo |
-|-------|--------|------------|--------------|
+| Speed | Effect | PTS factor | Audio tempo |
+|-------|--------|-----------|--------------|
 | 0.25× | Quarter-speed slow-motion | `setpts=4.0*PTS` | `atempo=0.25` |
 | 0.5× | Half-speed slow-motion | `setpts=2.0*PTS` | `atempo=0.5` |
-| 1.0× | Normal (no change) | — | — |
 | 1.5× | Slight speed-up | `setpts=0.667*PTS` | `atempo=1.5` |
 | 2.0× | Double-speed timelapse | `setpts=0.5*PTS` | `atempo=2.0` |
 | 4.0× | Fast timelapse | `setpts=0.25*PTS` | `atempo=4.0` |
+</details>
 
-### Privacy Purge
+<details>
+<summary><strong>Privacy Purge</strong></summary>
 
-Removes all of the following from the video container:
-
+Strips all of the following via stream copy (near-instant, no re-encode):
 - Global and stream-level metadata
-- EXIF data
-- GPS location tags
+- EXIF data and GPS location tags
 - Creation date and software markers
-- Chapter markers
-- Cover art / embedded thumbnails
+- Chapter markers and embedded thumbnails
+- Cover art
+</details>
 
-This uses stream copy (`-c copy`), so it completes in seconds without re-encoding.
-
-### Stitch & Merge
-
-Concatenates multiple videos sequentially using FFmpeg's concat demuxer. The videos must share the same codec, resolution, and frame rate for stream copy to work. Drag cards in the queue to reorder before processing.
+<br>
 
 ---
 
-## Browser Support
+## 🌍 Browser Support
 
-| Browser | Minimum Version | Notes |
-|---------|----------------|-------|
-| Chrome | 91+ | Full support |
-| Edge | 91+ | Full support |
-| Firefox | 90+ | Full support |
-| Safari | 16.4+ | Requires experimental features for SharedArrayBuffer |
-| Opera | 77+ | Full support |
+| Browser | Min version | Notes |
+|---------|------------|-------|
+| **Chrome** | 91+ | Full support |
+| **Edge** | 91+ | Full support |
+| **Firefox** | 90+ | Full support (Clipboard API limited for non-text types) |
+| **Safari** | 16.4+ | SharedArrayBuffer requires experimental features |
+| **Opera** | 77+ | Full support |
 
-**Mobile browsers:** Safari on iOS 16.4+ and Chrome on Android 91+ are supported. The UI is responsive and collapses to single-column layout below 768px viewport width.
+**Mobile:** Safari iOS 16.4+ and Chrome Android 91+ supported. Responsive layout with hamburger nav and stacked tool panels below 768px.
 
-### Checking Cross-Origin Isolation
+**Camera:** HTTPS required for Scan to PDF (`npm run dev:phone` for local dev with self-signed cert).
 
-Open the DevTools console. If you see:
-
-```
-Cross-Origin isolation is enabled
-```
-
-ffmpeg.wasm will use the multi-threaded core for faster processing. If you see errors about `SharedArrayBuffer`, verify your deployment is serving the correct headers (see [Deployment](#deployment)).
+<br>
 
 ---
 
-## Known Limitations
+## ⚠️ Known Limitations
 
-### File Size
+| Limitation | Detail | Mitigation |
+|------------|--------|------------|
+| **File size** | ~500 MB soft limit. WebAssembly has a ~4 GB addressable memory ceiling shared between input, output, and working memory. | Compress or resize first; split large files before importing |
+| **Video speed** | ffmpeg.wasm is 5–10× slower than native FFmpeg. 30s 1080p re-encode: 2–5 min | Stream-copy operations (trim, mute, metadata strip) are near-instant |
+| **PDF OCR speed** | OCR digitization is 30s+ per page depending on hardware | Use for short documents; batch processing not recommended |
+| **Clipboard API** | Firefox and Safari have limited/nonexistent support for copying non-text types via `navigator.clipboard.write()` | Use the Download button + drag into target app |
+| **Multi-threading** | Requires `SharedArrayBuffer` which needs cross-origin isolation headers | Dev server pre-configured; coi-serviceworker polyfill for static hosts |
 
-- **Soft limit: 500 MB.** Files above this trigger a warning banner. The browser tab may crash for files approaching or exceeding 1 GB due to WebAssembly memory limits (max ~4 GB addressable, shared between input, output, and working memory).
-- **Workaround:** Use the Compress or Resize tool first, or split large files before importing.
-
-### Processing Speed
-
-- ffmpeg.wasm is **5–10x slower** than native FFmpeg. A 30-second 1080p video re-encode might take 2–5 minutes, depending on your hardware.
-- **Stream copy** operations (lossless trim, metadata strip, mute) are near-instant regardless of video length.
-- **Re-encode** operations (resize, speed, accurate trim) scale with video duration and resolution.
-
-### Codec Support
-
-- **Input:** BrowserSnip accepts any format your browser can decode (`video/*` MIME type), subject to the codecs available in ffmpeg.wasm (H.264, H.265/HEVC, VP8, VP9, AV1, MP3, AAC, etc.)
-- **Output:** All tools output **H.264 video + AAC audio in MP4 container**, except:
-  - GIF Converter outputs `.gif`
-  - MP3 Extract outputs `.mp3`
-
-### Clipboard API
-
-- The "Copy to Clipboard" feature uses `navigator.clipboard.write()` with `ClipboardItem`. This is supported in Chrome, Edge, and Opera. Firefox and Safari have limited or no support for copying non-text MIME types.
-- **Fallback:** Use the "Download File" button, then drag the downloaded file into your target app.
+<br>
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome. BrowserSnip is designed to be approachable — each tool is a self-contained component with a clear input → FFmpeg command → output flow.
+Each tool is a self-contained component with a clear `input → process → output` flow. Adding a new tool:
 
-### Development Setup
+1. Add types in `src/types/index.ts`
+2. Register in `src/lib/constants.ts` (with `category`)
+3. Implement the command in `src/lib/ffmpeg/commands.ts` or `src/lib/pdf-engine/commands.ts`
+4. Create the component in `src/components/tools/` (video) or `src/components/tools/pdf/<category>/` (PDF)
+5. Register in `TOOL_COMPONENTS` (and `TOOL_MAIN_COMPONENTS` for visual overlays) in `ToolWorkspace.tsx`
+
+### Before submitting
 
 ```bash
-npm install
-npm run dev
+npm run build         # Must pass with zero errors
+npx tsc --noEmit      # Must pass with zero type errors
+npx vitest run        # All tests must pass
 ```
 
-### Code Conventions
+### Conventions
 
-- **TypeScript** throughout — no `any` in application code
-- **Components** — one component per file, named exports, Props interface for each
-- **FFmpeg commands** — all argument builders live in `src/lib/ffmpeg/commands.ts` and are pure functions
-- **State** — use Zustand stores for cross-component state, local React state for tool-specific parameter UI
-- **Styling** — Tailwind utility classes, dark mode by default, zinc/slate palette
+- **TypeScript** throughout — explicit types, no `any`
+- **Immutability** — pure functions for all PDF commands and FFmpeg argument builders
+- **One component per file** — named exports with Props interfaces
+- **Dark mode** — indigo accent (`#6366f1`) on zinc/slate background (`#0a0b10`)
 
-### Adding a New Tool
-
-1. Add a type definition in `src/types/index.ts`
-2. Add the tool definition to the `TOOLS` array in `src/lib/constants.ts`
-3. Create an FFmpeg command builder in `src/lib/ffmpeg/commands.ts`
-4. Create the tool component in `src/components/tools/`
-5. Register it in `TOOL_COMPONENTS` in `src/components/layout/ToolWorkspace.tsx`
-
-### Before Submitting a PR
-
-```bash
-npm run build      # Must pass with no errors
-npx tsc --noEmit   # Must pass with no type errors
-```
+<br>
 
 ---
 
-## License
+## 📜 License
 
 MIT © BrowserSnip Contributors
 
 ---
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-- [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) — FFmpeg compiled to WebAssembly by Jerome Wu and contributors
-- [FFmpeg](https://ffmpeg.org) — The universal multimedia toolkit
-- [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — Cross-origin isolation polyfill by Gideon Zuidhof
-- [Zustand](https://github.com/pmndrs/zustand) — State management by Poimandres
-- [TailwindCSS](https://tailwindcss.com) — Utility-first CSS framework
+BrowserSnip stands on the shoulders of remarkable open-source projects:
+
+| Project | What it provides |
+|---------|-----------------|
+| [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) | FFmpeg compiled to WebAssembly (Jerome Wu + contributors) |
+| [FFmpeg](https://ffmpeg.org) | The universal multimedia engine |
+| [pdf-lib](https://github.com/Hopding/pdf-lib) | Pure JavaScript PDF creation and manipulation (Andrew Dillon) |
+| [PDF.js](https://mozilla.github.io/pdf.js) | In-browser PDF rendering (Mozilla) |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) | ONNX-accelerated text detection and recognition (PaddlePaddle) |
+| [ONNX Runtime](https://onnxruntime.ai) | Cross-platform ML model inference (Microsoft) |
+| [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) | Cross-origin isolation polyfill (Gideon Zuidhof) |
+| [Zustand](https://zustand.docs.pmnd.rs) | Lightweight React state management (Poimandres) |
+| [TailwindCSS](https://tailwindcss.com) | Utility-first CSS framework |

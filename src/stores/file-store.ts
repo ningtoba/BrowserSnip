@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import type { VideoMetadata, ToolId } from '@/types';
+import type { VideoMetadata, PDFMetadata, ToolId } from '@/types';
 
-interface ToolSlot {
+interface ToolFileSlot {
   file: File | null;
   files: File[];
-  metadata: VideoMetadata | null;
+  metadata: VideoMetadata | PDFMetadata | null;
   isLargeFile: boolean;
   params: Record<string, unknown>;
   codecWarning: string | null;
@@ -12,29 +12,32 @@ interface ToolSlot {
 
 interface FileState {
   activeTool: ToolId | null;
-  sessions: Partial<Record<ToolId, ToolSlot>>;
+  sessions: Partial<Record<ToolId, ToolFileSlot>>;
   file: File | null;
   files: File[];
-  metadata: VideoMetadata | null;
+  metadata: VideoMetadata | PDFMetadata | null;
   isLargeFile: boolean;
   params: Record<string, unknown>;
   codecWarning: string | null;
   probing: boolean;
+  previewFileIndex: number;
 
   setActiveTool: (tool: ToolId | null) => void;
   setFile: (file: File | null) => void;
   addFile: (file: File) => void;
   removeFile: (index: number) => void;
   reorderFiles: (from: number, to: number) => void;
-  setMetadata: (meta: VideoMetadata | null) => void;
+  setFiles: (files: File[]) => void;
+  setMetadata: (meta: VideoMetadata | PDFMetadata | null) => void;
   setParams: (params: Record<string, unknown>) => void;
   setCodecWarning: (warning: string | null) => void;
   setProbing: (probing: boolean) => void;
+  setPreviewFileIndex: (index: number) => void;
   persistCurrent: () => void;
   clearCurrent: () => void;
 }
 
-const emptySlot = (): ToolSlot => ({
+const emptySlot = (): ToolFileSlot => ({
   file: null,
   files: [],
   metadata: null,
@@ -53,6 +56,7 @@ export const useFileStore = create<FileState>((set, get) => ({
   params: {},
   codecWarning: null,
   probing: false,
+  previewFileIndex: 0,
 
   setActiveTool: (tool) => {
     const state = get();
@@ -86,16 +90,33 @@ export const useFileStore = create<FileState>((set, get) => ({
   setFile: (file) =>
     set({
       file,
+      files: file ? [file] : [],
       isLargeFile: (file?.size ?? 0) > 500 * 1024 * 1024,
       metadata: null,
       codecWarning: null,
+      previewFileIndex: 0,
     }),
 
   addFile: (file) =>
-    set((state) => ({ files: [...state.files, file] })),
+    set((state) => {
+      const files = [...state.files, file];
+      return {
+        files,
+        file: files[0] ?? null,
+        isLargeFile: files.some((f) => f.size > 500 * 1024 * 1024),
+        metadata: null,
+      };
+    }),
 
   removeFile: (index) =>
-    set((state) => ({ files: state.files.filter((_, i) => i !== index) })),
+    set((state) => {
+      const files = state.files.filter((_, i) => i !== index);
+      return {
+        files,
+        file: files[0] ?? null,
+        isLargeFile: files.some((f) => f.size > 500 * 1024 * 1024),
+      };
+    }),
 
   reorderFiles: (from, to) =>
     set((state) => {
@@ -105,6 +126,13 @@ export const useFileStore = create<FileState>((set, get) => ({
       return { files };
     }),
 
+  setFiles: (files) =>
+    set({
+      files,
+      file: files[0] ?? null,
+      isLargeFile: files.some((f) => f.size > 500 * 1024 * 1024),
+    }),
+
   setMetadata: (meta) => set({ metadata: meta }),
 
   setParams: (params) => set({ params }),
@@ -112,6 +140,8 @@ export const useFileStore = create<FileState>((set, get) => ({
   setCodecWarning: (warning) => set({ codecWarning: warning }),
 
   setProbing: (probing) => set({ probing }),
+
+  setPreviewFileIndex: (index) => set({ previewFileIndex: index }),
 
   persistCurrent: () => {
     const state = get();
@@ -131,8 +161,14 @@ export const useFileStore = create<FileState>((set, get) => ({
     }));
   },
 
-  clearCurrent: () => set({
-    file: null, files: [], metadata: null, isLargeFile: false,
-    params: {}, codecWarning: null,
-  }),
+  clearCurrent: () =>
+    set({
+      file: null,
+      files: [],
+      metadata: null,
+      isLargeFile: false,
+      params: {},
+      codecWarning: null,
+      previewFileIndex: 0,
+    }),
 }));
