@@ -18,7 +18,7 @@ export function AppLayout() {
     }`;
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="h-screen flex flex-col overflow-hidden bg-cream">
       {/* ── Top Navigation ── */}
       <header className="sticky top-0 z-30 h-12 border-b border-cream-border bg-cream-light/90 backdrop-blur-subtle">
         <div className="mx-auto flex h-full max-w-6xl items-center gap-4 px-4 sm:px-6 lg:px-8">
@@ -137,7 +137,9 @@ export function AppLayout() {
       )}
 
       {/* ── Page Content ── */}
-      <Outlet />
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <Outlet />
+      </div>
     </div>
   );
 }

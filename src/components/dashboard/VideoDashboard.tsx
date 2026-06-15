@@ -8,7 +8,7 @@ export function VideoDashboard() {
   const videoTools = TOOLS.filter((t) => t.category === 'video');
 
   return (
-    <div className="min-h-screen bg-cream bg-grid">
+    <div className="bg-cream bg-grid">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <Link
           to="/"

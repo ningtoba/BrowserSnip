@@ -186,7 +186,7 @@ export function ToolWorkspace() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-cream overflow-hidden" ref={mainRef}>
+    <div className="flex h-full flex-col bg-cream overflow-hidden" ref={mainRef}>
       {/* ── Top bar ── */}
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-cream-border bg-cream-light/90 backdrop-blur-subtle px-3 sm:px-4 z-20">
         <button

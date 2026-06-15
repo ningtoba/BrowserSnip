@@ -49,23 +49,26 @@ export function ProtectTool() {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <p className="text-[11px] font-medium text-ink-soft">Permissions</p>
-        {([
-          ['allowPrinting', 'Printing'],
-          ['allowCopying', 'Copying'],
-          ['allowModifying', 'Modifying'],
-          ['allowAnnotating', 'Annotating'],
-          ['allowFillingForms', 'Filling Forms'],
-          ['allowAccessibility', 'Accessibility'],
-          ['allowAssembling', 'Assembling'],
-        ] as const).map(([key, label]) => (
-          <label key={key} className="flex items-center gap-2 text-[11px] text-ink-soft cursor-pointer">
-            <input type="checkbox" checked={params[key]}
-              onChange={(e) => update(key, e.target.checked)} />
-            {label}
-          </label>
-        ))}
+      <div>
+        <p className="text-[11px] font-medium text-ink-soft mb-1">Permissions</p>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+          {([
+            ['allowPrinting', 'Print'],
+            ['allowCopying', 'Copy'],
+            ['allowModifying', 'Modify'],
+            ['allowAnnotating', 'Annotate'],
+            ['allowFillingForms', 'Fill Forms'],
+            ['allowAccessibility', 'Access'],
+            ['allowAssembling', 'Assemble'],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex items-center gap-1.5 text-[10px] text-ink-soft cursor-pointer py-0.5">
+              <input type="checkbox" checked={params[key]}
+                onChange={(e) => update(key, e.target.checked)}
+                className="w-3 h-3" />
+              {label}
+            </label>
+          ))}
+        </div>
       </div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn"

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 
 export function Landing() {
   return (
-    <div className="min-h-screen bg-cream bg-grid">
+    <div className="bg-cream bg-grid">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         {/* ── Section 1: Hero ── */}
         <section className="py-20 sm:py-28 text-center">
