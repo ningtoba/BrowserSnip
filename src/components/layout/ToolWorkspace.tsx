@@ -153,8 +153,8 @@ export function ToolWorkspace() {
         hint: 'Supports JPG, PNG, WEBP, GIF, AVIF, TIFF',
       }
     : isPDF
-      ? { label: 'Drop a PDF file or click to browse', hint: 'Max recommended: 500 MB' }
-      : {};
+      ? { accept: '.pdf,application/pdf', label: 'Drop a PDF file or click to browse', hint: 'Max recommended: 500 MB' }
+      : { accept: 'video/*' };
 
   const importLabel = isPDF
     ? (isImageTool ? 'Import images to get started' : 'Import a PDF to get started')
@@ -234,7 +234,6 @@ export function ToolWorkspace() {
               <FileDropZone
                 multiple={isMultiFile}
                 {...dropZoneProps}
-                {...(isVideo ? { accept: 'video/*' } : {})}
               />
             )}
             {isLargeFile && <MemoryWarning />}
@@ -263,7 +262,6 @@ export function ToolWorkspace() {
                     <FileDropZone
                       multiple={isMultiFile}
                       {...dropZoneProps}
-                      {...(isVideo ? { accept: 'video/*' } : {})}
                     />
                   </div>
                 )}
