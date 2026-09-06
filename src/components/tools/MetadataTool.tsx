@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { metadataCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 
 export function MetadataTool() {
   const { process } = useFFmpeg();
@@ -27,8 +29,14 @@ export function MetadataTool() {
   };
 
   return (
-    <div className="mt-4 space-y-3">
-      <button
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-3"
+    >
+      <motion.button
+        variants={fadeUp}
         onClick={handleStrip}
         disabled={running}
         className="w-full rounded-doodle border border-success/30 bg-success hover:bg-success/90
@@ -39,11 +47,14 @@ export function MetadataTool() {
                    disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
       >
         {running ? 'Stripping...' : 'Strip Metadata'}
-      </button>
-      <p className="text-xs text-ink-muted leading-relaxed">
+      </motion.button>
+      <motion.p
+        variants={scaleIn}
+        className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-xs leading-relaxed text-ink-soft"
+      >
         Removes all EXIF data, location tags, creation markers, and hidden
         metadata tracks. Uses stream copy for near-instant execution.
-      </p>
-    </div>
+      </motion.p>
+    </motion.div>
   );
 }

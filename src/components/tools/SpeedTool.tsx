@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import type { SpeedParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { speedCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 
 const PRESETS = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0];
 
@@ -42,10 +44,15 @@ export function SpeedTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-extrabold text-ink-soft">Playback Speed</label>
-        <div className="grid grid-cols-3 gap-1">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Playback Speed</label>
+        <div className="grid grid-cols-3 gap-1.5">
           {PRESETS.map((speed) => (
             <button
               key={speed}
@@ -59,7 +66,7 @@ export function SpeedTool() {
           ))}
         </div>
 
-        <div className="flex gap-2 text-xs font-bold">
+        <div className="mt-3 flex gap-2 text-xs font-bold">
           {params.speed < 1 && (
             <span className="text-accent">🐢 Slow motion</span>
           )}
@@ -70,7 +77,17 @@ export function SpeedTool() {
             <span className="text-ink-muted">Normal speed (no change)</span>
           )}
         </div>
-      </div>
+      </motion.section>
+
+      {params.speed !== 1 && (
+        <motion.div
+          variants={scaleIn}
+          className="flex items-center justify-between rounded-[12px] border border-cream-border bg-white px-3.5 py-2.5 shadow-doodle"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Selected</span>
+          <span className="font-mono text-xs font-semibold tabular-nums text-accent">{params.speed}x</span>
+        </motion.div>
+      )}
 
       <button
         onClick={handleProcess}
@@ -79,6 +96,6 @@ export function SpeedTool() {
       >
         {running ? 'Processing...' : 'Apply Speed Change'}
       </button>
-    </div>
+    </motion.div>
   );
 }

@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 export function MergeTool() {
   const files = useFileStore((s) => s.files);
@@ -17,26 +19,38 @@ export function MergeTool() {
 
   if (files.length < 2) {
     return (
-      <div className="doodle-section">
-        <p className="text-xs font-semibold text-ink mb-1">Merge PDF</p>
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={staggerParent}
+        className="doodle-section"
+      >
+        <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">Merge PDF</motion.p>
         <p className="text-[11px] text-ink-muted">
           Add at least 2 PDF files to merge them into a single document.
         </p>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
         Merge {files.length} PDFs
-      </p>
+      </motion.p>
 
       <div className="space-y-1.5">
         {files.map((f, i) => (
-          <div
+          <motion.div
             key={`${f.name}-${i}`}
-            className="flex items-center gap-2 p-2 rounded bg-cream border border-cream-border"
+            variants={fadeUp}
+            transition={{ delay: Math.min(i, 8) * 0.03 }}
+            className="flex items-center gap-2 p-2 rounded-[10px] bg-cream border border-cream-border"
           >
             <span className="text-[10px] font-mono text-ink-muted w-5 text-center">
               {i + 1}
@@ -58,13 +72,13 @@ export function MergeTool() {
                 ↓
               </button>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Merge {files.length} Files
       </button>
-    </div>
+    </motion.div>
   );
 }

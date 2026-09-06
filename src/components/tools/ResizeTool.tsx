@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import type { ResizeParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { resizeCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
 import { PRESETS, calculateHeight } from '@/lib/utils/aspect-ratio';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 const PRESET_OPTIONS = ['1080p', '720p', '480p', '360p', 'custom'] as const;
 
@@ -73,9 +75,14 @@ export function ResizeTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-extrabold text-ink-soft">Preset</label>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Preset</label>
         <div className="flex gap-1">
           {PRESET_OPTIONS.map((p) => (
             <button
@@ -89,11 +96,11 @@ export function ResizeTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
-      <div className="grid grid-cols-2 gap-3">
+      <motion.section variants={fadeUp} className="grid grid-cols-2 gap-3 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="space-y-1">
-          <label className="text-xs font-extrabold text-ink-soft">Width</label>
+          <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Width</label>
           <input
             type="number"
             value={params.width}
@@ -102,7 +109,7 @@ export function ResizeTool() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-extrabold text-ink-soft">Height</label>
+          <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Height</label>
           <input
             type="number"
             value={params.height}
@@ -110,9 +117,12 @@ export function ResizeTool() {
             className="doodle-input font-mono tabular-nums"
           />
         </div>
-      </div>
+      </motion.section>
 
-      <label className="flex items-center gap-2 text-xs font-bold text-ink-soft cursor-pointer">
+      <motion.label
+        variants={fadeUp}
+        className="flex items-center gap-2 text-xs font-bold text-ink-soft cursor-pointer"
+      >
         <input
           type="checkbox"
           checked={params.lockAspectRatio}
@@ -120,11 +130,11 @@ export function ResizeTool() {
           className="h-4 w-4 rounded border-2 border-cream-border accent-accent"
         />
         Lock aspect ratio
-      </label>
+      </motion.label>
 
       <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Resize Video'}
       </button>
-    </div>
+    </motion.div>
   );
 }

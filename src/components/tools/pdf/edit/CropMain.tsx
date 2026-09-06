@@ -5,6 +5,8 @@
  * and draggable handles. The crop rect is shared with CropTool sidebar.
  */
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { scaleIn } from '@/lib/motion';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useFileStore } from '@/stores/file-store';
 import type { PdfCropParams } from '@/types';
@@ -192,9 +194,14 @@ export function CropMain() {
 
   if (!file && !loading) {
     return (
-      <div className="flex h-full items-center justify-center opacity-40">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={scaleIn}
+        className="flex h-full items-center justify-center opacity-40"
+      >
         <span className="text-5xl">✂️</span>
-      </div>
+      </motion.div>
     );
   }
 

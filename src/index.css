@@ -268,7 +268,7 @@
   }
 
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.08em];
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em];
     color: #75756B;
   }
 
@@ -286,6 +286,30 @@
 }
 
 @layer utilities {
+  /* v3 — slow-drifting blue→violet wash behind the hero (decorative, subtle). */
+  @keyframes hero-wash {
+    0%, 100% { transform: translate3d(-3%, -2%, 0) scale(1); }
+    50%      { transform: translate3d(3%, 2%, 0) scale(1.12); }
+  }
+  .hero-wash {
+    background:
+      radial-gradient(42rem 26rem at 38% 42%, rgba(37, 99, 235, 0.55), transparent 70%),
+      radial-gradient(38rem 24rem at 64% 38%, rgba(124, 58, 237, 0.5), transparent 70%);
+    opacity: 0.12;
+    animation: hero-wash 22s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  /* v3 — faux progress-bar loop for the hero product mock (no real processing). */
+  @keyframes mock-progress {
+    0%   { width: 8%; }
+    78%  { width: 92%; }
+    100% { width: 96%; }
+  }
+  .mock-progress-fill {
+    animation: mock-progress 4.5s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+
   .h-screen-safe {
     height: 100dvh;
   }

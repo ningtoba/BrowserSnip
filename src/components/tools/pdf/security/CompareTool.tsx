@@ -5,8 +5,10 @@
  * comparison PDF with differences highlighted.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import {
   getCompareState, setCompareSensitivity, setCompareHighlightColor,
   subscribeCompare,
@@ -31,44 +33,54 @@ export function CompareTool() {
 
   if (files.length < 2) {
     return (
-      <div className="doodle-section space-y-3">
-        <p className="text-xs font-semibold text-ink">Compare PDFs</p>
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={staggerParent}
+        className="doodle-section space-y-3"
+      >
+        <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Compare PDFs</motion.p>
         <p className="text-[11px] text-ink-muted leading-relaxed">
           Add 2 PDF files to compare them. Differences will be highlighted on the preview and in the output.
         </p>
-        <div className="p-3 rounded bg-cream border border-cream-border">
+        <motion.div variants={scaleIn} className="p-3 rounded-[12px] border border-cream-border bg-cream-soft">
           <p className="text-[10px] text-ink-muted">
             {files.length === 0 ? 'No files loaded.' : `${files.length} file(s) loaded — need 2.`}
           </p>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Compare PDFs</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Compare PDFs</motion.p>
 
       {/* File info */}
-      <div className="p-3 rounded bg-cream border border-cream-border space-y-1">
+      <motion.div variants={fadeUp} className="p-3 rounded-[12px] border border-cream-border bg-white space-y-1 shadow-doodle">
         <p className="text-[10px] text-ink-muted font-mono truncate">
           A: {files[0]?.name}
         </p>
         <p className="text-[10px] text-ink-muted font-mono truncate">
           B: {files[1]?.name}
         </p>
-      </div>
+      </motion.div>
 
       {/* Diff stats */}
-      <div className="p-3 rounded bg-cream border border-cream-border text-center">
+      <motion.div variants={scaleIn} className="rounded-[12px] border border-cream-border bg-white p-3 text-center shadow-doodle">
         <p className="text-2xl font-bold text-accent tabular-nums">{st.diffPercent}%</p>
         <p className="text-[10px] text-ink-muted">of pixels differ</p>
-      </div>
+      </motion.div>
 
       {/* Sensitivity */}
-      <div>
-        <label className="text-[10px] text-ink-muted">
-          Sensitivity: {st.sensitivity}
+      <motion.div variants={fadeUp}>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
+          Sensitivity: <span className="tabular-nums">{st.sensitivity}</span>
         </label>
         <input type="range" min={5} max={150} value={st.sensitivity}
           onChange={(e) => setCompareSensitivity(Number(e.target.value))}
@@ -77,24 +89,24 @@ export function CompareTool() {
           <span>More sensitive</span>
           <span>Less sensitive</span>
         </div>
-      </div>
+      </motion.div>
 
       {/* Highlight color */}
-      <div>
-        <label className="text-[10px] text-ink-muted">Highlight Color</label>
+      <motion.div variants={fadeUp}>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Highlight Color</label>
         <input type="color" value={st.highlightColor}
           onChange={(e) => setCompareHighlightColor(e.target.value)}
-          className="w-full h-6 rounded bg-cream border border-cream-border mt-1 cursor-pointer" />
-      </div>
+          className="w-full h-6 rounded-[10px] bg-cream border border-cream-border mt-1 cursor-pointer" />
+      </motion.div>
 
       {/* Info */}
-      <p className="text-[10px] text-ink-muted leading-relaxed">
+      <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">
         Differences are computed pixel-by-pixel. Lower sensitivity catches more subtle changes. The output PDF shows document A with differences from B highlighted.
-      </p>
+      </motion.p>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Generate Comparison PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

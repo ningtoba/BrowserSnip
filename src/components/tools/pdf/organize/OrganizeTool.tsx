@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 
 export function OrganizeTool() {
   const file = useFileStore((s) => s.file);
@@ -23,43 +25,53 @@ export function OrganizeTool() {
 
   if (!file) {
     return (
-      <div className="doodle-section">
-        <p className="text-xs font-semibold text-ink mb-1">Organize Pages</p>
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={staggerParent}
+        className="doodle-section"
+      >
+        <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">Organize Pages</motion.p>
         <p className="text-[11px] text-ink-muted">
           Import a PDF to reorder, rotate, or delete pages.
         </p>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="doodle-section space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-ink">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.div variants={fadeUp} className="flex items-center justify-between">
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
           Organize {pageCount} Page{pageCount !== 1 ? 's' : ''}
         </p>
         {!isDefaultOrder && (
           <button
             onClick={handleReset}
-            className="text-[10px] font-medium text-ink-muted hover:text-ink transition-colors"
+            className="text-[10px] font-medium text-ink-muted hover:text-ink transition-colors duration-150"
           >
             Reset order
           </button>
         )}
-      </div>
+      </motion.div>
 
-      <p className="text-[10px] text-ink-muted leading-relaxed">
+      <motion.p variants={scaleIn} className="text-[10px] text-ink-muted leading-relaxed">
         Drag page thumbnails in the main area to reorder them.
         {!isDefaultOrder && (
           <span className="block mt-1 text-accent font-medium">
             Custom order active — {pageCount} pages will be rearranged.
           </span>
         )}
-      </p>
+      </motion.p>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn w-full">
         Reorder Pages
       </button>
-    </div>
+    </motion.div>
   );
 }

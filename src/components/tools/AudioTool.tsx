@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import type { AudioParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { audioCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 export function AudioTool() {
   const { process } = useFFmpeg();
@@ -48,9 +50,14 @@ export function AudioTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-extrabold text-ink-soft">Mode</label>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Mode</label>
         <div className="flex gap-1">
           {(['mute', 'extract', 'volume'] as const).map((mode) => (
             <button
@@ -64,12 +71,12 @@ export function AudioTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
       {params.mode === 'volume' && (
-        <div className="space-y-2">
+        <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
           <div className="flex justify-between text-xs">
-            <span className="font-extrabold text-ink-soft">Volume</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Volume</span>
             <span className="font-mono tabular-nums text-ink">{(params.volume * 100).toFixed(0)}%</span>
           </div>
           <input
@@ -86,12 +93,12 @@ export function AudioTool() {
             <span>100%</span>
             <span>300%</span>
           </div>
-        </div>
+        </motion.section>
       )}
 
       <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Apply Audio Changes'}
       </button>
-    </div>
+    </motion.div>
   );
 }

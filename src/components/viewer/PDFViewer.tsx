@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { usePDFRenderer } from '@/hooks/usePDFRenderer';
 import { useFileStore } from '@/stores/file-store';
+import { scaleIn } from '@/lib/motion';
 
 interface PDFViewerProps {
   scale?: number;
@@ -57,23 +59,33 @@ export function PDFViewer({ scale = 1.5, showControls = true, fileOverride }: PD
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <motion.div
+        variants={scaleIn}
+        initial="hidden"
+        animate="visible"
+        className="flex h-full items-center justify-center"
+      >
         <div className="text-center">
           <div className="mb-3 animate-spin text-3xl">⏳</div>
           <p className="text-xs text-ink-muted">Loading PDF...</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (error) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center max-w-md">
+        <motion.div
+          variants={scaleIn}
+          initial="hidden"
+          animate="visible"
+          className="mx-4 max-w-md rounded-[12px] border border-danger/25 bg-danger/[0.07] px-4 py-3 text-center"
+        >
           <div className="mb-3 text-3xl">⚠️</div>
           <p className="text-xs font-semibold text-danger">Failed to load PDF</p>
-          <p className="mt-1 text-[11px] text-ink-muted">{error}</p>
-        </div>
+          <p className="mt-1 text-[11px] text-ink-soft">{error}</p>
+        </motion.div>
       </div>
     );
   }
@@ -84,14 +96,19 @@ export function PDFViewer({ scale = 1.5, showControls = true, fileOverride }: PD
       <div className="flex-1 flex items-center justify-center overflow-auto bg-cream-soft p-4 min-h-0">
         <canvas
           ref={canvasRef}
-          className="max-w-full max-h-full shadow-doodle-card rounded-doodle-md"
+          className="max-w-full max-h-full rounded-[14px] border border-cream-border shadow-doodle-card"
           style={{ display: doc ? 'block' : 'none' }}
         />
       </div>
 
       {/* Controls */}
       {showControls && doc && (
-        <div className="flex items-center justify-center gap-3 py-2 px-4 border-t border-cream-border bg-white shrink-0">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className="flex items-center justify-center gap-3 border-t border-cream-border bg-white px-4 py-2 shrink-0"
+        >
           <button
             onClick={prevPage}
             disabled={currentPage <= 1}
@@ -126,7 +143,7 @@ export function PDFViewer({ scale = 1.5, showControls = true, fileOverride }: PD
             className="doodle-input w-16 text-center text-[11px] px-2 py-1"
             aria-label="Go to page"
           />
-        </div>
+        </motion.div>
       )}
     </div>
   );

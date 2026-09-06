@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import type { ProtectParams } from '@/types';
 
 export function ProtectTool() {
@@ -26,19 +28,26 @@ export function ProtectTool() {
   }, [process, params]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Protect PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Protect PDF</motion.p>
 
-      <input type="password" value={params.userPassword}
-        onChange={(e) => update('userPassword', e.target.value)}
-        placeholder="User password (to open)" className="doodle-input" />
+      <motion.div variants={fadeUp} className="space-y-2">
+        <input type="password" value={params.userPassword}
+          onChange={(e) => update('userPassword', e.target.value)}
+          placeholder="User password (to open)" className="doodle-input" />
 
-      <input type="password" value={params.ownerPassword}
-        onChange={(e) => update('ownerPassword', e.target.value)}
-        placeholder="Owner password (for permissions)" className="doodle-input" />
+        <input type="password" value={params.ownerPassword}
+          onChange={(e) => update('ownerPassword', e.target.value)}
+          placeholder="Owner password (for permissions)" className="doodle-input" />
+      </motion.div>
 
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">Encryption</label>
+      <motion.div variants={fadeUp}>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Encryption</label>
         <div className="flex gap-1 mt-1">
           {(['aes-128', 'aes-256', 'rc4-128'] as const).map((e) => (
             <button key={e} onClick={() => update('encryptionLevel', e)}
@@ -47,10 +56,10 @@ export function ProtectTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.div>
 
-      <div>
-        <p className="text-[11px] font-medium text-ink-soft mb-1">Permissions</p>
+      <motion.div variants={fadeUp}>
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">Permissions</p>
         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
           {([
             ['allowPrinting', 'Print'],
@@ -69,12 +78,12 @@ export function ProtectTool() {
             </label>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn"
         disabled={!params.userPassword && !params.ownerPassword}>
         Encrypt PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

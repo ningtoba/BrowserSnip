@@ -60,17 +60,18 @@ export function TrimScrubber({
   const endPct = (endTime / duration) * 100;
 
   return (
-    <div className="mt-4 space-y-2">
-      <div className="flex justify-between text-[11px] text-ink-soft font-mono tabular-nums">
+    <div className="mt-4 space-y-2 rounded-[12px] border border-cream-border bg-white px-3.5 py-3 shadow-doodle">
+      <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted tabular-nums">
         <span>{formatDisplayTime(startTime)}</span>
         <span>{formatDisplayTime(endTime)}</span>
       </div>
 
+      {/* trackRef is measured via getBoundingClientRect for pointer math — no motion wrappers */}
       <div
         ref={trackRef}
         className="relative h-8 w-full cursor-pointer select-none rounded"
       >
-        <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-cream-border" />
+        <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-cream-soft" />
 
         <div
           className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent"
@@ -82,7 +83,7 @@ export function TrimScrubber({
 
         <div
           onPointerDown={(e) => handlePointerDown(e, 'start')}
-          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-accent bg-white shadow-doodle hover:scale-125 hover:border-accent-hover transition-all touch-none"
+          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-md border-2 border-accent bg-white shadow-doodle hover:scale-125 hover:border-accent-hover transition-all touch-none"
           style={{ left: `${startPct}%` }}
         />
 

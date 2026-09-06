@@ -6,7 +6,9 @@
  * The overlay (SignMain) handles positioning, resizing, and editing.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import {
   getSignState, addSigItem, updateSigItem, removeSigItem,
   selectSigItem, getSignPageSize, subscribeSign,
@@ -184,11 +186,16 @@ export function SignTool() {
   );
 
   return (
-    <div className="doodle-section space-y-2.5">
-      <p className="text-xs font-semibold text-ink">Sign PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-2.5"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Sign PDF</motion.p>
 
       {/* Tab bar */}
-      <div className="flex gap-0.5">
+      <motion.div variants={fadeUp} className="flex gap-0.5">
         {([
           ['text', 'Text'],
           ['image', 'Image'],
@@ -197,20 +204,25 @@ export function SignTool() {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex-1 text-[10px] font-medium py-1.5 rounded-doodle transition-colors ${
-              tab === key
-                ? 'bg-accent/20 text-accent border border-accent/30'
-                : 'bg-cream text-ink-muted border border-cream-border hover:text-ink-soft'
+            className={`relative flex-1 text-[10px] font-medium py-1.5 rounded-[10px] px-3 transition-colors ${
+              tab === key ? 'text-accent' : 'text-ink-soft hover:text-ink'
             }`}
           >
-            {label}
+            {tab === key && (
+              <motion.span
+                layoutId="sig-tab-indicator"
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute inset-0 rounded-[10px] bg-accent/[0.08] ring-1 ring-inset ring-accent/30"
+              />
+            )}
+            <span className="relative">{label}</span>
           </button>
         ))}
-      </div>
+      </motion.div>
 
       {/* Tab content */}
       {tab === 'text' && (
-        <div className="space-y-2">
+        <motion.div variants={fadeUp} className="space-y-2">
           <input type="text" value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
             placeholder="Your name or initials…"
@@ -221,7 +233,7 @@ export function SignTool() {
               {FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
             <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)}
-              className="w-full h-7 rounded bg-cream border border-cream-border cursor-pointer" />
+              className="w-full h-7 rounded-[10px] bg-cream border border-cream-border cursor-pointer" />
             <input type="number" value={textW} min={60} max={400}
               onChange={(e) => setTextW(Number(e.target.value))}
               className="doodle-input text-center text-[10px]" placeholder="W" />
@@ -230,16 +242,16 @@ export function SignTool() {
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
             + Add Text to PDF
           </button>
-        </div>
+        </motion.div>
       )}
 
       {tab === 'image' && (
-        <div className="space-y-2">
+        <motion.div variants={fadeUp} className="space-y-2">
           <input ref={fileInputRef} type="file" accept="image/*"
             onChange={handleImagePicked} className="doodle-input text-[10px]" />
           {imageUrl && (
             <>
-              <img src={imageUrl} className="h-10 object-contain rounded bg-cream" alt="Preview" />
+              <img src={imageUrl} className="h-10 object-contain rounded-[10px] bg-cream" alt="Preview" />
               <div className="flex gap-1.5">
                 <input type="number" value={imageW} min={30} max={400}
                   onChange={(e) => setImageW(Number(e.target.value))}
@@ -254,12 +266,12 @@ export function SignTool() {
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
             + Add Image to PDF
           </button>
-        </div>
+        </motion.div>
       )}
 
       {tab === 'draw' && (
-        <div className="space-y-2">
-          <div className="border border-cream-border rounded overflow-hidden bg-white">
+        <motion.div variants={fadeUp} className="space-y-2">
+          <div className="border border-cream-border rounded-[10px] overflow-hidden bg-white shadow-doodle">
             <canvas ref={drawCanvasRef}
               onMouseDown={drawStart} onMouseMove={drawMove} onMouseUp={drawEnd} onMouseLeave={drawEnd}
               onTouchStart={drawStart} onTouchMove={drawMove} onTouchEnd={drawEnd}
@@ -278,24 +290,24 @@ export function SignTool() {
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
             + Add Drawing to PDF
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* Properties (when item selected) */}
       {selected && (
-        <div className="space-y-1.5 border-t border-cream-border pt-2">
-          <p className="text-[10px] font-medium text-ink-muted uppercase tracking-wider">
+        <motion.div variants={scaleIn} className="space-y-1.5 rounded-[12px] border border-cream-border bg-white p-3 shadow-doodle">
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
             {selected.type === 'text' ? 'Text' : selected.type === 'image' ? 'Image' : 'Drawing'} · Page {selected.page}
           </p>
           <div className="grid grid-cols-2 gap-1.5">
             <div>
-              <label className="text-[10px] text-ink-muted">Width</label>
+              <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Width</label>
               <input type="number" value={Math.round(selected.w)} min={30} max={500}
                 onChange={(e) => update({ w: Number(e.target.value) })}
                 className="doodle-input text-center text-xs" />
             </div>
             <div>
-              <label className="text-[10px] text-ink-muted">Height</label>
+              <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Height</label>
               <input type="number" value={Math.round(selected.h)} min={14} max={500}
                 onChange={(e) => update({ h: Number(e.target.value) })}
                 className="doodle-input text-center text-xs" />
@@ -314,28 +326,31 @@ export function SignTool() {
                 </select>
                 <input type="color" value={selected.color ?? '#000000'}
                   onChange={(e) => update({ color: e.target.value })}
-                  className="w-full h-7 rounded bg-cream border border-cream-border" />
+                  className="w-full h-7 rounded-[10px] bg-cream border border-cream-border" />
               </div>
             </>
           )}
           {selected.type !== 'text' && selected.imageDataUrl && (
-            <img src={selected.imageDataUrl} className="h-10 object-contain rounded bg-cream" alt="" />
+            <img src={selected.imageDataUrl} className="h-10 object-contain rounded-[10px] bg-cream" alt="" />
           )}
-        </div>
+        </motion.div>
       )}
 
       {/* Signature list */}
       {st.items.length > 0 && (
-        <div className="border-t border-cream-border pt-2">
-          <p className="text-[10px] font-medium text-ink-muted mb-1">
+        <motion.div variants={fadeUp} className="border-t border-cream-border pt-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">
             Placed ({st.items.length})
           </p>
           <div className="space-y-0.5 max-h-24 overflow-y-auto">
             {st.items.map((item) => (
-              <div key={item.id}
+              <motion.div key={item.id}
                 onClick={() => selectSigItem(item.id)}
-                className={`flex items-center gap-1.5 p-1 rounded cursor-pointer text-[10px] transition-colors
-                  ${item.id === st.selectedId ? 'bg-accent/10 border border-accent/30' : 'bg-cream/50 border border-transparent hover:bg-cream'}`}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.2 }}
+                className={`flex items-center gap-1.5 p-1 rounded-[10px] cursor-pointer text-[10px] transition-colors duration-150
+                  ${item.id === st.selectedId ? 'bg-accent/[0.06] border border-accent/60 shadow-glow' : 'bg-white border border-cream-border hover:border-[#D5D5CD]'}`}
               >
                 <span className="text-xs shrink-0">
                   {item.type === 'text' ? 'T' : item.type === 'image' ? '🖼' : '✎'}
@@ -345,16 +360,16 @@ export function SignTool() {
                 </span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeSigItem(item.id); }}
-                  className="text-danger hover:text-danger/80 text-xs shrink-0">✕</button>
-              </div>
+                  className="text-danger hover:text-danger/80 text-xs shrink-0 transition-colors duration-150">✕</button>
+              </motion.div>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn" disabled={!allReady}>
         Apply All Signatures
       </button>
-    </div>
+    </motion.div>
   );
 }

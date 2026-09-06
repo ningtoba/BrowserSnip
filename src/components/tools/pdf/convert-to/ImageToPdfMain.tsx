@@ -3,6 +3,8 @@
  * Shared by Image-to-PDF and Digitize Document tools.
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { scaleIn } from '@/lib/motion';
 import { useFileStore } from '@/stores/file-store';
 
 export function ImageToPdfMain() {
@@ -40,7 +42,12 @@ export function ImageToPdfMain() {
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center opacity-40">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={scaleIn}
+          className="text-center opacity-40"
+        >
           <div className="mb-4 text-5xl">🖼️</div>
           <p className="text-sm font-medium text-ink-muted">
             Import images to get started
@@ -48,7 +55,7 @@ export function ImageToPdfMain() {
           <p className="mt-1.5 text-xs text-ink-muted/70">
             Supports JPG, PNG, WEBP, GIF, AVIF, TIFF
           </p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -85,13 +92,16 @@ export function ImageToPdfMain() {
       {files.length > 1 && (
         <div className="shrink-0 flex gap-2 overflow-x-auto border-t border-cream-border bg-cream-light/70 p-3 scrollbar-hide">
           {files.map((f, i) => (
-            <button
+            <motion.button
               key={`${f.name}-${i}-${f.size}`}
               onClick={() => setSelectedIdx(i)}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.2 }}
               className={`shrink-0 overflow-hidden rounded-md border-2 transition-all ${
                 i === safeIdx
-                  ? 'border-accent ring-1 ring-accent/30'
-                  : 'border-cream-border hover:border-ink-muted/40'
+                  ? 'border-accent bg-accent/[0.06] ring-1 ring-accent/30 shadow-glow'
+                  : 'border-cream-border bg-white hover:border-[#D5D5CD]'
               }`}
             >
               <img
@@ -103,7 +113,7 @@ export function ImageToPdfMain() {
                   (e.currentTarget as HTMLImageElement).style.display = 'none';
                 }}
               />
-            </button>
+            </motion.button>
           ))}
         </div>
       )}

@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import type { SplitParams } from '@/types';
 
 export function SplitTool() {
@@ -15,11 +17,16 @@ export function SplitTool() {
   }, [process, params]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Split PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Split PDF</motion.p>
 
-      <div className="space-y-2">
-        <label className="text-[11px] font-medium text-ink-soft">Split Mode</label>
+      <motion.div variants={fadeUp} className="space-y-2">
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Split Mode</label>
         <div className="flex gap-1">
           {(['ranges', 'every-page', 'odd-even'] as const).map((mode) => (
             <button
@@ -34,7 +41,7 @@ export function SplitTool() {
 
         {params.mode === 'ranges' && (
           <div>
-            <label className="text-[11px] font-medium text-ink-soft">Page Ranges</label>
+            <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Page Ranges</label>
             <input
               type="text"
               value={params.ranges}
@@ -47,11 +54,11 @@ export function SplitTool() {
             </p>
           </div>
         )}
-      </div>
+      </motion.div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Split PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

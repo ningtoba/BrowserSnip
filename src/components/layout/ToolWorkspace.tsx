@@ -1,6 +1,16 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { TOOLS } from '@/lib/constants';
+import {
+  fadeUp,
+  scaleIn,
+  slideLeft,
+  staggerParent,
+  springSoft,
+  tapDown,
+  floatLoop,
+} from '@/lib/motion';
 import { FileDropZone } from '@/components/ui/FileDropZone';
 import { VideoPreview } from '@/components/player/VideoPreview';
 import { PDFViewer } from '@/components/viewer/PDFViewer';
@@ -103,6 +113,18 @@ const TOOL_MAIN_COMPONENTS: Record<string, React.ComponentType> = {
   'compare': CompareMain,
 };
 
+// Spec §1 category accents — used only on the tool-header icon tile.
+const TOOL_ACCENT: Record<string, { fg: string; tint: string }> = {
+  video: { fg: '#2563EB', tint: 'rgba(37, 99, 235, 0.08)' },
+  organize: { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
+  'convert-to': { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
+  'convert-from': { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
+  edit: { fg: '#D97706', tint: 'rgba(217, 119, 6, 0.08)' },
+  optimize: { fg: '#059669', tint: 'rgba(5, 150, 105, 0.08)' },
+  security: { fg: '#059669', tint: 'rgba(5, 150, 105, 0.08)' },
+};
+const DEFAULT_ACCENT = TOOL_ACCENT.video;
+
 export function ToolWorkspace() {
   const { toolId } = useParams<{ toolId: string }>();
   const navigate = useNavigate();
@@ -185,45 +207,93 @@ export function ToolWorkspace() {
     if (el) el.click();
   };
 
+  const accent = TOOL_ACCENT[tool?.category ?? ''] ?? DEFAULT_ACCENT;
+
   return (
     <div className="flex h-full flex-col bg-cream overflow-hidden" ref={mainRef}>
-      {/* ── Top bar ── */}
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-cream-border bg-white/85 backdrop-blur-subtle px-3 sm:px-4 z-20">
-        <button
+      {/* ── Sub-header ── */}
+      <motion.header
+        variants={staggerParent}
+        initial="hidden"
+        animate="visible"
+        className="flex h-14 shrink-0 items-center gap-3 border-b border-cream-border bg-white/85 backdrop-blur-subtle px-3 sm:px-4 z-20"
+      >
+        <motion.button
+          variants={slideLeft}
           onClick={() => navigate(dashboardPath)}
-          className="flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink-soft transition-colors shrink-0"
+          whileHover="hover"
+          className="group flex items-center gap-1.5 text-[11px] font-medium text-ink-muted hover:text-ink transition-colors shrink-0"
         >
-          <span className="text-sm leading-none">&larr;</span>
+          <motion.span
+            aria-hidden
+            className="inline-flex text-sm leading-none"
+            variants={{ hover: { x: -3 } }}
+            transition={springSoft}
+          >
+            &larr;
+          </motion.span>
           <span className="hidden sm:inline">{isVideo ? 'Video Tools' : 'PDF Tools'}</span>
           <span className="sm:hidden">Back</span>
-        </button>
-        <span className="text-cream-border text-xs font-bold">/</span>
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink truncate">
-          <span className="text-sm">{tool.icon}</span>
-          <span className="truncate">{tool.name}</span>
-        </span>
+        </motion.button>
+        <span className="text-cream-border text-xs font-bold select-none">/</span>
+        <motion.div
+          variants={fadeUp}
+          className="flex min-w-0 items-center gap-2.5"
+        >
+          <motion.span
+            variants={scaleIn}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-base"
+            style={{ background: accent.tint, color: accent.fg }}
+          >
+            {tool.icon}
+          </motion.span>
+          <span className="truncate font-display text-sm font-semibold tracking-tight text-ink">
+            {tool.name}
+          </span>
+        </motion.div>
 
         <div className="flex-1" />
 
-        {(hasFiles || isNoFileTool) && ToolComponent && !isProcessing && !outputUrl && (
-          <button
-            onClick={triggerProcess}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent hover:bg-accent/15 transition-colors px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20"
-          >
-            Process
-          </button>
-        )}
-        {isProcessing && (
-          <span className="text-[11px] font-medium text-ink-muted">Processing...</span>
-        )}
+        <AnimatePresence initial={false}>
+          {(hasFiles || isNoFileTool) && ToolComponent && !isProcessing && !outputUrl && (
+            <motion.button
+              key="process"
+              variants={scaleIn}
+              initial="hidden"
+              animate="visible"
+              exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
+              whileTap={tapDown}
+              onClick={triggerProcess}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent hover:bg-accent/15 transition-colors px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20"
+            >
+              Process
+            </motion.button>
+          )}
+          {isProcessing && (
+            <motion.span
+              key="processing"
+              variants={scaleIn}
+              initial="hidden"
+              animate="visible"
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              className="text-[11px] font-medium text-ink-muted"
+            >
+              Processing...
+            </motion.span>
+          )}
+        </AnimatePresence>
 
-        <button
+        <motion.button
+          variants={fadeUp}
           onClick={() => useUIStore.getState().toggleLogMonitor()}
-          className="text-[11px] font-medium text-ink-muted hover:text-ink-soft transition-colors shrink-0"
+          whileTap={tapDown}
+          className={`text-[11px] font-medium transition-colors shrink-0 ${
+            showLogs ? 'text-ink' : 'text-ink-muted hover:text-ink-soft'
+          }`}
         >
           {showLogs ? 'Hide Log' : 'Log'}
-        </button>
-      </header>
+        </motion.button>
+      </motion.header>
 
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
@@ -289,12 +359,17 @@ export function ToolWorkspace() {
                 )}
 
                 {!hasFiles && !isProcessing && !ToolMainComponent && !isNoFileTool && (
-                  <div className="flex flex-1 items-center justify-center p-4">
+                  <motion.div
+                    variants={staggerParent}
+                    initial="hidden"
+                    animate="visible"
+                    className="flex flex-1 items-center justify-center p-4"
+                  >
                     <div className="text-center opacity-40">
-                      <div className="mb-3 text-4xl">{tool.icon}</div>
-                      <p className="text-xs font-medium text-ink-muted">{importLabel}</p>
+                      <motion.div {...floatLoop} className="mb-3 text-4xl">{tool.icon}</motion.div>
+                      <motion.p variants={fadeUp} className="text-xs font-medium text-ink-muted">{importLabel}</motion.p>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {(hasFiles || ToolMainComponent || (isNoFileTool && ToolComponent)) && (
@@ -348,15 +423,24 @@ export function ToolWorkspace() {
 
                 {error && (
                   <div className="absolute inset-x-0 bottom-4 z-30 flex justify-center pointer-events-none">
-                    <div className="pointer-events-auto mx-3 max-w-md rounded-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-3 animate-fade-in">
+                    <motion.div
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      className="pointer-events-auto mx-3 max-w-md rounded-doodle-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-3"
+                    >
                       <div className="flex items-start gap-2">
-                        <span className="text-base shrink-0">⚠️</span>
+                        <motion.span
+                          aria-hidden
+                          className="text-base shrink-0"
+                          {...floatLoop}
+                        >⚠️</motion.span>
                         <div className="min-w-0">
                           <p className="text-[11px] font-semibold text-danger">Processing Error</p>
                           <p className="mt-0.5 text-[10px] text-danger/80 leading-relaxed">{error}</p>
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   </div>
                 )}
               </>
@@ -403,34 +487,49 @@ export function ToolWorkspace() {
                 ) : null}
 
                 {!hasFiles && !isProcessing && !ToolMainComponent && !isNoFileTool && (
-                  <div className="flex h-full items-center justify-center">
+                  <motion.div
+                    variants={staggerParent}
+                    initial="hidden"
+                    animate="visible"
+                    className="flex h-full items-center justify-center"
+                  >
                     <div className="text-center opacity-40">
-                      <div className="mb-4 text-5xl">{tool.icon}</div>
-                      <p className="text-sm font-medium text-ink-muted">{importLabel}</p>
-                      <p className="mt-1.5 text-xs text-ink-muted/70">
+                      <motion.div {...floatLoop} className="mb-4 text-5xl">{tool.icon}</motion.div>
+                      <motion.p variants={fadeUp} className="text-sm font-medium text-ink-muted">{importLabel}</motion.p>
+                      <motion.p variants={fadeUp} className="mt-1.5 text-xs text-ink-muted/70">
                         Drag & drop a file or use the upload area on the left
-                      </p>
+                      </motion.p>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {isProcessing && (
-                  <div className="mx-auto mt-8 max-w-md animate-fade-in">
+                  <motion.div
+                    variants={fadeUp}
+                    initial="hidden"
+                    animate="visible"
+                    className="mx-auto mt-8 max-w-md"
+                  >
                     <ProgressBar />
-                  </div>
+                  </motion.div>
                 )}
 
                 {error && (
                   <div className="absolute inset-x-0 top-4 z-30 flex justify-center pointer-events-none">
-                    <div className="pointer-events-auto mx-4 max-w-md rounded-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-4 animate-fade-in">
+                    <motion.div
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      className="pointer-events-auto mx-4 max-w-md rounded-doodle-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-4"
+                    >
                       <div className="flex items-start gap-3">
-                        <span className="text-lg shrink-0">⚠️</span>
+                        <motion.span aria-hidden className="text-lg shrink-0" {...floatLoop}>⚠️</motion.span>
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-danger">Processing Error</p>
                           <p className="mt-1 text-[11px] text-danger/80 leading-relaxed">{error}</p>
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   </div>
                 )}
               </div>

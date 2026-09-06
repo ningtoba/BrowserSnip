@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { getFFmpeg, terminateFFmpeg } from '@/lib/ffmpeg/core';
+import { easeOut, floatLoop, springSoft, tapDown } from '@/lib/motion';
 
 interface FileDropZoneProps {
   accept?: string;
@@ -139,14 +141,17 @@ export function FileDropZone({
           {files.map((f, i) => {
             const sizeMB = (f.size / 1_000_000).toFixed(1);
             return (
-              <div
+              <motion.div
                 key={`${f.name}-${i}-${f.size}`}
-                className="rounded-doodle-md border border-cream-border bg-white p-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ ...easeOut, duration: 0.25, delay: i * 0.04 }}
+                className="rounded-doodle-md border border-cream-border bg-white p-3 shadow-doodle"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[11px] font-semibold text-ink">{f.name}</p>
-                    <p className="text-[11px] text-ink-muted">
+                    <p className="text-[11px] text-ink-muted font-mono tabular-nums">
                       {probing ? 'Probing codec...' : `${sizeMB} MB`}
                     </p>
                   </div>
@@ -158,21 +163,24 @@ export function FileDropZone({
                     Remove
                   </button>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
 
           {multiple && (
-            <button
+            <motion.button
               onClick={openFilePicker}
+              whileHover={{ y: -1 }}
+              whileTap={tapDown}
+              transition={springSoft}
               className="w-full cursor-pointer rounded-doodle-md border-[1.5px] border-dashed border-[#B9B9AF] p-3 text-center hover:border-accent hover:bg-accent/5 transition-colors"
             >
               <p className="text-[11px] text-ink-muted">+ Add more files</p>
-            </button>
+            </motion.button>
           )}
         </div>
       ) : (
-        <div
+        <motion.div
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragging(true);
@@ -180,16 +188,32 @@ export function FileDropZone({
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           onClick={openFilePicker}
-          className={`cursor-pointer rounded-doodle-lg border-[1.5px] border-dashed bg-white p-6 sm:p-8 text-center transition-all duration-200 ${
+          animate={{ scale: isDragging ? 1.01 : 1 }}
+          transition={springSoft}
+          whileTap={{ scale: 0.995 }}
+          className={`cursor-pointer rounded-[20px] border-[1.5px] border-dashed p-6 sm:p-8 text-center ${
             isDragging
-              ? 'border-accent bg-accent/5 scale-[1.01]'
-              : 'border-[#B9B9AF] hover:border-accent hover:bg-accent/5'
+              ? 'border-accent bg-accent/[0.06] shadow-glow'
+              : 'border-[#B9B9AF] bg-white hover:border-accent hover:bg-accent/5'
           }`}
+          style={{ transition: 'border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease' }}
         >
-          <div className="mb-2 text-2xl opacity-40">📁</div>
+          <motion.div
+            aria-hidden
+            {...(isDragging
+              ? {
+                  animate: { y: [0, -7, 0] },
+                  transition: { duration: 0.7, repeat: Infinity, ease: 'easeInOut' as const },
+                }
+              : floatLoop)}
+            className={`mb-2 text-2xl ${isDragging ? 'opacity-90' : 'opacity-40'}`}
+            style={{ transition: 'opacity 0.2s ease' }}
+          >
+            📁
+          </motion.div>
           <p className="text-xs font-medium text-ink-soft">{label}</p>
-          <p className="mt-1 text-[11px] text-ink-muted">{hint}</p>
-        </div>
+          <p className="mt-1 text-[11px] text-ink-muted font-mono">{hint}</p>
+        </motion.div>
       )}
     </>
   );

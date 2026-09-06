@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import type { GifParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { gifCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 const MAX_DURATION = 10;
 
@@ -42,10 +44,15 @@ export function GifTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="flex justify-between text-xs">
-          <span className="font-extrabold text-ink-soft">Start Time</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Start Time</span>
           <span className="font-mono tabular-nums text-ink">{params.startTime.toFixed(1)}s</span>
         </div>
         <input
@@ -57,11 +64,11 @@ export function GifTool() {
           onChange={(e) => setParams({ ...params, startTime: parseFloat(e.target.value) })}
           className="w-full"
         />
-      </div>
+      </motion.section>
 
-      <div className="space-y-2">
+      <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="flex justify-between text-xs">
-          <span className="font-extrabold text-ink-soft">Duration (max {MAX_DURATION}s)</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Duration (max {MAX_DURATION}s)</span>
           <span className="font-mono tabular-nums text-ink">{params.duration.toFixed(1)}s</span>
         </div>
         <input
@@ -73,11 +80,11 @@ export function GifTool() {
           onChange={(e) => setParams({ ...params, duration: parseFloat(e.target.value) })}
           className="w-full"
         />
-      </div>
+      </motion.section>
 
-      <div className="space-y-2">
+      <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="flex justify-between text-xs">
-          <span className="font-extrabold text-ink-soft">FPS</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">FPS</span>
           <span className="font-mono tabular-nums text-ink">{params.fps}</span>
         </div>
         <div className="flex gap-1">
@@ -93,11 +100,11 @@ export function GifTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
-      <div className="space-y-2">
+      <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="flex justify-between text-xs">
-          <span className="font-extrabold text-ink-soft">Width</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Width</span>
           <span className="font-mono tabular-nums text-ink">{params.width}px</span>
         </div>
         <input
@@ -114,11 +121,11 @@ export function GifTool() {
           <span>480</span>
           <span>720</span>
         </div>
-      </div>
+      </motion.section>
 
       <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Converting...' : 'Convert to GIF'}
       </button>
-    </div>
+    </motion.div>
   );
 }

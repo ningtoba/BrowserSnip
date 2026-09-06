@@ -288,7 +288,7 @@ export function SignMain() {
             </>
           )}
         </div>
-        <span className="text-[10px] text-ink-muted/70">
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted/70">
           {pageItems.length} signature{pageItems.length !== 1 ? 's' : ''} on this page
           {st.selectedId && ' · selected'}
         </span>

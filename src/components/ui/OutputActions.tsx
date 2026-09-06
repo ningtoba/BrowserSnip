@@ -1,7 +1,9 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import { downloadBlob, downloadMultipleBlobs, getOutputFileName, formatFileSize, formatCompressionRatio } from '@/lib/utils/download';
+import { fadeUp, scaleIn, springSoft, tapDown } from '@/lib/motion';
 
 interface OutputActionsProps {
   onCancel?: () => void;
@@ -110,40 +112,61 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
   if (isVideoOutput || isGifOutput || isAudioOutput) {
     const sizeMB = (outputBlob.size / 1_000_000).toFixed(1);
     return (
-      <div className="space-y-4 animate-doodle-pop p-6 max-w-md mx-auto">
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="space-y-4 p-6 max-w-md mx-auto"
+      >
         <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-success flex items-center gap-1.5">
+          <motion.span
+            variants={scaleIn}
+            className="font-semibold text-success flex items-center gap-1.5"
+          >
             <span>✓</span> {label}
-          </span>
-          <span className="font-mono font-medium text-ink-muted">{sizeMB} MB</span>
+          </motion.span>
+          <span className="font-mono font-medium text-ink-muted tabular-nums">{sizeMB} MB</span>
         </div>
 
-        <button onClick={handleDownloadSimple} className="doodle-btn">
+        <motion.button
+          onClick={handleDownloadSimple}
+          whileHover={{ y: -1 }}
+          whileTap={tapDown}
+          transition={springSoft}
+          className="doodle-btn block w-full text-center"
+        >
           Download File
-        </button>
+        </motion.button>
 
         {isGifOutput ? (
-          <img
+          <motion.img
+            variants={scaleIn}
             src={outputUrl}
             alt="Processed GIF"
             className="w-full sketch-border"
           />
         ) : !isAudioOutput ? (
           /* eslint-disable-next-line jsx-a11y/media-has-caption */
-          <video
+          <motion.video
+            variants={scaleIn}
             src={outputUrl}
             controls
             className="w-full sketch-border"
           />
         ) : null}
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden animate-fade-in">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Action bar */}
-      <div className="shrink-0 flex items-center gap-2.5 border-b border-cream-border bg-white/90 backdrop-blur-subtle px-4 py-2.5">
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="shrink-0 flex items-center gap-2.5 border-b border-cream-border bg-white/90 backdrop-blur-subtle px-4 py-2.5"
+      >
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-semibold text-ink shrink-0">
             {hasMultiple ? `${allBlobs.length} files` : 'Ready'}
@@ -161,44 +184,72 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
         <div className="flex-1" />
 
         {onCancel && (
-          <button onClick={onCancel} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-cream-border bg-white px-3 py-1.5 text-[11px] font-semibold text-ink-muted shadow-doodle hover:border-danger/30 hover:text-danger transition-colors">
+          <motion.button
+            onClick={onCancel}
+            whileTap={tapDown}
+            transition={springSoft}
+            className="inline-flex items-center gap-1.5 rounded-doodle-md border border-cream-border bg-white px-3 py-1.5 text-[11px] font-semibold text-ink-muted shadow-doodle hover:border-danger/30 hover:text-danger transition-colors"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
             Cancel
-          </button>
+          </motion.button>
         )}
 
         {!isImageGallery && !isDocumentOutput && (
-          <button onClick={handleCopy} className={`inline-flex items-center gap-1.5 rounded-doodle-md border px-3 py-1.5 text-[11px] font-semibold transition-colors ${copied ? 'border-success/40 bg-success/10 text-success' : 'border-accent/30 bg-accent/5 text-accent hover:bg-accent/15'}`}>
+          <motion.button
+            onClick={handleCopy}
+            whileTap={tapDown}
+            transition={springSoft}
+            className={`inline-flex items-center gap-1.5 rounded-doodle-md border px-3 py-1.5 text-[11px] font-semibold transition-colors ${copied ? 'border-success/40 bg-success/10 text-success' : 'border-accent/30 bg-accent/5 text-accent hover:bg-accent/15'}`}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               {copied ? <polyline points="20 6 9 17 4 12" /> : <><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>}
             </svg>
             {copied ? 'Copied' : 'Copy'}
-          </button>
+          </motion.button>
         )}
 
         {isImageGallery ? (
           <>
-            <button onClick={handleDownloadSelected} disabled={selectedCount === 0} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] font-semibold text-accent hover:bg-accent/15 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <motion.button
+              onClick={handleDownloadSelected}
+              disabled={selectedCount === 0}
+              whileTap={selectedCount === 0 ? undefined : tapDown}
+              transition={springSoft}
+              className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] font-semibold text-accent hover:bg-accent/15 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               Download ({selectedCount})
-            </button>
-            <button onClick={handleDownloadAll} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors">
+            </motion.button>
+            <motion.button
+              onClick={handleDownloadAll}
+              whileHover={{ y: -1 }}
+              whileTap={tapDown}
+              transition={springSoft}
+              className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors"
+            >
               Download All
-            </button>
+            </motion.button>
           </>
         ) : (
-          <button onClick={handleDownloadSimple} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors">
+          <motion.button
+            onClick={handleDownloadSimple}
+            whileHover={{ y: -1 }}
+            whileTap={tapDown}
+            transition={springSoft}
+            className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
             Download
-          </button>
+          </motion.button>
         )}
-      </div>
+      </motion.div>
 
       {/* Content area */}
       {isImageGallery ? (

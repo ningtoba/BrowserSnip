@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 export function RotateTool() {
   const { process } = usePDFEngine();
@@ -13,11 +15,16 @@ export function RotateTool() {
   }, [process, degrees, applyToAll, pagesInput]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Rotate Pages</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Rotate Pages</motion.p>
 
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">Rotation</label>
+      <motion.div variants={fadeUp}>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Rotation</label>
         <div className="flex gap-1 mt-1">
           {[90, 180, 270].map((d) => (
             <button
@@ -29,7 +36,7 @@ export function RotateTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       <label className="flex items-center gap-2 text-[11px] text-ink-soft cursor-pointer">
         <input type="checkbox" checked={applyToAll} onChange={(e) => setApplyToAll(e.target.checked)} />
@@ -48,6 +55,6 @@ export function RotateTool() {
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Rotate PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

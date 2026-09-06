@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 import type { WatermarkParams } from '@/types';
 
@@ -27,21 +29,28 @@ export function WatermarkTool() {
   }, [process, params]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Add Watermark</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Add Watermark</p>
 
       {/* Type toggle */}
-      <div className="flex gap-1 flex-wrap">
-        {(['text', 'image'] as const).map((t) => (
-          <button key={t} onClick={() => update('type', t)}
-            className={`doodle-chip text-[10px] ${params.type === t ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
-            {t === 'text' ? 'Text' : 'Image'}
-          </button>
-        ))}
-      </div>
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <div className="flex gap-1 flex-wrap">
+          {(['text', 'image'] as const).map((t) => (
+            <button key={t} onClick={() => update('type', t)}
+              className={`doodle-chip text-[10px] ${params.type === t ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
+              {t === 'text' ? 'Text' : 'Image'}
+            </button>
+          ))}
+        </div>
+      </motion.section>
 
       {params.type === 'text' ? (
-        <>
+        <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle space-y-2.5">
           {/* Text input */}
           <input type="text" value={params.text}
             onChange={(e) => update('text', e.target.value)}
@@ -50,7 +59,7 @@ export function WatermarkTool() {
           {/* Font size + bold */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-ink-muted">Font Size: {params.fontSize}</label>
+              <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Font Size: {params.fontSize}</label>
               <input type="range" min={12} max={120} value={params.fontSize}
                 onChange={(e) => update('fontSize', Number(e.target.value))} />
             </div>
@@ -63,12 +72,12 @@ export function WatermarkTool() {
               </button>
             </div>
           </div>
-        </>
+        </motion.section>
       ) : (
-        <>
+        <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle space-y-2.5">
           {/* Image upload */}
           <div>
-            <label className="text-[10px] text-ink-muted">Watermark Image</label>
+            <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Watermark Image</label>
             <input type="file" accept="image/*"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -97,39 +106,41 @@ export function WatermarkTool() {
               className="doodle-input text-[10px]" />
           </div>
           <div>
-            <label className="text-[10px] text-ink-muted">Scale: {Math.round((params.imageScale ?? 0.3) * 100)}%</label>
+            <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Scale: {Math.round((params.imageScale ?? 0.3) * 100)}%</label>
             <input type="range" min={5} max={100} value={Math.round((params.imageScale ?? 0.3) * 100)}
               onChange={(e) => update('imageScale', Number(e.target.value) / 100)} />
           </div>
-        </>
+        </motion.section>
       )}
 
       {/* Color + Opacity */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[10px] text-ink-muted">Color</label>
-          <input type="color" value={params.color}
-            onChange={(e) => update('color', e.target.value)}
-            className="w-full h-6 rounded bg-cream border border-cream-border" />
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Color</label>
+            <input type="color" value={params.color}
+              onChange={(e) => update('color', e.target.value)}
+              className="w-full h-6 rounded bg-cream border border-cream-border" />
+          </div>
+          <div>
+            <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Opacity: {Math.round(params.opacity * 100)}%</label>
+            <input type="range" min={5} max={100} value={Math.round(params.opacity * 100)}
+              onChange={(e) => update('opacity', Number(e.target.value) / 100)} />
+          </div>
         </div>
-        <div>
-          <label className="text-[10px] text-ink-muted">Opacity: {Math.round(params.opacity * 100)}%</label>
-          <input type="range" min={5} max={100} value={Math.round(params.opacity * 100)}
-            onChange={(e) => update('opacity', Number(e.target.value) / 100)} />
-        </div>
-      </div>
+      </motion.section>
 
       {/* Rotation */}
-      <div>
-        <label className="text-[10px] text-ink-muted">Rotation: {params.rotation}°</label>
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Rotation: {params.rotation}°</label>
         <input type="range" min={-90} max={90} value={params.rotation}
           onChange={(e) => update('rotation', Number(e.target.value))} />
-      </div>
+      </motion.section>
 
       {/* Position */}
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">Position</label>
-        <div className="flex gap-1 flex-wrap mt-1">
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Position</label>
+        <div className="flex gap-1 flex-wrap">
           {(['center', 'tile', 'diagonal', 'top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((pos) => (
             <button key={pos} onClick={() => update('position', pos)}
               className={`doodle-chip text-[10px] ${params.position === pos ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
@@ -137,12 +148,15 @@ export function WatermarkTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
       {/* Tile density — only visible when tile position is selected */}
       {params.position === 'tile' && (
-        <div>
-          <label className="text-[10px] text-ink-muted">
+        <motion.div
+          variants={scaleIn}
+          className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5"
+        >
+          <label className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
             Tile Density: {params.tileSpacing!.toFixed(1)}×
           </label>
           <input type="range" min={1} max={3} step={0.1}
@@ -151,13 +165,13 @@ export function WatermarkTool() {
           <div className="flex justify-between text-[8px] text-ink-muted/50">
             <span>Tight</span><span>Sparse</span>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Apply */}
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Apply Watermark
       </button>
-    </div>
+    </motion.div>
   );
 }

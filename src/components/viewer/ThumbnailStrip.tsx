@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import * as renderer from '@/lib/renderer/core';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 interface ThumbnailStripProps {
   onSelectPage?: (pageNum: number) => void;
@@ -53,7 +55,7 @@ export function ThumbnailStrip({
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className="w-20 h-28 rounded bg-white border border-cream-border animate-pulse shrink-0"
+            className="w-20 h-28 rounded-[10px] bg-white border border-cream-border animate-pulse shrink-0"
           />
         ))}
       </div>
@@ -61,14 +63,25 @@ export function ThumbnailStrip({
   }
 
   return (
-    <div className="flex gap-2 overflow-x-auto py-2 scrollbar-hide" role="listbox" aria-label="Page thumbnails">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="flex gap-2 overflow-x-auto py-2 scrollbar-hide"
+      role="listbox"
+      aria-label="Page thumbnails"
+    >
       {thumbnails.map((thumb, idx) => {
         const pageNum = idx + 1;
         const isSelected = selectedPages.includes(pageNum);
 
         return (
-          <button
+          <motion.button
             key={idx}
+            variants={fadeUp}
+            transition={{ delay: Math.min(idx, 8) * 0.03 }}
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => {
               if (multiSelect) {
                 onSelectPage?.(pageNum);
@@ -76,10 +89,10 @@ export function ThumbnailStrip({
                 onSelectPage?.(pageNum);
               }
             }}
-            className={`relative shrink-0 rounded overflow-hidden border-2 transition-all duration-150 ${
+            className={`relative shrink-0 overflow-hidden rounded-[10px] border transition-colors duration-150 ${
               isSelected
-                ? 'border-accent shadow-glow'
-                : 'border-transparent hover:border-cream-border'
+                ? 'border-accent/60 bg-accent/[0.06] shadow-glow'
+                : 'border-cream-border bg-white hover:border-[#D5D5CD]'
             }`}
             role="option"
             aria-selected={isSelected}
@@ -94,9 +107,9 @@ export function ThumbnailStrip({
             <span className="absolute bottom-0 left-0 right-0 bg-white/85 text-[9px] font-mono text-ink-soft text-center py-0.5 tabular-nums">
               {pageNum}
             </span>
-          </button>
+          </motion.button>
         );
       })}
-    </div>
+    </motion.div>
   );
 }

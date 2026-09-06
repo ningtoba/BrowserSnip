@@ -6,7 +6,7 @@ export default {
     extend: {
       fontFamily: {
         mono: ['JetBrains Mono', 'SF Mono', 'ui-monospace', 'Menlo', 'monospace'],
-        display: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Segoe UI', 'system-ui', 'sans-serif'],
+        display: ['Space Grotesk', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Segoe UI', 'system-ui', 'sans-serif'],
         body: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Segoe UI', 'system-ui', 'sans-serif'],
       },
       colors: {
@@ -29,6 +29,14 @@ export default {
         success: '#059669',
         warn: '#D97706',
         danger: '#DC2626',
+        // v3 "Studio" category accent set — icon tiles, eyebrows, active tab only.
+        acc: {
+          blue: { DEFAULT: '#2563EB', tint: 'rgba(37, 99, 235, 0.08)' },
+          violet: { DEFAULT: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
+          emerald: { DEFAULT: '#059669', tint: 'rgba(5, 150, 105, 0.08)' },
+          amber: { DEFAULT: '#D97706', tint: 'rgba(217, 119, 6, 0.08)' },
+          rose: { DEFAULT: '#E11D48', tint: 'rgba(225, 29, 72, 0.07)' },
+        },
       },
       borderRadius: {
         doodle: '8px',
@@ -70,6 +78,7 @@ export default {
         'doodle-card': '0 1px 2px rgba(27, 27, 24, 0.05)',
         'doodle-focus': '0 0 0 3px rgba(37, 99, 235, 0.25)',
         glow: '0 0 0 4px rgba(37, 99, 235, 0.10)',
+        'card-hover': '0 12px 32px rgba(27, 27, 24, 0.10)',
       },
       transitionTimingFunction: {
         'spring': 'cubic-bezier(0.16, 1, 0.3, 1)',

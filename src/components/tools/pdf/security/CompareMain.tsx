@@ -6,8 +6,10 @@
  * sensitivity.
  */
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useFileStore } from '@/stores/file-store';
+import { scaleIn } from '@/lib/motion';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs', import.meta.url,
@@ -178,10 +180,15 @@ export function CompareMain() {
   if (!hasFiles && !loading) {
     return (
       <div className="flex h-full items-center justify-center opacity-40">
-        <div className="text-center space-y-2">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={scaleIn}
+          className="text-center space-y-2"
+        >
           <span className="text-5xl block">🔍</span>
           <p className="text-xs text-ink-muted">Add 2 PDF files to compare</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -211,7 +218,7 @@ export function CompareMain() {
             </>
           )}
         </div>
-        <span className="text-[10px] text-ink-muted/70">
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted/70">
           {diffPct}% different · {files[0]?.name} vs {files[1]?.name}
         </span>
       </div>

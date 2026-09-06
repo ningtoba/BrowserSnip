@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import type { CropParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { cropCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 
 const ASPECT_RATIOS: { value: CropParams['aspectRatio']; label: string }[] = [
   { value: '9:16', label: '9:16 (TikTok / Reels)' },
@@ -50,9 +52,14 @@ export function CropTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-extrabold text-ink-soft">Aspect Ratio</label>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Aspect Ratio</label>
         <div className="flex gap-1">
           {ASPECT_RATIOS.map((ar) => (
             <button
@@ -68,15 +75,18 @@ export function CropTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
-      <p className="text-xs text-ink-muted leading-relaxed">
+      <motion.p
+        variants={scaleIn}
+        className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-xs leading-relaxed text-ink-soft"
+      >
         Crops the video to the selected aspect ratio, centered on the original frame.
-      </p>
+      </motion.p>
 
       <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Processing...' : 'Crop Video'}
       </button>
-    </div>
+    </motion.div>
   );
 }

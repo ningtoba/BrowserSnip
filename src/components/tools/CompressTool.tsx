@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import type { CompressParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { compressCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
 import { calculateBitrate } from '@/lib/utils/bitrate';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 const PCT_PRESETS = [25, 50, 75];
 
@@ -68,10 +70,15 @@ export function CompressTool() {
   if (!file || originalSizeMB === 0) return null;
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="space-y-2">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="flex justify-between text-xs">
-          <span className="font-extrabold text-ink-soft">Target Size</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Target Size</span>
           <span className="font-mono font-bold tabular-nums text-accent">
             {params.targetSizeMB} MB ({pct}% of original)
           </span>
@@ -90,9 +97,9 @@ export function CompressTool() {
           <span>~{Math.max(1, Math.round(originalSizeMB * 0.05))} MB</span>
           <span>~{Math.round(originalSizeMB * 0.95)} MB</span>
         </div>
-      </div>
+      </motion.section>
 
-      <div className="flex gap-1">
+      <motion.div variants={fadeUp} className="flex gap-1">
         {PCT_PRESETS.map((p) => {
           const size = Math.max(1, Math.round((originalSizeMB * p) / 100));
           const active = params.targetSizeMB === size;
@@ -108,26 +115,26 @@ export function CompressTool() {
             </button>
           );
         })}
-      </div>
+      </motion.div>
 
-      <div className="doodle-section space-y-2">
+      <motion.section variants={fadeUp} className="doodle-section space-y-2">
         <div className="flex justify-between text-xs">
-          <span className="text-ink-soft font-bold">Original</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Original</span>
           <span className="font-mono tabular-nums text-ink">{originalSizeMB.toFixed(1)} MB</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-ink-soft font-bold">Duration</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Duration</span>
           <span className="font-mono tabular-nums text-ink">{duration.toFixed(1)}s</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-ink-soft font-bold">Target bitrate</span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Target bitrate</span>
           <span className="font-mono font-extrabold tabular-nums text-accent">{targetBitrate} kbps</span>
         </div>
-      </div>
+      </motion.section>
 
       <button onClick={handleProcess} disabled={running} className="doodle-btn">
         {running ? 'Compressing...' : 'Compress Video'}
       </button>
-    </div>
+    </motion.div>
   );
 }

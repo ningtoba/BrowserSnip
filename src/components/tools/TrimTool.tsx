@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion } from 'framer-motion';
 import type { TrimParams } from '@/types';
 import { useFFmpeg } from '@/hooks/useFFmpeg';
 import { trimCommand } from '@/lib/ffmpeg/commands';
 import { useFileStore } from '@/stores/file-store';
 import { TrimScrubber } from '@/components/player/TrimScrubber';
 import { formatDisplayTime } from '@/lib/utils/time';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 
 function formatInput(seconds: number): string {
   return seconds.toFixed(3);
@@ -96,10 +98,15 @@ export function TrimTool() {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mt-4 space-y-4"
+    >
+      <motion.section variants={fadeUp} className="grid grid-cols-2 gap-3 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="space-y-1">
-          <label className="text-xs font-extrabold text-ink-soft">
+          <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
             Start Time (seconds)
           </label>
           <input
@@ -117,7 +124,7 @@ export function TrimTool() {
           </p>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-extrabold text-ink-soft">
+          <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
             End Time (seconds)
           </label>
           <input
@@ -134,34 +141,42 @@ export function TrimTool() {
             {formatDisplayTime(params.endTime)}
           </p>
         </div>
-      </div>
+      </motion.section>
 
-      <div className="flex justify-between rounded-doodle border-2 border-cream-border bg-cream-light px-3 py-2">
-        <span className="text-xs font-bold text-ink-soft">Selected Duration</span>
+      <motion.div
+        variants={fadeUp}
+        className="flex items-center justify-between rounded-[12px] border border-cream-border bg-white px-3.5 py-2.5 shadow-doodle"
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Selected Duration</span>
         <span className="font-mono text-xs font-extrabold tabular-nums text-accent">
           {(params.endTime - params.startTime).toFixed(3)}s
         </span>
-      </div>
+      </motion.div>
 
-      <TrimScrubber
-        duration={duration}
-        startTime={params.startTime}
-        endTime={params.endTime}
-        onStartChange={(t) => {
-          setParams((p) => ({ ...p, startTime: t }));
-          setStartText(formatInput(t));
-        }}
-        onEndChange={(t) => {
-          setParams((p) => ({ ...p, endTime: t }));
-          setEndText(formatInput(t));
-        }}
-      />
+      <motion.div variants={fadeUp}>
+        <TrimScrubber
+          duration={duration}
+          startTime={params.startTime}
+          endTime={params.endTime}
+          onStartChange={(t) => {
+            setParams((p) => ({ ...p, startTime: t }));
+            setStartText(formatInput(t));
+          }}
+          onEndChange={(t) => {
+            setParams((p) => ({ ...p, endTime: t }));
+            setEndText(formatInput(t));
+          }}
+        />
+      </motion.div>
 
-      <p className="text-xs leading-relaxed text-ink-muted">
+      <motion.p
+        variants={scaleIn}
+        className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-xs leading-relaxed text-ink-soft"
+      >
         Uses <span className="font-bold text-ink-soft">stream copy</span> — copies the
         original video data directly without decoding or re-encoding. Near-instant,
         preserves the exact quality and bitrate of your source.
-      </p>
+      </motion.p>
 
       <button
         onClick={handleProcess}
@@ -170,6 +185,6 @@ export function TrimTool() {
       >
         {running ? 'Cutting...' : 'Trim Video'}
       </button>
-    </div>
+    </motion.div>
   );
 }

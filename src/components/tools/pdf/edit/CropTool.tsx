@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 import { getCropRect, getPageSizePt, subscribeCrop } from './CropMain';
 import type { PdfCropParams } from '@/types';
@@ -59,48 +61,59 @@ export function CropTool() {
   }, [process, params]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Crop Pages</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Crop Pages</p>
 
       <p className="text-[10px] leading-relaxed text-ink-muted">
         Drag the blue handles on the preview to adjust the crop area.
       </p>
 
       {/* Toggles */}
-      <div className="flex gap-1 flex-wrap">
-        <button
-          onClick={() => update('allPages', !params.allPages)}
-          className={`doodle-chip text-[10px] ${params.allPages ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
-        >
-          {params.allPages ? 'All Pages' : 'This Page'}
-        </button>
-      </div>
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <div className="flex gap-1 flex-wrap">
+          <button
+            onClick={() => update('allPages', !params.allPages)}
+            className={`doodle-chip text-[10px] ${params.allPages ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
+          >
+            {params.allPages ? 'All Pages' : 'This Page'}
+          </button>
+        </div>
+      </motion.section>
 
       {/* Crop values (display only, converted from fractions) */}
-      <div className="grid grid-cols-2 gap-2">
-        {(['top', 'bottom', 'left', 'right'] as const).map((side) => (
-          <div key={side}>
-            <label className="text-[10px] text-ink-muted capitalize">{side}</label>
-            <div className="doodle-input text-center text-[11px] font-mono tabular-nums py-1.5 bg-cream">
-              {params[side]}{params.unit === 'px' ? '' : params.unit}
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <div className="grid grid-cols-2 gap-2">
+          {(['top', 'bottom', 'left', 'right'] as const).map((side) => (
+            <div key={side}>
+              <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">{side}</label>
+              <div className="doodle-input text-center text-[11px] font-mono tabular-nums py-1.5 bg-cream">
+                {params[side]}{params.unit === 'px' ? '' : params.unit}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </motion.section>
 
       {/* Unit selector */}
-      <div className="flex gap-1 flex-wrap">
-        {(['px', 'pt', 'in', 'mm'] as const).map((u) => (
-          <button key={u} onClick={() => update('unit', u)}
-            className={`doodle-chip text-[10px] ${params.unit === u ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
-            {u}
-          </button>
-        ))}
-      </div>
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <div className="flex gap-1 flex-wrap">
+          {(['px', 'pt', 'in', 'mm'] as const).map((u) => (
+            <button key={u} onClick={() => update('unit', u)}
+              className={`doodle-chip text-[10px] ${params.unit === u ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
+              {u}
+            </button>
+          ))}
+        </div>
+      </motion.section>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Apply Crop
       </button>
-    </div>
+    </motion.div>
   );
 }

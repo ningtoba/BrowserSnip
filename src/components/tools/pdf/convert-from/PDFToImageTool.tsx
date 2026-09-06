@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import * as renderer from '@/lib/renderer/core';
@@ -47,12 +49,17 @@ export function PDFToImageTool() {
     setParams((p) => ({ ...p, [key]: value }));
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">PDF to Image</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">PDF to Image</p>
 
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">Format</label>
-        <div className="flex gap-1 mt-1 flex-wrap">
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Format</label>
+        <div className="flex gap-1 flex-wrap">
           {(['jpg', 'png', 'webp'] as const).map((f) => (
             <button key={f} onClick={() => update('format', f)}
               className={`doodle-chip text-[10px] ${params.format === f ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}>
@@ -60,19 +67,19 @@ export function PDFToImageTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">
-          Quality: {Math.round(params.quality * 100)}%
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
+          Quality: <span className="tabular-nums text-accent">{Math.round(params.quality * 100)}%</span>
         </label>
         <input type="range" min={10} max={100} value={Math.round(params.quality * 100)}
-          onChange={(e) => update('quality', Number(e.target.value) / 100)} className="mt-1" />
-      </div>
+          onChange={(e) => update('quality', Number(e.target.value) / 100)} className="mt-1 w-full" />
+      </motion.section>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Convert to Images
       </button>
-    </div>
+    </motion.div>
   );
 }

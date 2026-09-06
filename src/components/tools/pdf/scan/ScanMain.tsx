@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
+import { scaleIn } from '@/lib/motion';
 
 interface CapturedPage {
   id: number;
@@ -215,7 +217,12 @@ export function ScanMain() {
   if (cameraError) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center max-w-sm p-6">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={scaleIn}
+          className="text-center max-w-sm p-6 rounded-[14px] border border-danger/25 bg-danger/[0.07]"
+        >
           <div className="mb-4 text-4xl">📷</div>
           <p className="text-xs font-semibold text-danger mb-2">Camera Unavailable</p>
           <p className="text-[11px] text-ink-muted leading-relaxed">{cameraError}</p>
@@ -225,7 +232,7 @@ export function ScanMain() {
           >
             Try Again
           </button>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -321,7 +328,7 @@ export function ScanMain() {
       {captures.length > 0 && (
         <div className="shrink-0 border-t border-cream-border bg-cream-light px-4 py-3">
           <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide">
-            <span className="text-[10px] font-semibold text-ink-muted shrink-0">
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted shrink-0">
               {captures.length} page{captures.length !== 1 ? 's' : ''}
             </span>
             {captures.map((cap, idx) => (
@@ -329,7 +336,7 @@ export function ScanMain() {
                 <img
                   src={cap.dataUrl}
                   alt={`Scanned page ${idx + 1}`}
-                  className="h-20 w-auto rounded border border-cream-border object-cover shadow-sm"
+                  className="h-20 w-auto rounded-[10px] border border-cream-border object-cover shadow-sm"
                 />
                 <span className="absolute bottom-0.5 left-0.5 text-[8px] font-mono bg-cream/80 px-1 rounded text-ink-muted">
                   {idx + 1}

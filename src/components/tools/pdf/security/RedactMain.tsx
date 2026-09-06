@@ -278,7 +278,7 @@ export function RedactMain() {
             </>
           )}
         </div>
-        <span className="text-[10px] text-ink-muted/70">
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted/70">
           {pageRedactions.length} redaction{pageRedactions.length !== 1 ? 's' : ''} · Drag to mark
         </span>
       </div>

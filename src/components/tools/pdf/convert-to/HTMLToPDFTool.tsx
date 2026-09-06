@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 
 const EXAMPLE_HTML = `<h1>Hello World</h1>
@@ -31,10 +33,15 @@ export function HTMLToPDFTool() {
   }, []);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">HTML to PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">HTML to PDF</p>
 
-      <div className="flex items-center gap-2">
+      <motion.section variants={fadeUp} className="flex items-center gap-2 rounded-[14px] border border-cream-border bg-white px-3.5 py-2.5 shadow-doodle">
         <button
           onClick={() => fileInputRef.current?.click()}
           className="doodle-chip doodle-chip-inactive text-[10px]"
@@ -49,21 +56,23 @@ export function HTMLToPDFTool() {
           className="hidden"
         />
         {fileName && (
-          <span className="text-[10px] text-ink-muted truncate">{fileName}</span>
+          <span className="truncate font-mono text-[10px] text-ink-muted">{fileName}</span>
         )}
-      </div>
+      </motion.section>
 
-      <textarea
-        value={htmlContent}
-        onChange={(e) => setHtmlContent(e.target.value)}
-        placeholder="<h1>Hello World</h1><p>Paste HTML content here...</p>"
-        className="doodle-input h-48 resize-y font-mono text-[11px]"
-        spellCheck={false}
-      />
+      <motion.div variants={fadeUp}>
+        <textarea
+          value={htmlContent}
+          onChange={(e) => setHtmlContent(e.target.value)}
+          placeholder="<h1>Hello World</h1><p>Paste HTML content here...</p>"
+          className="doodle-input h-48 resize-y font-mono text-[11px]"
+          spellCheck={false}
+        />
+      </motion.div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Convert HTML to PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

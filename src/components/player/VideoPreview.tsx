@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
+import { fadeUp, staggerParent } from '@/lib/motion';
 
 export function VideoPreview() {
   const file = useFileStore((s) => s.file);
@@ -14,8 +16,13 @@ export function VideoPreview() {
   if (!inputUrl) return null;
 
   return (
-    <div className="mx-auto max-w-3xl animate-fade-in">
-      <div className="sketch-border">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="mx-auto max-w-3xl"
+    >
+      <motion.div variants={fadeUp} className="overflow-hidden rounded-[14px] border border-cream-border bg-white shadow-doodle">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <video
           src={inputUrl}
@@ -24,10 +31,10 @@ export function VideoPreview() {
         >
           Your browser does not support the video element.
         </video>
-      </div>
-      <p className="mt-2 text-center text-[11px] font-medium text-ink-muted">
+      </motion.div>
+      <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
         Original source
       </p>
-    </div>
+    </motion.div>
   );
 }

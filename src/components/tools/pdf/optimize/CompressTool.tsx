@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, staggerParent } from '@/lib/motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 
 const PRESETS = [
@@ -25,12 +27,17 @@ export function CompressTool() {
   }, [process, preset]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Compress PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Compress PDF</p>
 
-      <div>
-        <label className="text-[11px] font-medium text-ink-soft">Compression Level</label>
-        <div className="flex gap-1 mt-1">
+      <motion.section variants={fadeUp} className="rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
+        <label className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Compression Level</label>
+        <div className="flex gap-1">
           {PRESETS.map((p) => (
             <button
               key={p.level}
@@ -42,7 +49,7 @@ export function CompressTool() {
             </button>
           ))}
         </div>
-      </div>
+      </motion.section>
 
       <p className="text-[10px] text-ink-muted">
         Compresses embedded images at the target DPI and JPEG quality.
@@ -52,6 +59,6 @@ export function CompressTool() {
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Compress PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

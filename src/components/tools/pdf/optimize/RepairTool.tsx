@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 
 export function RepairTool() {
@@ -9,32 +11,40 @@ export function RepairTool() {
   }, [process]);
 
   return (
-    <div className="doodle-section space-y-3">
-      <p className="text-xs font-semibold text-ink">Repair PDF</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={staggerParent}
+      className="doodle-section space-y-3"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Repair PDF</p>
 
-      <p className="text-[11px] text-ink-muted leading-relaxed">
+      <motion.p variants={fadeUp} className="text-[11px] text-ink-muted leading-relaxed">
         Rebuilds the PDF structure by copying all pages into a fresh
         document. This fixes broken cross-reference tables, corrupted
         page trees, and invalid object references.
-      </p>
+      </motion.p>
 
-      <ul className="text-[10px] text-ink-muted space-y-1 list-disc list-inside">
+      <motion.ul variants={fadeUp} className="text-[10px] text-ink-muted space-y-1 list-disc list-inside">
         <li>Rebuilds xref table and object graph</li>
         <li>Strips broken encryption and annotations</li>
         <li>Preserves all readable page content</li>
         <li>Metadata is kept when readable</li>
-      </ul>
+      </motion.ul>
 
-      <div className="rounded bg-warn/5 border border-warn/20 p-2">
+      <motion.div
+        variants={scaleIn}
+        className="rounded-[12px] border border-warn/20 bg-warn/[0.06] p-2.5"
+      >
         <p className="text-[10px] text-warn">
           Severely corrupted files where the PDF parser fails entirely
           cannot be recovered in the browser.
         </p>
-      </div>
+      </motion.div>
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn">
         Repair PDF
       </button>
-    </div>
+    </motion.div>
   );
 }

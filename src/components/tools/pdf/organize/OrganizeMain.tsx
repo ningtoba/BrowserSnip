@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import * as renderer from '@/lib/renderer/core';
+import { scaleIn } from '@/lib/motion';
 
 interface OrganizeMainProps {
   onOrderChange?: (order: number[]) => void;
@@ -239,7 +241,7 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="w-24 h-32 rounded bg-cream-light border border-cream-border animate-pulse"
+                className="w-24 h-32 rounded-[10px] bg-cream-light border border-cream-border animate-pulse"
               />
             ))}
           </div>
@@ -251,11 +253,16 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center max-w-md">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={scaleIn}
+          className="mx-auto max-w-md rounded-[12px] border border-danger/25 bg-danger/[0.07] px-4 py-4 text-center"
+        >
           <div className="mb-3 text-3xl">⚠️</div>
           <p className="text-xs font-semibold text-danger">Failed to load PDF</p>
           <p className="mt-1 text-[11px] text-ink-muted">{error}</p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -273,7 +280,7 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-cream-border bg-cream-light/50 shrink-0">
         <div className="flex items-center gap-3">
-          <p className="text-xs font-semibold text-ink">
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
             {pageCount} page{pageCount !== 1 ? 's' : ''}
           </p>
           {!isDefaultOrder && !isDragging && (
@@ -319,6 +326,7 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
                 className={`
                   relative rounded-doodle-md overflow-hidden
                   transition-all duration-200 ease-out
+                  hover:-translate-y-0.5
                   cursor-grab active:cursor-grabbing
                   focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none
                   ${isBeingDragged
