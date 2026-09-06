@@ -141,7 +141,7 @@ export function FileDropZone({
             return (
               <div
                 key={`${f.name}-${i}-${f.size}`}
-                className="rounded-doodle-md border border-cream-border bg-cream-light/60 p-3"
+                className="rounded-doodle-md border border-cream-border bg-white p-3"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -165,7 +165,7 @@ export function FileDropZone({
           {multiple && (
             <button
               onClick={openFilePicker}
-              className="w-full cursor-pointer rounded-doodle-md border border-dashed border-cream-border p-3 text-center hover:border-ink-muted/40 hover:bg-cream-light/40 transition-colors"
+              className="w-full cursor-pointer rounded-doodle-md border-[1.5px] border-dashed border-[#B9B9AF] p-3 text-center hover:border-accent hover:bg-accent/5 transition-colors"
             >
               <p className="text-[11px] text-ink-muted">+ Add more files</p>
             </button>
@@ -180,10 +180,10 @@ export function FileDropZone({
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           onClick={openFilePicker}
-          className={`cursor-pointer rounded-doodle-md border border-dashed p-6 sm:p-8 text-center transition-all duration-200 ${
+          className={`cursor-pointer rounded-doodle-lg border-[1.5px] border-dashed bg-white p-6 sm:p-8 text-center transition-all duration-200 ${
             isDragging
               ? 'border-accent bg-accent/5 scale-[1.01]'
-              : 'border-cream-border hover:border-ink-muted/40 hover:bg-cream-light/40'
+              : 'border-[#B9B9AF] hover:border-accent hover:bg-accent/5'
           }`}
         >
           <div className="mb-2 text-2xl opacity-40">📁</div>

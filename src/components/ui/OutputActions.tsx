@@ -143,7 +143,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden animate-fade-in">
       {/* Action bar */}
-      <div className="shrink-0 flex items-center gap-2.5 border-b border-cream-border bg-cream-light/90 backdrop-blur-sm px-4 py-2.5">
+      <div className="shrink-0 flex items-center gap-2.5 border-b border-cream-border bg-white/90 backdrop-blur-subtle px-4 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-semibold text-ink shrink-0">
             {hasMultiple ? `${allBlobs.length} files` : 'Ready'}
@@ -161,7 +161,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
         <div className="flex-1" />
 
         {onCancel && (
-          <button onClick={onCancel} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-cream-border bg-cream-light px-3 py-1.5 text-[11px] font-semibold text-ink-muted hover:border-danger/30 hover:text-danger transition-colors">
+          <button onClick={onCancel} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-cream-border bg-white px-3 py-1.5 text-[11px] font-semibold text-ink-muted shadow-doodle hover:border-danger/30 hover:text-danger transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -186,12 +186,12 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
               </svg>
               Download ({selectedCount})
             </button>
-            <button onClick={handleDownloadAll} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent/40 bg-accent px-3 py-1.5 text-[11px] font-semibold text-cream-light hover:bg-accent-hover transition-colors">
+            <button onClick={handleDownloadAll} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors">
               Download All
             </button>
           </>
         ) : (
-          <button onClick={handleDownloadSimple} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent/40 bg-accent px-3 py-1.5 text-[11px] font-semibold text-cream-light hover:bg-accent-hover transition-colors">
+          <button onClick={handleDownloadSimple} className="inline-flex items-center gap-1.5 rounded-doodle-md border border-accent bg-accent px-3 py-1.5 text-[11px] font-semibold text-white shadow-doodle hover:bg-accent-hover transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
@@ -203,7 +203,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
       {/* Content area */}
       {isImageGallery ? (
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <button onClick={toggleAll} className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-cream-light/50 transition-colors border-b border-cream-border">
+          <button onClick={toggleAll} className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-cream-soft transition-colors border-b border-cream-border">
             <span className={`inline-flex items-center justify-center w-4 h-4 rounded border-2 transition-colors ${allSelected ? 'bg-accent border-accent' : 'border-cream-border'}`}>
               {allSelected && (
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -221,7 +221,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
               <button
                 key={i}
                 onClick={() => toggleSelect(i)}
-                className="flex items-center gap-3 w-full px-4 py-2 text-left hover:bg-cream-light/50 transition-colors border-b border-cream-border/50"
+                className="flex items-center gap-3 w-full px-4 py-2 text-left hover:bg-cream-soft transition-colors border-b border-cream-border/50"
               >
                 <span className={`inline-flex items-center justify-center w-4 h-4 rounded border-2 shrink-0 transition-colors ${isSel ? 'bg-accent border-accent' : 'border-cream-border'}`}>
                   {isSel && (
@@ -240,7 +240,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
           })}
         </div>
       ) : isDocumentOutput ? (
-        <div className="flex-1 min-h-0 flex items-center justify-center bg-cream-dark/20 p-8">
+        <div className="flex-1 min-h-0 flex items-center justify-center bg-cream-soft p-8">
           <div className="text-center max-w-xs">
             <div className="mb-4 text-5xl">
               {activeTool === 'pdf-to-word' ? '📝' : '📊'}
@@ -259,7 +259,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 bg-cream-dark/20">
+        <div className="flex-1 min-h-0 bg-cream-soft">
           <iframe
             src={outputUrl}
             className="w-full h-full border-0 block"

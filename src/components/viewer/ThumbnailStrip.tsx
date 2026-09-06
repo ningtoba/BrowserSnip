@@ -53,7 +53,7 @@ export function ThumbnailStrip({
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className="w-20 h-28 rounded bg-cream-light border border-cream-border animate-pulse shrink-0"
+            className="w-20 h-28 rounded bg-white border border-cream-border animate-pulse shrink-0"
           />
         ))}
       </div>
@@ -91,7 +91,7 @@ export function ThumbnailStrip({
               className="w-16 h-24 object-cover"
               loading="lazy"
             />
-            <span className="absolute bottom-0 left-0 right-0 bg-cream/80 text-[9px] font-mono text-ink-muted text-center py-0.5">
+            <span className="absolute bottom-0 left-0 right-0 bg-white/85 text-[9px] font-mono text-ink-soft text-center py-0.5 tabular-nums">
               {pageNum}
             </span>
           </button>

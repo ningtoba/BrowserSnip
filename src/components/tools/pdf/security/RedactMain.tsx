@@ -237,8 +237,8 @@ export function RedactMain() {
   const handleStyle = (x: number, y: number, cursor: string): React.CSSProperties => ({
     position: 'absolute', left: x - HANDLE_SIZE / 2, top: y - HANDLE_SIZE / 2,
     width: HANDLE_SIZE, height: HANDLE_SIZE,
-    background: '#ef4444', border: '2px solid white', borderRadius: 2,
-    cursor, zIndex: 25, boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+    background: '#DC2626', border: '2px solid white', borderRadius: 2,
+    cursor, zIndex: 25, boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
   });
 
   const getOverlayRect = (r: Redaction) => {
@@ -264,7 +264,7 @@ export function RedactMain() {
 
   return (
     <div className="relative flex-1 overflow-hidden flex flex-col">
-      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-ink/20 bg-ink-darker">
+      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-cream-border bg-cream-light">
         <div className="flex items-center gap-2">
           {hasPdf && st.totalPages > 1 && (
             <>
@@ -300,7 +300,7 @@ export function RedactMain() {
                     style={{
                       left, top, width, height,
                       background: fillColor,
-                      borderColor: sel ? '#ef4444' : 'transparent',
+                      borderColor: sel ? '#DC2626' : 'transparent',
                       zIndex: sel ? 15 : 12,
                       cursor: sel ? 'move' : 'pointer',
                     }}
@@ -324,7 +324,7 @@ export function RedactMain() {
               })}
 
               {drawing && (
-                <div className="absolute border-2 border-red-400 rounded-sm pointer-events-none"
+                <div className="absolute border-2 border-danger rounded-sm pointer-events-none"
                   style={{
                     left: drawing.x * canvasDims.w,
                     top: (1 - drawing.y - drawing.h) * canvasDims.h,

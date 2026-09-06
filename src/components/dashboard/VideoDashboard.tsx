@@ -9,25 +9,27 @@ export function VideoDashboard() {
 
   return (
     <div className="bg-cream bg-grid">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
         <Link
           to="/"
-          className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink-soft transition-colors mb-6"
+          className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink-soft transition-colors mb-8"
         >
           <span className="text-sm leading-none">&larr;</span>
           Home
         </Link>
 
-        <div className="mb-8 animate-fade-in">
-          <div className="flex items-center gap-3 mb-2">
+        <div className="mb-12 animate-fade-in">
+          <p className="eyebrow mb-2">FFmpeg · In your browser</p>
+          <div className="flex items-center gap-3 mb-3">
             <span className="text-2xl">🎬</span>
             <h1 className="text-2xl sm:text-3xl font-bold text-ink font-display tracking-tight">
               Video Tools
             </h1>
           </div>
-          <p className="text-sm text-ink-muted">
+          <p className="text-sm text-ink-soft">
             8 client-side FFmpeg tools. No uploads, no servers.
           </p>
+          <div className="mt-6 border-b border-cream-border" />
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

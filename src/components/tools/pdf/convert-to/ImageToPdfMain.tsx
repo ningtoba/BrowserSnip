@@ -59,7 +59,7 @@ export function ImageToPdfMain() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Selected image preview */}
-      <div className="flex-1 min-h-0 flex items-center justify-center bg-cream-dark/30 p-4">
+      <div className="flex-1 min-h-0 flex items-center justify-center bg-cream-soft p-4">
         {selected && (
           <img
             src={imageUrls[safeIdx]}

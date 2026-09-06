@@ -61,7 +61,7 @@ export function TrimScrubber({
 
   return (
     <div className="mt-4 space-y-2">
-      <div className="flex justify-between text-[11px] text-ink-muted font-mono">
+      <div className="flex justify-between text-[11px] text-ink-soft font-mono tabular-nums">
         <span>{formatDisplayTime(startTime)}</span>
         <span>{formatDisplayTime(endTime)}</span>
       </div>
@@ -73,24 +73,22 @@ export function TrimScrubber({
         <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-cream-border" />
 
         <div
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full"
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent"
           style={{
             left: `${startPct}%`,
             width: `${endPct - startPct}%`,
-            background: 'linear-gradient(90deg, #6366f1, #818cf8)',
-            boxShadow: '0 0 6px rgba(99, 102, 241, 0.4)',
           }}
         />
 
         <div
           onPointerDown={(e) => handlePointerDown(e, 'start')}
-          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-accent bg-cream shadow-lg hover:scale-125 hover:border-ink transition-all touch-none"
+          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-accent bg-white shadow-doodle hover:scale-125 hover:border-accent-hover transition-all touch-none"
           style={{ left: `${startPct}%` }}
         />
 
         <div
           onPointerDown={(e) => handlePointerDown(e, 'end')}
-          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-accent bg-cream shadow-lg hover:scale-125 hover:border-ink transition-all touch-none"
+          className="absolute top-1/2 h-6 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-accent bg-white shadow-doodle hover:scale-125 hover:border-accent-hover transition-all touch-none"
           style={{ left: `${endPct}%` }}
         />
       </div>

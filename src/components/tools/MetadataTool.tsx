@@ -31,7 +31,7 @@ export function MetadataTool() {
       <button
         onClick={handleStrip}
         disabled={running}
-        className="w-full rounded-doodle border-2 border-success/30 bg-success hover:bg-success/90
+        className="w-full rounded-doodle border border-success/30 bg-success hover:bg-success/90
                    px-4 py-3 text-sm font-bold text-white
                    shadow-doodle hover:shadow-doodle-hover
                    transition-all duration-200

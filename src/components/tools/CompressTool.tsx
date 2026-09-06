@@ -72,7 +72,7 @@ export function CompressTool() {
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
           <span className="font-extrabold text-ink-soft">Target Size</span>
-          <span className="font-mono font-bold text-accent">
+          <span className="font-mono font-bold tabular-nums text-accent">
             {params.targetSizeMB} MB ({pct}% of original)
           </span>
         </div>
@@ -86,7 +86,7 @@ export function CompressTool() {
           onChange={(e) => setParams({ targetSizeMB: parseInt(e.target.value) })}
           className="w-full"
         />
-        <div className="flex justify-between font-mono text-xs text-ink-muted">
+        <div className="flex justify-between font-mono text-xs tabular-nums text-ink-muted">
           <span>~{Math.max(1, Math.round(originalSizeMB * 0.05))} MB</span>
           <span>~{Math.round(originalSizeMB * 0.95)} MB</span>
         </div>
@@ -113,15 +113,15 @@ export function CompressTool() {
       <div className="doodle-section space-y-2">
         <div className="flex justify-between text-xs">
           <span className="text-ink-soft font-bold">Original</span>
-          <span className="font-mono text-ink">{originalSizeMB.toFixed(1)} MB</span>
+          <span className="font-mono tabular-nums text-ink">{originalSizeMB.toFixed(1)} MB</span>
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-ink-soft font-bold">Duration</span>
-          <span className="font-mono text-ink">{duration.toFixed(1)}s</span>
+          <span className="font-mono tabular-nums text-ink">{duration.toFixed(1)}s</span>
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-ink-soft font-bold">Target bitrate</span>
-          <span className="font-mono font-extrabold text-accent">{targetBitrate} kbps</span>
+          <span className="font-mono font-extrabold tabular-nums text-accent">{targetBitrate} kbps</span>
         </div>
       </div>
 

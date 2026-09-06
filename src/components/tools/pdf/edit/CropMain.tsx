@@ -182,12 +182,12 @@ export function CropMain() {
     top: y - handleSize / 2,
     width: handleSize,
     height: handleSize,
-    background: '#3b82f6',
+    background: '#2563EB',
     border: '2px solid white',
     borderRadius: 2,
     cursor,
     zIndex: 20,
-    boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+    boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
   });
 
   if (!file && !loading) {

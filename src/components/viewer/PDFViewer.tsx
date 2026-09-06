@@ -81,7 +81,7 @@ export function PDFViewer({ scale = 1.5, showControls = true, fileOverride }: PD
   return (
     <div className="flex flex-col h-full" ref={containerRef}>
       {/* Canvas */}
-      <div className="flex-1 flex items-center justify-center overflow-auto p-4 min-h-0">
+      <div className="flex-1 flex items-center justify-center overflow-auto bg-cream-soft p-4 min-h-0">
         <canvas
           ref={canvasRef}
           className="max-w-full max-h-full shadow-doodle-card rounded-doodle-md"
@@ -91,7 +91,7 @@ export function PDFViewer({ scale = 1.5, showControls = true, fileOverride }: PD
 
       {/* Controls */}
       {showControls && doc && (
-        <div className="flex items-center justify-center gap-3 py-2 px-4 border-t border-cream-border bg-cream-light/50 shrink-0">
+        <div className="flex items-center justify-center gap-3 py-2 px-4 border-t border-cream-border bg-white shrink-0">
           <button
             onClick={prevPage}
             disabled={currentPage <= 1}

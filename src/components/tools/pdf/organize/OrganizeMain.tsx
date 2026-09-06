@@ -115,7 +115,7 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
       clone.style.transform = 'scale(1.05) rotate(2deg)';
       clone.style.zIndex = '9999';
       clone.style.pointerEvents = 'none';
-      clone.style.boxShadow = '0 8px 30px rgba(0,0,0,0.3)';
+      clone.style.boxShadow = '0 8px 30px rgba(27,27,24,0.12)';
       document.body.appendChild(clone);
       e.dataTransfer.setDragImage(clone, rect.width / 2, rect.height / 2);
       requestAnimationFrame(() => document.body.removeChild(clone));
@@ -349,7 +349,7 @@ export function OrganizeMain({ onOrderChange }: OrganizeMainProps) {
                     ${isBeingDragged
                       ? 'bg-accent'
                       : isDefaultOrder
-                      ? 'bg-ink-muted/50'
+                      ? 'bg-ink/70'
                       : 'bg-accent'
                     }
                   `}

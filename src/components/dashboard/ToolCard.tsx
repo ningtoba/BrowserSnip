@@ -6,30 +6,30 @@ interface Props {
 }
 
 const TOOL_ACCENT: Record<string, string> = {
-  trim: '#6366f1',
-  resize: '#a78bfa',
-  crop: '#34d399',
-  compress: '#fbbf24',
-  gif: '#f472b6',
-  audio: '#38bdf8',
-  speed: '#fb923c',
-  metadata: '#f87171',
+  trim: '#2563EB',
+  resize: '#7C3AED',
+  crop: '#059669',
+  compress: '#D97706',
+  gif: '#DB2777',
+  audio: '#0891B2',
+  speed: '#EA580C',
+  metadata: '#DC2626',
 };
 
 const TOOL_BG: Record<string, string> = {
-  trim: 'rgba(99, 102, 241, 0.12)',
-  resize: 'rgba(167, 139, 250, 0.12)',
-  crop: 'rgba(52, 211, 153, 0.12)',
-  compress: 'rgba(251, 191, 36, 0.12)',
-  gif: 'rgba(244, 114, 182, 0.12)',
-  audio: 'rgba(56, 189, 248, 0.12)',
-  speed: 'rgba(251, 146, 60, 0.12)',
-  metadata: 'rgba(248, 113, 113, 0.12)',
+  trim: 'rgba(37, 99, 235, 0.08)',
+  resize: 'rgba(124, 58, 237, 0.08)',
+  crop: 'rgba(5, 150, 105, 0.08)',
+  compress: 'rgba(217, 119, 6, 0.08)',
+  gif: 'rgba(219, 39, 119, 0.08)',
+  audio: 'rgba(8, 145, 178, 0.08)',
+  speed: 'rgba(234, 88, 12, 0.08)',
+  metadata: 'rgba(220, 38, 38, 0.08)',
 };
 
 export function ToolCard({ tool, onClick }: Props) {
-  const accent = TOOL_ACCENT[tool.id] ?? '#6366f1';
-  const accentBg = TOOL_BG[tool.id] ?? 'rgba(99, 102, 241, 0.12)';
+  const accent = TOOL_ACCENT[tool.id] ?? '#2563EB';
+  const accentBg = TOOL_BG[tool.id] ?? 'rgba(37, 99, 235, 0.08)';
 
   return (
     <button onClick={onClick} className="tool-card group text-left w-full">

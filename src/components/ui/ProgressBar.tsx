@@ -8,16 +8,14 @@ export function ProgressBar() {
     <div className="space-y-3">
       <div className="flex items-center justify-between text-xs">
         <span className="font-semibold text-accent">Processing...</span>
-        <span className="font-mono text-ink-soft font-medium">{progress.toFixed(0)}%</span>
+        <span className="font-mono text-ink-soft font-medium tabular-nums">{progress.toFixed(0)}%</span>
       </div>
 
       <div className="h-2 overflow-hidden rounded-full bg-cream-border">
         <div
-          className="h-full rounded-full transition-all duration-300 ease-out"
+          className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
           style={{
             width: `${progress}%`,
-            background: 'linear-gradient(90deg, #6366f1, #818cf8)',
-            boxShadow: '0 0 8px rgba(99, 102, 241, 0.4)',
           }}
         />
       </div>

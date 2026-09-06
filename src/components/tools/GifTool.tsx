@@ -46,7 +46,7 @@ export function GifTool() {
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
           <span className="font-extrabold text-ink-soft">Start Time</span>
-          <span className="font-mono text-ink">{params.startTime.toFixed(1)}s</span>
+          <span className="font-mono tabular-nums text-ink">{params.startTime.toFixed(1)}s</span>
         </div>
         <input
           type="range"
@@ -62,7 +62,7 @@ export function GifTool() {
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
           <span className="font-extrabold text-ink-soft">Duration (max {MAX_DURATION}s)</span>
-          <span className="font-mono text-ink">{params.duration.toFixed(1)}s</span>
+          <span className="font-mono tabular-nums text-ink">{params.duration.toFixed(1)}s</span>
         </div>
         <input
           type="range"
@@ -78,7 +78,7 @@ export function GifTool() {
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
           <span className="font-extrabold text-ink-soft">FPS</span>
-          <span className="font-mono text-ink">{params.fps}</span>
+          <span className="font-mono tabular-nums text-ink">{params.fps}</span>
         </div>
         <div className="flex gap-1">
           {[10, 15, 20, 30].map((fps) => (
@@ -98,7 +98,7 @@ export function GifTool() {
       <div className="space-y-2">
         <div className="flex justify-between text-xs">
           <span className="font-extrabold text-ink-soft">Width</span>
-          <span className="font-mono text-ink">{params.width}px</span>
+          <span className="font-mono tabular-nums text-ink">{params.width}px</span>
         </div>
         <input
           type="range"
@@ -109,7 +109,7 @@ export function GifTool() {
           onChange={(e) => setParams({ ...params, width: parseInt(e.target.value) })}
           className="w-full"
         />
-        <div className="flex justify-between font-mono text-xs text-ink-muted">
+        <div className="flex justify-between font-mono text-xs tabular-nums text-ink-muted">
           <span>240</span>
           <span>480</span>
           <span>720</span>

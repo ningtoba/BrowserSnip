@@ -7,30 +7,31 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-cream bg-grid">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12 sm:py-20">
-        <header className="mb-12 sm:mb-20 text-center">
-          <div className="mb-6 inline-flex items-center justify-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-doodle-lg bg-accent/10 ring-1 ring-accent/20">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+        <header className="mb-14 sm:mb-24 text-center">
+          <div className="mb-8 inline-flex items-center justify-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-doodle-lg border border-cream-border bg-cream-light shadow-doodle-card">
               <span className="text-2xl">✂</span>
             </div>
           </div>
+          <p className="eyebrow mb-3">Video utility sandbox</p>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-ink">
             Browser<span className="text-accent">Snip</span>
           </h1>
-          <p className="mx-auto mt-4 max-w-lg text-sm sm:text-base text-ink-soft leading-relaxed">
+          <p className="mx-auto mt-5 max-w-lg text-sm sm:text-base text-ink-soft leading-relaxed">
             100% client-side video utility sandbox. No uploads, no servers, total privacy.
           </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-doodle-lg border border-cream-border bg-cream-light px-3.5 py-2 text-xs font-medium text-ink-soft">
-              <span className="h-2 w-2 rounded-full bg-success shadow-[0_0_6px_rgba(52,211,153,0.4)]" />
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream-border bg-cream-light px-3.5 py-1.5 text-xs font-medium text-ink-soft shadow-doodle-card">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
               WebAssembly
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-doodle-lg border border-cream-border bg-cream-light px-3.5 py-2 text-xs font-medium text-ink-soft">
-              <span className="text-accent text-sm">🔒</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream-border bg-cream-light px-3.5 py-1.5 text-xs font-medium text-ink-soft shadow-doodle-card">
+              <span className="text-sm leading-none">🔒</span>
               Private
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-doodle-lg border border-cream-border bg-cream-light px-3.5 py-2 text-xs font-medium text-ink-soft">
-              <span className="text-accent text-sm">⚡</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream-border bg-cream-light px-3.5 py-1.5 text-xs font-medium text-ink-soft shadow-doodle-card">
+              <span className="text-sm leading-none">⚡</span>
               Instant
             </span>
           </div>
@@ -43,12 +44,13 @@ export function Dashboard() {
           className="mb-6 block animate-slide-up group"
           style={{ animationFillMode: 'both' }}
         >
-          <div className="rainbow-border">
+          <div className="rainbow-border transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-doodle-hover">
             <div className="rainbow-border-inner p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-5">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-doodle-lg bg-accent/10 text-3xl transition-transform duration-300 group-hover:scale-110">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-doodle-lg bg-accent/[0.08] text-3xl text-accent transition-transform duration-300 group-hover:scale-110">
                 ◎
               </div>
               <div className="flex-1 min-w-0">
+                <p className="eyebrow mb-1.5">Featured</p>
                 <h2 className="text-lg sm:text-xl font-bold text-ink mb-1.5">
                   Blur
                 </h2>
@@ -57,7 +59,7 @@ export function Dashboard() {
                 </p>
               </div>
               <div className="shrink-0">
-                <span className="inline-flex items-center gap-2 rounded-doodle-md bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition-all duration-200 group-hover:bg-accent/20 group-hover:gap-2.5">
+                <span className="inline-flex items-center gap-2 rounded-doodle-md bg-accent/[0.08] px-4 py-2 text-sm font-semibold text-accent transition-all duration-200 group-hover:bg-accent/15 group-hover:gap-2.5">
                   Try it
                   <span className="text-sm leading-none transition-transform duration-200 group-hover:translate-x-0.5">→</span>
                 </span>
@@ -111,7 +113,7 @@ export function Dashboard() {
           ))}
         </div>
 
-        <footer className="mt-16 sm:mt-24 text-center">
+        <footer className="mt-20 sm:mt-28 text-center">
           <div className="flex flex-wrap items-center justify-center gap-3">
             <div className="inline-flex items-center gap-3 rounded-doodle-lg border border-cream-border bg-cream-light px-5 py-3.5 shadow-doodle-card">
               <div className="flex h-8 w-8 items-center justify-center rounded-doodle bg-success/10">
@@ -127,7 +129,7 @@ export function Dashboard() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="View source on GitHub"
-              className="inline-flex h-12 w-12 items-center justify-center rounded-doodle-lg border border-cream-border bg-cream-light shadow-doodle-card transition-all duration-200 hover:border-accent/40 hover:bg-accent/10"
+              className="inline-flex h-12 w-12 items-center justify-center rounded-doodle-lg border border-cream-border bg-cream-light shadow-doodle-card transition-colors duration-200 hover:bg-cream-soft"
             >
               <svg className="h-5 w-5 text-ink-soft" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />

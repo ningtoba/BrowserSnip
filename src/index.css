@@ -5,21 +5,21 @@
 @layer base {
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2a2d42 #0a0b10;
+    scrollbar-color: #D5D5CD #F7F7F4;
   }
 
   *::-webkit-scrollbar {
     width: 5px;
   }
   *::-webkit-scrollbar-track {
-    background: #0a0b10;
+    background: #F7F7F4;
   }
   *::-webkit-scrollbar-thumb {
-    background: #2a2d42;
+    background: #D5D5CD;
     border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: #3a3d52;
+    background: #BFBFB6;
   }
 
   html {
@@ -29,11 +29,15 @@
   body {
     min-height: 100dvh;
     min-height: -webkit-fill-available;
-    background: #0a0b10;
-    color: #eeeff5;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: #F7F7F4;
+    color: #1B1B18;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.01em;
   }
 
   input[type='range'] {
@@ -47,7 +51,7 @@
   input[type='range']::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 999px;
-    background: #1e2035;
+    background: #E3E3DD;
   }
 
   input[type='range']::-webkit-slider-thumb {
@@ -56,22 +60,22 @@
     width: 16px;
     height: 16px;
     border-radius: 999px;
-    background: #6366f1;
+    background: #2563EB;
     margin-top: -6px;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     transition: box-shadow 150ms ease, transform 150ms ease;
     cursor: pointer;
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
     transform: scale(1.15);
   }
 
   input[type='range']::-moz-range-track {
     height: 4px;
     border-radius: 999px;
-    background: #1e2035;
+    background: #E3E3DD;
     border: none;
   }
 
@@ -79,9 +83,9 @@
     width: 16px;
     height: 16px;
     border-radius: 999px;
-    background: #6366f1;
+    background: #2563EB;
     border: none;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
   }
 
   input[type='text'],
@@ -93,32 +97,31 @@
     font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
   }
 
-  input[type='checkbox'] {
-    accent-color: #6366f1;
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: #2563EB;
   }
 
   ::selection {
-    background: rgba(99, 102, 241, 0.3);
-    color: #eeeff5;
+    background: rgba(37, 99, 235, 0.16);
+    color: #1B1B18;
   }
 }
 
 @layer components {
   .doodle-btn {
-    @apply relative w-full overflow-hidden rounded-md font-semibold
-           px-4 py-2.5 text-sm transition-all duration-200
+    @apply relative w-full overflow-hidden rounded-doodle font-semibold
+           px-4 py-2.5 text-sm transition-all duration-150
            active:scale-[0.98];
-    background: linear-gradient(135deg, #6366f1, #5558e6);
+    background: #2563EB;
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
   .doodle-btn:hover:not(:disabled) {
-    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.45);
-    transform: translateY(-1px);
+    background: #1D4ED8;
   }
   .doodle-btn:active:not(:disabled) {
-    box-shadow: 0 1px 4px rgba(99, 102, 241, 0.2);
-    transform: translateY(0) scale(0.98);
+    transform: scale(0.98);
   }
   .doodle-btn:disabled {
     @apply opacity-40 cursor-not-allowed;
@@ -127,16 +130,15 @@
   }
 
   .doodle-btn-secondary {
-    @apply w-full rounded-md px-4 py-2.5 text-sm font-semibold
-           transition-all duration-200 active:scale-[0.98];
-    background: #161922;
-    color: #eeeff5;
-    border: 1px solid #1e2035;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    @apply w-full rounded-doodle px-4 py-2.5 text-sm font-semibold
+           transition-all duration-150 active:scale-[0.98];
+    background: #FFFFFF;
+    color: #1B1B18;
+    border: 1px solid #E3E3DD;
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
   .doodle-btn-secondary:hover:not(:disabled) {
-    border-color: #2a2d42;
-    background: #1c1f30;
+    background: #F1F1EC;
   }
   .doodle-btn-secondary:disabled {
     @apply opacity-40 cursor-not-allowed;
@@ -146,94 +148,101 @@
   .doodle-btn-danger {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-doodle
            font-body font-medium text-sm
-           bg-danger/15 text-danger border border-danger/20
-           transition-all duration-200 ease-out
-           hover:bg-danger/25 hover:border-danger/40
+           transition-all duration-150 ease-out
            active:scale-[0.97]
            disabled:opacity-40 disabled:pointer-events-none
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40
            cursor-pointer select-none;
+    background: rgba(220, 38, 38, 0.08);
+    color: #DC2626;
+    border: 1px solid rgba(220, 38, 38, 0.2);
+  }
+  .doodle-btn-danger:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.14);
+    border-color: rgba(220, 38, 38, 0.35);
   }
 
   .doodle-input {
-    @apply w-full rounded px-3 py-2 text-sm
+    @apply w-full rounded-doodle px-3 py-2 text-sm
            transition-all duration-150 outline-none;
-    background: #0d0f17;
-    color: #eeeff5;
-    border: 1px solid #1e2035;
+    background: #FFFFFF;
+    color: #1B1B18;
+    border: 1px solid #E3E3DD;
     font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
   }
   .doodle-input:hover {
-    border-color: #2a2d42;
+    border-color: #BFBFB6;
   }
   .doodle-input:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    border-color: #2563EB;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
   }
   .doodle-input::placeholder {
-    color: #5c6080;
+    color: #75756B;
   }
 
   .doodle-chip {
-    @apply flex-1 rounded border px-3 py-2 text-xs font-medium
+    @apply flex-1 rounded-doodle border px-3 py-2 text-xs font-medium
            transition-all duration-150 cursor-pointer select-none;
   }
   .doodle-chip-active {
-    background: rgba(99, 102, 241, 0.12);
-    color: #a5b4fc;
-    border-color: rgba(99, 102, 241, 0.35);
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563EB;
+    border-color: rgba(37, 99, 235, 0.35);
   }
   .doodle-chip-inactive {
-    background: #11131c;
-    color: #5c6080;
-    border-color: #1e2035;
+    background: #FFFFFF;
+    color: #55554E;
+    border-color: #E3E3DD;
   }
   .doodle-chip-inactive:hover {
-    color: #a8adc4;
-    border-color: #2a2d42;
-    background: #161922;
+    color: #1B1B18;
+    border-color: #BFBFB6;
+    background: #F1F1EC;
   }
 
   .doodle-section {
-    @apply rounded-md p-4;
-    background: #11131c;
-    border: 1px solid #1e2035;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    @apply rounded-doodle-md p-4;
+    background: #FFFFFF;
+    border: 1px solid #E3E3DD;
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
 
   .sketch-border {
-    border: 1px solid #1e2035;
-    border-radius: 8px;
+    border: 1px solid #E3E3DD;
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    background: #FFFFFF;
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
 
   .tool-card {
-    @apply cursor-pointer rounded-md p-5 h-full flex flex-col
+    @apply cursor-pointer rounded-doodle-md p-5 h-full flex flex-col
            transition-all duration-200;
-    background: #11131c;
-    border: 1px solid #1e2035;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    background: #FFFFFF;
+    border: 1px solid #E3E3DD;
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
   .tool-card:hover {
-    border-color: #6366f1;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.15);
-    transform: translateY(-2px);
+    border-color: #D5D5CD;
+    box-shadow: 0 8px 24px rgba(27, 27, 24, 0.09), 0 2px 6px rgba(27, 27, 24, 0.05);
+    transform: translateY(-1px);
   }
   .tool-card:active {
     transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
 
   .log-line {
     @apply font-mono text-xs leading-relaxed;
-    color: #5c6080;
-    border-bottom: 1px solid #1e2035;
+    color: #55554E;
+    border-bottom: 1px solid #E3E3DD;
     padding: 2px 0;
+    font-variant-numeric: tabular-nums;
   }
 
   .glow-border {
-    box-shadow: 0 0 16px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10);
   }
   .glow-border-active {
     animation: pulse-glow 2s ease-in-out infinite;
@@ -245,50 +254,34 @@
   }
 
   .bg-glass {
-    background: rgba(17, 19, 28, 0.85);
+    background: rgba(247, 247, 244, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
 
   .bg-grid {
     background-image:
-      linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+      linear-gradient(rgba(27, 27, 24, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(27, 27, 24, 0.03) 1px, transparent 1px);
     background-size: 40px 40px;
     background-position: center center;
   }
 
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em];
+    color: #75756B;
+  }
+
   .rainbow-border {
     position: relative;
-    border-radius: 10px;
-    padding: 2px;
-    background: conic-gradient(
-      from var(--rainbow-angle, 0deg),
-      #f87171,
-      #fbbf24,
-      #34d399,
-      #38bdf8,
-      #818cf8,
-      #f472b6,
-      #f87171
-    );
-    animation: rainbow-cycle 6s linear infinite;
+    border-radius: 16px;
+    padding: 1px;
+    background: #E3E3DD;
+    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
   }
   .rainbow-border-inner {
-    background: #11131c;
-    border-radius: 8px;
-  }
-}
-
-@property --rainbow-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-@keyframes rainbow-cycle {
-  to {
-    --rainbow-angle: 360deg;
+    background: #FFFFFF;
+    border-radius: 15px;
   }
 }
 
@@ -303,5 +296,9 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }

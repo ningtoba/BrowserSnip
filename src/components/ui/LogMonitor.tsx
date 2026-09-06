@@ -10,14 +10,14 @@ export function LogMonitor() {
   }, [logs.length]);
 
   return (
-    <div className="h-full overflow-y-auto p-4">
+    <div className="h-full overflow-y-auto bg-cream-soft p-4">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold text-ink-soft">FFmpeg Log</span>
-        <span className="font-mono text-[11px] text-ink-muted">
+        <span className="font-mono text-[11px] text-ink-muted tabular-nums">
           {logs.length} lines
         </span>
       </div>
-      <div className="font-mono text-[11px] leading-relaxed">
+      <div className="rounded-doodle-md border border-cream-border bg-white p-3 font-mono text-[11px] leading-relaxed text-ink-soft">
         {logs.length === 0 && (
           <p className="text-ink-muted italic">Waiting for FFmpeg output...</p>
         )}

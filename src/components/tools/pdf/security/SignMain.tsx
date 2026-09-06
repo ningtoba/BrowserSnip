@@ -251,8 +251,8 @@ export function SignMain() {
   const handleStyle = (x: number, y: number, cursor: string): React.CSSProperties => ({
     position: 'absolute', left: x - HANDLE_SIZE / 2, top: y - HANDLE_SIZE / 2,
     width: HANDLE_SIZE, height: HANDLE_SIZE,
-    background: '#3b82f6', border: '2px solid white', borderRadius: 2,
-    cursor, zIndex: 20, boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+    background: '#2563EB', border: '2px solid white', borderRadius: 2,
+    cursor, zIndex: 20, boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
   });
 
   // ═══════════════════ Render ═══════════════════
@@ -268,7 +268,7 @@ export function SignMain() {
   return (
     <div className="relative flex-1 overflow-hidden flex flex-col">
       {/* Page nav */}
-      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-ink/20 bg-ink-darker">
+      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-cream-border bg-cream-light">
         <div className="flex items-center gap-2">
           {hasPdf && st.totalPages > 1 && (
             <>
@@ -311,10 +311,10 @@ export function SignMain() {
                   const vpW = item.w * scale;
                   const vpH = item.h * scale;
                   const isSelected = item.id === st.selectedId;
-                  const borderColor = item.type === 'text' ? 'border-blue-400'
-                    : item.type === 'image' ? 'border-emerald-400' : 'border-purple-400';
-                  const selBg = item.type === 'text' ? 'bg-blue-500/10'
-                    : item.type === 'image' ? 'bg-emerald-500/10' : 'bg-purple-500/10';
+                  const borderColor = item.type === 'text' ? 'border-accent'
+                    : item.type === 'image' ? 'border-success' : 'border-warn';
+                  const selBg = item.type === 'text' ? 'bg-accent/10'
+                    : item.type === 'image' ? 'bg-success/10' : 'bg-warn/10';
 
                   return (
                     <div key={item.id}

@@ -197,7 +197,7 @@ export function CompareMain() {
   return (
     <div className="relative flex-1 overflow-hidden flex flex-col">
       {/* Page nav + info */}
-      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-ink/20 bg-ink-darker">
+      <div className="flex items-center justify-between shrink-0 px-3 py-1.5 border-b border-cream-border bg-cream-light">
         <div className="flex items-center gap-2">
           {pageCount > 1 && (
             <>

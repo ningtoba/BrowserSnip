@@ -188,7 +188,7 @@ export function ToolWorkspace() {
   return (
     <div className="flex h-full flex-col bg-cream overflow-hidden" ref={mainRef}>
       {/* ── Top bar ── */}
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-cream-border bg-cream-light/90 backdrop-blur-subtle px-3 sm:px-4 z-20">
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-cream-border bg-white/85 backdrop-blur-subtle px-3 sm:px-4 z-20">
         <button
           onClick={() => navigate(dashboardPath)}
           className="flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink-soft transition-colors shrink-0"
@@ -208,7 +208,7 @@ export function ToolWorkspace() {
         {(hasFiles || isNoFileTool) && ToolComponent && !isProcessing && !outputUrl && (
           <button
             onClick={triggerProcess}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent hover:bg-accent/15 transition-colors px-2.5 py-1 rounded-md bg-accent/10 border border-accent/20"
           >
             Process
           </button>
@@ -307,8 +307,8 @@ export function ToolWorkspace() {
                             onClick={() => setPreviewFileIndex(i)}
                             className={`shrink-0 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
                               i === safePreviewIndex
-                                ? 'bg-accent/20 text-accent border border-accent/30'
-                                : 'bg-cream-light text-ink-muted border border-cream-border hover:text-ink-soft'
+                                ? 'bg-accent/10 text-accent border border-accent/20'
+                                : 'bg-white text-ink-muted border border-cream-border hover:text-ink-soft'
                             }`}
                           >
                             {f.name.length > 16 ? f.name.slice(0, 14) + '…' : f.name}
@@ -348,7 +348,7 @@ export function ToolWorkspace() {
 
                 {error && (
                   <div className="absolute inset-x-0 bottom-4 z-30 flex justify-center pointer-events-none">
-                    <div className="pointer-events-auto mx-3 max-w-md rounded-md border border-danger/30 bg-cream-light/95 backdrop-blur-sm shadow-doodle-card p-3 animate-fade-in">
+                    <div className="pointer-events-auto mx-3 max-w-md rounded-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-3 animate-fade-in">
                       <div className="flex items-start gap-2">
                         <span className="text-base shrink-0">⚠️</span>
                         <div className="min-w-0">
@@ -363,7 +363,7 @@ export function ToolWorkspace() {
             )}
 
             {showLogs && (
-              <div className="h-32 shrink-0 border-t border-cream-border bg-cream-light/60">
+              <div className="h-32 shrink-0 border-t border-cream-border bg-white">
                 <LogMonitor />
               </div>
             )}
@@ -385,8 +385,8 @@ export function ToolWorkspace() {
                         onClick={() => setPreviewFileIndex(i)}
                         className={`shrink-0 px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${
                           i === safePreviewIndex
-                            ? 'bg-accent/20 text-accent border border-accent/30'
-                            : 'bg-cream-light text-ink-muted border border-cream-border hover:text-ink-soft'
+                            ? 'bg-accent/10 text-accent border border-accent/20'
+                            : 'bg-white text-ink-muted border border-cream-border hover:text-ink-soft'
                         }`}
                       >
                         {f.name}
@@ -422,7 +422,7 @@ export function ToolWorkspace() {
 
                 {error && (
                   <div className="absolute inset-x-0 top-4 z-30 flex justify-center pointer-events-none">
-                    <div className="pointer-events-auto mx-4 max-w-md rounded-md border border-danger/30 bg-cream-light/95 backdrop-blur-sm shadow-doodle-card p-4 animate-fade-in">
+                    <div className="pointer-events-auto mx-4 max-w-md rounded-md border border-danger/20 bg-white/95 backdrop-blur-sm shadow-doodle-card p-4 animate-fade-in">
                       <div className="flex items-start gap-3">
                         <span className="text-lg shrink-0">⚠️</span>
                         <div className="min-w-0">
@@ -437,7 +437,7 @@ export function ToolWorkspace() {
             )}
 
             {showLogs && (
-              <div className="h-44 shrink-0 border-t border-cream-border bg-cream-light/60">
+              <div className="h-44 shrink-0 border-t border-cream-border bg-white">
                 <LogMonitor />
               </div>
             )}

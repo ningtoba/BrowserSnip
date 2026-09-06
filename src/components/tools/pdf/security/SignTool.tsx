@@ -239,7 +239,7 @@ export function SignTool() {
             onChange={handleImagePicked} className="doodle-input text-[10px]" />
           {imageUrl && (
             <>
-              <img src={imageUrl} className="h-10 object-contain rounded bg-white/50" alt="Preview" />
+              <img src={imageUrl} className="h-10 object-contain rounded bg-cream" alt="Preview" />
               <div className="flex gap-1.5">
                 <input type="number" value={imageW} min={30} max={400}
                   onChange={(e) => setImageW(Number(e.target.value))}
@@ -319,7 +319,7 @@ export function SignTool() {
             </>
           )}
           {selected.type !== 'text' && selected.imageDataUrl && (
-            <img src={selected.imageDataUrl} className="h-10 object-contain rounded bg-white/50" alt="" />
+            <img src={selected.imageDataUrl} className="h-10 object-contain rounded bg-cream" alt="" />
           )}
         </div>
       )}
@@ -345,7 +345,7 @@ export function SignTool() {
                 </span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeSigItem(item.id); }}
-                  className="text-red-400 hover:text-red-500 text-xs shrink-0">✕</button>
+                  className="text-danger hover:text-danger/80 text-xs shrink-0">✕</button>
               </div>
             ))}
           </div>

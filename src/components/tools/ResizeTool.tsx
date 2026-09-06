@@ -98,7 +98,7 @@ export function ResizeTool() {
             type="number"
             value={params.width}
             onChange={(e) => handleWidth(parseInt(e.target.value) || 0)}
-            className="doodle-input"
+            className="doodle-input font-mono tabular-nums"
           />
         </div>
         <div className="space-y-1">
@@ -107,7 +107,7 @@ export function ResizeTool() {
             type="number"
             value={params.height}
             onChange={(e) => handleHeight(parseInt(e.target.value) || 0)}
-            className="doodle-input"
+            className="doodle-input font-mono tabular-nums"
           />
         </div>
       </div>

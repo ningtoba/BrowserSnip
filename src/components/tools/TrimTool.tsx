@@ -110,9 +110,9 @@ export function TrimTool() {
             onFocus={() => { startFocusedRef.current = true; }}
             onBlur={() => { startFocusedRef.current = false; commitStart(); }}
             onKeyDown={(e) => { if (e.key === 'Enter') commitStart(); }}
-            className="doodle-input"
+            className="doodle-input font-mono tabular-nums"
           />
-          <p className="font-mono text-xs text-ink-muted">
+          <p className="font-mono text-xs tabular-nums text-ink-muted">
             {formatDisplayTime(params.startTime)}
           </p>
         </div>
@@ -128,9 +128,9 @@ export function TrimTool() {
             onFocus={() => { endFocusedRef.current = true; }}
             onBlur={() => { endFocusedRef.current = false; commitEnd(); }}
             onKeyDown={(e) => { if (e.key === 'Enter') commitEnd(); }}
-            className="doodle-input"
+            className="doodle-input font-mono tabular-nums"
           />
-          <p className="font-mono text-xs text-ink-muted">
+          <p className="font-mono text-xs tabular-nums text-ink-muted">
             {formatDisplayTime(params.endTime)}
           </p>
         </div>
@@ -138,7 +138,7 @@ export function TrimTool() {
 
       <div className="flex justify-between rounded-doodle border-2 border-cream-border bg-cream-light px-3 py-2">
         <span className="text-xs font-bold text-ink-soft">Selected Duration</span>
-        <span className="font-mono text-xs font-extrabold text-accent">
+        <span className="font-mono text-xs font-extrabold tabular-nums text-accent">
           {(params.endTime - params.startTime).toFixed(3)}s
         </span>
       </div>

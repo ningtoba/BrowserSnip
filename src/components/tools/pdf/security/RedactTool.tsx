@@ -80,7 +80,7 @@ export function RedactTool() {
             <span>H: {(selected.h * 100).toFixed(0)}%</span>
           </div>
           <button onClick={() => removeRedaction(selected.id)}
-            className="doodle-chip text-[10px] text-red-400 w-full">
+            className="doodle-chip text-[10px] text-danger w-full">
             Remove Selected
           </button>
         </div>
@@ -102,7 +102,7 @@ export function RedactTool() {
                 <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: st.color }} />
                 <span className="flex-1">p.{r.page} · {(r.w * 100).toFixed(0)}%×{(r.h * 100).toFixed(0)}%</span>
                 <button onClick={(e) => { e.stopPropagation(); removeRedaction(r.id); }}
-                  className="text-red-400 hover:text-red-500 text-xs shrink-0">✕</button>
+                  className="text-danger hover:text-danger/80 text-xs shrink-0">✕</button>
               </div>
             ))}
           </div>

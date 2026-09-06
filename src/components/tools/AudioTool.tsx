@@ -70,7 +70,7 @@ export function AudioTool() {
         <div className="space-y-2">
           <div className="flex justify-between text-xs">
             <span className="font-extrabold text-ink-soft">Volume</span>
-            <span className="font-mono text-ink">{(params.volume * 100).toFixed(0)}%</span>
+            <span className="font-mono tabular-nums text-ink">{(params.volume * 100).toFixed(0)}%</span>
           </div>
           <input
             type="range"
@@ -81,7 +81,7 @@ export function AudioTool() {
             onChange={(e) => setParams({ ...params, volume: parseFloat(e.target.value) })}
             className="w-full"
           />
-          <div className="flex justify-between font-mono text-xs text-ink-muted">
+          <div className="flex justify-between font-mono text-xs tabular-nums text-ink-muted">
             <span>0%</span>
             <span>100%</span>
             <span>300%</span>

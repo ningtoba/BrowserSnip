@@ -231,7 +231,7 @@ export function ScanMain() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-cream-dark">
+    <div className="flex flex-col h-full bg-cream">
       {/* Hidden canvas for frame capture */}
       <canvas ref={canvasRef} className="hidden" />
 
