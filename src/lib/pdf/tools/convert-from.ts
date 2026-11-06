@@ -6,23 +6,275 @@
  * screenshot. The old `pdf-to-word` and `pdf-to-excel` forced every run to
  * Calibri and treated "items on the same line" as a table; both are replaced.
  */
-import type { PDFDocument } from '../core/doc';
 import { savePDF } from '../core/doc';
-import { openRender } from '../core/render';
 import { resolvePages } from '../core/pages';
 import { pageSizeReport } from '../core/measure';
 import {
+  countImages,
   documentToJson,
   jsonToLlamaIndex,
   jsonToMarkdown,
   jsonToText,
   detectHeadingHeights,
+  type PdfJsonDocument,
 } from '../core/convert';
 import { detectTables, tablesToCsv, type DetectedTable } from '../core/tables';
 import { canvasToBlob, concatTiffs } from '../core/raster';
 import type { ExtractedImage } from '../core/images-out';
-import { openInputs, withRender, filesResult, reportResult, baseName, pdfResult } from './helpers';
-import { booleanValue, numberValue, stringValue, type PdfToolDefinition, type ToolRunContext } from './types';
+import {
+  ToolInputError,
+  baseName,
+  filesResult,
+  openInputs,
+  reportResult,
+  throwIfAborted,
+  withRender,
+  type OpenedInput,
+} from './helpers';
+import {
+  booleanValue,
+  numberValue,
+  stringValue,
+  type PdfToolDefinition,
+  type ToolReportSection,
+  type ToolResult,
+  type ToolRunContext,
+} from './types';
+
+/* ── naming (E17) ─────────────────────────────────────────────────────────── */
+
+/** Longest stem kept for a download or an archive entry. */
+const STEM_LIMIT = 120;
+
+/**
+ * A file stem that survives spaces, unicode and the characters Windows, macOS
+ * and ZIP refuse in a name (E17).
+ *
+ * Extraction output is usually several files at once — one image per page, one
+ * entry per table — all named from the source document, so a stray `/`, a NUL
+ * or a trailing dot yields an entry some unzippers reject and a download the
+ * browser silently renames. Unicode (CJK, RTL marks, accents) is preserved on
+ * purpose: transliterating `报告` to `baogao` would misreport which file the
+ * user actually picked.
+ */
+function outputStem(name: string): string {
+  const cleaned = baseName(name ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .replace(/[<>:"/\\|?*]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.-]+|[\s.-]+$/g, '');
+  const clipped = Array.from(cleaned)
+    .slice(0, STEM_LIMIT)
+    .join('')
+    .replace(/[\s.-]+$/, '');
+  return clipped === '' ? 'document' : clipped;
+}
+
+/** `007`, `0007` — wide enough for the page numbers the document really has. */
+function pageNumber(value: number, total: number): string {
+  return String(value).padStart(Math.max(3, String(Math.max(1, total)).length), '0');
+}
+
+/* ── what a page actually gave us (E10, E13) ──────────────────────────────── */
+
+/** NUL and the other invisible control characters a broken glyph map leaves. */
+const CONTROL_JUNK = /[\u0000-\u0008\u000B\u000E-\u001F\u007F-\u009F]/g;
+
+/**
+ * Strip characters no reader can see.
+ *
+ * A subset font with a missing `/ToUnicode` map, or a sparse OCR layer, hands
+ * back runs full of NULs. Left in, the page *looks* extracted — the file is
+ * non-empty and the word count is up — while reading it shows nothing (E10).
+ * Tab, newline and form feed survive because they are the layout.
+ */
+function tidy(text: string): string {
+  return text.replace(CONTROL_JUNK, '');
+}
+
+/** Characters a reader could actually see — the honest "did this work?" test. */
+function readableChars(text: string): number {
+  return Array.from(tidy(text).replace(/\s+/g, '')).length;
+}
+
+interface ExtractionFacts {
+  /** Visible characters per selected page, in page order. */
+  pages: { page: number; chars: number; images: number; tables: number }[];
+  /** Selected pages that produced at least one visible character. */
+  withText: number[];
+  /** Selected pages that hold images but no text layer: scans (E10). */
+  scanned: number[];
+  /** Selected pages with neither text nor images. */
+  blank: number[];
+  chars: number;
+  tables: number;
+  images: number;
+}
+
+function extractionFacts(json: PdfJsonDocument): ExtractionFacts {
+  const pages = json.pages.map((item) => ({
+    page: item.page,
+    chars: readableChars(item.text || item.blocks.map((block) => block.text ?? '').join(' ')),
+    images: item.images,
+    tables: item.blocks.filter((block) => block.type === 'table').length,
+  }));
+  const empty = pages.filter((item) => item.chars === 0);
+  return {
+    pages,
+    withText: pages.filter((item) => item.chars > 0).map((item) => item.page),
+    scanned: empty.filter((item) => item.images > 0).map((item) => item.page),
+    blank: empty.filter((item) => item.images === 0).map((item) => item.page),
+    chars: pages.reduce((sum, item) => sum + item.chars, 0),
+    tables: pages.reduce((sum, item) => sum + item.tables, 0),
+    images: pages.reduce((sum, item) => sum + item.images, 0),
+  };
+}
+
+/** `2, 4-6, 9` — a wall of 480 page numbers tells nobody anything (E7). */
+function listPages(pages: readonly number[], limit = 10): string {
+  const groups: string[] = [];
+  let start: number | null = null;
+  let last = 0;
+  const flush = () => {
+    if (start === null) return;
+    groups.push(start === last ? `${start}` : last - start === 1 ? `${start}, ${last}` : `${start}-${last}`);
+    start = null;
+  };
+  for (const page of pages) {
+    if (start !== null && page === last + 1) {
+      last = page;
+      continue;
+    }
+    flush();
+    start = page;
+    last = page;
+  }
+  flush();
+  if (groups.length === 0) return 'no page';
+  if (groups.length <= limit) return groups.join(', ');
+  return `${groups.slice(0, limit).join(', ')} and ${groups.length - limit} more`;
+}
+
+const singular = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
+const ofPages = (facts: ExtractionFacts): string =>
+  `Page ${listPages(facts.scanned)} of the ${facts.pages.length} selected`;
+
+/**
+ * A "nothing found" outcome that is not a download.
+ *
+ * An empty file is a lie twice over: the user opens a zero-byte .txt or a ZIP
+ * with nothing in it, and the log says "done" (E13). A report names what was
+ * searched, why it came up empty and what to press instead.
+ */
+function nothingFound(title: string, detail: string, suggestions: string[] = []): ToolResult {
+  const sections: ToolReportSection[] = [{ title, text: detail }];
+  if (suggestions.length > 0) {
+    sections.push({
+      title: 'What to try instead',
+      rows: suggestions.map((line, index) => ({ label: `Option ${index + 1}`, value: line })),
+    });
+  }
+  return { kind: 'report', sections, message: title, warnings: [detail] };
+}
+
+/** Why nothing readable was found — a scan and a blank page are different news. */
+function emptyReason(facts: ExtractionFacts, unit: string): string {
+  if (facts.scanned.length > 0 && facts.withText.length === 0) {
+    return `${ofPages(facts)} page(s) hold images but no text layer, so they read as pictures. There is no ${unit} in them until the page has been OCR'd.`;
+  }
+  if (facts.scanned.length > 0) {
+    return `Only ${singular(facts.scanned.length, 'page')} (${listPages(facts.scanned)}) had no text layer, and the rest held no ${unit} either.`;
+  }
+  if (facts.chars === 0 && facts.images > 0) {
+    return `The ${facts.pages.length} selected page(s) are drawings and images with no text at all, so there is no ${unit} to read.`;
+  }
+  if (facts.chars === 0) {
+    return `The ${facts.pages.length} selected page(s) are blank — no text, no images, nothing to write into ${unit}.`;
+  }
+  return `No ${unit} was found on ${facts.pages.length} page(s), although they do contain text.`;
+}
+
+function emptyAdvice(facts: ExtractionFacts): string[] {
+  const advice: string[] = [];
+  if (facts.scanned.length > 0) {
+    advice.push('Run OCR (Searchable PDF) on this file first, then extract again.');
+    advice.push('Or export the pages with PDF to Image and work from the pictures.');
+  } else {
+    advice.push('Widen the page selection — the content may be on a page that was left out.');
+    advice.push('Check the file with View metadata or Page Dimensions to see what it holds.');
+  }
+  return advice;
+}
+
+/**
+ * Partial successes, phrased for `result.warnings`: three good pages and one
+ * scan must never be reported as a clean run (E10, E7).
+ */
+function degradedPages(facts: ExtractionFacts, consequence: string): string[] {
+  const warnings: string[] = [];
+  if (facts.scanned.length > 0) {
+    warnings.push(
+      `${ofPages(facts)} page(s) have no text layer (image only — a scan). ${consequence}`,
+    );
+  }
+  if (facts.blank.length > 0) {
+    warnings.push(`Page ${listPages(facts.blank)} is blank — no text and no images.`);
+  }
+  return warnings;
+}
+
+/** Anything the input guard already admitted (E3) rides along with the result. */
+function inputNotices(input: OpenedInput): string[] {
+  const seen = input.inspection;
+  if (!seen?.recovered) return [];
+  return [
+    `"${seen.name}" is damaged: ${seen.pages} of ${seen.declaredPages ?? 'its'} page(s) could be read, so the output may be short.`,
+  ];
+}
+
+function withWarnings<T extends ToolResult>(result: T, warnings: readonly string[]): T {
+  const merged = [...new Set([...(result.warnings ?? []), ...warnings.filter(Boolean)])];
+  return merged.length === 0 ? result : ({ ...result, warnings: merged } as T);
+}
+
+/* ── resolution (E15) ─────────────────────────────────────────────────────── */
+
+const DPI_FLOOR = 24;
+const DPI_CEILING = 3600;
+
+/**
+ * A resolution the renderer can act on.
+ *
+ * `0` is refused rather than clamped: at 0 dpi every page becomes a 1×1 pixel,
+ * so the tool would "succeed" and hand back a handful of blank thumbnails. A
+ * value that is merely outside the useful band is moved onto it and said out
+ * loud, which is the other half of E15.
+ */
+function resolveDpi(value: number): { dpi: number; notice?: string } {
+  if (!Number.isFinite(value) || value <= 0) {
+    const shown = Number.isFinite(value) ? value : 'blank';
+    throw new ToolInputError(
+      'OUT_OF_RANGE',
+      `A resolution of ${shown} dpi cannot be rendered: an image needs a positive number of dots per inch.`,
+      { hint: `Use between ${DPI_FLOOR} and ${DPI_CEILING} dpi — 200 for screen, 300 for print.` },
+    );
+  }
+  if (value < DPI_FLOOR) {
+    return {
+      dpi: DPI_FLOOR,
+      notice: `Resolution raised from ${value} dpi to ${DPI_FLOOR} dpi, the smallest value that still renders a legible page.`,
+    };
+  }
+  if (value > DPI_CEILING) {
+    return {
+      dpi: DPI_CEILING,
+      notice: `Resolution lowered from ${value} dpi to ${DPI_CEILING} dpi so one page still fits in memory.`,
+    };
+  }
+  return { dpi: Math.round(value) };
+}
+
+/* ── raster export (E7, E8, E9, E15, E17) ─────────────────────────────────── */
 
 /** Extract → render → download helper shared by the image exporters. */
 async function exportPages(
@@ -40,26 +292,75 @@ async function exportPages(
   const { session } = await withRender(input, context);
   try {
     const indices = resolvePages(options.pages, input.pageCount).map((p) => p + 1);
+    if (indices.length === 0) {
+      return nothingFound(
+        'No page selected',
+        `"${input.name}" has ${singular(input.pageCount, 'page')} and the selection matched none of them.`,
+        ['Use "all", or list pages the way 1-3,7.'],
+      );
+    }
+    const { dpi, notice } = resolveDpi(options.dpi);
+    const scale = dpi / 72;
+    const stem = outputStem(input.name);
+    // Rotation-aware geometry, page by page: a document may mix A4, Letter and
+    // landscape scans, and each image has to match its own page (E8, E9).
+    const boxes = pageSizeReport(input.doc);
+    const warnings: string[] = [...(notice ? [notice] : []), ...inputNotices(input)];
+    const sizes = new Set<string>();
+    let rotated = 0;
+    const sideways: string[] = [];
     const files: { blob: Blob; name: string }[] = [];
-    const stem = baseName(input.name);
     for (let i = 0; i < indices.length; i++) {
       const page = indices[i];
-      const render = await session.renderPage(page, options.dpi / 72, { background: '#ffffff' });
+      throwIfAborted(context.signal);
+      const box = boxes[page - 1];
+      if (box) {
+        sizes.add(`${box.widthPt}x${box.heightPt}`);
+        if (box.rotation % 180 !== 0) rotated += 1;
+      }
+      const render = await session.renderPage(page, scale, { background: '#ffffff' });
+      if (box && box.widthPt !== box.heightPt) {
+        const wideOut = render.width > render.height;
+        const wantWide = box.widthPt > box.heightPt;
+        if (wideOut !== wantWide) {
+          sideways.push(`${page} (image ${render.width}×${render.height} px, page shows as ${box.widthPt}×${box.heightPt} pt)`);
+        }
+      }
       const blob = await canvasToBlob(render.canvas, options.format, options.quality, { background: '#ffffff' });
-      files.push({ blob, name: `${stem}-page-${String(page).padStart(3, '0')}.${options.extension}` });
+      files.push({ blob, name: `${stem}-page-${pageNumber(page, input.pageCount)}.${options.extension}` });
       render.cancel();
-      context.progress((i + 1) / indices.length, `Exported page ${page}`);
+      context.progress((i + 1) / indices.length, `Exported page ${page} of ${indices.length}`);
     }
+    if (sideways.length > 0) {
+      warnings.push(`Page ${sideways.join('; ')} came out the wrong way round: its /Rotate value was not applied.`);
+    }
+    if (files.length !== indices.length) {
+      warnings.push(`${indices.length - files.length} selected page(s) produced no image and were skipped.`);
+    }
+    const summary = [
+      `${files.length} ${options.format.toUpperCase()} image(s) at ${dpi} dpi`,
+      sizes.size > 1 ? `${sizes.size} different page sizes` : 'one page size',
+      rotated > 0 ? `${rotated} rotated page(s) kept upright` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+      + '.';
     if (options.format === 'tiff' && files.length > 1) {
       const merged = await concatTiffs(files.map((file) => file.blob));
-      return filesResult([{ blob: merged, name: `${stem}.tif` }], `${files.length} pages in one multi-page TIFF.`);
+      return withWarnings(
+        filesResult([{ blob: merged, name: `${stem}.tif` }], `${files.length} pages in one multi-page TIFF.`),
+        warnings,
+      );
     }
     if (files.length > 1 && options.zipWhenMany !== false) {
       const { createZip } = await import('../core/archive');
       const blob = await createZip(files.map((file) => ({ name: file.name, data: file.blob })));
-      return filesResult([{ blob, name: `${stem}-images.zip` }], `${files.length} images zipped.`);
+      return withWarnings(
+        filesResult([{ blob, name: `${stem}-images.zip` }], `${summary} Packaged as one .zip.`),
+        warnings,
+      );
     }
-    return filesResult(files);
+    return withWarnings(filesResult(files, summary), warnings);
   } finally {
     await session.destroy();
   }
@@ -84,18 +385,44 @@ async function buildJson(context: ToolRunContext) {
   const { session } = await withRender(input, context);
   try {
     const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount).map((p) => p + 1);
+    if (indices.length === 0) {
+      return { input, json: { meta: {}, pages: [] } as PdfJsonDocument, empty: true };
+    }
     const json = await documentToJson(input.doc, session, indices);
     context.progress(0.9, `Read ${json.pages.length} page(s)`);
-    return { input, json };
+    return { input, json, empty: false };
   } finally {
     await session.destroy();
   }
 }
 
+const TEXT_MIME: Record<string, string> = {
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+  json: 'application/json',
+};
+
+/**
+ * One text download.
+ *
+ * CSV gets a UTF-8 byte-order mark because Excel and Sheets both assume a
+ * legacy codepage without it, which turns CJK and accented output into mojibake
+ * the moment the file is opened (E11).
+ */
 function textFiles(name: string, extension: string, content: string) {
+  const body = extension === 'csv' ? `\uFEFF${content}` : content;
   return [{
-    blob: new Blob([content], { type: `text/${extension === 'md' ? 'markdown' : extension}` }),
-    name: `${baseName(name)}.${extension}`,
+    blob: new Blob([body], { type: TEXT_MIME[extension] ?? `text/${extension}` }),
+    name: `${outputStem(name)}.${extension}`,
+  }];
+}
+
+function jsonFile(name: string, suffix: string, value: unknown, options: { pretty?: boolean } = {}) {
+  const body = typeof value === 'string' ? value : JSON.stringify(value, null, options.pretty === false ? undefined : 2);
+  return [{
+    blob: new Blob([body], { type: TEXT_MIME.json }),
+    name: `${outputStem(name)}${suffix}`,
   }];
 }
 
@@ -623,5 +950,3 @@ function toMarkdownTable(table: DetectedTable): string {
   ].join('\n');
 }
 
-void pdfResult;
-export type { PDFDocument };
