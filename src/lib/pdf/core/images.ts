@@ -135,9 +135,8 @@ export async function decodeImagePages(
   const buffer = bufferOf(bytes);
   const ifds = UTIF.decode(buffer);
   const out: DecodedImage[] = [];
-  for (const ifd of ifds) {
-    UTIF.decodeImage(buffer, ifd);
-    out.push(ifdToCanvas(ifd, buffer, options));
+  for (let index = 0; index < ifds.length; index++) {
+    out.push(ifdToCanvas(ifds[index], buffer, options, index + 1));
   }
   if (out.length === 0) throw new Error('That TIFF file did not contain any decodable pages.');
   return out;
@@ -150,9 +149,7 @@ async function decodeNative(
 ): Promise<DecodedImage> {
   const source = await loadBitmap(bytes, mime);
   try {
-    const scale = options.maxSide
-      ? Math.min(1, options.maxSide / Math.max(source.width, source.height))
-      : 1;
+    const scale = sizeScale(source.width, source.height, options.maxSide);
     const width = Math.max(1, Math.round(source.width * scale));
     const height = Math.max(1, Math.round(source.height * scale));
     const canvas = document.createElement('canvas');
@@ -205,22 +202,72 @@ function decodeTiff(bytes: Uint8Array, options: DecodeOptions): DecodedImage {
   const buffer = bufferOf(bytes);
   const ifds = UTIF.decode(buffer);
   if (ifds.length === 0) throw new Error('That TIFF file did not contain any decodable pages.');
-  const ifd = ifds[0];
-  UTIF.decodeImage(buffer, ifd);
-  return ifdToCanvas(ifd, buffer, options);
+  return ifdToCanvas(ifds[0], buffer, options, 1);
+}
+
+/**
+ * What UTIF hands back for one decoded page.
+ *
+ * The ambient `UtifIFD` type names the dimensions `w` and `h`, but `decodeImage`
+ * publishes `width` / `height` (copied out of the `t256` / `t257` tags) and
+ * never sets anything else, so `ifd.w` is `undefined` on every real file.
+ */
+interface UtifPage {
+  width?: unknown;
+  height?: unknown;
+  t256?: unknown;
+  t257?: unknown;
+}
+
+/** One TIFF dimension: a positive whole number, or `null` when unstated. */
+function dimension(value: unknown): number | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const size = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(size) && size >= 1 ? Math.round(size) : null;
+}
+
+/**
+ * The size a decoded TIFF page really has, read from the fields UTIF fills in
+ * (falling back to the raw tags, which are already there after `UTIF.decode`,
+ * so a page's size can be reported without decompressing it — E12).
+ *
+ * `null` means "the file does not say", and callers must show that honestly
+ * instead of painting a 0 × 0 or 1 × 1 placeholder (E15).
+ */
+export function tiffPageDimensions(ifd: unknown): { width: number | null; height: number | null } {
+  const page = (ifd ?? {}) as UtifPage;
+  return {
+    width: dimension(page.width ?? page.t256),
+    height: dimension(page.height ?? page.t257),
+  };
+}
+
+/**
+ * Down-scale factor for `maxSide`. An absent, non-finite or non-positive cap
+ * means "keep the real size" rather than collapsing the image to a point (E15).
+ */
+function sizeScale(width: number, height: number, maxSide?: number): number {
+  const cap = typeof maxSide === 'number' && Number.isFinite(maxSide) && maxSide > 0 ? maxSide : 0;
+  if (!cap) return 1;
+  return Math.min(1, cap / Math.max(width, height));
 }
 
 function ifdToCanvas(
   ifd: ReturnType<typeof UTIF.decode>[number],
   buffer: ArrayBuffer,
   options: DecodeOptions,
+  page = 1,
 ): DecodedImage {
   UTIF.decodeImage(buffer, ifd);
+  const { width, height } = tiffPageDimensions(ifd);
+  if (width === null || height === null) {
+    throw new Error(
+      `Page ${page} of that TIFF does not record a width and height, so it cannot be decoded.`,
+    );
+  }
   const rgba = UTIF.toRGBA8(ifd);
-  const width = ifd.w;
-  const height = ifd.h;
+  const scale = sizeScale(width, height, options.maxSide);
   const canvas = document.createElement('canvas');
-  const scale = options.maxSide ? Math.min(1, options.maxSide / Math.max(width, height)) : 1;
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
   const ctx = canvasContext2d(canvas);

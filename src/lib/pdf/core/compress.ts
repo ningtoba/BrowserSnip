@@ -12,6 +12,7 @@ import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray } from './doc';
 import type { PDFDocument } from './doc';
 import { openPDF, savePDF, toBytes } from './doc';
 import { canvasContext2d } from './raster';
+import { formatBytes } from '@/lib/utils/format';
 
 export type CompressionPreset = 'lossless' | 'light' | 'balanced' | 'strong' | 'extreme';
 
@@ -45,7 +46,15 @@ export interface ImageCompressResult {
 
 export interface CompressReport {
   before: number;
+  /** Size of the bytes the caller gets back — the input again when it was kept. */
   after: number;
+  /**
+   * Size the rebuild itself produced, kept even when `bytes` is the untouched
+   * input because the rebuild was the larger of the two (B2 item 2). Without it
+   * a tool can only say "the original came back", never the honest delta E14
+   * asks for, and "compressed" would be a lie over a file that grew.
+   */
+  rebuildBytes: number;
   preset: CompressionPreset;
   appliedQuality: number;
   appliedDpi: number;
@@ -176,6 +185,7 @@ async function runCompression(
   const report: CompressReport = {
     before: source.byteLength,
     after: bytes.byteLength,
+    rebuildBytes: bytes.byteLength,
     preset,
     appliedQuality: settings.quality,
     appliedDpi: settings.dpi,
@@ -187,8 +197,9 @@ async function runCompression(
 
   // Never hand back something bigger than the input.
   if (bytes.byteLength >= source.byteLength) {
+    const grew = bytes.byteLength > source.byteLength;
     report.notes.unshift(
-      'This PDF was already smaller than it could be made without losing quality, so the original was returned unchanged.',
+      `The rebuild measured ${formatBytes(bytes.byteLength)} against the original ${formatBytes(source.byteLength)}, so ${grew ? 'it was larger' : 'it saved nothing'} and the original was returned unchanged.`,
     );
     report.after = source.byteLength;
     return { bytes: source, report };

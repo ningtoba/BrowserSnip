@@ -125,38 +125,26 @@ export async function signBytes(
   return signDocument(doc, options);
 }
 
-/** Find and verify every `/Sig` field in a document. */
+/**
+ * Find and verify every `/Sig` field in a document.
+ *
+ * An unsigned PDF is the common case and an answer, not a failure: the result
+ * is simply empty, so the UI can render "no signatures" (see `signatureFields`
+ * for the `/Fields` trap that used to make this throw).
+ */
 export async function readSignatures(input: Uint8Array): Promise<SignatureInfo[]> {
   const bytes = toBytes(input);
   const doc = await openPDF(bytes, { ignoreEncryption: true });
   const results: SignatureInfo[] = [];
 
-  const acroForm = doc.catalog.get(PDFName.of('AcroForm'));
-  const acroDict = acroForm instanceof PDFRef
-    ? doc.context.lookup(acroForm, PDFDict)
-    : (acroForm as PDFDict | undefined);
-  const fieldsValue = acroDict?.get(PDFName.of('Fields'));
-  const fields = fieldsValue instanceof PDFArray
-    ? fieldsValue
-    : doc.context.lookup(fieldsValue, PDFArray);
-  if (!fields) return results;
-
-  for (let i = 0; i < fields.size(); i++) {
-    const field = doc.context.lookup(fields.get(i), PDFDict);
-    if (!field) continue;
-    const isSigType = String(field.get(PDFName.of('FT')) ?? '') === '/Sig';
-    const valueRef = field.get(PDFName.of('V'));
-    const value = valueRef instanceof PDFRef
-      ? doc.context.lookup(valueRef, PDFDict)
-      : (valueRef as PDFDict | undefined);
-    const isSigValue = String(value?.get(PDFName.of('Type')) ?? '') === '/Sig';
-    if (!isSigType && !isSigValue) continue;
+  for (const field of signatureFields(doc)) {
+    const fieldName = decodePdfString(field.get(PDFName.of('T')));
+    const value = dictAt(doc, field.get(PDFName.of('V')));
     if (!value) {
-      results.push({ digestMatches: false, error: 'The signature value object is missing.' });
+      results.push({ fieldName, digestMatches: false, error: 'The signature value object is missing.' });
       continue;
     }
 
-    const fieldName = decodePdfString(field.get(PDFName.of('T')));
     const byteRange = readNumberArray(value.get(PDFName.of('ByteRange')));
     const contentsHex = readHexString(value.get(PDFName.of('Contents')));
     if (!byteRange || byteRange.length !== 4 || !contentsHex) {
@@ -167,13 +155,121 @@ export async function readSignatures(input: Uint8Array): Promise<SignatureInfo[]
       });
       continue;
     }
-    if (fieldName !== undefined) {
-      results.push(verifyOne(bytes, byteRange, contentsHex, fieldName));
-    } else {
-      results.push(verifyOne(bytes, byteRange, contentsHex));
-    }
+    results.push(verifyOne(bytes, byteRange, contentsHex, fieldName));
   }
   return results;
+}
+
+// ── finding the signature dictionaries ──────────────────────────────────────
+
+/**
+ * Read an entry that may be a dictionary, a reference to one, or absent.
+ *
+ * `lookupMaybe` answers `undefined` for all three cases; `lookup` throws
+ * `Expected instance of PDFDict, but got instance of undefined`, and a PDF whose
+ * pieces are not where the happy path expects them used to abort verification
+ * with exactly that.
+ */
+function dictAt(doc: PDFDocument, value: unknown): PDFDict | undefined {
+  return value === undefined ? undefined : doc.context.lookupMaybe(value as PDFDict | PDFRef, PDFDict);
+}
+
+/** Same, for an array entry — `/Fields` is written inline or as a reference. */
+function arrayAt(doc: PDFDocument, value: unknown): PDFArray | undefined {
+  return value === undefined ? undefined : doc.context.lookupMaybe(value as PDFArray | PDFRef, PDFArray);
+}
+
+/**
+ * The `/Sig` fields registered in `AcroForm /Fields`, in field order.
+ *
+ * Most PDFs have no `/AcroForm` at all, and one that exists may declare only
+ * defaults with no `/Fields` key, so the entry is `undefined` far more often than
+ * it is an array. That is the ordinary "not signed" case, not an error.
+ *
+ * A field counts as a signature field when it says `/FT /Sig` or when its value
+ * says `/Type /Sig` — producers write both, and `/FT` can be inherited. Widgets
+ * that were never registered in the form are outside this walk: a signature held
+ * only in a page's `/Annots` reads as unsigned.
+ */
+function signatureFields(doc: PDFDocument): PDFDict[] {
+  const acroForm = dictAt(doc, doc.catalog.get(PDFName.of('AcroForm')));
+  const fields = arrayAt(doc, acroForm?.get(PDFName.of('Fields')));
+  const found: PDFDict[] = [];
+  if (!fields) return found;
+  for (let i = 0; i < fields.size(); i++) {
+    const field = dictAt(doc, fields.get(i));
+    if (!field) continue;
+    const value = dictAt(doc, field.get(PDFName.of('V')));
+    const isSigType = String(field.get(PDFName.of('FT')) ?? '') === '/Sig';
+    const isSigValue = String(value?.get(PDFName.of('Type')) ?? '') === '/Sig';
+    if (isSigType || isSigValue) found.push(field);
+  }
+  return found;
+}
+
+/**
+ * The signature values that hold a signature, newest field last.
+ *
+ * `/SubFilter` is the discriminator: it names the encoding of the value
+ * (`adbe.pkcs7.detached` for everything this app signs), so a field that was
+ * created but never signed — `/V` present, no `SubFilter`, no `ByteRange` — is
+ * not offered up as a signature.
+ */
+function signedValues(doc: PDFDocument): { fieldName?: string; value: PDFDict }[] {
+  const found: { fieldName?: string; value: PDFDict }[] = [];
+  for (const field of signatureFields(doc)) {
+    const value = dictAt(doc, field.get(PDFName.of('V')));
+    if (!value) continue;
+    if (!(value.get(PDFName.of('SubFilter')) instanceof PDFName)) continue;
+    found.push({ fieldName: decodePdfString(field.get(PDFName.of('T'))), value });
+  }
+  return found;
+}
+
+/**
+ * Locate a signature's `/Contents` bytes.
+ *
+ * A value rewritten into this span must land exactly on the placeholder: one
+ * byte early and the write eats a byte the signature covers, one byte late and
+ * it runs past the string. The dictionary is already known, so its value is
+ * *compared* rather than guessed at — every `/Contents` key in the file is tried
+ * and the one whose hex equals the parsed value is the placeholder. That is what
+ * keeps a page's `/Contents` (every page has one, and they come first) from
+ * being read as a signature, and it refuses to guess when the recorded
+ * `/ByteRange` puts the gap somewhere else.
+ */
+function contentsSpan(source: Uint8Array, value: PDFDict): Placeholder | null {
+  const hex = readHexString(value.get(PDFName.of('Contents')));
+  if (!hex) return null;
+  const wanted = hex.toUpperCase();
+  const text = new TextDecoder('latin1').decode(source);
+  const byteRange = readNumberArray(value.get(PDFName.of('ByteRange')));
+  // Everything before `br[0] + br[1]` and after `br[2]` is signed data; the
+  // placeholder is the only thing in between.
+  const declared = byteRange && byteRange.length === 4 ? byteRange : null;
+  const gapStart = declared ? declared[0] + declared[1] : 0;
+  const gapEnd = declared ? declared[2] : source.length;
+
+  let at = text.indexOf('/Contents');
+  while (at !== -1) {
+    const open = skipPunctuation(text, at + '/Contents'.length);
+    if (text[open] === '<') {
+      const valueStart = open + 1;
+      const close = text.indexOf('>', valueStart);
+      if (close !== -1 && text.slice(valueStart, close).replace(/\s+/g, '').toUpperCase() === wanted) {
+        return valueStart < gapStart || close > gapEnd ? null : { start: at, valueStart, valueEnd: close };
+      }
+    }
+    at = text.indexOf('/Contents', at + 1);
+  }
+  return null;
+}
+
+/** A key and its value may be separated by whitespace, and by an array bracket. */
+function skipPunctuation(text: string, from: number): number {
+  let index = from;
+  while (index < text.length && /[\s[\]]/.test(text[index])) index++;
+  return index;
 }
 
 // ── verification ────────────────────────────────────────────────────────────
@@ -817,24 +913,43 @@ export async function timestampDocument(
   return timestampBytes(toBytes(saved), options);
 }
 
-/** Timestamp from raw bytes, for callers that already saved the document. */
+/**
+ * Timestamp from raw bytes, for callers that already saved the document.
+ *
+ * The signature is found through the document structure — `AcroForm /Fields` →
+ * the `/Sig` value that carries a `/SubFilter` — never by searching for
+ * `/Contents`, which every page carries, and its byte span is measured from the
+ * placeholder the file's own `/ByteRange` declares, so the rewrite cannot touch
+ * a covered byte.
+ */
 export async function timestampBytes(
   input: Uint8Array,
   options: { tsaUrl: string; fieldName?: string },
 ): Promise<TimestampResult> {
   const source = toBytes(input);
-  const text = new TextDecoder('latin1').decode(source);
-  const contentsAt = text.indexOf('/Contents');
-  if (contentsAt === -1) {
-    throw new Error('This PDF has no signature to timestamp — sign it first.');
+  const signatures = signedValues(await openPDF(source, { ignoreEncryption: true }));
+  const candidates = options.fieldName
+    ? signatures.filter((entry) => entry.fieldName === options.fieldName)
+    : signatures;
+  if (candidates.length === 0) {
+    throw new Error(
+      signatures.length === 0
+        ? 'This PDF has no signature to timestamp — sign it first.'
+        : `This PDF has no signature field named "${options.fieldName}" to timestamp.`,
+    );
   }
-  const valueStart = text.indexOf('<', contentsAt) + 1;
-  const valueEnd = text.indexOf('>', valueStart);
-  if (valueStart <= 0 || valueEnd <= valueStart) {
-    throw new Error('This PDF has no signature to timestamp — sign it first.');
+  // The newest field, matching `findPlaceholderContents`, which signs the last
+  // revision so an existing signature is never overwritten.
+  const target = candidates[candidates.length - 1];
+  const span = contentsSpan(source, target.value);
+  if (!span) {
+    throw new Error(
+      'The existing signature could not be read from these bytes: its /Contents value is not a hexadecimal string that /ByteRange covers, so no timestamp was added and the file is unchanged.',
+    );
   }
+  const { valueStart, valueEnd } = span;
 
-  const hex = text.slice(valueStart, valueEnd).replace(/\s+/g, '');
+  const hex = new TextDecoder('latin1').decode(source.subarray(valueStart, valueEnd)).replace(/\s+/g, '');
   const der = forge.util.hexToBytes(hex.length % 2 === 0 ? hex : `${hex}0`);
   // Keep the root: the parsed tree is shared by reference, so mutating the
   // signer info below mutates this same object and it can be re-emitted whole.

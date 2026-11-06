@@ -228,10 +228,17 @@ export interface PdfInspection {
   encrypted: boolean;
   /** Encryption scheme, e.g. `AES-256`, when the document is protected. */
   algorithm: string | null;
-  /** Locked and no password supplied. */
+  /** The **user** password is set and none was supplied. Owner-only protection
+   * never sets this: see `opensWithEmptyPassword`. */
   needsPassword: boolean;
   /** A password was supplied and it opened the document (E5). */
   passwordAccepted: boolean;
+  /**
+   * The file opens on the empty password: it is restricted, not locked. Anyone
+   * can read it, and the `/P` flags only ask a reader to behave — which is what
+   * `unlock`, `change-permissions` and `remove-restrictions` exist for (E4/E5).
+   */
+  opensWithEmptyPassword: boolean;
   permissions: PdfPermissions | null;
   /** Header version, e.g. `1.7`. */
   version: string | null;
@@ -283,14 +290,16 @@ interface LoadOutcome {
   doc: PDFDocument | null;
   encrypted: boolean;
   passwordAccepted: boolean;
+  /** The user password is empty, so the file opens for anyone: `/P` only restricts. */
+  opensWithEmptyPassword: boolean;
   refused: ToolInputErrorCode | null;
   detail?: unknown;
 }
 
 /**
  * Parse with the same recovery order every tool gets: a lenient
- * `ignoreEncryption` load reads the structure of a locked file, and a
- * password load decides whether the password is right.
+ * `ignoreEncryption` load reads the structure of a protected file, then the
+ * *user* password decides whether one is actually needed.
  */
 async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> {
   let lenient: PDFDocument | null = null;
@@ -304,20 +313,40 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
       doc: null,
       encrypted: looksEncrypted(bytes),
       passwordAccepted: false,
+      opensWithEmptyPassword: false,
       refused: crypto && password ? 'BAD_PASSWORD' : crypto ? 'PASSWORD_REQUIRED' : 'CORRUPT',
       detail: err,
     };
   }
   const encrypted = lenient.isEncrypted;
   if (!encrypted) {
-    return { doc: lenient, encrypted: false, passwordAccepted: false, refused: null };
+    return { doc: lenient, encrypted: false, passwordAccepted: false, opensWithEmptyPassword: false, refused: null };
+  }
+  // An `/Encrypt` entry is not a lock. Two different passwords protect a PDF: the
+  // **user** password gates opening, the owner password only gates permission
+  // changes. A permissions-only file hashes the empty user password, so anyone
+  // can read it and demanding a password blocks the tools whose job is the
+  // restrictions (E4/E5). Loading with `''` is the reader's point of view: the
+  // crypto layer checks the empty password before any other, so a supplied
+  // password opens such a file too, and nothing here has to guess.
+  try {
+    const open = await PDFDocument.load(bytes, { password: '', updateMetadata: false });
+    return {
+      doc: open,
+      encrypted: true,
+      passwordAccepted: Boolean(password),
+      opensWithEmptyPassword: true,
+      refused: null,
+    };
+  } catch {
+    /* the user password is real — fall through to it */
   }
   if (!password) {
-    return { doc: lenient, encrypted: true, passwordAccepted: false, refused: 'PASSWORD_REQUIRED' };
+    return { doc: lenient, encrypted: true, passwordAccepted: false, opensWithEmptyPassword: false, refused: 'PASSWORD_REQUIRED' };
   }
   try {
     const opened = await PDFDocument.load(bytes, { password, updateMetadata: false });
-    return { doc: opened, encrypted: true, passwordAccepted: true, refused: null };
+    return { doc: opened, encrypted: true, passwordAccepted: true, opensWithEmptyPassword: false, refused: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const crypto = /encrypt|password/i.test(message);
@@ -325,6 +354,7 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
       doc: lenient,
       encrypted: true,
       passwordAccepted: false,
+      opensWithEmptyPassword: false,
       refused: crypto ? 'BAD_PASSWORD' : 'CORRUPT',
       detail: err,
     };
@@ -389,6 +419,7 @@ async function probePdf(
     algorithm: null,
     needsPassword: false,
     passwordAccepted: false,
+    opensWithEmptyPassword: false,
     permissions: null,
     version,
     truncated,
@@ -407,6 +438,8 @@ async function probePdf(
   }
   if (options.cheap) {
     const encrypted = looksEncrypted(bytes);
+    // Without a parse the user-password hash is unreadable, so "encrypted" is
+    // all a cheap check can claim; `preflightPdf` re-asks before refusing.
     const locked = encrypted && !options.password;
     return {
       ...base,
@@ -438,6 +471,7 @@ async function probePdf(
     algorithm: encrypted ? algorithmOf(dict) : null,
     needsPassword: outcome.refused === 'PASSWORD_REQUIRED',
     passwordAccepted: outcome.passwordAccepted,
+    opensWithEmptyPassword: outcome.opensWithEmptyPassword,
     permissions,
     truncated,
     recovered,
@@ -484,6 +518,12 @@ async function probePdf(
       ...info,
       message: `${quote(name)} is damaged but recoverable: read ${pages} of ${declaredPages ?? 'its'} pages.`,
       hint: 'Pages after the break may be missing from the output.',
+    };
+  }
+  if (info.opensWithEmptyPassword) {
+    return {
+      ...info,
+      message: `${quote(name)}: ${pages} page${pages === 1 ? '' : 's'}. Restricted, not locked — it opens without a password.`,
     };
   }
   return { ...info, message: `${quote(name)}: ${pages} page${pages === 1 ? '' : 's'}.` };
@@ -536,7 +576,18 @@ export async function preflightPdf(
   password?: string,
 ): Promise<ToolInputError | null> {
   const edges = await readEdges(source);
-  const inspection = await inspectPdf(edges, source.name, { password, cheap: true });
+  let inspection = await inspectPdf(edges, source.name, { password, cheap: true });
+  // The cheap pass can only see the `/Encrypt` entry, and an entry is not a
+  // lock — it cannot read the user-password hash. Before refusing, ask the
+  // parser: a restricted-but-open file must reach the tool (E5), and a genuinely
+  // locked one is still named here before the tool allocates any work (E4).
+  if (inspection.error === 'PASSWORD_REQUIRED') {
+    inspection = await inspectPdf(
+      new Uint8Array(await source.blob().arrayBuffer()),
+      source.name,
+      { password },
+    );
+  }
   if (!inspection.error) return null;
   return new ToolInputError(inspection.error, inspection.message, {
     fileName: source.name,

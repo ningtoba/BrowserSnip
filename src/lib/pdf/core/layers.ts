@@ -5,10 +5,11 @@
  * several toggleable groups. pdf-lib has no layer API, so the `/OCProperties`
  * dictionary in the catalog is read and written here.
  */
-import { PDFArray, PDFDict, PDFName, PDFRef } from './doc';
+import { PDFArray, PDFDict, PDFHexString, PDFName, PDFObject, PDFRef, PDFString } from './doc';
 import type { PDFDocument } from './doc';
 
 export interface PdfLayer {
+  /** Decoded for display: never a `#xx` escape, a BOM or a U+FFFD sentinel. */
   name: string;
   xref: number;
   /** Whether the layer is visible in the default view configuration. */
@@ -20,13 +21,8 @@ export interface PdfLayer {
 }
 
 function ocProperties(doc: PDFDocument, create = false): PDFDict | null {
-  const existing = doc.catalog.get(PDFName.of('OCProperties'));
-  if (existing instanceof PDFRef) {
-    const resolved = doc.context.lookup(existing, PDFDict);
-    if (resolved) return resolved;
-  } else if (existing instanceof PDFDict) {
-    return existing;
-  }
+  const existing = resolveDict(doc, doc.catalog.get(PDFName.of('OCProperties')));
+  if (existing) return existing;
   if (!create) return null;
 
   const context = doc.context;
@@ -44,23 +40,31 @@ function ocProperties(doc: PDFDocument, create = false): PDFDict | null {
   return properties;
 }
 
-function arrayAt(dict: PDFDict, key: string): PDFArray | null {
-  const value = dict.get(PDFName.of(key));
-  // An inherited or indirect array is resolved by the caller through the
-  // document context; only a direct `PDFArray` is returned here.
+function arrayAt(doc: PDFDocument, dict: PDFDict, key: string): PDFArray | null {
+  // `/OCGs`, `/D` and the `ON`/`OFF`/`Order` lists are all commonly indirect.
+  const value = deref(doc, dict.get(PDFName.of(key)));
   return value instanceof PDFArray ? value : null;
 }
 
 function ocgDicts(doc: PDFDocument, properties: PDFDict): { array: PDFArray | null; dicts: { ref: PDFRef; dict: PDFDict }[] } {
-  const array = arrayAt(properties, 'OCGs');
+  const array = arrayAt(doc, properties, 'OCGs');
   const refs = array ? array.asArray().filter((item): item is PDFRef => item instanceof PDFRef) : [];
-  const dicts = refs
-    .map((ref) => ({ ref, dict: doc.context.lookup(ref, PDFDict) }))
-    .filter((entry): entry is { ref: PDFRef; dict: PDFDict } => Boolean(entry.dict));
+  const dicts: { ref: PDFRef; dict: PDFDict }[] = [];
+  for (const ref of refs) {
+    // An entry that is not an OCG (a dangling reference, an array member some
+    // producer wrote by mistake) is skipped rather than thrown on.
+    const dict = resolveDict(doc, ref);
+    if (dict) dicts.push({ ref, dict });
+  }
   return { array, dicts };
 }
 
-/** Read every OCG and whether the default configuration shows it. */
+/**
+ * Read every OCG and whether the default configuration shows it.
+ *
+ * Names come back as the text the author typed, decoded from whichever of the
+ * three spellings the file used; see `layerName`.
+ */
 export function listLayers(doc: PDFDocument): PdfLayer[] {
   const properties = ocProperties(doc);
   if (!properties) return [];
@@ -76,7 +80,7 @@ export function listLayers(doc: PDFDocument): PdfLayer[] {
   void order;
 
   return dicts.map(({ ref, dict }) => {
-    const name = decodeString(dict.get(PDFName.of('Name'))) ?? `Layer ${ref.objectNumber}`;
+    const name = layerName(doc, dict.get(PDFName.of('Name'))) ?? `Layer ${ref.objectNumber}`;
     const usage = resolveDict(doc, dict.get(PDFName.of('Usage')));
     const intent = readNameArray(dict.get(PDFName.of('Intent')));
     return {
@@ -108,7 +112,7 @@ function parentOf(doc: PDFDocument, dict: PDFDict): number | undefined {
 export function setLayerVisibility(doc: PDFDocument, name: string, on: boolean): boolean {
   const properties = ocProperties(doc);
   if (!properties) return false;
-  const target = listLayers(doc).find((layer) => layer.name.toLowerCase() === name.toLowerCase());
+  const target = findLayer(doc, name);
   if (!target) return false;
   const defaultConfig = resolveDict(doc, properties.get(PDFName.of('D')));
   if (!defaultConfig) return false;
@@ -142,7 +146,11 @@ export function addLayer(doc: PDFDocument, name: string, options: { intent?: str
   const context = doc.context;
   const dict = context.obj({
     Type: 'OCG',
-    Name: name,
+    // `/Name` is a text string. `context.obj(name)` would build a PDF name
+    // instead, which escapes the space in "Revision B" to `Revision#20B` — the
+    // panel then shows a different name from the one the user typed, and no
+    // later instruction naming "Revision B" matches it.
+    Name: PDFHexString.fromText(name),
     ...(options.intent ? { Intent: context.obj([PDFName.of(options.intent)]) } : {}),
   }) as PDFDict;
   const ref = context.register(dict);
@@ -162,7 +170,7 @@ export function addLayer(doc: PDFDocument, name: string, options: { intent?: str
 export function deleteLayer(doc: PDFDocument, name: string): boolean {
   const properties = ocProperties(doc);
   if (!properties) return false;
-  const target = listLayers(doc).find((layer) => layer.name.toLowerCase() === name.toLowerCase());
+  const target = findLayer(doc, name);
   if (!target) return false;
   const { array, dicts } = ocgDicts(doc, properties);
   const entry = dicts.find((candidate) => candidate.ref.objectNumber === target.xref);
@@ -174,7 +182,7 @@ export function deleteLayer(doc: PDFDocument, name: string): boolean {
   const defaultConfig = resolveDict(doc, properties.get(PDFName.of('D')));
   if (defaultConfig) {
     for (const key of ['ON', 'OFF', 'Order']) {
-      const list = arrayAt(defaultConfig, key);
+      const list = arrayAt(doc, defaultConfig, key);
       if (!list) continue;
       const at = indexOfRef(list, entry.ref);
       if (at !== -1) removeAt(list, at);
@@ -187,26 +195,74 @@ export function deleteLayer(doc: PDFDocument, name: string): boolean {
 export function renameLayer(doc: PDFDocument, from: string, to: string): boolean {
   const properties = ocProperties(doc);
   if (!properties) return false;
-  const target = listLayers(doc).find((layer) => layer.name.toLowerCase() === from.toLowerCase());
+  const target = findLayer(doc, from);
   if (!target) return false;
   const { dicts } = ocgDicts(doc, properties);
   const entry = dicts.find((candidate) => candidate.ref.objectNumber === target.xref);
   if (!entry) return false;
-  entry.dict.set(PDFName.of('Name'), doc.context.obj(to));
+  entry.dict.set(PDFName.of('Name'), PDFHexString.fromText(to));
   return true;
 }
 
 // ── small dictionary helpers ────────────────────────────────────────────────
 
+/** The OCG a user means by `name`, matched case-insensitively on the decoded name. */
+function findLayer(doc: PDFDocument, name: string): PdfLayer | undefined {
+  const wanted = name.trim().toLowerCase();
+  return listLayers(doc).find((layer) => layer.name.toLowerCase() === wanted);
+}
+
+/** Resolve an indirect object without naming a class for it — that would throw. */
+function deref(doc: PDFDocument, value: unknown): PDFObject | undefined {
+  if (value instanceof PDFRef) return doc.context.lookup(value);
+  return value instanceof PDFObject ? value : undefined;
+}
+
 function resolveDict(doc: PDFDocument, value: unknown): PDFDict | null {
-  if (value instanceof PDFDict) return value;
-  if (value instanceof PDFRef) return doc.context.lookup(value, PDFDict) ?? null;
-  return null;
+  const target = deref(doc, value);
+  return target instanceof PDFDict ? target : null;
+}
+
+/**
+ * Read an OCG `/Name` as the text the author meant.
+ *
+ * The spec asks for a text string — PDFDocEncoding, or UTF-16BE with a byte
+ * order mark — and `decodeText` handles both. Files written before this module
+ * stored text strings (and some producers) hold a PDF name instead, where a
+ * space survives as `#20`, so that is unescaped too. `undefined` means "no
+ * readable name was recorded", which callers show as the object number rather
+ * than as garbage.
+ */
+function layerName(doc: PDFDocument, value: unknown): string | undefined {
+  const target = deref(doc, value);
+  if (target instanceof PDFString || target instanceof PDFHexString) {
+    return displayText(target.decodeText());
+  }
+  if (target instanceof PDFName) {
+    // `toString()` is the escaped form (`/Revision#20B`); the leading `/` is the
+    // name delimiter, not part of the layer's name.
+    return displayText(unescapeName(target.toString().slice(1)));
+  }
+  return undefined;
+}
+
+/** `#xx` → the byte it stands for, as a PDF name does for every odd character. */
+function unescapeName(text: string): string {
+  return text.replace(/#([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/**
+ * A name for the UI: no byte-order mark, and never the U+FFFD sentinel that
+ * decoding a byte the PDF encoding cannot name produces.
+ */
+function displayText(text: string): string | undefined {
+  const clean = text.replace(/\uFEFF/g, '').replace(/\uFFFD/g, '').trim();
+  return clean === '' ? undefined : clean;
 }
 
 function ensureArray(doc: PDFDocument, dict: PDFDict, key: string): PDFArray {
-  const existing = dict.get(PDFName.of(key));
-  if (existing instanceof PDFArray) return existing;
+  const existing = arrayAt(doc, dict, key);
+  if (existing) return existing;
   const created = doc.context.obj([]) as PDFArray;
   dict.set(PDFName.of(key), created);
   return created;
@@ -228,7 +284,8 @@ function removeAt(array: PDFArray, index: number): void {
 }
 
 function collectStates(doc: PDFDocument, value: unknown, into: Set<string>): void {
-  const array = value instanceof PDFArray ? value : null;
+  const raw = deref(doc, value);
+  const array = raw instanceof PDFArray ? raw : null;
   if (!array) return;
   for (const item of array.asArray()) {
     if (item instanceof PDFRef) into.add(item.toString());
@@ -249,21 +306,4 @@ function readFirstKey(dict: PDFDict): string | undefined {
   const keys = dict.entries();
   const first = keys[0];
   return first ? String(first[0]).replace(/^\//, '') : undefined;
-}
-
-function decodeString(value: unknown): string | undefined {
-  const text = String(value ?? '');
-  const literal = /^\((.*)\)$/s.exec(text);
-  if (!literal) return text ? text.replace(/^\//, '') : undefined;
-  const inner = literal[1];
-  const utf16 = /^FEFF/.test(inner);
-  if (utf16) {
-    try {
-      const bytes = Buffer.from(inner.slice(4), 'hex');
-      return new TextDecoder('utf-16be').decode(bytes);
-    } catch {
-      return inner;
-    }
-  }
-  return inner.replace(/\\([()\\])/g, '$1');
 }

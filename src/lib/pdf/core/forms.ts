@@ -63,7 +63,11 @@ export interface FormFieldInfo {
   required: boolean;
   multiline: boolean;
   maxLen?: number;
-  /** `/TU`, the alternate name readers show as a tooltip. */
+  /**
+   * `/TU`, the alternate name readers show as a tooltip / label. Most real
+   * forms never write one, so this falls back to the `/T` tree name and is only
+   * absent on a field that carries neither (E13).
+   */
   alternateName?: string;
 }
 
@@ -144,9 +148,49 @@ function widgetPage(doc: PDFDocument, widget: PDFWidgetAnnotation): PDFPage | un
   return undefined;
 }
 
-function alternateName(field: PDFField): string | undefined {
-  const value = field.acroField.dict.lookup(PDFName.of('TU'), PDFString, PDFHexString);
-  return value?.decodeText();
+/**
+ * Decode PDF text into something worth putting in front of a person: a stray
+ * byte-order mark and the U+FFFD "this byte has no name" sentinel are dropped,
+ * and a label that had nothing left in it reports as absent.
+ */
+function displayText(text: string): string | undefined {
+  const clean = text.replace(/\uFEFF/g, '').replace(/\uFFFD/g, '').trim();
+  return clean === '' ? undefined : clean;
+}
+
+/**
+ * Read a text entry (`/TU`, `/T`) without naming a class for it.
+ *
+ * `dict.lookup(key, PDFString, PDFHexString)` throws both when the key is
+ * absent *and* when it holds another type, and real forms do both constantly;
+ * the value is read raw — indirect references resolved — and narrowed here.
+ */
+function textOf(doc: PDFDocument, dict: PDFDict, key: string): string | undefined {
+  const raw = dict.get(PDFName.of(key));
+  const value = raw instanceof PDFRef ? context(doc).lookup(raw) : raw;
+  if (value instanceof PDFString || value instanceof PDFHexString) {
+    return displayText(value.decodeText());
+  }
+  return undefined;
+}
+
+/**
+ * The `/T` tree name (every parent joined with `.`): the key `fillForm` and
+ * every viewer addresses a field by. A field with no `/T` at all is legal PDF
+ * and reports as the empty string; a `/T` that is not a text string breaks
+ * pdf-lib's own accessor, which must not cost the caller the whole list.
+ */
+function treeName(doc: PDFDocument, field: PDFField): string {
+  try {
+    return field.getName();
+  } catch {
+    return textOf(doc, field.acroField.dict, 'T') ?? '';
+  }
+}
+
+/** The label to show for a field: `/TU`, else the `/T` tree name (E13). */
+function alternateName(doc: PDFDocument, field: PDFField, name: string): string | undefined {
+  return textOf(doc, field.acroField.dict, 'TU') ?? displayText(name);
 }
 
 function fieldDescription(field: PDFField): Pick<FormFieldInfo, 'value' | 'options' | 'checked'> {
@@ -197,7 +241,7 @@ export function listFormFields(doc: PDFDocument): FormFieldInfo[] {
       rect = widget.getRectangle();
     }
     const info: FormFieldInfo = {
-      name: field.getName(),
+      name: treeName(doc, field),
       type: typeOf(field),
       page,
       rect,
@@ -213,8 +257,8 @@ export function listFormFields(doc: PDFDocument): FormFieldInfo[] {
       const maxLength = field.getMaxLength();
       if (maxLength !== undefined) info.maxLen = maxLength;
     }
-    const tu = alternateName(field);
-    if (tu !== undefined) info.alternateName = tu;
+    const label = alternateName(doc, field, info.name);
+    if (label !== undefined) info.alternateName = label;
     fields.push(info);
   }
   return fields;

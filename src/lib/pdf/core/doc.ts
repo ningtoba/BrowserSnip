@@ -43,6 +43,7 @@ import type {
   EncryptOptions,
   PDFPermissions,
 } from '@maxwbh/pdf-lib';
+import { cropBox } from './pages';
 
 type FontkitInstance = Parameters<PDFDocument['registerFontkit']>[0];
 
@@ -260,6 +261,26 @@ export async function collectPages(
  * primitive behind N-up, booklet, overlay, posterize, rotate-by-arbitrary-
  * angle and fix-page-size: it scales and repositions real vector content
  * instead of rasterising it.
+ *
+ * The source is measured **per page**, from its own visible box (E8): a
+ * document whose second sheet is a different size is not squeezed into the
+ * first sheet's rectangle. Two things the page content stream does not carry
+ * are re-applied here, because `embedPage` copies the raw stream (B1 item 1):
+ *
+ * - `/Rotate` is a display instruction, so an embedded page comes out sideways
+ *   unless the turn is composed into the draw matrix (E9). `options.rotate` is
+ *   an **extra clockwise** turn on top of the page's own `/Rotate` — clockwise
+ *   is what `/Rotate`, the UI and a viewer all mean — and the two are added
+ *   before being negated for pdf-lib, whose content matrix turns
+ *   counter-clockwise.
+ * - the box origin is honoured by clipping to the visible box **in the page's
+ *   own coordinates**, which is what shifts an offset `/MediaBox` (e.g. a
+ *   scanned sheet at `[36 36 612 792]`) back onto the cell instead of cropping
+ *   its left and bottom edges away.
+ *
+ * The turn is composed around the centre of that box: the rotated bounding
+ * rectangle is what gets scaled into `box`, so a quarter-turned sheet fills a
+ * cell sized for it as displayed rather than overflowing its neighbour.
  */
 export async function drawPageInto(
   target: PDFDocument,
@@ -268,27 +289,63 @@ export async function drawPageInto(
   box: { x: number; y: number; width: number; height: number },
   options: { scale?: number; rotate?: number; opacity?: number } = {},
 ): Promise<PDFEmbeddedPage> {
-  const embedded = await target.embedPage(source);
-  const rotate = options.rotate ?? 0;
-  const swap = Math.abs(((rotate % 360) + 360) % 360) % 180 === 90;
-  const sw = source.getWidth();
-  const sh = source.getHeight();
-  const natural = swap ? Math.min(box.width / sh, box.height / sw) : Math.min(box.width / sw, box.height / sh);
-  const scale = (options.scale ?? 1) * natural;
-  const drawW = (swap ? sh : sw) * scale;
-  const drawH = (swap ? sw : sh) * scale;
-  const x = box.x + (box.width - drawW) / 2;
-  const y = box.y + (box.height - drawH) / 2;
+  const region = cropBox(source);
+  const embedded = await target.embedPage(source, {
+    left: region.x,
+    bottom: region.y,
+    right: region.x + region.width,
+    top: region.y + region.height,
+  });
 
+  const clockwise = normalise360(pageRotation(source) + (options.rotate ?? 0));
+  const radians = (-clockwise * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  // The embedder shifts the region's bottom-left to the origin, so the four
+  // corners of the visible box are what the draw matrix turns.
+  const corners = [
+    [0, 0],
+    [region.width, 0],
+    [0, region.height],
+    [region.width, region.height],
+  ].map(([x, y]) => [snap(x * cos - y * sin), snap(x * sin + y * cos)] as const);
+  const minX = Math.min(...corners.map((c) => c[0]));
+  const maxX = Math.max(...corners.map((c) => c[0]));
+  const minY = Math.min(...corners.map((c) => c[1]));
+  const maxY = Math.max(...corners.map((c) => c[1]));
+  const drawnWidth = maxX - minX;
+  const drawnHeight = maxY - minY;
+  if (drawnWidth <= 0 || drawnHeight <= 0 || box.width <= 0 || box.height <= 0) {
+    // Nothing this cell can hold: a zero-area source box or target box would
+    // only write `0 0 0 0 … cm`, which no viewer draws.
+    return embedded;
+  }
+
+  const scale = (options.scale ?? 1) * Math.min(box.width / drawnWidth, box.height / drawnHeight);
   page.drawPage(embedded, {
-    x,
-    y,
+    x: box.x + (box.width - drawnWidth * scale) / 2 - minX * scale,
+    y: box.y + (box.height - drawnHeight * scale) / 2 - minY * scale,
     xScale: scale,
     yScale: scale,
-    rotate: degrees(rotate),
+    rotate: degrees(-clockwise),
     opacity: options.opacity,
   });
   return embedded;
+}
+
+/** A page's own `/Rotate` as a clockwise angle in 0–359 (0 when absent). */
+export function pageRotation(page: PDFPage): number {
+  return normalise360(page.getRotation().angle);
+}
+
+/** `450 → 90`, `-90 → 270`; readers take `/Rotate` modulo 360 and writers do emit both. */
+function normalise360(angle: number): number {
+  return ((angle % 360) + 360) % 360;
+}
+
+/** Clear the `6.1e-17` a quarter turn leaves behind. */
+function snap(value: number): number {
+  return Math.abs(value) < 1e-9 ? 0 : value;
 }
 
 /** Low-level access used by the annotation / metadata / content modules. */
@@ -345,12 +402,74 @@ export function context(doc: PDFDocument): PDFContext {
 
 /** Read the PDF version header the fork exposes on the context. */
 export function pdfVersion(doc: PDFDocument): string {
-  // SAFETY: `PDFContext` keeps the parsed `PDFHeader` on a field the public
-  // type does not declare; it is present on every document loaded from bytes.
-  const header = (
-    doc.context as unknown as { header?: { toString(): string } | string }
-  ).header;
+  const header = pdfHeaderOf(doc);
   const text = typeof header === 'string' ? header : String(header ?? '');
   const m = text.match(/PDF-(\d\.\d)/);
   return m ? m[1] : '1.7';
+}
+
+/** Versions a `%PDF-M.m` line can carry; the ones tools ever need to ask for. */
+export type PdfVersion = '1.4' | '1.5' | '1.6' | '1.7' | '2.0';
+
+/**
+ * The `PDFHeader` the fork keeps on the context. `major`/`minor` are `private`
+ * in the class, which is a compile-time-only label: at runtime they are plain
+ * writable own properties, and the class itself is not exported.
+ */
+type PdfHeader = { major: string; minor: string; toString(): string };
+
+function pdfHeaderOf(doc: PDFDocument): PdfHeader | string | undefined {
+  // SAFETY: `PDFHeader` is not exported by the fork, so the only honest shape
+  // for the field is the two digits it stores plus `toString()`.
+  return (doc.context as unknown as { header?: PdfHeader | string }).header;
+}
+
+/** `1.5 < 1.7` — the numeric comparison a version string cannot get by with. */
+function comparePdfVersions(a: string, b: string): number {
+  const [am = 0, an = 0] = a.split('.').map(Number);
+  const [bm = 0, bn = 0] = b.split('.').map(Number);
+  return am !== bm ? am - bm : an - bn;
+}
+
+/**
+ * Raise the PDF version a document declares (B2 item 1): a tool that writes
+ * object streams into a file that still says `1.4` has to say `1.5` first,
+ * instead of only warning about the mismatch.
+ *
+ * It raises and never lowers — downgrading a file that already uses newer
+ * structures would make it read worse, not better — and returns the version
+ * the document declares afterwards, which is what a caller should report.
+ *
+ * Two surfaces carry the claim and this only reaches one of them: the fork's
+ * full-save writers hard-code `%PDF-1.7`, while `saveIncremental` copies the
+ * original bytes verbatim. Use `applyPdfVersion` on the saved bytes when the
+ * emitted header itself has to change.
+ */
+export function setPdfVersion(doc: PDFDocument, version: PdfVersion): string {
+  const header = pdfHeaderOf(doc);
+  if (!header || typeof header === 'string') return pdfVersion(doc);
+  const current = pdfVersion(doc);
+  if (comparePdfVersions(version, current) <= 0) return current;
+  const [major, minor] = version.split('.');
+  header.major = major ?? '1';
+  header.minor = minor ?? '7';
+  return version;
+}
+
+/**
+ * Rewrite the `%PDF-M.m` line of already-saved bytes, raising it to `version`.
+ *
+ * Every version string is the same width and the patch is done in place, so it
+ * cannot move a byte an xref offset points at — which is the whole reason it is
+ * safe to apply to a finished file rather than re-saving it.
+ */
+export function applyPdfVersion(bytes: Bytes, version: PdfVersion): Bytes {
+  const text = new TextDecoder('latin1').decode(bytes.subarray(0, 9));
+  const match = /^%PDF-(\d\.\d)/.exec(text);
+  if (!match || comparePdfVersions(version, match[1]) <= 0) return bytes;
+  const major = version.charCodeAt(0);
+  const minor = version.charCodeAt(2);
+  bytes[5] = major;
+  bytes[7] = minor;
+  return bytes;
 }
