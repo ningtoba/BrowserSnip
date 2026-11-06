@@ -83,7 +83,7 @@ function collectImageRefs(
   for (const [key, value] of xobjects.entries()) {
     const ref = value instanceof PDFRef ? value : null;
     if (!ref) continue;
-    const dict = doc.context.lookup(ref, PDFDict);
+    const dict = narrowDict(doc, ref);
     if (!dict) continue;
     const subtype = String(dict.get(PDFName.of('Subtype')) ?? '');
     if (subtype === '/Image') {
@@ -101,7 +101,7 @@ function collectImageRefs(
       for (const [, item] of nestedXobjects.entries()) {
         const nestedRef = item instanceof PDFRef ? item : null;
         if (!nestedRef) continue;
-        const nestedDict = doc.context.lookup(nestedRef, PDFDict);
+        const nestedDict = narrowDict(doc, nestedRef);
         if (nestedDict && String(nestedDict.get(PDFName.of('Subtype'))) === '/Image') {
           if (!into.has(nestedRef.toString())) into.set(nestedRef.toString(), { ref: nestedRef });
         }
@@ -256,10 +256,26 @@ function streamBytes(stream: PDFRawStream): Uint8Array {
     : new Uint8Array(stream.contents as ArrayLike<number>);
 }
 
+/**
+ * Read a resource entry whose object type varies.
+ *
+ * An XObject name points at a **stream** for an image and at a **dict** for a
+ * form, and pdf-lib's typed `lookup`/`lookupMaybe` both *throw* when the object
+ * they found is not the class asked for. Asking for `PDFDict` over a page of
+ * JPEGs therefore killed the whole extraction with
+ * "Expected instance of PDFDict, but got instance of PDFRawStream"; the untyped
+ * `lookup` plus an `instanceof` narrow is the only safe read of a mixed entry.
+ */
+function narrowDict(doc: PDFDocument, value: unknown): PDFDict | null {
+  const object = value instanceof PDFRef ? doc.context.lookup(value) : value;
+  if (object instanceof PDFDict) return object;
+  // The common case for an XObject entry: a stream, whose dictionary travels
+  // inside it. Reading `stream.dict` is what makes an image visible here at all.
+  return object instanceof PDFRawStream ? object.dict : null;
+}
+
 function resolveDict(doc: PDFDocument, value: unknown): PDFDict | null {
-  if (value instanceof PDFDict) return value;
-  if (value instanceof PDFRef) return doc.context.lookup(value, PDFDict) ?? null;
-  return null;
+  return narrowDict(doc, value);
 }
 
 function numberFrom(value: unknown): number | null {

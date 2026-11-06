@@ -132,9 +132,10 @@ export function encodeTiff(canvas: HTMLCanvasElement): Blob {
   const stripBytes = width * 3 * height;
   const headerSize = 8;
   const resolutionSize = 16; // two SHORT-style RATIONALs stored out of line
+  const bitsSize = 6; // BitsPerSample: three SHORTs, too wide for the value field
   const ifdOffset = headerSize + stripBytes;
   const entryCount = 13;
-  const ifdSize = 2 + entryCount * 12 + 4 + resolutionSize;
+  const ifdSize = 2 + entryCount * 12 + 4 + resolutionSize + bitsSize;
   const buffer = new ArrayBuffer(ifdOffset + ifdSize);
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
@@ -158,11 +159,18 @@ export function encodeTiff(canvas: HTMLCanvasElement): Blob {
     }
     p += 12;
   };
-  const resolutionOffset = p + 4; // after the next-IFD pointer
+  // The two RATIONAL values sit in the tail of the block reserved above, after
+  // every entry and the 4-byte next-IFD pointer. Deriving the offset from the
+  // entry count rather than from `p` matters: `p` is still at the *start* of the
+  // table here, so the old `p + 4` wrote the resolution pair on top of the
+  // ImageWidth entry and every page this app exported was unreadable to a strict
+  // TIFF decoder (UTIF lost the width, so the image decoded as nothing).
+  const resolutionOffset = ifdOffset + 2 + entryCount * 12 + 4;
+  const bitsOffset = resolutionOffset + resolutionSize;
   entry(0x00fe, 3, 1, 0); // NewSubfileType
   entry(0x0100, 3, 1, width); // ImageWidth
   entry(0x0101, 3, 1, height); // ImageLength
-  entry(0x0102, 3, 1, 8); // BitsPerSample
+  entry(0x0102, 3, 3, bitsOffset); // BitsPerSample, one SHORT per sample
   entry(0x0103, 3, 1, 1); // Compression = 1 (none)
   entry(0x0106, 3, 1, 2); // PhotometricInterpretation = RGB
   entry(0x0111, 4, 1, headerSize); // StripOffsets
@@ -180,6 +188,14 @@ export function encodeTiff(canvas: HTMLCanvasElement): Blob {
   view.setUint32(rat + 4, 1, true);
   view.setUint32(rat + 8, 72, true);
   view.setUint32(rat + 12, 1, true);
+
+  // One BitsPerSample per sample. Declaring `count: 1, value: 8` next to
+  // `SamplesPerPixel: 3` makes a strict reader compute 8 bits per *pixel* and
+  // read every row at a third of its true width — UTIF did exactly that, so the
+  // exported page came back black.
+  view.setUint16(bitsOffset, 8, true);
+  view.setUint16(bitsOffset + 2, 8, true);
+  view.setUint16(bitsOffset + 4, 8, true);
 
   for (let i = 0, src = 0; i < stripBytes; i += 3, src += 4) {
     bytes[headerSize + i] = data[src];
@@ -215,13 +231,18 @@ export async function concatTiffs(blobs: Blob[]): Promise<Blob> {
   const layouts = pages.map((page) => {
     const ifd = page.ifdOffset;
     const entryCount = page.view.getUint16(ifd, page.little);
-    const ifdSize = 2 + entryCount * 12 + 4;
+    // The IFD table *and* the out-of-line tail that follows it (the resolution
+    // RATIONALs and BitsPerSample) run to the end of the page. Copying only the
+    // 2 + n*12 + 4 table left those offsets pointing into the previous page's
+    // pixel data in the merged file.
+    const ifdSize = page.buffer.byteLength - ifd;
     return {
       page,
       dataStart: headerSize,
       dataEnd: ifd,
       ifd,
       ifdSize,
+      entryCount,
       nextPointerOffset: ifd + 2 + entryCount * 12,
     };
   });
@@ -257,14 +278,26 @@ export async function concatTiffs(blobs: Blob[]): Promise<Blob> {
 
   view.setUint32(4, ifdPositions[0], little);
 
-  layouts.forEach((_layout, index) => {
+  layouts.forEach((layout, index) => {
     const base = ifdPositions[index];
     const entryCount = view.getUint16(base, little);
-    // StripOffsets (0x0111) is written as a LONG value by `encodeTiff`.
+    const shift = base - layout.ifd;
     for (let i = 0; i < entryCount; i++) {
       const entry = base + 2 + i * 12;
-      if (view.getUint16(entry, little) === 0x0111) {
+      const tag = view.getUint16(entry, little);
+      // StripOffsets (0x0111) is written as a LONG value by `encodeTiff`.
+      if (tag === 0x0111) {
         view.setUint32(entry + 8, dataPositions[index], little);
+        continue;
+      }
+      // Anything that does not fit in the 4-byte value field is an offset into
+      // this page's tail, so it moves with the IFD it belongs to.
+      const type = view.getUint16(entry + 2, little);
+      const count = view.getUint32(entry + 4, little);
+      const inline = type === 3 && count === 1;
+      const value = view.getUint32(entry + 8, little);
+      if (!inline && value >= layout.ifd && value < layout.page.buffer.byteLength) {
+        view.setUint32(entry + 8, value + shift, little);
       }
     }
     const next = base + 2 + entryCount * 12;

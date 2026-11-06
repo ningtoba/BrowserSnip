@@ -7,7 +7,7 @@
  * Calibri and treated "items on the same line" as a table; both are replaced.
  */
 import { savePDF } from '../core/doc';
-import { resolvePages } from '../core/pages';
+import { PageSpecError, resolvePages, type PageSpec } from '../core/pages';
 import { pageSizeReport } from '../core/measure';
 import {
   countImages,
@@ -23,7 +23,6 @@ import { canvasToBlob, concatTiffs } from '../core/raster';
 import type { ExtractedImage } from '../core/images-out';
 import {
   ToolInputError,
-  baseName,
   filesResult,
   openInputs,
   reportResult,
@@ -39,6 +38,7 @@ import {
   type ToolReportSection,
   type ToolResult,
   type ToolRunContext,
+  type ToolValues,
 } from './types';
 
 /* ── naming (E17) ─────────────────────────────────────────────────────────── */
@@ -56,17 +56,25 @@ const STEM_LIMIT = 120;
  * browser silently renames. Unicode (CJK, RTL marks, accents) is preserved on
  * purpose: transliterating `报告` to `baogao` would misreport which file the
  * user actually picked.
+ *
+ * The order matters, and the old version had it backwards: stripping the
+ * extension first meant `a/b:c*e?.pdf` was read as a *path* and lost `a/b:` —
+ * every exported image came back named after the last directory component. A
+ * separator is therefore replaced like any other hostile character, and only
+ * the final `.pdf` is dropped.
  */
 function outputStem(name: string): string {
-  const cleaned = baseName(name ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+  const cleaned = (name ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, '-')
     .replace(/[<>:"/\\|?*]+/g, '-')
     .replace(/\s+/g, ' ')
-    .replace(/^[\s.-]+|[\s.-]+$/g, '');
-  const clipped = Array.from(cleaned)
+    .trim();
+  const withoutExtension = cleaned.replace(/\.[^.]*$/, '');
+  const stem = withoutExtension === '' ? cleaned : withoutExtension;
+  const clipped = Array.from(stem)
     .slice(0, STEM_LIMIT)
     .join('')
-    .replace(/[\s.-]+$/, '');
+    .replace(/^[\s.-]+|[\s.-]+$/g, '');
   return clipped === '' ? 'document' : clipped;
 }
 
@@ -111,13 +119,16 @@ interface ExtractionFacts {
   images: number;
 }
 
-function extractionFacts(json: PdfJsonDocument): ExtractionFacts {
-  const pages = json.pages.map((item) => ({
-    page: item.page,
-    chars: readableChars(item.text || item.blocks.map((block) => block.text ?? '').join(' ')),
-    images: item.images,
-    tables: item.blocks.filter((block) => block.type === 'table').length,
-  }));
+/** What one sweep over the selected pages turned up: grids and the truth. */
+interface TableHaul {
+  input: OpenedInput;
+  tables: DetectedTable[];
+  facts: ExtractionFacts;
+}
+
+function factsFromPages(
+  pages: ExtractionFacts['pages'],
+): ExtractionFacts {
   const empty = pages.filter((item) => item.chars === 0);
   return {
     pages,
@@ -128,6 +139,17 @@ function extractionFacts(json: PdfJsonDocument): ExtractionFacts {
     tables: pages.reduce((sum, item) => sum + item.tables, 0),
     images: pages.reduce((sum, item) => sum + item.images, 0),
   };
+}
+
+function extractionFacts(json: PdfJsonDocument): ExtractionFacts {
+  return factsFromPages(
+    json.pages.map((item) => ({
+      page: item.page,
+      chars: readableChars(item.text || item.blocks.map((block) => block.text ?? '').join(' ')),
+      images: item.images,
+      tables: item.blocks.filter((block) => block.type === 'table').length,
+    })),
+  );
 }
 
 /** `2, 4-6, 9` — a wall of 480 page numbers tells nobody anything (E7). */
@@ -156,8 +178,20 @@ function listPages(pages: readonly number[], limit = 10): string {
 }
 
 const singular = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
+
 const ofPages = (facts: ExtractionFacts): string =>
   `Page ${listPages(facts.scanned)} of the ${facts.pages.length} selected`;
+
+/** Zero readable characters on every selected page: a report, never a download. */
+function nothingToRead(
+  input: OpenedInput,
+  facts: ExtractionFacts,
+  unit: string,
+): ToolResult | null {
+  if (facts.pages.length === 0) return noPagesSelected(input);
+  if (facts.chars > 0) return null;
+  return nothingFound('Nothing to extract', emptyReason(facts, unit), emptyAdvice(facts));
+}
 
 /**
  * A "nothing found" outcome that is not a download.
@@ -175,6 +209,55 @@ function nothingFound(title: string, detail: string, suggestions: string[] = [])
     });
   }
   return { kind: 'report', sections, message: title, warnings: [detail] };
+}
+
+/**
+ * The `pages` field as a spec `core/pages` can resolve (E6).
+ *
+ * The rail sends a string — `all`, `1-3,7` — but the field type also allows a
+ * list of numbers, and reading that with `stringValue` fell back to `all`. An
+ * empty selection then exported the whole document instead of admitting that
+ * nothing was picked.
+ */
+function pageSpec(values: ToolValues): PageSpec {
+  const raw = values.pages;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => (typeof item === 'number' ? item : Number(String(item).trim())))
+      .filter((item) => Number.isFinite(item));
+  }
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : 'all';
+}
+
+/**
+ * The page selection as 1-based page numbers, or a sentence (E6).
+ *
+ * `core/pages` throws `PageSpecError`, and its class name was reaching the user
+ * as `PageSpecError: "2" refers to page 2 …` — a stack trace where a sentence
+ * belongs. The tool layer owns what the rail prints, so the spec failure is
+ * translated into the same `ToolInputError` shape every other refusal uses and
+ * the valid range is spelled out instead of left to be inferred.
+ */
+function pageSelection(input: OpenedInput, spec: PageSpec): number[] {
+  try {
+    return resolvePages(spec, input.pageCount).map((index) => index + 1);
+  } catch (error) {
+    if (!(error instanceof PageSpecError)) throw error;
+    throw new ToolInputError(
+      'OUT_OF_RANGE',
+      `The page selection is outside "${input.name}" — ${error.message} Valid range: 1-${input.pageCount}.`,
+      { fileName: input.name, hint: 'Use "all", or list pages the way 1-3,7.' },
+    );
+  }
+}
+
+/** E18's honest cousin: a selection that matched no page is a report, not a file. */
+function noPagesSelected(input: OpenedInput): ToolResult {
+  return nothingFound(
+    'No page selected',
+    `"${input.name}" has ${singular(input.pageCount, 'page')} and the selection matched none of them.`,
+    ['Use "all", or list pages the way 1-3,7.'],
+  );
 }
 
 /** Why nothing readable was found — a scan and a blank page are different news. */
@@ -284,20 +367,16 @@ async function exportPages(
     extension: string;
     dpi: number;
     quality: number;
-    pages: string;
+    pages: PageSpec;
     zipWhenMany?: boolean;
   },
 ) {
   const [input] = await openInputs(context);
   const { session } = await withRender(input, context);
   try {
-    const indices = resolvePages(options.pages, input.pageCount).map((p) => p + 1);
+    const indices = pageSelection(input, options.pages);
     if (indices.length === 0) {
-      return nothingFound(
-        'No page selected',
-        `"${input.name}" has ${singular(input.pageCount, 'page')} and the selection matched none of them.`,
-        ['Use "all", or list pages the way 1-3,7.'],
-      );
+      return noPagesSelected(input);
     }
     const { dpi, notice } = resolveDpi(options.dpi);
     const scale = dpi / 72;
@@ -338,7 +417,7 @@ async function exportPages(
       warnings.push(`${indices.length - files.length} selected page(s) produced no image and were skipped.`);
     }
     const summary = [
-      `${files.length} ${options.format.toUpperCase()} image(s) at ${dpi} dpi`,
+      `${singular(files.length, `${options.format.toUpperCase()} image`)} at ${dpi} dpi`,
       sizes.size > 1 ? `${sizes.size} different page sizes` : 'one page size',
       rotated > 0 ? `${rotated} rotated page(s) kept upright` : null,
     ]
@@ -348,7 +427,10 @@ async function exportPages(
     if (options.format === 'tiff' && files.length > 1) {
       const merged = await concatTiffs(files.map((file) => file.blob));
       return withWarnings(
-        filesResult([{ blob: merged, name: `${stem}.tif` }], `${files.length} pages in one multi-page TIFF.`),
+        filesResult(
+          [{ blob: merged, name: `${stem}.tif` }],
+          `${summary} Written as ${files.length} pages in one multi-page TIFF.`,
+        ),
         warnings,
       );
     }
@@ -380,17 +462,25 @@ const RESOLUTION_FIELD = {
 
 const PAGES_FIELD = { key: 'pages', label: 'Pages', type: 'pages' as const, default: 'all' };
 
+/**
+ * Read the selected pages once, for every text-shaped exporter.
+ *
+ * `facts` is the honest answer to "did this work?": it counts the characters a
+ * reader can actually see, per page, so a scan, a blank page and a page of
+ * glyph-map noise are told apart instead of all reporting success (E10, E13).
+ */
 async function buildJson(context: ToolRunContext) {
   const [input] = await openInputs(context);
   const { session } = await withRender(input, context);
   try {
-    const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount).map((p) => p + 1);
+    const indices = pageSelection(input, pageSpec(context.values));
     if (indices.length === 0) {
-      return { input, json: { meta: {}, pages: [] } as PdfJsonDocument, empty: true };
+      const json = { meta: {}, pages: [] } as PdfJsonDocument;
+      return { input, json, facts: factsFromPages([]) };
     }
     const json = await documentToJson(input.doc, session, indices);
     context.progress(0.9, `Read ${json.pages.length} page(s)`);
-    return { input, json, empty: false };
+    return { input, json, facts: extractionFacts(json) };
   } finally {
     await session.destroy();
   }
@@ -426,6 +516,14 @@ function jsonFile(name: string, suffix: string, value: unknown, options: { prett
   }];
 }
 
+/**
+ * A font height no text on earth is drawn at, which is how heading promotion
+ * is switched **off**: `jsonToMarkdown` and friends read an empty
+ * `headingHeights` list as "work the heights out yourself", so `[]` meant the
+ * rail's "Detect headings" toggle could never actually be turned off.
+ */
+const NO_HEADING_HEIGHT = 0.01;
+
 export const convertFromTools: PdfToolDefinition[] = [
   {
     id: 'pdf-to-text',
@@ -442,15 +540,20 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'pageMarkers', label: 'Insert page break markers', type: 'toggle', default: false },
     ],
     async run(context) {
-      const { json } = await buildJson(context);
-      const text = jsonToText(json, {
+      const { input, json, facts } = await buildJson(context);
+      const blocker = nothingToRead(input, facts, 'text');
+      if (blocker) return blocker;
+      const text = tidy(jsonToText(json, {
         pageMarkers: booleanValue(context.values, 'pageMarkers'),
         formFeed: booleanValue(context.values, 'layout', true),
-      });
+      }));
       const words = text.split(/\s+/).filter(Boolean).length;
-      return filesResult(
-        textFiles(context.inputs[0].name, 'txt', text),
-        `Extracted ${words.toLocaleString()} words from ${json.pages.length} page(s).`,
+      return withWarnings(
+        filesResult(
+          textFiles(input.name, 'txt', text),
+          `Extracted ${words.toLocaleString()} words from ${json.pages.length} page(s).`,
+        ),
+        [...degradedPages(facts, 'They contributed no text to the file.'), ...inputNotices(input)],
       );
     },
   },
@@ -471,15 +574,22 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'pageBreaks', label: 'Separate pages with a rule', type: 'toggle', default: false },
     ],
     async run(context) {
-      const { json } = await buildJson(context);
+      const { input, json, facts } = await buildJson(context);
+      const blocker = nothingToRead(input, facts, 'Markdown');
+      if (blocker) return blocker;
       const markdown = jsonToMarkdown(json, {
-        headingHeights: booleanValue(context.values, 'headings', true) ? detectHeadingHeights(json) : [],
+        headingHeights: booleanValue(context.values, 'headings', true)
+          ? detectHeadingHeights(json)
+          : [NO_HEADING_HEIGHT],
         tables: booleanValue(context.values, 'tables', true),
         pageBreaks: booleanValue(context.values, 'pageBreaks'),
       });
-      return filesResult(
-        textFiles(context.inputs[0].name, 'md', markdown),
-        `Wrote ${markdown.split('\n').length} lines of Markdown.`,
+      return withWarnings(
+        filesResult(
+          textFiles(input.name, 'md', markdown),
+          `Wrote ${markdown.split('\n').length} lines of Markdown from ${json.pages.length} page(s).`,
+        ),
+        [...degradedPages(facts, 'Those pages became a comment, not prose.'), ...inputNotices(input)],
       );
     },
   },
@@ -495,11 +605,22 @@ export const convertFromTools: PdfToolDefinition[] = [
     outputSuffix: '.json',
     fields: [PAGES_FIELD, { key: 'tables', label: 'Detect tables', type: 'toggle', default: true }],
     async run(context) {
-      const { json } = await buildJson(context);
+      const { input, json, facts } = await buildJson(context);
+      // A page of pictures only is still worth describing, so the empty-result
+      // report is reserved for a selection with no text *and* no images and no
+      // tables (E13) — the scan case keeps its file and gains a warning.
+      const blocker = nothingToRead(input, facts, 'content');
+      if (blocker && facts.images + facts.tables === 0) return blocker;
       const body = JSON.stringify(json, null, 2);
-      return filesResult(
-        [{ blob: new Blob([body], { type: 'application/json' }), name: `${baseName(context.inputs[0].name)}.json` }],
-        `${json.pages.length} page(s), ${json.pages.reduce((n, page) => n + page.blocks.length, 0)} block(s).`,
+      return withWarnings(
+        filesResult(
+          [{ blob: new Blob([body], { type: 'application/json' }), name: `${outputStem(input.name)}.json` }],
+          `${json.pages.length} page(s), ${json.pages.reduce((n, page) => n + page.blocks.length, 0)} block(s).`,
+        ),
+        [
+          ...degradedPages(facts, 'Their JSON carries an empty "text" field.'),
+          ...inputNotices(input),
+        ],
       );
     },
   },
@@ -519,24 +640,33 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'extra', label: 'Extra metadata (JSON)', type: 'textarea', default: '' },
     ],
     async run(context) {
-      const { json } = await buildJson(context);
+      const { input, json, facts } = await buildJson(context);
+      const blocker = nothingToRead(input, facts, 'text to chunk');
+      if (blocker) return blocker;
       const extra = stringValue(context.values, 'extra').trim();
       let parsed: Record<string, unknown> | undefined;
       if (extra) {
         try {
           parsed = JSON.parse(extra) as Record<string, unknown>;
         } catch {
-          throw new Error('The extra metadata must be valid JSON, for example {"source": "contracts"}.');
+          throw new ToolInputError(
+            'OUT_OF_RANGE',
+            'The extra metadata must be valid JSON, for example {"source": "contracts"}.',
+            { hint: 'One flat object of strings and numbers, which is what an index stores.' },
+          );
         }
       }
       const doc = jsonToLlamaIndex(json, {
-        title: stringValue(context.values, 'title') || context.inputs[0].name,
+        title: stringValue(context.values, 'title') || input.name,
         extraMetadata: parsed,
       });
       const chunks = Object.keys(doc.ref_doc_info).length;
-      return filesResult(
-        [{ blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }), name: `${baseName(context.inputs[0].name)}-llamaindex.json` }],
-        `Produced ${chunks} reference document(s) ready for an index.`,
+      return withWarnings(
+        filesResult(
+          jsonFile(input.name, '-llamaindex.json', doc, { pretty: false }),
+          `Produced ${chunks} reference document(s) from ${json.pages.length} page(s), ready for an index.`,
+        ),
+        [...degradedPages(facts, 'They became an empty chunk in the index.'), ...inputNotices(input)],
       );
     },
   },
@@ -558,14 +688,15 @@ export const convertFromTools: PdfToolDefinition[] = [
       ] },
     ],
     async run(context) {
-      const tables = await collectTables(context);
-      if (tables.length === 0) {
-        throw new Error('No table-like structure was found. Lower the minimum row count, or use PDF to Text.');
-      }
+      const { input, tables, facts } = await collectTables(context);
+      if (tables.length === 0) return noTablesFound(input, facts, numberValue(context.values, 'minRows', 3));
       const csv = tablesToCsv(tables, stringValue(context.values, 'delimiter', ','));
-      return filesResult(
-        textFiles(context.inputs[0].name, 'csv', csv),
-        `Extracted ${tables.length} table(s) totalling ${tables.reduce((n, table) => n + table.rows.length, 0)} rows.`,
+      return withWarnings(
+        filesResult(
+          textFiles(input.name, 'csv', csv),
+          `Extracted ${tables.length} table(s) totalling ${tables.reduce((n, table) => n + table.rows.length, 0)} rows.`,
+        ),
+        [...degradedPages(facts, 'No rows could be read from them, so they are missing from the CSV.'), ...inputNotices(input)],
       );
     },
   },
@@ -587,20 +718,36 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20 },
     ],
     async run(context) {
-      const tables = await collectTables(context);
-      if (tables.length === 0) throw new Error('No tables were found in the selected pages.');
+      const { input, tables, facts } = await collectTables(context);
+      if (tables.length === 0) return noTablesFound(input, facts, numberValue(context.values, 'minRows', 2));
       const format = stringValue(context.values, 'format', 'json');
-      const name = baseName(context.inputs[0].name);
+      const notices = [...degradedPages(facts, 'They held no table, so nothing was written for them.'), ...inputNotices(input)];
       if (format === 'csv') {
-        return filesResult(textFiles(context.inputs[0].name, 'csv', tablesToCsv(tables)), `${tables.length} table(s).`);
+        return withWarnings(
+          filesResult(textFiles(input.name, 'csv', tablesToCsv(tables)), `${tables.length} table(s).`),
+          notices,
+        );
       }
       if (format === 'md') {
-        const body = tables.map((table, index) => `## Table ${index + 1}\n\n${toMarkdownTable(table)}`).join('\n\n');
-        return filesResult(textFiles(context.inputs[0].name, 'md', body), `${tables.length} table(s).`);
+        // A Markdown file needs a level-1 title before the per-table `##` ones,
+        // or the first line is a section heading with no document heading.
+        const body = [
+          `# Tables from ${outputStem(input.name)}`,
+          '',
+          `Extracted from ${facts.pages.length} page(s); ${tables.length} table(s).`,
+          ...tables.map((table, index) => `\n## Table ${index + 1}\n\n${toMarkdownTable(table)}`),
+        ].join('\n');
+        return withWarnings(
+          filesResult(textFiles(input.name, 'md', body), `${tables.length} table(s).`),
+          notices,
+        );
       }
-      return filesResult(
-        [{ blob: new Blob([JSON.stringify({ tables }, null, 2)], { type: 'application/json' }), name: `${name}-tables.json` }],
-        `${tables.length} table(s) with ${tables.reduce((n, table) => n + table.rows.length, 0)} rows.`,
+      return withWarnings(
+        filesResult(
+          jsonFile(input.name, '-tables.json', { tables }),
+          `${tables.length} table(s) with ${tables.reduce((n, table) => n + table.rows.length, 0)} rows.`,
+        ),
+        notices,
       );
     },
   },
@@ -620,8 +767,10 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20 },
     ],
     async run(context) {
-      const tables = await collectTables(context);
-      if (tables.length === 0) throw new Error('No tables were detected, so there is nothing to put in a workbook.');
+      const { input, tables, facts } = await collectTables(context);
+      if (tables.length === 0) {
+        return noTablesFound(input, facts, numberValue(context.values, 'minRows', 2));
+      }
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
       if (booleanValue(context.values, 'oneSheet')) {
@@ -638,12 +787,18 @@ export const convertFromTools: PdfToolDefinition[] = [
         });
       }
       const out: Uint8Array = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
-      return filesResult(
-        [{
-          blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-          name: `${baseName(context.inputs[0].name)}.xlsx`,
-        }],
-        `${tables.length} table(s) across ${workbook.SheetNames.length} worksheet(s).`,
+      return withWarnings(
+        filesResult(
+          [{
+            blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+            name: `${outputStem(input.name)}.xlsx`,
+          }],
+          `${tables.length} table(s) across ${workbook.SheetNames.length} worksheet(s).`,
+        ),
+        [
+          ...degradedPages(facts, 'They are not in the workbook.'),
+          ...inputNotices(input),
+        ],
       );
     },
   },
@@ -664,16 +819,21 @@ export const convertFromTools: PdfToolDefinition[] = [
       { key: 'pageBreaks', label: 'Start a new page for each PDF page', type: 'toggle', default: false },
     ],
     async run(context) {
-      const { json } = await buildJson(context);
+      const { input, json, facts } = await buildJson(context);
+      const blocker = nothingToRead(input, facts, 'text');
+      if (blocker) return blocker;
       const { buildDocx } = await import('../core/docx-out');
       const blob = await buildDocx(json, {
         headings: booleanValue(context.values, 'headings', true),
         tables: booleanValue(context.values, 'tables', true),
         pageBreaks: booleanValue(context.values, 'pageBreaks'),
       });
-      return filesResult(
-        [{ blob, name: `${baseName(context.inputs[0].name)}.docx` }],
-        `Wrote a Word document from ${json.pages.length} page(s). Text is editable; original positions are not preserved.`,
+      return withWarnings(
+        filesResult(
+          [{ blob, name: `${outputStem(input.name)}.docx` }],
+          `Wrote a Word document from ${json.pages.length} page(s). Text is editable; original positions are not preserved.`,
+        ),
+        [...degradedPages(facts, 'They reached the document as an empty paragraph.'), ...inputNotices(input)],
       );
     },
   },
@@ -697,7 +857,11 @@ export const convertFromTools: PdfToolDefinition[] = [
       const { session } = await withRender(input, context);
       try {
         const { documentToSvg } = await import('../core/convert');
-        const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount).map((p) => p + 1);
+        const indices = pageSelection(input, pageSpec(context.values));
+        if (indices.length === 0) {
+          return noPagesSelected(input);
+        }
+        const stem = outputStem(input.name);
         const files: { blob: Blob; name: string }[] = [];
         for (let i = 0; i < indices.length; i++) {
           const svg = await documentToSvg(input.doc, session, indices[i], {
@@ -705,14 +869,14 @@ export const convertFromTools: PdfToolDefinition[] = [
           });
           files.push({
             blob: new Blob([svg], { type: 'image/svg+xml' }),
-            name: `${baseName(input.name)}-page-${String(indices[i]).padStart(3, '0')}.svg`,
+            name: `${stem}-page-${pageNumber(indices[i], input.pageCount)}.svg`,
           });
           context.progress((i + 1) / indices.length, `Vectorised page ${indices[i]}`);
         }
         if (files.length === 1 || !booleanValue(context.values, 'asOne')) return filesResult(files);
         const { createZip } = await import('../core/archive');
         const blob = await createZip(files.map((file) => ({ name: file.name, data: file.blob })));
-        return filesResult([{ blob, name: `${baseName(input.name)}-svg.zip` }], `${files.length} SVG pages zipped.`);
+        return filesResult([{ blob, name: `${stem}-svg.zip` }], `${files.length} SVG pages zipped.`);
       } finally {
         await session.destroy();
       }
@@ -735,28 +899,50 @@ export const convertFromTools: PdfToolDefinition[] = [
     async run(context) {
       const [input] = await openInputs(context);
       const { extractPageImages } = await import('../core/images-out');
-      const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount).map((p) => p + 1);
+      const indices = pageSelection(input, pageSpec(context.values));
       const smallest = numberValue(context.values, 'smallest', 64);
+      const stem = outputStem(input.name);
       const found: { name: string; blob: Blob }[] = [];
       for (let i = 0; i < indices.length; i++) {
-        const images = await extractPageImages(input.doc, indices[i], { minSide: smallest });
+        // The rail's own floor is the only size filter. The core helper also
+        // drops anything 2 px or under as a decorative tile, which hid a real
+        // 1x1 thumbnail the user had never asked to skip (E15).
+        const images = await extractPageImages(input.doc, indices[i], {
+          minSide: smallest,
+          skipMasks: false,
+        });
         images.forEach((image: ExtractedImage, index: number) => {
           found.push({
-            name: `${baseName(input.name)}-p${indices[i]}-${String(index + 1).padStart(2, '0')}.${image.extension}`,
+            // Both counters are padded from the start: `shots-p2-9.png` sorts
+            // after `shots-p12-1.png` in every file manager (E17).
+            name: `${stem}-p${pageNumber(indices[i], input.pageCount)}-${String(index + 1).padStart(3, '0')}.${image.extension}`,
             blob: new Blob([image.bytes], { type: image.mime }),
           });
         });
         context.progress((i + 1) / indices.length, `Scanned page ${indices[i]}`);
+        throwIfAborted(context.signal);
       }
       if (found.length === 0) {
-        return reportResult([{ title: 'Images', text: 'No embedded images were found above the size limit. If the pages are scans, use PDF to PNG instead.' }], {
+        return withWarnings(reportResult([{
+          title: 'No embedded images',
+          text: `No embedded image was found on the ${indices.length} selected page(s)${smallest > 0 ? ` at or above the ${smallest} px size limit` : ' at all'}. A page drawn from vectors and text has nothing to pull out; a scanned page has one image of the whole sheet, which PDF to Image renders better.`,
+        }, {
+          title: 'What to try instead',
+          rows: [
+            { label: 'Option 1', value: smallest > 0 ? `Lower "Ignore images smaller than" (now ${smallest} px).` : 'This document holds no images; try PDF to Text.' },
+            { label: 'Option 2', value: 'Use PDF to Image to rasterise the pages themselves.' },
+          ],
+        }], {
           message: 'No extractable images.',
-        });
+        }), inputNotices(input));
       }
       if (found.length === 1) return filesResult(found);
       const { createZip } = await import('../core/archive');
       const blob = await createZip(found.map((file) => ({ name: file.name, data: file.blob })));
-      return filesResult([{ blob, name: `${baseName(input.name)}-images.zip` }], `Extracted ${found.length} image(s).`);
+      return filesResult(
+        [{ blob, name: `${stem}-images.zip` }],
+        `Extracted ${found.length} image(s) from ${indices.length} page(s).`,
+      );
     },
   },
 
@@ -793,7 +979,7 @@ export const convertFromTools: PdfToolDefinition[] = [
         extension: format === 'jpeg' ? 'jpg' : format === 'tiff' ? 'tif' : format,
         dpi: numberValue(context.values, 'dpi', 200),
         quality: numberValue(context.values, 'quality', 0.92),
-        pages: stringValue(context.values, 'pages', 'all'),
+        pages: pageSpec(context.values),
         zipWhenMany: booleanValue(context.values, 'zip', true),
       });
     },
@@ -818,7 +1004,7 @@ export const convertFromTools: PdfToolDefinition[] = [
           extension: format === 'jpeg' ? 'jpg' : format === 'tiff' ? 'tif' : format,
           dpi: numberValue(context.values, 'dpi', 200),
           quality: 0.92,
-          pages: stringValue(context.values, 'pages', 'all'),
+          pages: pageSpec(context.values),
           zipWhenMany: true,
         });
       },
@@ -844,6 +1030,11 @@ export const convertFromTools: PdfToolDefinition[] = [
     async run(context) {
       const [input] = await openInputs(context);
       if (stringValue(context.values, 'mode', 'vectors') === 'raster') {
+        // Checked here, in words a user can read: `applyColorFilter` resolves the
+        // same spec against the render session, where an unknown page surfaces
+        // as a raw `PageSpecError` (E6).
+        const wanted = pageSelection(input, pageSpec(context.values));
+        const { dpi } = resolveDpi(numberValue(context.values, 'dpi', 200));
         const { applyColorFilter } = await import('../core/measure');
         const { session } = await withRender(input, context);
         try {
@@ -854,18 +1045,25 @@ export const convertFromTools: PdfToolDefinition[] = [
             saturation: 1,
             hue: 0,
             invert: false,
-            pages: stringValue(context.values, 'pages', 'all'),
-            dpi: numberValue(context.values, 'dpi', 200),
+            pages: wanted.join(','),
+            dpi,
             progress: context.progress,
             signal: context.signal,
           });
-          return { kind: 'pdf', bytes, message: 'Re-rendered every page in greyscale. Text is now part of the image.' };
+          return withWarnings(
+            {
+              kind: 'pdf',
+              bytes,
+              message: `Re-rendered ${wanted.length} page(s) at ${dpi} dpi. Text is now part of the image and can no longer be selected or searched.`,
+            },
+            inputNotices(input),
+          );
         } finally {
           await session.destroy();
         }
       }
       const { greyscalePage } = await import('../core/content');
-      const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
+      const indices = pageSelection(input, pageSpec(context.values)).map((page) => page - 1);
       let changed = 0;
       for (let i = 0; i < indices.length; i++) {
         changed += greyscalePage(input.doc.getPage(indices[i]));
@@ -876,7 +1074,7 @@ export const convertFromTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes,
         message: changed > 0
-          ? `Converted ${changed} colour operation(s) to grey. Text stays selectable.`
+          ? `Converted ${changed} colour operation(s) to grey across ${indices.length} page(s). Text stays selectable.`
           : 'This document already had no colour operations to convert.',
       };
     },
@@ -918,24 +1116,59 @@ export const convertFromTools: PdfToolDefinition[] = [
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-async function collectTables(context: ToolRunContext): Promise<DetectedTable[]> {
+/**
+ * Every table in the selection, plus what the pages actually gave up.
+ *
+ * The facts are collected on the same pass as the tables because "no tables
+ * were found" is two different pieces of news (E10, E13): the page is prose,
+ * or the page is a scan with no text layer at all. Only the second one wants
+ * OCR.
+ */
+async function collectTables(context: ToolRunContext): Promise<TableHaul> {
   const [input] = await openInputs(context);
   const { session } = await withRender(input, context);
   try {
-    const indices = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount).map((p) => p + 1);
+    const indices = pageSelection(input, pageSpec(context.values));
     const minRows = numberValue(context.values, 'minRows', 3);
     const out: DetectedTable[] = [];
+    const pages: ExtractionFacts['pages'] = [];
     for (let i = 0; i < indices.length; i++) {
       const items = await session.textItems(indices[i]);
-      for (const table of detectTables(items, { minRows })) {
-        out.push({ ...table, page: indices[i] });
-      }
+      const found = detectTables(items, { minRows }).map((table) => ({ ...table, page: indices[i] }));
+      out.push(...found);
+      pages.push({
+        page: indices[i],
+        chars: readableChars(items.map((item) => item.str).join(' ')),
+        images: countImages(input.doc.getPage(indices[i] - 1)),
+        tables: found.length,
+      });
       context.progress((i + 1) / indices.length, `Looked for tables on page ${indices[i]}`);
     }
-    return out.sort((a, b) => a.page - b.page);
+    return {
+      input,
+      tables: out.sort((a, b) => a.page - b.page),
+      facts: factsFromPages(pages),
+    };
   } finally {
     await session.destroy();
   }
+}
+
+/** E13 for the table trio, phrased for what the pages really were (E10). */
+function noTablesFound(input: OpenedInput, facts: ExtractionFacts, minRows: number): ToolResult {
+  if (facts.pages.length === 0) {
+    return noPagesSelected(input);
+  }
+  const scanned = facts.chars === 0 && facts.images > 0;
+  return nothingFound(
+    'No tables found',
+    scanned
+      ? `${ofPages(facts)} page(s) hold images but no text layer, so there is no grid of cells to read — the page is a scan, not a table.`
+      : `No grid of aligned columns was found on ${facts.pages.length} page(s), so there is nothing to put in a table.`,
+    scanned
+      ? ['Run OCR (Searchable PDF) on this file first, then extract the table again.', 'Or export the pages with PDF to Image and read the figures off the picture.']
+      : [`Lower the minimum rows setting (now ${minRows}) — a short block still counts.`, 'Use PDF to Text when the page is prose: it keeps the words in reading order.'],
+  );
 }
 
 function toMarkdownTable(table: DetectedTable): string {

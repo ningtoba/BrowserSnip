@@ -619,7 +619,12 @@ async function embedRender(
     background: format === 'jpeg' ? '#ffffff' : undefined,
   });
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  return format === 'jpeg' ? target.embedJpg(bytes) : target.embedPng(bytes);
+  // A canvas that cannot encode the requested type returns PNG and says nothing
+  // about it — that is the HTML spec's fallback, not a hypothetical. Embedding by
+  // the *asked* format died inside pdf-lib with "SOI not found in JPEG", so the
+  // bytes decide which embedder runs.
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+  return isJpeg ? target.embedJpg(bytes) : target.embedPng(bytes);
 }
 
 function throwIfCancelled(signal: AbortSignal, message: string): void {
