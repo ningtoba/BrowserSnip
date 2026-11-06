@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { easeOut, tapDown } from '@/lib/motion';
 import { EngineSettingsDialog, useEngineStatus } from '@/lib/pdf/engines/EngineGate';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export function AppLayout() {
   const { pathname } = useLocation();
@@ -192,7 +193,10 @@ export function AppLayout() {
 
       {/* ── Page Content ── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <Outlet />
+        {/* Keyed by route, so walking to another tool clears a crash by itself. */}
+        <ErrorBoundary label="page" resetKey={pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
       {enginesOpen && (
         <EngineSettingsDialog open={enginesOpen} onClose={() => setEnginesOpen(false)} />

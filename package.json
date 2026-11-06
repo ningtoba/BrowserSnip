@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "dev:phone": "VITE_HTTPS=true vite",
-    "prebuild": "node scripts/copy-pdfjs-assets.mjs"
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
+    "smoke:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.9",

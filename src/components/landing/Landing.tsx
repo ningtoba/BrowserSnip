@@ -4,6 +4,7 @@ import { PDF_TOOLS, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
 const TOOL_COUNT = TOOLS.length;
 const PDF_TOOL_COUNT = PDF_TOOLS.length;
 const PDF_CATEGORY_COUNT = PDF_CATEGORIES.length;
+const VIDEO_TOOL_COUNT = TOOLS.filter((t) => t.category === 'video').length;
 
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -165,7 +166,7 @@ export function Landing() {
                 to="/pdf"
                 className="inline-flex items-center gap-2 rounded-2xl border border-cream-border bg-cream-light px-6 py-3 text-sm font-semibold text-ink-soft shadow-doodle-card transition-colors duration-200 hover:bg-cream-soft hover:text-ink"
               >
-                Explore 26 PDF tools
+                Explore {PDF_TOOL_COUNT} PDF tools
               </Link>
             </motion.span>
           </motion.div>
@@ -247,7 +248,7 @@ export function Landing() {
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-acc-blue-tint text-2xl text-acc-blue transition-transform duration-300 group-hover:scale-110">
                   ▶
                 </div>
-                <p className="eyebrow mb-2 text-acc-blue">8 tools · FFmpeg</p>
+                <p className="eyebrow mb-2 text-acc-blue">{VIDEO_TOOL_COUNT} tools · FFmpeg</p>
                 <h3 className="mb-2 font-display text-2xl font-semibold tracking-[-0.02em] text-ink sm:text-[28px]">
                   Video, cut to fit
                 </h3>

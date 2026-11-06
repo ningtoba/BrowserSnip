@@ -84,7 +84,12 @@ export function ToolCard({ tool, onClick, featured = false }: Props) {
       whileTap={tapDown}
       className="group h-full"
     >
-      <button type="button" onClick={onClick} className="tool-card flex flex-col text-left w-full h-full">
+      <button
+        type="button"
+        data-tool={tool.id}
+        onClick={onClick}
+        className="tool-card flex flex-col text-left w-full h-full"
+      >
         <div
           className={`mb-4 flex items-center justify-center rounded-[10px] transition-transform duration-300 group-hover:scale-105 ${
             featured ? 'h-14 w-14 text-2xl' : 'h-11 w-11 text-xl'
