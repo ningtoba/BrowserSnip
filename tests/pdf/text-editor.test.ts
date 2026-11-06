@@ -11,7 +11,6 @@ import { viewerRectToUserSpace, type PageFrame } from '@/lib/pdf/core/tables';
 import {
   DEFAULT_STYLE,
   alignBoxes,
-  applyMatrix,
   boxContains,
   canRedo,
   canUndo,
@@ -34,6 +33,7 @@ import {
   joinLines,
   layoutBlock,
   listMarker,
+  mapVector,
   matrixDeterminant,
   monospaceMeasure,
   nextObjectId,
@@ -113,7 +113,8 @@ function textObject(overrides: Partial<TextObject> = {}): TextObject {
     paragraphs: paragraphsFromText('hello'),
     style: { ...DEFAULT_STYLE },
     deletion: [],
-    patchColor: '#ffffff',
+    paperColor: '#ffffff',
+    sourceId: '',
     fromInvisibleLayer: false,
     ...overrides,
   };
@@ -277,13 +278,13 @@ describe('page geometry', () => {
       expect(matrixDeterminant(m)).toBeCloseTo(1, 6);
       // Text-space +x has to come out as viewer +x: map the vector through `Tm`
       // and back through the page transform into viewer space.
-      const forward = applyMatrix(invertMatrix(viewerToUserMatrix(frame)), [m[0], m[1]]);
-      expect(forward[0]).toBeCloseTo(1, 6);
-      expect(forward[1]).toBeCloseTo(0, 6);
+      const forward = mapVector(invertMatrix(viewerToUserMatrix(frame)), { x: m[0], y: m[1] });
+      expect(forward.x).toBeCloseTo(1, 6);
+      expect(forward.y).toBeCloseTo(0, 6);
       // And text-space +y (the direction a superscript rises) is viewer up.
-      const up = applyMatrix(invertMatrix(viewerToUserMatrix(frame)), [m[2], m[3]]);
-      expect(up[0]).toBeCloseTo(0, 6);
-      expect(up[1]).toBeCloseTo(-1, 6);
+      const up = mapVector(invertMatrix(viewerToUserMatrix(frame)), { x: m[2], y: m[3] });
+      expect(up.x).toBeCloseTo(0, 6);
+      expect(up.y).toBeCloseTo(-1, 6);
     }
   });
 
@@ -323,14 +324,25 @@ describe('page geometry', () => {
     // Mirroring keeps the covered rectangle identical but walks it the other way.
     expect(flipped[0]).toBeCloseTo(-plain[0], 6);
     const end = (m: ReturnType<typeof imageMatrix>) => m[4] + m[0];
-    expect(end(flipped)).toBeCloseTo(end(plain) - 2 * box.width, 6);
     expect(flipped[4]).toBeCloseTo(plain[4] + box.width, 6);
+    expect(end(flipped)).toBeCloseTo(plain[4], 6);
   });
 
   it('swaps width and height on a quarter turn of the box', () => {
     const rotated = rotateBoxAboutCenter({ x: 100, y: 100, width: 60, height: 20 }, 90);
     expect(rotated).toEqual({ x: 120, y: 80, width: 20, height: 60 });
     expect(rotateBoxAboutCenter(rotated, 180)).toEqual(rotated);
+  });
+
+  it('turns a point of an object about its centre', () => {
+    const box = { x: 0, y: 0, width: 100, height: 40 };
+    expect(rotatePointAboutCenter(box, 0, { x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
+    // 90° clockwise sends the top-left corner to the rotated box's top-right.
+    const turned = rotatePointAboutCenter(box, 90, { x: 0, y: 0 });
+    const rotatedBox = rotateBoxAboutCenter(box, 90);
+    expect(turned.x).toBeCloseTo(rotatedBox.x + rotatedBox.width, 6);
+    expect(turned.y).toBeCloseTo(rotatedBox.y, 6);
+    expect(rotatePointAboutCenter(box, 360, { x: 10, y: 20 })).toEqual({ x: 10, y: 20 });
   });
 
   it('unions and hit-tests boxes', () => {
@@ -942,5 +954,132 @@ describe('line helpers', () => {
       item({ str: 'gamma', x: 200, y: 101, w: 40, h: 10 }),
     ]);
     expect(lines.map((line) => line.text)).toEqual(['alpha', 'gamma', 'beta']);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Page images and shapes, from pdf.js's flattened operator list        *
+ * ------------------------------------------------------------------ */
+
+describe('operator-list detection', () => {
+  const codes: OperatorCodes = {
+    save: 1,
+    restore: 2,
+    transform: 3,
+    paintImageXObject: 4,
+    paintImageXObjectRepeat: 5,
+    paintInlineImageXObject: 6,
+    paintImageMaskXObject: 7,
+    paintSolidColorImageMask: 8,
+    constructPath: 9,
+    fill: 10,
+    stroke: 11,
+    fillStroke: 12,
+    endPath: 13,
+  };
+
+  function list(...ops: [number, readonly unknown[] | null][]): { fnArray: number[]; argsArray: (readonly unknown[] | null)[] } {
+    return { fnArray: ops.map(([fn]) => fn), argsArray: ops.map(([, args]) => args) };
+  }
+
+  it('reports an image placed by the current transform', () => {
+    const { fnArray, argsArray } = list(
+      [codes.transform, [100, 0, 0, 50, 10, 20]],
+      [codes.paintImageXObject, ['img_p0_1']],
+    );
+    const found = detectPageObjects(fnArray, argsArray, codes, { width: 612, height: 792 });
+    expect(found).toEqual([{ kind: 'image', box: { x: 10, y: 20, width: 100, height: 50 } }]);
+  });
+
+  it('tracks save/restore so one image cannot leak its transform', () => {
+    const { fnArray, argsArray } = list(
+      [codes.save, null],
+      [codes.transform, [200, 0, 0, 200, 0, 0]],
+      [codes.paintImageXObject, ['a']],
+      [codes.restore, null],
+      [codes.paintImageXObject, ['b']],
+    );
+    const found = detectPageObjects(fnArray, argsArray, codes, { width: 612, height: 792 });
+    expect(found.map((entry) => entry.box.width)).toEqual([200, 1]);
+  });
+
+  it('measures filled paths as shape boxes and skips unpainted ones', () => {
+    const { fnArray, argsArray } = list(
+      [codes.constructPath, [[10, 10, 60, 10, 60, 40, 10, 40], []]],
+      [codes.fill, null],
+      [codes.constructPath, [[0, 0, 5, 5], []]],
+      [codes.endPath, null],
+    );
+    const found = detectPageObjects(fnArray, argsArray, codes, { width: 612, height: 792 });
+    expect(found).toEqual([{ kind: 'shape', box: { x: 10, y: 10, width: 50, height: 30 } }]);
+  });
+
+  it('drops degenerate and off-page placements', () => {
+    const { fnArray, argsArray } = list(
+      [codes.transform, [0.4, 0, 0, 0.4, 0, 0]],
+      [codes.paintImageXObject, ['tiny']],
+      [codes.transform, [10, 0, 0, 10, 5000, 5000]],
+      [codes.paintImageXObject, ['offpage']],
+    );
+    expect(detectPageObjects(fnArray, argsArray, codes, { width: 612, height: 792 })).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Editor HTML round trip                                              *
+ * ------------------------------------------------------------------ */
+
+describe('editor HTML round trip', () => {
+  it('escapes markup so page text cannot inject elements', () => {
+    const html = paragraphsToHtml(paragraphsFromText('<img src=x onerror=alert(1)>'), DEFAULT_STYLE);
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+  });
+
+  it('preserves inline formatting through the DOM-lite walk', () => {
+    const style: typeof DEFAULT_STYLE = { ...DEFAULT_STYLE, size: 11 };
+    const paragraphs: DocParagraph[] = [
+      {
+        runs: [
+          { text: 'plain ', style: {} },
+          { text: 'bold', style: { bold: true } },
+          { text: ' and red', style: { color: '#ff0000' } },
+        ],
+        style: { align: 'center' },
+        list: 'none',
+        listLevel: 0,
+      },
+    ];
+    const html = paragraphsToHtml(paragraphs, style);
+    expect(html).toContain('<b>bold</b>');
+    expect(html).toContain('color:#ff0000');
+    expect(html).toContain('text-align:center');
+    // The writer reads the tree back, and the formatting survives.
+    const restored = paragraphsFromDom([
+      {
+        tag: 'div',
+        align: 'center',
+        children: [
+          { tag: '#text', text: 'plain ' },
+          { tag: 'b', bold: true, children: [{ tag: '#text', text: 'bold' }] },
+          { tag: '#text', text: ' and ' },
+          { tag: 'span', color: '#ff0000', children: [{ tag: '#text', text: 'red' }] },
+        ],
+      },
+    ]);
+    expect(restored[0].runs).toEqual([
+      { text: 'plain ', style: {} },
+      { text: 'bold', style: { bold: true } },
+      { text: ' and ', style: {} },
+      { text: 'red', style: { color: '#ff0000' } },
+    ]);
+    expect(restored[0].style.align).toBe('center');
+  });
+
+  it('keeps block alignment and indent from the editor wrapper', () => {
+    const [paragraph] = paragraphsFromDom([
+      { tag: 'div', align: 'right', indent: 24, children: [{ tag: '#text', text: 'x' }] },
+    ]);
+    expect(paragraph.style).toEqual({ align: 'right', indent: 24 });
   });
 });

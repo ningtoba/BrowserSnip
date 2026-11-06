@@ -77,6 +77,11 @@ export function applyMatrix(m: Matrix6, p: Point): Point {
   };
 }
 
+/** Direction only: the same matrix without its translation. */
+export function mapVector(m: Matrix6, v: Point): Point {
+  return { x: round(m[0] * v.x + m[2] * v.y, 6), y: round(m[1] * v.x + m[3] * v.y, 6) };
+}
+
 /** Normalise `/Rotate` (and any object angle) to a clockwise multiple of 90. */
 export function quarterTurn(rotation: number): 0 | 90 | 180 | 270 {
   const r = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
@@ -1209,8 +1214,6 @@ export interface TextObject extends BaseObject {
   style: EditorStyle;
   /** Viewer-space boxes of the source runs this object replaces. */
   deletion: TopLeftBox[];
-  /** Colour painted over the deleted runs before the rewrite. */
-  patchColor: string;
   /** Colour sampled from behind the block, used for the on-screen patch. */
   paperColor: string;
   /** Source paragraph id, so find & replace edits the same block twice. */
@@ -1225,10 +1228,22 @@ export interface ImageObject extends BaseObject {
   mime: string;
   /** Natural pixel size, so "replace image keeping placement" can rescale. */
   intrinsic?: { width: number; height: number };
-  replaced?: string;
 }
 
-export type EditObject = TextObject | ImageObject;
+/**
+ * A flat rectangle painted over page content.
+ *
+ * This is what "delete this page image" means with a client-only engine: the
+ * producer's pixels stay in the file, covered by a patch in the page's own
+ * colour. Only a raster pass (`core/render` + `core/raster`, or the optional
+ * PyMuPDF engine) removes them, and the UI says so.
+ */
+export interface PatchObject extends BaseObject {
+  kind: 'shape';
+  color: string;
+}
+
+export type EditObject = TextObject | ImageObject | PatchObject;
 
 export function scopeAllows(kind: ObjectKind, scope: EditScope): boolean {
   return scope === 'all' || scope === kind;
@@ -1887,6 +1902,130 @@ export function objectsSummary(objects: EditObject[]): { text: number; images: n
     images: objects.filter((object) => object.kind === 'image').length,
     pending: objects.filter((object) => object.state === 'draft' || object.state === 'queued').length,
   };
+}
+
+/**
+ * Where a point of an object lands after the object is turned `degrees`
+ * clockwise about its own centre (viewer space).
+ */
+export function rotatePointAboutCenter(box: TopLeftBox, degrees: number, point: Point): Point {
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const m = multiplyMatrices(
+    multiplyMatrices(translationMatrix(cx, cy), rotationMatrix(degrees)),
+    translationMatrix(-cx, -cy),
+  );
+  return applyMatrix(m, point);
+}
+
+/**
+ * The subset of pdf.js's `OPS` table {@link detectPageObjects} reads. Codes are
+ * numbers that differ between pdf.js releases, so the caller passes the table it
+ * loaded rather than the editor hard-coding them.
+ */
+export interface OperatorCodes {
+  save: number;
+  restore: number;
+  transform: number;
+  paintImageXObject: number;
+  paintImageXObjectRepeat: number;
+  paintInlineImageXObject: number;
+  paintImageMaskXObject: number;
+  paintSolidColorImageMask: number;
+  constructPath: number;
+  fill: number;
+  stroke: number;
+  fillStroke: number;
+  endPath: number;
+}
+
+export interface DetectedPageObject {
+  kind: 'image' | 'shape';
+  box: TopLeftBox;
+}
+
+/**
+ * Raster and vector placements on one page, from pdf.js's flattened operator
+ * list, in viewer space at one unit per point.
+ *
+ * pdf.js resolves XObject `Do` calls and page rotation into the list it hands
+ * over, so the current transform is all this needs: an image paints the unit
+ * square, `constructPath` arrives as a flat `[x, y, …]` array. A repeated image
+ * is reported once, at its first placement.
+ */
+export function detectPageObjects(
+  fnArray: ArrayLike<number>,
+  argsArray: readonly (readonly unknown[] | null)[],
+  codes: OperatorCodes,
+  limits: { width: number; height: number },
+): DetectedPageObject[] {
+  const imageCodes = new Set([codes.paintImageXObject, codes.paintImageXObjectRepeat, codes.paintInlineImageXObject, codes.paintImageMaskXObject]);
+  const paintCodes = new Set([codes.fill, codes.stroke, codes.fillStroke]);
+  const out: DetectedPageObject[] = [];
+  const stack: Matrix6[] = [];
+  let ctm = identityMatrix();
+  let path: TopLeftBox | null = null;
+
+  const pushBox = (kind: 'image' | 'shape', box: TopLeftBox) => {
+    if (!(box.width > 0.5) || !(box.height > 0.5)) return;
+    if (box.x > limits.width || box.y > limits.height) return;
+    if (box.x + box.width < 0 || box.y + box.height < 0) return;
+    out.push({ kind, box });
+  };
+
+  for (let index = 0; index < fnArray.length; index += 1) {
+    const fn = fnArray[index];
+    const args = (argsArray[index] ?? []) as readonly unknown[];
+    if (fn === codes.save) {
+      stack.push(ctm);
+      continue;
+    }
+    if (fn === codes.restore) {
+      ctm = stack.pop() ?? identityMatrix();
+      continue;
+    }
+    if (fn === codes.transform && args.length >= 6) {
+      const m = args.slice(0, 6).map(Number) as Matrix6;
+      if (m.every(Number.isFinite)) ctm = multiplyMatrices(ctm, m);
+      continue;
+    }
+    if (imageCodes.has(fn)) {
+      const corners = [
+        applyMatrix(ctm, { x: 0, y: 0 }),
+        applyMatrix(ctm, { x: 1, y: 0 }),
+        applyMatrix(ctm, { x: 1, y: 1 }),
+        applyMatrix(ctm, { x: 0, y: 1 }),
+      ];
+      pushBox('image', boxOf(corners));
+      continue;
+    }
+    if (fn === codes.constructPath) {
+      const coords = (args[0] ?? []) as readonly unknown[];
+      const points: Point[] = [];
+      for (let i = 0; i + 1 < coords.length; i += 2) {
+        const x = Number(coords[i]);
+        const y = Number(coords[i + 1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        points.push(applyMatrix(ctm, { x, y }));
+      }
+      path = points.length > 0 ? boxOf(points) : null;
+      continue;
+    }
+    if (paintCodes.has(fn)) {
+      if (path) pushBox('shape', path);
+      continue;
+    }
+    if (fn === codes.endPath) path = null;
+  }
+  return out;
+}
+
+function boxOf(points: Point[]): TopLeftBox {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 
 export type { QuadRect } from '@/lib/pdf/core/tables';

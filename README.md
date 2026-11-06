@@ -22,7 +22,7 @@
 ---
 
 > **✂ Snip, process, and secure your media — all inside your browser tab.**  
-> BrowserSnip is a collection of **34 focused micro-tools** for video and PDF work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
+> BrowserSnip is a collection of **120 focused micro-tools** (8 video + 112 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
 
 ---
 
@@ -35,7 +35,7 @@ BrowserSnip is **not** a timeline-based video editor like CapCut or Premiere. It
 | | | |
 |---|---|---|
 | 🎬 **Video Tools** | 8 FFmpeg-powered micro-tools | Trim, resize, crop, compress, GIF, audio, speed, metadata |
-| 📄 **PDF Tools** | 26 tools across 6 categories | Merge, split, convert, edit, sign, encrypt, OCR, redact |
+| 📄 **PDF Tools** | 112 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
 | 🔒 **Privacy-first** | Runs entirely in your browser | WebAssembly + SharedArrayBuffer. Zero server footprint |
 | ⚡ **Instant results** | Stream-copy where possible | Lossless operations finish in seconds, not minutes |
 | 🌑 **Dark mode** | Developer-grade aesthetic | Indigo accent on zinc/slate, designed for long sessions |
@@ -64,7 +64,21 @@ Eight focused tools powered by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpe
 
 ## 📄 PDF Tools
 
-Twenty-six tools across six categories. Powered by [pdf-lib](https://github.com/Hopding/pdf-lib), [PDF.js](https://github.com/mozilla/pdf.js), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), and [ONNX Runtime](https://github.com/microsoft/onnxruntime).
+112 tools across six categories, all driven from one declarative registry
+(`src/lib/pdf/tools/`) — adding a tool means adding one module, not editing five files.
+
+| Category | Tools |
+| --- | --- |
+| Organize | 23 — merge, split, extract, delete, reorder, rotate (incl. any angle), reverse, blank pages, alternate-merge, duplex collate, overlay/underlay, N-up, booklet imposition, posterize, divide, combine-to-scroll, fix page size, page dimensions, remove blanks, attachments, ZIP/CBZ, scan |
+| Edit | 21 — annotation editor, in-place text editor, page numbers, watermark, header/footer, Bates numbering, page labels, bookmarks/outline, table of contents, stamps, layers (OCG), background & text colour, invert/adjust colours, scanner effect, rasterize, deskew, crop, form filler, form creator |
+| Convert to PDF | 23 — images (JPG/PNG/WEBP/HEIC/BMP/TIFF/PSD/SVG/CBZ), text, Markdown, HTML, CSV, JSON, XML, RTF, Word, Excel, PowerPoint, EPUB, digitize/OCR |
+| Convert from PDF | 17 — text, Markdown, JSON, CSV, Excel, Word, SVG, images (5 formats), extract tables, extract images, prepare-for-AI (LlamaIndex), greyscale |
+| Optimize | 9 — compress (incl. target size), lossless optimize, PDF/A, linearize, font-to-outline, repair, sanitize, deskew, rasterize |
+| Security | 19 — protect with AES-256 + real permissions, unlock, change permissions, remove restrictions, sign, digital X.509 signature, validate signature, RFC 3161 timestamp, redact, flatten, remove annotations, view/edit/remove metadata, attachments |
+
+Powered by [`@maxwbh/pdf-lib`](https://github.com/Maxwbh/pdf-lib) (a pdf-lib fork with real
+encryption), [PDF.js](https://github.com/mozilla/pdf.js), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR),
+[node-forge](https://github.com/digitalbazaar/forge) and [ONNX Runtime](https://github.com/microsoft/onnxruntime).
 
 ### 📑 Organize PDF
 
@@ -143,12 +157,48 @@ Your video file
 ```
 Your PDF file
   → FileReader → ArrayBuffer
-    → pdf-lib loads + parses the document
-      → Pure function applies the transformation (merge, split, sign, etc.)
-        → Document serialized back to Uint8Array → Blob → Object URL
-          → PDF.js renders pages to canvas for live preview
-            → Download, copy to clipboard, or preview in-browser
+    → registry looks up the tool definition (src/lib/pdf/tools/<group>.ts)
+      → @maxwbh/pdf-lib loads + parses the document, prompting for a password if /Encrypt
+        → pure function applies the transformation (merge, split, sign, redact, impose …)
+          → serialized back to Uint8Array → Blob → Object URL
+            → PDF.js renders pages to canvas for live preview (cMaps + standard fonts included)
+              → Download, copy to clipboard, or preview in-browser
 ```
+
+Text is never drawn with a WinAnsi standard font: `core/fonts.ts` embeds
+Noto Sans and lazily fetches a matching script face (CJK, Arabic, Hebrew, Thai,
+Indic) from the range table, which is what makes non-Latin watermarks, page
+numbers, Bates stamps and OCR output work instead of throwing.
+
+### Two tiers: MIT core, optional AGPL engines
+
+Almost every PDF tool runs on the bundled MIT/Apache dependencies alone — no
+network, no download, works with the laptop unplugged.
+
+A handful of capabilities cannot be had without a heavyweight engine. For those,
+BrowserSnip borrows BentoPDF's architecture: the engine is **fetched lazily from a
+CDN on first use**, is user-overridable under **Engines** in the nav bar, and is
+never bundled into the app.
+
+| Engine | Default source | Unlocks | Licence |
+| --- | --- | --- | --- |
+| PyMuPDF WASM | `@bentopdf/pymupdf-wasm@0.11.16` | high-fidelity extraction, deskew, layers | AGPL-3.0 |
+| Ghostscript WASM | `@bentopdf/gs-wasm@0.1.1` | conforming PDF/A, font-to-outline | AGPL-3.0 |
+| CoherentPDF | `coherentpdf@2.5.5` | conforming linearization, bookmark tooling | AGPL-3.0 |
+
+Every engine-backed tool still works without its engine: it degrades to the
+`pdf-lib` path and says so in the result message rather than failing silently.
+Configuring a custom URL is allow-listed by host, so a stored URL cannot be
+pointed at an attacker-controlled origin without a deliberate edit.
+
+> **Privacy note, precisely:** files are never uploaded. The engines are
+> *downloaded* (once, then cached), and RFC 3161 timestamping sends a 32-byte
+> message digest to the timestamp authority you choose. Nothing else leaves the
+> tab — open the Network panel and check.
+>
+> **Licence note:** BrowserSnip is MIT. The three optional modules above are
+> AGPL-3.0 and are loaded from their own CDN at runtime rather than linked into
+> the distributed bundle.
 
 ### Why WebAssembly?
 
@@ -285,7 +335,7 @@ npm run build
 ```
 /                    Landing page (hero, category cards, Blur promo)
 /video               Video Tools dashboard (8 tools)
-/pdf                 PDF Tools dashboard (26 tools in 6 categories)
+/pdf                 PDF Tools dashboard (112 tools in 6 categories)
 /tool/:toolId        Unified ToolWorkspace — dispatches video vs PDF by category
 ```
 

@@ -168,10 +168,7 @@ const MAIN_VIEWS: Record<string, LazyExoticType> = {
   'edit-pdf': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
   annotate: lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
   'add-stamps': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
-  // NOTE: 'edit-pdf-text' maps to components/tools/pdf/text-editor/TextEditor
-  // once that pane exists; it is registered below as a viewer-only fallback so
-  // the route works while the editor lands.
-
+  'edit-pdf-text': lazy(() => import('@/components/tools/pdf/text-editor/TextEditor').then(asDefault('TextEditor'))),
   'form-filler': lazy(() => import('@/components/tools/pdf/edit/FormFillMain')),
   'form-creator': lazy(() => import('@/components/tools/pdf/edit/FormCreatorMain')),
 };

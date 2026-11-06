@@ -441,7 +441,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     category: 'convert-from',
     keywords: ['jpg', 'png', 'webp', 'bmp', 'tiff', 'screenshot'],
     surface: 'none',
-    outputSuffix: '',
+    outputSuffix: '_images',
     multiFile: false,
     fields: [
       {
@@ -483,7 +483,7 @@ export const convertFromTools: PdfToolDefinition[] = [
       category: 'convert-from',
       keywords: ['image', label.toLowerCase(), 'raster', 'export'],
       surface: 'none',
-      outputSuffix: '',
+      outputSuffix: `_${format}s`,
       fields: [RESOLUTION_FIELD, PAGES_FIELD],
       async run(context) {
         return exportPages(context, {

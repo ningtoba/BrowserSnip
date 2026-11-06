@@ -41,8 +41,7 @@ import {
   setWordSpacing,
   showText,
 } from '@maxwbh/pdf-lib';
-import type { PDFDocument, PDFImage, PDFPage, PDFFont } from '@/lib/pdf/core/doc';
-import { PDFName, rgb } from '@/lib/pdf/core/doc';
+import type { PDFDocument, PDFImage, PDFPage, PDFFont } from '@/lib/pdf/core/doc';import { PDFName, rgb } from '@/lib/pdf/core/doc';
 import { cropBox } from '@/lib/pdf/core/pages';
 import type { QuadRect, TopLeftBox, PageFrame } from '@/lib/pdf/core/tables';
 import { removeTextInRects, textRects } from '@/lib/pdf/core/content';
@@ -64,6 +63,7 @@ import {
   type LayoutLine,
   type LayoutResult,
   type Measure,
+  type PatchObject,
   type ResolvedInline,
   type TextObject,
 } from './model';
@@ -369,6 +369,21 @@ export async function writeImageObject(
   );
 }
 
+/**
+ * Paint a cover patch over page content (see `model.PatchObject`): the producer's
+ * pixels stay in the file, hidden behind a rectangle in the page's own colour.
+ */
+export function writePatchObject(page: PDFPage, frame: PageFrame, object: PatchObject): void {
+  const rect = viewerBoxToUserSpace(object.box, frame);
+  page.drawRectangle({
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    color: colorOf(object.color),
+  });
+}
+
 export interface ApplyOutcome {
   written: number;
   /** Blocks the built-in engine could not clean; the optional engine can. */
@@ -398,12 +413,14 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
   const outcome: ApplyOutcome = { written: 0, failed: [], partial: [], raster: [] };
   const images = new Map<string, PDFImage>();
 
-  for (const [page1, pageObjects] of [...byPage.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [page1, pageObjectsRaw] of [...byPage.entries()].sort((a, b) => a[0] - b[0])) {
     const index = page1 - 1;
     if (index < 0 || index >= doc.getPageCount()) continue;
     const page = doc.getPage(index);
     const frame = frameOfPage(page);
     const writers = pageWriters(page);
+    // Paint order is the model's `z`, so "bring to front" means what it says.
+    const pageObjects = [...pageObjectsRaw].sort((a, b) => a.z - b.z);
 
     const textObjects = pageObjects.filter((object): object is TextObject => object.kind === 'text');
     const withSource = textObjects.filter((object) => object.deletion.length > 0);
@@ -427,6 +444,11 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
 
     const skipped = new Set(outcome.failed.map((entry) => entry.id));
     for (const object of pageObjects) {
+      if (object.kind === 'shape') {
+        writePatchObject(page, frame, object);
+        outcome.written += 1;
+        continue;
+      }
       if (object.kind === 'image') {
         await writeImageObject(doc, page, frame, object, images);
         outcome.written += 1;

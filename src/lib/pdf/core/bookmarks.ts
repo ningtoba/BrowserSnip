@@ -610,8 +610,10 @@ export interface TocOptions {
    */
   startPage?: number;
   /**
-   * Extra offset added to every **displayed** page number. Inserting the
-   * contents page shifts the target pages automatically; use this for front
+   * How many pages of front matter the **printed** numbering has to carry: the
+   * offset is the larger of this and the number of contents pages inserted
+   * ahead of an entry, so `pagesBefore` declares the front matter (which the
+   * generated pages are part of) instead of stacking on top of it. Use it for
    * matter that lives outside this document, or to continue numbering from a
    * printed volume. Defaults to 0.
    */
@@ -652,12 +654,15 @@ function clip(
 
 /**
  * Build a real contents page: pages are inserted into `doc`, entries are laid
- * out with a dot leader, page numbers are right-aligned, and each row carries a
- * `/Link` annotation that jumps to the bookmarked page.
+ * out with a dot leader, page numbers are right-aligned, and each row that has
+ * a destination carries one `/Link` annotation that jumps to the bookmarked
+ * page.
  *
- * Page numbers are the 1-based positions in the **finished** document (the
- * inserted pages are counted) plus `pagesBefore`; the document's page-label
- * dictionary is not consulted.
+ * An entry's number is its 1-based position in the **finished** document: a
+ * target behind the insertion point has moved down by the number of pages
+ * generated ahead of it. `pagesBefore` replaces that shift when the caller
+ * declares more front matter than the contents pages themselves; the document's
+ * page-label dictionary is not consulted.
  */
 export async function generateTocPage(
   doc: PDFDocument,
@@ -723,13 +728,18 @@ export async function generateTocPage(
   }
 
   const inserted = pages.length;
-  const numberingOffset = (opts.pagesBefore ?? 0) + inserted;
+  const declaredBefore = Math.max(0, Math.trunc(opts.pagesBefore ?? 0));
+  // Only the generated pages that land ahead of a target move it; an entry
+  // pointing at the cover page in front of `startPage` keeps its position.
+  const shiftedBy = (page: number): number => (page < startPage ? 0 : inserted);
+  const displayedPage = (page: number): number =>
+    page + 1 + Math.max(declaredBefore, shiftedBy(page));
 
   for (const item of drawn) {
     const node = item.page;
     const row = item.row;
     const x = left + row.level * indent;
-    const label = row.page === null ? '' : String(row.page + 1 + numberingOffset);
+    const label = row.page === null ? '' : String(displayedPage(row.page));
     const labelWidth = label ? bodyFont.widthOfTextAtSize(label, fontSize) : 0;
     const available = Math.max(fontSize, right - x - (label ? labelWidth + gap : 0));
     const title = clip(row.title, bodyFont, fontSize, available);
@@ -766,7 +776,7 @@ export async function generateTocPage(
     }
 
     if (row.page !== null) {
-      const target = row.page + inserted;
+      const target = row.page + shiftedBy(row.page);
       if (target >= 0 && target < doc.getPageCount()) {
         node.drawLink({
           x,
@@ -988,9 +998,10 @@ export interface BatesOptions {
   /** Pages that share one sequence number (Bates "unit" size). Defaults to 1. */
   unitOffset?: number;
   /**
-   * Count positions from the page's absolute index instead of its rank among
-   * the stamped pages, which keeps a sequence intact when only part of a
-   * production is being stamped.
+   * Take `{n}` from the page's position in the **whole document** — page 1 gets
+   * `start` — instead of from the first page of the selection. Unselected pages
+   * always consume their own numbers, so a batch stamped in pieces keeps one
+   * sequence; this only decides where `start` sits.
    */
   crossDocument?: boolean;
 }
@@ -1079,6 +1090,11 @@ function two(n: number): string {
  * support — the text goes through `drawTextU`, so `{org}` may be Cyrillic, CJK
  * or emoji without the `WinAnsi cannot encode` crash the standard fonts give.
  *
+ * `{n}` steps with the document's page order, not with the count of pages
+ * stamped: an unselected page still consumes its number, so a production
+ * stamped in batches ends up matching its physical pages. `start` belongs to
+ * the first page of the selection unless `crossDocument` counts from page 1.
+ *
  * `{org}` resolves from the document information dictionary: `Author`, then
  * `Creator`, then `Title`, then empty — a Bates stamp has no other place to
  * learn the organisation.
@@ -1100,6 +1116,11 @@ export async function addBatesNumbers(
 
   const info = readInfo(doc);
   const organisation = info.author ?? info.creator ?? info.title ?? '';
+  // `{n}` steps with the document's page order, so an unselected page still
+  // consumes its own number. `start` then belongs to page 1 of the document
+  // when `crossDocument` is set, and to the first page of the selection when
+  // it is not.
+  const numberingBase = opts.crossDocument ? 0 : (targets[0] ?? 0);
 
   const unknown = new Set<string>();
   for (const match of format.matchAll(/\{\s*([^{}]+?)\s*\}/g)) {
@@ -1132,13 +1153,13 @@ export async function addBatesNumbers(
       }
     });
 
-  const stampLine = (absoluteIndex: number, rank: number): string =>
-    `${opts.prefix ?? ''}${stampText(opts.crossDocument ? absoluteIndex : rank, absoluteIndex)}${opts.suffix ?? ''}`;
+  const stampLine = (absoluteIndex: number): string =>
+    `${opts.prefix ?? ''}${stampText(absoluteIndex - numberingBase, absoluteIndex)}${opts.suffix ?? ''}`;
 
   const [horizontal, vertical] = anchor;
-  const jobs = targets.map((absoluteIndex, rank) => {
+  const jobs = targets.map((absoluteIndex) => {
     const page = doc.getPage(absoluteIndex);
-    const text = stampLine(absoluteIndex, rank);
+    const text = stampLine(absoluteIndex);
     return measureText(doc, { text, size: fontSize, x: 0, y: 0, fontFamily: opts.fontFamily }).then(
       ({ width }) => {
         const displayed = displayedSize(page);

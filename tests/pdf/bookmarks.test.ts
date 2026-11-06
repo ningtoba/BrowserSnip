@@ -6,7 +6,9 @@
  * that only looks right in memory is worthless. Text-drawing assertions read
  * the content streams back out of the saved bytes.
  */
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import {
   PDFArray,
@@ -15,6 +17,7 @@ import {
   PDFName,
   PDFNumber,
   PDFRef,
+  PDFStream,
   degrees,
   newPDF,
   openPDF,
@@ -42,30 +45,162 @@ async function blankDoc(pages: number) {
   return doc;
 }
 
-/** The visible text of a page: every hex string shown with `Tj`. */
-function pageText(page: PDFPage): string {
-  const contents = page.node.Contents();
-  const streams =
-    contents instanceof PDFArray
-      ? contents.asArray().map((_, i) => contents.lookup(i))
-      : [contents];
+// `core/fonts.ts` loads the vendored Noto Sans with `fetch` against the site
+// root, which is a live dev server in the app and nothing at all here (jsdom
+// answers `http://localhost:3000/`). Serve `public/fonts/` off disk so a stamp
+// containing text Helvetica cannot encode embeds a real face.
+const realFetch = globalThis.fetch;
+const LOCAL_FONT = /\/fonts\/([A-Za-z0-9._-]+\.ttf)$/;
+beforeAll(() => {
+  vi.stubGlobal(
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.href : String(input);
+      const file = LOCAL_FONT.exec(url);
+      if (!file) return realFetch(input as never, init);
+      // Vitest runs from the repository root, which is where `public/` lives.
+      const bytes = readFileSync(path.resolve(process.cwd(), 'public', 'fonts', file[1]));
+      return new Response(new Uint8Array(bytes), { status: 200 });
+    },
+  );
+});
+afterAll(() => vi.unstubAllGlobals());
+
+/**
+ * A page's content, concatenated.
+ *
+ * `/Contents` is optional, may be a direct stream, a reference to one, or an
+ * array of references, and drawing can leave several streams on a page — so
+ * the operators a test looks for are not necessarily in the first entry.
+ */
+function pageContent(page: PDFPage): string {
+  const entry = page.node.Contents();
+  if (!entry) return '';
+  const items = entry instanceof PDFArray ? entry.asArray() : [entry];
   let raw = '';
-  for (const item of streams) {
-    const stream = item as never;
+  for (const item of items) {
+    const stream = item instanceof PDFRef ? page.doc.context.lookup(item) : item;
+    if (!(stream instanceof PDFStream)) continue;
     raw += new TextDecoder('latin1').decode(streamBytes(stream));
   }
-  const out: string[] = [];
-  for (const match of raw.matchAll(/<([0-9A-Fa-f]*)>\s*Tj/g)) {
-    const bytes = (match[1].match(/../g) ?? []).map((hex) => Number.parseInt(hex, 16));
-    out.push(new TextDecoder('latin1').decode(Uint8Array.from(bytes)));
-  }
-  return out.join('\n');
+  return raw;
 }
 
-function rawContent(page: PDFPage): string {
-  const contents = page.node.Contents();
-  const first = contents instanceof PDFArray ? contents.get(0) : contents;
-  return new TextDecoder('latin1').decode(streamBytes(first as never));
+interface FontText {
+  /** Identity-H: every code in the content stream is 2 bytes wide. */
+  composite: boolean;
+  /** Glyph code → text, from the font's `/ToUnicode` CMap. */
+  unicode: Map<number, string>;
+}
+
+const hexDigits = (hex: string): number[] =>
+  (hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16));
+
+/** A CMap destination string: UTF-16BE when it is a whole number of units. */
+function decodeHexText(hex: string): string {
+  const bytes = hexDigits(hex);
+  if (bytes.length % 2 === 1) return new TextDecoder('latin1').decode(Uint8Array.from(bytes));
+  let text = '';
+  for (let i = 0; i + 1 < bytes.length; i += 2) text += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+  return text;
+}
+
+function cMapSections(text: string, kind: string): string[] {
+  const bodies: string[] = [];
+  for (const section of text.matchAll(new RegExp(`begin${kind}([\\s\\S]*?)end${kind}`, 'g'))) {
+    bodies.push(section[1]);
+  }
+  return bodies;
+}
+
+/** `bfchar` and both `bfrange` forms of a `/ToUnicode` CMap. */
+function parseToUnicode(text: string): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const body of cMapSections(text, 'bfchar')) {
+    for (const entry of body.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+      map.set(Number.parseInt(entry[1], 16), decodeHexText(entry[2]));
+    }
+  }
+  for (const body of cMapSections(text, 'bfrange')) {
+    for (const entry of body.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(?:<([0-9A-Fa-f]+)>|\[([^\]]*)\])/g)) {
+      const low = Number.parseInt(entry[1], 16);
+      const high = Number.parseInt(entry[2], 16);
+      if (entry[3] !== undefined) {
+        const first = Number.parseInt(entry[3], 16);
+        for (let code = low; code <= high; code++) {
+          map.set(code, String.fromCharCode(first + code - low));
+        }
+      } else {
+        const destinations = entry[4].match(/<([0-9A-Fa-f]+)>/g) ?? [];
+        destinations.forEach((destination, offset) => {
+          map.set(low + offset, decodeHexText(destination.slice(1, -1)));
+        });
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * How to read the strings each `/Font` resource of this page shows.
+ *
+ * An embedded TrueType face is written with Identity-H, so the bytes in the
+ * content stream are glyph ids and `BATES:` looks like `<0002 0003 …>` until
+ * the font's `/ToUnicode` CMap turns them back into characters.
+ */
+function pageFonts(page: PDFPage): Map<string, FontText> {
+  const ctx = page.doc.context;
+  const fonts = new Map<string, FontText>();
+  try {
+    const resources = ctx.lookupMaybe(page.node.get(PDFName.of('Resources')), PDFDict);
+    const fontDict = resources && ctx.lookupMaybe(resources.get(PDFName.of('Font')), PDFDict);
+    if (!fontDict) return fonts;
+    for (const [name, value] of fontDict.entries()) {
+      const font = ctx.lookupMaybe(value, PDFDict);
+      if (!font) continue;
+      const toUnicode = ctx.lookupMaybe(font.get(PDFName.of('ToUnicode')), PDFStream);
+      fonts.set(name.decodeText(), {
+        composite: font.get(PDFName.of('DescendantFonts')) !== undefined,
+        unicode: toUnicode
+          ? parseToUnicode(new TextDecoder('latin1').decode(streamBytes(toUnicode)))
+          : new Map(),
+      });
+    }
+  } catch {
+    // A page whose resources the helper cannot read simply falls back to the
+    // one-byte (WinAnsi) interpretation.
+  }
+  return fonts;
+}
+
+/** The visible text of a page: every hex string shown with `Tj`. */
+function pageText(page: PDFPage): string {
+  const fonts = pageFonts(page);
+  const fallback: FontText = { composite: false, unicode: new Map() };
+  let font = fallback;
+  const out: string[] = [];
+  // `Tf` picks the font for the `Tj` runs that follow it, which matters: a
+  // WinAnsi string is one byte per character, an Identity-H one is two glyph
+  // ids per character.
+  const tokens = /\/([A-Za-z0-9._-]+)[ ]+[\d.]+[ ]+Tf|<([0-9A-Fa-f]*)>[ ]*Tj/g;
+  for (const match of pageContent(page).matchAll(tokens)) {
+    if (match[1] !== undefined) {
+      font = fonts.get(match[1]) ?? fallback;
+      continue;
+    }
+    const bytes = (match[2].match(/../g) ?? []).map((hex) => Number.parseInt(hex, 16));
+    if (!font.composite) {
+      out.push(new TextDecoder('latin1').decode(Uint8Array.from(bytes)));
+      continue;
+    }
+    let text = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      text += font.unicode.get((bytes[i] << 8) | bytes[i + 1]) ?? '';
+    }
+    out.push(text);
+  }
+  return out.join('\n');
 }
 
 function linkTargets(page: PDFPage, doc: Awaited<ReturnType<typeof newPDF>>): number[] {
@@ -381,10 +516,13 @@ describe('generateTocPage', () => {
     expect(text).toContain('Deep');
     // Numbering counts the inserted pages: original page index 1 is now page 2+N.
     expect(text).toContain(String(2 + tocPages.length));
-    expect(rawContent(toc)).toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/); // dot leader dashes
+    expect(pageContent(toc)).toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/); // dot leader dashes
 
     const targets = linkTargets(toc, loaded);
-    expect(targets).toHaveLength(5);
+    // One /Link per entry with a destination: Introduction, the long title,
+    // Sub and Deep. A grouping heading with no page gets none, and the
+    // 'Contents' title itself does not jump anywhere.
+    expect(targets).toHaveLength(4);
     expect(targets.every((target) => target >= tocPages.length)).toBe(true);
     expect(targets).toEqual(
       nodes.length ? expect.arrayContaining([1 + tocPages.length]) : targets,
@@ -408,7 +546,7 @@ describe('generateTocPage', () => {
     expect(text).toContain('Table of');
     expect(text).toContain('Introduction');
     expect(text).toContain(String(11 + tocPages.length));
-    expect(rawContent(loaded.getPage(1))).not.toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/);
+    expect(pageContent(loaded.getPage(1))).not.toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/);
   });
 
   it('omits the heading when the title is an empty string', async () => {
@@ -521,16 +659,25 @@ describe('addBatesNumbers', () => {
     await addBatesNumbers(doc, { ...base, format: 'R{n}', position: 'bottom-right,72,48' });
 
     const loaded = await reload(await savePDF(doc));
-    const topLeft = rawContent(loaded.getPage(0));
-    // 72pt from the left, 200 - 48 - 9pt tall text from the bottom of the
-    // display box → y = 143 in unrotated user space.
-    expect(topLeft).toMatch(/1 0 0 1 72 143 Tm/);
-    const rotated = rawContent(loaded.getPage(1));
-    // A page rotated 90° clockwise needs the text rotated with it: the text
-    // matrix is the 90° rotation `0 1 -1 0 ...` (cos/sin are written as
-    // float pairs by pdf-lib).
-    expect(rotated).toMatch(/0 1 -1 0/);
-    expect(pageText(loaded.getPage(2))).toContain('R001000');
+    const unrotated = pageContent(loaded.getPage(0));
+    // `top-left` carries no explicit margins, so the default 36pt inset applies
+    // to both of its edges: x = 36, and the baseline sits 36pt + one 9pt line
+    // below the top of the visible page → y = 200 - 36 - 9 = 155.
+    expect(unrotated).toMatch(/1 0 0 1 36 155 Tm/);
+    // `bottom-right,72,48` measures its margins off the anchor's own edges: the
+    // baseline is 48pt up from the bottom and the line stops 72pt short of the
+    // right edge → x = 300 - 72 - width('R001000' @ 9pt Helvetica) = 191.478.
+    expect(unrotated).toMatch(/1 0 0 1 191\.478 48 Tm/);
+    const rotated = pageContent(loaded.getPage(1));
+    // A page rotated 90° clockwise needs the text rotated with it. pdf-lib
+    // writes cos/sin as float pairs, so the matrix is
+    // `6.12e-17 1 -1 6.12e-17 45 36 Tm` rather than a tidy `0 1 -1 0`; the
+    // `1 / -1` pair is the quarter turn. 45 36 is the top-left stamp put back
+    // into user space: the visible box is 200×300, so the origin sits
+    // (36, 300 - 36 - 9) from the display bottom-left → (300 - 255, 36).
+    expect(rotated).toMatch(/[\d.eE+-]+ 1 -1 [\d.eE+-]+ 45 36 Tm/);
+    // The sequence runs with the page order on every page of the selection.
+    expect(pageText(loaded.getPage(2))).toContain('R001020');
     expect(pageText(loaded.getPage(1))).toContain('R001010');
   });
 
