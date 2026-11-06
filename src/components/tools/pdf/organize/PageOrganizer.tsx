@@ -168,6 +168,98 @@ export function planStats(plan: Plan, sourceCount: number): PlanStats {
   };
 }
 
+/**
+ * Whether a plan can be built, in the words the pane shows before saving.
+ *
+ * A plan is a promise about pages that may no longer exist: every page was
+ * deleted, or the only items left are blank sheets, or a document was swapped
+ * while the grid was open and its page numbers now run past the end (E6, E13,
+ * E19). `Save` refuses the empty case, but the user should read the reason in the
+ * plan header rather than in an error after the click.
+ */
+export interface PlanWarning {
+  tone: 'info' | 'warn' | 'danger';
+  text: string;
+}
+
+export function planWarnings(
+  plan: Plan,
+  sources: PlanSource[],
+  options: { statuses?: SourceStatus[] } = {},
+): PlanWarning[] {
+  const notes: PlanWarning[] = [];
+  const stats = planStats(plan, sources.length);
+
+  if (plan.length === 0) {
+    notes.push({
+      tone: 'danger',
+      text: 'This plan has 0 output pages — every page was removed, so saving would produce an empty PDF.',
+    });
+    return notes;
+  }
+  if (stats.pages === 0) {
+    notes.push({
+      tone: 'warn',
+      text: `All ${stats.blanks} output page${stats.blanks === 1 ? ' is' : 's are'} blank sheet${
+        stats.blanks === 1 ? '' : 's'
+      }: nothing from a document would be in the result.`,
+    });
+  }
+
+  const missing: string[] = [];
+  for (const item of plan) {
+    if (item.kind !== 'page') continue;
+    const source = sources[item.source];
+    if (!source) {
+      missing.push(`file ${item.source + 1} is no longer open`);
+    } else if (item.page >= source.pages) {
+      missing.push(`page ${item.page + 1} of “${source.name}”, which has ${source.pages}`);
+    }
+  }
+  if (missing.length > 0) {
+    notes.push({
+      tone: 'danger',
+      text: `${missing.length} planned page${missing.length === 1 ? '' : 's'} refer${
+        missing.length === 1 ? 's' : ''
+      } to a document that changed (${[...new Set(missing)].slice(0, 2).join('; ')}). Remove them or press Reset order.`,
+    });
+  }
+
+  const statuses = options.statuses ?? [];
+  const locked = statuses.filter((status) => status === 'locked').length;
+  const broken = statuses.filter((status) => status === 'error').length;
+  if (locked > 0) {
+    notes.push({
+      tone: 'warn',
+      text: `${locked} open file${locked === 1 ? ' is' : 's are'} password locked and cannot contribute pages until it is unlocked.`,
+    });
+  }
+  if (broken > 0) {
+    notes.push({
+      tone: 'warn',
+      text: `${broken} open file${broken === 1 ? '' : 's'} could not be previewed; pages from ${
+        broken === 1 ? 'it' : 'them'
+      } may fail to build.`,
+    });
+  }
+
+  if (stats.pages > 0 && stats.distinct < stats.pages) {
+    notes.push({
+      tone: 'info',
+      text: `${stats.pages - stats.distinct} page${
+        stats.pages - stats.distinct === 1 ? '' : 's'
+      } in this plan duplicate${stats.pages - stats.distinct === 1 ? 's' : ''} another — the output repeats them on purpose.`,
+    });
+  }
+  if (sources.length === 1 && sources[0].pages === 1) {
+    notes.push({
+      tone: 'info',
+      text: 'The document has one page, so reordering can only duplicate it or add blank sheets around it.',
+    });
+  }
+  return notes;
+}
+
 /** True when the plan is exactly the untouched page order of `source`. */
 export function isPristinePlan(plan: Plan, sources: PlanSource[], source = 0): boolean {
   const base = defaultPlan(sources, source);
@@ -327,6 +419,12 @@ export default function PageOrganizer(): JSX.Element {
   const loading = sources.some((s) => s.status === 'loading');
   const customised = planSources.length > 0 && !isPristinePlan(plan, planSources, 0);
   const multiFile = stats.perSource.filter((n) => n > 0).length > 1;
+  /** Whether this plan would build the file the header says it will (E13, E19). */
+  const planNotes = useMemo(
+    () => planWarnings(plan, planSources, { statuses: sources.map((source) => source.status) }),
+    [plan, planSources, sources],
+  );
+  const blocked = planNotes.some((note) => note.tone === 'danger');
 
   const announce = useCallback((line: string) => setStatus(line), []);
 
@@ -847,15 +945,14 @@ export default function PageOrganizer(): JSX.Element {
           )}
           {customised && <span className="text-[10px] font-medium text-accent">Custom order</span>}
           {loading && <span className="text-[10px] text-warn">Rendering thumbnails…</span>}
-        </div>
-        <div className="flex items-center gap-2">
+        </div>        <div className="flex items-center gap-2">
           <button type="button" onClick={resetOrder} className="doodle-chip text-[10px] doodle-chip-inactive">
             Reset order
           </button>
           <button
             type="button"
             onClick={() => void save()}
-            disabled={saving || plan.length === 0}
+            disabled={saving || plan.length === 0 || blocked}
             className="doodle-btn text-[11px] disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save reordered PDF'}
@@ -864,6 +961,30 @@ export default function PageOrganizer(): JSX.Element {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {planNotes.length > 0 && (
+          <ul
+            data-plan-warnings={planNotes.length}
+            className="shrink-0 flex flex-wrap gap-x-4 gap-y-1 border-b border-cream-border bg-cream-light/40 px-3 py-1.5"
+          >
+            {planNotes.map((note) => (
+              <li
+                key={note.text}
+                role="note"
+                data-tone={note.tone}
+                className={`text-[10px] leading-relaxed ${
+                  note.tone === 'danger'
+                    ? 'text-danger'
+                    : note.tone === 'warn'
+                      ? 'text-warn'
+                      : 'text-ink-muted'
+                }`}
+              >
+                {note.tone === 'info' ? '· ' : '⚠ '}
+                {note.text}
+              </li>
+            ))}
+          </ul>
+        )}
         {/* the plan */}
         <div
           className="min-h-0 flex-1 overflow-y-auto p-3"

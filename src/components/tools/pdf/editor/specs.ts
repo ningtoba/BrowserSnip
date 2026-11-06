@@ -354,6 +354,72 @@ export interface ExportPlan {
   counts: { total: number; redactions: number; byKind: { kind: AnnotationKind; count: number }[] };
 }
 
+/**
+ * Marks that would be written to the file but change nothing in it.
+ *
+ * E13 in the editor's own words: a redaction with no area burns in a dot, a
+ * sticky note with no text is an empty comment. Catching them before Export is
+ * the difference between "it said success" and "it did the thing".
+ */
+export interface EmptyMark {
+  id: string;
+  /** Human sentence, page-qualified, naming the mark rather than its index. */
+  reason: string;
+}
+
+/** Smallest area, in square points, that still removes or shows something. */
+export const MIN_MARK_AREA_PT2 = 1;
+
+export function emptyMarks(annotations: EditorAnnotation[]): EmptyMark[] {
+  const found: EmptyMark[] = [];
+  for (const annotation of annotations) {
+    const label = TOOL_BY_ID[annotation.tool]?.label ?? annotation.kind;
+    const where = `${label} on page ${annotation.page + 1}`;
+    const { width, height } = annotation.rect;
+    if (![annotation.rect.x, annotation.rect.y, width, height].every((n) => Number.isFinite(n))) {
+      found.push({ id: annotation.id, reason: `${where} has no usable geometry.` });
+      continue;
+    }
+    if (annotation.kind === 'Redact' && width * height < MIN_MARK_AREA_PT2) {
+      found.push({ id: annotation.id, reason: `${where} covers no area, so it would redact nothing.` });
+      continue;
+    }
+    if (annotation.kind === 'Text' && !(annotation.contents ?? '').trim()) {
+      found.push({ id: annotation.id, reason: `${where} has no comment text.` });
+      continue;
+    }
+    if (annotation.kind === 'FreeText' && !(annotation.text ?? '').trim()) {
+      found.push({ id: annotation.id, reason: `${where} is an empty text box.` });
+      continue;
+    }
+    if (annotation.kind === 'Ink' && (annotation.inkPath?.[0]?.length ?? 0) < 2) {
+      found.push({ id: annotation.id, reason: `${where} has no stroke to draw.` });
+      continue;
+    }
+  }
+  return found;
+}
+
+/**
+ * The same list without the marks `emptyMarks` reported — the edit behind the
+ * “Remove them” button, kept here so the promise (what is left is what will be
+ * written) is testable next to the rule that found them.
+ */
+export function dropEmptyMarks(annotations: EditorAnnotation[]): EditorAnnotation[] {
+  const ids = new Set(emptyMarks(annotations).map((mark) => mark.id));
+  if (ids.size === 0) return annotations;
+  return annotations.filter((annotation) => !ids.has(annotation.id));
+}
+
+/** One-line honest summary for the export button's neighbour. */
+export function marksSummary(annotations: EditorAnnotation[]): string {
+  const redactions = annotations.filter((a) => a.kind === 'Redact').length;
+  const total = annotations.length;
+  if (total === 0) return 'Nothing on the page yet.';
+  const head = `${total} mark${total === 1 ? '' : 's'} on ${new Set(annotations.map((a) => a.page)).size} page(s)`;
+  return redactions > 0 ? `${head} · ${redactions} redaction${redactions === 1 ? '' : 's'} delete text on export` : `${head}.`;
+}
+
 export function exportPlan(annotations: EditorAnnotation[]): ExportPlan {
   const specs = annotations.map(annotationToSpec);
   const redactions = annotations

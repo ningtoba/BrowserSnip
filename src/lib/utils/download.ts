@@ -2,6 +2,7 @@
  * Download and clipboard utilities for processed PDF output.
  */
 import type { ToolId } from '@/types';
+import { formatBytes } from '@/lib/utils/format';
 
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
@@ -101,11 +102,7 @@ export async function copyToClipboard(blob: Blob): Promise<boolean> {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const size = bytes / Math.pow(1024, i);
-  return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  return formatBytes(bytes);
 }
 
 export function formatCompressionRatio(original: number, compressed: number): string {

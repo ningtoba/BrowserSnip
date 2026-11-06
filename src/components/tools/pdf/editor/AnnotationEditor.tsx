@@ -52,19 +52,26 @@ import {
 import {
   canRedo,
   canUndo,
-  createHistory,
   liveHistory,
   pushHistory,
   redoHistory,
   settleHistory,
   undoHistory,
-  type HistoryState,
 } from './history';
+import {
+  historyCommandForKey,
+  isTypingTarget,
+  keyForTool,
+  toolForKey,
+} from './shortcuts';
 import { pageHasText, snapTextLines } from './quads';
 import {
   buildAnnotation,
   describeAnnotation,
+  dropEmptyMarks,
+  emptyMarks,
   exportPlan,
+  marksSummary,
   moveAnnotation,
   nextAnnotationId,
   workSignature,
@@ -74,35 +81,42 @@ import {
   BUILT_IN_STAMPS,
   EDITABLE_TEXT_TOOLS,
   FILLABLE_TOOLS,
+  GROUP_FOR_TOOL,
   MARKUP_TOOLS,
   STROKED_TOOLS,
   SWATCHES,
   TEXT_TOOLS,
   TOOLS,
   TOOL_BY_ID,
+  TOOL_GROUPS,
   defaultStyleFor,
+  toolGroupById,
+  toolsOfGroup,
 } from './tools';
+import { InspectorSection, SHORTCUT_COUNT, ShortcutList } from './inspector';
+import {
+  DROP_REASSURANCE,
+  adoptedFile,
+  defaultToolForToolId,
+  takeEditorIntent,
+  toolIdFromLocation,
+  type QuickMode,
+} from './quickModes';
+import { DropReassurance, QuickModeChips } from './QuickModeChips';
+import {
+  clampPageIndex,
+  createWork,
+  docWork,
+  documentKey,
+  formatPageExtent,
+  isUnsaved,
+  pageContextNotes,
+  switchNotice,
+  type DocWork,
+} from './workspace';
 import { MAX_DOCUMENTS, type EditorAnnotation, type EditorToolId, type PlacedRaster, type ToolStyle } from './types';
 
 type Phase = 'empty' | 'loading' | 'ready' | 'locked' | 'error';
-
-interface DocWork {
-  history: HistoryState<EditorAnnotation[]>;
-  page: number;
-  selectedId: string | null;
-  /** `workSignature` of the list that was last exported; drives "unsaved". */
-  exportedSignature: string | null;
-}
-
-/** In-memory only — a page reload really does start from the file on disk. */
-const workspaces = new Map<string, DocWork>();
-
-const createWork = (): DocWork => ({
-  history: createHistory<EditorAnnotation[]>([]),
-  page: 0,
-  selectedId: null,
-  exportedSignature: null,
-});
 
 type Gesture =
   | { mode: 'drag'; from: Point; to: Point }
@@ -155,9 +169,20 @@ export function AnnotationEditor(): JSX.Element {
   const setPreviewFileIndex = useFileStore((s) => s.setPreviewFileIndex);
   const addFile = useFileStore((s) => s.addFile);
   const removeFile = useFileStore((s) => s.removeFile);
+  /** Which tool route this editor is mounted on (`edit-pdf`, `annotate`, …). */
+  const activeToolId = useFileStore((s) => s.activeTool);
 
   const activeIndex = files.length > 0 ? Math.min(previewFileIndex, files.length - 1) : 0;
   const activeFile = files[activeIndex] ?? null;
+  /** Two files called `report.pdf` are not the same document (E19). */
+  const workKey = documentKey(activeFile);
+  /**
+   * Route id this editor is mounted on. The same component serves `edit-pdf`,
+   * `annotate`, `add-stamps` and `redact`, and a quick-mode chip has to know
+   * which one the user is standing in to decide whether to move them.
+   */
+  const routeToolId =
+    typeof activeToolId === 'string' && activeToolId.length > 0 ? activeToolId : toolIdFromLocation();
 
   const [work, setWork] = useState<DocWork | null>(null);
 
@@ -166,13 +191,13 @@ export function AnnotationEditor(): JSX.Element {
       setWork(null);
       return;
     }
-    const stored = workspaces.get(activeFile.name);
+    const stored = docWork.get(documentKey(activeFile));
     setWork(stored ?? createWork());
     // Switching tabs must not silently drop work, so say what was kept.
-    if (stored && workSignature(stored.history.present) !== stored.exportedSignature) {
+    if (stored && isUnsaved(stored)) {
       setNotice({
         tone: 'info',
-        text: `Unsaved annotations for ${activeFile.name} are still here — they live in this tab only.`,
+        text: `Unsaved annotations for ${activeFile.name} are still here — ${stored.history.present.length} mark(s), kept in this tab only.`,
       });
     } else {
       setNotice(null);
@@ -184,7 +209,7 @@ export function AnnotationEditor(): JSX.Element {
       setWork((current) => {
         if (!current || !activeFile) return current;
         const next = change(current);
-        workspaces.set(activeFile.name, next);
+        docWork.set(documentKey(activeFile), next);
         return next;
       });
     },
@@ -207,7 +232,7 @@ export function AnnotationEditor(): JSX.Element {
   passwordRef.current = password;
 
   const numPages = session?.numPages ?? 0;
-  const page = Math.min(work?.page ?? 0, Math.max(numPages - 1, 0));
+  const page = clampPageIndex(work?.page ?? 0, numPages);
   const annotations = work?.history.present ?? [];
 
   useEffect(() => {
@@ -390,6 +415,14 @@ export function AnnotationEditor(): JSX.Element {
   /* ── tools + styles ──────────────────────────────────────────────── */
 
   const [tool, setTool] = useState<EditorToolId>('highlight');
+  /** Palette section expand/collapse — controlled so a chip can open what it armed. */
+  const [toolsOpen, setToolsOpen] = useState(true);
+  /**
+   * Inspector group the last arm or quick mode landed in. The options card is
+   * titled with it, so "Words" above a font slider tells the user which half of
+   * the palette they are looking at.
+   */
+  const [focusedGroup, setFocusedGroup] = useState<string>('markup');
   const [styles, setStyles] = useState<Record<EditorToolId, ToolStyle>>(() =>
     TOOLS.reduce(
       (acc, meta) => {
@@ -407,6 +440,21 @@ export function AnnotationEditor(): JSX.Element {
     },
     [tool],
   );
+
+  /**
+   * The one way a palette entry becomes the armed tool — from a click, a key, or
+   * a quick-mode chip — so all three leave the same state behind: the mark being
+   * dragged is dropped, and the inspector section that owns the tool is open.
+   */
+  const armTool = useCallback((next: EditorToolId) => {
+    setTool(next);
+    setFocusedGroup(GROUP_FOR_TOOL[next] ?? 'markup');
+    setToolsOpen(true);
+    setGesture(null);
+    // The arrow is how you get at the text of a box you are still writing, so it
+    // must not close the editor the way arming another pen does.
+    if (next !== 'select') setEditingId(null);
+  }, []);
 
   const [notice, setNotice] = useState<Notice | null>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -439,7 +487,61 @@ export function AnnotationEditor(): JSX.Element {
   /** A chosen picture/signature is only armed for the tool that asked for it. */
   const rasterReady = raster !== null && rasterTool === tool;
 
-  const dirty = work !== null && workSignature(annotations) !== work.exportedSignature;
+  const dirty = isUnsaved(work, annotations);
+
+  /* ── what the editor can say about this document (E6, E8, E9, E13) ── */
+
+  /**
+   * Distinct page sizes seen per document. Mixed sizes (E8) can only be noticed
+   * by visiting the pages, so the set is accumulated rather than read from the
+   * catalogue, and it is keyed by document so a second tab cannot inherit it.
+   */
+  const sizeKeys = useRef(new Map<string, Set<string>>());
+  const [distinctSizes, setDistinctSizes] = useState(1);
+
+  useEffect(() => {
+    if (!pageInfo || !workKey) return;
+    const seen = sizeKeys.current.get(workKey) ?? new Set<string>();
+    sizeKeys.current.set(workKey, seen);
+    const before = seen.size;
+    seen.add(`${Math.round(pageInfo.width)}×${Math.round(pageInfo.height)}`);
+    if (seen.size !== before) setDistinctSizes(seen.size);
+  }, [pageInfo, workKey]);
+
+  const contextNotes = useMemo(
+    () =>
+      pageInfo
+        ? pageContextNotes({
+            index: page,
+            total: numPages,
+            rotation: pageInfo.rotation,
+            widthPt: pageInfo.width,
+            heightPt: pageInfo.height,
+            distinctSizes,
+          })
+        : [],
+    [distinctSizes, numPages, page, pageInfo],
+  );
+
+  /** Marks that would be written but change nothing — E13, before the export. */
+  const uselessMarks = useMemo(() => emptyMarks(annotations), [annotations]);
+
+  const dropUselessMarks = useCallback(() => {
+    if (uselessMarks.length === 0) return;
+    const removed = uselessMarks.length;
+    updateWork((current) => {
+      const kept = dropEmptyMarks(current.history.present);
+      return {
+        ...current,
+        history: pushHistory(current.history, kept),
+        selectedId: kept.some((entry) => entry.id === current.selectedId) ? current.selectedId : null,
+      };
+    });
+    setNotice({
+      tone: 'info',
+      text: `Removed ${removed} mark${removed === 1 ? '' : 's'} that would have been written without changing anything.`,
+    });
+  }, [updateWork, uselessMarks]);
 
   /* ── annotation edits ────────────────────────────────────────────── */
 
@@ -746,22 +848,26 @@ export function AnnotationEditor(): JSX.Element {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const element = event.target as HTMLElement | null;
-      const typing =
-        !!element &&
-        (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable);
-      if (typing) return;
-      const combo = event.ctrlKey || event.metaKey;
-      if (combo && event.key.toLowerCase() === 'z') {
+      if (isTypingTarget(event.target)) return;
+      const history = historyCommandForKey(event.key, {
+        ctrl: event.ctrlKey,
+        meta: event.metaKey,
+        shift: event.shiftKey,
+      });
+      if (history) {
         event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
+        if (history === 'undo') undo();
+        else redo();
         return;
       }
-      if (combo && event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        redo();
-        return;
+      // Single-key tool arms (V H T P) — only bare keys, so Ctrl+P still prints.
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        const armed = toolForKey(event.key);
+        if (armed) {
+          event.preventDefault();
+          armTool(armed);
+          return;
+        }
       }
       switch (event.key) {
         case 'ArrowLeft':
@@ -800,7 +906,7 @@ export function AnnotationEditor(): JSX.Element {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [finishVertices, goToPage, page, redo, removeSelected, tool, undo, updateWork, work?.selectedId]);
+  }, [armTool, finishVertices, goToPage, page, redo, removeSelected, tool, undo, updateWork, work?.selectedId]);
 
   /* ── unsaved changes ─────────────────────────────────────────────── */
 
@@ -907,34 +1013,120 @@ export function AnnotationEditor(): JSX.Element {
     (index: number) => {
       const closing = files[index];
       if (!closing) return;
-      const stored = workspaces.get(closing.name);
-      const unsaved = stored && workSignature(stored.history.present) !== stored.exportedSignature && stored.history.present.length > 0;
+      const stored = docWork.get(documentKey(closing));
+      const unsaved = isUnsaved(stored);
       if (unsaved && !window.confirm(`“${closing.name}” has annotations that were never exported. Close it anyway?`)) {
         return;
       }
-      workspaces.delete(closing.name);
+      docWork.delete(documentKey(closing));
       removeFile(index);
       setPreviewFileIndex(Math.max(0, Math.min(index, files.length - 2)));
     },
     [files, removeFile, setPreviewFileIndex],
   );
 
+  /**
+   * Opening the same file twice is a mistake, not a second document: it would
+   * get a second tab bound to the same workspace key (E16).
+   */
   const addDocument = useCallback(
     (list: FileList | null) => {
       const picked = Array.from(list ?? []);
       if (picked.length === 0) return;
+      const known = new Set(files.map((entry) => documentKey(entry)));
+      const fresh = picked.filter((entry) => !known.has(documentKey(entry)));
+      const repeats = picked.length - fresh.length;
       const room = MAX_DOCUMENTS - files.length;
       if (room <= 0) {
         hint(`This editor holds ${MAX_DOCUMENTS} documents at a time — close a tab before adding another.`, 'warn');
         return;
       }
-      for (const file of picked.slice(0, room)) addFile(file);
-      if (picked.length > room) {
-        hint(`Only ${room} of the ${picked.length} files you chose were opened — the tab strip holds ${MAX_DOCUMENTS}.`, 'warn');
+      const opening = fresh.slice(0, room);
+      for (const file of opening) addFile(file);
+      const parts: string[] = [];
+      if (opening.length === 0 && fresh.length === 0) {
+        parts.push(`${picked.length} of those files ${picked.length === 1 ? 'is' : 'are'} already open — a tab per document, not per drop.`);
+      } else if (repeats > 0) {
+        parts.push(`${repeats} already-open file${repeats === 1 ? ' was' : 's were'} skipped.`);
       }
+      if (fresh.length > room) {
+        parts.push(`Only ${room} of the ${fresh.length} new files were opened — the tab strip holds ${MAX_DOCUMENTS}.`);
+      }
+      if (parts.length > 0) hint(parts.join(' '), opening.length > 0 ? 'info' : 'warn');
     },
-    [addFile, files.length, hint],
+    [addFile, files, hint],
   );
+
+  /* ── arriving from a quick-mode chip ───────────────────────────── */
+
+  const intentApplied = useRef(false);
+
+  useEffect(() => {
+    if (intentApplied.current) return;
+    intentApplied.current = true;
+    const intent = routeToolId ? takeEditorIntent(routeToolId) : null;
+    // The route itself implies a pen: `/tool/add-stamps` must not open on the
+    // highlighter just because that is the component default.
+    const armed = intent?.armTool ?? defaultToolForToolId(routeToolId);
+    if (armed) armTool(armed);
+    const carried = adoptedFile(intent, files);
+    if (carried) {
+      addFile(carried);
+      setNotice({
+        tone: 'info',
+        text: `Brought ${carried.name} across from the editor chooser — it is still only in this tab.`,
+      });
+    } else if (intent?.note) {
+      setNotice({ tone: 'info', text: intent.note });
+    }
+  }, [addFile, armTool, files.length, routeToolId]);
+
+  /**
+   * A chip that lands on the route already open does not navigate; it arms the
+   * palette group the job lives in, which is the part the user asked for.
+   */
+  const applyLocalQuickMode = useCallback(
+    (mode: QuickMode) => {
+      const armed = mode.armTool ?? defaultToolForToolId(routeToolId) ?? 'select';
+      armTool(armed);
+      setNotice({
+        tone: 'info',
+        text: `${mode.label} is what this page already does — the ${
+          toolGroupById(GROUP_FOR_TOOL[armed] ?? '')?.label ?? 'matching'
+        } tools are open in the rail.`,
+      });
+    },
+    [armTool, routeToolId],
+  );
+
+  /* ── switching documents mid-edit (E19) ────────────────────────── */
+
+  const lastWorkKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previous = lastWorkKey.current;
+    lastWorkKey.current = workKey;
+    if (previous === null || previous === workKey) return;
+    // A half-drawn mark, an open link dialog and an armed picture all belong to
+    // the page that was on screen, not the one that just arrived.
+    const pendingMark = gesture !== null || linkDraft !== null;
+    setGesture(null);
+    setLinkDraft(null);
+    setEditingId(null);
+    clearRaster();
+    setDistinctSizes(sizeKeys.current.get(workKey)?.size ?? 1);
+    const kept = docWork.get(workKey)?.history.present.length ?? 0;
+    setNotice({
+      tone: 'info',
+      text: switchNotice({
+        fileName: activeFile?.name ?? 'the other document',
+        kept,
+        discardedPending: pendingMark,
+      }),
+    });
+    // Only the key change matters; the transient values are read as-is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workKey]);
 
   /* ── derived render data ─────────────────────────────────────────── */
 
@@ -956,11 +1148,8 @@ export function AnnotationEditor(): JSX.Element {
           Documents
         </span>
         {visibleFiles.map((file, index) => {
-          const stored = workspaces.get(file.name);
-          const unsaved =
-            stored !== undefined &&
-            stored.history.present.length > 0 &&
-            workSignature(stored.history.present) !== stored.exportedSignature;
+          const stored = docWork.get(documentKey(file));
+          const unsaved = isUnsaved(stored);
           const active = index === activeIndex;
           return (
             <span
@@ -1008,36 +1197,92 @@ export function AnnotationEditor(): JSX.Element {
 
       <div className="flex min-h-0 flex-1">
         {/* ── palette + options ── */}
-        <aside className="flex w-60 shrink-0 flex-col gap-3 overflow-y-auto border-r border-cream-border bg-cream-light p-3 lg:w-72">
+        <aside
+          data-editor-palette
+          data-armed-tool={tool}
+          className="flex w-60 shrink-0 flex-col gap-3 overflow-y-auto border-r border-cream-border bg-cream-light p-3 lg:w-72"
+        >
           <motion.div variants={staggerParent} initial="hidden" animate="visible" className="space-y-3">
             <motion.div variants={fadeUp}>
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Markup tools</p>
-              <div className="mt-1.5 grid grid-cols-2 gap-1">
-                {TOOLS.map((meta) => (
-                  <button
-                    key={meta.id}
-                    type="button"
-                    title={meta.hint}
-                    onClick={() => {
-                      setTool(meta.id);
-                      setGesture(null);
-                      if (meta.id !== 'select') setEditingId(null);
-                    }}
-                    className={`doodle-chip flex items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] ${
-                      tool === meta.id ? 'doodle-chip-active' : 'doodle-chip-inactive'
-                    }`}
-                  >
-                    <span aria-hidden className="text-[12px] leading-none">{meta.icon}</span>
-                    <span className="truncate">{meta.label}</span>
-                  </button>
-                ))}
-              </div>
+              <InspectorSection
+                id="tools"
+                title="Markup tools"
+                meta={`${TOOLS.length} pens`}
+                open={toolsOpen}
+                onToggle={setToolsOpen}
+              >
+                <div className="space-y-2.5" data-focused-group={focusedGroup}>
+                  {TOOL_GROUPS.map((group) => {
+                    const items = toolsOfGroup(group);
+                    const active = GROUP_FOR_TOOL[tool] === group.id;
+                    return (
+                      <div key={group.id} data-tool-group={group.id} {...(active ? { 'data-group-active': 'true' } : {})}>
+                        <p
+                          className={`font-mono text-[9px] uppercase tracking-[0.12em] ${
+                            active ? 'text-accent' : 'text-ink-muted/80'
+                          }`}
+                        >
+                          {group.label}
+                        </p>
+                        <div className="mt-1 grid grid-cols-2 gap-1">
+                          {items.map((meta) => {
+                            const shortcutKey = keyForTool(meta.id);
+                            return (
+                              <button
+                                key={meta.id}
+                                type="button"
+                                data-tool={meta.id}
+                                aria-pressed={tool === meta.id}
+                                {...(shortcutKey ? { 'aria-keyshortcuts': shortcutKey } : {})}
+                                title={meta.hint}
+                                onClick={() => armTool(meta.id)}
+                                className={`doodle-chip flex items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] ${
+                                  tool === meta.id ? 'doodle-chip-active' : 'doodle-chip-inactive'
+                                }`}
+                              >
+                                <span aria-hidden className="text-[12px] leading-none">
+                                  {meta.icon}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-left">{meta.label}</span>
+                                {shortcutKey && (
+                                  <kbd className="shrink-0 rounded border border-cream-border bg-cream px-1 text-[8px] uppercase text-ink-soft">
+                                    {shortcutKey}
+                                  </kbd>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[9px] leading-relaxed text-ink-muted/80">
+                  Eighteen tools in six named groups. Keys V H T P arm the arrow, highlighter, text box and pen.
+                </p>
+              </InspectorSection>
             </motion.div>
 
-            <motion.div variants={fadeUp} className="space-y-2 rounded-doodle-md border border-cream-border bg-white p-2.5">
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
-                {toolMeta.label} options
-              </p>
+            {/* Once a document is open the chips carry it across, which is the
+                only reason a chip beats opening the other tool by hand. In the
+                empty state the chooser below is the single source of chips. */}
+            {phase !== 'empty' && (
+              <motion.div variants={fadeUp}>
+                <QuickModeChips
+                  currentToolId={routeToolId}
+                  file={activeFile}
+                  onLocal={applyLocalQuickMode}
+                />
+              </motion.div>
+            )}
+
+            <motion.div variants={fadeUp}>
+              <InspectorSection
+                id="options"
+                title={`${toolMeta.label} options`}
+                meta={toolGroupById(GROUP_FOR_TOOL[tool] ?? '')?.label ?? 'marks'}
+              >
+                <div className="space-y-2">
 
               <div className="flex items-center gap-2">
                 <input
@@ -1191,6 +1436,8 @@ export function AnnotationEditor(): JSX.Element {
               )}
 
               <p className="text-[10px] leading-relaxed text-ink-muted">{toolMeta.hint}</p>
+                </div>
+              </InspectorSection>
             </motion.div>
 
             <motion.div variants={fadeUp} className="space-y-1.5">
@@ -1228,6 +1475,40 @@ export function AnnotationEditor(): JSX.Element {
                 The original file is copied, the annotations are written into that copy, and redaction
                 regions are cut out of the page content before saving.
               </p>
+              <p className="font-mono text-[10px] tabular-nums text-ink-soft" data-export-summary>
+                {marksSummary(annotations)}
+              </p>
+              {uselessMarks.length > 0 && (
+                <div className="space-y-1 rounded-doodle-md border border-warn/30 bg-warn/[0.07] p-2" data-empty-marks>
+                  <p className="text-[10px] font-semibold text-warn">
+                    {uselessMarks.length} mark{uselessMarks.length === 1 ? '' : 's'} would be written but change nothing
+                  </p>
+                  <ul className="space-y-0.5">
+                    {uselessMarks.slice(0, 4).map((mark) => (
+                      <li key={mark.id} className="text-[10px] leading-relaxed text-ink-soft">
+                        · {mark.reason}
+                      </li>
+                    ))}
+                    {uselessMarks.length > 4 && (
+                      <li className="text-[10px] text-ink-muted">· and {uselessMarks.length - 4} more</li>
+                    )}
+                  </ul>
+                  <button type="button" onClick={dropUselessMarks} className={MINI_BTN}>
+                    Remove {uselessMarks.length === 1 ? 'it' : `them`}
+                  </button>
+                </div>
+              )}
+            </motion.div>
+
+            <motion.div variants={fadeUp}>
+              <InspectorSection
+                id="keys"
+                title="Keyboard"
+                meta={`${SHORTCUT_COUNT} keys`}
+                defaultOpen={false}
+              >
+                <ShortcutList compact />
+              </InspectorSection>
             </motion.div>
 
             <motion.div variants={fadeUp} className="space-y-1 border-t border-cream-border pt-2">
@@ -1314,6 +1595,16 @@ export function AnnotationEditor(): JSX.Element {
               aria-label="Page number"
             />
             <span className="font-mono text-[10px] tabular-nums text-ink-muted">of {pageCount}</span>
+            {pageInfo && (
+              <span
+                className="font-mono text-[10px] tabular-nums text-ink-muted"
+                title="Size of this page, and how it was turned for display"
+                data-page-extent={`${Math.round(pageInfo.width)}x${Math.round(pageInfo.height)}@${pageInfo.rotation}`}
+              >
+                {formatPageExtent(pageInfo.width, pageInfo.height)}
+                {pageInfo.rotation !== 0 ? ` · ${pageInfo.rotation}°` : ''}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => goToPage(page + 1)}
@@ -1398,6 +1689,29 @@ export function AnnotationEditor(): JSX.Element {
             )}
           </div>
 
+          {/*
+             What the editor knows about the page under the pen (E6, E8, E9). These
+             are the three cases where a user suspects a mark landed wrong and cannot
+             tell from the picture, so the answer is printed next to the page controls.
+          */}
+          {contextNotes.length > 0 && (
+            <div className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 border-b border-cream-border bg-white/70 px-3 py-1">
+              {contextNotes.map((note) => (
+                <p
+                  key={note.text}
+                  role="note"
+                  data-tone={note.tone}
+                  className={`text-[10px] leading-relaxed ${
+                    note.tone === 'warn' ? 'text-warn' : 'text-ink-muted'
+                  }`}
+                >
+                  {note.tone === 'warn' ? '⚠ ' : '· '}
+                  {note.text}
+                </p>
+              ))}
+            </div>
+          )}
+
           <div
             ref={paneRef}
             className="relative flex min-h-0 flex-1 items-start justify-center overflow-auto bg-cream-soft p-4 sm:p-6"
@@ -1437,7 +1751,14 @@ export function AnnotationEditor(): JSX.Element {
               </p>
             )}
 
-            {phase === 'empty' && <EmptyState onPick={() => documentInput.current?.click()} />}
+            {phase === 'empty' && (
+              <EmptyState
+                onPick={() => documentInput.current?.click()}
+                currentToolId={routeToolId}
+                file={null}
+                onLocal={applyLocalQuickMode}
+              />
+            )}
 
             {phase === 'loading' && (
               <motion.div variants={scaleIn} initial="hidden" animate="visible" className="flex h-full items-center justify-center">
@@ -1605,7 +1926,17 @@ function Slider({
   );
 }
 
-function EmptyState({ onPick }: { onPick: () => void }) {
+function EmptyState({
+  onPick,
+  currentToolId,
+  file,
+  onLocal,
+}: {
+  onPick: () => void;
+  currentToolId: string | null;
+  file: File | null;
+  onLocal: (mode: QuickMode) => void;
+}) {
   return (
     <motion.div
       variants={staggerParent}
@@ -1633,6 +1964,12 @@ function EmptyState({ onPick }: { onPick: () => void }) {
         >
           Choose a PDF
         </motion.button>
+        <motion.div variants={fadeUp} className="mt-4">
+          <QuickModeChips currentToolId={currentToolId} file={file} onLocal={onLocal} />
+        </motion.div>
+        <motion.div variants={fadeUp} className="mt-4">
+          <DropReassurance lines={DROP_REASSURANCE} />
+        </motion.div>
         <motion.p variants={fadeUp} className="mt-2 text-[10px] text-ink-muted/80">
           Or drop one in the panel on the left.
         </motion.p>

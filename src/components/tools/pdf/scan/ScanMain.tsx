@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
 import { scaleIn } from '@/lib/motion';
+import { navigateToTool } from '@/components/tools/pdf/editor/quickModes';
+import { cameraAvailable } from './ScanTool';
 
 interface CapturedPage {
   id: number;
@@ -9,6 +11,11 @@ interface CapturedPage {
   blob: Blob;
   width: number;
   height: number;
+}
+
+/** The store file name a capture is written to — the link the strip trusts. */
+function captureFileName(id: number): string {
+  return `scan-page-${id + 1}.jpg`;
 }
 
 export function ScanMain() {
@@ -29,8 +36,16 @@ export function ScanMain() {
   const [capturing, setCapturing] = useState(false);
   const [nextId, setNextId] = useState(0);
 
-  // Enumerate cameras
+  // Enumerate cameras. `navigator.mediaDevices` is absent outright in an insecure
+  // context (http on a LAN address), so asking it for devices has to be guarded —
+  // reading a property off `undefined` used to take the whole pane down.
   useEffect(() => {
+    if (!cameraAvailable()) {
+      setCameraError(
+        'This page has no camera API. Camera capture needs a secure context (https, or localhost); photos already on this device can be added with Image to PDF.',
+      );
+      return;
+    }
     navigator.mediaDevices
       .enumerateDevices()
       .then((devices) => {
@@ -49,6 +64,11 @@ export function ScanMain() {
 
     setCameraReady(false);
     setCameraError(null);
+
+    if (!cameraAvailable()) {
+      setCameraError('No camera API in this context — open this page over https, or add photos with Image to PDF.');
+      return;
+    }
 
     try {
       const constraints: MediaStreamConstraints = {
@@ -184,7 +204,7 @@ export function ScanMain() {
 
       // Also create a File and add to the file store for processing.
       // Read store directly to avoid stale closure values.
-      const file = new File([blob], `scan-page-${id + 1}.jpg`, { type: 'image/jpeg' });
+      const file = new File([blob], captureFileName(id), { type: 'image/jpeg' });
       const storeFiles = useFileStore.getState().files;
       if (storeFiles.length === 0) {
         setFiles([file]);
@@ -203,15 +223,31 @@ export function ScanMain() {
         const idx = prev.findIndex((c) => c.id === id);
         if (idx === -1) return prev;
 
-        // Also remove from file store
+        // Match the capture by the name it was stored under, not by position: a
+        // file added or removed in another panel shifts the strip, and removing by
+        // index would then delete the wrong document.
         const store = useFileStore.getState();
-        store.removeFile(idx);
+        const name = captureFileName(id);
+        const at = store.files.findIndex((entry) => entry.name === name);
+        if (at >= 0) store.removeFile(at);
 
         return prev.filter((c) => c.id !== id);
       });
     },
     [],
   );
+
+  // The strip is a view onto the file store, so anything that removes a captured
+  // page elsewhere (the queue, another tool, a new document) has to remove it here
+  // too — otherwise the thumbnails promise pages the PDF will not contain (E19).
+  useEffect(() => {
+    setCaptures((current) => {
+      if (current.length === 0) return current;
+      const names = new Set(files.map((entry) => entry.name));
+      const kept = current.filter((capture) => names.has(captureFileName(capture.id)));
+      return kept.length === current.length ? current : kept;
+    });
+  }, [files]);
 
   // Camera error state
   if (cameraError) {
@@ -226,12 +262,20 @@ export function ScanMain() {
           <div className="mb-4 text-4xl">📷</div>
           <p className="text-xs font-semibold text-danger mb-2">Camera Unavailable</p>
           <p className="text-[11px] text-ink-muted leading-relaxed">{cameraError}</p>
-          <button
-            onClick={() => startCamera(activeCameraId)}
-            className="doodle-btn-secondary mt-4 text-[11px]"
-          >
-            Try Again
-          </button>
+          <div className="mt-4 flex justify-center gap-2">
+            <button
+              onClick={() => startCamera(activeCameraId)}
+              className="doodle-btn-secondary text-[11px]"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigateToTool('image-to-pdf')}
+              className="doodle-btn text-[11px]"
+            >
+              Add photos instead
+            </button>
+          </div>
         </motion.div>
       </div>
     );

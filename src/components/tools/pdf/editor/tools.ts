@@ -236,6 +236,34 @@ export const TOOLS: ToolMeta[] = [
   },
 ];
 
+/**
+ * Inspector sections for the palette.
+ *
+ * Eighteen buttons in one grid is a wall; six named groups is a tool chest. The
+ * ids are also what the quick-mode chips preselect (`panel: 'markup'`), so a
+ * group name is a public-ish string, not a layout detail. `paletteIsGrouped`
+ * keeps the promise that every tool appears in exactly one group.
+ */
+export interface ToolGroup {
+  id: string;
+  label: string;
+  tools: EditorToolId[];
+}
+
+export const TOOL_GROUPS: ToolGroup[] = [
+  { id: 'markup', label: 'Read and mark up', tools: ['select', 'highlight', 'underline', 'strike'] },
+  { id: 'words', label: 'Words', tools: ['note', 'freetext'] },
+  { id: 'draw', label: 'Freehand', tools: ['ink', 'line', 'arrow', 'polygon', 'polyline'] },
+  { id: 'shapes', label: 'Shapes', tools: ['square', 'circle'] },
+  { id: 'place', label: 'Stamps, images, signatures', tools: ['stamp', 'image', 'signature'] },
+  { id: 'page', label: 'Page edits', tools: ['link', 'redact'] },
+];
+
+export function toolGroupById(id: string | null | undefined): ToolGroup | undefined {
+  if (!id) return undefined;
+  return TOOL_GROUPS.find((group) => group.id === id);
+}
+
 export const TOOL_BY_ID: Record<EditorToolId, ToolMeta> = TOOLS.reduce(
   (acc, meta) => {
     acc[meta.id] = meta;
@@ -243,6 +271,31 @@ export const TOOL_BY_ID: Record<EditorToolId, ToolMeta> = TOOLS.reduce(
   },
   {} as Record<EditorToolId, ToolMeta>,
 );
+
+/** Which group a tool belongs to, for opening the right inspector section. */
+export const GROUP_FOR_TOOL: Record<EditorToolId, string> = TOOL_GROUPS.reduce(
+  (acc, group) => {
+    for (const tool of group.tools) acc[tool] = group.id;
+    return acc;
+  },
+  {} as Record<EditorToolId, string>,
+);
+
+export function toolsOfGroup(group: ToolGroup): ToolMeta[] {
+  return group.tools.map((id) => TOOL_BY_ID[id]).filter(Boolean);
+}
+
+/** Every palette entry in exactly one group, and every group entry in the palette. */
+export function paletteIsGrouped(): boolean {
+  const seen = new Set<EditorToolId>();
+  for (const group of TOOL_GROUPS) {
+    for (const id of group.tools) {
+      if (!TOOL_BY_ID[id] || seen.has(id)) return false;
+      seen.add(id);
+    }
+  }
+  return seen.size === TOOLS.length;
+}
 
 /** Tools whose geometry comes from snapping to real text. */
 export const MARKUP_TOOLS: EditorToolId[] = ['highlight', 'underline', 'strike'];

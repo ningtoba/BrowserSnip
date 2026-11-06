@@ -51,9 +51,23 @@ export interface ToolField {
   placeholder?: string;
   default?: string | number | boolean | number[] | null;
   options?: ToolFieldOption[];
+  /** Smallest accepted value. `core/guard` clamps or rejects anything below it. */
   min?: number;
+  /** Largest accepted value. */
   max?: number;
+  /** Slider/stepper granularity. Validation snaps to the bounds, not to this. */
   step?: number;
+  /** Reject fractional input (the runner rounds instead, and says so). */
+  integer?: boolean;
+  /** Regular expression source the value must match. */
+  pattern?: string;
+  /**
+   * Leave the field blank without failing validation — the opposite of
+   * `required`, and wins when both are set on a legacy definition.
+   */
+  optional?: boolean;
+  /** Rail section this field belongs to; new sections appear in declaration order. */
+  group?: string;
   unit?: string;
   accept?: string;
   /** Let the user pick more than one file for this field. */
@@ -105,10 +119,18 @@ export interface ToolOutputFile {
   name?: string;
 }
 
+/**
+ * Caveats from a run that had to compromise — "OCR skipped on page 4",
+ * "Ghostscript unavailable, used the core path". `message` is the outcome, so
+ * these belong in their own field: the result card renders them as warnings
+ * rather than burying an admission in a log pane.
+ */
+type ToolResultCommon = { warnings?: string[] };
+
 export type ToolResult =
-  | { kind: 'pdf'; bytes: Uint8Array; message?: string }
-  | { kind: 'files'; files: ToolOutputFile[]; message?: string }
-  | { kind: 'report'; sections: ToolReportSection[]; message?: string; files?: ToolOutputFile[] };
+  | ({ kind: 'pdf'; bytes: Uint8Array; message?: string } & ToolResultCommon)
+  | ({ kind: 'files'; files: ToolOutputFile[]; message?: string } & ToolResultCommon)
+  | ({ kind: 'report'; sections: ToolReportSection[]; message?: string; files?: ToolOutputFile[] } & ToolResultCommon);
 
 export interface ToolReportSection {
   title: string;
@@ -159,6 +181,10 @@ export interface PdfToolDefinition {
   fields?: ToolField[];
   /** Refuse obviously bad parameter combinations before any work starts. */
   validate?: (values: ToolValues, context: { fileCount: number }) => string | null;
+  /** Verb for the primary action (`Merge`, `Compress`); the panel falls back to "Run". */
+  actionLabel?: string;
+  /** One line under the tool name: what the user gets when they press it. */
+  promise?: string;
   run?: (context: ToolRunContext) => Promise<ToolResult>;
   /** Provided instead of `run` for tools with bespoke execution (editors). */
   mainComponent?: ComponentType<{ context: ToolRunContext }>;

@@ -4,10 +4,11 @@
  * Drag on the preview to draw redaction rectangles, then apply
  * to permanently draw opaque rectangles over sensitive areas.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
+import { reportMarks } from '@/components/tools/pdf/editor/placement';
 import {
   getRedactState, setRedactPage, setRedactColor,
   removeRedaction, selectRedaction, getRedactPageSize, subscribeRedact,
@@ -22,16 +23,32 @@ export function RedactTool() {
 
   const selected = st.redactions.find((r) => r.id === st.selectedId) ?? null;
 
-  const handleProcess = useCallback(() => {
+  /**
+   * E13 and E19, before the click: a box the size of a stray mouse-twitch covers no
+   * glyphs, so it would draw a speck and still report a redaction; a box on page 9
+   * of a document that now has 3 pages belongs to the file that was open before.
+   * Both are counted, named and left out of the run instead of smuggled through.
+   */
+  const report = useMemo(() => {
     const pageSize = getRedactPageSize();
-    const redactions = st.redactions.map((r) => ({
+    return reportMarks(st.redactions, {
+      numPages: st.totalPages,
+      page: { page: st.page, widthPt: pageSize.width, heightPt: pageSize.height },
+      describe: (redaction) =>
+        `${Math.round(redaction.w * 100)}% × ${Math.round(redaction.h * 100)}% on page ${redaction.page}`,
+    });
+  }, [st.page, st.redactions, st.totalPages]);
+
+  const handleProcess = useCallback(() => {
+    if (!report.valid) return;
+    const pageSize = getRedactPageSize();
+    const redactions = report.usable.map((r) => ({
       page: r.page,
       x: Math.round(r.x * pageSize.width),
       y: Math.round(r.y * pageSize.height),
       width: Math.round(r.w * pageSize.width),
       height: Math.round(r.h * pageSize.height),
     }));
-    if (redactions.length === 0) return;
     process({
       toolId: 'redact',
       params: {
@@ -39,7 +56,7 @@ export function RedactTool() {
         redactionColor: st.color,
       },
     });
-  }, [process, st.redactions, st.color]);
+  }, [process, report, st.color]);
 
   const pageCounts = new Map<number, number>();
   for (const r of st.redactions) {
@@ -93,6 +110,28 @@ export function RedactTool() {
         </motion.div>
       )}
 
+      {/* Boxes that will not survive the run */}
+      {report.empty.length + report.offPage.length > 0 && (
+        <motion.div variants={scaleIn} className="rounded-[12px] border border-warn/25 bg-warn/[0.07] p-2.5 space-y-1">
+          <p className="text-[10px] font-semibold text-warn">
+            {report.empty.length + report.offPage.length} of {st.redactions.length} box{st.redactions.length === 1 ? '' : 'es'} will not be written
+          </p>
+          <ul className="space-y-0.5">
+            {report.notes.map((note) => (
+              <li key={note} className="text-[10px] leading-relaxed text-ink-soft">· {note}</li>
+            ))}
+          </ul>
+          <button
+            onClick={() => {
+              for (const r of [...report.empty, ...report.offPage]) removeRedaction(r.id);
+            }}
+            className="doodle-chip text-[10px] doodle-chip-inactive"
+          >
+            Remove them
+          </button>
+        </motion.div>
+      )}
+
       {/* Redaction list */}
       {st.redactions.length > 0 && (
         <motion.div variants={fadeUp} className="border-t border-cream-border pt-2">
@@ -127,8 +166,15 @@ export function RedactTool() {
       )}
 
       <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn-danger"
-        disabled={st.redactions.length === 0}>
-        Apply {st.redactions.length} Redaction{st.redactions.length !== 1 ? 's' : ''}
+        disabled={!report.valid}
+        title={
+          st.redactions.length === 0
+            ? 'Drag a rectangle on the preview first — there is nothing to redact yet'
+            : !report.valid
+              ? 'None of the boxes covers anything this document has'
+              : undefined
+        }>
+        Apply {report.usable.length} Redaction{report.usable.length !== 1 ? 's' : ''}
       </button>
     </motion.div>
   );

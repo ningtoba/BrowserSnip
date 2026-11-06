@@ -11,6 +11,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/fonts/fonts.css" />
     <script src="/coi-serviceworker.js"></script>
+    <script>
+      // useTheme adds html.dark after mount, which is after first paint: a dark
+      // mode reload flashed the whole light palette first. Key and value format
+      // match THEME_STORAGE_KEY in src/hooks/useTheme.ts ('' | 'dark' | 'light').
+      try {
+        if (localStorage.getItem('browsersnip:theme') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (err) {
+        /* storage can be blocked; light is a fine default */
+      }
+    </script>
   </head>
   <body class="bg-cream text-ink antialiased">
     <div id="root"></div>

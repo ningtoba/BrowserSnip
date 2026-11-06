@@ -3,23 +3,119 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * The doodle palette, expressed once. Components and the shell never name a
+   * colour directly; they take a token (`shell-muted`, `shell-panel`, …) and
+   * `html.dark` re-points every one of them at a dark value. Light is the
+   * default: the dark block only applies when `useTheme` adds the class, and
+   * the light values below are byte-for-byte the colours the app already drew
+   * with, so the existing look is unchanged.
+   */
+  :root {
+    color-scheme: light;
+
+    --app-bg: #F7F7F4;
+    --panel-bg: #FFFFFF;
+    --sunken-bg: #F1F1EC;
+    --hairline: #E3E3DD;
+    --hairline-strong: #D5D5CD;
+
+    --text-strong: #1B1B18;
+    --text-soft: #55554E;
+    --text-muted: #75756B;
+
+    --accent: #2563EB;
+    --accent-strong: #1D4ED8;
+    --accent-ink: #FFFFFF;
+    --accent-tint: rgba(37, 99, 235, 0.08);
+    --accent-line: rgba(37, 99, 235, 0.35);
+    --accent-ring: rgba(37, 99, 235, 0.18);
+
+    --ok: #059669;
+    --warn: #D97706;
+    --bad: #DC2626;
+    --bad-tint: rgba(220, 38, 38, 0.08);
+    --bad-line: rgba(220, 38, 38, 0.2);
+
+    --ink-rgb: 27 27 24;
+    --ink-soft-rgb: 85 85 78;
+    --ink-muted-rgb: 117 117 107;
+    --cream-rgb: 247 247 244;
+    --cream-light-rgb: 255 255 255;
+    --cream-border-rgb: 227 227 221;
+    --cream-soft-rgb: 241 241 236;
+    --ok-rgb: 5 150 105;
+    --warn-rgb: 217 119 6;
+    --bad-rgb: 220 38 38;
+
+    --glass-bg: rgba(247, 247, 244, 0.85);
+    --scrim: rgba(247, 247, 244, 0.7);
+    --grid-line: rgba(27, 27, 24, 0.03);
+    --shadow-card: 0 1px 2px rgba(27, 27, 24, 0.05);
+    --shadow-lift: 0 8px 24px rgba(27, 27, 24, 0.09), 0 2px 6px rgba(27, 27, 24, 0.05);
+  }
+
+  html.dark {
+    color-scheme: dark;
+
+    --app-bg: #121210;
+    --panel-bg: #1B1B18;
+    --sunken-bg: #232320;
+    --hairline: #33332E;
+    --hairline-strong: #45453D;
+
+    --text-strong: #F2F2EC;
+    --text-soft: #C6C6BC;
+    --text-muted: #97978C;
+
+    --accent: #6EA8FE;
+    --accent-strong: #9CC2FF;
+    --accent-ink: #101A2C;
+    --accent-tint: rgba(110, 168, 254, 0.16);
+    --accent-line: rgba(110, 168, 254, 0.42);
+    --accent-ring: rgba(110, 168, 254, 0.3);
+
+    --ok: #34D399;
+    --warn: #FBBF24;
+    --bad: #F87171;
+    --bad-tint: rgba(248, 113, 113, 0.14);
+    --bad-line: rgba(248, 113, 113, 0.3);
+
+    --ink-rgb: 242 242 236;
+    --ink-soft-rgb: 198 198 188;
+    --ink-muted-rgb: 151 151 140;
+    --cream-rgb: 18 18 16;
+    --cream-light-rgb: 27 27 24;
+    --cream-border-rgb: 51 51 46;
+    --cream-soft-rgb: 35 35 32;
+    --ok-rgb: 52 211 153;
+    --warn-rgb: 251 191 36;
+    --bad-rgb: 248 113 113;
+
+    --glass-bg: rgba(18, 18, 16, 0.82);
+    --scrim: rgba(8, 8, 7, 0.6);
+    --grid-line: rgba(242, 242, 236, 0.035);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.5);
+  }
+
   * {
     scrollbar-width: thin;
-    scrollbar-color: #D5D5CD #F7F7F4;
+    scrollbar-color: var(--hairline-strong) var(--app-bg);
   }
 
   *::-webkit-scrollbar {
     width: 5px;
   }
   *::-webkit-scrollbar-track {
-    background: #F7F7F4;
+    background: var(--app-bg);
   }
   *::-webkit-scrollbar-thumb {
-    background: #D5D5CD;
+    background: var(--hairline-strong);
     border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: #BFBFB6;
+    background: var(--text-muted);
   }
 
   html {
@@ -29,8 +125,8 @@
   body {
     min-height: 100dvh;
     min-height: -webkit-fill-available;
-    background: #F7F7F4;
-    color: #1B1B18;
+    background: var(--app-bg);
+    color: var(--text-strong);
     font-family: Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -51,7 +147,7 @@
   input[type='range']::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 999px;
-    background: #E3E3DD;
+    background: var(--hairline);
   }
 
   input[type='range']::-webkit-slider-thumb {
@@ -60,22 +156,22 @@
     width: 16px;
     height: 16px;
     border-radius: 999px;
-    background: #2563EB;
+    background: var(--accent);
     margin-top: -6px;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-ring);
     transition: box-shadow 150ms ease, transform 150ms ease;
     cursor: pointer;
   }
 
   input[type='range']::-webkit-slider-thumb:hover {
-    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
+    box-shadow: 0 0 0 6px var(--accent-ring);
     transform: scale(1.15);
   }
 
   input[type='range']::-moz-range-track {
     height: 4px;
     border-radius: 999px;
-    background: #E3E3DD;
+    background: var(--hairline);
     border: none;
   }
 
@@ -83,9 +179,9 @@
     width: 16px;
     height: 16px;
     border-radius: 999px;
-    background: #2563EB;
+    background: var(--accent);
     border: none;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-ring);
   }
 
   input[type='text'],
@@ -99,12 +195,12 @@
 
   input[type='checkbox'],
   input[type='radio'] {
-    accent-color: #2563EB;
+    accent-color: var(--accent);
   }
 
   ::selection {
-    background: rgba(37, 99, 235, 0.16);
-    color: #1B1B18;
+    background: var(--accent-ring);
+    color: var(--text-strong);
   }
 }
 
@@ -113,12 +209,12 @@
     @apply relative w-full overflow-hidden rounded-doodle font-semibold
            px-4 py-2.5 text-sm transition-all duration-150
            active:scale-[0.98];
-    background: #2563EB;
-    color: #ffffff;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: var(--shadow-card);
   }
   .doodle-btn:hover:not(:disabled) {
-    background: #1D4ED8;
+    background: var(--accent-strong);
   }
   .doodle-btn:active:not(:disabled) {
     transform: scale(0.98);
@@ -132,13 +228,13 @@
   .doodle-btn-secondary {
     @apply w-full rounded-doodle px-4 py-2.5 text-sm font-semibold
            transition-all duration-150 active:scale-[0.98];
-    background: #FFFFFF;
-    color: #1B1B18;
-    border: 1px solid #E3E3DD;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--panel-bg);
+    color: var(--text-strong);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-card);
   }
   .doodle-btn-secondary:hover:not(:disabled) {
-    background: #F1F1EC;
+    background: var(--sunken-bg);
   }
   .doodle-btn-secondary:disabled {
     @apply opacity-40 cursor-not-allowed;
@@ -153,32 +249,32 @@
            disabled:opacity-40 disabled:pointer-events-none
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40
            cursor-pointer select-none;
-    background: rgba(220, 38, 38, 0.08);
-    color: #DC2626;
-    border: 1px solid rgba(220, 38, 38, 0.2);
+    background: var(--bad-tint);
+    color: var(--bad);
+    border: 1px solid var(--bad-line);
   }
   .doodle-btn-danger:hover:not(:disabled) {
-    background: rgba(220, 38, 38, 0.14);
-    border-color: rgba(220, 38, 38, 0.35);
+    background: var(--bad-tint);
+    border-color: var(--bad);
   }
 
   .doodle-input {
     @apply w-full rounded-doodle px-3 py-2 text-sm
            transition-all duration-150 outline-none;
-    background: #FFFFFF;
-    color: #1B1B18;
-    border: 1px solid #E3E3DD;
+    background: var(--panel-bg);
+    color: var(--text-strong);
+    border: 1px solid var(--hairline);
     font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
   }
   .doodle-input:hover {
-    border-color: #BFBFB6;
+    border-color: var(--hairline-strong);
   }
   .doodle-input:focus {
-    border-color: #2563EB;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
   }
   .doodle-input::placeholder {
-    color: #75756B;
+    color: var(--text-muted);
   }
 
   .doodle-chip {
@@ -186,63 +282,63 @@
            transition-all duration-150 cursor-pointer select-none;
   }
   .doodle-chip-active {
-    background: rgba(37, 99, 235, 0.08);
-    color: #2563EB;
-    border-color: rgba(37, 99, 235, 0.35);
+    background: var(--accent-tint);
+    color: var(--accent);
+    border-color: var(--accent-line);
   }
   .doodle-chip-inactive {
-    background: #FFFFFF;
-    color: #55554E;
-    border-color: #E3E3DD;
+    background: var(--panel-bg);
+    color: var(--text-soft);
+    border-color: var(--hairline);
   }
   .doodle-chip-inactive:hover {
-    color: #1B1B18;
-    border-color: #BFBFB6;
-    background: #F1F1EC;
+    color: var(--text-strong);
+    border-color: var(--hairline-strong);
+    background: var(--sunken-bg);
   }
 
   .doodle-section {
     @apply rounded-doodle-md p-4;
-    background: #FFFFFF;
-    border: 1px solid #E3E3DD;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--panel-bg);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-card);
   }
 
   .sketch-border {
-    border: 1px solid #E3E3DD;
+    border: 1px solid var(--hairline);
     border-radius: 12px;
     overflow: hidden;
-    background: #FFFFFF;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-card);
   }
 
   .tool-card {
     @apply cursor-pointer rounded-doodle-md p-5 h-full flex flex-col
            transition-all duration-200;
-    background: #FFFFFF;
-    border: 1px solid #E3E3DD;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--panel-bg);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-card);
   }
   .tool-card:hover {
-    border-color: #D5D5CD;
-    box-shadow: 0 8px 24px rgba(27, 27, 24, 0.09), 0 2px 6px rgba(27, 27, 24, 0.05);
+    border-color: var(--hairline-strong);
+    box-shadow: var(--shadow-lift);
     transform: translateY(-1px);
   }
   .tool-card:active {
     transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    box-shadow: var(--shadow-card);
   }
 
   .log-line {
     @apply font-mono text-xs leading-relaxed;
-    color: #55554E;
-    border-bottom: 1px solid #E3E3DD;
+    color: var(--text-soft);
+    border-bottom: 1px solid var(--hairline);
     padding: 2px 0;
     font-variant-numeric: tabular-nums;
   }
 
   .glow-border {
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10);
+    box-shadow: 0 0 0 4px var(--accent-ring);
   }
   .glow-border-active {
     animation: pulse-glow 2s ease-in-out infinite;
@@ -254,34 +350,207 @@
   }
 
   .bg-glass {
-    background: rgba(247, 247, 244, 0.85);
+    background: var(--glass-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
 
   .bg-grid {
     background-image:
-      linear-gradient(rgba(27, 27, 24, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(27, 27, 24, 0.03) 1px, transparent 1px);
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 40px 40px;
     background-position: center center;
   }
 
   .eyebrow {
     @apply text-[11px] font-semibold uppercase tracking-[0.12em];
-    color: #75756B;
+    color: var(--text-muted);
   }
 
   .rainbow-border {
     position: relative;
     border-radius: 16px;
     padding: 1px;
-    background: #E3E3DD;
-    box-shadow: 0 1px 2px rgba(27, 27, 24, 0.05);
+    background: var(--hairline);
+    box-shadow: var(--shadow-card);
   }
   .rainbow-border-inner {
-    background: #FFFFFF;
+    background: var(--panel-bg);
     border-radius: 15px;
+  }
+
+  /* ── App shell ─────────────────────────────────────────────────────────
+     The rail, palette and tool header are built from these so that every
+     surface they touch has a dark value. Layout utilities (flex, gap,
+     text size) still come from Tailwind; only colour lives here. */
+  .shell-app {
+    background: var(--app-bg);
+    color: var(--text-strong);
+  }
+  .shell-header {
+    background: var(--glass-bg);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .shell-rail {
+    background: var(--panel-bg);
+    border-right: 1px solid var(--hairline);
+  }
+  .shell-rule {
+    background: var(--hairline);
+  }
+  /** Status dot next to the engine counter: reachable / not reachable. */
+  .shell-dot-ok {
+    background: var(--ok);
+  }
+  .shell-dot-idle {
+    background: var(--hairline-strong);
+  }
+  .shell-hairline-t {
+    border-top: 1px solid var(--hairline);
+  }
+  .shell-title {
+    color: var(--text-strong);
+  }
+  .shell-soft {
+    color: var(--text-soft);
+  }
+  .shell-muted {
+    color: var(--text-muted);
+  }
+  /** Quiet text affordance (breadcrumb crumb, rail section header). */
+  .shell-link {
+    @apply transition-colors duration-200;
+    color: var(--text-muted);
+  }
+  .shell-link:hover {
+    color: var(--text-strong);
+  }
+  /** Indent rule for the tool list inside an expanded category. */
+  .shell-nest {
+    border-left: 1px solid var(--hairline);
+  }
+  .shell-accent {
+    color: var(--accent);
+  }
+  .shell-btn {
+    @apply inline-flex items-center gap-1.5 rounded-doodle border px-2.5 py-1.5
+           text-[11px] font-medium transition-colors duration-200 cursor-pointer;
+    background: var(--panel-bg);
+    color: var(--text-soft);
+    border-color: var(--hairline);
+  }
+  .shell-btn:hover {
+    background: var(--sunken-bg);
+    color: var(--text-strong);
+    border-color: var(--hairline-strong);
+  }
+  .shell-btn-active {
+    background: var(--accent-tint);
+    color: var(--accent);
+    border-color: var(--accent-line);
+  }
+  .shell-icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-doodle
+           border transition-colors duration-200 cursor-pointer;
+    background: var(--panel-bg);
+    border-color: var(--hairline);
+    color: var(--text-soft);
+  }
+  .shell-icon-btn:hover {
+    color: var(--text-strong);
+    background: var(--sunken-bg);
+  }
+  /** Clickable row in the rail and in the palette. */
+  .shell-row {
+    @apply flex w-full items-center gap-2 rounded-doodle px-2 py-1.5 text-left text-xs
+           transition-colors duration-150 cursor-pointer;
+    color: var(--text-soft);
+  }
+  .shell-row:hover {
+    background: var(--sunken-bg);
+    color: var(--text-strong);
+  }
+  .shell-row-active {
+    background: var(--accent-tint);
+    color: var(--accent);
+    @apply font-semibold;
+  }
+  .shell-row-active:hover {
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+  /** Tiny numeric counter / timestamp, monospaced so columns stay aligned. */
+  .shell-meta {
+    @apply font-mono text-[10px] tabular-nums;
+    color: var(--text-muted);
+  }
+  .shell-kbd {
+    @apply inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px];
+    background: var(--sunken-bg);
+    border-color: var(--hairline);
+    color: var(--text-muted);
+  }
+  .shell-badge {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-doodle border px-2 py-0.5
+           text-[10px] font-semibold;
+    border-color: var(--hairline);
+    background: var(--sunken-bg);
+    color: var(--text-soft);
+  }
+  .shell-badge-warn {
+    border-color: var(--bad-line);
+    background: var(--bad-tint);
+    color: var(--warn);
+  }
+  .shell-badge-ok {
+    border-color: var(--hairline);
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+  .shell-scrim {
+    background: var(--scrim);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* ── Command palette ──────────────────────────────────────────────── */
+  .palette-panel {
+    @apply overflow-hidden rounded-doodle-lg;
+    background: var(--panel-bg);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-lift);
+  }
+  .palette-field {
+    @apply w-full bg-transparent text-sm outline-none;
+    color: var(--text-strong);
+    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+  .palette-field::placeholder {
+    color: var(--text-muted);
+  }
+  .palette-group {
+    @apply px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.12em];
+    color: var(--text-muted);
+  }
+  .palette-list {
+    @apply overflow-y-auto py-1.5;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .palette-item {
+    @apply mb-0.5 flex w-full items-center gap-2.5 rounded-doodle
+           px-2.5 py-2 text-left transition-colors duration-100 cursor-pointer;
+    color: var(--text-soft);
+  }
+  .palette-item-active {
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+  .palette-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-sm;
+    background: var(--sunken-bg);
+    color: var(--text-strong);
   }
 }
 
@@ -326,3 +595,15 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/*
+ * Components that ask for `bg-white` literally (83 of them) keep their utility
+ * class, so dark mode re-points the colour instead of a 83-file sweep. The
+ * translucent overlays on the camera scanner (bg-white/10, /20, /30 over video)
+ * are deliberately left alone: there `white` is a highlight, not a surface.
+ */
+html.dark .bg-white { background-color: rgb(var(--cream-light-rgb)); }
+html.dark .bg-white\/85 { background-color: rgb(var(--cream-light-rgb) / 0.85); }
+html.dark .bg-white\/95 { background-color: rgb(var(--cream-light-rgb) / 0.95); }
+html.dark .bg-white\/70 { background-color: rgb(var(--cream-light-rgb) / 0.7); }
+html.dark .bg-white\/60 { background-color: rgb(var(--cream-light-rgb) / 0.6); }

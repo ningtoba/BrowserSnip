@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TOOLS } from '@/lib/constants';
 import { getPdfTool, mainViewFor, hasCustomMainView } from '@/lib/pdf/tools/registry';
-import { fadeUp, scaleIn, slideLeft, staggerParent, tapDown, floatLoop } from '@/lib/motion';
+import { fadeUp, scaleIn, staggerParent, tapDown, floatLoop } from '@/lib/motion';
 import { FileDropZone } from '@/components/ui/FileDropZone';
 import { VideoPreview } from '@/components/player/VideoPreview';
 import { PDFViewer } from '@/components/viewer/PDFViewer';
@@ -75,16 +75,6 @@ function named(name: string) {
   };
 }
 
-const TOOL_ACCENT: Record<string, { fg: string; tint: string }> = {
-  video: { fg: '#2563EB', tint: 'rgba(37, 99, 235, 0.08)' },
-  organize: { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
-  'convert-to': { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
-  'convert-from': { fg: '#7C3AED', tint: 'rgba(124, 58, 237, 0.08)' },
-  edit: { fg: '#D97706', tint: 'rgba(217, 119, 6, 0.08)' },
-  optimize: { fg: '#059669', tint: 'rgba(5, 150, 105, 0.08)' },
-  security: { fg: '#059669', tint: 'rgba(5, 150, 105, 0.08)' },
-};
-const DEFAULT_ACCENT = TOOL_ACCENT.video;
 
 export function ToolWorkspace() {
   const { toolId } = useParams<{ toolId: string }>();
@@ -145,10 +135,8 @@ export function ToolWorkspace() {
         : { accept: 'video/*' };
 
   const importLabel = isVideo ? 'Import a video to get started' : 'Import a file to get started';
-  const dashboardPath = isVideo ? '/video' : '/pdf';
   const safePreviewIndex = Math.min(previewFileIndex, Math.max(0, files.length - 1));
   const previewFile = isMultiFile && files.length > 0 ? files[safePreviewIndex] : file;
-  const accent = TOOL_ACCENT[tool?.category ?? ''] ?? DEFAULT_ACCENT;
 
   if (!tool) {
     return (
@@ -304,33 +292,11 @@ export function ToolWorkspace() {
         animate="visible"
         className="z-20 flex h-14 shrink-0 items-center gap-3 border-b border-cream-border bg-white/85 px-3 backdrop-blur-subtle sm:px-4"
       >
-        <motion.button
-          variants={slideLeft}
-          onClick={() => navigate(dashboardPath)}
-          whileHover="hover"
-          className="group flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-ink-muted transition-colors hover:text-ink"
-        >
-          <motion.span
-            aria-hidden
-            className="inline-flex text-sm leading-none transition-transform duration-200 group-hover:-translate-x-0.5"
-            variants={{ hover: { x: -3 } }}
-          >
-            &larr;
-          </motion.span>
-          <span className="hidden sm:inline">{isVideo ? 'Video Tools' : 'PDF Tools'}</span>
-          <span className="sm:hidden">Back</span>
-        </motion.button>
-        <span className="text-xs font-bold select-none text-cream-border">/</span>
-        <motion.div variants={fadeUp} className="flex min-w-0 items-center gap-2.5">
-          <motion.span
-            variants={scaleIn}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-base"
-            style={{ background: accent.tint, color: accent.fg }}
-          >
-            {tool.icon}
-          </motion.span>
-          <span className="truncate font-display text-sm font-semibold tracking-tight text-ink">{tool.name}</span>
-        </motion.div>
+        {/* Identity — back link, icon tile, name — belongs to AppLayout's
+            ToolPageHeader, which also carries the breadcrumb, the promise, the
+            engine badge and the star. Rendering it twice stacked two bars
+            naming the same tool. */}
+        <span className="sr-only">{tool.name}</span>
 
         <div className="flex-1" />
 

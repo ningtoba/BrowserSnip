@@ -126,6 +126,19 @@ import {
   type ToolMode,
 } from './model';
 import { mountParagraphs, readParagraphs } from './editorDom';
+import { InspectorSection, ShortcutList } from '@/components/tools/pdf/editor/inspector';
+import { DropReassurance, QuickModeChips } from '@/components/tools/pdf/editor/QuickModeChips';
+import {
+  DROP_REASSURANCE,
+  adoptedFile,
+  navigateToTool,
+  takeEditorIntent,
+  toolIdFromLocation,
+} from '@/components/tools/pdf/editor/quickModes';
+import { historyCommandForKey, isTypingTarget } from '@/components/tools/pdf/editor/shortcuts';
+import { TEXT_EDITOR_SHORTCUTS, textModeForKey } from './keys';
+import { adviceActionLabel, pageAdvice, type AdviceAction } from './pageAdvice';
+import { EngineSettingsDialog } from '@/lib/pdf/engines/EngineGate';
 
 /** Extra padding around a block when it is converted into an editable box. */
 const BLOCK_PADDING = 2;
@@ -135,8 +148,8 @@ const IMAGE_PLACE_FRACTION = 0.35;
 export function TextEditor() {
   const file = useFileStore((s) => s.file);
   const setFile = useFileStore((s) => s.setFile);
+  const activeToolId = useFileStore((s) => s.activeTool);
   const process = useProcessStore();
-
   // ── document state ────────────────────────────────────────────────────────
   const [source, setSource] = useState<{ bytes: Uint8Array; name: string } | null>(null);
   const [session, setSession] = useState<PdfSession | null>(null);
@@ -176,6 +189,7 @@ export function TextEditor() {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [hitIndex, setHitIndex] = useState(0);
   const [findStatus, setFindStatus] = useState('Type something to search every page.');
+  const [engineSettingsOpen, setEngineSettingsOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -225,6 +239,20 @@ export function TextEditor() {
       setSource(null);
       return;
     }
+    // A new document must not inherit the previous one's work (E19): blocks, hits
+    // and the page number are cleared before the first `await`, not after the open
+    // succeeds, or the old edits float over the new page while it loads — and stay
+    // there for good if the open fails.
+    setHistory(createHistory<EditObject[]>([]));
+    setSelection([]);
+    setEditingId(null);
+    setBlocks([]);
+    setItems([]);
+    setPageObjects([]);
+    setHits([]);
+    setEditedSession(null);
+    setPage(1);
+    searchIndexRef.current = null;
     let disposed = false;
     let madeSession: PdfSession | null = null;
     (async () => {
@@ -357,18 +385,28 @@ export function TextEditor() {
         setFindOpen(true);
         return;
       }
-      const inText = isTextTarget(event.target);
-      if (meta && key === 'z' && !inText) {
+      // One guard for every binding below: while a field or the in-place
+      // paragraph owns the caret, keys belong to the text, not to the editor.
+      const inText = isTypingTarget(event.target);
+      const history = historyCommandForKey(event.key, {
+        ctrl: event.ctrlKey,
+        meta: event.metaKey,
+        shift: event.shiftKey,
+      });
+      if (history && !inText) {
         event.preventDefault();
-        setHistory((state) => (event.shiftKey ? redoHistory(state) : undoHistory(state)));
+        setHistory((state) => (history === 'undo' ? undoHistory(state) : redoHistory(state)));
         return;
       }
-      if (meta && key === 'y' && !inText) {
-        event.preventDefault();
-        setHistory(redoHistory);
-        return;
+      if (!inText && !meta && !event.altKey) {
+        const armed = textModeForKey(event.key);
+        if (armed) {
+          event.preventDefault();
+          armMode(armed);
+          return;
+        }
       }
-      if ((key === 'delete' || key === 'backspace') && !inText && selection.length > 0) {
+      if ((key === 'delete' || key === 'backspace') && !inText && !meta && selection.length > 0) {
         event.preventDefault();
         apply({ type: 'remove', ids: selection });
         setSelection([]);
@@ -466,6 +504,80 @@ export function TextEditor() {
     setEditingId(null);
     toast('success', 'Block rewritten. Export to write it into the file.');
   }, [apply, editing, toast, zoom]);
+
+  /**
+   * Arm a mode. The panel, the V/T/I keys and a quick-mode chip all come through
+   * here so that "Add image" never means three different things — committing the
+   * open paragraph first, and asking for the picture immediately.
+   */
+  const armMode = useCallback(
+    (next: ToolMode) => {
+      if (editingId) stopEditing();
+      setMode(next);
+      if (next === 'add-image' && !pendingImageRef.current) imageInputRef.current?.click();
+    },
+    [editingId, stopEditing],
+  );
+
+  /* ── arriving from a quick-mode chip (the editor chooser's "Edit text") ── */
+
+  const routeToolId =
+    typeof activeToolId === 'string' && activeToolId.length > 0 ? activeToolId : toolIdFromLocation();
+  const intentChecked = useRef(false);
+
+  useEffect(() => {
+    if (intentChecked.current) return;
+    intentChecked.current = true;
+    const intent = routeToolId ? takeEditorIntent(routeToolId) : null;
+    if (!intent) return;
+    if (intent.panel === 'text' || intent.panel === 'blocks') armMode('edit');
+    // `useFileStore` gives every tool its own slot, so the document only follows
+    // the user here if this editor takes it from the hand-off.
+    const carried = adoptedFile(intent, file ? [file] : []);
+    if (carried) {
+      setFile(carried);
+      toast('info', `Brought ${carried.name} across from the editor chooser — it is still only in this tab.`);
+    } else if (intent.note) {
+      toast('info', intent.note);
+    }
+  }, [armMode, file, routeToolId, setFile, toast]);
+
+  /* ── what this page can actually be edited into (E10, E11) ───────────── */
+
+  const advice = useMemo(
+    () =>
+      pageAdvice({
+        hasDocument: Boolean(source),
+        opening,
+        numPages,
+        page,
+        blocks: blocks.map((block) => ({
+          invisible: block.invisible,
+          direction: block.direction,
+          text: block.text,
+        })),
+        imageCount: pageObjects.filter((entry) => entry.kind === 'image').length,
+        engineAvailable: engineRepairAvailable(),
+      }),
+    [blocks, numPages, opening, page, pageObjects, source],
+  );
+
+  const runAdviceAction = useCallback(
+    (action: AdviceAction) => {
+      if (action === 'run-ocr') {
+        toast('info', 'Opening OCR PDF with this document still loaded — the recognised page comes back editable.');
+        navigateToTool('ocr-pdf');
+        return;
+      }
+      if (action === 'open-engine') {
+        setEngineSettingsOpen(true);
+        return;
+      }
+      if (action === 'add-text') armMode('add-text');
+      if (action === 'next-page') setPage((current) => Math.min(numPages, current + 1));
+    },
+    [armMode, numPages, toast],
+  );
 
   /** The on-screen box grows with the typed text, so the overlay never clips. */
   function growBox(object: TextObject, node: HTMLElement, scale: number): TopLeftBox {
@@ -1045,6 +1157,8 @@ export function TextEditor() {
                 label="Drop a PDF here, or click to browse"
                 hint="Everything happens in this tab. Text is deleted and rewritten for real — no overlay."
               />
+              <DropReassurance lines={DROP_REASSURANCE} />
+              <QuickModeChips currentToolId={routeToolId} file={file} onLocal={() => armMode('edit')} />
               <p className="text-[11px] leading-relaxed text-ink-soft">
                 Click any paragraph to retype it in place. On export, the original runs are removed from the page's
                 content stream and the edited block is drawn back with selectable text. Blocks the client-side engine
@@ -1084,11 +1198,24 @@ export function TextEditor() {
             conformance; re-validate with the PDF/A tool afterwards.
           </p>
         )}
-        {source && blocks.length > 0 && blocks.every((block) => block.invisible) && (
-          <p className="border-b border-cream-border bg-warn/10 px-3 py-1.5 text-[11px] leading-relaxed text-warn">
-            Every text run on this page is invisible: it is an OCR layer over a scan. Such blocks can be searched and
-            copied, but the built-in engine cannot rewrite them — load the optional PyMuPDF engine for that.
-          </p>
+        {advice && (
+          <div
+            role="status"
+            data-page-advice={advice.kind}
+            className={`flex flex-wrap items-start gap-2 border-b px-3 py-2 ${
+              advice.tone === 'warn' ? 'border-warn/25 bg-warn/10' : 'border-cream-border bg-accent/5'
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <p className={`text-[11px] font-semibold ${advice.tone === 'warn' ? 'text-warn' : 'text-ink'}`}>
+                {advice.headline}
+              </p>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-ink-soft">{advice.detail}</p>
+            </div>
+            {advice.actions.map((action) => (
+              <ToolButton key={action} label={adviceActionLabel(action)} onClick={() => runAdviceAction(action)} />
+            ))}
+          </div>
         )}
 
         {source && (
@@ -1215,11 +1342,7 @@ export function TextEditor() {
                 <ModePanel
                   mode={mode}
                   scope={scope}
-                  onMode={(next) => {
-                    if (editingId) stopEditing();
-                    setMode(next);
-                    if (next === 'add-image' && !pendingImageRef.current) imageInputRef.current?.click();
-                  }}
+                  onMode={armMode}
                   onScope={setScope}
                   onPickImage={() => imageInputRef.current?.click()}
                 />
@@ -1310,6 +1433,14 @@ export function TextEditor() {
                     }}
                   />
                 </div>
+                <InspectorSection
+                  id="keys"
+                  title="Keyboard"
+                  meta={`${TEXT_EDITOR_SHORTCUTS.length} keys`}
+                  defaultOpen={false}
+                >
+                  <ShortcutList compact rows={TEXT_EDITOR_SHORTCUTS} />
+                </InspectorSection>
                 <p className="text-[10px] leading-relaxed text-ink-muted">
                   {engineRepairAvailable()
                     ? 'PyMuPDF engine is reachable: blocks the built-in engine cannot delete are repaired with it on export.'
@@ -1321,6 +1452,7 @@ export function TextEditor() {
         )}
       </div>
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />
+      <EngineSettingsDialog open={engineSettingsOpen} onClose={() => setEngineSettingsOpen(false)} />
     </div>
   );
 }
@@ -1577,11 +1709,6 @@ async function detectObjects(
   } catch {
     return [];
   }
-}
-
-function isTextTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
 
 function baseName(name: string): string {

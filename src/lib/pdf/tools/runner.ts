@@ -10,6 +10,14 @@ import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolVa
 import { getPdfTool } from './registry';
 import { engineReady, enginePurpose } from '../core/engine-ops';
 import { defaultValues } from './types';
+import {
+  ToolInputError,
+  clampFields,
+  inspectPdf,
+  preflightPdf,
+  validateFields,
+  type PdfInspection,
+} from '../core/guard';
 
 export interface RunRequest {
   toolId: string;
@@ -33,6 +41,8 @@ export interface RunOutcome {
   outputs: RunOutput[];
   report?: { sections: ToolReportSection[]; message?: string };
   message?: string;
+  /** Clamp notices plus anything the tool admitted — shown, never swallowed. */
+  warnings: string[];
 }
 
 export class ToolCancelledError extends Error {
@@ -60,48 +70,126 @@ function toToolFile(file: File): ToolFile {
   };
 }
 
-/** Reject obviously wrong inputs before a tool spends minutes on them. */
-function validateFiles(tool: PdfToolDefinition, files: File[]): string | null {
+/**
+ * Reject obviously wrong inputs before a tool spends minutes on them.
+ *
+ * Returns a `ToolInputError` so the rail can disable the action and name the
+ * reason instead of throwing a bare sentence at the log pane (E16/E18).
+ */
+export function fileProblem(tool: PdfToolDefinition, files: File[]): ToolInputError | null {
   if (files.length === 0) {
-    return tool.accept && !/pdf/.test(tool.accept)
-      ? 'Add a file first.'
-      : 'Add a PDF first.';
+    const acceptsOther = Boolean(tool.accept && !/pdf/.test(tool.accept));
+    return new ToolInputError('EMPTY_FILE', acceptsOther ? 'Add a file first.' : 'Add a PDF first.', {
+      hint: 'Pick a file — it is read in this tab, never uploaded.',
+    });
+  }
+  const uniqueNames = new Set(files.map((file) => `${file.name}:${file.size}`));
+  if (!tool.multiFile && uniqueNames.size < files.length) {
+    // E16, single-document half: a repeat in the list is never work twice, and
+    // there is nothing sensible to do with it. Multi-document tools keep one
+    // copy and say so — see `openInputs`.
+    return new ToolInputError(
+      'OUT_OF_RANGE',
+      `"${files[0].name}" appears twice in the selection.`,
+      { fileName: files[0].name, hint: 'Remove the repeat, or add a different document.' },
+    );
   }
   if (!tool.multiFile && files.length > 1) {
-    return `This tool works on one file at a time. It will use "${files[0].name}".`;
+    return new ToolInputError(
+      'OUT_OF_RANGE',
+      `This tool works on one file at a time. It will use "${files[0].name}".`,
+      { hint: 'Remove the other files, or choose a tool that merges.' },
+    );
   }
   if (tool.minFiles && files.length < tool.minFiles) {
-    return `This tool needs at least ${tool.minFiles} files — ${files.length} added.`;
+    return new ToolInputError(
+      'OUT_OF_RANGE',
+      `This tool needs at least ${tool.minFiles} files — ${files.length} added.`,
+    );
   }
   if (tool.maxFiles && files.length > tool.maxFiles) {
-    return `This tool takes at most ${tool.maxFiles} files — ${files.length} added.`;
+    return new ToolInputError(
+      'OUT_OF_RANGE',
+      `This tool takes at most ${tool.maxFiles} files — ${files.length} added.`,
+    );
   }
   return null;
+}
+
+/**
+ * Inspect files without running a tool: the queue rows, the page count on a
+ * result card, and the disabled-until-valid check all read this (E1-E4, E18).
+ */
+export async function inspectFiles(
+  files: readonly File[],
+  password?: string,
+): Promise<PdfInspection[]> {
+  const inspections: PdfInspection[] = [];
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    inspections.push(await inspectPdf(bytes, file.name, { password }));
+  }
+  return inspections;
+}
+
+/** Does this tool read PDFs? `inputKind` is only declared by the exceptions. */
+function takesPdfInput(tool: PdfToolDefinition): boolean {
+  return !tool.inputKind || tool.inputKind === 'pdf';
 }
 
 export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const tool = getPdfTool(request.toolId);
   if (!tool) throw new Error(`Unknown tool "${request.toolId}".`);
-  if (tool.unavailable) throw new Error(tool.unavailable);
+  if (tool.unavailable) {
+    throw new ToolInputError('UNSUPPORTED', tool.unavailable, {
+      hint: 'The notes on this tool name the format to export instead.',
+    });
+  }
   if (!tool.run) {
     throw new Error(`${tool.name} runs inside its own editor pane rather than from the Run button.`);
   }
 
-  const fileProblem = validateFiles(tool, request.files);
-  if (fileProblem) throw new Error(fileProblem);
+  const problem = fileProblem(tool, request.files);
+  if (problem) throw problem;
 
   const missing = (tool.engines ?? []).filter((id) => !engineReady(id));
   if (missing.length > 0) {
-    throw new Error(
+    throw new ToolInputError(
+      'NEEDS_ENGINE',
       `${tool.name} needs the optional ${missing.join(' and ')} module. ${missing
         .map((id) => enginePurpose(id))
         .join(' ')} Open WASM settings to enable it.`,
+      { hint: 'The built-in tools run without it; this one cannot.' },
     );
   }
 
-  const values = { ...defaultValues(tool.fields), ...(request.values ?? {}) };
+  // A tool that admits a compromise in the log ("warning: fonts are degraded")
+  // must not have it buried in a pane nobody opens. Structural `result.warnings`
+  // is the right channel and Phase B tools are moving to it; this bridge means
+  // the ~100 tools that still only `log()` a caveat are honest today.
+  const logged: string[] = [];
+  const CAVEAT = /(warn|degrad|skipp|fallback|could not|couldn.t|failed to|no text layer|larger than|ignored|became)/i;
+  const onLog = (line: string) => {
+    logged.push(line);
+    request.onLog?.(line);
+  };
+
+  const merged = { ...defaultValues(tool.fields), ...(request.values ?? {}) };
+  // E15: a number outside its bounds is corrected and announced here, so no
+  // tool receives `dpi: 0` and no long run ends in a broken file.
+  const clamped = clampFields(tool.fields, merged);
+  for (const change of clamped.changes) {
+    onLog(change.message);
+  }
+  const values = clamped.values;
   const validation = tool.validate?.(values, { fileCount: request.files.length });
   if (validation) throw new Error(validation);
+  const [issue] = validateFields(tool.fields, values);
+  if (issue) {
+    throw new ToolInputError('OUT_OF_RANGE', issue.message, {
+      hint: 'Fix the highlighted option and run again.',
+    });
+  }
 
   // A tool may collect the password in its own form (`Unlock`, `Change
   // permissions`, `Remove restrictions`) or rely on the shared gate in the
@@ -114,6 +202,15 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const effectivePassword = request.password || declared;
 
   const inputs = request.files.map(toToolFile);
+  // One cheap header/trailer pass per file, before any tool allocates work: an
+  // empty or mislabelled file, and a document the gate has no password for, are
+  // settled here rather than halfway through a 500-page parse (E1, E2, E4, E7).
+  if (takesPdfInput(tool)) {
+    for (const input of inputs) {
+      const refusal = await preflightPdf(input, effectivePassword);
+      if (refusal) throw refusal;
+    }
+  }
   const controller = new AbortController();
   const upstream = request.signal;
   const onUpstreamAbort = () => controller.abort(new ToolCancelledError());
@@ -128,7 +225,7 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
       inputs,
       values,
       progress: (fraction, message) => request.onProgress?.(fraction, message),
-      log: (line) => request.onLog?.(line),
+      log: onLog,
       signal: controller.signal,
       password: effectivePassword,
     });
@@ -137,6 +234,13 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
       outputs: results,
       report: result.kind === 'report' ? { sections: result.sections, message: result.message } : undefined,
       message: result.message,
+      // A corrected value is an admission too: the user asked for 0 dpi and got
+      // 96, and the result card has to say so (E15).
+      warnings: [...new Set([
+        ...clamped.changes.map((change) => change.message),
+        ...(result.warnings ?? []),
+        ...logged.filter((line) => CAVEAT.test(line)),
+      ])],
     };
   } finally {
     upstream?.removeEventListener('abort', onUpstreamAbort);

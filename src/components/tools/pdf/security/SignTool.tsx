@@ -5,10 +5,13 @@
  * then click "Add to PDF" to place them on the page.
  * The overlay (SignMain) handles positioning, resizing, and editing.
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { useFileStore } from '@/stores/file-store';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
+import { clampPageNumber, fitMarkToPage } from '@/components/tools/pdf/editor/placement';
+import { adoptedFile, takeEditorIntent } from '@/components/tools/pdf/editor/quickModes';
 import {
   getSignState, addSigItem, updateSigItem, removeSigItem,
   selectSigItem, getSignPageSize, subscribeSign,
@@ -28,17 +31,46 @@ type SigTab = 'text' | 'image' | 'draw';
 
 export function SignTool() {
   const { process } = usePDFEngine();
+  const file = useFileStore((s) => s.file);
+  const setFile = useFileStore((s) => s.setFile);
+  const activeToolId = useFileStore((s) => s.activeTool);
   const [st, setSt] = useState(getSignState());
   const [tab, setTab] = useState<SigTab>('text');
+  const [notice, setNotice] = useState<string | null>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawActive = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Arriving from the editor chooser's "Sign" chip means the Draw tab, not the
+   * default Text tab — the chip promised drawing a signature — and the document
+   * follows the user: `useFileStore` keeps a slot per tool, so without adopting the
+   * carried file this panel would open empty and the chip would be a lie.
+   */
+  const intentChecked = useRef(false);
+  useEffect(() => {
+    if (intentChecked.current) return;
+    intentChecked.current = true;
+    const routeId = typeof activeToolId === 'string' && activeToolId ? activeToolId : 'sign';
+    const intent = takeEditorIntent(routeId);
+    if (!intent) return;
+    if (intent.panel === 'draw' || intent.panel === 'text' || intent.panel === 'image') setTab(intent.panel);
+    const carried = adoptedFile(intent, file ? [file] : []);
+    if (carried) {
+      setFile(carried);
+      setNotice(`Brought ${carried.name} across from the editor chooser — it is still only in this tab.`);
+    } else if (intent.note) {
+      setNotice(intent.note);
+    }
+  }, [activeToolId, file, setFile]);
+
   const [textValue, setTextValue] = useState('');
   const [textFont, setTextFont] = useState('Helvetica');
   const [textColor, setTextColor] = useState('#000000');
+  // A typed signature's height follows its width (the preview box is resized by the
+  // overlay), so only the width is a user choice here.
   const [textW, setTextW] = useState(180);
-  const [textH, setTextH] = useState(40);
+  const [textH] = useState(40);
 
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageBytes, setImageBytes] = useState<ArrayBuffer | null>(null);
@@ -54,41 +86,64 @@ export function SignTool() {
 
   const selected = st.items.find((s) => s.id === st.selectedId) ?? null;
 
+  /**
+   * Sizes here are points, but the page they land on is whatever the document
+   * happens to be (E8): a 400 pt signature on a 300 pt page would hang off the
+   * paper, where no viewer shows it. Fit it at add time and say what changed,
+   * rather than letting the export write something invisible.
+   */
+  const fitToPage = useCallback((w: number, h: number): { w: number; h: number } => {
+    const pageSize = getSignPageSize();
+    const widthPt = Math.max(1, pageSize.width);
+    const heightPt = Math.max(1, pageSize.height);
+    const fit = fitMarkToPage(
+      { page: 1, x: 0, y: 0, w: w / widthPt, h: h / heightPt },
+      { page: 1, widthPt, heightPt },
+    );
+    if (fit.reason) setNotice(`Mark was ${fit.reason}.`);
+    return { w: fit.mark.w * widthPt, h: fit.mark.h * heightPt };
+  }, []);
+
   const addTextToPDF = useCallback(() => {
     if (!textValue.trim()) return;
+    const size = fitToPage(textW, textH);
     addSigItem({
       id: nextId(), type: 'text',
       text: textValue,
       imageDataUrl: null, imageBytes: null,
-      w: textW, h: textH,
+      w: size.w, h: size.h,
       color: textColor, fontFamily: textFont,
     });
     setTextValue('');
-  }, [textValue, textW, textH, textColor, textFont]);
+  }, [fitToPage, textColor, textFont, textH, textValue, textW]);
 
   const addImageToPDF = useCallback(() => {
     if (!imageBytes) return;
+    const size = fitToPage(imageW, imageH);
     addSigItem({
       id: nextId(), type: 'image',
       text: '',
       imageDataUrl: imageUrl, imageBytes,
-      w: imageW, h: imageH,
+      w: size.w, h: size.h,
     });
     setImageUrl(null); setImageBytes(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [imageBytes, imageUrl, imageW, imageH]);
+  }, [fitToPage, imageBytes, imageH, imageUrl, imageW]);
 
   const addDrawToPDF = useCallback(() => {
     if (!drawBytes) return;
+    const size = fitToPage(drawW, drawH);
     addSigItem({
       id: nextId(), type: 'draw',
       text: '',
       imageDataUrl: drawUrl, imageBytes: drawBytes,
-      w: drawW, h: drawH,
+      w: size.w, h: size.h,
     });
     setDrawUrl(null); setDrawBytes(null);
     clearDrawCanvas();
-  }, [drawBytes, drawUrl, drawW, drawH]);
+    // `clearDrawCanvas` is declared below and is itself a stable `useCallback`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawBytes, drawH, drawUrl, drawW, fitToPage]);
 
   const handleImagePicked = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -166,9 +221,23 @@ export function SignTool() {
     updateSigItem(selected.id, patch);
   }, [selected]);
 
+  /**
+   * Items whose page still exists (E6, E19). A signature placed on page 3 and a
+   * document swapped for a 2-page one must not silently write to a page the output
+   * does not have — it is dropped, named, and the user is told.
+   */
+  const unusable = useMemo(
+    () => (st.totalPages > 0 ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) === null) : []),
+    [st.items, st.totalPages],
+  );
+  const usable = useMemo(
+    () => (st.totalPages > 0 ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) !== null) : st.items),
+    [st.items, st.totalPages],
+  );
+
   const handleProcess = useCallback(() => {
     const pageSize = getSignPageSize();
-    const sigs = st.items.map((item) => ({
+    const sigs = usable.map((item) => ({
       type: item.type === 'draw' ? 'image' as const : item.type,
       imageData: item.type !== 'text' ? item.imageBytes : null,
       text: item.text,
@@ -178,10 +247,15 @@ export function SignTool() {
       width: item.w, height: item.h,
       color: item.color, fontFamily: item.fontFamily,
     }));
+    if (unusable.length > 0) {
+      setNotice(
+        `${unusable.length} signature${unusable.length === 1 ? '' : 's'} sat on a page this document does not have and were left out.`,
+      );
+    }
     process({ toolId: 'sign', params: { signatures: sigs } });
-  }, [process, st.items]);
+  }, [process, unusable, usable]);
 
-  const allReady = st.items.length > 0 && st.items.every(
+  const allReady = usable.length > 0 && usable.every(
     (s) => s.type === 'text' ? s.text.trim().length > 0 : s.imageBytes,
   );
 
@@ -193,6 +267,32 @@ export function SignTool() {
       className="doodle-section space-y-2.5"
     >
       <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Sign PDF</motion.p>
+
+      {/*
+         Honest document state: the overlay measures the page it drew, so until a
+         PDF is open there is no page size to place anything on.
+      */}
+      {!file && (
+        <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3 py-2 text-[10px] leading-relaxed text-ink-muted">
+          No PDF is open. Prepare a signature now and it is kept in this tab, but nothing can be placed or sized until a document is loaded.
+        </motion.p>
+      )}
+      {file && st.totalPages > 0 && (
+        <p className="font-mono text-[10px] tabular-nums text-ink-muted" data-sign-doc-pages={st.totalPages}>
+          {file.name} · {st.totalPages} page{st.totalPages === 1 ? '' : 's'} · placing on page {st.page}
+          {st.totalPages === 1 ? ' (this document has one page)' : ''}
+        </p>
+      )}
+      {notice && (
+        <motion.p
+          variants={scaleIn}
+          role="status"
+          data-sign-notice
+          className="rounded-[12px] border border-accent/25 bg-accent/[0.06] px-3 py-2 text-[10px] leading-relaxed text-ink-soft"
+        >
+          {notice}
+        </motion.p>
+      )}
 
       {/* Tab bar */}
       <motion.div variants={fadeUp} className="flex gap-0.5">
@@ -367,8 +467,22 @@ export function SignTool() {
         </motion.div>
       )}
 
-      <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn" disabled={!allReady}>
-        Apply All Signatures
+      <button
+        onClick={handleProcess}
+        id="tool-process-btn"
+        className="doodle-btn"
+        disabled={!allReady || !file}
+        title={
+          !file
+            ? 'Open a PDF to sign first'
+            : !allReady
+              ? usable.length === 0
+                ? 'Nothing placed yet — add a signature from the tabs above'
+                : 'Every placed signature needs text, a picture or a stroke'
+              : undefined
+        }
+      >
+        Apply {usable.length > 0 ? `${usable.length} ` : ''}Signature{usable.length === 1 ? '' : 's'}
       </button>
     </motion.div>
   );

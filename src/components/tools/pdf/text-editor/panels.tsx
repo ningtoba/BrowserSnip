@@ -22,6 +22,7 @@ import {
   type TextDirection,
 } from './model';
 import type { FontFamilyOption } from './faces';
+import { keyForMode } from './keys';
 
 // ── primitives ──────────────────────────────────────────────────────────────
 
@@ -368,6 +369,12 @@ export interface ModePanelProps {
 }
 
 export function ModePanel({ mode, scope, onMode, onScope, onPickImage }: ModePanelProps) {
+  // The tooltip carries the bound key, so the panel, the keyboard handler and the
+  // shortcut list all read the same table (`keyForMode` is the reverse of it).
+  const keyOf = (value: ModePanelProps['mode']): string => {
+    const key = keyForMode(value);
+    return key ? ` (${key})` : '';
+  };
   return (
     <div className="space-y-2">
       <SegmentedField
@@ -375,9 +382,17 @@ export function ModePanel({ mode, scope, onMode, onScope, onPickImage }: ModePan
         value={mode}
         onChange={onMode}
         options={[
-          { value: 'edit', label: 'Edit', title: 'Click a paragraph and retype it' },
-          { value: 'add-text', label: 'Add text box', title: 'Drag on the page to place new text' },
-          { value: 'add-image', label: 'Add image', title: 'Choose an image, then click where it goes' },
+          { value: 'edit', label: 'Edit', title: `Click a paragraph and retype it${keyOf('edit')}` },
+          {
+            value: 'add-text',
+            label: 'Add text box',
+            title: `Drag on the page to place new text${keyOf('add-text')}`,
+          },
+          {
+            value: 'add-image',
+            label: 'Add image',
+            title: `Choose an image, then click where it goes${keyOf('add-image')}`,
+          },
         ]}
       />
       {mode === 'edit' && (

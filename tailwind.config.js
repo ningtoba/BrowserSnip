@@ -10,25 +10,34 @@ export default {
         body: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Segoe UI', 'system-ui', 'sans-serif'],
       },
       colors: {
+        /*
+         * Surface and text colours resolve from CSS variables at paint time, so
+         * `bg-cream-light` follows `html.dark` without touching ~300 components.
+         * Light values are the hexes these utilities used before, so the default
+         * theme is byte-identical. `accent` stays literal on purpose: it is used
+         * both as a fill under white label text and as text on the page, and the
+         * blue that passes contrast one way fails it the other. The shell's own
+         * `--accent` token carries the brighter dark-mode blue.
+         */
         ink: {
-          DEFAULT: '#1B1B18',
-          soft: '#55554E',
-          muted: '#75756B',
+          DEFAULT: 'rgb(var(--ink-rgb) / <alpha-value>)',
+          soft: 'rgb(var(--ink-soft-rgb) / <alpha-value>)',
+          muted: 'rgb(var(--ink-muted-rgb) / <alpha-value>)',
         },
         cream: {
-          DEFAULT: '#F7F7F4',
-          light: '#FFFFFF',
-          border: '#E3E3DD',
-          soft: '#F1F1EC',
+          DEFAULT: 'rgb(var(--cream-rgb) / <alpha-value>)',
+          light: 'rgb(var(--cream-light-rgb) / <alpha-value>)',
+          border: 'rgb(var(--cream-border-rgb) / <alpha-value>)',
+          soft: 'rgb(var(--cream-soft-rgb) / <alpha-value>)',
         },
         accent: {
           DEFAULT: '#2563EB',
           hover: '#1D4ED8',
           ring: 'rgba(37, 99, 235, 0.18)',
         },
-        success: '#059669',
-        warn: '#D97706',
-        danger: '#DC2626',
+        success: 'rgb(var(--ok-rgb) / <alpha-value>)',
+        warn: 'rgb(var(--warn-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--bad-rgb) / <alpha-value>)',
         // v3 "Studio" category accent set — icon tiles, eyebrows, active tab only.
         acc: {
           blue: { DEFAULT: '#2563EB', tint: 'rgba(37, 99, 235, 0.08)' },
