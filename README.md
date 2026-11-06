@@ -22,7 +22,7 @@
 ---
 
 > **✂ Snip, process, and secure your media — all inside your browser tab.**  
-> BrowserSnip is a collection of **120 focused micro-tools** (8 video + 112 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
+> BrowserSnip is a collection of **132 focused micro-tools** (8 video + 124 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
 
 ---
 
@@ -35,7 +35,7 @@ BrowserSnip is **not** a timeline-based video editor like CapCut or Premiere. It
 | | | |
 |---|---|---|
 | 🎬 **Video Tools** | 8 FFmpeg-powered micro-tools | Trim, resize, crop, compress, GIF, audio, speed, metadata |
-| 📄 **PDF Tools** | 112 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
+| 📄 **PDF Tools** | 124 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
 | 🔒 **Privacy-first** | Runs entirely in your browser | WebAssembly + SharedArrayBuffer. Zero server footprint |
 | ⚡ **Instant results** | Stream-copy where possible | Lossless operations finish in seconds, not minutes |
 | 🌑 **Dark mode** | Developer-grade aesthetic | Indigo accent on zinc/slate, designed for long sessions |
@@ -64,15 +64,16 @@ Eight focused tools powered by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpe
 
 ## 📄 PDF Tools
 
-112 tools across six categories, all driven from one declarative registry
+124 tools across six categories — 116 of BentoPDF's 123 tool routes — all driven from one declarative registry
 (`src/lib/pdf/tools/`) — adding a tool means adding one module, not editing five files.
 
 | Category | Tools |
 | --- | --- |
 | Organize | 23 — merge, split, extract, delete, reorder, rotate (incl. any angle), reverse, blank pages, alternate-merge, duplex collate, overlay/underlay, N-up, booklet imposition, posterize, divide, combine-to-scroll, fix page size, page dimensions, remove blanks, attachments, ZIP/CBZ, scan |
 | Edit | 21 — annotation editor, in-place text editor, page numbers, watermark, header/footer, Bates numbering, page labels, bookmarks/outline, table of contents, stamps, layers (OCG), background & text colour, invert/adjust colours, scanner effect, rasterize, deskew, crop, form filler, form creator |
-| Convert to PDF | 23 — images (JPG/PNG/WEBP/HEIC/BMP/TIFF/PSD/SVG/CBZ), text, Markdown, HTML, CSV, JSON, XML, RTF, Word, Excel, PowerPoint, EPUB, digitize/OCR |
+| Convert to PDF | 35 — images (JPG/PNG/WEBP/HEIC/BMP/TIFF/PSD/SVG/CBZ), text, Markdown, HTML, CSV, JSON, XML, RTF, Word, Excel, PowerPoint, EPUB, digitize/OCR |
 | Convert from PDF | 17 — text, Markdown, JSON, CSV, Excel, Word, SVG, images (5 formats), extract tables, extract images, prepare-for-AI (LlamaIndex), greyscale |
+| Convert to PDF (cont.) | ODT, ODS, ODP, XPS and FB2 are decoded in the tab; MOBI, Pages, PUB, VSD, WPD, WPS and ODG are listed with what to do instead, since those containers need LibreOffice, which is not bundled |
 | Optimize | 9 — compress (incl. target size), lossless optimize, PDF/A, linearize, font-to-outline, repair, sanitize, deskew, rasterize |
 | Security | 19 — protect with AES-256 + real permissions, unlock, change permissions, remove restrictions, sign, digital X.509 signature, validate signature, RFC 3161 timestamp, redact, flatten, remove annotations, view/edit/remove metadata, attachments |
 
@@ -335,7 +336,7 @@ npm run build
 ```
 /                    Landing page (hero, category cards, Blur promo)
 /video               Video Tools dashboard (8 tools)
-/pdf                 PDF Tools dashboard (112 tools in 6 categories)
+/pdf                 PDF Tools dashboard (124 tools in 6 categories)
 /tool/:toolId        Unified ToolWorkspace — dispatches video vs PDF by category
 ```
 

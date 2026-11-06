@@ -712,7 +712,6 @@ export const convertToTools: PdfToolDefinition[] = [
       }
     },
   },
-
 ];
 
 /**
@@ -734,3 +733,4 @@ async function convertWithLibreOffice(
   context.progress(0.1, 'Loading the office converter');
   return convertOffice(bytes, name, target, context.progress);
 }
+

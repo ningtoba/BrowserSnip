@@ -35,10 +35,28 @@ describe('pdf tool registry', () => {
   });
 
   it('gives every tool a way to produce output', () => {
+    // A tool is allowed to have no `run` when it is a bespoke pane, or when it
+    // declares itself `unavailable` — the legacy office containers are listed so
+    // the capability is discoverable, and explain what to do instead.
     const dead = PDF_TOOLS.filter(
-      (tool) => !tool.run && !tool.mainComponent && !hasCustomMainView(tool.id) && tool.id !== 'edit-pdf' && tool.id !== 'edit-pdf-text',
+      (tool) =>
+        !tool.run
+        && !tool.mainComponent
+        && !tool.unavailable
+        && !hasCustomMainView(tool.id),
     ).map((tool) => tool.id);
     expect(dead).toEqual([]);
+  });
+
+  it('explains every unavailable tool well enough to act on', () => {
+    const inert = PDF_TOOLS.filter((tool) => tool.unavailable);
+    expect(inert.length).toBeGreaterThan(0);
+    for (const tool of inert) {
+      // Must name the format and offer a concrete alternative, not just "no".
+      expect(tool.unavailable!.length, tool.id).toBeGreaterThan(40);
+      expect(/\.pdf|DOCX|EPUB|SVG|PNG|LibreOffice|Export|save/i.test(tool.unavailable!), tool.id).toBe(true);
+      expect(tool.notes?.some((note) => /LibreOffice|decoder|Export|save/i.test(note)), tool.id).toBe(true);
+    }
   });
 
   it('names every tool with a description users would recognise', () => {

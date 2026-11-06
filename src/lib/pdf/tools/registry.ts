@@ -14,6 +14,7 @@ import { securityTools } from './security';
 import { convertToTools } from './convert-to';
 import { convertFromTools } from './convert-from';
 import { legacyTools } from './legacy';
+import { legacyOfficeTools, officeTools } from './office';
 
 import type { PdfToolCategory, PdfToolDefinition, ToolField, ToolValues } from './types';
 
@@ -24,6 +25,8 @@ const GROUPS = [
   securityTools,
   convertToTools,
   convertFromTools,
+  officeTools,
+  legacyOfficeTools,
   legacyTools,
 ] as const;
 
