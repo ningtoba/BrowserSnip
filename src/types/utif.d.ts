@@ -1,9 +1,15 @@
 /** Ambient types for `utif`, which ships JavaScript without declarations. */
 declare module 'utif' {
-  /** An opaque decoded IFD handle; fields are populated by `decodeImage`. */
+  /**
+   * An opaque decoded IFD handle; fields are populated by `decodeImage`.
+   *
+   * `w` and `h` are deliberately NOT declared. UTIF sets them on no real file —
+   * the dimensions arrive as `c`/`l` (and `data.length` after decode) — so
+   * typing them as `number` let `ifd.w` compile while reading `undefined` at
+   * runtime, which is how PDF→TIFF produced 0x0 canvases. Read dimensions
+   * through `core/images.ts` → `tiffPageDimensions`, which returns honest nulls.
+   */
   export interface UtifIFD {
-    w: number;
-    h: number;
     bpp: number;
     samples: number;
     config: number;
