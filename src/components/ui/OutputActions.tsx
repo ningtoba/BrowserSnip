@@ -10,15 +10,13 @@ interface OutputActionsProps {
 }
 
 export function OutputActions({ onCancel }: OutputActionsProps) {
-  const { outputBlob, outputUrl, outputBlobs, outputUrls, label, suffix } = useProcessStore();
+  const { outputBlob, outputUrl, outputBlobs, outputUrls, outputNames, label, suffix } = useProcessStore();
   const file = useFileStore((s) => s.file);
   const activeTool = useFileStore((s) => s.activeTool);
   const [copied, setCopied] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const prevLengthRef = useRef(0);
 
-  const isImageGallery = activeTool === 'pdf-to-image';
-  const isDocumentOutput = activeTool === 'pdf-to-word' || activeTool === 'pdf-to-excel';
   const isVideoOutput = outputBlob?.type.startsWith('video/') ?? false;
   const isGifOutput = outputBlob?.type.includes('gif') ?? false;
   const isAudioOutput = outputBlob?.type.includes('mpeg') ?? false;
@@ -26,6 +24,14 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
   const allBlobs: Blob[] = hasMultiple ? outputBlobs : (outputBlob ? [outputBlob] : []);
   const allUrls: string[] = hasMultiple ? outputUrls : (outputUrl ? [outputUrl] : []);
   const blobCount = allBlobs.length;
+  // Derived from the produced blobs, not from a hard-coded tool list: the PDF
+  // catalogue now emits many more formats than it used to.
+  const allImages = allBlobs.length > 0 && allBlobs.every((b) => b.type.startsWith('image/'));
+  const isImageGallery = activeTool === 'pdf-to-image' || (allImages && hasMultiple);
+  const isDocumentOutput =
+    !outputBlob?.type.includes('pdf') && !(outputBlob?.type.startsWith('image/') ?? false);
+  /** More than one non-image result, e.g. Split PDF or unmerged Extract Pages. */
+  const isFileList = blobCount > 1 && !isImageGallery;
 
   useEffect(() => {
     if (blobCount !== prevLengthRef.current) {
@@ -59,21 +65,47 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
     }
   };
 
+  const nameFor = (index: number): string => {
+    const stored = outputNames[index];
+    if (stored) return stored;
+    const fallbackBase = file?.name ?? 'document';
+    return getOutputFileName(fallbackBase, activeTool ?? 'merge').replace(
+      /(\.[a-z0-9]+)$/i,
+      `-${index + 1}$1`,
+    );
+  };
+
   const handleDownloadSelected = () => {
-    const toDownload = allBlobs.filter((_, i) => selected.has(i));
-    if (toDownload.length === 0) return;
-    if (toDownload.length === 1) {
-      const pageNum = allIndices.find((i) => selected.has(i))! + 1;
-      const ext = toDownload[0].type.split('/')[1] ?? 'jpg';
-      const baseName = getOutputFileName(file?.name ?? 'page', activeTool ?? 'pdf-to-image');
-      downloadBlob(toDownload[0], baseName.replace(/\.[^.]+$/, `_${pageNum}.${ext}`));
-    } else {
-      downloadMultipleBlobs(toDownload, getOutputFileName(file?.name ?? 'document', activeTool ?? 'pdf-to-image'));
+    const indices = allIndices.filter((i) => selected.has(i));
+    if (indices.length === 0) return;
+    if (indices.length === 1) {
+      downloadBlob(allBlobs[indices[0]], nameFor(indices[0]));
+      return;
     }
+    indices.forEach((index, order) => {
+      setTimeout(() => downloadBlob(allBlobs[index], nameFor(index)), order * 220);
+    });
   };
 
   const handleDownloadAll = () => {
-    downloadMultipleBlobs(allBlobs, getOutputFileName(file?.name ?? 'document', activeTool ?? 'pdf-to-image'));
+    if (allImages || blobCount > 6) {
+      void downloadAllAsZip();
+      return;
+    }
+    handleDownloadSelected.caller === undefined;
+    allIndices.forEach((index, order) => {
+      setTimeout(() => downloadBlob(allBlobs[index], nameFor(index)), order * 220);
+    });
+  };
+
+  const downloadAllAsZip = async (): Promise<void> => {
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    allBlobs.forEach((blob, index) => {
+      zip.file(nameFor(index), blob);
+    });
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    downloadBlob(blob, `${(file?.name ?? 'browsersnip').replace(/\.[^.]+$/, '')}-results.zip`);
   };
 
   // ── Simple single download for video/audio/gif tools ──
@@ -211,7 +243,7 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
           </motion.button>
         )}
 
-        {isImageGallery ? (
+        {isImageGallery || isFileList ? (
           <>
             <motion.button
               onClick={handleDownloadSelected}
@@ -252,7 +284,42 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
       </motion.div>
 
       {/* Content area */}
-      {isImageGallery ? (
+      {isFileList ? (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <button onClick={toggleAll} className="flex w-full items-center gap-2 border-b border-cream-border px-4 py-2 text-left transition-colors hover:bg-cream-soft">
+            <span className={`inline-flex h-4 w-4 items-center justify-center rounded border-2 transition-colors ${allSelected ? 'border-accent bg-accent' : 'border-cream-border'}`}>
+              {allSelected && (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+            </span>
+            <span className="text-[11px] font-semibold text-ink-soft">{allSelected ? 'Deselect All' : 'Select All'}</span>
+            <span className="ml-auto text-[10px] text-ink-muted">{blobCount} files · {formatFileSize(totalSize)}</span>
+          </button>
+          {allBlobs.map((blob, i) => {
+            const isSel = selected.has(i);
+            return (
+              <button
+                key={`${nameFor(i)}-${i}`}
+                onClick={() => toggleSelect(i)}
+                className={`flex w-full items-center gap-3 border-b border-cream-border/50 px-4 py-2.5 text-left transition-colors hover:bg-cream-soft ${isSel ? 'bg-accent/5' : ''}`}
+              >
+                <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${isSel ? 'border-accent bg-accent' : 'border-cream-border'}`}>
+                  {isSel && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </span>
+                <span className="shrink-0 text-sm">📄</span>
+                <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink">{nameFor(i)}</span>
+                <span className="shrink-0 text-[10px] tabular-nums text-ink-muted">{formatFileSize(blob.size)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : isImageGallery ? (
         <div className="flex-1 min-h-0 overflow-y-auto">
           <button onClick={toggleAll} className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-cream-soft transition-colors border-b border-cream-border">
             <span className={`inline-flex items-center justify-center w-4 h-4 rounded border-2 transition-colors ${allSelected ? 'bg-accent border-accent' : 'border-cream-border'}`}>

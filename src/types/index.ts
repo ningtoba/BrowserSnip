@@ -264,7 +264,16 @@ export interface PdfToolParams {
 
 export type ToolCategory = 'video' | 'organize' | 'optimize' | 'convert-to' | 'convert-from' | 'edit' | 'security';
 
-export type ToolId =
+/**
+ * PDF tool ids are derived from `src/lib/pdf/tools/registry.ts`, which is the
+ * single source of truth for the PDF catalogue. `(string & {})` keeps the
+ * literal suggestions for video tools while allowing a PDF id to be added in
+ * exactly one place instead of two, and avoids a types → registry → components
+ * → types import cycle.
+ */
+export type PdfToolId = string & {};
+
+export type VideoToolId =
   // Video
   | 'trim'
   | 'resize'
@@ -304,6 +313,8 @@ export type ToolId =
   | 'sign'
   | 'redact'
   | 'compare';
+
+export type ToolId = VideoToolId | PdfToolId;
 
 export interface ToolDefinition {
   id: ToolId;

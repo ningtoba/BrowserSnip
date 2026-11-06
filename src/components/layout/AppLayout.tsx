@@ -2,10 +2,14 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { easeOut, tapDown } from '@/lib/motion';
+import { EngineSettingsDialog, useEngineStatus } from '@/lib/pdf/engines/EngineGate';
 
 export function AppLayout() {
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [enginesOpen, setEnginesOpen] = useState(false);
+  const engineStatus = useEngineStatus();
+  const engineCount = Object.values(engineStatus).filter((entry) => entry.configured).length;
 
   const isVideoActive = pathname.startsWith('/video');
   const isPdfActive = pathname.startsWith('/pdf');
@@ -54,6 +58,28 @@ export function AppLayout() {
           </nav>
 
           <div className="flex-1" />
+
+          {/* Right: optional WASM engines, then GitHub */}
+          <motion.button
+            onClick={() => setEnginesOpen(true)}
+            whileTap={tapDown}
+            title="Optional advanced PDF engines"
+            className="hidden items-center gap-1.5 rounded-full border border-cream-border bg-cream-light px-3 py-1.5 text-[11px] font-medium text-ink-muted transition-colors hover:border-accent/30 hover:text-ink sm:inline-flex"
+          >
+            <span
+              aria-hidden
+              className={`h-1.5 w-1.5 rounded-full ${engineCount > 0 ? 'bg-success' : 'bg-cream-border'}`}
+            />
+            Engines
+            <span className="font-mono text-[10px] text-ink-muted/70">{engineCount}/3</span>
+          </motion.button>
+          <button
+            onClick={() => setEnginesOpen(true)}
+            className="inline-flex items-center rounded-full border border-cream-border bg-cream-light px-2.5 py-1.5 text-[11px] font-medium text-ink-muted sm:hidden"
+            aria-label="Advanced PDF engines"
+          >
+            ⚙
+          </button>
 
           {/* Right: GitHub button (desktop) */}
           <motion.a
@@ -168,6 +194,9 @@ export function AppLayout() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <Outlet />
       </div>
+      {enginesOpen && (
+        <EngineSettingsDialog open={enginesOpen} onClose={() => setEnginesOpen(false)} />
+      )}
     </div>
   );
 }

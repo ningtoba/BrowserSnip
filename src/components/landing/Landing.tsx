@@ -1,3 +1,10 @@
+import { TOOLS } from '@/lib/constants';
+import { PDF_TOOLS, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
+
+const TOOL_COUNT = TOOLS.length;
+const PDF_TOOL_COUNT = PDF_TOOLS.length;
+const PDF_CATEGORY_COUNT = PDF_CATEGORIES.length;
+
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -124,7 +131,7 @@ export function Landing() {
           </motion.div>
 
           <motion.p variants={fadeUp} className="eyebrow mb-4 text-accent">
-            Private browser studio · 34 tools
+            Private browser studio · {TOOL_COUNT} tools
           </motion.p>
 
           <motion.h1
@@ -139,7 +146,7 @@ export function Landing() {
             variants={fadeUp}
             className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg"
           >
-            34 video, PDF, and AI tools that run entirely on your machine.
+            {TOOL_COUNT} video, PDF, and AI tools that run entirely on your machine.
             No uploads. No servers. No accounts.
           </motion.p>
 
@@ -259,7 +266,7 @@ export function Landing() {
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-acc-violet-tint text-2xl text-acc-violet transition-transform duration-300 group-hover:scale-110">
                   ▤
                 </div>
-                <p className="eyebrow mb-2 text-acc-violet">26 tools · 6 categories</p>
+                <p className="eyebrow mb-2 text-acc-violet">{PDF_TOOL_COUNT} tools · {PDF_CATEGORY_COUNT} categories</p>
                 <h3 className="mb-2 font-display text-2xl font-semibold tracking-[-0.02em] text-ink sm:text-[28px]">
                   The PDF desk
                 </h3>

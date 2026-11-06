@@ -1,0 +1,448 @@
+/**
+ * Writing edited blocks back into a PDF with the MIT client-side engine.
+ *
+ * The honest model (see the header of `TextEditor.tsx`): this is
+ * **delete-and-rewrite**, not in-place glyph surgery. `core/content`'s
+ * `removeTextInRects` really does drop the text-showing operators inside the
+ * block's rectangles — the old words stop existing, stop being selectable and
+ * stop being found by Ctrl-F — and the edited block is then drawn back with its
+ * own operators at the same origin. Nothing is painted over the top to hide the
+ * old text, which is what separates this from an overlay.
+ *
+ * Why raw operators instead of `core/fonts.drawTextU`: the format inspector
+ * exposes character spacing, word spacing, horizontal scale (`Tz`), text outline
+ * (`Tr` + `RG`/`w`), superscript/subscript (`Ts`) and rotated pages. Those are
+ * text-state and text-matrix concerns that `drawTextU` cannot express. Face
+ * selection is still `core/fonts` (`getFont`, via `faces.ts`) and measurement is
+ * the same `font.widthOfTextAtSize` that `wrapText` uses, so what the user saw is
+ * what the file gets.
+ *
+ * Glyph geometry comes from `model.layoutBlock` — the identical call that sizes
+ * and lays out the on-screen editor box.
+ */
+import {
+  TextRenderingMode,
+  beginText,
+  concatTransformationMatrix,
+  drawObject,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  setCharacterSqueeze,
+  setCharacterSpacing,
+  setFillingColor,
+  setFontAndSize,
+  setGraphicsState,
+  setLineWidth,
+  setStrokingColor,
+  setTextMatrix,
+  setTextRenderingMode,
+  setTextRise,
+  setWordSpacing,
+  showText,
+} from '@maxwbh/pdf-lib';
+import type { PDFDocument, PDFImage, PDFPage, PDFFont } from '@/lib/pdf/core/doc';
+import { PDFName, rgb } from '@/lib/pdf/core/doc';
+import { cropBox } from '@/lib/pdf/core/pages';
+import type { QuadRect, TopLeftBox, PageFrame } from '@/lib/pdf/core/tables';
+import { removeTextInRects, textRects } from '@/lib/pdf/core/content';
+import { toEmbeddableImage } from '@/lib/pdf/core/images';
+import { prepareTextForDirection } from '@/lib/pdf/core/fonts';
+import { colorOf, faceCacheKey, resolveFace } from './faces';
+import {
+  advanceOf,
+  baseInline,
+  imageMatrix,
+  inlineFor,
+  layoutBlock,
+  pointInObject,
+  textMatrixForRun,
+  viewerBoxToUserSpace,
+  type EditObject,
+  type ImageObject,
+  type InlineStyle,
+  type LayoutLine,
+  type LayoutResult,
+  type Measure,
+  type ResolvedInline,
+  type TextObject,
+} from './model';
+
+/** Faces one block needs, keyed by `faces.faceCacheKey(style, runText)`. */
+export type FaceMap = Map<string, PDFFont>;
+
+export interface PreparedObject {
+  object: TextObject;
+  layout: LayoutResult;
+  faces: FaceMap;
+}
+
+export interface DeleteReport {
+  /** Text-showing operators the engine removed. */
+  removed: number;
+  /** Runs still inside the rectangles afterwards (should be 0). */
+  leftover: number;
+  /** The engine could not measure everything it touched (Type3, no widths). */
+  needsRasterFallback: boolean;
+  /** The block's text was not in the page's own content stream at all. */
+  nothingRemoved: boolean;
+}
+
+/** Unrotated page frame from the file itself, in PDF user space. */
+export function frameOfPage(page: PDFPage): PageFrame {
+  const box = cropBox(page);
+  return {
+    x0: box.x,
+    y0: box.y,
+    width: box.width,
+    height: box.height,
+    rotation: page.getRotation().angle,
+  };
+}
+
+/**
+ * Remove the original runs under `boxes` (viewer space). Call this for every
+ * edited block *before* drawing anything, so a later block can never delete an
+ * earlier block's fresh text, and so the leftover check cannot see the rewrite.
+ */
+export function deleteOriginalText(page: PDFPage, boxes: TopLeftBox[], frame: PageFrame): DeleteReport {
+  const rects: QuadRect[] = boxes.map((box) => viewerBoxToUserSpace(box, frame));
+  if (rects.length === 0) {
+    return { removed: 0, leftover: 0, needsRasterFallback: false, nothingRemoved: false };
+  }
+  const result = removeTextInRects(page, rects);
+  const leftover = textRects(page).filter(
+    (entry) => entry.text.trim().length > 0 && rects.some((rect) => intersects(rect, entry.rect)),
+  ).length;
+  return {
+    removed: result.removedGlyphRuns,
+    leftover,
+    needsRasterFallback: result.needsRasterFallback,
+    nothingRemoved: result.removedGlyphRuns === 0,
+  };
+}
+
+function intersects(a: QuadRect, b: QuadRect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+/**
+ * Lay an edited block out with the faces it will really be written in, so the
+ * line breaks the user saw are the line breaks the file gets.
+ */
+export async function prepareTextObject(doc: PDFDocument, object: TextObject): Promise<PreparedObject> {
+  const faces = await resolveFaces(doc, object);
+  const layout = layoutBlock(object.paragraphs, object.style, {
+    measure: measureWith(faces),
+    width: Math.max(8, object.box.width),
+  });
+  return { object, layout, faces };
+}
+
+async function resolveFaces(doc: PDFDocument, object: TextObject): Promise<FaceMap> {
+  const faces: FaceMap = new Map();
+  const want = async (style: InlineStyle, text: string) => {
+    const key = faceCacheKey(style, text);
+    if (faces.has(key)) return;
+    const { font } = await resolveFace(doc, style, text);
+    faces.set(key, font);
+  };
+
+  // A body-size sample first: every fallback path can then find *a* face.
+  await want(object.style, 'Ag');
+  for (const paragraph of object.paragraphs) {
+    const style = { ...object.style, ...paragraph.style };
+    if (paragraph.list !== 'none') {
+      await want(baseInline(style), paragraph.list === 'bullet' ? '\u2022' : '1.');
+    }
+    for (const run of paragraph.runs) {
+      if (run.text.trim().length === 0) continue;
+      await want(inlineFor(run, style), run.text);
+    }
+  }
+  return faces;
+}
+
+function measureWith(faces: FaceMap): Measure {
+  return (text, run, sourceText) => {
+    const font = faceOf(faces, run, sourceText);
+    if (!font) return [...text].length * run.size * 0.5;
+    return advanceOf(font.widthOfTextAtSize(text, run.size), text, run);
+  };
+}
+
+function faceOf(faces: FaceMap, style: InlineStyle, sourceText: string): PDFFont | undefined {
+  const exact = faces.get(faceCacheKey(style, sourceText));
+  if (exact) return exact;
+  // Same family and posture, different script classification: prefer any face
+  // already embedded for that style before falling back to the sample face.
+  const prefix = `${style.fontFamily || 'auto'}|${style.bold ? 'b' : ''}${style.italic ? 'i' : ''}#`;
+  for (const [key, font] of faces) {
+    if (key.startsWith(prefix)) return font;
+  }
+  return faces.values().next().value;
+}
+
+/** Resource bookkeeping shared by every write on one page. */
+export interface PageWriters {
+  fontKeys: Map<string, PDFName>;
+  opacityKey: (alpha: number) => PDFName | undefined;
+}
+
+export function pageWriters(page: PDFPage): PageWriters {
+  const fontKeys = new Map<string, PDFName>();
+  const opacityKeys = new Map<string, PDFName>();
+  return {
+    fontKeys,
+    opacityKey(alpha: number) {
+      if (!(alpha < 1)) return undefined;
+      const key = alpha.toFixed(3);
+      let name = opacityKeys.get(key);
+      if (!name) {
+        name = page.node.newExtGState('GS', page.doc.context.obj({ ca: alpha, CA: alpha }));
+        opacityKeys.set(key, name);
+      }
+      return name;
+    },
+  };
+}
+
+/** Draw one prepared block. Text is selectable and searchable in the output. */
+export function writeTextObject(
+  page: PDFPage,
+  frame: PageFrame,
+  prepared: PreparedObject,
+  writers: PageWriters,
+): void {
+  const { object, layout, faces } = prepared;
+  for (const line of layout.lines) {
+    if (line.marker) {
+      const markerParagraph = line.pieces[0]?.source.paragraph ?? 0;
+      const style = baseInline({ ...object.style, ...paragraphStyle(object, markerParagraph) });
+      const font = faceOf(faces, style, line.marker);
+      if (font) {
+        writeRun(page, frame, object, {
+          text: line.marker,
+          anchorX: line.indent,
+          width: 0,
+          line,
+          font,
+          style,
+          rise: 0,
+          writers,
+        });
+      }
+    }
+    for (const piece of line.pieces) {
+      const run = object.paragraphs[piece.source.paragraph]?.runs[piece.source.run];
+      if (!run) continue;
+      const style = inlineFor(run, { ...object.style, ...paragraphStyle(object, piece.source.paragraph) });
+      const font = faceOf(faces, style, run.text);
+      if (!font) continue;
+      writeRun(page, frame, object, {
+        text: piece.text,
+        anchorX: piece.x,
+        width: piece.width,
+        line,
+        font,
+        style,
+        rise: style.rise,
+        writers,
+      });
+      const size = style.size;
+      if (style.underline) drawRule(page, frame, object, piece, line, size * 0.12, size, style);
+      if (style.strike) drawRule(page, frame, object, piece, line, -size * 0.28, size, style);
+    }
+  }
+}
+
+function paragraphStyle(object: TextObject, index: number) {
+  return object.paragraphs[index]?.style ?? {};
+}
+
+interface RunWrite {
+  text: string;
+  /** Block-relative x of the baseline start, points. */
+  anchorX: number;
+  width: number;
+  line: LayoutLine;
+  font: PDFFont;
+  style: ResolvedInline;
+  rise: number;
+  writers: PageWriters;
+}
+
+function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunWrite): void {
+  if (run.text.length === 0) return;
+  const { style, line } = run;
+  const anchor = { x: object.box.x + run.anchorX, y: object.box.y + line.baseline };
+  const tm = textMatrixForRun(anchor, object.rotation, frame, object.box);
+  const outline = style.outlineWidth;
+  const gs = run.writers.opacityKey(object.style.opacity);
+  const fontKey = ensureFontKey(page, run.font, run.writers.fontKeys);
+
+  page.pushOperators(
+    pushGraphicsState(),
+    ...(gs ? [setGraphicsState(gs)] : []),
+    setFillingColor(colorOf(style.color)),
+    ...(outline > 0 ? [setStrokingColor(colorOf(style.outlineColor)), setLineWidth(outline)] : []),
+    beginText(),
+    setFontAndSize(fontKey, num(style.size)),
+    setTextMatrix(tm[0], tm[1], tm[2], tm[3], tm[4], tm[5]),
+    setCharacterSqueeze(num(style.horizontalScale)),
+    setCharacterSpacing(num(style.charSpacing)),
+    setWordSpacing(num(style.wordSpacing + line.extraWordSpacing)),
+    setTextRise(num(run.rise)),
+    setTextRenderingMode(outline > 0 ? TextRenderingMode.FillAndOutline : TextRenderingMode.Fill),
+    // RTL runs are stored visually reversed, exactly like `core/fonts`, so a
+    // Hebrew or Arabic block reads the same on screen and in the file.
+    showText(run.font.encodeText(prepareTextForDirection(run.text, style.direction))),
+    endText(),
+    popGraphicsState(),
+  );
+}
+
+function drawRule(
+  page: PDFPage,
+  frame: PageFrame,
+  object: TextObject,
+  piece: { x: number; width: number },
+  line: LayoutLine,
+  offset: number,
+  size: number,
+  style: ResolvedInline,
+): void {
+  if (!(piece.width > 0)) return;
+  const start = pointInObject(object.box, object.rotation, frame, {
+    x: object.box.x + piece.x,
+    y: object.box.y + line.baseline + offset,
+  });
+  const end = pointInObject(object.box, object.rotation, frame, {
+    x: object.box.x + piece.x + piece.width,
+    y: object.box.y + line.baseline + offset,
+  });
+  page.drawLine({
+    start,
+    end,
+    thickness: Math.max(0.2, size * 0.06),
+    color: colorOf(style.color),
+    opacity: object.style.opacity,
+  });
+}
+
+/** One `/Font` resource entry per page per face, not one per drawn run. */
+function ensureFontKey(page: PDFPage, font: PDFFont, cache: Map<string, PDFName>): PDFName {
+  const key = font.ref.toString();
+  const known = cache.get(key);
+  if (known) return known;
+  const created = page.node.newFontDictionary(font.name, font.ref);
+  cache.set(key, created);
+  return created;
+}
+
+/** Embed and place one image object, honouring rotate and flip. */
+export async function writeImageObject(
+  doc: PDFDocument,
+  page: PDFPage,
+  frame: PageFrame,
+  object: ImageObject,
+  cache: Map<string, PDFImage>,
+): Promise<void> {
+  const cacheKey = `${object.id}:${object.bytes.byteLength}`;
+  let image = cache.get(cacheKey);
+  if (!image) {
+    image = await toEmbeddableImage(doc, object.bytes, { mime: object.mime });
+    cache.set(cacheKey, image);
+  }
+  const key = page.node.newXObject('Image', image.ref);
+  const matrix = imageMatrix(
+    object.box,
+    { degrees: object.rotation, flipH: object.flipH, flipV: object.flipV },
+    frame,
+  );
+  page.pushOperators(
+    pushGraphicsState(),
+    setFillingColor(rgb(1, 1, 1)),
+    concatTransformationMatrix(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]),
+    drawObject(key),
+    popGraphicsState(),
+  );
+}
+
+export interface ApplyOutcome {
+  written: number;
+  /** Blocks the built-in engine could not clean; the optional engine can. */
+  failed: { id: string; reason: string }[];
+  /** Blocks whose text survived deletion partially under the new text. */
+  partial: { id: string; leftover: number }[];
+  /** Blocks that sit on raster content the engine cannot repaint. */
+  raster: string[];
+}
+
+/**
+ * Write every edited object into an open document.
+ *
+ * Pass 1 deletes the original runs of every text block on the page; pass 2 draws
+ * the edits in paint order. A block whose words could not be deleted is *not*
+ * rewritten — that would be the doubled text this editor promises to avoid — and
+ * is reported so the UI can point at the optional PyMuPDF path.
+ */
+export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promise<ApplyOutcome> {
+  const byPage = new Map<number, EditObject[]>();
+  for (const object of objects) {
+    const list = byPage.get(object.page) ?? [];
+    list.push(object);
+    byPage.set(object.page, list);
+  }
+
+  const outcome: ApplyOutcome = { written: 0, failed: [], partial: [], raster: [] };
+  const images = new Map<string, PDFImage>();
+
+  for (const [page1, pageObjects] of [...byPage.entries()].sort((a, b) => a[0] - b[0])) {
+    const index = page1 - 1;
+    if (index < 0 || index >= doc.getPageCount()) continue;
+    const page = doc.getPage(index);
+    const frame = frameOfPage(page);
+    const writers = pageWriters(page);
+
+    const textObjects = pageObjects.filter((object): object is TextObject => object.kind === 'text');
+    const withSource = textObjects.filter((object) => object.deletion.length > 0);
+    if (withSource.length > 0) {
+      const report = deleteOriginalText(page, withSource.flatMap((object) => object.deletion), frame);
+      if (report.nothingRemoved) {
+        for (const object of withSource) {
+          outcome.failed.push({
+            id: object.id,
+            reason:
+              'This block’s words live in a form XObject or a Type3 font, which the built-in engine cannot delete. Export will skip it unless the optional PyMuPDF engine is loaded.',
+          });
+        }
+      } else {
+        if (report.needsRasterFallback) outcome.raster.push(...withSource.map((object) => object.id));
+        if (report.leftover > 0) {
+          for (const object of withSource) outcome.partial.push({ id: object.id, leftover: report.leftover });
+        }
+      }
+    }
+
+    const skipped = new Set(outcome.failed.map((entry) => entry.id));
+    for (const object of pageObjects) {
+      if (object.kind === 'image') {
+        await writeImageObject(doc, page, frame, object, images);
+        outcome.written += 1;
+        continue;
+      }
+      if (skipped.has(object.id)) continue;
+      const prepared = await prepareTextObject(doc, object);
+      writeTextObject(page, frame, prepared, writers);
+      outcome.written += 1;
+    }
+  }
+
+  return outcome;
+}
+
+function num(value: number): number {
+  const scaled = Math.round(value * 1e4) / 1e4;
+  return Object.is(scaled, -0) ? 0 : scaled;
+}
