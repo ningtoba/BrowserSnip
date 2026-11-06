@@ -382,11 +382,15 @@ export function exportPlan(annotations: EditorAnnotation[]): ExportPlan {
 export function describeAnnotation(annotation: EditorAnnotation): string {
   const label = TOOL_BY_ID[annotation.tool]?.label ?? annotation.kind;
   const body = annotation.text || annotation.contents || annotation.snapText || annotation.stampName;
-  const quote = body ? ` · “${clip(body.replace(/\s+/g, ' ').trim(), 42)}”` : '';
-  const link = annotation.link
-    ? ` · ${annotation.link.type === 'uri' ? annotation.link.uri : `p.${annotation.link.page + 1}`}`
-    : '';
-  return `${label} · p.${annotation.page + 1}${quote}${link}`;
+  const parts = [`${label} · p.${annotation.page + 1}`];
+  if (body) parts.push(`· “${clip(body.replace(/\s+/g, ' ').trim(), 42)}”`);
+  if (annotation.link) parts.push(`· ${linkTarget(annotation.link)}`);
+  return parts.join(' ');
+}
+
+/** Human-readable form of a link target. */
+function linkTarget(link: NonNullable<EditorAnnotation['link']>): string {
+  return link.type === 'uri' ? link.uri : `p.${link.page + 1}`;
 }
 
 /**
@@ -414,7 +418,7 @@ export function workSignature(annotations: EditorAnnotation[]): string {
         a.contents ?? '',
         a.stampName ?? '',
         a.imageBytes?.byteLength ?? 0,
-        a.link ? `${a.link.type}:${'page' in a.link ? a.link.page : a.link.uri}` : '',
+        a.link ? `${a.link.type}:${linkTarget(a.link)}` : '',
       ].join(''),
     )
     .sort()

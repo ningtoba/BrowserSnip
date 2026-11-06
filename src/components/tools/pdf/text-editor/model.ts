@@ -753,6 +753,11 @@ export interface DomNode {
   color?: string;
   size?: number;
   fontFamily?: string;
+  /** Block-level values the editor box carries on its wrapper element. */
+  align?: TextAlign;
+  indent?: number;
+  list?: ListKind;
+  listLevel?: number;
   text?: string;
   children?: DomNode[];
 }
@@ -763,14 +768,15 @@ export function paragraphsFromDom(nodes: DomNode[]): DocParagraph[] {
   let current: Run[] = [];
 
   const flush = () => {
+    if (current.length === 0) return;
     paragraphs.push({ runs: normaliseRuns(current), style: {}, list: 'none', listLevel: 0 });
     current = [];
   };
 
-  const walk = (node: DomNode, inherited: Partial<InlineStyle>) => {
+  const walk = (node: DomNode, inherited: Partial<InlineStyle>): DocParagraph | null => {
     if (node.tag === 'br') {
       flush();
-      return;
+      return null;
     }
     const style: Partial<InlineStyle> = { ...inherited };
     for (const key of ['bold', 'italic', 'underline', 'strike', 'superscript', 'subscript'] as const) {
@@ -782,15 +788,26 @@ export function paragraphsFromDom(nodes: DomNode[]): DocParagraph[] {
 
     if (node.tag === '#text') {
       if (node.text) current.push({ text: node.text, style: { ...style } });
-      return;
+      return null;
     }
     const isBlock = node.tag === 'p' || node.tag === 'div' || node.tag === 'li';
-    const before = current.length;
-    for (const child of node.children ?? []) walk(child, style);
+    let block: DocParagraph | null = null;
+    for (const child of node.children ?? []) block = walk(child, style) ?? block;
     if (isBlock && current.length > 0) {
-      flush();
-      void before;
+      const paragraph = {
+        runs: normaliseRuns(current),
+        style: {
+          ...(node.align ? { align: node.align } : {}),
+          ...(typeof node.indent === 'number' && node.indent > 0 ? { indent: node.indent } : {}),
+        },
+        list: node.list ?? 'none',
+        listLevel: node.listLevel ?? 0,
+      } satisfies DocParagraph;
+      paragraphs.push(paragraph);
+      current = [];
+      return paragraph;
     }
+    return block;
   };
 
   for (const node of nodes) walk(node, {});
@@ -819,6 +836,55 @@ export function normaliseRuns(runs: Run[]): Run[] {
 const INLINE_KEYS: (keyof InlineStyle)[] = [
   'fontFamily', 'size', 'color', 'bold', 'italic', 'underline', 'strike', 'superscript', 'subscript',
 ];
+
+/**
+ * The editor box's initial HTML for a block: escaped, inline-styled, and the
+ * inverse of {@link paragraphsFromDom} for the tags this editor emits, so what
+ * the user sees is what the writer receives back.
+ */
+export function paragraphsToHtml(paragraphs: DocParagraph[], base: EditorStyle): string {
+  return paragraphs
+    .map((paragraph) => {
+      const style = { ...base, ...paragraph.style };
+      const body = paragraph.runs
+        .map((run) => {
+          const resolved = resolveRun(run, style);
+          let html = escapeHtml(run.text).replace(/\n/g, '<br>');
+          if (resolved.subscript) html = `<sub>${html}</sub>`;
+          if (resolved.superscript) html = `<sup>${html}</sup>`;
+          const decorations = [resolved.underline ? 'underline' : '', resolved.strike ? 'line-through' : ''].filter(Boolean);
+          if (decorations.length > 0) html = `<u style="text-decoration:${decorations.join(' ')}">${html}</u>`;
+          if (resolved.italic) html = `<i>${html}</i>`;
+          if (resolved.bold) html = `<b>${html}</b>`;
+          const inline: string[] = [];
+          if (resolved.color !== base.color) inline.push(`color:${resolved.color}`);
+          if (resolved.size !== base.size) inline.push(`font-size:${round(resolved.size, 2)}s`);
+          if (inline.length === 0) return html;
+          return `<span data-size="${resolved.size}" style="${inline.join(';')}">${html}</span>`;
+        })
+        .join('');
+      const box: string[] = [`text-align:${paragraphAlign(paragraph, base)}`];
+      const indent = Math.max(0, (paragraph.style.indent ?? base.indent) + paragraph.listLevel * 14);
+      if (indent) box.push(`margin-left:${round(indent, 2)}s`);
+      if (base.firstLineIndent) box.push(`text-indent:${round(base.firstLineIndent, 2)}s`);
+      return `<div data-paragraph="1" style="${box.join(';')}">${body || '<br>'}</div>`;
+    })
+    .join('');
+}
+
+function paragraphAlign(paragraph: DocParagraph, base: EditorStyle): string {
+  return paragraph.style.align ?? base.align;
+}
+
+/** Escape the characters that can break out of an attribute or a text node. */
+export function escapeHtml(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function sameInlineStyle(a: Partial<InlineStyle>, b: Partial<InlineStyle>): boolean {
   return INLINE_KEYS.every((key) => (a[key] ?? undefined) === (b[key] ?? undefined));
@@ -1145,6 +1211,10 @@ export interface TextObject extends BaseObject {
   deletion: TopLeftBox[];
   /** Colour painted over the deleted runs before the rewrite. */
   patchColor: string;
+  /** Colour sampled from behind the block, used for the on-screen patch. */
+  paperColor: string;
+  /** Source paragraph id, so find & replace edits the same block twice. */
+  sourceId: string;
   /** Source paragraph was an invisible OCR layer. */
   fromInvisibleLayer: boolean;
 }

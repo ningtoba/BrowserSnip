@@ -6,10 +6,10 @@
  * bytes in `draw.ts`, and the wiring in `TextEditor.tsx`. Styling reuses the
  * app's existing vocabulary (`doodle-*`, `cream`, `ink`, category accents).
  */
-import { useRef, useState } from 'react';
 import {
   SWATCH_COLORS,
   ZOOM_PRESETS,
+  rulerTicks,
   type AlignMode,
   type BulletMarker,
   type DistributeAxis,
@@ -872,35 +872,26 @@ export function Ruler({
   lengthPoints: number;
   scale: number;
 }) {
-  const [step, setStep] = useState(50);
-  const ref = useRef<HTMLDivElement>(null);
-  void ref;
-  void setStep;
-  void step;
   const px = lengthPoints * scale;
-  const ticks: number[] = [];
-  const candidates = [10, 20, 50, 100, 200];
-  const chosen = candidates.find((candidate) => candidate * scale >= 40) ?? 500;
-  for (let value = 0; value <= lengthPoints; value += chosen) ticks.push(value);
+  const ticks = rulerTicks(lengthPoints, scale, 40);
   const long = orientation === 'horizontal';
   return (
     <div
-      ref={ref}
       className={long ? 'relative h-4 bg-cream-soft' : 'relative w-4 bg-cream-soft'}
       style={long ? { width: px } : { height: px }}
       aria-hidden
     >
-      {ticks.map((value) => (
+      {ticks.map((tick) => (
         <span
-          key={value}
+          key={tick.label}
           className="absolute font-mono text-[7px] leading-none text-ink-muted"
           style={
             long
-              ? { left: value * scale, top: 0, height: value % (chosen * 2) === 0 ? 10 : 6, borderLeft: '1px solid #BFBFB6', paddingLeft: 2 }
-              : { top: value * scale, left: 0, width: value % (chosen * 2) === 0 ? 10 : 6, borderTop: '1px solid #BFBFB6', paddingTop: 1 }
+              ? { left: tick.position, top: 0, height: 8, borderLeft: '1px solid #BFBFB6', paddingLeft: 2 }
+              : { top: tick.position, left: 0, width: 8, borderTop: '1px solid #BFBFB6', paddingTop: 1 }
           }
         >
-          {value % (chosen * 2) === 0 ? value : ''}
+          {Number(tick.label) % 100 === 0 ? tick.label : ''}
         </span>
       ))}
     </div>

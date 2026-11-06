@@ -140,6 +140,13 @@ const CHIP = 'doodle-chip flex-none whitespace-nowrap px-2 py-1 text-[10px]';
 /** Small secondary action inside the option panel (`doodle-btn` is full-width). */
 const MINI_BTN = 'doodle-btn doodle-btn-secondary w-auto flex-none px-2 py-1 text-[10px]';
 
+/** What the active place tool is still waiting for. */
+function rasterHint(tool: EditorToolId, ready: boolean): string {
+  if (ready) return 'Ready to place — click or drag on the page.';
+  if (tool === 'signature') return 'Draw the signature; it is placed as a stamp annotation.';
+  return 'Pick a PNG or JPEG; it is placed as a stamp annotation.';
+}
+
 export function AnnotationEditor(): JSX.Element {
   /* ── documents ───────────────────────────────────────────────────── */
 
@@ -1178,11 +1185,7 @@ export function AnnotationEditor(): JSX.Element {
                     )}
                   </div>
                   <p className="text-[10px] leading-relaxed text-ink-muted">
-                    {rasterReady
-                      ? 'Ready to place — click or drag on the page.'
-                      : tool === 'image'
-                        ? 'Pick a PNG or JPEG; it is placed as a stamp annotation.'
-                        : 'Draw the signature; it is placed as a stamp annotation.'}
+                    {rasterHint(tool, rasterReady)}
                   </p>
                 </div>
               )}
@@ -1336,40 +1339,39 @@ export function AnnotationEditor(): JSX.Element {
               <span className="w-12 text-center font-mono text-[10px] tabular-nums text-ink-muted">
                 {Math.round(zoom * 100)}%
               </span>
-            <button
-              type="button"
-              onClick={() => {
-                setFitMode('manual');
-                setZoom((z) => clampZoom(z * 1.25));
-              }}
-              disabled={!geom || zoom >= MAX_ZOOM - 0.001}
-              className={`${CHIP} doodle-chip-inactive disabled:opacity-30`}
-              aria-label="Zoom in"
-            >
-              ＋
-            </button>
-            <button
-              type="button"
-              onClick={() => setFitMode('fit')}
-              className={`${CHIP} ${fitMode === 'fit' ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
-            >
-              Fit width
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFitMode('manual');
-                setZoom(1);
-              }}
-              className={`${CHIP} doodle-chip-inactive`}
-            >
-              100%
-            </button>
-
-            <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => {
+                  setFitMode('manual');
+                  setZoom((z) => clampZoom(z * 1.25));
+                }}
+                disabled={!geom || zoom >= MAX_ZOOM - 0.001}
+                className={`${CHIP} doodle-chip-inactive disabled:opacity-30`}
+                aria-label="Zoom in"
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                onClick={() => setFitMode('fit')}
+                className={`${CHIP} ${fitMode === 'fit' ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
+              >
+                Fit width
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFitMode('manual');
+                  setZoom(1);
+                }}
+                className={`${CHIP} doodle-chip-inactive`}
+              >
+                100%
+              </button>
+            </span>
 
             {selected && (
-              <>
+              <div className="ml-auto flex items-center gap-2">
                 <span className="max-w-[220px] truncate font-mono text-[10px] text-ink-muted">
                   {describeAnnotation(selected)}
                 </span>
@@ -1392,7 +1394,7 @@ export function AnnotationEditor(): JSX.Element {
                 >
                   Delete
                 </button>
-              </>
+              </div>
             )}
           </div>
 

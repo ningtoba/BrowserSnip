@@ -486,11 +486,7 @@ function Mark({
             fontFamily="'JetBrains Mono', monospace"
             fill={annotation.color}
           >
-            {annotation.link?.type === 'uri'
-              ? clip(annotation.link.uri, 34)
-              : annotation.link
-                ? `→ p.${annotation.link.page + 1}`
-                : 'link'}
+            {linkLabel(annotation)}
           </text>
         </g>
       );
@@ -574,3 +570,10 @@ const round = (value: number): number => Math.round(value * 10) / 10;
 
 const clip = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;
+
+/** What a link annotation says it does, drawn above its box. */
+function linkLabel(annotation: EditorAnnotation): string {
+  const link = annotation.link;
+  if (!link) return 'link';
+  return link.type === 'uri' ? clip(link.uri, 34) : `→ p.${link.page + 1}`;
+}

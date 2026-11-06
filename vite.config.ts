@@ -1,23 +1,12 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
 
 export default defineConfig({
   base: './',
   plugins: [
     react(),
-    // pdf.js needs its CJK CMaps and the standard-font metrics at runtime.
-    // Without them every CID/Type0 document previews with missing glyphs and
-    // text extraction degrades. They are copied, not bundled, because pdf.js
-    // fetches them by URL.
-    viteStaticCopy({
-      targets: [
-        { src: 'node_modules/pdfjs-dist/cmaps/*', dest: 'cmaps' },
-        { src: 'node_modules/pdfjs-dist/standard_fonts/*', dest: 'standard_fonts' },
-      ],
-    }),
   ],
   resolve: {
     alias: {

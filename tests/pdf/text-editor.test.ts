@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ExtractedTextItem } from '@/lib/pdf/core/render';
 import { viewerRectToUserSpace, type PageFrame } from '@/lib/pdf/core/tables';
 import {
+  DEFAULT_STYLE,
   alignBoxes,
+  applyMatrix,
   boxContains,
   canRedo,
   canUndo,
@@ -17,8 +19,8 @@ import {
   clusterLines,
   clusterParagraphs,
   createHistory,
-  DEFAULT_STYLE,
   deletionBoxes,
+  detectPageObjects,
   distributeBoxes,
   editObjects,
   findRanges,
@@ -28,26 +30,31 @@ import {
   hexToRgb,
   imageMatrix,
   inlineFor,
+  invertMatrix,
   joinLines,
   layoutBlock,
   listMarker,
+  matrixDeterminant,
   monospaceMeasure,
   nextObjectId,
   normaliseRuns,
   objectAtPoint,
   paragraphsFromDom,
   paragraphsFromText,
+  paragraphsToHtml,
+  pointInObject,
   pushHistory,
   redoHistory,
   replaceInText,
   resetObjectIds,
   rotateBoxAboutCenter,
+  rotatePointAboutCenter,
   rulerTicks,
   samplePalette,
   scopeAllows,
   searchBlocks,
   searchableBlocks,
-  textMatrix,
+  textMatrixForRun,
   textOfParagraphs,
   undoHistory,
   unionBoxes,
@@ -56,6 +63,7 @@ import {
   type DocParagraph,
   type EditObject,
   type ExtractedParagraph,
+  type OperatorCodes,
   type TextObject,
 } from '@/components/tools/pdf/text-editor/model';
 
@@ -259,20 +267,38 @@ describe('page geometry', () => {
     });
   });
 
-  it('runs text along viewer +x for every page rotation', () => {
+  it('runs text along viewer +x without mirroring glyphs, on every page rotation', () => {
     const anchor = { x: 100, y: 200 };
     for (const frame of frames) {
-      const m = textMatrix(anchor, 0, frame);
+      const m = textMatrixForRun(anchor, 0, frame);
       const origin = viewerBoxToUserSpace({ x: anchor.x, y: anchor.y, width: 0, height: 0 }, frame);
       expect([m[4], m[5]]).toEqual([origin.x, origin.y]);
-      // Advance one unit along the baseline and compare with the mapped point.
-      const ahead = viewerBoxToUserSpace(
-        { x: anchor.x + 1, y: anchor.y, width: 0, height: 0 },
-        frame,
-      );
-      expect(Math.hypot(ahead.x - m[4], ahead.y - m[5])).toBeCloseTo(1, 4);
-      expect(Math.hypot(m[0], m[1])).toBeCloseTo(1, 6);
+      // A `Tm` with a negative determinant would draw the glyphs mirrored.
+      expect(matrixDeterminant(m)).toBeCloseTo(1, 6);
+      // Text-space +x has to come out as viewer +x: map the vector through `Tm`
+      // and back through the page transform into viewer space.
+      const forward = applyMatrix(invertMatrix(viewerToUserMatrix(frame)), [m[0], m[1]]);
+      expect(forward[0]).toBeCloseTo(1, 6);
+      expect(forward[1]).toBeCloseTo(0, 6);
+      // And text-space +y (the direction a superscript rises) is viewer up.
+      const up = applyMatrix(invertMatrix(viewerToUserMatrix(frame)), [m[2], m[3]]);
+      expect(up[0]).toBeCloseTo(0, 6);
+      expect(up[1]).toBeCloseTo(-1, 6);
     }
+  });
+
+  it('turns a rotated object the other way in user space', () => {
+    const frame: PageFrame = { x0: 0, y0: 0, width: 612, height: 792, rotation: 0 };
+    const box = { x: 100, y: 200, width: 200, height: 40 };
+    const m = textMatrixForRun({ x: box.x, y: box.y }, 90, frame, box);
+    // 90° clockwise on a /Rotate 0 page is −90° in PDF's counter-clockwise sense.
+    expect(m[0]).toBeCloseTo(0, 6);
+    expect(m[1]).toBeCloseTo(-1, 6);
+    expect(matrixDeterminant(m)).toBeCloseTo(1, 6);
+    // The anchor travels with the object, so a rotated block stays centred.
+    const centre = pointInObject(box, 90, frame, { x: 200, y: 220 });
+    const unrotated = pointInObject(box, 0, frame, { x: 200, y: 220 });
+    expect(Math.hypot(centre.x - unrotated.x, centre.y - unrotated.y)).toBeLessThan(1e-6);
   });
 
   it('places the unit square on the requested box', () => {
@@ -294,7 +320,10 @@ describe('page geometry', () => {
     const frame: PageFrame = { x0: 0, y0: 0, width: 612, height: 792, rotation: 0 };
     const plain = imageMatrix(box, {}, frame);
     const flipped = imageMatrix(box, { flipH: true }, frame);
+    // Mirroring keeps the covered rectangle identical but walks it the other way.
     expect(flipped[0]).toBeCloseTo(-plain[0], 6);
+    const end = (m: ReturnType<typeof imageMatrix>) => m[4] + m[0];
+    expect(end(flipped)).toBeCloseTo(end(plain) - 2 * box.width, 6);
     expect(flipped[4]).toBeCloseTo(plain[4] + box.width, 6);
   });
 
@@ -673,7 +702,7 @@ describe('object reducer', () => {
       ],
       { type: 'distribute', ids: ['a', 'b', 'c'], axis: 'horizontal' },
     );
-    expect(spaced.map((object) => object.box.x)).toEqual([0, 55, 100]);
+    expect(spaced.map((object) => object.box.x)).toEqual([0, 50, 100]);
     expect(distributeBoxes([], 'horizontal')).toEqual([]);
   });
 
@@ -892,9 +921,11 @@ describe('zoom and rulers', () => {
   });
 
   it('picks a legible ruler step', () => {
-    expect(rulerTicks(100, 1)).toEqual([]);
-    expect(rulerTicks(250, 1).length).toBeGreaterThan(1);
-    expect(rulerTicks(612, 2).map((tick) => tick.label)).toEqual(['0', '50', '100', '150', '200', '250', '300', '350', '400', '450', '500', '550', '600']);
+    expect(rulerTicks(100, 1).map((tick) => tick.label)).toEqual(['0', '50', '100']);
+    expect(rulerTicks(100, 4).map((tick) => tick.label)[1]).toBe('20');
+    expect(rulerTicks(612, 2).map((tick) => tick.position)).toEqual(
+      [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600].map((value) => value * 2),
+    );
   });
 
   it('generates unique object ids', () => {
