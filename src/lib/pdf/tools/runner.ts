@@ -103,6 +103,16 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const validation = tool.validate?.(values, { fileCount: request.files.length });
   if (validation) throw new Error(validation);
 
+  // A tool may collect the password in its own form (`Unlock`, `Change
+  // permissions`, `Remove restrictions`) or rely on the shared gate in the
+  // sidebar. Either source has to reach `openPDF`, otherwise opening the file
+  // fails before the tool can use the password it was just given.
+  const declared = (tool.fields ?? [])
+    .filter((field) => field.type === 'password')
+    .map((field) => values[field.key])
+    .find((value): value is string => typeof value === 'string' && value.length > 0);
+  const effectivePassword = request.password || declared;
+
   const inputs = request.files.map(toToolFile);
   const controller = new AbortController();
   const upstream = request.signal;
@@ -120,7 +130,7 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
       progress: (fraction, message) => request.onProgress?.(fraction, message),
       log: (line) => request.onLog?.(line),
       signal: controller.signal,
-      password: request.password,
+      password: effectivePassword,
     });
     results.push(...collect(result, inputs[0].name, tool.outputSuffix));
     return {

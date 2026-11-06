@@ -27,9 +27,9 @@ import {
   PDFArray,
   PDFContext,
   PDFDict,
-  PDFHexString,
   PDFName,
   PDFNumber,
+  PDFObject,
   PDFRawStream,
   PDFRef,
   PDFStream,
@@ -263,14 +263,6 @@ function isHexDigit(b: number): boolean {
 }
 
 const LATIN1 = new TextDecoder('latin1');
-const UTF16BE = new TextDecoder('utf-16be');
-
-function decodeTextOperand(bytes: Uint8Array): string {
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return UTF16BE.decode(bytes.subarray(2));
-  }
-  return LATIN1.decode(bytes);
-}
 
 /** Operand constructors for synthetic operators. Spans stay `-1` (not parsed). */
 export const operand = {
@@ -1028,6 +1020,9 @@ function resolveStream(context: PDFPage['doc']['context'], value: unknown): PDFS
 
 /** Decoded bytes of one stream object, whatever filter it uses. */
 export function streamBytes(stream: PDFStream): Uint8Array {
+  // SAFETY: `PDFStream` declares `getUnencodedContents` on the concrete
+  // subclasses but not on the base type, and a stream may be either. Probing the
+  // method is the only way to reach it without importing every subclass.
   const unencoded = (stream as unknown as { getUnencodedContents?: () => Uint8Array }).getUnencodedContents;
   if (typeof unencoded === 'function' && !stream.dict.has(PDFName.of('Filter'))) {
     return unencoded.call(stream);
@@ -1052,6 +1047,8 @@ export function streamBytes(stream: PDFStream): Uint8Array {
  * pdf.js is involved.
  */
 export function pageContentStreams(page: PDFPage): { bytes: Uint8Array; ref: PDFRef }[] {
+  // SAFETY: `PDFPageLeaf` stores the owning `PDFContext` on a private field that
+  // the generated accessors rely on internally; it always exists at runtime.
   const { context } = page.node as unknown as { context: PDFPage['doc']['context'] };
   const raw = page.node.get(PDFName.of(CONTENTS));
   const out: { bytes: Uint8Array; ref: PDFRef }[] = [];
@@ -1077,10 +1074,14 @@ export function pageContentOps(page: PDFPage): ContentOp[] {
 
 /** The `/Contents` value as a `PDFArray`, converting a single stream first. */
 function contentsArray(page: PDFPage): PDFArray {
+  // SAFETY: `PDFPageLeaf` keeps `context`, `get` and `set` on members the public
+  // `PDFPageNode` type does not declare; all three exist on every page node, and
+  // `get` returns any `PDFObject` because `/Contents` may be a stream, a
+  // reference or an array of either.
   const node = page.node as unknown as {
     context: PDFPage['doc']['context'];
-    get(key: PDFName): unknown;
-    set(key: PDFName, value: unknown): void;
+    get(key: PDFName): PDFObject | undefined;
+    set(key: PDFName, value: PDFArray): void;
   };
   const existing = node.get(PDFName.of(CONTENTS));
   if (existing instanceof PDFArray) return existing;
@@ -1150,16 +1151,13 @@ export function rewritePageContent(page: PDFPage, fn: (ops: ContentOp[]) => Cont
   const changed = countChanged(before, after);
   if (changed === 0) return 0;
   const ref = registerContentStream(page, after);
+  // SAFETY: `PDFPageLeaf.set` is inherited from `PDFDict` and is public at
+  // runtime; the page type only exposes the named accessors.
   (page.node as unknown as { set(key: PDFName, value: unknown): void }).set(PDFName.of(CONTENTS), ref);
   return changed;
 }
 
 // ── Colour operators ───────────────────────────────────────────────
-
-interface ColorState {
-  fill: ColorValue;
-  stroke: ColorValue;
-}
 
 type ColorValue =
   | { space: 'gray'; value: number }
@@ -1218,7 +1216,48 @@ function colorsMatch(a: ColorValue, b: RGB): boolean {
  * It is present at runtime, so the cast is the only way to resolve a nested
  * reference from inside a helper that was not handed the document.
  */
-function contextOf(holder: object): PDFContext {
+/**
+ * Read a dictionary entry and resolve one level of indirection, without the
+ * type assertion `lookupMaybe` performs. Use for keys whose PDF type is
+ * genuinely polymorphic.
+ */
+/** A dictionary entry after one level of reference resolution. */
+export type DictValue = PDFDict | PDFArray | PDFName | PDFNumber | PDFRef | undefined;
+
+function resolveValue(dict: PDFDict, key: PDFName): DictValue {
+  const value = dict.get(key);
+  if (value === undefined || value === null) return undefined;
+  if (value instanceof PDFRef) {
+    try {
+      const resolved = contextOfDict(dict).lookup(value);
+      return resolved instanceof PDFDict
+        || resolved instanceof PDFArray
+        || resolved instanceof PDFName
+        || resolved instanceof PDFNumber
+        ? resolved
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return value instanceof PDFDict
+    || value instanceof PDFArray
+    || value instanceof PDFName
+    || value instanceof PDFNumber
+    ? value
+    : undefined;
+}
+
+/** `PDFDict` keeps its context private; only the ref-resolver needs it. */
+function contextOfDict(dict: PDFDict): PDFContext {
+  // SAFETY: every collection object in pdf-lib holds the `PDFContext` that
+  // created it on a private field, which is where indirect lookups must go.
+  return (dict as unknown as { context: PDFContext }).context;
+}
+
+function contextOf(holder: PDFDict | PDFArray): PDFContext {
+  // SAFETY: `PDFDict` and `PDFArray` both store the creating `PDFContext` on a
+  // private field; it is required to resolve the references they contain.
   return (holder as unknown as { context: PDFContext }).context;
 }
 
@@ -1249,8 +1288,6 @@ interface FontInfo {
   ascent: number;
   descent: number;
 }
-
-const STANDARD_FONT_METRICS = new Map<string, ReturnType<typeof standardMetrics>>();
 
 function standardMetrics(baseFont: string) {
   // `StandardFontEmbedder` is a public pdf-lib export and carries the AFM
@@ -1397,9 +1434,12 @@ function fontCacheFor(page: PDFPage): FontCache {
 }
 
 function resourcesDict(page: PDFPage): PDFDict | undefined {
+  // SAFETY: `Resources` and `getInheritableAttribute` are generated accessors on
+  // `PDFPageLeaf` that the public `PDFPageNode` type does not declare; both exist
+  // at runtime on every page node.
   const node = page.node as unknown as {
     Resources?: () => PDFDict | undefined;
-    getInheritableAttribute?: (name: PDFName) => unknown;
+    getInheritableAttribute?: (name: PDFName) => PDFObject | undefined;
     context: PDFPage['doc']['context'];
   };
   const own = node.Resources ? node.Resources() : undefined;
@@ -1573,7 +1613,14 @@ function toUnicodeMap(context: PDFPage['doc']['context'], value: unknown): Map<n
 
 /** `/Encoding << /Differences [code /Name …] >>` → code → unicode. */
 function differencesMap(dict: PDFDict): Map<number, number> | undefined {
-  const encoding = dict.lookupMaybe(PDFName.of('Encoding'), PDFDict);
+  // `/Encoding` is polymorphic: a simple font carries a *name*
+  // (`/WinAnsiEncoding`, `/MacRomanEncoding`), a CID font a dictionary, and a
+  // composite Type0 font may hold a reference to either. `lookupMaybe` throws
+  // on a type mismatch rather than returning undefined, so the value is read
+  // with `get` and narrowed here — otherwise every standard-font page in the
+  // corpus would make text recovery blow up.
+  const rawEncoding = resolveValue(dict, PDFName.of('Encoding'));
+  const encoding = rawEncoding instanceof PDFDict ? rawEncoding : undefined;
   const differences = encoding?.lookupMaybe(PDFName.of('Differences'), PDFArray);
   if (!differences) return undefined;
   const map = new Map<number, number>();
@@ -1612,10 +1659,6 @@ function multiply(m: Matrix, n: Matrix): Matrix {
 
 function translate(tx: number, ty: number): Matrix {
   return [1, 0, 0, 1, tx, ty];
-}
-
-function scale(sx: number, sy: number): Matrix {
-  return [sx, 0, 0, sy, 0, 0];
 }
 
 function apply(m: Matrix, x: number, y: number): [number, number] {
@@ -1687,9 +1730,6 @@ function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
   const showString = (bytes: Uint8Array, opIndex: number, kerned: boolean, dx: (code: number) => number) => {
     if (!bytes.length) return;
     const codeSize = font?.codeSize ?? 1;
-    const pen = () => multiply(multiply(ctm, tm), translate(0, rise));
-    let [x0, y0] = pen()[4] !== undefined ? apply(multiply(ctm, tm), 0, rise) : [0, 0];
-    void x0;
     let advance = 0;
     const chars: string[] = [];
     const ascender = (font?.ascent ?? 0.75) * Math.abs(size) * scaleOf(multiply(ctm, tm));
@@ -2222,6 +2262,7 @@ export function stripEmbeddedFiles(doc: PDFDocument): number {
     if (perPage) {
       const dict = page.doc.context.lookup(perPage as PDFRef, PDFDict);
       removed += Math.max(1, countNameTreeEntries(dict));
+      // SAFETY: `delete` is inherited from `PDFDict` on the page node.
       (page.node as unknown as { delete(key: PDFName): boolean }).delete(PDFName.of('EmbeddedFiles'));
     }
   }

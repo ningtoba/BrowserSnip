@@ -927,6 +927,9 @@ export async function markdownToBlocks(
   options: { images?: (src: string) => Promise<Uint8Array | null> } = {},
 ): Promise<Block[]> {
   const { marked } = await import('marked');
+  // SAFETY: `marked` types its lexer output as a wide `TokensList` union whose
+  // members carry the fields read below; `MdToken` is that shared shape narrowed
+  // to what this renderer consumes, so no field is invented by the cast.
   const tokens = marked.lexer(markdown) as unknown as MdToken[];
   const inlineOf = (tokens: MdToken[] | undefined): Inline[] => walkInline(tokens ?? []);
   const blocks: Block[] = [];
@@ -1320,12 +1323,14 @@ function applyStyle(tag: string, element: Element, style: Partial<Inline>): Part
 }
 
 function sameStyle(run: Inline, style: Partial<Inline>): boolean {
+  const sameFlag = (a: boolean | undefined, b: boolean | undefined): boolean =>
+    Boolean(a) === Boolean(b);
   return (
-    !!run.bold === !!style.bold
-    && !!run.italic === !!style.italic
-    && !!run.underline === !!style.underline
-    && !!run.strike === !!style.strike
-    && !!run.code === !!style.code
+    sameFlag(run.bold, style.bold)
+    && sameFlag(run.italic, style.italic)
+    && sameFlag(run.underline, style.underline)
+    && sameFlag(run.strike, style.strike)
+    && sameFlag(run.code, style.code)
     && (run.color ?? '') === (style.color ?? '')
   );
 }

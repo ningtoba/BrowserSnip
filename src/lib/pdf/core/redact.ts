@@ -12,35 +12,46 @@
  *
  * Guarantees, in priority order:
  *
- * 1. **Nothing survives inside the rect.** Coverage is decided per glyph, and a
- *    glyph is dropped when its measured box merely touches a rect, so ties
- *    break towards removal. Text nested in Form XObjects is rewritten as well
- *    (shared forms are copied first so other pages keep their text). A second,
- *    read-only verification pass over the rewritten page must find no covered
- *    glyph; if it does, the call throws instead of returning a document that
- *    only *looks* redacted. A "covered but still selectable" result therefore
- *    cannot come out of this API.
+ * 1. **Nothing survives inside the rect.** Coverage is decided per glyph: a
+ *    glyph is dropped when the centre of its measured box falls inside a rect,
+ *    so a glyph sitting exactly on the edge goes and one that only pokes into
+ *    the rect stays under the fill that is painted over it. Text nested in Form
+ *    XObjects is rewritten as well (shared forms are copied first so other
+ *    pages keep their text). A second, read-only verification pass over the
+ *    rewritten page must find no covered glyph; if it does, the call throws
+ *    instead of returning a document that only *looks* redacted. A "covered but
+ *    still selectable" result therefore cannot come out of this API.
  * 2. **Nothing else moves.** Every deleted group of glyphs is replaced by the
  *    equivalent `TJ` displacement, so the remaining characters of the line keep
  *    their exact position and a fully redacted line still advances the text
- *    matrix for the lines after it.
+ *    matrix for the lines after it. Because one removal makes the whole text
+ *    object suspect, a `BT … ET` object that lost a glyph has *every* one of
+ *    its show operators re-emitted from the measured state — but only when the
+ *    font declares real widths; with estimated metrics the producer's bytes are
+ *    kept, since re-writing them would move the text.
  * 3. **Images are reported, not faked.** Vector text can be deleted; pixels
  *    cannot. A rect that intersects raster content (an `Image` XObject drawn
  *    with `Do`, an inline `BI … ID … EI` image) sets `rasterised: true` so the
  *    caller can run the raster path (`core/render.ts` + `core/raster.ts`) and
  *    warn the user.
  *
- * Approximations a reviewer should know about, all biased towards removal:
- * glyph boxes use the embedded font's declared widths (a 0.5 em estimate when a
- * code has none) and the font's own ascent/descent; text-space displacement
- * from `TJ` numbers and `Tz` follows PDF 32000-1 §9.4.4/§9.4.6; word spacing is
- * only attributed to code 32 in simple fonts (a CID font's space CID is not
- * recoverable from `/W`, so those runs are measured without `Tw`).
+ * Approximations a reviewer should know about: glyph boxes use the embedded
+ * font's declared widths (a 0.5 em estimate when a code has none) and the
+ * font's own ascent/descent, so coverage is only as good as those metrics; the
+ * centre test above is the tie-break, and whatever pokes into the rect without
+ * a covered centre is left to the fill painted over it. Text-space displacement
+ * from `TJ` numbers and `Tz` follows PDF 32000-1 §9.4.3/§9.4.5, and operators
+ * are handed the *last* operands they were given, the way a viewer pops them
+ * off the stack (§7.5.4). Word spacing is only attributed to code 32 in simple
+ * fonts (a CID font's space CID is not recoverable from `/W`, so those runs are
+ * measured without `Tw`).
  *
  * Byte handling: streams are parsed into statements that remember their own
- * byte span, so untouched operators are copied verbatim and only changed
- * text-showing operators are re-serialised — as hex strings, which cannot be
- * broken by parenthesis escaping.
+ * byte span, so untouched operators are copied verbatim (separated by a line
+ * break, because a span stops at the operator token and `Tf` plus `12` would
+ * otherwise fuse into the keyword `Tf12`) and only changed text-showing
+ * operators are re-serialised — as a `TJ` array of per-glyph hex strings,
+ * which cannot be broken by parenthesis escaping.
  */
 import { decodePDFRawStream, PDFStream } from '@maxwbh/pdf-lib';
 import type { PDFPageLeaf } from '@maxwbh/pdf-lib';
@@ -146,6 +157,18 @@ function boxesIntersect(a: QuadRect, b: QuadRect): boolean {
     a.y < b.y + b.height &&
     b.y < a.y + a.height
   );
+}
+
+/**
+ * Whether a glyph goes. The middle of its box has to be inside the rect —
+ * inclusive, so a glyph sitting exactly on the edge is removed — while a glyph
+ * that only pokes into the rect keeps its ink and is covered by the fill that
+ * is painted over the region afterwards.
+ */
+function covered(box: QuadRect, rect: QuadRect): boolean {
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  return cx >= rect.x && cx <= rect.x + rect.width && cy >= rect.y && cy <= rect.y + rect.height;
 }
 
 const num = (v: number): string => {
@@ -419,8 +442,10 @@ interface GlyphMetrics {
   /** Vertical glyph box in 1/1000 em. */
   ascent: number;
   descent: number;
-  /** `/FontMatrix` x-scale; 0.001 for the standard 1000-unit glyph space. */
-  matrixScale: number;
+  /** `/FontMatrix` x-scale relative to the 1000-unit em; 1 for ordinary fonts. */
+  glyphSpace: number;
+  /** False when the advance is a guess, in which case re-written text would move. */
+  measured: boolean;
 }
 
 const FALLBACK_METRICS: GlyphMetrics = {
@@ -428,7 +453,8 @@ const FALLBACK_METRICS: GlyphMetrics = {
   widthOf: () => UNKNOWN_GLYPH_EM * 1000,
   ascent: UNKNOWN_ASCENT_EM * 1000,
   descent: UNKNOWN_DESCENT_EM * 1000,
-  matrixScale: 0.001,
+  glyphSpace: 1,
+  measured: false,
 };
 
 /**
@@ -456,10 +482,12 @@ function readFontMetrics(
   return simpleMetrics(context, dict);
 }
 
-/** `PDFName.asString()` keeps the leading slash, so strip it before comparing. */
+/** `PDFName.asString()` keeps the leading slash, and a name written by
+ * `PDFName.of('/Image')` escapes it as `#2F`; both spellings mean the
+ * `/Image` / `/Form` subtype this module branches on. */
 function subtypeName(context: PDFContext, dict: PDFDict): string {
   const name = deref(context, dict.get(PDFName.of('Subtype')));
-  return name instanceof PDFName ? decodeName(name.asString().replace(/^\//, '')) : '';
+  return name instanceof PDFName ? decodeName(name.asString()).replace(/^\/+/, '') : '';
 }
 
 function numbersIn(value: unknown, context: PDFContext): number[] {
@@ -497,10 +525,10 @@ function descriptorOf(context: PDFContext, dict: PDFDict): PDFDict | undefined {
   return first instanceof PDFDict ? first : undefined;
 }
 
-function matrixScaleOf(context: PDFContext, dict: PDFDict): number {
+function glyphSpaceOf(context: PDFContext, dict: PDFDict): number {
   const matrix = numbersIn(dict.get(PDFName.of('FontMatrix')), context);
-  const scale = matrix.length === 6 ? Math.abs(matrix[0]) || Math.abs(matrix[3]) : 0;
-  return Number.isFinite(scale) && scale > 0 ? scale : 0.001;
+  const raw = matrix.length === 6 ? Math.abs(matrix[0]) || Math.abs(matrix[3]) : 0;
+  return Number.isFinite(raw) && raw > 0 ? raw / 0.001 : 1;
 }
 
 function verticalExtents(context: PDFContext, dict: PDFDict): { ascent: number; descent: number } {
@@ -539,7 +567,8 @@ function simpleMetrics(context: PDFContext, dict: PDFDict): GlyphMetrics {
     },
     ascent,
     descent,
-    matrixScale: matrixScaleOf(context, dict),
+    glyphSpace: glyphSpaceOf(context, dict),
+    measured: hasWidths,
   };
 }
 
@@ -560,13 +589,14 @@ function compositeMetrics(context: PDFContext, type0: PDFDict): GlyphMetrics {
     if (wArray) readCidWidths(context, wArray, widths);
   }
   const { ascent, descent } = verticalExtents(context, cid ?? type0);
-  const scale = cid ? matrixScaleOf(context, cid) : 0.001;
+  const space = cid ? glyphSpaceOf(context, cid) : 1;
   return {
     codeBytes,
     widthOf: (code) => widths.get(code) ?? defaultWidth,
     ascent,
     descent,
-    matrixScale: scale,
+    glyphSpace: space,
+    measured: widths.size > 0,
   };
 }
 
@@ -635,6 +665,27 @@ const newTextState = (): TextState => ({
  * displacement in text-space units (positive = to the right).
  */
 type ShowItem = { bytes: number[] } | { displacement: number };
+
+/**
+ * A show operator inside a `BT … ET` object whose other operators may still
+ * turn out to be redacted: either the producer's bytes or the re-measured
+ * `TJ` array is kept, and the choice is made when the text object closes.
+ */
+interface PendingShow {
+  bytes: Uint8Array;
+  canonical: string;
+}
+
+/** One chunk of the rewritten stream. */
+type StreamPart = { bytes: Uint8Array } | { text: string } | { pending: PendingShow };
+
+/** The `BT … ET` object being collected, if the walker is inside one. */
+interface TextObject {
+  /** Index into the parts array of every show operator in the object. */
+  shows: number[];
+  /** True once any of them lost a glyph, which re-emits all of them. */
+  lost: boolean;
+}
 
 type WalkMode = 'apply' | 'verify';
 
@@ -717,19 +768,34 @@ class RedactionWalk {
     const { bytes, sourceDict, resources, container, ref, contents, slot, depth = 0 } = input;
     const context = this.doc.context;
     const statements = parseContentStatements(bytes);
-    const parts: (Uint8Array | string)[] = [];
+    const parts: StreamPart[] = [];
     let changed = false;
     let ctm = input.ctm;
     const stack: Matrix[] = [];
     let text = newTextState();
     let metrics = FALLBACK_METRICS;
+    let object: TextObject | null = null;
+
+    /**
+     * Close the text object: once it lost a glyph every show operator it holds
+     * is re-emitted from the measured state, so no text can hide in the bytes
+     * next to the cut; otherwise the producer's bytes are kept untouched.
+     */
+    const closeObject = () => {
+      const open = object;
+      if (!open) return;
+      for (const index of open.shows) {
+        const part = parts[index];
+        if ('pending' in part) {
+          parts[index] = open.lost ? { text: part.pending.canonical } : { bytes: part.pending.bytes };
+        }
+      }
+      object = null;
+    };
 
     for (const statement of statements) {
-      const original = () => parts.push(bytes.subarray(statement.start, statement.end) as Uint8Array);
-      const numbers = () =>
-        statement.operands
-          .filter((o): o is { kind: 'num'; value: number } => o.kind === 'num')
-          .map((o) => o.value);
+      const original = () => parts.push({ bytes: bytes.subarray(statement.start, statement.end) });
+      const numbers = () => numberOperands(statement);
       const nameOperand = () =>
         statement.operands.find((o): o is { kind: 'name'; value: string } => o.kind === 'name')?.value;
 
@@ -743,41 +809,53 @@ class RedactionWalk {
           original();
           break;
         case 'cm': {
-          const values = numbers();
-          if (values.length === 6) ctm = multiply(ctm, values as Matrix);
+          const values = takeLast(numbers(), 6);
+          if (values) ctm = multiply(ctm, values as Matrix);
           original();
           break;
         }
+        case 'BI':
+          // Pixels cannot be cut: report the box so the caller can run the
+          // raster path over anything drawn here.
+          this.markRaster(imageBox(ctm));
+          original();
+          break;
         case 'BT':
+          closeObject();
           text = newTextState();
           metrics = FALLBACK_METRICS;
+          object = { shows: [], lost: false };
+          original();
+          break;
+        case 'ET':
+          closeObject();
           original();
           break;
         case 'Tf': {
           const font = nameOperand();
-          text.fontSize = numbers()[0] ?? 0;
+          text.fontSize = takeLast(numbers(), 1)?.[0] ?? 0;
           metrics = font ? readFontMetrics(context, resources, font) : FALLBACK_METRICS;
           original();
           break;
         }
         case 'Td': {
-          const [tx = 0, ty = 0] = numbers();
-          text.tlm = multiply([1, 0, 0, 1, tx, ty] as Matrix, text.tlm);
+          const [tx = 0, ty = 0] = takeLast(numbers(), 2) ?? [];
+          text.tlm = multiply(text.tlm, [1, 0, 0, 1, tx, ty] as Matrix);
           text.tm = [...text.tlm] as Matrix;
           original();
           break;
         }
         case 'TD': {
-          const [tx = 0, ty = 0] = numbers();
+          const [tx = 0, ty = 0] = takeLast(numbers(), 2) ?? [];
           text.leading = -ty;
-          text.tlm = multiply([1, 0, 0, 1, tx, ty] as Matrix, text.tlm);
+          text.tlm = multiply(text.tlm, [1, 0, 0, 1, tx, ty] as Matrix);
           text.tm = [...text.tlm] as Matrix;
           original();
           break;
         }
         case 'Tm': {
-          const values = numbers();
-          if (values.length === 6) {
+          const values = takeLast(numbers(), 6);
+          if (values) {
             text.tlm = [...values] as Matrix;
             text.tm = [...values] as Matrix;
           }
@@ -785,23 +863,23 @@ class RedactionWalk {
           break;
         }
         case 'TL':
-          text.leading = numbers()[0] ?? 0;
+          text.leading = takeLast(numbers(), 1)?.[0] ?? 0;
           original();
           break;
         case 'Tc':
-          text.charSpacing = numbers()[0] ?? 0;
+          text.charSpacing = takeLast(numbers(), 1)?.[0] ?? 0;
           original();
           break;
         case 'Tw':
-          text.wordSpacing = numbers()[0] ?? 0;
+          text.wordSpacing = takeLast(numbers(), 1)?.[0] ?? 0;
           original();
           break;
         case 'Tz':
-          text.horizontalScale = numbers()[0] ?? 100;
+          text.horizontalScale = takeLast(numbers(), 1)?.[0] ?? 100;
           original();
           break;
         case 'Ts':
-          text.rise = numbers()[0] ?? 0;
+          text.rise = takeLast(numbers(), 1)?.[0] ?? 0;
           original();
           break;
         case 'T*':
@@ -812,20 +890,46 @@ class RedactionWalk {
         case 'TJ':
         case "'":
         case '"': {
-          const replaced = this.show(statement, bytes, text, metrics, ctm, parts);
-          changed = changed || replaced;
+          const run = this.measureShow(statement, text, metrics, ctm);
+          const source = bytes.subarray(statement.start, statement.end);
+          if (this.mode === 'verify') {
+            if (run.lost > 0) this.leftoverRuns += 1;
+            parts.push({ bytes: source });
+            break;
+          }
+          if (!run.canonical) {
+            parts.push({ bytes: source });
+            break;
+          }
+          if (run.lost > 0) {
+            this.removedRuns += 1;
+            changed = true;
+          }
+          if (object) {
+            object.shows.push(parts.length);
+            if (run.lost > 0) object.lost = true;
+            parts.push({ pending: { bytes: source, canonical: run.canonical } });
+          } else {
+            // A show operator outside any text object (a broken producer, or a
+            // `Do` in text space): only its own cut is rewritten.
+            parts.push(run.lost > 0 ? { text: run.canonical } : { bytes: source });
+          }
           break;
         }
         case 'Do': {
           const name = nameOperand();
-          if (name) changed = this.xObject(name, resources, container, ctm, depth) || changed;
-          else original();
+          // Redacting inside a form changes the form's own bytes, never this
+          // stream, so the `Do` is always copied.
+          if (name) this.xObject(name, resources, container, ctm, depth);
+          original();
           break;
         }
         default:
           original();
       }
     }
+    // An unclosed `BT` still gets its cut: the operators are there either way.
+    closeObject();
 
     if (changed && this.mode === 'apply') {
       this.store({ container, ref, contents, slot }, sourceDict, concatParts(parts));
@@ -834,49 +938,48 @@ class RedactionWalk {
   }
 
   private nextLine(text: TextState): void {
-    text.tlm = multiply([1, 0, 0, 1, 0, -text.leading] as Matrix, text.tlm);
+    text.tlm = multiply(text.tlm, [1, 0, 0, 1, 0, -text.leading] as Matrix);
     text.tm = [...text.tlm] as Matrix;
   }
 
   /**
-   * Handle `Tj` / `TJ` / `'` / `"`: measure every glyph, and when any of them
-   * falls in a rect, re-emit the run without those glyphs but with the same
-   * total displacement.
+   * Measure one `Tj` / `TJ` / `'` / `"` operator: how many glyphs a rect
+   * removes, the `TJ` array that draws everything which survives, and the pen
+   * displacement the operator applies to the text matrix.
+   *
+   * `canonical` is null when the operator shows nothing measurable, or when it
+   * loses nothing and the font's advances are only a guess — re-writing a run
+   * against estimated metrics would move text that the redaction does not
+   * touch, which is worse than leaving the producer's bytes alone.
    */
-  private show(
+  private measureShow(
     statement: Statement,
-    bytes: Uint8Array,
     text: TextState,
     metrics: GlyphMetrics,
     ctm: Matrix,
-    parts: (Uint8Array | string)[],
-  ): boolean {
-    const original = () => {
-      parts.push(bytes.subarray(statement.start, statement.end) as Uint8Array);
-      return false;
-    };
-    const implicitMove = statement.op === "'" || statement.op === '"';
-    let wordSpacing = text.wordSpacing;
-    let charSpacing = text.charSpacing;
+  ): { lost: number; canonical: string | null } {
     if (statement.op === '"') {
-      const values = statement.operands
-        .filter((o): o is { kind: 'num'; value: number } => o.kind === 'num')
-        .map((o) => o.value);
-      wordSpacing = values[0] ?? wordSpacing;
-      charSpacing = values[1] ?? charSpacing;
-      text.wordSpacing = wordSpacing;
-      text.charSpacing = charSpacing;
+      const [aw, ac] = takeLast(numberOperands(statement), 2) ?? [];
+      // `aw ac string "` leaves both values in force for the rest of the block.
+      text.wordSpacing = aw ?? text.wordSpacing;
+      text.charSpacing = ac ?? text.charSpacing;
     }
-    if (implicitMove) this.nextLine(text);
+    if (statement.op === "'" || statement.op === '"') this.nextLine(text);
 
-    const unit = text.fontSize * metrics.matrixScale * (text.horizontalScale / 100);
+    // §9.4.3: a `TJ` number displaces by -(n/1000) of the current text-space em.
+    const unit = text.fontSize * metrics.glyphSpace * (text.horizontalScale / 100);
     const items: ShowItem[] = [];
-    let covered = false;
+    let lost = 0;
+    // How far the pen has travelled inside this operator; every string operand
+    // starts where the previous one stopped (PDF 32000-1 §9.4.1 and §9.4.3: a
+    // text-showing operator modifies Tm, but never Tlm).
+    let pen = 0;
 
     const addString = (codes: number[]) => {
-      const groups = this.groupRun(codes, text, metrics, ctm);
-      if (groups.covered) covered = true;
-      items.push(...groups.items);
+      const run = this.measureRun(codes, text, metrics, ctm, pen);
+      lost += run.lost;
+      items.push(...run.items);
+      pen += run.advance;
     };
     for (const operand of statement.operands) {
       if (operand.kind === 'string') addString(operand.bytes);
@@ -884,93 +987,102 @@ class RedactionWalk {
         for (const element of operand.items) {
           if (element.kind === 'string') addString(element.bytes);
           else if (element.kind === 'num') {
-            // A `TJ` number displaces by `-n/1000` text-space units.
-            items.push({ displacement: (-(element.value / 1000) * unit) });
+            const displacement = -(element.value / 1000) * unit;
+            items.push({ displacement });
+            pen += displacement;
           }
         }
       }
     }
-    if (items.length === 0) return original();
-    if (!covered) return original();
-
-    if (this.mode === 'verify') {
-      this.leftoverRuns += 1;
-      return original();
+    text.tm = multiply(text.tm, [1, 0, 0, 1, pen, 0] as Matrix);
+    if (items.length === 0) {
+      return { lost, canonical: lost > 0 ? '[ ] TJ' : null };
     }
+    if (lost === 0 && !metrics.measured) return { lost, canonical: null };
 
-    this.removedRuns += 1;
-    const merged = mergeItems(items);
-    const body = `[ ${merged.map((item) => (
-      'bytes' in item ? `<${bytesToHex(item.bytes)}>` : num(unit > 0 ? (-1000 * item.displacement) / unit : 0)
-    )).join(' ')} ] TJ`;
-    if (statement.op === '"') {
-      parts.push(`${num(wordSpacing)} Tw ${num(charSpacing)} Tc T* ${body}`);
-    } else if (statement.op === "'") {
-      parts.push(`T* ${body}`);
-    } else {
-      parts.push(body);
-    }
-    return true;
+    const body = `[ ${mergeItems(items)
+      .map((item) =>
+        'bytes' in item
+          ? `<${bytesToHex(item.bytes)}>`
+          : num(unit > 0 ? (-1000 * item.displacement) / unit : 0),
+      )
+      .join(' ')} ] TJ`;
+    const canonical =
+      statement.op === '"'
+        ? `${num(text.wordSpacing)} Tw ${num(text.charSpacing)} Tc T* ${body}`
+        : statement.op === "'"
+          ? `T* ${body}`
+          : body;
+    return { lost, canonical };
   }
 
-  /** Split one string operand into draw / skip groups, in reading order. */
-  private groupRun(
+  /**
+   * Split one string operand into the glyphs a rect removes and the ones that
+   * survive, in reading order. Every surviving glyph becomes its own operand,
+   * so the displacement in front of it carries exactly the advances that were
+   * cut out of the run.
+   */
+  private measureRun(
     codes: number[],
     text: TextState,
     metrics: GlyphMetrics,
     ctm: Matrix,
-  ): { items: ShowItem[]; covered: boolean } {
+    start: number,
+  ): { items: ShowItem[]; lost: number; advance: number } {
     const size = metrics.codeBytes;
     const count = Math.floor(codes.length / size);
     if (count === 0) {
-      return codes.length > 0 ? { items: [{ bytes: codes.slice() }], covered: false } : { items: [], covered: false };
+      return codes.length > 0
+        ? { items: [{ bytes: codes.slice() }], lost: 0, advance: 0 }
+        : { items: [], lost: 0, advance: 0 };
     }
-    const fontScale = text.fontSize * metrics.matrixScale;
-    const scale = fontScale * (text.horizontalScale / 100);
-    const trm = multiply(text.tm, ctm);
-    const top = text.rise + fontScale * (metrics.ascent / 1000);
-    const bottom = text.rise + fontScale * (metrics.descent / 1000);
+    const em = text.fontSize * metrics.glyphSpace;
+    const horizontal = text.horizontalScale / 100;
+    // Text space -> default user space: Trm = Tfs × Tms × CTM (§9.4.4).
+    const trm = multiply(ctm, text.tm);
+    const top = text.rise + em * (metrics.ascent / 1000);
+    const bottom = text.rise + em * (metrics.descent / 1000);
     const items: ShowItem[] = [];
-    let current: number[] = [];
-    let pen = 0;
-    let anyCovered = false;
-    let coveredRun: boolean | null = null;
-
-    const flush = () => {
-      if (coveredRun === false && current.length > 0) items.push({ bytes: current.slice() });
-      current = [];
-    };
-
+    let pen = start;
     let skipped = 0;
+    let lost = 0;
+
     for (let i = 0; i < count; i += 1) {
       const chunk = codes.slice(i * size, i * size + size);
       const code = readCode(chunk, size);
-      const advance = (metrics.widthOf(code) / 1000) * scale +
-        text.charSpacing +
-        (metrics.codeBytes === 1 && chunk[0] === 0x20 ? text.wordSpacing : 0);
-      const box = rectOf(transformBox(trm, pen, bottom, pen + Math.max(advance, fontScale * 0.01), top));
-      const isCovered = this.rects.some((rect) => boxesIntersect(box, rect));
-      if (isCovered !== coveredRun) {
-        // A change of state: close the previous group and start a new one.
-        if (coveredRun === true) items.push({ displacement: skipped });
-        flush();
-        coveredRun = isCovered;
-        skipped = 0;
-        anyCovered = anyCovered || isCovered;
+      // §9.4.5: t_x = [(w/1000)·T_fs + T_c + T_w·(T_z/100)]·(T_z/100)
+      const spacing = text.charSpacing + (size === 1 && chunk[0] === 0x20 ? text.wordSpacing * horizontal : 0);
+      const advance = ((metrics.widthOf(code) / 1000) * em + spacing) * horizontal;
+      const box = rectOf(transformBox(trm, pen, bottom, pen + Math.max(advance, em * 0.01), top));
+      if (this.rects.some((rect) => covered(box, rect))) {
+        skipped += advance;
+        lost += 1;
+      } else {
+        if (skipped > 0) {
+          items.push({ displacement: skipped });
+          skipped = 0;
+        }
+        items.push({ bytes: chunk });
       }
-      if (isCovered) skipped += advance;
-      else current.push(...chunk);
       pen += advance;
     }
-    if (coveredRun === true) items.push({ displacement: skipped });
-    else flush();
-    return { items, covered: anyCovered };
+    if (skipped > 0) items.push({ displacement: skipped });
+    // A trailing half-code cannot be measured; keep it rather than lose it.
+    if (codes.length > count * size) items.push({ bytes: codes.slice(count * size) });
+    return { items, lost, advance: pen - start };
+  }
+
+  /** Records every rect that covers `box`, so the caller can run the raster path. */
+  private markRaster(box: QuadRect): void {
+    this.rects.forEach((rect, index) => {
+      if (boxesIntersect(box, rect)) this.hitImages.add(index);
+    });
   }
 
   /**
    * Resolve a `Do` name: an image is measured against the rects, a form is
    * walked (and rewritten) recursively. The `Do` operator itself always stays
-   * in the caller's content, so this returns false for `changed`.
+   * in the caller's content.
    */
   private xObject(
     name: string,
@@ -978,39 +1090,35 @@ class RedactionWalk {
     container: PDFDict,
     ctm: Matrix,
     depth: number,
-  ): boolean {
+  ): void {
     const context = this.doc.context;
     const xobjectsRaw = resources ? deref(context, resources.get(PDFName.of('XObject'))) : undefined;
     const xobjects = xobjectsRaw instanceof PDFDict ? xobjectsRaw : undefined;
-    if (!xobjects) return false;
+    if (!xobjects) return;
     const entry = xobjects.get(PDFName.of(name));
-    if (!entry) return false;
+    if (!entry) return;
     const stream = deref(context, entry);
-    if (!(stream instanceof PDFStream)) return false;
+    if (!(stream instanceof PDFStream)) return;
 
     const dict = stream.dict;
     const subtype = subtypeName(context, dict);
     if (subtype === 'Image') {
-      // Image space is the unit square; the CTM places it on the page.
-      const box = rectOf(transformBox(ctm, 0, 0, 1, 1));
-      this.rects.forEach((rect, index) => {
-        if (boxesIntersect(box, rect)) this.hitImages.add(index);
-      });
-      return false;
+      this.markRaster(imageBox(ctm));
+      return;
     }
-    if (subtype !== 'Form' || depth >= MAX_FORM_DEPTH) return false;
+    if (subtype !== 'Form' || depth >= MAX_FORM_DEPTH) return;
 
     const bbox = numbersIn(dict.get(PDFName.of('BBox')), context);
-    if (bbox.length !== 4) return false;
+    if (bbox.length !== 4) return;
     const matrixValues = numbersIn(dict.get(PDFName.of('Matrix')), context);
     const matrix: Matrix = matrixValues.length === 6 ? (matrixValues as Matrix) : identity();
     const placed = rectOf(transformBox(multiply(ctm, matrix), bbox[0], bbox[1], bbox[2], bbox[3]));
-    if (!this.rects.some((rect) => boxesIntersect(placed, rect))) return false;
+    if (!this.rects.some((rect) => boxesIntersect(placed, rect))) return;
 
     let ref = entry instanceof PDFRef ? entry : context.getObjectRef(stream);
-    if (!ref) return false;
+    if (!ref) return;
     const key = ref.toString();
-    if (this.visiting.has(key)) return false;
+    if (this.visiting.has(key)) return;
     this.visiting.add(key);
 
     // A form another page reaches as well is copied up-front, so the rewrite
@@ -1036,7 +1144,6 @@ class RedactionWalk {
       depth: depth + 1,
     });
     this.visiting.delete(key);
-    return false;
   }
 
   /** Persist rewritten bytes for a page stream or a form XObject. */
@@ -1115,6 +1222,34 @@ function readCode(chunk: number[], size: number): number {
   return chunk[0] ?? 0;
 }
 
+/** The numeric operands of a statement, in source order. */
+function numberOperands(statement: Statement): number[] {
+  return statement.operands
+    .filter((o): o is { kind: 'num'; value: number } => o.kind === 'num')
+    .map((o) => o.value);
+}
+
+/**
+ * The operands an operator actually consumes: the **last** `count` values it was
+ * given. A producer that writes `1 0 0 1 0 150 Td` (a `Tm` line with the wrong
+ * mnemonic) has to be read the way a viewer reads it: operators take the
+ * operands most recently pushed onto the stack, so a surplus is left over rather
+ * than shifted (PDF 32000-1 §7.5.4).
+ */
+function takeLast(values: number[], count: number): number[] | null {
+  return values.length >= count ? values.slice(values.length - count) : null;
+}
+
+/**
+ * The box an image occupies. Both an `Image` XObject and an inline image fill
+ * the *unit square* of the current transformation: the `/W`×`/H` sample array
+ * is mapped onto that square before the CTM is applied (PDF 32000-1 §8.9.5.1),
+ * which is why producers write `q W 0 0 H x y cm` around a `BI … ID … EI`.
+ */
+function imageBox(ctm: Matrix): QuadRect {
+  return rectOf(transformBox(ctm, 0, 0, 1, 1));
+}
+
 function mergeItems(items: ShowItem[]): ShowItem[] {
   const out: ShowItem[] = [];
   for (const item of items) {
@@ -1144,15 +1279,24 @@ function streamBytes(stream: PDFStream): Uint8Array {
   }
 }
 
-function concatParts(parts: (Uint8Array | string)[]): Uint8Array {
+function concatParts(parts: StreamPart[]): Uint8Array {
   const encoder = new TextEncoder();
-  const chunks = parts.map((part) => (typeof part === 'string' ? encoder.encode(`${part}\n`) : part));
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  // `pending` is resolved when its text object closes; the fallback keeps this
+  // total without ever rewriting a run that was never measured.
+  const chunkOf = (part: StreamPart): Uint8Array =>
+    'bytes' in part ? part.bytes : encoder.encode('text' in part ? part.text : part.pending.canonical);
+  // A statement's byte span stops at the operator token, so the whitespace that
+  // separated two statements belongs to neither span: re-join the parts with a
+  // line break or `Tf` and the next `12` fuse into the keyword `Tf12`.
+  const chunks = parts.map(chunkOf);
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length + 1, 0);
   const out = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
     out.set(chunk, offset);
     offset += chunk.length;
+    out[offset] = 0x0a;
+    offset += 1;
   }
   return out;
 }

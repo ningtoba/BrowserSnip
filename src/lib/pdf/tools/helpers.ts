@@ -7,6 +7,7 @@
  */
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import {
+  collectPages,
   openPDF,
   newPDF as createPdf,
   savePDF,
@@ -128,6 +129,37 @@ export async function pdfResult(
     ? await saveEncrypted(doc, options.encrypt)
     : await savePDF(doc, { useObjectStreams: options.compress ?? true });
   return { kind: 'pdf', bytes, message: options.message };
+}
+
+/**
+ * Copy a document into a fresh one.
+ *
+ * `pdf-lib` keeps the `/Encrypt` trailer entry when you save a document that was
+ * *loaded* with a password, so "unlock" would hand back a file that still asks
+ * for one. Rebuilding through a new `PDFDocument` is the only reliable way to
+ * drop protection, and it is also what produces the cleanest cross-reference
+ * table for a repaired file.
+ */
+export async function rebuildDocument(
+  doc: PDFDocument,
+  options: { password?: string } = {},
+): Promise<PDFDocument> {
+  const indices = doc.getPages().map((_, index) => index);
+  const { doc: target } = await collectPages([{ doc, pages: indices }]);
+  const title = doc.getTitle();
+  const author = doc.getAuthor();
+  const subject = doc.getSubject();
+  const keywords = doc.getKeywords();
+  const creator = doc.getCreator();
+  const producer = doc.getProducer();
+  if (title) target.setTitle(title);
+  if (author) target.setAuthor(author);
+  if (subject) target.setSubject(subject);
+  if (keywords) target.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
+  if (creator) target.setCreator(creator);
+  if (producer) target.setProducer(producer);
+  void options;
+  return target;
 }
 
 /** Save without encryption; used by the large majority of tools. */

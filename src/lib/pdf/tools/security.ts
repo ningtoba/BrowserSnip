@@ -22,7 +22,14 @@ import {
   stringValues,
   type PdfToolDefinition,
 } from './types';
-import { baseName, openInputs, pdfResult, filesResult, reportResult } from './helpers';
+import {
+  baseName,
+  openInputs,
+  pdfResult,
+  filesResult,
+  rebuildDocument,
+  reportResult,
+} from './helpers';
 
 /**
  * The `/P` flag bit positions, kept for the report text and for engines that
@@ -176,7 +183,11 @@ export const securityTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const password = stringValue(context.values, 'password') || context.password || '';
       const doc = await openPDF(input.bytes, { password });
-      const bytes = await savePDF(doc, { useObjectStreams: true });
+      // Rebuild rather than re-save: saving a document that was loaded with a
+      // password keeps the `/Encrypt` entry, so the "unlocked" file would still
+      // ask for one.
+      const cleared = await rebuildDocument(doc);
+      const bytes = await savePDF(cleared, { useObjectStreams: true });
       const check = await openPDF(bytes);
       return {
         kind: 'pdf',
@@ -219,7 +230,8 @@ export const securityTools: PdfToolDefinition[] = [
       const owner = stringValue(context.values, 'ownerPassword') || context.password || '';
       const doc = await openPDF(input.bytes, { password: owner });
       if (stringValue(context.values, 'action', 'set') === 'clear') {
-        const bytes = await savePDF(doc);
+        const cleared = await rebuildDocument(doc);
+        const bytes = await savePDF(cleared);
         return { kind: 'pdf', bytes, message: 'All restrictions and the password were removed.' };
       }
       const flags = permissionsObject({
@@ -260,7 +272,8 @@ export const securityTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const password = context.password ?? '';
       const doc = await openPDF(input.bytes, { password, ignoreEncryption: password === '' });
-      const bytes = await savePDF(doc);
+      const rebuilt0 = await rebuildDocument(doc);
+      const bytes = await savePDF(rebuilt0);
       const rebuilt = await openPDF(bytes);
       return {
         kind: 'pdf',

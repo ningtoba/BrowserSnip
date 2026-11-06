@@ -144,6 +144,35 @@ function hexStrings(content: string): string {
     .join('|');
 }
 
+/**
+ * The text a content stream shows, whichever of the three equivalent spellings
+ * the producer (or a redaction pass) used: `(literal) Tj`, `<hex> Tj` and
+ * `[<hex> …] TJ` — string syntaxes in PDF 32000-1 §7.2.2/§7.3.4.3, the operators
+ * in §9.4.3. Assertions about *surviving* text go through this so they do not
+ * depend on how the operand was written.
+ */
+function shownText(content: string): string {
+  const parts: string[] = [];
+  const pushHex = (hex: string) =>
+    parts.push(Buffer.from(hex.length % 2 ? `${hex}0` : hex, 'hex').toString('latin1'));
+  for (const array of content.matchAll(/\[([^\]]*)]\s*TJ/g)) {
+    for (const operand of array[1].matchAll(/<([0-9a-fA-F]+)>/g)) pushHex(operand[1]);
+  }
+  for (const standalone of content.matchAll(/<([0-9a-fA-F]+)>\s*Tj/g)) pushHex(standalone[1]);
+  for (const literal of content.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/g)) {
+    parts.push(literal[1].replace(/\\([()\\])/g, '$1'));
+  }
+  return parts.join('');
+}
+
+/** The Form XObject a page draws under `key`, as decoded operators. */
+function formOps(doc: PDFDocument, pageIndex: number, key: string): string {
+  const xobjects = doc.getPage(pageIndex).node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+  const stream = doc.context.lookupMaybe(xobjects?.get(PDFName.of(key)) ?? undefined, PDFRawStream);
+  expect(stream, `page ${pageIndex} has no form /${key}`).toBeInstanceOf(PDFRawStream);
+  return decode(doc, stream as PDFRawStream);
+}
+
 /** A plain fixed-width font dictionary, as any producer would write it. */
 function registerFixedFont(doc: PDFDocument, width = 600): PDFRef {
   return doc.context.register(
@@ -724,8 +753,15 @@ describe('applyRedactions', () => {
     expect(result.removed).toBe(1);
     const reloaded = await roundTrip(doc);
     const content = pageContent(reloaded);
-    expect(content).toContain('(visible) Tj');
+    // The covered run is gone and the line after it keeps its own `TD` move, so
+    // it lands where the producer put it. The surviving run is re-emitted as a
+    // `TJ` array of hex operands, because one cut makes the whole text object
+    // get rewritten from the measured state — the bytes of `(visible) Tj` would
+    // prove nothing that `shownText` does not already prove here.
+    expect(content).toContain('0 -20 TD');
+    expect(shownText(content)).toContain('visible');
     expect(content).not.toContain(Buffer.from('scaled').toString('hex'));
+    expect(shownText(content)).not.toContain('scaled');
   });
 
   it('reports rasterised for image XObjects and inline images, and can leave them unpainted', async () => {
@@ -761,6 +797,19 @@ describe('applyRedactions', () => {
     // Miss-area rects do not report raster content.
     const elsewhere = applyRedactions(doc, [{ page: 0, rect: { x: 200, y: 200, width: 20, height: 20 } }]);
     expect(elsewhere.rasterised).toBe(false);
+
+    // An inline image is pixels as much as an `Image` XObject is: `BI … ID … EI`
+    // has to report too, or a scan under the rect survives the redaction.
+    const scanned = await docWithPages();
+    setContent(
+      scanned,
+      scanned.getPage(0),
+      ['q', '40 0 0 40 40 40 cm', 'BI /W 4 /H 4 /BPC 8 /F /ASCIIHexDecode /L 8 ID', '61626364656667', 'EI', 'Q'].join('\n'),
+    );
+    const inline = applyRedactions(scanned, [{ page: 0, rect: { x: 45, y: 45, width: 10, height: 10 } }]);
+    expect(inline.rasterised).toBe(true);
+    const clear = applyRedactions(scanned, [{ page: 0, rect: { x: 200, y: 200, width: 10, height: 10 } }]);
+    expect(clear.rasterised).toBe(false);
   });
 
   it('redacts text nested in a Form XObject and copies a form another page shares', async () => {
@@ -790,16 +839,18 @@ describe('applyRedactions', () => {
     expect(result.removed).toBe(1);
 
     const reloaded = await roundTrip(doc);
-    const pageOne = pageContent(reloaded, 0);
-    const pageTwo = pageContent(reloaded, 1);
-    // Page 1 keeps the original, un-redacted form.
-    expect(pageTwo).toContain(Buffer.from('form secret').toString('hex'));
-    expect(pageOne).not.toContain(Buffer.from('form secret').toString('hex'));
-    const form = reloaded.context.lookupMaybe(
-      reloaded.getPage(0).node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict)?.get(PDFName.of('Frm')) ?? undefined,
-      PDFRawStream,
-    ) as PDFRawStream;
-    expect(decode(reloaded, form)).toContain('re');
+    // A form's operators live in the form XObject's own stream and the page
+    // stream only holds the `Do` (PDF 32000-1 §8.10.1), so the two copies are
+    // read through the resources of the page that draws them.
+    expect(pageContent(reloaded, 0)).toContain('/Frm Do');
+    expect(pageContent(reloaded, 1)).toContain('/FrmShared Do');
+    // Page 1 keeps the original, un-redacted form…
+    expect(shownText(formOps(reloaded, 1, 'FrmShared'))).toContain('form secret');
+    // …while the copy this page got lost the glyphs under the rect and kept the
+    // ones beside it.
+    const form = formOps(reloaded, 0, 'Frm');
+    expect(shownText(form)).not.toContain('form');
+    expect(shownText(form)).toContain('secret');
   });
 
   it('applies the requested fill colour and rejects an out-of-range page', async () => {

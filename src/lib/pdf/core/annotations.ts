@@ -555,6 +555,15 @@ function textString(text: string): PDFHexString {
   return PDFHexString.of(bytes.map((b) => b.toString(16).padStart(2, '0')).join(''));
 }
 
+/**
+ * The text operand of a `Tj`: `PDFHexString` prints upper-case digits, and the
+ * streams written here stay lower-case so the same byte pairs can be read back
+ * out of them (a hex string is case-insensitive, PDF 32000-1 §7.3.4.3).
+ */
+function showOperand(font: PDFFont, text: string): string {
+  return `<${font.encodeText(text).asString().toLowerCase()}>`;
+}
+
 /* Readers tolerant of indirect values, which is how most producers write. */
 
 /**
@@ -1020,7 +1029,7 @@ function stampOps(
     'BT',
     `/${FONT_KEY} ${round(size)} Tf`,
     `${x} ${y} Td`,
-    `<${font.encodeText(label).asString()}> Tj`,
+    `${showOperand(font, label)} Tj`,
     'ET',
     'Q',
   ].join('\n');
@@ -1272,7 +1281,7 @@ function textBlockOps(
         : layout.align === 'right'
           ? round(Math.max(rect.width - inset - textWidth, inset))
           : round(inset);
-    if (line !== '') parts.push(`${x} ${baseline} Td`, `<${font.encodeText(line).asString()}> Tj`);
+    if (line !== '') parts.push(`${x} ${baseline} Td`, `${showOperand(font, line)} Tj`);
     baseline = round(baseline - lineHeight);
   }
   parts.push('ET', 'Q');
