@@ -7,24 +7,34 @@
  * `unavailable` reason instead of producing a page that merely looks right:
  * compound-file and PalmDB formats need a full office-suite decoder, and
  * BrowserSnip does not bundle LibreOffice's ~100 MB of WASM.
+ *
+ * These tools do *not* open their input through `openInputs`: that gate decides
+ * whether bytes are a usable PDF (E1–E5), and an ODT is never one. They use the
+ * converter-side guard in `tools/convert-to`, which refuses a 0-byte upload and
+ * a mislabelled file by naming the format the bytes really are.
  */
-import { savePDF } from '../core/doc';
-import { pageSize as resolvePageSize } from '../core/pages';
-import { openInputs, pdfResult, rebuildDocument } from './helpers';
+import { ToolInputError } from './helpers';
+import {
+  blocksResult,
+  layoutOptionsFor,
+  readPrimarySource,
+  type SourceKind,
+} from './convert-to';
 import {
   booleanValue,
   numberValue,
   stringValue,
   type PdfToolDefinition,
-  type ToolRunContext,
-  type ToolValues,
 } from './types';
+
+type Block = import('../core/layout').Block;
 
 const PAGE_FIELD = {
   key: 'pageSize',
   label: 'Page size',
   type: 'select' as const,
   default: 'a4',
+  group: 'Page',
   options: [
     { value: 'a4', label: 'A4' },
     { value: 'letter', label: 'Letter' },
@@ -44,6 +54,7 @@ const MARGIN_FIELD = {
   max: 144,
   step: 2,
   unit: 'pt',
+  group: 'Page',
 };
 
 const ORIENTATION_FIELD = {
@@ -51,35 +62,31 @@ const ORIENTATION_FIELD = {
   label: 'Orientation',
   type: 'segmented' as const,
   default: 'portrait',
+  group: 'Page',
   options: [
     { value: 'portrait', label: 'Portrait' },
     { value: 'landscape', label: 'Landscape' },
   ],
 };
 
-function layoutOptions(values: ToolValues) {
-  const size = stringValue(values, 'pageSize', 'a4');
-  const landscape = stringValue(values, 'orientation', 'portrait') === 'landscape';
-  return {
-    pageSize: landscape ? resolvePageSize(size, true) : size,
-    margin: numberValue(values, 'margin', 56),
-    baseFontSize: numberValue(values, 'fontSize', 11),
-    lineHeight: numberValue(values, 'lineHeight', 1.45),
-    pageNumbers: booleanValue(values, 'pageNumbers'),
-    columns: numberValue(values, 'columns', 1) === 2 ? (2 as const) : (1 as const),
-  };
-}
+/** What a document must sniff as before the reader is allowed to parse it. */
+const OPC: { kinds: SourceKind[]; label: string; hint?: string } = {
+  kinds: ['zip'],
+  label: 'an OpenDocument package (a ZIP of XML parts)',
+  hint: 'A legacy binary .odt written by an old suite, or a file renamed from something else, is not the same container — re-save it as .odt first.',
+};
 
+const LAYOUT_LOSS =
+  'Text is re-flowed and drawn as selectable PDF text with the app’s own faces: your document’s fonts, exact pagination, headers and footers, footnotes, comments and text-box positions are not preserved.';
+
+/** Shared block → PDF tail, so every office route reports pages the same way. */
 async function blocksToPdf(
-  context: ToolRunContext,
-  blocks: Awaited<ReturnType<typeof import('../core/office-in').odtToBlocks>>,
+  blocks: Block[],
+  values: Parameters<typeof layoutOptionsFor>[0],
   message: string,
+  warnings: string[] = [],
 ) {
-  const { renderBlocks, newDocumentForLayout } = await import('../core/layout');
-  const doc = await newDocumentForLayout();
-  const pages = await renderBlocks(doc, blocks, layoutOptions(context.values));
-  const bytes = await savePDF(doc);
-  return pdfResult(doc, { message: `${message} ${pages.length} page(s).` });
+  return blocksResult(blocks, layoutOptionsFor(values), `${message} with selectable text into`, warnings);
 }
 
 export const officeTools: PdfToolDefinition[] = [
@@ -94,12 +101,28 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.odt,.ott',
     surface: 'none',
     outputSuffix: '_from_odt.pdf',
+    actionLabel: 'Convert',
+    promise: 'Your ODT’s headings, paragraphs, lists and tables as a paginated PDF with real selectable text.',
+    notes: [
+      LAYOUT_LOSS,
+      'Drawings, charts, embedded spreadsheets, indexes and Master-Page content are skipped; the reader walks the text body.',
+      'A 0-byte or renamed file is refused with its real format named, not converted into a blank page.',
+    ],
     fields: [PAGE_FIELD, ORIENTATION_FIELD, MARGIN_FIELD],
     async run(context) {
-      const [input] = await openInputs(context);
+      const input = await readPrimarySource(context, OPC);
       const { odtToBlocks } = await import('../core/office-in');
       const blocks = await odtToBlocks(input.bytes);
-      return blocksToPdf(context, blocks, 'Converted the OpenDocument text file into');
+      if (blocks.length === 0) {
+        throw new ToolInputError('UNSUPPORTED', `"${input.name}" has no text body to convert.`, {
+          fileName: input.name,
+          hint: 'A drawing-only or chart-only ODT produces nothing here; export it to PDF from LibreOffice.',
+        });
+      }
+      return blocksToPdf(blocks, context.values, `Converted the OpenDocument text file`, [
+        LAYOUT_LOSS,
+        ...(input.extra > 0 ? [`Only "${input.name}" was converted; this tool handles one document at a time.`] : []),
+      ]);
     },
   },
 
@@ -114,12 +137,28 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.ods',
     surface: 'none',
     outputSuffix: '_from_ods.pdf',
+    actionLabel: 'Tabulate',
+    promise: 'Every sheet as a real table of values, page-broken down the rows, with selectable text.',
+    notes: [
+      LAYOUT_LOSS,
+      'Cell values are printed as the file saved them: formulas are not re-evaluated, and number/date formats, styles, merged cells, charts and conditional formatting are lost.',
+      'Columns are re-sized to the page, so a wide sheet reflows instead of keeping the original print range.',
+    ],
     fields: [PAGE_FIELD, ORIENTATION_FIELD],
     async run(context) {
-      const [input] = await openInputs(context);
+      const input = await readPrimarySource(context, OPC);
       const { odsToBlocks } = await import('../core/office-in');
       const blocks = await odsToBlocks(input.bytes);
-      return blocksToPdf(context, blocks, 'Converted the OpenDocument spreadsheet into');
+      if (blocks.length === 0) {
+        throw new ToolInputError('UNSUPPORTED', `"${input.name}" has no cells to print.`, {
+          fileName: input.name,
+          hint: 'Every sheet is empty, or holds only charts.',
+        });
+      }
+      return blocksToPdf(blocks, context.values, 'Converted the OpenDocument spreadsheet', [
+        'Values are printed as last saved: no recalculation, and number formats, merged cells, styles and charts are dropped.',
+        ...(input.extra > 0 ? [`Only "${input.name}" was converted; this tool handles one document at a time.`] : []),
+      ]);
     },
   },
 
@@ -134,6 +173,13 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.odp',
     surface: 'none',
     outputSuffix: '_from_odp.pdf',
+    actionLabel: 'Convert',
+    promise: 'One page per slide, with the slide text re-flowed as selectable text at the aspect you pick.',
+    notes: [
+      LAYOUT_LOSS,
+      'Slide geometry is not reproduced: text frames are read in order and re-laid out, so positions, masters, themes, animations, speaker notes and pictures do not survive.',
+      'The output page uses the aspect ratio you choose, not the deck’s own slide size.',
+    ],
     fields: [
       {
         key: 'slideSize',
@@ -145,18 +191,31 @@ export const officeTools: PdfToolDefinition[] = [
           { value: '4:3', label: '4:3 (720 × 540)' },
         ],
       },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, integer: true, unit: 'pt' },
     ],
     async run(context) {
-      const [input] = await openInputs(context);
+      const input = await readPrimarySource(context, OPC);
       const { odpToBlocks } = await import('../core/office-in');
       const blocks = await odpToBlocks(input.bytes);
+      if (!blocks.some((block) => block.kind !== 'pagebreak')) {
+        throw new ToolInputError(
+          'UNSUPPORTED',
+          `"${input.name}" has no text frames this reader can see, so every slide would come out blank.`,
+        );
+      }
       const [width, height] = stringValue(context.values, 'slideSize', '16:9') === '4:3'
         ? [720, 540]
         : [960, 540];
-      const { renderBlocks, newDocumentForLayout } = await import('../core/layout');
-      const doc = await newDocumentForLayout();
-      const pages = await renderBlocks(doc, blocks, { pageSize: [width, height], margin: 28, baseFontSize: 14 });
-      return pdfResult(doc, { message: `${pages.length} slide(s) written from the OpenDocument presentation.` });
+      const margin = numberValue(context.values, 'margin', 28);
+      return blocksResult(
+        blocks,
+        { pageSize: [width, height], margin, baseFontSize: 14, lineHeight: 1.4 },
+        `Converted the OpenDocument presentation into`,
+        [
+          'Slide geometry is approximate: text order is kept, positions, masters, themes, animations and pictures are not.',
+          `Pages are ${width} × ${height} pt — the aspect you chose, not the deck’s own slide size.`,
+        ],
+      );
     },
   },
 
@@ -171,13 +230,33 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.xps,.oxps',
     surface: 'none',
     outputSuffix: '_from_xps.pdf',
-    fields: [PAGE_FIELD],
-    notes: ['Text runs are recovered as flow text; strokes, gradients and exact glyph positioning are not reproduced.'],
+    actionLabel: 'Convert',
+    promise: 'The text of every fixed page, re-flowed as selectable PDF text.',
+    notes: [
+      'Text runs are recovered from each page’s `UnicodeString` attributes, so wording and reading order survive.',
+      'Strokes, gradients, images, exact glyph positioning, embedded fonts and page geometry are not reproduced — a server engine would keep them as vector content.',
+      LAYOUT_LOSS,
+    ],
+    fields: [PAGE_FIELD, ORIENTATION_FIELD, MARGIN_FIELD],
     async run(context) {
-      const [input] = await openInputs(context);
+      const input = await readPrimarySource(context, {
+        kinds: ['zip'],
+        label: 'an XPS or OXPS package (a ZIP of fixed-page XML)',
+        hint: 'If it is an XML paper file saved uncompressed, print it to PDF from Windows first.',
+      });
       const { xpsToBlocks } = await import('../core/office-in');
       const blocks = await xpsToBlocks(input.bytes);
-      return blocksToPdf(context, blocks, 'Converted the XPS document into');
+      if (!blocks.some((block) => block.kind !== 'pagebreak')) {
+        throw new ToolInputError(
+          'UNSUPPORTED',
+          `"${input.name}" has no text runs this reader can recover, so every page would come out blank.`,
+          { fileName: input.name, hint: 'Print it to PDF in Windows first; XPS to PDF is a text-recovery route, not a pixel-accurate one.' },
+        );
+      }
+      return blocksToPdf(blocks, context.values, 'Converted the XPS document', [
+        'Only text runs survive: strokes, gradients, images and exact glyph positions are dropped.',
+        ...(input.extra > 0 ? [`Only "${input.name}" was converted; this tool handles one document at a time.`] : []),
+      ]);
     },
   },
 
@@ -192,20 +271,34 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.fb2',
     surface: 'none',
     outputSuffix: '_from_fb2.pdf',
-    fields: [PAGE_FIELD, MARGIN_FIELD],
+    actionLabel: 'Reflow',
+    promise: 'The book’s title, chapters and paragraphs re-typeset as a paginated PDF with selectable text.',
+    notes: [
+      'FB2 is plain XML, so text and chapter order are read without any external converter.',
+      'Cover images, epigraphs, verse indentation, footnotes, annotations and binary inclusions are not reproduced.',
+      LAYOUT_LOSS,
+    ],
+    fields: [PAGE_FIELD, MARGIN_FIELD, { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page' }],
     async run(context) {
-      const [input] = await openInputs(context);
+      const input = await readPrimarySource(context, {
+        kinds: ['text'],
+        label: 'an FB2 (FictionBook XML) file',
+        hint: 'FictionBook is XML text; an EPUB or MOBI needs the ebook converter instead.',
+      });
       const { ebookToBlocks } = await import('../core/office-in');
       const blocks = await ebookToBlocks(input.bytes, input.name);
-      return blocksToPdf(context, blocks, 'Converted the FictionBook file into');
+      return blocksToPdf(blocks, context.values, 'Converted the FictionBook file', [
+        'Cover art, footnotes, annotations and verse formatting in the book are not reproduced.',
+        ...(booleanValue(context.values, 'pageNumbers') ? [] : ['Page numbers are off.']),
+      ]);
     },
   },
 ];
 
 /**
  * Registered so the capability is discoverable rather than silently absent.
- * `unavailable` is surfaced in the UI and as a clear error instead of a
- * plausible-looking but wrong conversion.
+ * `unavailable` is surfaced in the UI and as a clear error from the runner
+ * instead of a plausible-looking but wrong conversion (E20).
  */
 const LEGACY_ONLY: {
   id: string;
@@ -240,14 +333,14 @@ const LEGACY_ONLY: {
     name: 'VSD to PDF',
     label: 'Microsoft Visio',
     accept: '.vsd,.vsdx',
-    hint: 'Export from Visio to PDF, or save the drawing as SVG and use SVG to PDF. VSDX is partly readable — try SVG export for reliable results.',
+    hint: 'Export from Visio to PDF, or save the drawing as SVG and use SVG to PDF, which paints the artwork.',
   },
   {
     id: 'wpd-to-pdf',
     name: 'WPD to PDF',
     label: 'WordPerfect',
     accept: '.wpd',
-    hint: 'Re-export from CorelDRAW or LibreOffice as DOCX or PDF first.',
+    hint: 'Re-export from Corel WordPerfect or LibreOffice as DOCX or PDF first.',
   },
   {
     id: 'wps-to-pdf',
@@ -276,8 +369,10 @@ export const legacyOfficeTools: PdfToolDefinition[] = LEGACY_ONLY.map((entry) =>
   accept: entry.accept,
   surface: 'none' as const,
   outputSuffix: `_${entry.id.replace('-to-pdf', '')}.pdf`,
-  notes: [`Needs a full office-suite decoder. ${entry.hint}`],
+  promise: `Listed so the capability is findable. ${entry.label} is not converted offline — the notes name a format that is.`,
+  notes: [
+    `Needs a full office-suite decoder. ${entry.hint}`,
+    'Text and images in the container are not read here, so nothing is quietly substituted: the run is refused before any page is written.',
+  ],
   unavailable: `${entry.name} is not available offline: the ${entry.label} container needs LibreOffice, which BrowserSnip does not bundle (~100 MB of WASM). ${entry.hint}`,
 }));
-
-void rebuildDocument;

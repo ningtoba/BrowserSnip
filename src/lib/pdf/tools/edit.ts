@@ -4,38 +4,225 @@
  * Everything here draws real PDF content through `core/fonts`, which is what
  * fixes the long-standing crash where any Cyrillic, Greek or CJK watermark,
  * page number or Bates stamp threw `WinAnsi cannot encode …`.
+ *
+ * Two rules govern every mark drawn below, because these tools write into the
+ * page itself:
+ *
+ * - Geometry is worked out in *displayed* coordinates and converted back to PDF
+ *   user space (`frameOf`, `placeRun`, `toUserSpace`). A `/Rotate 90` page turns
+ *   the rendered sheet 90° clockwise, so anchoring on the crop box directly put
+ *   a "bottom centre" page number on the left edge and drew it sideways (E9).
+ * - The frame comes from the page being drawn on, never from page 1, so a mixed
+ *   size document measures each page on its own (E8).
+ *
+ * Anything a tool could not do exactly as asked — a clamped value, a skipped
+ * page, a substituted typeface — is collected in a `notes` array and returned
+ * as `result.warnings`, never buried in a success message.
  */
-import type { PDFDocument, PDFPage } from '../core/doc';
-import { degrees, rgb, savePDF } from '../core/doc';
-import { drawTextU, measureText, wrapText } from '../core/fonts';
-import {
-  cropBox,
-  displayedSize,
-  formatPages,
-  mediaBox,
-  resolvePages,
-  setMediaAndCrop,
-  toPoints,
-  type LengthUnit,
-} from '../core/pages';
-import { parseHexColor } from './helpers';
-import { addPageLabels, readPageLabels, writeOutline, readOutline } from '../core/bookmarks';
-import { listFormFields, type CreateFieldSpec } from '../core/forms';
-import { openRender, rasterizePages } from '../core/render';
-import { pdfFromImages } from '../core/pack';
-import { openInputs, pdfResult, reportResult, withRender, baseName } from './helpers';
+import type { PDFDocument, PDFPage, PDFFont } from '../core/doc';
+import { PDFArray, PDFName, PDFRef, StandardFonts, degrees, rgb, savePDF } from '../core/doc';
+import { drawTextU, isWinAnsiSafe, measureText, wrapText } from '../core/fonts';
+import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
+import { addPageLabels, readPageLabels, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
+import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
+import { canvasToBlob } from '../core/render';
+import { embedImageBytes } from '../core/pack';
+import { newPDF } from '../core/doc';
+import { clampNumber, openInputs, parseHexColor, pdfResult, reportResult, throwIfAborted, withRender, baseName, type OpenedInput } from './helpers';
 import {
   booleanValue,
   numberValue,
   stringValue,
   stringValues,
   type PdfToolDefinition,
+  type ToolResult,
   type ToolRunContext,
 } from './types';
 
 type Anchor = 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
 
-/** Position text inside a page box, honouring the page's own /Rotate. */
+/** A rectangle in the coordinates a viewer shows the page in. */
+interface RunRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The page as the reader sees it.
+ *
+ * `/Rotate` is *not* applied to the stored geometry, only to the rendering, so
+ * on a `/Rotate 90` page the visible corners are nowhere near the page-space
+ * ones and the visible width is the stored height. Marks are placed here and
+ * converted back before they are drawn (E9).
+ */
+interface PageFrame {
+  /** Crop box in unrotated PDF user space. */
+  box: PageBox;
+  /** `/Rotate` normalised to a multiple of 90. */
+  rotation: 0 | 90 | 180 | 270;
+  /** Visible width and height, after `/Rotate`. */
+  width: number;
+  height: number;
+}
+
+function frameOf(page: PDFPage): PageFrame {
+  const box = cropBox(page);
+  const angle = Math.round(page.getRotation().angle / 90) * 90;
+  const rotation = (((angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+  const quarter = rotation === 90 || rotation === 270;
+  return {
+    box,
+    rotation,
+    width: quarter ? box.height : box.width,
+    height: quarter ? box.width : box.height,
+  };
+}
+
+/** A displayed-space point (origin: bottom-left of the visible page) in PDF user space. */
+function toUserSpace(frame: PageFrame, x: number, y: number): { x: number; y: number } {
+  const { box, rotation } = frame;
+  if (rotation === 90) return { x: box.x + box.width - y, y: box.y + x };
+  if (rotation === 180) return { x: box.x + box.width - x, y: box.y + box.height - y };
+  if (rotation === 270) return { x: box.x + y, y: box.y + box.height - x };
+  return { x: box.x + x, y: box.y + y };
+}
+
+/**
+ * A displayed-space rectangle in PDF user space. Still axis-aligned, because
+ * `/Rotate` is always a multiple of 90 — the sizes just swap on a quarter turn.
+ */
+function toUserRect(frame: PageFrame, rect: RunRect): PageBox {
+  const a = toUserSpace(frame, rect.x, rect.y);
+  const b = toUserSpace(frame, rect.x + rect.width, rect.y + rect.height);
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
+}
+
+/** Which edges an anchor name refers to, once, instead of re-deriving them by string position. */
+const ANCHOR_AXIS: Record<Anchor, { horizontal: 'left' | 'center' | 'right'; vertical: 'top' | 'center' | 'bottom' }> = {
+  'top-left': { horizontal: 'left', vertical: 'top' },
+  'top-center': { horizontal: 'center', vertical: 'top' },
+  'top-right': { horizontal: 'right', vertical: 'top' },
+  'center-left': { horizontal: 'left', vertical: 'center' },
+  center: { horizontal: 'center', vertical: 'center' },
+  'center-right': { horizontal: 'right', vertical: 'center' },
+  'bottom-left': { horizontal: 'left', vertical: 'bottom' },
+  'bottom-center': { horizontal: 'center', vertical: 'bottom' },
+  'bottom-right': { horizontal: 'right', vertical: 'bottom' },
+};
+
+function anchorAxis(anchor: string): { horizontal: 'left' | 'center' | 'right'; vertical: 'top' | 'center' | 'bottom' } {
+  return ANCHOR_AXIS[anchor as Anchor] ?? ANCHOR_AXIS.center;
+}
+
+/** The visible bounding box of a `width` × `height` run turned by `angle` degrees. */
+function runBounds(width: number, height: number, angle: number) {
+  const rad = (angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const corner = (x: number, y: number) => ({ x: x * cos - y * sin, y: x * sin + y * cos });
+  const points = [corner(0, 0), corner(width, 0), corner(width, height), corner(0, height)];
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return { minX, minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY };
+}
+
+/**
+ * Where a run starts in displayed coordinates so its visible box sits at
+ * `anchor` with `margin` of clearance.
+ *
+ * The margin shrinks when the page is too small for it (E8: a business card is
+ * measured as a business card), and a run wider than the page is centred rather
+ * than pushed off the edge — the caller reports the overhang.
+ */
+function placeRun(frame: PageFrame, width: number, height: number, angle: number, anchor: string, margin: number) {
+  const bounds = runBounds(width, height, angle);
+  const axis = anchorAxis(anchor);
+  const roomX = frame.width - bounds.width;
+  const roomY = frame.height - bounds.height;
+  const mx = Math.min(Math.max(margin, 0), Math.max(0, roomX) / 2);
+  const my = Math.min(Math.max(margin, 0), Math.max(0, roomY) / 2);
+  const leftEdge = { left: mx, right: roomX - mx, center: roomX / 2 }[axis.horizontal];
+  const topEdge = { top: roomY - my, bottom: my, center: roomY / 2 }[axis.vertical];
+  return {
+    x: leftEdge - bounds.minX,
+    y: topEdge - bounds.minY,
+    bounds,
+    overflow: roomX < -0.5 || roomY < -0.5,
+  };
+}
+
+/**
+ * Record an admission once.
+ *
+ * A 500-page run stamps the same page size five hundred times; the result card
+ * needs the sentence once (E7).
+ */
+function note(notes: string[], message: string): void {
+  if (!notes.includes(message)) notes.push(message);
+}
+
+/** Latin-only standard faces, keyed the way the `font` picker names them. */
+const STANDARD_FACES: Record<string, [StandardFonts, StandardFonts, StandardFonts, StandardFonts]> = {
+  helvetica: [
+    StandardFonts.Helvetica,
+    StandardFonts.HelveticaBold,
+    StandardFonts.HelveticaOblique,
+    StandardFonts.HelveticaBoldOblique,
+  ],
+  times: [
+    StandardFonts.TimesRoman,
+    StandardFonts.TimesRomanBold,
+    StandardFonts.TimesRomanItalic,
+    StandardFonts.TimesRomanBoldItalic,
+  ],
+  courier: [
+    StandardFonts.Courier,
+    StandardFonts.CourierBold,
+    StandardFonts.CourierOblique,
+    StandardFonts.CourierBoldOblique,
+  ],
+};
+
+/**
+ * Resolve the typeface picker to a standard face, or `null` for the Unicode path.
+ *
+ * A standard-14 face is only used after `isWinAnsiSafe` says the string fits it:
+ * `page.drawText` with a WinAnsi font throws on CJK, Cyrillic and emoji, so the
+ * fallback embeds the Noto face and says what happened (E11).
+ */
+async function standardFace(
+  doc: PDFDocument,
+  text: string,
+  family: string | undefined,
+  bold: boolean,
+  italic: boolean,
+  notes: string[],
+): Promise<PDFFont | null> {
+  const key = (family ?? 'auto').toLowerCase();
+  const faces = STANDARD_FACES[key];
+  if (!faces) return null;
+  if (!isWinAnsiSafe(text)) {
+    const sample = [...text].slice(0, 12).join('');
+    note(notes, `"${key}" cannot render “${sample}” — it is a Latin-only face, so an embedded Unicode font was used instead.`);
+    return null;
+  }
+  return doc.embedFont(faces[(bold ? 1 : 0) + (italic ? 2 : 0)]);
+}
+
+/**
+ * Position text inside the page as the reader sees it, honouring /Rotate (E9),
+ * measuring that page alone (E8) and never drawing unsupported glyphs with a
+ * WinAnsi face (E11). Returns the run width in points.
+ */
 async function stamp(
   doc: PDFDocument,
   page: PDFPage,
@@ -49,36 +236,149 @@ async function stamp(
     rotation?: number;
     opacity?: number;
     margin?: number;
+    family?: string;
+    notes?: string[];
   },
 ): Promise<number> {
-  const box = cropBox(page);
-  const rotation = ((page.getRotation().angle % 360) + 360) % 360;
-  const { width } = await measureText(doc, { text, x: 0, y: 0, size: options.size, bold: options.bold, italic: options.italic });
-  const margin = options.margin ?? 24;
-  const [ax, ay] = options.anchor.split('-') as [string, string];
-  const horizontal = ax === 'top' || ax === 'bottom' ? ay : ax;
-  const vertical = ax === 'top' || ax === 'bottom' ? ax : ay === 'left' || ay === 'right' ? 'center' : ay;
+  const notes = options.notes ?? [];
+  const frame = frameOf(page);
+  const angle = options.rotation ?? 0;
+  const face = await standardFace(doc, text, options.family, Boolean(options.bold), Boolean(options.italic), notes);
+  const width = face
+    ? face.widthOfTextAtSize(text, options.size)
+    : (await measureText(doc, {
+        text,
+        x: 0,
+        y: 0,
+        size: options.size,
+        bold: options.bold,
+        italic: options.italic,
+      })).width;
+  const run = placeRun(frame, width, options.size, angle, options.anchor, options.margin ?? 24);
+  if (run.overflow) {
+    note(notes, `“${[...text].slice(0, 18).join('')}” does not fit inside a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so it runs past the edges.`);
+  }
+  const origin = toUserSpace(frame, run.x, run.y);
+  // Text is turned by the page's own /Rotate on top of the requested angle, so
+  // what the user sees as "45°" reads as 45° in a viewer whatever /Rotate is.
+  const pageAngle = angle + frame.rotation;
+  if (face) {
+    page.drawText(text, {
+      x: origin.x,
+      y: origin.y,
+      size: options.size,
+      font: face,
+      color: rgbColor(options.color),
+      opacity: options.opacity,
+      rotate: degrees(pageAngle),
+    });
+  } else {
+    await drawTextU(page, {
+      text,
+      x: origin.x,
+      y: origin.y,
+      size: options.size,
+      color: rgbColor(options.color),
+      bold: options.bold,
+      italic: options.italic,
+      opacity: options.opacity,
+      rotation: pageAngle,
+    });
+  }
+  return width;
+}
 
-  const x =
-    horizontal === 'left' ? box.x + margin
-    : horizontal === 'right' ? box.x + box.width - width - margin
-    : box.x + (box.width - width) / 2;
-  const y =
-    vertical === 'top' ? box.y + box.height - margin - options.size
-    : vertical === 'bottom' ? box.y + margin
-    : box.y + (box.height - options.size) / 2;
+/** Numeric option bounds, mirroring what the rail declared for the same field (E15). */
+interface NumberOption {
+  key: string;
+  label: string;
+  fallback: number;
+  min: number;
+  max: number;
+  integer?: boolean;
+  unit?: string;
+}
 
-  return drawTextU(page, {
-    text,
-    x,
-    y,
-    size: options.size,
-    color: rgbColor(options.color),
-    bold: options.bold,
-    italic: options.italic,
-    rotation: (options.rotation ?? 0) + (rotation === 180 ? 180 : 0),
-    opacity: options.opacity,
-  });
+/**
+ * Clamp one form value and admit it (E15: "clamped or rejected with a reason").
+ *
+ * `core/guard` clamps the same fields in the runner; this is the backstop for
+ * values that arrive from a bespoke pane, the legacy `params` objects, or a
+ * direct `run()` call, where nothing else has looked at them.
+ */
+/**
+ * Clamp one option into range and record it (E15: "clamped or rejected with a
+ * reason").
+ *
+ * `core/guard` clamps the same fields in the runner with the same sentence, so a
+ * corrected value reads identically whichever layer caught it; this is the
+ * backstop for values that arrive from a bespoke pane, the legacy `params`
+ * objects, or a direct `run()` call, where nothing else has looked at them.
+ */
+function bounded(
+  notes: string[],
+  label: string,
+  raw: number,
+  option: { min: number; max: number; integer?: boolean; unit?: string },
+): number {
+  const value = clampNumber(raw, option.min, option.max, { integer: option.integer });
+  if (value !== raw) {
+    note(notes, `${label} must be ${boundsSentence(option)}: ${raw} became ${value}.`);
+  }
+  return value;
+}
+
+function boundsSentence(option: { min: number; max: number; unit?: string }): string {
+  const unit = option.unit ? ` ${option.unit}` : '';
+  const hasMin = Number.isFinite(option.min);
+  const hasMax = Number.isFinite(option.max);
+  if (hasMin && hasMax) {
+    return option.min === option.max ? `${option.min}${unit}` : `between ${option.min} and ${option.max}${unit}`;
+  }
+  if (hasMin) return `at least ${option.min}${unit}`;
+  if (hasMax) return `at most ${option.max}${unit}`;
+  return 'a number';
+}
+
+function readNumber(context: ToolRunContext, notes: string[], option: NumberOption): number {
+  const raw = numberValue(context.values, option.key, option.fallback);
+  return bounded(notes, option.label, raw, option);
+}
+
+/** Attach the run's admissions to a result — `pdfResult` takes no warnings option. */
+function admit(result: ToolResult, notes: string[]): ToolResult {
+  if (notes.length > 0) result.warnings = notes;
+  return result;
+}
+
+async function pdfOutput(doc: PDFDocument, notes: string[], message: string): Promise<ToolResult> {
+  return admit(await pdfResult(doc, { message }), notes);
+}
+
+/**
+ * Draw with `paint`'s operators placed *behind* the page's existing content.
+ *
+ * pdf-lib appends one content stream per draw call and `/Contents` is painted
+ * in order, so the streams that appeared during `paint` move to the front.
+ * Without this, "Placement: Behind content" was a zero-size no-op rectangle
+ * that still reported a watermark (E13).
+ */
+async function drawBehind(page: PDFPage, paint: () => Promise<void> | void): Promise<void> {
+  const { pageContentStreams } = await import('../core/content');
+  const seen = new Set(pageContentStreams(page).map((stream) => stream.ref.toString()));
+  await paint();
+  const contents = page.node.lookupMaybe(PDFName.of('Contents'), PDFArray);
+  if (!contents) return;
+  const entries = contents.asArray();
+  const isOld = (index: number): boolean => {
+    const entry = entries[index];
+    return entry instanceof PDFRef && seen.has(entry.toString());
+  };
+  const moved = entries.filter((_, index) => !isOld(index));
+  const kept = entries.filter((_, index) => isOld(index));
+  if (moved.length === 0 || kept.length === 0) return;
+  const ordered = [...moved, ...kept];
+  for (let i = 0; i < ordered.length; i++) contents.set(i, ordered[i]);
 }
 
 function rgbColor(hex: string) {
@@ -116,28 +416,67 @@ const ANNOTATION_SURFACE_FIELDS = [
   },
 ];
 
+/** The six text slots a header/footer run can fill, in draw order. */
+const HEADER_SLOTS = ['headerLeft', 'headerCenter', 'headerRight'] as const;
+const FOOTER_SLOTS = ['footerLeft', 'footerCenter', 'footerRight'] as const;
+
 /** Parse the fallback textual region format used when the surface is absent. */
-function parseRegions(raw: unknown, doc: PDFDocument): { page: number; x: number; y: number; width: number; height: number }[] {
-  if (Array.isArray(raw)) {
-    return raw as { page: number; x: number; y: number; width: number; height: number }[];
-  }
+function parseRegions(
+  raw: unknown,
+  doc: PDFDocument,
+  notes: string[],
+): { page: number; x: number; y: number; width: number; height: number }[] {
   const text = typeof raw === 'string' ? raw : '';
   const out: { page: number; x: number; y: number; width: number; height: number }[] = [];
-  for (const chunk of text.split(/[;\n]+/)) {
-    const match = /^\s*(\d+)\s*:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*$/.exec(chunk);
-    if (!match) continue;
-    const page = Number(match[1]) - 1;
-    if (page < 0 || page >= doc.getPageCount()) continue;
-    out.push({
-      page,
-      x: Number(match[2]),
-      y: Number(match[3]),
-      width: Number(match[4]),
-      height: Number(match[5]),
-    });
+  let unparseable = 0;
+  let offDocument = 0;
+  const accept = (region: { page: number; x: number; y: number; width: number; height: number }): void => {
+    const frame = frameOf(doc.getPage(region.page));
+    const x = Math.min(Math.max(region.x, frame.box.x), frame.box.x + Math.max(0, frame.box.width - 1));
+    const y = Math.min(Math.max(region.y, frame.box.y), frame.box.y + Math.max(0, frame.box.height - 1));
+    const width = Math.min(region.width, frame.box.x + frame.box.width - x);
+    const height = Math.min(region.height, frame.box.y + frame.box.height - y);
+    if (x !== region.x || y !== region.y || width !== region.width || height !== region.height) {
+      note(notes, `A box on page ${region.page + 1} hung past the edge of the page, so it was trimmed to fit.`);
+    }
+    if (width > 0 && height > 0) out.push({ page: region.page, x, y, width, height });
+    else note(notes, `A box on page ${region.page + 1} has no size once it is inside the page, so it was ignored.`);
+  };
+  if (Array.isArray(raw)) {
+    for (const region of raw as { page: number; x: number; y: number; width: number; height: number }[]) {
+      if (!Number.isInteger(region.page) || region.page < 0 || region.page >= doc.getPageCount()) {
+        offDocument += 1;
+        continue;
+      }
+      accept(region);
+    }
+  } else {
+    for (const chunk of text.split(/[;\n]+/)) {
+      if (!chunk.trim()) continue;
+      const match = /^\s*(\d+)\s*:\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*$/.exec(chunk);
+      if (!match) {
+        unparseable += 1;
+        continue;
+      }
+      const page = Number(match[1]) - 1;
+      if (page < 0 || page >= doc.getPageCount()) {
+        offDocument += 1;
+        continue;
+      }
+      accept({ page, x: Number(match[2]), y: Number(match[3]), width: Number(match[4]), height: Number(match[5]) });
+    }
+  }
+  if (unparseable > 0) {
+    note(notes, `${countLabel(unparseable, 'entry', 'entries')} could not be read — use page:x,y,w,h, separated by semicolons.`);
+  }
+  if (offDocument > 0) {
+    note(notes, `${countLabel(offDocument, 'box', 'boxes')} named a page outside this ${doc.getPageCount()}-page document and was ignored.`);
   }
   return out;
 }
+
+/** How many marks one page may receive from a tiled pattern (E7). */
+const MAX_TILES = 400;
 
 export const editTools: PdfToolDefinition[] = [
   {
@@ -149,7 +488,11 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['annotate', 'highlight', 'comment', 'draw', 'markup', 'pen', 'shapes'],
     surface: 'custom',
     outputSuffix: '_edited.pdf',
-    notes: ['Annotations are written as standard PDF annotations, so other readers show and edit them.'],
+    promise: 'One canvas for highlights, notes, ink, shapes and stamps — saved as standard PDF annotations you can still edit elsewhere.',
+    notes: [
+      'Annotations are written as standard PDF annotations, so other readers show and edit them.',
+      'Marks follow the page as you see it: on a rotated page a box you drew stays where you put it.',
+    ],
   },
 
   {
@@ -161,6 +504,7 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['rewrite text', 'change wording', 'content editor', 'typo', 'in place'],
     surface: 'custom',
     outputSuffix: '_edited.pdf',
+    promise: 'Rewrite a paragraph where it sits: the old glyphs are removed and the block is redrawn, not covered up.',
     notes: [
       'Editing deletes the original glyph runs and redraws the block, so the old text is not left hiding underneath.',
       'Blocks that PyMuPDF-grade surgery is needed for are reported instead of silently doubled.',
@@ -175,56 +519,92 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['pagination', 'footer numbers', 'folio'],
     outputSuffix: '_numbered.pdf',
+    actionLabel: 'Add numbers',
+    promise: 'A folio drawn into the page itself, in the position and style you choose, on the pages you select.',
     fields: [
-      { key: 'position', label: 'Position', type: 'select', default: 'bottom-center', options: ANCHOR_OPTIONS },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 5, max: 72, half: true },
-      { key: 'margin', label: 'Margin', type: 'number', default: 24, min: 0, max: 200, unit: 'pt', half: true },
-      { key: 'startAt', label: 'First number', type: 'number', default: 1, min: 0, half: true },
-      { key: 'step', label: 'Count every', type: 'number', default: 1, min: 1, max: 10, half: true, help: '2 numbers every second page, useful for folded booklets.' },
-      { key: 'prefix', label: 'Before the number', type: 'text', default: 'Page ', half: true },
-      { key: 'suffix', label: 'After the number', type: 'text', default: ' of {total}', half: true, help: '{total} and {page} are replaced.' },
+      { key: 'position', label: 'Position', type: 'select', default: 'bottom-center', options: ANCHOR_OPTIONS, group: 'Placement' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 24, min: 0, max: 200, unit: 'pt', half: true, group: 'Placement' },
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Placement' },
+      { key: 'skip', label: 'Skip first N pages', type: 'number', default: 0, min: 0, integer: true, half: true, group: 'Placement', help: 'Counted from the start of the selection, so cover pages stay blank.' },
+      { key: 'step', label: 'Count every', type: 'number', default: 1, min: 1, max: 10, integer: true, half: true, group: 'Placement', help: '2 numbers every second page from the first numbered one, useful for folded booklets.' },
+      { key: 'startAt', label: 'First number', type: 'number', default: 1, min: 0, max: 100000, integer: true, half: true, group: 'Format' },
       { key: 'style', label: 'Number style', type: 'select', default: 'decimal', options: [
         { value: 'decimal', label: '1, 2, 3' },
         { value: 'roman-upper', label: 'I, II, III' },
         { value: 'roman-lower', label: 'i, ii, iii' },
         { value: 'letters', label: 'A, B, C' },
         { value: 'padded', label: '01, 02, 03' },
-      ] },
-      { key: 'color', label: 'Colour', type: 'color', default: '#1b1b18' },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: false },
-      { key: 'font', label: 'Typeface', type: 'select', default: 'auto', options: FONT_OPTIONS },
-      { key: 'skip', label: 'Skip first N pages', type: 'number', default: 0, min: 0 },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      ], group: 'Format' },
+      { key: 'prefix', label: 'Before the number', type: 'text', default: 'Page ', half: true, group: 'Format' },
+      { key: 'suffix', label: 'After the number', type: 'text', default: ' of {total}', half: true, group: 'Format', help: '{total} and {page} are replaced.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 5, max: 72, half: true, unit: 'pt', group: 'Style' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#1b1b18', group: 'Style' },
+      { key: 'bold', label: 'Bold', type: 'toggle', default: false, group: 'Style' },
+      { key: 'font', label: 'Typeface', type: 'select', default: 'auto', options: FONT_OPTIONS, group: 'Style', help: 'A Latin-only face is swapped for the embedded Unicode font — and the run says so — when the text needs characters it cannot encode.' },
+    ],
+    notes: [
+      'Numbers are drawn into the page, not stored as metadata, so they print and appear in every viewer.',
+      'Each page is measured on its own: a mixed-size or rotated document keeps its folios inside the visible edge.',
     ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const all = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
-      const startAt = numberValue(context.values, 'startAt', 1);
-      const step = Math.max(1, numberValue(context.values, 'step', 1));
-      const skip = numberValue(context.values, 'skip', 0);
+      const startAt = readNumber(context, notes, { key: 'startAt', label: 'First number', fallback: 1, min: 0, max: 100000, integer: true });
+      const step = readNumber(context, notes, { key: 'step', label: 'Count every', fallback: 1, min: 1, max: 10, integer: true });
+      const skip = bounded(notes, 'Skip first N pages', numberValue(context.values, 'skip', 0), { min: 0, max: all.length, integer: true });
       const style = stringValue(context.values, 'style', 'decimal');
-      const total = all.length;
+      const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 5, max: 72, unit: 'pt' });
+      const margin = readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 24, min: 0, max: 200, unit: 'pt' });
+      const anchor = stringValue(context.values, 'position', 'bottom-center');
+      const family = stringValue(context.values, 'font', 'auto');
       const pages = input.doc.getPages();
-      let stamped = 0;
-      for (let i = 0; i < all.length; i++) {
-        if (i < skip || i % step !== 0) continue;
-        const number = startAt + Math.floor(i / step);
+      // Numbering restarts at `startAt` on the first page that is actually
+      // numbered, and the step counts from there — previously the step was
+      // measured from page 1, so "skip 2, every 2nd" began mid-count and the
+      // `First number` the user typed never appeared.
+      const targets: { page: number; number: number }[] = [];
+      for (let i = skip; i < all.length; i += step) {
+        targets.push({ page: all[i], number: startAt + targets.length });
+      }
+      if (targets.length === 0) {
+        return admit(
+          reportResult(
+            [{
+              title: 'Nothing was numbered',
+              text: skip > 0
+                ? `The selection holds ${countLabel(all.length, 'page')} and "skip first ${skip}" covers all of them, so no page was left to stamp.`
+                : `The selection holds ${countLabel(all.length, 'page')}, which is not enough to number.`,
+            }],
+            { message: 'No page was numbered — the file is unchanged.' },
+          ),
+          notes,
+        );
+      }
+      const total = targets[targets.length - 1].number;
+      for (let i = 0; i < targets.length; i++) {
+        const { page, number } = targets[i];
         const text = stringValue(context.values, 'prefix', 'Page ')
           + formatNumber(number, style)
           + stringValue(context.values, 'suffix', ' of {total}')
-            .replace('{total}', formatNumber(Math.ceil(total / step) + startAt - 1, style))
+            .replace('{total}', formatNumber(total, style))
             .replace('{page}', formatNumber(number, style));
-        await stamp(input.doc, pages[all[i]], text, {
-          anchor: stringValue(context.values, 'position', 'bottom-center') as Anchor,
-          size: numberValue(context.values, 'fontSize', 11),
+        await stamp(input.doc, pages[page], text, {
+          anchor: anchor as Anchor,
+          size,
           color: stringValue(context.values, 'color', '#1b1b18'),
           bold: booleanValue(context.values, 'bold'),
-          margin: numberValue(context.values, 'margin', 24),
+          margin,
+          family,
+          notes,
         });
-        stamped += 1;
-        context.progress((i + 1) / all.length, `Numbered page ${all[i] + 1}`);
+        context.progress((i + 1) / targets.length, `Numbered page ${page + 1}`);
       }
-      return pdfResult(input.doc, { message: `Added page numbers to ${stamped} page(s).` });
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Numbered ${countLabel(targets.length, 'page')}, ${formatNumber(targets[0].number, style)} to ${formatNumber(total, style)}.`,
+      );
     },
   },
 
@@ -236,37 +616,51 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['draft', 'confidential', 'logo', 'stamp overlay'],
     outputSuffix: '_watermarked.pdf',
+    actionLabel: 'Add watermark',
+    promise: 'A text or image mark drawn into the page, over or behind the existing content, on the pages you select.',
     fields: [
       { key: 'type', label: 'Watermark', type: 'segmented', default: 'text', options: [
         { value: 'text', label: 'Text' }, { value: 'image', label: 'Image' },
       ] },
-      { key: 'text', label: 'Text', type: 'text', default: 'DRAFT', when: (v) => v.type === 'text' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 64, min: 6, max: 400, half: true, when: (v) => v.type === 'text' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#888888', when: (v) => v.type === 'text' },
-      { key: 'opacity', label: 'Opacity', type: 'slider', default: 0.25, min: 0.02, max: 1, step: 0.01 },
-      { key: 'rotation', label: 'Angle', type: 'slider', default: 45, min: -180, max: 180, step: 1, unit: '°' },
+      { key: 'text', label: 'Text', type: 'text', default: 'DRAFT', when: (v) => v.type === 'text', group: 'Mark' },
+      { key: 'image', label: 'Watermark image', type: 'file', accept: 'image/*', when: (v) => v.type === 'image', group: 'Mark', help: 'PNG, JPEG or WebP — converted in this tab, never uploaded.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 64, min: 6, max: 400, half: true, unit: 'pt', when: (v) => v.type === 'text', group: 'Mark' },
+      { key: 'bold', label: 'Bold', type: 'toggle', default: true, when: (v) => v.type === 'text', group: 'Mark' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#888888', when: (v) => v.type === 'text', group: 'Mark' },
+      { key: 'scale', label: 'Image scale', type: 'slider', default: 0.35, min: 0.02, max: 2, step: 0.01, when: (v) => v.type === 'image', group: 'Mark', help: 'Fraction of each page\'s own width — measured per page, so mixed sizes stay proportional.' },
+      { key: 'opacity', label: 'Opacity', type: 'slider', default: 0.25, min: 0.02, max: 1, step: 0.01, group: 'Look' },
+      { key: 'rotation', label: 'Angle', type: 'slider', default: 45, min: -180, max: 180, step: 1, unit: '°', group: 'Look', help: 'Measured as the page is displayed, so it is the same angle on a rotated page.' },
       { key: 'layer', label: 'Placement', type: 'segmented', default: 'over', options: [
         { value: 'over', label: 'Over content' }, { value: 'under', label: 'Behind content' },
-      ] },
-      { key: 'position', label: 'Position', type: 'select', default: 'center', options: ANCHOR_OPTIONS, when: (v) => v.tile !== true },
-      { key: 'tile', label: 'Repeat as a pattern', type: 'toggle', default: false },
-      { key: 'tileGap', label: 'Pattern spacing', type: 'slider', default: 1.5, min: 0.2, max: 5, step: 0.1, when: (v) => v.tile === true },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: true, when: (v) => v.type === 'text' },
-      { key: 'scale', label: 'Image scale', type: 'slider', default: 0.35, min: 0.02, max: 2, step: 0.01, when: (v) => v.type === 'image' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      ], group: 'Look' },
+      { key: 'position', label: 'Position', type: 'select', default: 'center', options: ANCHOR_OPTIONS, when: (v) => v.tile !== true, group: 'Repeat' },
+      { key: 'tile', label: 'Repeat as a pattern', type: 'toggle', default: false, group: 'Repeat' },
+      { key: 'tileGap', label: 'Pattern spacing', type: 'slider', default: 1.5, min: 0.2, max: 5, step: 0.1, when: (v) => v.tile === true, group: 'Repeat' },
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Repeat' },
     ],
-    validate: (values) =>
-      values.type === 'text' && stringValue(values, 'text').trim() === ''
+    notes: [
+      'Behind content moves the mark in front of the page\u2019s own drawing operators, so text stays readable on top of it.',
+      'A mark wider than the page is centred and reported rather than clipped silently.',
+    ],
+    validate: (values) => {
+      if (values.type === 'image') {
+        const file = values['image'];
+        const hasFile = Array.isArray(file) ? file.length > 0 : Boolean(file);
+        return hasFile ? null : 'Choose the image to use as a watermark.';
+      }
+      return stringValue(values, 'text').trim() === ''
         ? 'Enter the watermark text, or switch to an image watermark.'
-        : null,
+        : null;
+    },
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const type = stringValue(context.values, 'type', 'text');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
-      const opacity = numberValue(context.values, 'opacity', 0.25);
-      const rotation = numberValue(context.values, 'rotation', 45);
+      const opacity = readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 0.25, min: 0.02, max: 1 });
+      const rotation = readNumber(context, notes, { key: 'rotation', label: 'Angle', fallback: 45, min: -180, max: 180, unit: '°' });
       const tile = booleanValue(context.values, 'tile');
-      const gap = numberValue(context.values, 'tileGap', 1.5);
+      const gap = readNumber(context, notes, { key: 'tileGap', label: 'Pattern spacing', fallback: 1.5, min: 0.2, max: 5 });
       const anchor = stringValue(context.values, 'position', 'center') as Anchor;
       const behind = stringValue(context.values, 'layer', 'over') === 'under';
       const imageBytes = firstFileBytes(context.values, 'image');
@@ -277,42 +671,65 @@ export const editTools: PdfToolDefinition[] = [
       const embedded = type === 'image'
         ? await input.doc.embedPng(await toPng(input.doc, imageBytes!))
         : null;
+      const text = stringValue(context.values, 'text', 'DRAFT');
+      const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 64, min: 6, max: 400, unit: 'pt' });
+      const bold = booleanValue(context.values, 'bold', true);
+      const color = stringValue(context.values, 'color', '#888888');
+      const scale = readNumber(context, notes, { key: 'scale', label: 'Image scale', fallback: 0.35, min: 0.02, max: 2 });
+      // Measured once: the face is cached, and a 500-page document must not
+      // re-measure the same string five hundred times (E7).
+      const textWidth = type === 'image' || !tile
+        ? (await measureText(input.doc, { text, x: 0, y: 0, size, bold })).width
+        : 0;
 
       for (let i = 0; i < pages.length; i++) {
         const page = input.doc.getPage(pages[i]);
-        const box = cropBox(page);
-        if (behind) {
-          page.drawRectangle({ x: box.x, y: box.y, width: 0, height: 0, opacity: 0, color: rgb(1, 1, 1) });
-        }
-        if (type === 'image' && embedded) {
-          const scale = numberValue(context.values, 'scale', 0.35);
-          const width = box.width * scale;
-          const height = (embedded.height / embedded.width) * width;
-          const positions = tile ? tilePoints(box, width * gap, height * gap) : [anchorPoint(box, width, height, anchor, 0)];
-          for (const point of positions) {
-            page.drawImage(embedded, { x: point.x, y: point.y, width, height, opacity, rotate: degrees(rotation) });
-          }
-        } else {
-          const text = stringValue(context.values, 'text', 'DRAFT');
-          const size = numberValue(context.values, 'fontSize', 64);
-          if (tile) {
-            const { width } = await measureText(input.doc, { text, x: 0, y: 0, size });
-            for (const point of tilePoints(box, width * gap, size * gap * 2)) {
-              await stampText(input.doc, page, text, point.x, point.y, { size, opacity, rotation, bold: booleanValue(context.values, 'bold'), color: stringValue(context.values, 'color', '#888888') });
+        const frame = frameOf(page);
+        throwIfAborted(context.signal);
+        const paint = async (): Promise<void> => {
+          if (type === 'image' && embedded) {
+            const width = frame.width * scale;
+            const height = (embedded.height / Math.max(1, embedded.width)) * width;
+            const spots = tile
+              ? tilePoints(frame, width * gap, height * gap, notes)
+              : [placeRun(frame, width, height, rotation, anchor, 0)];
+            for (const spot of spots) {
+              const origin = toUserSpace(frame, spot.x, spot.y);
+              page.drawImage(embedded, {
+                x: origin.x,
+                y: origin.y,
+                width,
+                height,
+                opacity,
+                rotate: degrees(rotation + frame.rotation),
+              });
+            }
+          } else if (tile) {
+            for (const spot of tilePoints(frame, textWidth * gap, size * gap * 2, notes)) {
+              await stampText(page, text, spot, { size, opacity, rotation, bold, color });
             }
           } else {
-            const { width } = await measureText(input.doc, { text, x: 0, y: 0, size });
-            const point = anchorPoint(box, width, size, anchor, 0);
-            await stampText(input.doc, page, text, point.x, point.y, {
-              size, opacity, rotation,
-              bold: booleanValue(context.values, 'bold'),
-              color: stringValue(context.values, 'color', '#888888'),
+            await stamp(input.doc, page, text, {
+              anchor,
+              size,
+              opacity,
+              rotation,
+              bold,
+              color,
+              margin: 0,
+              notes,
             });
           }
-        }
+        };
+        if (behind) await drawBehind(page, paint);
+        else await paint();
         context.progress((i + 1) / pages.length, `Watermarked page ${pages[i] + 1}`);
       }
-      return pdfResult(input.doc, { message: `Watermarked ${pages.length} page(s).` });
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Watermarked ${countLabel(pages.length, 'page')}${type === 'image' ? ' with your image' : ''}${behind ? ', behind the page content' : ''}.`,
+      );
     },
   },
 
@@ -324,24 +741,35 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['running head', 'footer', 'document title bar'],
     outputSuffix: '_header_footer.pdf',
+    actionLabel: 'Add header and footer',
+    promise: 'Left, centre and right text at the top and bottom of each selected page, with page numbers and document fields.',
     fields: [
-      { key: 'headerLeft', label: 'Header left', type: 'text' },
-      { key: 'headerCenter', label: 'Header centre', type: 'text', default: '{title}' },
-      { key: 'headerRight', label: 'Header right', type: 'text', default: '{date}' },
-      { key: 'footerLeft', label: 'Footer left', type: 'text', default: '{author}' },
-      { key: 'footerCenter', label: 'Footer centre', type: 'text' },
-      { key: 'footerRight', label: 'Footer right', type: 'text', default: 'Page {page} of {total}' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, half: true },
-      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, unit: 'pt', half: true },
-      { key: 'color', label: 'Colour', type: 'color', default: '#55554e' },
-      { key: 'rule', label: 'Draw a hairline rule', type: 'toggle', default: true },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'headerLeft', label: 'Header left', type: 'text', group: 'Header' },
+      { key: 'headerCenter', label: 'Header centre', type: 'text', default: '{title}', group: 'Header' },
+      { key: 'headerRight', label: 'Header right', type: 'text', default: '{date}', group: 'Header' },
+      { key: 'footerLeft', label: 'Footer left', type: 'text', default: '{author}', group: 'Footer' },
+      { key: 'footerCenter', label: 'Footer centre', type: 'text', group: 'Footer' },
+      { key: 'footerRight', label: 'Footer right', type: 'text', default: 'Page {page} of {total}', group: 'Footer' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, half: true, unit: 'pt', group: 'Style' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, unit: 'pt', half: true, group: 'Style' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#55554e', group: 'Style' },
+      { key: 'rule', label: 'Draw a hairline rule', type: 'toggle', default: true, group: 'Style' },
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Style' },
     ],
+    notes: [
+      'Tokens: {page} {total} {title} {author} {subject} {date} {file}. They are filled in per page.',
+      'Every page is measured on its own, so a mixed-size or rotated document keeps its rules inside the visible area.',
+    ],
+    validate: (values) =>
+      [...HEADER_SLOTS, ...FOOTER_SLOTS].every((key) => stringValue(values, key).trim() === '')
+        ? 'Type something for the header or the footer — with all six boxes empty there is nothing to add.'
+        : null,
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
-      const size = numberValue(context.values, 'fontSize', 9);
-      const margin = numberValue(context.values, 'margin', 28);
+      const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 9, min: 5, max: 36, unit: 'pt' });
+      const margin = readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 28, min: 4, max: 120, unit: 'pt' });
       const color = stringValue(context.values, 'color', '#55554e');
       const rule = booleanValue(context.values, 'rule', true);
       const meta = {
@@ -352,46 +780,44 @@ export const editTools: PdfToolDefinition[] = [
         total: String(input.pageCount),
         file: input.name,
       };
+      const rows = [
+        { label: 'header', keys: HEADER_SLOTS, anchors: ['top-left', 'top-center', 'top-right'] as Anchor[], above: true },
+        { label: 'footer', keys: FOOTER_SLOTS, anchors: ['bottom-left', 'bottom-center', 'bottom-right'] as Anchor[], above: false },
+      ];
       for (let i = 0; i < pages.length; i++) {
+        throwIfAborted(context.signal);
         const page = input.doc.getPage(pages[i]);
-        const box = cropBox(page);
+        const frame = frameOf(page);
         const values = { ...meta, page: String(pages[i] + 1) };
-        const headerY = box.y + box.height - margin;
-        const footerY = box.y + margin;
-        const slots: [string, Anchor][] = [
-          [expand(stringValue(context.values, 'headerLeft'), values), 'top-left'],
-          [expand(stringValue(context.values, 'headerCenter'), values), 'top-center'],
-          [expand(stringValue(context.values, 'headerRight'), values), 'top-right'],
-          [expand(stringValue(context.values, 'footerLeft'), values), 'bottom-left'],
-          [expand(stringValue(context.values, 'footerCenter'), values), 'bottom-center'],
-          [expand(stringValue(context.values, 'footerRight'), values), 'bottom-right'],
-        ];
-        for (const [text, anchor] of slots) {
-          if (!text) continue;
-          await stamp(input.doc, page, text, {
-            anchor,
-            size,
-            color,
-            margin,
-          });
-        }
-        if (rule) {
-          page.drawLine({
-            start: { x: box.x + margin, y: headerY - size - 4 },
-            end: { x: box.x + box.width - margin, y: headerY - size - 4 },
-            thickness: 0.5,
-            color: rgbColor(color),
-          });
-          page.drawLine({
-            start: { x: box.x + margin, y: footerY + size + 4 },
-            end: { x: box.x + box.width - margin, y: footerY + size + 4 },
-            thickness: 0.5,
-            color: rgbColor(color),
-          });
+        for (const row of rows) {
+          const texts = row.keys.map((key) => expand(stringValue(context.values, key), values).trim());
+          const widths = await Promise.all(texts.map((text) => (text
+            ? measureText(input.doc, { text, x: 0, y: 0, size }).then((m) => m.width)
+            : Promise.resolve(0))));
+          const used = widths.reduce((sum, width) => sum + width, 0);
+          if (texts.filter(Boolean).length > 1 && used + margin * 2 > frame.width) {
+            note(notes, `The ${row.label} text is wider than a ${Math.round(frame.width)} pt page, so its left, centre and right parts overlap.`);
+          }
+          for (let s = 0; s < row.anchors.length; s++) {
+            if (!texts[s]) continue;
+            await stamp(input.doc, page, texts[s], { anchor: row.anchors[s], size, color, margin, notes });
+          }
+          if (rule) {
+            // The rule is drawn where the reader sees it, then turned with the
+            // page: on a /Rotate 90 sheet a page-space horizontal line runs off
+            // the side of the paper.
+            const y = row.above ? frame.height - margin - size - 4 : margin + size + 4;
+            page.drawLine({
+              start: toUserSpace(frame, margin, y),
+              end: toUserSpace(frame, Math.max(margin, frame.width - margin), y),
+              thickness: 0.5,
+              color: rgbColor(color),
+            });
+          }
         }
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
-      return pdfResult(input.doc, { message: `Added headers and footers to ${pages.length} page(s).` });
+      return pdfOutput(input.doc, notes, `Added headers and footers to ${countLabel(pages.length, 'page')}.`);
     },
   },
 
@@ -404,6 +830,12 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['legal', 'discovery', 'production', 'sequential numbering'],
     multiFile: true,
     outputSuffix: '_bates.pdf',
+    actionLabel: 'Number the files',
+    promise: 'A sequential, zero-padded production number stamped on every page of every file, continuing across files or restarting in each one.',
+    notes: [
+      'Bates numbering is permanent: the number is drawn into the page, so a second run writes a second number.',
+      'One number is consumed per page across the whole batch, which is what a discovery production expects.',
+    ],
     fields: [
       { key: 'format', label: 'Number format', type: 'text', default: '{prefix}-{n}', help: 'Tokens: {n} {page} {total} {prefix} {date} {time}.' },
       { key: 'prefix', label: 'Prefix', type: 'text', default: 'DOC', half: true },
@@ -416,48 +848,64 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'color', label: 'Colour', type: 'color', default: '#000000' },
     ],
     async run(context) {
+      const notes: string[] = [];
       const inputs = await openInputs(context);
-      const digits = numberValue(context.values, 'digits', 6);
+      const digits = readNumber(context, notes, { key: 'digits', label: 'Number width', fallback: 6, min: 1, max: 12, integer: true });
+      const start = readNumber(context, notes, { key: 'start', label: 'Start at', fallback: 1, min: 0, max: 1000000, integer: true });
       const perFile = booleanValue(context.values, 'perFile');
-      let counter = numberValue(context.values, 'start', 1);
-      const stamped: string[] = [];
+      const format = stringValue(context.values, 'format', '{prefix}-{n}');
+      const prefix = stringValue(context.values, 'prefix', 'DOC');
+      let counter = start;
+      let stamped = 0;
+      const total = inputs.reduce((sum, input) => sum + input.pageCount, 0);
+      const seen = new Set<string>();
       for (const input of inputs) {
-        const pages = resolvePages('all', input.pageCount);
-        for (const index of pages) {
-          const page = input.doc.getPage(index);
-          const number = String(perFile && stamped.includes(input.name) ? counter : counter).padStart(digits, '0');
-          const text = expand(stringValue(context.values, 'format', '{prefix}-{n}'), {
+        // E16: the same document added twice is two productions here, and the
+        // output names collide, so say which copy is which.
+        if (seen.has(input.name)) {
+          note(notes, `Two documents are named "${input.name}"; both were stamped, and both downloads carry the same name.`);
+        }
+        seen.add(input.name);
+        for (let index = 0; index < input.pageCount; index++) {
+          throwIfAborted(context.signal);
+          const number = String(counter).padStart(digits, '0');
+          const text = expand(format, {
             n: number,
             page: String(index + 1),
             total: String(input.pageCount),
-            prefix: stringValue(context.values, 'prefix', 'DOC'),
+            prefix,
             date: new Date().toISOString().slice(0, 10),
             time: new Date().toTimeString().slice(0, 8),
           });
-          await stamp(input.doc, page, text, {
+          await stamp(input.doc, input.doc.getPage(index), text, {
             anchor: stringValue(context.values, 'position', 'bottom-right') as Anchor,
-            size: numberValue(context.values, 'fontSize', 9),
+            size: readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 9, min: 5, max: 36, unit: 'pt' }),
             color: stringValue(context.values, 'color', '#000000'),
-            margin: numberValue(context.values, 'margin', 18),
+            margin: readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 18, min: 0, max: 120, unit: 'pt' }),
+            notes,
           });
           counter += 1;
-          if (!stamped.includes(input.name)) stamped.push(input.name);
+          stamped += 1;
+          context.progress(stamped / (total || 1), `Stamped page ${index + 1} of ${input.name}`);
         }
-        if (perFile) counter = numberValue(context.values, 'start', 1);
+        if (perFile) counter = start;
+      }
+      if (stamped > 0 && stamped < 10) {
+        note(notes, `The last number written was ${String(perFile ? start + stamped - 1 : counter - 1).padStart(digits, '0')}.`);
       }
       const files = [];
-      for (let i = 0; i < inputs.length; i++) {
+      for (const input of inputs) {
         files.push({
-          blob: new Blob([await savePDF(inputs[i].doc) as BlobPart], { type: 'application/pdf' }),
-          name: `${baseName(inputs[i].name)}_bates.pdf`,
+          blob: new Blob([await savePDF(input.doc) as BlobPart], { type: 'application/pdf' }),
+          name: `${baseName(input.name)}_bates.pdf`,
         });
-        context.progress((i + 1) / inputs.length, `Stamped ${inputs[i].name}`);
       }
-      return {
+      const result: ToolResult = {
         kind: 'files',
         files,
-        message: `Applied ${counter - 1} Bates number(s) across ${inputs.length} file(s).`,
+        message: `Applied ${countLabel(stamped, 'Bates number')} across ${countLabel(inputs.length, 'file')}${perFile ? ', restarting at each file' : ''}.`,
       };
+      return admit(result, notes);
     },
   },
 
@@ -469,24 +917,36 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['roman numerals', 'front matter', 'label ranges'],
     outputSuffix: '_labelled.pdf',
+    actionLabel: 'Apply labels',
+    promise: 'A /PageLabels dictionary, so the page number in the reader\u2019s toolbar reads i, ii, 1, 2 \u2014 nothing is drawn on the page.',
     fields: [
       {
         key: 'ranges',
         label: 'Label ranges',
         type: 'textarea',
         default: '1-3 roman 1\n4-99 decimal 1',
-        help: 'One per line: start-end style [startNumber] [prefix]. Styles: decimal, roman, Roman, alpha, Alpha, none.',
+        help: 'One per line: start-end style [startNumber] [prefix]. Styles: decimal, roman, Roman, alpha, Alpha, none. A range runs until the next line starts.',
       },
     ],
+    notes: [
+      'PDF page labels are start-based: a line takes effect on its first page and lasts until the next line or the end of the document.',
+      'Labels change what the reader shows, not what is printed on the sheet. Use Page Numbers to stamp visible folios.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
-      const parsed = parseLabelRanges(stringValue(context.values, 'ranges'), input.pageCount);
-      if (parsed.length === 0) throw new Error('No valid label ranges were entered — use lines like "1-3 roman 1".');
+      const parsed = parseLabelRanges(stringValue(context.values, 'ranges'), input.pageCount, notes);
+      if (parsed.length === 0) {
+        throw new Error(`No usable label range. ${notes[0] ?? 'Enter at least one line such as "1-3 roman 1".'}`);
+      }
       addPageLabels(input.doc, parsed);
-      const preview = readPageLabels(input.doc).slice(0, 12).map((l) => l.label);
-      return pdfResult(input.doc, {
-        message: `Applied ${parsed.length} label range(s). The first pages now read: ${preview.join(', ')}${parsed.length > 0 && input.pageCount > 12 ? ', …' : ''}.`,
-      });
+      const labels = readPageLabels(input.doc);
+      const shown = Math.min(labels.length, 12);
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Applied ${countLabel(parsed.length, 'label range')}. The first ${countLabel(shown, 'page')} now read: ${labels.slice(0, shown).map((l) => l.label).join(', ')}${labels.length > shown ? ', \u2026' : ''}.`,
+      );
     },
   },
 
@@ -499,6 +959,8 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['outline', 'toc structure', 'navigate'],
     outputSuffix: '_bookmarks.pdf',
     surface: 'none',
+    actionLabel: 'Save bookmarks',
+    promise: 'The outline as text you can read, edit and paste back — leaving the box empty just shows you what is there.',
     fields: [
       {
         key: 'outline',
@@ -509,23 +971,41 @@ export const editTools: PdfToolDefinition[] = [
       },
       { key: 'replace', label: 'Replace the existing outline', type: 'toggle', default: true },
     ],
+    notes: [
+      'Page numbers are 1-based positions in the document as it stands now, before the new outline is written.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const raw = stringValue(context.values, 'outline');
       if (!raw.trim()) {
         const existing = readOutline(input.doc);
         if (existing.length === 0) {
           return reportResult([{ title: 'Bookmarks', text: 'This document has no outline. Add entries above and run again.' }], {
-            message: 'No bookmarks found.',
+            message: 'No bookmarks found — nothing was changed.',
           });
         }
+        const size = countOutline(existing);
         return reportResult([{ title: 'Current outline', text: outlineToText(existing) }], {
-          message: `${existing.length} top-level bookmark(s). Copy the text, edit it, and run again to replace them.`,
+          message: `${countLabel(size.total, 'bookmark')} (${countLabel(existing.length, 'at the top level')}${size.targetless > 0 ? `, ${countLabel(size.targetless, 'without a page')}` : ''}). Copy the text, edit it, and run again to replace them.`,
         });
       }
-      const nodes = textToOutline(raw, input.pageCount);
-      writeOutline(input.doc, nodes);
-      return pdfResult(input.doc, { message: `Wrote ${nodes.length} top-level bookmark(s).` });
+      const nodes = textToOutline(raw, input.pageCount, notes);
+      if (countOutline(nodes).total === 0) {
+        throw new Error(`No bookmark could be read from that text. ${notes[0] ?? 'Use one entry per line, "Title :: page".'}`.trim());
+      }
+      const replace = booleanValue(context.values, 'replace', true);
+      const existing = replace ? readOutline(input.doc) : [];
+      const before = replace ? countOutline(existing).total : readOutline(input.doc).length;
+      writeOutline(input.doc, replace ? nodes : [...readOutline(input.doc), ...nodes]);
+      const written = countOutline(nodes);
+      return pdfOutput(
+        input.doc,
+        notes,
+        replace
+          ? `Wrote ${countLabel(written.total, 'bookmark')} (${countLabel(nodes.length, 'top-level one', 'top-level ones')})${before > 0 ? `, replacing the ${countLabel(before, 'bookmark')} already in the document` : ''}.`
+          : `Added ${countLabel(written.total, 'bookmark')} after the ${countLabel(before, 'existing')} outline.`,
+      );
     },
   },
 
@@ -537,33 +1017,48 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['toc', 'index page', 'contents'],
     outputSuffix: '_toc.pdf',
+    actionLabel: 'Insert contents',
+    promise: 'A real contents page — drawn text with clickable links to the outline it reads.',
     fields: [
-      { key: 'title', label: 'Heading', type: 'text', default: 'Contents', half: true },
-      { key: 'insertAt', label: 'Insert at page', type: 'number', default: 1, min: 1, half: true },
+      { key: 'title', label: 'Heading', type: 'text', default: 'Contents', half: true, group: 'Contents page' },
+      { key: 'insertAt', label: 'Insert at page', type: 'number', default: 1, min: 1, integer: true, half: true, group: 'Contents page', help: 'Clamped into this document, so a page past the end lands at the back.' },
       { key: 'leader', label: 'Leader', type: 'segmented', default: 'dots', options: [
         { value: 'dots', label: 'Dots' }, { value: 'none', label: 'None' },
-      ] },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 24, half: true },
-      { key: 'showPageNumbers', label: 'Show page numbers', type: 'toggle', default: true },
+      ], group: 'Contents page' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 24, half: true, unit: 'pt', group: 'Style' },
+      { key: 'showPageNumbers', label: 'Show page numbers', type: 'toggle', default: true, group: 'Style' },
+    ],
+    notes: [
+      'The list comes from the document outline, so a PDF with no bookmarks has nothing to list.',
+      'Entries are numbered against the finished document, including the contents pages just inserted.',
     ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const outline = readOutline(input.doc);
       if (outline.length === 0) {
         throw new Error('This PDF has no bookmarks to build a table of contents from. Add them with Edit Bookmarks first.');
       }
+      const size = countOutline(outline);
+      if (size.targetless > 0) {
+        note(notes, `${countLabel(size.targetless, 'entry', 'entries')} has no page target, so it is listed without a number.`);
+      }
+      const insertAt = bounded(notes, 'Insert at page', numberValue(context.values, 'insertAt', 1), { min: 1, max: input.pageCount, integer: true });
+      const fontSize = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 7, max: 24, unit: 'pt' });
       const { generateTocPage } = await import('../core/bookmarks');
       const pages = await generateTocPage(input.doc, {
         nodes: outline,
         title: stringValue(context.values, 'title', 'Contents'),
-        fontSize: numberValue(context.values, 'fontSize', 11),
+        fontSize,
         leader: stringValue(context.values, 'leader', 'dots') === 'dots' ? 'dots' : 'none',
         rightAlignPageNumbers: booleanValue(context.values, 'showPageNumbers', true),
-        startPage: Math.max(0, numberValue(context.values, 'insertAt', 1) - 1),
+        startPage: insertAt - 1,
       });
-      return pdfResult(input.doc, {
-        message: `Inserted a ${pages.length} page table of contents with ${outline.length} entries.`,
-      });
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Inserted a ${countLabel(pages.length, 'page')} table of contents at page ${insertAt}, listing ${countLabel(size.total, 'entry', 'entries')} from the outline.`,
+      );
     },
   },
 
@@ -576,6 +1071,8 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['approved', 'signed seal', 'logo stamp', 'date stamp'],
     surface: 'surface',
     outputSuffix: '_stamped.pdf',
+    actionLabel: 'Place stamps',
+    promise: 'A standard or image stamp as a real PDF annotation, one per page you click or per page you list.',
     fields: [
       { key: 'stamp', label: 'Stamp', type: 'select', default: 'APPROVED', options: [
         { value: 'APPROVED', label: 'Approved' }, { value: 'AS IS', label: 'As is' },
@@ -593,18 +1090,32 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'regions', label: 'Placements', type: 'text', default: '', help: 'Filled in by clicking the page. Format page:x,y,w,h.' },
       { key: 'pages', label: 'Pages', type: 'pages', default: '1' },
     ],
+    notes: [
+      'Standard stamps are written as PDF Stamp annotations, so other readers show, move and delete them.',
+      'A stamp placed on a rotated page sits in the corner you see; its label follows the page orientation.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { addAnnotations } = await import('../core/annotations');
       const name = stringValue(context.values, 'stamp', 'APPROVED');
       const custom = name === 'custom' ? firstFileBytes(context.values, 'image') : null;
       if (name === 'custom' && !custom) throw new Error('Choose the image to stamp.');
       const pages = resolvePages(stringValue(context.values, 'pages', '1'), input.pageCount);
-      const explicit = parseRegions(context.values['regions'], input.doc);
+      const width = readNumber(context, notes, { key: 'width', label: 'Stamp width', fallback: 140, min: 20, max: 600, unit: 'pt' });
+      const embedded = custom ? await input.doc.embedPng(await toPng(input.doc, custom)) : null;
+      // Keep the picture's own proportions: the appearance is stretched to the rect.
+      const aspect = embedded ? embedded.height / Math.max(1, embedded.width) : 0.42;
+      const explicit = parseRegions(context.values['regions'], input.doc, notes);
       const targets = explicit.length > 0
         ? explicit
-        : pages.map((page) => ({ page, ...anchorRect(input.doc.getPage(page), stringValue(context.values, 'position', 'top-right') as Anchor, numberValue(context.values, 'width', 140)) }));
-      const embedded = custom ? await input.doc.embedPng(await toPng(input.doc, custom)) : null;
+        : pages.map((page) => ({ page, ...anchorRect(input.doc.getPage(page), stringValue(context.values, 'position', 'top-right') as Anchor, width, aspect, notes) }));
+      if (targets.length === 0) {
+        throw new Error(`No stamp could be placed. ${notes[0] ?? 'The page selection matched no page of this document.'}`);
+      }
+      if (targets.some((region) => frameOf(input.doc.getPage(region.page)).rotation !== 0)) {
+        note(notes, 'Some stamps landed on rotated pages: they sit in the corner as you see it, but the label follows the page orientation.');
+      }
       addAnnotations(
         input.doc,
         targets.map((region) => ({
@@ -612,40 +1123,56 @@ export const editTools: PdfToolDefinition[] = [
           page: region.page,
           rect: { x: region.x, y: region.y, width: region.width, height: region.height },
           stampName: embedded ? undefined : name,
-
-          opacity: numberValue(context.values, 'opacity', 1),
+          stampImage: embedded ? custom ?? undefined : undefined,
+          opacity: readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 1, min: 0.1, max: 1 }),
           color: stringValue(context.values, 'color', '#dc2626'),
           contents: name,
         })),
       );
-      return pdfResult(input.doc, { message: `Placed ${targets.length} stamp(s).` });
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Placed ${countLabel(targets.length, 'stamp')} on ${countLabel(new Set(targets.map((region) => region.page)).size, 'page')}.`,
+      );
     },
   },
 
   {
     id: 'background-color',
     name: 'Background Color',
-    description: 'Paint a solid colour or page-size image behind every page',
+    description: 'Paint a solid colour behind the content of every page',
     icon: '🎨',
     category: 'edit',
-    keywords: ['page colour', 'behind content', 'tint'],
+    keywords: ['page colour', 'behind content', 'tint', 'reading tint'],
     outputSuffix: '_background.pdf',
+    actionLabel: 'Paint background',
+    promise: 'A flat colour laid under each selected page, tagged as a background artifact so text extraction ignores it.',
     fields: [
       { key: 'color', label: 'Colour', type: 'color', default: '#f7f7f4' },
       { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
     ],
+    notes: [
+      'Solid colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
+      'The rectangle covers each page\u2019s own crop box, so mixed sizes stay covered edge to edge.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { prependBackground } = await import('../core/content');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const color = stringValue(context.values, 'color', '#f7f7f4');
       for (let i = 0; i < pages.length; i++) {
+        throwIfAborted(context.signal);
         const page = input.doc.getPage(pages[i]);
         const box = cropBox(page);
+        if (box.width <= 0 || box.height <= 0) {
+          note(notes, `Page ${pages[i] + 1} has an empty crop box, so it was left unpainted.`);
+          continue;
+        }
         prependBackground(page, { x: box.x, y: box.y, width: box.width, height: box.height }, color);
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
-      return pdfResult(input.doc, { message: `Painted a ${color} background behind ${pages.length} page(s).` });
+      return pdfOutput(input.doc, notes, `Painted a ${color} background behind ${countLabel(pages.length, 'page')}.`);
     },
   },
 
@@ -657,6 +1184,8 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['recolour', 'black text', 'colour swap'],
     outputSuffix: '_recoloured.pdf',
+    actionLabel: 'Recolour text',
+    promise: 'The colour operators in front of existing text are rewritten — no page is rasterised, so the text stays selectable.',
     fields: [
       { key: 'to', label: 'New colour', type: 'color', default: '#000000' },
       { key: 'from', label: 'Replace which colour', type: 'select', default: 'any', options: [
@@ -664,27 +1193,41 @@ export const editTools: PdfToolDefinition[] = [
         { value: '#000000', label: 'Black only' },
         { value: '#ff0000', label: 'Red only' },
         { value: '#0000ff', label: 'Blue only' },
-      ] },
+      ], help: 'Matches the exact colour a run was painted with; a near-black from a scanner will not count as black.' },
       { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
     ],
+    notes: [
+      'Only text drawn by the page itself is recoloured. Text inside an image is part of the picture.',
+      'Pages with no matching text are reported, not quietly skipped.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { recolourText } = await import('../core/content');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
+      const from = stringValue(context.values, 'from', 'any');
+      const to = stringValue(context.values, 'to', '#000000');
       let changed = 0;
       for (let i = 0; i < pages.length; i++) {
-        changed += recolourText(
-          input.doc.getPage(pages[i]),
-          stringValue(context.values, 'from', 'any'),
-          stringValue(context.values, 'to', '#000000'),
-        );
+        throwIfAborted(context.signal);
+        changed += recolourText(input.doc.getPage(pages[i]), from, to);
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
-      return pdfResult(input.doc, {
-        message: changed > 0
-          ? `Recoloured ${changed} text run(s).`
-          : 'No text matched that colour, so nothing changed.',
-      });
+      if (changed === 0) {
+        return admit(
+          reportResult(
+            [{
+              title: 'Nothing was recoloured',
+              text: from === 'any'
+                ? `None of the ${countLabel(pages.length, 'page')} you selected draws text with a colour operator — scanned pages, or text painted inside an image, look like this.`
+                : `No text painted in ${from} was found on the ${countLabel(pages.length, 'page')} you selected. Try "Any colour", which changes every text run.`,
+            }],
+            { message: 'No text matched, so the file is unchanged.' },
+          ),
+          notes,
+        );
+      }
+      return pdfOutput(input.doc, notes, `Recoloured ${countLabel(changed, 'text run')} to ${to}.`);
     },
   },
 
@@ -696,12 +1239,24 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['dark mode', 'negative', 'night reading'],
     outputSuffix: '_inverted.pdf',
+    actionLabel: 'Invert',
+    promise: 'A rebuilt document whose pages are photographs of the inverted originals.',
     fields: [
       { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi' },
       { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
     ],
+    notes: [
+      'The output is images, so text stops being selectable and the file usually grows. Links and annotations are not carried over.',
+      'Each page is re-rendered at its own displayed size, including its /Rotate, so mixed and rotated documents keep their shape.',
+    ],
     async run(context) {
-      return rasteriseTransform(context, 'invert(1)', 'Inverted');
+      const notes: string[] = [];
+      const [input] = await openInputs(context);
+      return rerasterise(context, notes, input, {
+        pages: stringValue(context.values, 'pages', 'all'),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        filter: { invert: true },
+      }, 'Inverted');
     },
   },
 
@@ -713,26 +1268,40 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['brightness', 'contrast', 'saturation', 'sharpen', 'scan cleanup'],
     outputSuffix: '_adjusted.pdf',
+    actionLabel: 'Adjust colors',
+    promise: 'Every page re-rendered with your colour settings applied to the pixels, including a black-and-white cutoff.',
     fields: [
-      { key: 'brightness', label: 'Brightness', type: 'slider', default: 1, min: 0.2, max: 2, step: 0.02 },
-      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1, min: 0.2, max: 3, step: 0.02 },
-      { key: 'saturation', label: 'Saturation', type: 'slider', default: 1, min: 0, max: 3, step: 0.02 },
-      { key: 'hue', label: 'Hue rotate', type: 'slider', default: 0, min: -180, max: 180, step: 1, unit: '°' },
-      { key: 'grayscale', label: 'Desaturate completely', type: 'toggle', default: false },
-      { key: 'threshold', label: 'Make black and white', type: 'slider', default: 0, min: 0, max: 1, step: 0.02, help: '0 keeps colour. Drag up to binarise a scan.' },
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'brightness', label: 'Brightness', type: 'slider', default: 1, min: 0.2, max: 2, step: 0.02, group: 'Colour' },
+      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1, min: 0.2, max: 3, step: 0.02, group: 'Colour' },
+      { key: 'saturation', label: 'Saturation', type: 'slider', default: 1, min: 0, max: 3, step: 0.02, group: 'Colour' },
+      { key: 'hue', label: 'Hue rotate', type: 'slider', default: 0, min: -180, max: 180, step: 1, unit: '°', group: 'Colour' },
+      { key: 'grayscale', label: 'Desaturate completely', type: 'toggle', default: false, group: 'Colour' },
+      { key: 'threshold', label: 'Make black and white', type: 'slider', default: 0, min: 0, max: 1, step: 0.02, help: '0 keeps colour. Drag up to binarise a scan — this is a real pixel cutoff, not a contrast boost.', group: 'Output' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output' },
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Output' },
+    ],
+    notes: [
+      'The output is images: text stops being selectable, and pages you did not select are not carried over.',
+      'Each page is rendered at its own displayed size and rotation, so mixed and rotated documents keep their shape.',
     ],
     async run(context) {
-      const parts = [
-        `brightness(${numberValue(context.values, 'brightness', 1)})`,
-        `contrast(${numberValue(context.values, 'contrast', 1)})`,
-      ];
-      if (booleanValue(context.values, 'grayscale')) parts.push('grayscale(1)');
-      else parts.push(`saturate(${numberValue(context.values, 'saturation', 1)})`);
-      const hue = numberValue(context.values, 'hue', 0);
-      if (hue !== 0) parts.push(`hue-rotate(${hue}deg)`);
-      return rasteriseTransform(context, parts.join(' '), 'Adjusted');
+      const notes: string[] = [];
+      const [input] = await openInputs(context);
+      const threshold = readNumber(context, notes, { key: 'threshold', label: 'Black-and-white cutoff', fallback: 0, min: 0, max: 1 });
+      return rerasterise(context, notes, input, {
+        pages: stringValue(context.values, 'pages', 'all'),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        threshold: threshold > 0 ? Math.round(threshold * 255) : undefined,
+        filter: {
+          brightness: readNumber(context, notes, { key: 'brightness', label: 'Brightness', fallback: 1, min: 0.2, max: 2 }),
+          contrast: readNumber(context, notes, { key: 'contrast', label: 'Contrast', fallback: 1, min: 0.2, max: 3 }),
+          // "Desaturate completely" wins over saturation; keeping both would
+          // fight, and the slider would quietly lose.
+          saturation: booleanValue(context.values, 'grayscale') ? 1 : readNumber(context, notes, { key: 'saturation', label: 'Saturation', fallback: 1, min: 0, max: 3 }),
+          hue: readNumber(context, notes, { key: 'hue', label: 'Hue rotate', fallback: 0, min: -180, max: 180, unit: '°' }),
+          grayscale: booleanValue(context.values, 'grayscale'),
+        },
+      }, threshold > 0 ? 'Adjusted and binarised' : 'Adjusted');
     },
   },
 
@@ -744,19 +1313,33 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['scan look', 'whitening', 'binarise', 'photocopy'],
     outputSuffix: '_scanned.pdf',
+    actionLabel: 'Make it look scanned',
+    promise: 'Whitened, sharpened greyscale pages — a real pixel pass, not just a colour filter.',
     fields: [
-      { key: 'whitening', label: 'Whiten the background', type: 'toggle', default: true },
-      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true },
-      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: true },
-      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1.35, min: 1, max: 3, step: 0.05 },
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 220, min: 96, max: 400, step: 1, unit: 'dpi' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'whitening', label: 'Whiten the background', type: 'toggle', default: true, group: 'Look' },
+      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true, group: 'Look' },
+      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: true, group: 'Look' },
+      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1.35, min: 1, max: 3, step: 0.05, group: 'Look' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 220, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output' },
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Output' },
+    ],
+    notes: [
+      'Whitening and sharpening are applied per pixel, so they are the slowest of the colour tools — a 500-page document is a lot of canvases.',
+      'The output is images; selectable text is lost.',
     ],
     async run(context) {
-      const parts = [`contrast(${numberValue(context.values, 'contrast', 1.35)})`];
-      if (booleanValue(context.values, 'grayscale', true)) parts.push('grayscale(1)');
-      if (booleanValue(context.values, 'whitening', true)) parts.push('brightness(1.12)');
-      return rasteriseTransform(context, parts.join(' '), 'Applied the scanner effect to');
+      const notes: string[] = [];
+      const [input] = await openInputs(context);
+      return rerasterise(context, notes, input, {
+        pages: stringValue(context.values, 'pages', 'all'),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 220, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        filter: {
+          contrast: readNumber(context, notes, { key: 'contrast', label: 'Contrast', fallback: 1.35, min: 1, max: 3 }),
+          grayscale: booleanValue(context.values, 'grayscale', true),
+        },
+        whitening: booleanValue(context.values, 'whitening', true),
+        sharpen: booleanValue(context.values, 'sharpen', true),
+      }, 'Applied the scanner effect to');
     },
   },
 
@@ -768,6 +1351,8 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['recognise', 'searchable pdf', 'text layer', 'abbyy alternative'],
     outputSuffix: '_ocr.pdf',
+    actionLabel: 'Recognise text',
+    promise: 'A hidden text layer over the scan, so pages become selectable and searchable without changing how they look.',
     fields: [
       { key: 'language', label: 'Language', type: 'select', default: 'en', options: [
         { value: 'en', label: 'English' }, { value: 'de', label: 'German' },
@@ -785,39 +1370,90 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'skipSearchable', label: 'Skip pages that already have text', type: 'toggle', default: true },
       { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
     ],
-    notes: ['The OCR model is downloaded once and cached; the pages themselves are recognised on this device.'],
+    notes: [
+      'The OCR model is downloaded once and cached; the pages themselves are recognised on this device.',
+      'Pages that already carry a text layer are left alone unless you ask for a fresh read, so a mixed document keeps what it has.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { ocrDocument, addSearchableTextLayer } = await import('../core/ocr');
       const session = await withRender(input, context).then((result) => result.session);
+      const dpi = readNumber(context, notes, { key: 'dpi', label: 'Recognition resolution', fallback: 300, min: 150, max: 600, integer: true, unit: 'dpi' });
+      let results;
       try {
-        const results = await ocrDocument(session, {
+        results = await ocrDocument(session, {
           pages: stringValue(context.values, 'pages', 'all'),
-          dpi: numberValue(context.values, 'dpi', 300),
+          dpi,
           lang: stringValue(context.values, 'language', 'en'),
           signal: context.signal,
+          // The rail has offered this switch since the tool was written; until now
+          // nothing read it, so "skip pages that already have text" always applied.
+          force: !booleanValue(context.values, 'skipSearchable', true),
           onProgress: (done, total) => context.progress(done / total * 0.8, `Recognised page ${done} of ${total}`),
           onStatus: (status) => context.log(status),
         });
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        // E20: an absent engine is named, not reported as "0 characters, done".
+        throw new Error(`The recogniser could not run in this tab: ${error instanceof Error ? error.message : String(error)} The OCR model is downloaded once and cached — check the connection, then run again.`);
+      }
+      try {
         const mode = stringValue(context.values, 'mode', 'searchable');
-        if (mode === 'report') {
-          return reportResult(
-            results.map((page) => ({ title: `Page ${page.page}`, text: page.text.trim() || '(no text found)' })),
-            { message: `Read ${results.reduce((n, page) => n + page.text.length, 0)} characters across ${results.length} page(s).` },
+        const skipped = results.filter((page) => page.alreadySearchable);
+        if (skipped.length > 0) {
+          note(notes, `${countLabel(skipped.length, 'page')} already had a text layer and was left as it was.${booleanValue(context.values, 'skipSearchable', true) ? ' Turn off "skip pages that already have text" to read them again.' : ''}`);
+        }
+        const blank = results.filter((page) => !page.alreadySearchable && page.text.trim() === '');
+        if (blank.length > 0) {
+          // E10: say what a scan is, instead of "done, 0 characters".
+          note(notes, `${countLabel(blank.length, 'page')} yielded no text at all — they are either blank or too faint to read. Try a higher resolution, or scan again at 300 dpi or better.`);
+        }
+        if (results.length === 0) {
+          return admit(
+            reportResult([{ title: 'Nothing to read', text: 'The page selection matched no page of this document.' }], { message: 'No page was recognised.' }),
+            notes,
           );
+        }
+        if (mode === 'report') {
+          const characters = results.reduce((sum, page) => sum + page.text.trim().length, 0);
+          const outcome = reportResult(
+            results.map((page) => ({ title: `Page ${page.page}`, text: page.text.trim() || '(no text found on this page)' })),
+            { message: characters > 0
+              ? `Read ${characters.toLocaleString()} characters across ${countLabel(results.length, 'page')}.`
+              : `Read nothing: none of the ${countLabel(results.length, 'page')} carries readable text.` },
+          );
+          if (characters === 0) {
+            note(notes, 'No page has a text layer. Run this tool with "Invisible text layer" or "Replace the page with text" to make the document searchable.');
+          }
+          return admit(outcome, notes);
         }
         if (mode === 'searchable') {
           const added = await addSearchableTextLayer(input.doc, results, { invisible: true });
-          return pdfResult(input.doc, {
-            message: `Added ${added.words} recognised words to ${added.pages} page(s) as an invisible layer — the scan looks unchanged but the text is now selectable and searchable.`,
-          });
+          if (added.pages === 0) {
+            return admit(
+              reportResult(
+                [{ title: 'No layer was added', text: `Nothing was recognised on the ${countLabel(results.length, 'page')} you selected, so the document was not changed.` }],
+                { message: 'No text was recognised — the file is unchanged.' },
+              ),
+              notes,
+            );
+          }
+          if (added.skipped > 0) {
+            note(notes, `${countLabel(added.skipped, 'page')} had no recognised words to place and was left as it was.`);
+          }
+          return pdfOutput(
+            input.doc,
+            notes,
+            `Added ${countLabel(added.words, 'recognised word')} to ${countLabel(added.pages, 'page')} as an invisible layer — the scan looks unchanged but the text is now selectable and searchable.`,
+          );
         }
-        const packed = await pdfFromImages([], { pageSize: 'a4' }).catch(() => null);
-        void packed;
         const rebuilt = await textOnlyPdf(input.doc, results);
-        return pdfResult(rebuilt, {
-          message: `Rebuilt ${results.length} page(s) as selectable text. The original page images were replaced.`,
-        });
+        return pdfOutput(
+          rebuilt,
+          notes,
+          `Rebuilt ${countLabel(results.length, 'page')} as selectable text. The original page images were replaced, so any layout, image or handwriting in them is gone.`,
+        );
       } finally {
         await session.destroy();
       }
@@ -833,13 +1469,25 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['fill form', 'acroform', 'xfa', 'tax form'],
     surface: 'custom',
     outputSuffix: '_filled.pdf',
+    actionLabel: 'Fill the form',
+    promise: 'Your answers written into the form\u2019s own fields, optionally flattened into page content on save.',
     fields: [{ key: 'flatten', label: 'Flatten when saving', type: 'toggle', default: false }],
+    notes: [
+      'Values are written into the form fields themselves, so the file stays fillable unless you flatten it.',
+      'XFA-only forms cannot be rendered in a browser; the tool says so instead of filling an invisible copy.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { fillForm } = await import('../core/forms');
       const fields = listFormFields(input.doc);
       if (fields.length === 0) {
-        throw new Error('This PDF has no fillable form fields. Try Create PDF Form to add some.');
+        throw new Error(hasXfa(input.doc)
+          ? 'This form’s fields live only in its XFA stream, which nothing here can render. Use Create PDF Form to add real AcroForm fields.'
+          : 'This PDF has no fillable form fields. Try Create PDF Form to add some.');
+      }
+      if (hasXfa(input.doc)) {
+        note(notes, 'This document also carries an XFA form. Only the AcroForm values were written, so a viewer that renders XFA may still show the old text.');
       }
       const values = context.values['fieldValues'];
       const record = values && typeof values === 'object' && !Array.isArray(values)
@@ -850,11 +1498,16 @@ export const editTools: PdfToolDefinition[] = [
         const { flattenAnnotations } = await import('../core/flatten');
         await flattenAnnotations(input.doc, undefined, { kinds: ['Widget'] });
       }
-      return pdfResult(input.doc, {
-        message: result.missing.length > 0
-          ? `Filled ${result.filled} field(s); no value given for ${result.missing.slice(0, 4).join(', ')}${result.missing.length > 4 ? ', …' : ''}.`
-          : `Filled ${result.filled} field(s).`,
-      });
+      if (result.filled === 0) {
+        note(notes, `No value reached any of the ${countLabel(fields.length, 'field')} in this form, so it was saved unchanged.`);
+      }
+      return pdfOutput(
+        input.doc,
+        notes,
+        result.missing.length > 0
+          ? `Filled ${countLabel(result.filled, 'field')}; no value given for ${result.missing.slice(0, 4).join(', ')}${result.missing.length > 4 ? ', …' : ''}.`
+          : `Filled ${countLabel(result.filled, 'field')}.`,
+      );
     },
   },
 
@@ -867,8 +1520,14 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['make form', 'fillable', 'design form', 'widgets'],
     surface: 'custom',
     outputSuffix: '_form.pdf',
+    actionLabel: 'Create the form',
+    promise: 'The fields you dropped, turned into real AcroForm widgets that any viewer can type into.',
+    notes: [
+      'A field dropped on a page that no longer exists is moved to the nearest page and the run says how many moved.',
+    ],
     fields: [{ key: 'fields', label: 'Fields', type: 'text', default: '', help: 'Filled in by the field designer.' }],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const specs = context.values['fieldSpecs'];
       if (!Array.isArray(specs) || specs.length === 0) {
@@ -876,13 +1535,27 @@ export const editTools: PdfToolDefinition[] = [
       }
       const { createFormField } = await import('../core/forms');
       let created = 0;
+      let offPage = 0;
       for (const spec of specs as (CreateFieldSpec & { page: number })[]) {
-        if (spec.page >= input.pageCount) continue;
-        if (createFormField(input.doc, spec.page, spec) >= 0) created += 1;
+        // E15: a field left on a page that no longer exists is clamped to the
+        // nearest one, and the run says how many moved.
+        const page = bounded(notes, 'Field page', Math.trunc(Number(spec.page)) || 0, { min: 0, max: input.pageCount - 1, integer: true });
+        if (page !== spec.page) offPage += 1;
+        const { page: _dropped, ...field } = spec;
+        if (createFormField(input.doc, page, field) >= 0) created += 1;
+        else note(notes, `The "${spec.type}" field${spec.name ? ` named ${spec.name}` : ''} could not be created on page ${page + 1}.`);
       }
-      return pdfResult(input.doc, {
-        message: `Added ${created} fillable field(s). Viewers can now type into this document.`,
-      });
+      if (created === 0) {
+        throw new Error(`None of the ${countLabel(specs.length, 'field')} could be placed. ${notes[0] ?? 'Check the page each field was dropped on.'}`);
+      }
+      if (offPage > 0) {
+        note(notes, `${countLabel(offPage, 'field')} was dropped on a page outside this document and moved to the nearest one.`);
+      }
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Added ${countLabel(created, 'fillable field')} of ${countLabel(specs.length, 'requested')}. Viewers can now type into this document.`,
+      );
     },
   },
 
@@ -895,30 +1568,74 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['ocg', 'optional content', 'layers panel', 'cad export'],
     surface: 'none',
     outputSuffix: '_layers.pdf',
+    actionLabel: 'Change layers',
+    promise: 'The optional-content groups of a CAD or GIS export, switched on or off in the default view.',
     fields: [
       { key: 'hide', label: 'Hide these layers', type: 'multiselect', default: [], options: [] },
       { key: 'show', label: 'Show these layers', type: 'multiselect', default: [], options: [] },
       { key: 'add', label: 'Add a layer named', type: 'text', placeholder: 'Revision B' },
       { key: 'remove', label: 'Delete layers named', type: 'textarea' },
     ],
+    validate: (values) => {
+      const asked = stringValues(values, 'hide').length
+        + stringValues(values, 'show').length
+        + (stringValue(values, 'add').trim() ? 1 : 0)
+        + stringValue(values, 'remove').split(/[\n,]+/).filter((name) => name.trim() !== '').length;
+      return asked === 0
+        ? 'Choose layers to hide or show, or name one to add or delete — with none of those ticked nothing would change.'
+        : null;
+    },
+    notes: [
+      'Only the default viewing configuration is edited; named configurations keep their own state, as in other viewers.',
+      'Hiding a layer turns it off in the layers panel; it does not delete the content.',
+    ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { listLayers, setLayerVisibility, addLayer, deleteLayer } = await import('../core/layers');
       const layers = listLayers(input.doc);
       if (layers.length === 0 && !stringValue(context.values, 'add')) {
         return reportResult([{ title: 'Layers', text: 'This document has no optional-content groups (OCGs). CAD and GIS exports usually do; add one above to create the structure.' }], {
-          message: 'No layers found.',
+          message: 'No layers found — nothing was changed.',
         });
       }
-      for (const name of stringValues(context.values, 'hide')) setLayerVisibility(input.doc, name, false);
-      for (const name of stringValues(context.values, 'show')) setLayerVisibility(input.doc, name, true);
-      const added = stringValue(context.values, 'add');
-      if (added) addLayer(input.doc, added);
-      const removed = stringValue(context.values, 'remove').split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
-      for (const name of removed) deleteLayer(input.doc, name);
-      return pdfResult(input.doc, {
-        message: `Layers now: ${[...layers.map((layer) => layer.name), added].filter(Boolean).join(', ') || 'none'}.`,
-      });
+      const missing: string[] = [];
+      for (const name of stringValues(context.values, 'hide')) {
+        if (!setLayerVisibility(input.doc, name, false)) missing.push(name);
+      }
+      for (const name of stringValues(context.values, 'show')) {
+        if (!setLayerVisibility(input.doc, name, true)) missing.push(name);
+      }
+      let added = '';
+      const wanted = stringValue(context.values, 'add').trim();
+      if (wanted) {
+        if (layers.some((layer) => layer.name.toLowerCase() === wanted.toLowerCase())) {
+          note(notes, `A layer named "${wanted}" already exists, so it was kept and no duplicate was added.`);
+          setLayerVisibility(input.doc, wanted, true);
+        } else {
+          addLayer(input.doc, wanted);
+          added = wanted;
+        }
+      }
+      const deletions = stringValue(context.values, 'remove')
+        .split(/[\n,]+/)
+        .map((name) => name.trim())
+        .filter(Boolean);
+      let deleted = 0;
+      for (const name of deletions) {
+        if (deleteLayer(input.doc, name)) deleted += 1;
+        else missing.push(name);
+      }
+      if (missing.length > 0) {
+        note(notes, `No layer is named ${missing.map((name) => `"${name}"`).join(', ')} in this document, so those instructions did nothing.`);
+      }
+      const remaining = listLayers(input.doc);
+      const visible = remaining.filter((layer) => layer.on !== false).map((layer) => layer.name);
+      return pdfOutput(
+        input.doc,
+        notes,
+        `${added ? `Added "${added}" and ` : ''}${deleted > 0 ? `deleted ${countLabel(deleted, 'layer')} and ` : ''}the document now has ${countLabel(remaining.length, 'layer')}: ${remaining.map((layer) => layer.name).join(', ') || 'none'}${visible.length > 0 ? `, of which ${visible.map((name) => `"${name}"`).join(', ')} show${remaining.length === 1 ? 's' : ''} by default` : ''}.`,
+      );
     },
   },
 
@@ -930,18 +1647,43 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['clean markup', 'drop comments', 'flatten away'],
     outputSuffix: '_clean.pdf',
+    actionLabel: 'Remove annotations',
+    promise: 'Comments, highlights, ink and links deleted from the pages you select — as a report when there is nothing to delete.',
+    notes: [
+      'Removal is permanent: the annotation objects are deleted, not hidden.',
+      'Annotations inherited from a shared parent node are removed for every page beneath it.',
+    ],
     fields: [
       { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
     ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { removeAnnotations } = await import('../core/annotations');
-      const removed = removeAnnotations(input.doc, {
-        pages: resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount),
-      });
-      return pdfResult(input.doc, {
-        message: removed > 0 ? `Removed ${removed} annotation(s).` : 'There were no annotations to remove.',
-      });
+      const { listAnnotations } = await import('../core/annotations');
+      const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
+      const scope = new Set(pages);
+      const outside = listAnnotations(input.doc).filter((mark) => !scope.has(mark.page)).length;
+      const removed = removeAnnotations(input.doc, { pages });
+      if (removed === 0) {
+        // E13: an unchanged file is not a result. Say what is actually there.
+        return admit(
+          reportResult(
+            [{
+              title: 'Nothing to remove',
+              text: outside > 0
+                ? `The ${countLabel(outside, 'annotation')} this document carries sit${outside === 1 ? 's' : ''} outside the ${countLabel(pages.length, 'page')} you selected. Widen the Pages range and run again.`
+                : 'This document has no annotations at all — nothing was removed, and the download would be byte-for-byte the file you started with.',
+            }],
+            { message: 'There were no annotations to remove.' },
+          ),
+          notes,
+        );
+      }
+      if (outside > 0) {
+        note(notes, `${countLabel(outside, 'annotation')} on the pages you did not select is still there.`);
+      }
+      return pdfOutput(input.doc, notes, `Removed ${countLabel(removed, 'annotation')} from ${countLabel(pages.length, 'page')}.`);
     },
   },
 
@@ -954,69 +1696,151 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['blackout', 'remove sensitive data', 'censor', 'gdpr'],
     surface: 'surface',
     outputSuffix: '_redacted.pdf',
+    actionLabel: 'Redact',
+    promise: 'The text under each box is deleted from the page content, then a solid fill is painted — not a sticky note over the top.',
+    notes: [
+      'Where a box covers an image, the page is re-rendered and loses selectable text; the result says so.',
+      'Draw the boxes on the page, or type page:x,y,w,h entries; a box that hangs off the edge is trimmed and reported.',
+    ],
     fields: [
       { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000' },
       ...ANNOTATION_SURFACE_FIELDS,
     ],
     async run(context) {
+      const notes: string[] = [];
       const [input] = await openInputs(context);
       const { applyRedactions } = await import('../core/redact');
-      const regions = parseRegions(context.values['regions'], input.doc);
-      if (regions.length === 0) throw new Error('Draw at least one redaction box on the page, or enter page:x,y,w,h regions.');
+      const regions = parseRegions(context.values['regions'], input.doc, notes);
+      if (regions.length === 0) {
+        throw new Error(`Draw at least one redaction box on the page, or enter page:x,y,w,h regions. ${notes[0] ?? ''}`.trim());
+      }
       const outcome = applyRedactions(
         input.doc,
         regions.map((r) => ({ page: r.page, rect: { x: r.x, y: r.y, width: r.width, height: r.height } })),
         { fill: stringValue(context.values, 'fill', '#000000') },
       );
-      return pdfResult(input.doc, {
-        message: outcome.rasterised
-          ? `Redacted ${outcome.removed} region(s). Some covered images, so those pages were re-rendered and lost selectable text.`
-          : `Redacted ${outcome.removed} region(s) — the underlying text was deleted, not hidden.`,
-      });
+      if (outcome.removed === 0) {
+        // E13: a box over blank paper is not a redaction.
+        return admit(
+          reportResult(
+            [{
+              title: 'Nothing was redacted',
+              text: `None of the ${countLabel(regions.length, 'box', 'boxes')} you selected covered anything this redactor can remove, so the document is unchanged.`,
+            }],
+            { message: 'No region removed anything — the file is unchanged.' },
+          ),
+          notes,
+        );
+      }
+      return pdfOutput(
+        input.doc,
+        notes,
+        outcome.rasterised
+          ? `Redacted ${countLabel(regions.length, 'box', 'boxes')}, deleting ${countLabel(outcome.removed, 'text run')}. Some covered images, so those pages were re-rendered and lost selectable text.`
+          : `Redacted ${countLabel(regions.length, 'box', 'boxes')}, deleting ${countLabel(outcome.removed, 'text run')} — the underlying text is gone, not hidden.`,
+      );
     },
   },
 ];
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-async function rasteriseTransform(
+// ── helpers ────────────────────────────────────────────────────────────────
+
+/** "1 page" / "4 pages" — the phrasing every count in this module reports. */
+function countLabel(count: number, noun: string, plural?: string): string {
+  const value = Math.trunc(count);
+  return value === 1 ? `1 ${noun}` : `${value} ${plural ?? `${noun}s`}`;
+}
+
+/** What a raster colour tool asks for; see `rerasterise`. */
+interface RasterJob {
+  pages: string;
+  dpi: number;
+  /** CSS filter components, composed by `core/measure`'s `cssFilterString`. */
+  filter?: { brightness?: number; contrast?: number; saturation?: number; hue?: number; invert?: boolean; grayscale?: boolean };
+  /** Bilevel cutoff in 0..255, or undefined to keep anti-aliased grey. */
+  threshold?: number;
+  /** Scanner-mode pixel passes; each is a real per-pixel operation. */
+  whitening?: boolean;
+  sharpen?: boolean;
+}
+
+/**
+ * Re-render the selected pages as images and rebuild the document.
+ *
+ * Every output page is sized from *its own* source page after that page's
+ * `/Rotate` (E8/E9), one page is in flight at a time so memory stays bounded
+ * (E7), cancellation is honoured between pages (E19), and the pixel controls the
+ * rails expose — threshold, whitening, sharpen — are actually applied. The
+ * previous version packed one PDF point per pixel, then resized the page to the
+ * source size, so each output showed the bottom-left corner of its own scan at
+ * roughly 7× zoom and the three toggles changed nothing but the label.
+ */
+async function rerasterise(
   context: ToolRunContext,
-  filter: string,
+  notes: string[],
+  input: OpenedInput,
+  job: RasterJob,
   verb: string,
-) {
-  const [input] = await openInputs(context);
-  const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
+): Promise<ToolResult> {
+  const selected = resolvePages(job.pages, input.pageCount);
   const { session } = await withRender(input, context);
   try {
-    const images = await rasterizePages(session, {
-      format: 'jpeg',
-      quality: 0.9,
-      scale: numberValue(context.values, 'dpi', 200) / 72,
-      pages: pages.map((p) => p + 1),
-      filter,
-      background: '#ffffff',
-      onProgress: (done, total) => context.progress((done / total) * 0.7, `Rendered page ${done} of ${total}`),
+    const { cssFilterString, thresholdPixels, whitenPixels, sharpenPixels } = await import('../core/measure');
+    const doc = await newPDF();
+    const filter = cssFilterString({
+      brightness: job.filter?.brightness,
+      contrast: job.filter?.contrast,
+      saturation: job.filter?.saturation,
+      hue: job.filter?.hue,
+      invert: job.filter?.invert,
+      grayscale: job.filter?.grayscale,
     });
-    const packed = await pdfFromImages(
-      images.map((image) => ({ data: image.blob })),
-      { pageSize: 'original', margin: 0 },
-    );
-    const target = packed.doc.getPages();
-    for (let i = 0; i < target.length && i < pages.length; i++) {
-      const size = displayedSize(input.doc.getPage(pages[i]));
-      target[i].setSize(size.width, size.height);
+    for (let i = 0; i < selected.length; i++) {
+      throwIfAborted(context.signal);
+      const index = selected[i];
+      const size = displayedSize(input.doc.getPage(index));
+      const render = await session.renderPage(index + 1, job.dpi / 72, {
+        filter: filter || undefined,
+        background: '#ffffff',
+      });
+      try {
+        if (job.whitening || job.sharpen || job.threshold !== undefined) {
+          const data = render.ctx.getImageData(0, 0, render.width, render.height);
+          if (job.whitening) whitenPixels(data.data, 0.45);
+          if (job.threshold !== undefined) thresholdPixels(data.data, job.threshold);
+          if (job.sharpen) sharpenPixels(data.data, render.width, render.height, 0.7);
+          render.ctx.putImageData(data, 0, 0);
+        }
+        const blob = await canvasToBlob(render.canvas, 'jpeg', 0.9, { background: '#ffffff' });
+        // `mime` as well as `format`: without it `embedImageBytes` re-decodes the
+        // raster through a canvas, which never finishes in a tab without one.
+        const image = await embedImageBytes(doc, new Uint8Array(await blob.arrayBuffer()), { mime: 'image/jpeg', format: 'jpeg' });
+        const page = doc.addPage([size.width, size.height]);
+        page.drawImage(image, { x: 0, y: 0, width: size.width, height: size.height });
+      } finally {
+        render.cancel();
+      }
+      context.progress((i + 1) / selected.length, `Re-rendered page ${index + 1}`);
     }
-    await session.destroy();
-    return pdfResult(packed.doc, {
-      message: `${verb} ${pages.length} page(s). Text is now part of the image, so it is no longer selectable.`,
-    });
+    if (selected.length < input.pageCount) {
+      const left = input.pageCount - selected.length;
+      note(notes, `These tools rebuild the document from the pages they render, so ${countLabel(left, 'page')} outside your selection ${left === 1 ? 'is' : 'are'} not in the output.`);
+    }
+    const outcome: ToolResult = {
+      kind: 'pdf',
+      bytes: await savePDF(doc),
+      message: `${verb} ${countLabel(selected.length, 'page')} at ${job.dpi} dpi. Text is now part of the image, so it is no longer selectable or searchable.`,
+    };
+    return admit(outcome, notes);
   } finally {
     await session.destroy();
   }
 }
 
 async function textOnlyPdf(source: PDFDocument, results: { page: number; text: string }[]): Promise<PDFDocument> {
-  const { newPDF } = await import('../core/doc');
+  void source;
   const doc = await newPDF();
   for (const result of results) {
     const lines = await wrapText(doc, result.text, { size: 10, maxWidth: 480 });
@@ -1050,63 +1874,72 @@ function firstFileBytes(values: Record<string, unknown>, key: string): Uint8Arra
   return null;
 }
 
-function anchorPoint(
-  box: { x: number; y: number; width: number; height: number },
-  width: number,
-  height: number,
+/**
+ * The page-space rectangle of a mark anchored in the displayed view (E8/E9).
+ *
+ * Stamps are annotations, and an annotation `/Rect` lives in unrotated user
+ * space, so a `top-right` stamp on a `/Rotate 90` page has to be moved into the
+ * page-space corner the reader sees as top right.
+ */
+function anchorRect(
+  page: PDFPage,
   anchor: Anchor,
-  margin: number,
-): { x: number; y: number } {
-  const [ax, ay] = anchor.split('-') as [string, string];
-  const horizontal = ax === 'top' || ax === 'bottom' ? ay : ax;
-  const vertical = ax === 'top' || ax === 'bottom' ? ax : 'center';
-  const x = horizontal === 'left' ? box.x + margin
-    : horizontal === 'right' ? box.x + box.width - width - margin
-    : box.x + (box.width - width) / 2;
-  const y = vertical === 'top' ? box.y + box.height - height - margin
-    : vertical === 'bottom' ? box.y + margin
-    : box.y + (box.height - height) / 2;
-  return { x, y };
+  width: number,
+  aspect: number,
+  notes: string[],
+): PageBox {
+  const frame = frameOf(page);
+  const wanted = bounded(notes, 'Stamp width', width, { min: 20, max: 600, unit: 'pt' });
+  const boxWidth = Math.min(wanted, Math.max(24, frame.width - 24));
+  if (boxWidth !== wanted) {
+    note(notes, `A ${Math.round(wanted)} pt stamp does not fit a ${Math.round(frame.width)} pt wide page; it was drawn ${Math.round(boxWidth)} pt wide.`);
+  }
+  const height = boxWidth * aspect;
+  const run = placeRun(frame, boxWidth, height, 0, anchor, 18);
+  return toUserRect(frame, { x: run.x, y: run.y, width: boxWidth, height });
 }
 
-function anchorRect(page: PDFPage, anchor: Anchor, width: number): { x: number; y: number; width: number; height: number } {
-  const box = cropBox(page);
-  const height = width * 0.42;
-  const point = anchorPoint(box, width, height, anchor, 18);
-  return { x: point.x, y: point.y, width, height };
-}
-
+/**
+ * A displayed-space grid of tile origins, capped so a tight spacing on a big
+ * sheet cannot ask for thousands of draws per page (E7/E15).
+ */
 function tilePoints(
-  box: { x: number; y: number; width: number; height: number },
+  frame: PageFrame,
   stepX: number,
   stepY: number,
+  notes: string[],
 ): { x: number; y: number }[] {
+  const dx = Math.max(24, stepX);
+  const dy = Math.max(24, stepY);
+  const planned = Math.ceil(frame.width / dx) * Math.ceil(frame.height / dy);
+  if (planned > MAX_TILES) {
+    note(notes, `This spacing would repeat the watermark ${planned} times per page; it is limited to ${MAX_TILES} repeats.`);
+  }
   const out: { x: number; y: number }[] = [];
-  for (let y = box.y; y < box.y + box.height; y += Math.max(24, stepY)) {
-    for (let x = box.x; x < box.x + box.width; x += Math.max(24, stepX)) {
-      out.push({ x, y });
-    }
+  for (let y = 0; y < frame.height && out.length < MAX_TILES; y += dy) {
+    for (let x = 0; x < frame.width && out.length < MAX_TILES; x += dx) out.push({ x, y });
   }
   return out;
 }
 
+/** Draw one text run at a point in *displayed* coordinates (E9). */
 async function stampText(
-  doc: PDFDocument,
   page: PDFPage,
   text: string,
-  x: number,
-  y: number,
+  at: { x: number; y: number },
   options: { size: number; opacity: number; rotation: number; bold: boolean; color: string },
 ): Promise<void> {
+  const frame = frameOf(page);
+  const origin = toUserSpace(frame, at.x, at.y);
   await drawTextU(page, {
     text,
-    x,
-    y,
+    x: origin.x,
+    y: origin.y,
     size: options.size,
     color: rgbColor(options.color),
     bold: options.bold,
     opacity: options.opacity,
-    rotation: options.rotation,
+    rotation: options.rotation + frame.rotation,
   });
 }
 
@@ -1164,39 +1997,98 @@ const LABEL_STYLES: Record<string, 'D' | 'R' | 'r' | 'A' | 'a' | ''> = {
 function parseLabelRanges(
   raw: string,
   total: number,
-): { start: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] {
-  const out: { start: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] = [];
+  notes: string[],
+): { start: number; end: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] {
+  const out: { start: number; end: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] = [];
   for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
     const match = /^\s*(\d+)\s*-\s*(\d+)\s+(\w+)(?:\s+(\d+))?(?:\s+(\S+))?\s*$/.exec(line);
-    if (!match) continue;
-    const start = Number(match[1]) - 1;
-    if (start < 0 || start >= total) continue;
-    const style = LABEL_STYLES[match[3].toLowerCase()] ?? 'D';
+    if (!match) {
+      note(notes, `"${line.trim()}" was not read — use "start-end style", for example "1-3 roman 1".`);
+      continue;
+    }
+    const from = Number(match[1]);
+    const to = Number(match[2]);
+    if (to < from) {
+      note(notes, `"${line.trim()}" runs backwards: page ${from} comes after page ${to}.`);
+      continue;
+    }
+    if (from > total) {
+      note(notes, `"${line.trim()}" starts at page ${from}, but this document has ${countLabel(total, 'page')}.`);
+      continue;
+    }
+    const style = LABEL_STYLES[match[3].toLowerCase()];
+    if (style === undefined) {
+      note(notes, `"${match[3]}" is not a label style, so "${line.trim()}" was read as decimal. Use decimal, roman, Roman, alpha, Alpha or none.`);
+    }
+    const start = from - 1;
+    if (out.some((range) => range.start === start)) {
+      note(notes, `Two ranges start at page ${from}; the first one wins, so "${line.trim()}" was ignored.`);
+      continue;
+    }
     out.push({
       start,
-      style,
+      end: Math.min(to, total) - 1,
+      style: style ?? 'D',
       firstPageNumber: match[4] ? Number(match[4]) : undefined,
       prefix: match[5],
     });
   }
-  return out.sort((a, b) => a.start - b.start);
+  out.sort((a, b) => a.start - b.start);
+  // A label is start-based in PDF, so the end page a user typed is only ever
+  // honoured by the next line. Saying so is the difference between a legal
+  // document with correct front matter and one with a mystery (E15).
+  for (let i = 0; i < out.length; i++) {
+    const reached = (i + 1 < out.length ? out[i + 1].start : total) - 1;
+    if (reached !== out[i].end) {
+      note(notes, `The labels from page ${out[i].start + 1} run to page ${reached + 1}, not page ${out[i].end + 1}: PDF labels last until the next range starts.`);
+    }
+  }
+  return out;
 }
 
-function outlineToText(nodes: import('../core/bookmarks').OutlineNode[], depth = 0): string {
+function outlineToText(nodes: OutlineNode[], depth = 0): string {
   return nodes
     .map((node) => `${'  '.repeat(depth)}${node.title}${node.page !== null ? ` :: ${node.page + 1}` : ''}\n${node.children ? outlineToText(node.children, depth + 1) : ''}`)
     .join('');
 }
 
-function textToOutline(raw: string, total: number): import('../core/bookmarks').OutlineNode[] {
-  const root: import('../core/bookmarks').OutlineNode[] = [];
-  const stack: { depth: number; node: import('../core/bookmarks').OutlineNode }[] = [];
+/** Bookmark tree size, for an honest "what did I just write" message. */
+function countOutline(nodes: OutlineNode[]): { total: number; targetless: number } {
+  let total = 0;
+  let targetless = 0;
+  for (const node of nodes) {
+    total += 1;
+    if (node.page === null) targetless += 1;
+    if (node.children) {
+      const inner = countOutline(node.children);
+      total += inner.total;
+      targetless += inner.targetless;
+    }
+  }
+  return { total, targetless };
+}
+
+function textToOutline(raw: string, total: number, notes: string[]): OutlineNode[] {
+  const root: OutlineNode[] = [];
+  const stack: { depth: number; node: OutlineNode }[] = [];
+  let offDocument = 0;
+  let blank = 0;
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const depth = /^\s*/.exec(line)?.[0].replace(/\t/g, '  ').length ?? 0;
     const [title, pagePart] = line.split('::');
+    if (!title.trim()) {
+      blank += 1;
+      continue;
+    }
     const page = pagePart ? Number(pagePart.trim()) - 1 : NaN;
-    const node: import('../core/bookmarks').OutlineNode = {
+    if (pagePart && pagePart.trim() !== '' && !Number.isFinite(page)) {
+      note(notes, `"${pagePart.trim()}" is not a page number, so "${title.trim()}" was written without a link.`);
+    } else if (pagePart && Number.isFinite(page) && (page < 0 || page >= total)) {
+      offDocument += 1;
+    }
+    const node: OutlineNode = {
       title: title.trim(),
       page: Number.isFinite(page) && page >= 0 && page < total ? page : null,
       children: [],
@@ -1207,12 +2099,12 @@ function textToOutline(raw: string, total: number): import('../core/bookmarks').
     else root.push(node);
     stack.push({ depth, node });
   }
+  if (offDocument > 0) {
+    note(notes, `${countLabel(offDocument, 'entry', 'entries')} named a page outside this ${total}-page document, so it opens nothing when clicked.`);
+  }
+  if (blank > 0) {
+    note(notes, `${countLabel(blank, 'line')} had no title and was skipped.`);
+  }
   return root;
 }
 
-void mediaBox;
-void setMediaAndCrop;
-void toPoints;
-void formatPages;
-export type { LengthUnit };
-void measureText;

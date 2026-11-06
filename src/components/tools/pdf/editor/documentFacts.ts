@@ -10,7 +10,6 @@
  * module is what stops three panels from writing three different versions of
  * "both files were measured".
  */
-import { normaliseRotation } from '@/lib/pdf/core/pages';
 
 export interface DocPageCount {
   name: string;
@@ -52,8 +51,7 @@ export interface CompareReport {
  * The pixel diff walks both documents together, so the answer is bounded by the
  * shorter file; the surplus pages of the longer one are reported rather than
  * silently skipped, which is the difference between a review tool and a shrug.
- */
-export function compareReport(input: {
+ */export function compareReport(input: {
   a: DocPageCount | null;
   b: DocPageCount | null;
   filesLoaded: number;
@@ -100,7 +98,7 @@ export function compareReport(input: {
   }
 
   if (a.pages === 1 && b.pages === 1) {
-    notes.push('Both documents have a single page, so the comparison is that one page (E6).');
+    notes.push('Both documents have a single page, so the comparison is that one page.');
   } else if (a.pages !== b.pages) {
     const longer = a.pages > b.pages ? a : b;
     const surplus = Math.abs(a.pages - b.pages);
@@ -128,25 +126,8 @@ export function compareReport(input: {
   return {
     valid: comparedPages > 0,
     tone,
-    headline:
-      comparedPages > 0
-        ? `${a.name} against ${b.name}`
-        : 'Nothing to compare yet',
+    headline: comparedPages > 0 ? `${a.name} against ${b.name}` : 'Nothing to compare yet',
     notes,
     comparedPages,
   };
-}
-
-/** Pages of one document, clamped and rotation-normalised for display. */
-export function pageGeometrySummary(pages: readonly { rotation: number; widthPt: number; heightPt: number }[]): string {
-  const sizes = new Set<string>();
-  const rotations = new Set<number>();
-  for (const page of pages) {
-    sizes.add(`${Math.round(page.widthPt)}×${Math.round(page.heightPt)}`);
-    const rotation = normaliseRotation(page.rotation);
-    if (rotation !== 0) rotations.add(rotation);
-  }
-  const parts = [`${sizes.size} page size${sizes.size === 1 ? '' : 's'}`];
-  if (rotations.size > 0) parts.push(`rotations ${[...rotations].sort((x, y) => x - y).join(', ')}°`);
-  return parts.join(' · ');
 }

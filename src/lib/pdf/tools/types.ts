@@ -185,6 +185,12 @@ export interface PdfToolDefinition {
   actionLabel?: string;
   /** One line under the tool name: what the user gets when they press it. */
   promise?: string;
+  /**
+   * Set when removing the source's encryption IS the job (`unlock`,
+   * `remove-restrictions`). Without it the runner re-applies a protected
+   * source's password to the output, which is right for rotate and wrong here.
+   */
+  stripsProtection?: boolean;
   run?: (context: ToolRunContext) => Promise<ToolResult>;
   /** Provided instead of `run` for tools with bespoke execution (editors). */
   mainComponent?: ComponentType<{ context: ToolRunContext }>;

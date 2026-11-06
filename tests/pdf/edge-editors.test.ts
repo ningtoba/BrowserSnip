@@ -14,12 +14,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import type { ExtractedTextItem } from '@/lib/pdf/core/render';
+import { getPdfTool } from '@/lib/pdf/tools/registry';
 import AnnotationEditor from '@/components/tools/pdf/editor/AnnotationEditor';
 import CropTool from '@/components/tools/pdf/edit/CropTool';
 import { ScanTool } from '@/components/tools/pdf/scan/ScanTool';
 import { RedactTool } from '@/components/tools/pdf/security/RedactTool';
-import { getPdfTool } from '@/lib/pdf/tools/registry';
 import {
   QUICK_MODES,
   adoptedFile,
@@ -64,7 +63,7 @@ import {
   clampMargin,
   scanPlanReport,
 } from '@/components/tools/pdf/scan/ScanTool';
-import { blockCensus, pageAdvice, scriptsIn } from '@/components/tools/pdf/text-editor/pageAdvice';
+import { adviceActionLabel, blockCensus, pageAdvice, scriptsIn } from '@/components/tools/pdf/text-editor/pageAdvice';
 import { TEXT_EDITOR_SHORTCUTS, TEXT_MODE_KEYS, keyForMode, textModeForKey } from '@/components/tools/pdf/text-editor/keys';
 import {
   defaultPlan,
@@ -96,21 +95,18 @@ const NO_CROP: CropFractions = { top: 0, right: 0, bottom: 0, left: 0 };
 const TOP_TEN: CropFractions = { top: 0.1, right: 0, bottom: 0, left: 0 };
 
 function mark(overrides: Partial<EditorAnnotation> = {}): EditorAnnotation {
-  const tool = (overrides.tool ?? 'highlight') as EditorToolId;
   return {
     id: overrides.id ?? `m-${Math.random().toString(36).slice(2, 8)}`,
-    tool,
-    kind: overrides.kind ?? 'Highlight',
+    tool: (overrides.tool ?? 'highlight') as EditorToolId,
+    kind: overrides.kind ?? ('Highlight' as EditorAnnotation['kind']),
     page: overrides.page ?? 0,
     rect: overrides.rect ?? { x: 10, y: 10, width: 100, height: 12 },
-    rotation: overrides.rotation ?? 0,
-    style: overrides.style ?? { color: '#FFEE58', opacity: 1, strokeWidth: 1, fontSize: 12, filled: false, fillColor: '#FFFFFF' },
+    color: '#FFEE58',
+    borderWidth: 1,
+    opacity: 1,
+    createdAt: 0,
     ...overrides,
-  } as EditorAnnotation;
-}
-
-function textItem(str: string, dir: 'ltr' | 'rtl' = 'ltr'): ExtractedTextItem {
-  return { str, dir, x: 10, y: 20, w: str.length * 6, h: 10 } as unknown as ExtractedTextItem;
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -392,7 +388,7 @@ describe('empty marks', () => {
       mark({ id: 'r1', tool: 'redact', kind: 'Redact', rect: { x: 0, y: 0, width: 0, height: 0 } }),
       mark({ id: 't1', tool: 'note', kind: 'Text', contents: '   ' }),
       mark({ id: 'f1', tool: 'freetext', kind: 'FreeText', text: '' }),
-      mark({ id: 'i1', tool: 'ink', kind: 'Ink', inkPath: [[{ x: 1, y: 1 }]] }),
+      mark({ id: 'i1', tool: 'ink', kind: 'Ink', inkPath: [[[1, 1]]] }),
       mark({ id: 'g1', tool: 'square', kind: 'Square', rect: { x: 0, y: 0, width: Number.NaN, height: 4 } }),
       mark({ id: 'ok', tool: 'highlight', kind: 'Highlight' }),
     ]);
@@ -589,7 +585,7 @@ describe('crop model', () => {
     expect(resolveTargets('0', 6).refused[0].reason).toMatch(/numbered from 1/);
     expect(resolveTargets('9', 6).refused[0].reason).toMatch(/has 6 pages/);
     expect(resolveTargets('one', 6).refused[0].reason).toMatch(/not a page number/);
-    expect(resolveTargets('   ', 6).valid ?? resolveTargets('', 6).pages).toEqual([]);
+    expect(resolveTargets('', 6).pages).toEqual([]);
     expect(resolveTargets('1,3', 1).pages).toEqual([1]);
   });
 
@@ -655,6 +651,13 @@ describe('page advice', () => {
     );
     expect(pageAdvice({ ...base, opening: true, blocks: [] })).toBeNull();
     expect(pageAdvice({ ...base, hasDocument: false, blocks: [] })).toBeNull();
+  });
+
+  it('names the action it offers', () => {
+    expect(adviceActionLabel('run-ocr')).toMatch(/OCR/i);
+    expect(adviceActionLabel('add-text')).toMatch(/text box/i);
+    expect(adviceActionLabel('open-engine')).toMatch(/engine/i);
+    expect(adviceActionLabel('next-page')).toMatch(/next page/i);
   });
 
   it('counts scripts and the invisible layer', () => {
@@ -903,6 +906,9 @@ describe('crop and redact panels with nothing selected', () => {
     const button = document.getElementById('tool-process-btn') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toMatch(/Apply 0 Redactions/);
-    expect(textItem('x').str).toBe('x');
+    // The panel explains itself before the click, not after a broken file.
+    expect(button.getAttribute('title')).toMatch(/Drag a rectangle on the preview first/);
+    expect(screen.getByText(/Permanent Redaction/i)).toBeTruthy();
+    expect(screen.getByText(/cannot be recovered/i)).toBeTruthy();
   });
 });

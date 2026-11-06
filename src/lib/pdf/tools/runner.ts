@@ -6,6 +6,8 @@
  * which had to be edited for every tool and wrapped every result as
  * `application/pdf` — so a `.docx` or `.xlsx` needed a special case list.
  */
+import { PDFDocument } from '@maxwbh/pdf-lib';
+import { saveEncrypted } from '../core/doc';
 import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolValues } from './types';
 import { getPdfTool } from './registry';
 import { engineReady, enginePurpose } from '../core/engine-ops';
@@ -137,6 +139,53 @@ function takesPdfInput(tool: PdfToolDefinition): boolean {
   return !tool.inputKind || tool.inputKind === 'pdf';
 }
 
+const PROTECTION_VERSION: Record<string, 1 | 2 | 4 | 5> = {
+  'RC4-40': 1,
+  RC4: 1,
+  'RC4-128': 2,
+  'AES-128': 4,
+  'AES-256': 5,
+};
+
+/**
+ * Keep a protected document protected.
+ *
+ * Organize-style tools rebuild the page tree and save, and `pdf-lib` does not
+ * carry `/Encrypt` across that — so rotating a password-protected contract used
+ * to hand back an open file: the edit the user asked for, plus a loss of
+ * protection nobody asked for. Re-applying the password they supplied is the
+ * conservative default; tools whose job is removal say so with
+ * `stripsProtection`.
+ */
+async function preserveProtection(
+  result: ToolResult,
+  source: PdfInspection | undefined,
+  password: string | undefined,
+): Promise<{ result: ToolResult; note: string | null }> {
+  if (result.kind !== 'pdf' || !source?.encrypted) return { result, note: null };
+  // If the output carries protection already, the tool set it deliberately
+  // (`protect`, `change-permissions action: set`) and knows the owner password
+  // we never saw. Layering the reader's password over that would overwrite it.
+  const produced = await inspectPdf(result.bytes, source.name, { cheap: true });
+  if (produced.encrypted) return { result, note: null };
+  const algorithm = source.algorithm ?? 'password';
+  if (!password) {
+    return { result, note: `The source was protected (${algorithm}); the result opens without a password.` };
+  }
+  try {
+    const doc = await PDFDocument.load(result.bytes, { updateMetadata: false });
+    const bytes = await saveEncrypted(doc, {
+      userPassword: password,
+      ownerPassword: password,
+      version: PROTECTION_VERSION[algorithm.toUpperCase()] ?? 4,
+      ...(source.permissions ? { permissions: source.permissions } : {}),
+    });
+    return { result: { ...result, bytes }, note: `Re-applied the source’s ${algorithm} protection with the password you supplied.` };
+  } catch {
+    return { result, note: 'Could not re-apply the source protection; the result opens without a password.' };
+  }
+}
+
 export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const tool = getPdfTool(request.toolId);
   if (!tool) throw new Error(`Unknown tool "${request.toolId}".`);
@@ -229,16 +278,33 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
       signal: controller.signal,
       password: effectivePassword,
     });
-    results.push(...collect(result, inputs[0].name, tool.outputSuffix));
+    // A protected source stays protected unless removing it is the tool's job.
+    // Read the source's protection only when it could matter: the pre-flight
+    // keeps its inspection cheap (header and trailer) and throws it away.
+    let source: PdfInspection | undefined;
+    if (!tool.stripsProtection && takesPdfInput(tool) && inputs.length > 0) {
+      try {
+        const bytes = new Uint8Array(await inputs[0].blob().arrayBuffer());
+        source = await inspectPdf(bytes, inputs[0].name, { password: effectivePassword });
+      } catch {
+        source = undefined;
+      }
+    }
+    const guarded = source
+      ? await preserveProtection(result, source, effectivePassword)
+      : { result, note: null as string | null };
+    const produced = guarded.result;
+    results.push(...collect(produced, inputs[0].name, tool.outputSuffix));
     return {
       outputs: results,
-      report: result.kind === 'report' ? { sections: result.sections, message: result.message } : undefined,
-      message: result.message,
+      report: produced.kind === 'report' ? { sections: produced.sections, message: produced.message } : undefined,
+      message: produced.message,
       // A corrected value is an admission too: the user asked for 0 dpi and got
       // 96, and the result card has to say so (E15).
       warnings: [...new Set([
         ...clamped.changes.map((change) => change.message),
-        ...(result.warnings ?? []),
+        ...(produced.warnings ?? []),
+        ...(guarded.note ? [guarded.note] : []),
         ...logged.filter((line) => CAVEAT.test(line)),
       ])],
     };

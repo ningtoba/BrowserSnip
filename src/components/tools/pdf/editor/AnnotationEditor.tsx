@@ -59,6 +59,7 @@ import {
   undoHistory,
 } from './history';
 import {
+  TOOL_SHORTCUT_KEYS,
   historyCommandForKey,
   isTypingTarget,
   keyForTool,
@@ -1258,7 +1259,8 @@ export function AnnotationEditor(): JSX.Element {
                   })}
                 </div>
                 <p className="text-[9px] leading-relaxed text-ink-muted/80">
-                  Eighteen tools in six named groups. Keys V H T P arm the arrow, highlighter, text box and pen.
+                  {TOOLS.length} tools in {TOOL_GROUPS.length} named groups. {Object.keys(TOOL_SHORTCUT_KEYS).join(' ')}
+                  {' '}arm {Object.values(TOOL_SHORTCUT_KEYS).map((id) => TOOL_BY_ID[id].label.toLowerCase()).join(', ')}.
                 </p>
               </InspectorSection>
             </motion.div>
