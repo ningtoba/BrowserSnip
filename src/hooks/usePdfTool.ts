@@ -16,7 +16,7 @@ import { useFileStore } from '@/stores/file-store';
 import { useProcessStore, type ToolPhase } from '@/stores/process-store';
 import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { enginePurpose, engineReady } from '@/lib/pdf/core/engine-ops';
-import { isPasswordRequired, isToolInputError } from '@/lib/pdf/core/guard';
+import { inspectPdf, isPasswordRequired, isToolInputError } from '@/lib/pdf/core/guard';
 import {
   defaultValues,
   type PdfToolDefinition,
@@ -56,6 +56,8 @@ export interface UsePdfTool {
   /** Fields that still block the primary action, with the reason. */
   issues: Record<string, string>;
   /** Everything standing between the user and the primary action. */
+  /** Page count per loaded file, once the pre-flight has read it. */
+  pagesByFile: Record<string, number | null>;
   blockers: string[];
   /**
    * Things worth saying that must not gate the button. A repeat of the same file
@@ -90,7 +92,38 @@ export function usePdfTool(
   const files = useFileStore((s) => s.files);
   const phase = useProcessStore((s) => s.phase);
   const store = useProcessStore;
-  const pageCount = options.pageCount ?? null;
+  // Nothing writes `file-store.metadata` for a PDF, so a page count has to be
+  // read from the file. Without it every page-range field validates against
+  // `null`: the rail never says "this document has 3 pages" (E6) and the panel
+  // sits on "Reading file" forever while the preview next to it shows page 10.
+  const [pagesByFile, setPagesByFile] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    let alive = true;
+    for (const file of files) {
+      const key = `${file.name}:${file.size}`;
+      if (pagesByFile[key] !== undefined) continue;
+      void (async () => {
+        let pages: number | null = null;
+        try {
+          const inspection = await inspectPdf(new Uint8Array(await file.arrayBuffer()), file.name);
+          const known = inspection.pages ?? inspection.declaredPages ?? 0;
+          // Zero is not a page count. A header-only or damaged file reports 0,
+          // and treating that as "known" would flip the rail to ready and let a
+          // range field validate against nothing (E3, E6).
+          pages = known > 0 ? known : null;
+        } catch {
+          pages = null;
+        }
+        if (alive) setPagesByFile((prev) => (key in prev ? prev : { ...prev, [key]: pages }));
+      })();
+    }
+    return () => {
+      alive = false;
+    };
+  }, [files, pagesByFile]);
+
+  const primary = files[0];
+  const pageCount = options.pageCount ?? (primary ? pagesByFile[`${primary.name}:${primary.size}`] ?? null : null);
 
   const [values, setValues] = useState<ToolValues>(() => defaultValues(tool?.fields));
   const [password, setPassword] = useState('');
@@ -188,7 +221,9 @@ export function usePdfTool(
   useEffect(() => {
     const state = store.getState();
     if (isRunning || state.phase === 'running') return;
-    const resting: ToolPhase = files.length === 0 ? 'idle' : pageCount == null ? 'inspecting' : 'ready';
+    let resting: ToolPhase = 'ready';
+    if (files.length === 0) resting = 'idle';
+    else if (pageCount == null) resting = 'inspecting';
     if (state.phase === 'done') {
       if (ranSignature.current !== null && ranSignature.current !== signature) state.setPhase(resting);
       return;
@@ -318,6 +353,7 @@ export function usePdfTool(
     locked,
     phase,
     pageCount,
+    pagesByFile,
     notices,
     issues,
     blockers,

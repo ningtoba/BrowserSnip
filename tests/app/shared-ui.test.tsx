@@ -785,6 +785,36 @@ describe('usePdfTool', () => {
     await waitFor(() => expect(result.current.phase).toBe('ready'));
   });
 
+  it('reads the page count from the file itself, not from metadata', async () => {
+    // Nothing in the app writes file-store metadata for a PDF, so a page count
+    // that arrives only as an option is a page count that never arrives: ranges
+    // validated against null (E6) and the rail sat on "Reading file" forever
+    // while the preview beside it was already on page 10.
+    const { PDFDocument } = await import('@maxwbh/pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.addPage([300, 200]);
+    doc.addPage([300, 200]);
+    const bytes = await doc.save();
+    const real = new File([bytes as unknown as BlobPart], 'real.pdf', { type: 'application/pdf' });
+    loadFile(real);
+
+    const { result } = renderHook(() => usePdfTool('compress-thing', {}));
+    await waitFor(() => expect(result.current.phase).toBe('ready'));
+    expect(result.current.pageCount).toBe(2);
+  });
+
+  it('treats a header-only or damaged file as unknown, not as zero pages', async () => {
+    // pdfFile() is `%PDF-1.4` plus a trailer with no body: reporting 0 pages as
+    // if it were a fact would flip the rail to ready and let a range field
+    // validate against nothing.
+    loadFile(pdfFile());
+    const { result } = renderHook(() => usePdfTool('compress-thing', {}));
+    await waitFor(() => expect(result.current.tool).toBeTruthy());
+    await new Promise((r) => setTimeout(r, 60));
+    expect(result.current.pageCount).toBeNull();
+    expect(result.current.phase).toBe('inspecting');
+  });
+
   it('blocks until a required field has a value, then lets go', async () => {
     loadFile(pdfFile());
     const { result } = renderHook(() => usePdfTool('compress-thing', { pageCount: 3 }));
