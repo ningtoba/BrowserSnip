@@ -72,6 +72,98 @@ export interface QuadRect {
   height: number;
 }
 
+/* ------------------------------------------------------------------ *
+ * Rotation maths — the one place PDF-space turns are defined          *
+ * ------------------------------------------------------------------ *
+ *
+ * The editor's overlay needs the same numbers to draw a turned mark, so these
+ * live in the layer that writes the dictionary and are re-exported from
+ * `components/tools/pdf/editor/geometry.ts`: one rule for `/Rect`, one rule for
+ * the pixels on screen.
+ *
+ * Angles are **clockwise as the page is read** — the direction PDF's `/Rotate`
+ * entry means. User space has +y up, so a clockwise turn is the negative of the
+ * textbook counter-clockwise rotation.
+ */
+
+/** Degrees folded into `[0, 360)`. A non-number is straight. */
+export function normaliseAngle(degrees: number): number {
+  if (!Number.isFinite(degrees)) return 0;
+  return ((degrees % 360) + 360) % 360;
+}
+
+/** The pivot a mark turns about. */
+export function rectCentre(rect: QuadRect): { x: number; y: number } {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+/** Turn a point clockwise about `centre`. */
+export function rotatePointAbout(
+  point: { x: number; y: number },
+  centre: { x: number; y: number },
+  degrees: number,
+): { x: number; y: number } {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return { x: point.x, y: point.y };
+  const rad = (angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = point.x - centre.x;
+  const dy = point.y - centre.y;
+  return { x: centre.x + dx * cos + dy * sin, y: centre.y - dx * sin + dy * cos };
+}
+
+function rectCorners(rect: QuadRect): { x: number; y: number }[] {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+}
+
+/**
+ * The axis-aligned box that contains `rect` turned about its own centre.
+ *
+ * A rotated annotation always writes this as `/Rect`, never the pre-rotation
+ * box: a viewer that ignores our appearance stream, and anything that clips or
+ * prints by `/Rect`, then cannot crop the mark.
+ */
+export function rotatedRectBounds(rect: QuadRect, degrees: number): QuadRect {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return { ...rect };
+  const centre = rectCentre(rect);
+  const turned = rectCorners(rect).map((corner) => rotatePointAbout(corner, centre, angle));
+  const xs = turned.map((corner) => corner.x);
+  const ys = turned.map((corner) => corner.y);
+  return {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+/**
+ * A `/QuadPoints` list (8 numbers per quad, UL UR LL LR) turned as one unit
+ * about the centre of `about`.
+ *
+ * A quadrilateral is four free points, so a rotated line of highlighted text is
+ * still exactly one quad — the mark keeps one quad per line however it is
+ * turned, and the set of lines turns together rather than line by line.
+ */
+export function rotateQuadPoints(quads: number[], about: QuadRect, degrees: number): number[] {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return quads.slice();
+  const centre = rectCentre(about);
+  const out: number[] = [];
+  for (let i = 0; i + 1 < quads.length; i += 2) {
+    const turned = rotatePointAbout({ x: quads[i], y: quads[i + 1] }, centre, angle);
+    out.push(turned.x, turned.y);
+  }
+  return out;
+}
+
 export interface AnnotationSpec {
   kind: AnnotationKind;
   /** 0-based page index. */
@@ -103,6 +195,15 @@ export interface AnnotationSpec {
   lineArrow?: 'none' | 'start' | 'end' | 'both';
   /** 8 numbers per quad line, in PDF order (UL, UR, LL, LR). */
   quadPoints?: number[];
+  /**
+   * Degrees clockwise relative to the page, turned about the centre of `rect`.
+   *
+   * `rect` and the geometry fields stay **as drawn**: the writer turns them.
+   * `/Rect` becomes the axis-aligned bounding box of the rotated shape, the
+   * appearance stream bakes the turn with a `cm` about the shape's centre, and
+   * `/Rotate` carries the angle only where PDF allows it (see `declaredRotation`).
+   */
+  rotation?: number;
   /** Rasterised stamp appearance (JPEG, or 8-bit non-interlaced grey/RGB/palette PNG). */
   stampImage?: Uint8Array;
   /** Built-in stamp name, written to `/S` and drawn when no image is supplied. */
@@ -118,6 +219,12 @@ export interface ExistingAnnotation {
   kind: AnnotationKind;
   page: number;
   rect: QuadRect;
+  /**
+   * The annotation's declared `/Rotate`, 0 when the entry is absent. Only a
+   * multiple of 90 can be written there, so a mark turned to any other angle
+   * round-trips as 0 while its `/Rect` and appearance keep the turn.
+   */
+  rotation: number;
   contents?: string;
   color?: string;
   readonly: boolean;
@@ -193,28 +300,42 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
 
   const context = doc.context;
   const page = resolvePage(doc, spec.page);
-  const rect = normaliseRect(spec.rect, spec.kind);
+  // The shape as it was drawn, and the box that same shape occupies once its
+  // own rotation is applied. Everything written about position uses `bounds`;
+  // everything drawn inside the appearance starts from `shape` and is turned.
+  const shape = normaliseRect(spec.rect, spec.kind);
+  const angle = normaliseAngle(spec.rotation ?? 0);
+  const bounds = rotatedRectBounds(shape, angle);
+  // Exactly one reader applies the turn. Where PDF has an entry that can carry
+  // it, the angle is *declared* and the geometry and stream stay in the shape's
+  // own frame (centred inside the wider /Rect); everywhere else the writer has
+  // to bake it, or the mark would come out straight. Both paths agree on /Rect,
+  // which is always the box the turned shape occupies.
+  const declared = declaredRotation(spec.kind, angle);
+  const baked = declared === 0 ? angle : 0;
   const color = colorOf(spec.color, spec.kind);
   const fill = spec.fillColor ? hexToRgb01(spec.fillColor, 'fillColor') : null;
   const stroke = spec.borderColor ? hexToRgb01(spec.borderColor, 'borderColor') : color;
-  const strokeWidth = spec.borderWidth ?? defaultStrokeWidth(spec.kind, rect);
+  const strokeWidth = spec.borderWidth ?? defaultStrokeWidth(spec.kind, shape);
 
-  const appearanceRef = appearance(context, doc, spec, rect, color, fill, stroke, strokeWidth);
+  const appearanceRef = appearance(context, doc, spec, shape, bounds, baked, color, fill, stroke, strokeWidth);
 
   const entries: ObjDict = {
     // Names are written without the leading slash: `PDFName.of` only unescapes
     // `#hh`, so `'/Annot'` would encode as `/#2FAnnot`.
     Type: 'Annot',
     Subtype: dictSubtype(spec.kind),
-    // /Rect is [llx lly urx ury] in default user space; `normaliseRect` already
-    // flipped the app's top-left rect and forced positive extents.
-    Rect: [round(rect.x), round(rect.y), round(rect.x + rect.width), round(rect.y + rect.height)],
+    // /Rect is [llx lly urx ury] in default user space. For a rotated mark it is
+    // the bounding box of the *turned* shape, never the pre-rotation rect, so a
+    // viewer that ignores our appearance stream — and anything that clips or
+    // prints by /Rect — cannot crop the mark.
+    Rect: [round(bounds.x), round(bounds.y), round(bounds.x + bounds.width), round(bounds.y + bounds.height)],
     // PDF 2.0 annotation/page association: the page this annotation belongs
     // to. The geometry stays in /Rect (default user space, lower-left origin),
     // and PDF 1.7 viewers keep using the page's /Annots array, so this is a
     // redundant-but-allowed pointer that our own listAnnotations() prefers
     // when it resolves.
-    P: context.getObjectRef(page.node) ?? context.obj([round(rect.x), round(rect.y)]),
+    P: context.getObjectRef(page.node) ?? context.obj([round(bounds.x), round(bounds.y)]),
     C: stroke,
     CA: clamp01(spec.opacity ?? 1),
     BM: 'Normal',
@@ -231,7 +352,11 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
   if (spec.contents) entries.Contents = textString(spec.contents);
 
   if (MARKUP_KINDS.includes(spec.kind)) {
-    entries.QuadPoints = quadPoints(spec, rect);
+    // /Rect has to contain the quads, so a turned highlight writes them already
+    // rotated — unless the angle is declared in /Rotate, where the reader is the
+    // one that turns them. Either way it is one quad per line, never one box
+    // across the lines.
+    entries.QuadPoints = rotateQuadPoints(quadPoints(spec, shape), shape, baked);
   }
   if (INTERIOR_KINDS.includes(spec.kind)) {
     const interior = fill ?? (spec.kind === 'Ink' ? color : null);
@@ -239,6 +364,12 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
   }
   if (spec.kind === 'Line' || spec.kind === 'Arrow') {
     entries.LE = lineArrowHeads(spec);
+    // /L is the line's geometry, so it follows the same rule as the quads above:
+    // turned by the writer when the angle is baked, left straight for the reader
+    // when the angle is declared in /Rotate. A line is one of the subtypes PDF
+    // allows /Rotate on, so writing the endpoints also writes the mark's shape
+    // into the dictionary rather than only into the appearance stream.
+    entries.L = rotatedLineEnds(spec, shape, baked);
   }
   if (spec.kind === 'FreeText' || spec.kind === 'Widget') {
     const style = freeTextStyle(doc, spec);
@@ -249,6 +380,7 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
     entries.S = sanitizeName(spec.stampName);
   }
   if (spec.redact) entries.Redact = true;
+  if (declared) entries.Rotate = declared;
 
   const action = linkAction(doc, spec);
   if (action) {
@@ -306,6 +438,7 @@ export function listAnnotations(doc: PDFDocument): ExistingAnnotation[] {
         kind: readKind(readName(dict, PDFName.of('Subtype')), readNames(dict, PDFName.of('LE'))),
         page: pointedPage ?? index,
         rect,
+        rotation: normaliseAngle(readInt(dict, PDFName.of('Rotate'))),
         ...(contents !== undefined ? { contents } : {}),
         ...(color !== undefined ? { color } : {}),
         readonly: (flags & FLAG_BITS.ReadOnly) !== 0,
@@ -392,6 +525,49 @@ function normaliseRect(rect: QuadRect, kind: AnnotationKind): QuadRect {
     width: Math.abs(width),
     height: Math.abs(height),
   };
+}
+
+/**
+ * Whether PDF lets this subtype declare its own rotation, and what it may say.
+ *
+ * PDF 32000-1 §12.5.6.5 gives `/Rotate` to text markup annotations **except**
+ * Highlight, and to line annotations, and only ever in steps of 90°. Anywhere
+ * else, or at any other angle, the turn is not the reader's to apply: it lives
+ * in `/Rect`, in the rotated quads, and in the appearance stream, and claiming it
+ * here would tell a conforming reader to turn the mark a second time.
+ */
+function declaredRotation(kind: AnnotationKind, degrees: number): number {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0 || angle % 90 !== 0) return 0;
+  if (kind === 'Line' || kind === 'Arrow') return angle;
+  return MARKUP_KINDS.includes(kind) && kind !== 'Highlight' ? angle : 0;
+}
+
+/**
+ * The `cm` that turns a shape drawn in its own box into the appearance space of
+ * the rotated `/Rect`.
+ *
+ * Stream coordinates normally start at the rect's lower-left, and the `/BBox`
+ * is the size of the rotated bounds, so the matrix has to do both jobs: rotate
+ * about the centre of the shape's own box, then slide the turned box until it
+ * sits centred inside the axis-aligned bounds. With `degrees` at 0 it degenerates
+ * to that translation alone, which is what a `/Rotate`-declared annotation needs
+ * — the reader supplies the turn, the stream supplies the centring.
+ */
+function rotationMatrix(shape: QuadRect, bounds: QuadRect, degrees: number): number[] {
+  const rad = (normaliseAngle(degrees) * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const cx = shape.width / 2;
+  const cy = shape.height / 2;
+  return [
+    round(cos),
+    round(-sin),
+    round(sin),
+    round(cos),
+    round(cx - (cos * cx + sin * cy) + (shape.x - bounds.x)),
+    round(cy - (-sin * cx + cos * cy) + (shape.y - bounds.y)),
+  ];
 }
 
 /** PDF has no `Arrow` subtype — an arrow is a `/Line` with an arrow head in `/LE`. */
@@ -486,6 +662,16 @@ function lineEndsOf(
     raw && raw.every(Number.isFinite) ? [raw[0], raw[1], raw[2], raw[3]] : [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height];
   if (!local) return ends;
   return [ends[0] - rect.x, ends[1] - rect.y, ends[2] - rect.x, ends[3] - rect.y];
+}
+
+/** The `/L` array: the endpoints, turned by whatever the writer is baking. */
+function rotatedLineEnds(spec: AnnotationSpec, shape: QuadRect, degrees: number): number[] {
+  const [x1, y1, x2, y2] = lineEndsOf(spec, shape, false);
+  if (normaliseAngle(degrees) === 0) return [x1, y1, x2, y2].map(round);
+  const centre = rectCentre(shape);
+  const from = rotatePointAbout({ x: x1, y: y1 }, centre, degrees);
+  const to = rotatePointAbout({ x: x2, y: y2 }, centre, degrees);
+  return [from.x, from.y, to.x, to.y].map(round);
 }
 
 function lineArrowHeads(
@@ -720,7 +906,12 @@ const GS_KEY = 'GS1';
  * `/Font`, `/XObject` and `/ExtGState` are only declared when the operators
  * actually reference them.
  */
-function registerAppearance(context: PDFContext, ap: Appearance, rect: QuadRect): PDFRef {
+function registerAppearance(
+  context: PDFContext,
+  ap: Appearance,
+  rect: QuadRect,
+  matrix: number[] = [1, 0, 0, 1, 0, 0],
+): PDFRef {
   const resources: ObjDict = {};
   const fontEntries: ObjDict = {};
   const imageEntries: ObjDict = {};
@@ -732,7 +923,12 @@ function registerAppearance(context: PDFContext, ap: Appearance, rect: QuadRect)
   if (Object.keys(imageEntries).length > 0) resources.XObject = imageEntries;
   if (Object.keys(stateEntries).length > 0) resources.ExtGState = stateEntries;
 
-  const stream = context.flateStream(`${ap.ops}\n`, {
+  // A turn is baked in rather than left to `/Matrix` so that a viewer painting
+  // the stream sees exactly the mark the overlay drew, whatever it makes of the
+  // dictionary around it.
+  const turned = matrix.join(' ') !== '1 0 0 1 0 0';
+  const ops = turned ? `q\n${matrix.join(' ')} cm\n${ap.ops}\nQ` : ap.ops;
+  const stream = context.flateStream(`${ops}\n`, {
     Type: 'XObject',
     Subtype: 'Form',
     BBox: [0, 0, round(rect.width), round(rect.height)],
@@ -755,12 +951,15 @@ function appearance(
   context: PDFContext,
   doc: PDFDocument,
   spec: AnnotationSpec,
-  rect: QuadRect,
+  shape: QuadRect,
+  bounds: QuadRect,
+  degrees: number,
   color: [number, number, number],
   fill: [number, number, number] | null,
   stroke: [number, number, number],
   strokeWidth: number,
 ): PDFRef {
+  const rect = shape;
   const w = round(rect.width);
   const h = round(rect.height);
   const ap: Appearance = { ops: 'q Q' };
@@ -829,7 +1028,7 @@ function appearance(
       break;
   }
 
-  return registerAppearance(context, ap, rect);
+  return registerAppearance(context, ap, bounds, rotationMatrix(shape, bounds, degrees));
 }
 
 function markupOps(
@@ -1540,6 +1739,78 @@ function describePng(bytes: Uint8Array): RasterInfo {
     dataStart: idatStart,
     dataEnd: idatEnd,
   };
+}
+
+/**
+ * Replace a page's content with one picture of it: how a turned redaction is
+ * burned rather than pretended about.
+ *
+ * The vector text engine deletes glyphs inside an **axis-aligned** box. A
+ * redaction turned to an angle that is not a right one covers a parallelogram,
+ * so cutting by its bounding box would delete whole words the user never marked
+ * — a redaction that takes the wrong text is worse than one that has to wait.
+ * Rasterising is the honest answer: the page becomes ink, and nothing under the
+ * turn survives as extractable content.
+ *
+ * `image` is rendered elsewhere (a canvas cannot exist in every caller), and is
+ * drawn across the page's own box, honouring the page's `/Rotate` the way the
+ * renderer that produced it did. Annotations live in `/Annots`, not in the
+ * content stream, so marks written after this call — including the axis-aligned
+ * redactions of the same page — survive the burn.
+ */
+export function rasterisePageToImage(
+  doc: PDFDocument,
+  page: number,
+  image: Uint8Array,
+  options: { rotation?: number } = {},
+): { width: number; height: number } {
+  const target = resolvePage(doc, page);
+  const context = doc.context;
+  const raster = embedRasterImage(doc, image);
+  // Read the page's own `/Rotate` rather than the API's typed accessor, which
+  // also admits radians; a burned page must be put back the way it was turned.
+  const turned = target.node.Rotate();
+  const rotation = normaliseAngle(options.rotation ?? (turned ? turned.asNumber() : 0));
+  // The picture holds the page as it is *displayed*, so the box it is drawn
+  // into is the turned one: `/MediaBox` stays as it was and the CTM does the
+  // rotating, which is also what a viewer does with the content this replaces.
+  const { width, height } = target.getSize();
+  const swap = rotation === 90 || rotation === 270;
+  const boxWidth = swap ? height : width;
+  const boxHeight = swap ? width : height;
+  const key = target.node.newXObject('Burn', raster.ref);
+  const stream = context.flateStream(
+    [
+      'q',
+      rotation === 0 ? null : `${rotationMatrixForImage(rotation, boxWidth, boxHeight).join(' ')} cm`,
+      `${round(boxWidth)} 0 0 ${round(boxHeight)} 0 0 cm`,
+      `/${key.asString().slice(1)} Do`,
+      'Q',
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n') + '\n',
+    {},
+  );
+  stream.dict.set(PDFName.of('Length'), PDFNumber.of(stream.contents.length));
+  target.node.set(PDFName.of('Contents'), context.register(stream));
+  return { width, height };
+}
+
+/**
+ * The matrix that turns a displayed page picture back into user space.
+ *
+ * A renderer hands back the page as the reader sees it, so at `/Rotate 90` the
+ * image's own axes are the page's turned ones; this maps it back so the burned
+ * page lines up with the box every viewer still measures in user space.
+ */
+function rotationMatrixForImage(rotation: number, width: number, height: number): number[] {
+  // Rotate clockwise about the page centre, then slide it back into the box.
+  const rad = (normaliseAngle(rotation) * Math.PI) / 180;
+  const cos = round(Math.cos(rad));
+  const sin = round(Math.sin(rad));
+  const cx = width / 2;
+  const cy = height / 2;
+  return [cos, -sin, sin, cos, round(cx - (cos * cx + sin * cy)), round(cy - (-sin * cx + cos * cy))];
 }
 
 /* ------------------------------------------------------------------ *

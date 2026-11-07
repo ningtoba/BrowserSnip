@@ -29,6 +29,14 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   centeredRect,
+  markScreenRotation,
+  normaliseAngle,
+  rectCentre,
+  rotatePointAbout,
+  rotatedBounds,
+  rotationForDrag,
+  screenAngle,
+  snapAngle,
   clampZoom,
   fitRectInBox,
   fitWidthZoom,
@@ -40,6 +48,7 @@ import {
   screenToPdfPoint,
   screenToPdfRect,
   translateQuads,
+  unrotateDelta,
   type PageGeom,
 } from '@/components/tools/pdf/editor/geometry';
 import { pageHasText, snapTextLines } from '@/components/tools/pdf/editor/quads';
@@ -55,11 +64,13 @@ import {
   undoHistory,
 } from '@/components/tools/pdf/editor/history';
 import {
+  annotationRotation,
   annotationToSpec,
   buildAnnotation,
   describeAnnotation,
   exportPlan,
   moveAnnotation,
+  redactionNeedsRasterising,
   workSignature,
   withText,
 } from '@/components/tools/pdf/editor/specs';
@@ -714,6 +725,129 @@ describe('export compatibility with core/annotations', () => {
       expect(annotation.rect.x + annotation.rect.width).toBeLessThanOrEqual(PAGE_W + 0.001);
       expect(annotation.rect.y + annotation.rect.height).toBeLessThanOrEqual(PAGE_H + 0.001);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 5b. A mark turned to an angle                                       *
+ * ------------------------------------------------------------------ *
+ *
+ * A mark is stored unrotated and turned about the centre of its rect, so the
+ * overlay, the hit test and the writer all read the same number. These are the
+ * seams that claim is checked at: the maths, the spec handed to the writer, and
+ * the bytes the writer puts in the file.
+ */
+
+describe('a turned mark', () => {
+  const rect = { x: 100, y: 200, width: 120, height: 40 };
+
+  it('folds an angle into [0, 360) and snaps a drag to 15°', () => {
+    expect(normaliseAngle(-90)).toBe(270);
+    expect(normaliseAngle(450)).toBe(90);
+    expect(normaliseAngle(Number.NaN)).toBe(0);
+    expect(snapAngle(37)).toBe(30);
+    expect(snapAngle(7)).toBe(0);
+    expect(snapAngle(8)).toBe(15);
+    expect(rotationForDrag(37)).toBe(30);
+    expect(rotationForDrag(37, true)).toBe(37);
+  });
+
+  it('turns a point clockwise about the centre of its own box', () => {
+    const centre = rectCentre(rect);
+    expect(centre).toEqual({ x: 160, y: 220 });
+    // The lower-left corner is west-and-south of the pivot; a clockwise quarter
+    // turn (in +y-up user space) brings it north.
+    const turned = rotatePointAbout({ x: 100, y: 200 }, centre, 90);
+    expect(turned.x).toBeCloseTo(centre.x - 20, 6);
+    expect(turned.y).toBeCloseTo(centre.y + 60, 6);
+    expect(rotatePointAbout(centre, centre, 37)).toEqual(centre);
+    expect(rotatePointAbout({ x: 1, y: 2 }, centre, 0)).toEqual({ x: 1, y: 2 });
+  });
+
+  it('bounds the turned shape, and pulls a page delta back into its frame', () => {
+    // A wide flat mark swept 45° gets taller and *narrower*; the only honest
+    // claim is that /Rect is the corners' bounding box, centred where it was.
+    const box = rotatedBounds(rect, 45);
+    expect(box.x).toBeCloseTo(103.4315, 3);
+    expect(box.width).toBeCloseTo(113.1371, 3);
+    expect(box.height).toBeCloseTo(113.1371, 3);
+    expect(rectCentre(box).x).toBeCloseTo(rectCentre(rect).x, 6);
+    expect(rectCentre(box).y).toBeCloseTo(rectCentre(rect).y, 6);
+    // A right angle is exact, because a rect turned 90° is still a rect.
+    expect(rotatedBounds(rect, 90)).toEqual({ x: 140, y: 160, width: 40, height: 120 });
+    expect(rotatedBounds(rect, 0)).toEqual(rect);
+    // A mark turned 90° has its local +y along the page's +x.
+    expect(unrotateDelta(10, 0, 90).x).toBeCloseTo(0, 6);
+    expect(unrotateDelta(10, 0, 90).y).toBeCloseTo(10, 6);
+    expect(unrotateDelta(10, 0, 0)).toEqual({ x: 10, y: 0 });
+  });
+
+  it('derives the screen turn from the page axes instead of assuming a sign', () => {
+    const straight = markScreenRotation(rect, 0, flat);
+    expect(straight.degrees).toBe(0);
+    expect(straight.centre).toEqual(pdfToScreenPoint(rectCentre(rect), flat));
+    // The angle is measured off the mapped page axes, so the page's own /Rotate
+    // shifts every one of them: the same mark reads a quarter turn differently on
+    // a turned page, which is what stops the overlay spinning marks the wrong way.
+    expect([0, 90, 180, 270].map((deg) => markScreenRotation(rect, deg, flat).degrees)).toEqual([
+      0, 90, 180, -90,
+    ]);
+    expect([0, 90, 180, 270].map((deg) => markScreenRotation(rect, deg, geomAt(1, 90)).degrees)).toEqual([
+      0, 180, -90, 0,
+    ]);
+    expect(markScreenRotation(rect, 90, flat).centre).toEqual(pdfToScreenPoint(rectCentre(rect), flat));
+    // The arc a rotate handle reads is the screen angle of the pointer.
+    expect(screenAngle({ x: 0, y: 0 }, { x: 10, y: 0 })).toBeCloseTo(0, 6);
+    expect(screenAngle({ x: 0, y: 0 }, { x: 0, y: 10 })).toBeCloseTo(90, 6);
+  });
+
+  it('carries the angle to the writer rather than pre-turning the geometry', () => {
+    const square = build('square', { drag: { x: 50, y: 500, width: 120, height: 60 } })!;
+    expect(annotationToSpec(square).rotation).toBeUndefined();
+    expect(annotationToSpec({ ...square, rotation: 0 }).rotation).toBeUndefined();
+    const spec = annotationToSpec({ ...square, rotation: 45 });
+    expect(spec.rotation).toBe(45);
+    // The shape still travels exactly as drawn: /Rect, the quads and the stream
+    // are turned by the writer, which is the only place that can keep them in step.
+    expect(spec.rect).toEqual(square.rect);
+    expect(spec.quadPoints).toEqual(square.quadPoints);
+    expect(annotationRotation({ ...square, rotation: 405 })).toBe(45);
+  });
+
+  it('writes the turned box the overlay drew, into the file', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([PAGE_W, PAGE_H]);
+    const square = build('square', { drag: { x: 50, y: 500, width: 120, height: 60 } })!;
+    addAnnotations(doc, [annotationToSpec({ ...square, rotation: 45 })]);
+    const reloaded = await PDFDocument.load(await doc.save({ useObjectStreams: false }));
+    const [written] = listAnnotations(reloaded);
+    const box = rotatedBounds(square.rect, 45);
+    expect(written.rect.x).toBeCloseTo(box.x, 1);
+    expect(written.rect.y).toBeCloseTo(box.y, 1);
+    expect(written.rect.width).toBeCloseTo(box.width, 1);
+    expect(written.rect.height).toBeCloseTo(box.height, 1);
+    // And the same mark with no angle is untouched by any of this: that is the
+    // regression this whole path has to avoid.
+    const plain = await PDFDocument.create();
+    plain.addPage([PAGE_W, PAGE_H]);
+    addAnnotations(plain, [annotationToSpec(square)]);
+    const [straight] = listAnnotations(plain);
+    expect(straight.rect).toEqual(square.rect);
+    expect(straight.rotation).toBe(0);
+  });
+
+  it('burns a turned redaction by pixels instead of cutting a box that is too big', () => {
+    const burn = build('redact', { drag: { x: 70, y: 95, width: 150, height: 45 } })!;
+    expect(redactionNeedsRasterising(burn)).toBe(false);
+    expect(exportPlan([burn]).redactions).toHaveLength(1);
+    expect(exportPlan([burn]).rasterisations).toHaveLength(0);
+    const turned = exportPlan([{ ...burn, rotation: 30 }]);
+    expect(turned.redactions).toHaveLength(0);
+    expect(turned.rasterisations).toHaveLength(1);
+    expect(turned.rasterisations[0].quad).toHaveLength(8);
+    expect(turned.rasterisations[0].rect).toEqual(rotatedBounds(burn.rect, 30));
+    // A right angle still cuts: a rect turned 90° is still a rect.
+    expect(exportPlan([{ ...burn, rotation: 90 }]).redactions).toHaveLength(1);
   });
 });
 

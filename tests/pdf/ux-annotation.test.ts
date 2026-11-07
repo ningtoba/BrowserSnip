@@ -31,22 +31,60 @@ import {
   NUDGE_PX,
   escapeLevelNotice,
   isDuplicateKey,
+  isSelectAllKey,
   isTypeToEditKey,
   nextEscapeLevel,
   nudgeStep,
+  rotationStepForKey,
 } from '@/components/tools/pdf/editor/shortcuts';
 import { snapTextLines } from '@/components/tools/pdf/editor/quads';
 import {
   RESIZE_HANDLES,
+  annotationRotation,
   buildAnnotation,
+  canRotate,
   duplicateAnnotation,
+  duplicateMarks,
   handleCursor,
   markAtPoint,
+  markBounds,
+  marksInMarquee,
+  moveMarks,
+  pageSelection,
+  removeMarks,
   resizeAnnotation,
+  selectedMarks,
+  selectionBounds,
+  selectionSummary,
+  setMarksRotation,
+  styleMarks,
+  turnMarks,
+  workSignature,
 } from '@/components/tools/pdf/editor/specs';
-import { screenToPdfPoint } from '@/components/tools/pdf/editor/geometry';
-import { applyWorkStep, createWork, historyNotice } from '@/components/tools/pdf/editor/workspace';
-import { pushHistory } from '@/components/tools/pdf/editor/history';
+import { rotationForDrag, screenToPdfPoint } from '@/components/tools/pdf/editor/geometry';
+import {
+  addToSelection,
+  applyWorkStep,
+  createWork,
+  deleteNotice,
+  historyNotice,
+  marqueeNotice,
+  pruneSelection,
+  rotationRefusedNotice,
+  selectAllNotice,
+  selectionNotice,
+  selectOnly,
+  sharedStyleNotice,
+  toggleSelected,
+  transferSelectionToPage,
+} from '@/components/tools/pdf/editor/workspace';
+import {
+  createHistory,
+  liveHistory,
+  pushHistory,
+  settleHistory,
+  undoHistory,
+} from '@/components/tools/pdf/editor/history';
 import AnnotationEditor from '@/components/tools/pdf/editor/AnnotationEditor';
 import type { EditorAnnotation, EditorToolId, ToolStyle } from '@/components/tools/pdf/editor/types';
 import { defaultStyleFor } from '@/components/tools/pdf/editor/tools';
@@ -384,7 +422,207 @@ describe('editing the selection', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 7. Undo and redo are reportable                                     *
+ * 7. The selection is a set                                          *
+ * ------------------------------------------------------------------ *
+ *
+ * Multi-select is a property of the model, not of a click handler: every
+ * command the editor offers runs over `selection: string[]`, so "one drag is one
+ * undo step for the whole set" and "a style change hits every mark" are testable
+ * here, without a canvas.
+ */
+
+/** Three squares on page 1 and one on page 2, in creation order. */
+function markList(): EditorAnnotation[] {
+  const at = (x: number, page = 0) => build('square', { page, drag: { x, y: 100, width: 40, height: 24 } })!;
+  return [at(40), at(120), at(200), at(40, 1)];
+}
+
+const group = (marks: EditorAnnotation[], count = 3) => marks.slice(0, count).map((m) => m.id);
+
+describe('the selection is a set', () => {
+  it('Shift+click adds a mark and takes it back out, oldest first', () => {
+    const [a, b, c] = group(markList());
+    expect(selectOnly(a)).toEqual([a]);
+    expect(selectOnly(null)).toEqual([]);
+    expect(toggleSelected([], a)).toEqual([a]);
+    expect(toggleSelected([a], b)).toEqual([a, b]);
+    expect(toggleSelected([a, b], a)).toEqual([b]);
+    expect(addToSelection([a], [b, c, a])).toEqual([a, b, c]);
+  });
+
+  it('announces that the target of the keyboard changed, and drops ids that died', () => {
+    const marks = markList();
+    const [a, b] = group(marks);
+    expect(selectionNotice(0, 0)).toBe('Cleared the selection.');
+    expect(selectionNotice(1, 0, [marks[0]])).toBe('Selected the square on page 1.');
+    expect(selectionNotice(3, 0)).toContain('commands now act on the set');
+    // A stale id, and another page's mark, both fail to survive a prune.
+    expect(pruneSelection([a, b, 'gone'], marks, 0)).toEqual([a, b]);
+    expect(pruneSelection([a, marks[3].id], marks, 1)).toEqual([marks[3].id]);
+    const moved = transferSelectionToPage([a, b], 0, 1);
+    expect(moved.selection).toEqual([]);
+    expect(moved.notice).toContain('page 1');
+    expect(transferSelectionToPage([a], 0, 0)).toEqual({ selection: [a], notice: null });
+  });
+
+  it('moves the whole set as one drag and settles as ONE undo step', () => {
+    const marks = markList();
+    const ids = group(marks);
+    // A drag paints `present` live and records the pre-drag list once on release.
+    let live = createHistory(marks);
+    for (const step of [2, 5, 9, 14]) live = liveHistory(live, moveMarks(marks, ids, step, 0));
+    expect(live.past).toHaveLength(0);
+    const settled = settleHistory(live, marks);
+    expect(settled.past).toHaveLength(1);
+    const moved = selectedMarks(settled.present, ids);
+    expect(moved.map((m) => m.rect.x)).toEqual([54, 134, 214]);
+    // The unselected mark on the other page was never a target.
+    expect(settled.present[3].rect.x).toBe(marks[3].rect.x);
+    expect(undoHistory(settled).present).toEqual(marks);
+  });
+
+  it('removes the whole selection as one edit, so one undo brings them all back', () => {
+    const marks = markList();
+    const history = pushHistory(createHistory(marks), removeMarks(marks, group(marks)));
+    expect(history.present).toHaveLength(1);
+    expect(history.present[0].page).toBe(1);
+    expect(undoHistory(history).present).toHaveLength(4);
+    expect(deleteNotice(3)).toContain('one undo');
+    expect(deleteNotice(1)).toBe('Removed the selected mark.');
+  });
+
+  it('applies one style change to every mark in the set, and to nothing else', () => {
+    const marks = markList();
+    const ids = group(marks);
+    const alt = defaultStyleFor('ink').color;
+    const styled = styleMarks(marks, ids, { color: alt, opacity: 0.25, strokeWidth: 4 });
+    expect(styled.slice(0, 3).every((m) => m.color === alt)).toBe(true);
+    expect(styled.slice(0, 3).every((m) => m.opacity === 0.25)).toBe(true);
+    expect(styled.slice(0, 3).every((m) => m.borderWidth === 4)).toBe(true);
+    expect(styled[3]).toEqual(marks[3]);
+    expect(sharedStyleNotice(['color'], 3)).toContain('all 3 selected marks');
+    expect(sharedStyleNotice(['color'], 1)).toBe('Set the colour of the selected mark.');
+    // A redaction is burned in: a translucent burn would promise a visible page.
+    const burn = build('redact', { drag: { x: 20, y: 20, width: 60, height: 12 } })!;
+    expect(styleMarks([burn], [burn.id], { opacity: 0.2 })[0].opacity).toBe(burn.opacity);
+  });
+
+  it('says what a group is instead of inventing a value it does not share', () => {
+    const marks = markList();
+    const ids = group(marks);
+    const mismatched = marks.map((m, i) => (i === 1 ? { ...m, borderWidth: m.borderWidth + 2 } : m));
+    const summary = selectionSummary(mismatched, ids);
+    expect(summary.count).toBe(3);
+    expect(summary.pages).toEqual([0]);
+    expect(summary.shared.color).toBe(mismatched[0].color);
+    expect(summary.mixed).toContain('strokeWidth');
+    expect(summary.text).toContain('3 marks selected on page 1');
+    expect(selectionSummary(mismatched, []).text).toBe('Nothing selected.');
+    expect(selectionSummary(mismatched, [marks[3].id]).pages).toEqual([1]);
+  });
+
+  it('duplicates the set as one edit and selects the copies', () => {
+    const marks = markList();
+    const ids = group(marks, 2);
+    const { marks: copies, ids: copyIds } = duplicateMarks(marks, ids);
+    expect(copies).toHaveLength(2);
+    expect(new Set(copyIds).has(ids[0])).toBe(false);
+    const history = pushHistory(createHistory(marks), [...marks, ...copies]);
+    expect(history.present).toHaveLength(6);
+    expect(undoHistory(history).present).toHaveLength(4);
+  });
+
+  it('Cmd/Ctrl+A takes this page only, and never another page\'s marks', () => {
+    const marks = markList();
+    expect(pageSelection(marks, 0)).toEqual(group(marks));
+    expect(pageSelection(marks, 1)).toEqual([marks[3].id]);
+    expect(pageSelection(marks, 7)).toEqual([]);
+    expect(isSelectAllKey('a', { ctrl: true })).toBe(true);
+    expect(isSelectAllKey('A', { meta: true })).toBe(true);
+    expect(isSelectAllKey('a', { ctrl: true, alt: true })).toBe(false);
+    expect(isSelectAllKey('a', {})).toBe(false);
+    expect(selectAllNotice(0, 0)).toContain('no marks to select');
+    expect(selectAllNotice(3, 0)).toContain('other pages keep their own');
+  });
+
+  it('a band drawn on empty paper takes the marks it touches, on its page only', () => {
+    const marks = markList();
+    // Screen space: the squares sit at x 40–80, 120–160, 200–240, y 100–124.
+    expect(marksInMarquee(marks, 0, { x: 30, y: 90, width: 145, height: 45 }, flat)).toEqual([
+      marks[0].id,
+      marks[1].id,
+    ]);
+    expect(marksInMarquee(marks, 0, { x: 0, y: 0, width: PAGE_W, height: PAGE_H }, flat)).toHaveLength(3);
+    expect(marksInMarquee(marks, 1, { x: 0, y: 0, width: PAGE_W, height: PAGE_H }, flat)).toEqual([marks[3].id]);
+    expect(marqueeNotice(0, 0)).toContain('crossed no marks');
+    expect(marqueeNotice(2, 0)).toContain('2 marks');
+  });
+
+  it('Escape takes the selection off as one level, counting what it dropped', () => {
+    expect(nextEscapeLevel({ editing: false, selected: true, pinned: true, armed: true })).toBe('selection');
+    expect(escapeLevelNotice('selection', 3)).toContain('3 selected marks');
+    expect(escapeLevelNotice('selection')).toBe('Cleared the selection; the tool is still armed.');
+    expect(escapeLevelNotice('selection', 1)).toBe('Cleared the selection; the tool is still armed.');
+  });
+
+  it('turns the set about the middle of the group, not each mark in its place', () => {
+    const marks = markList().slice(0, 2);
+    const ids = group(marks, 2);
+    const before = selectionBounds(marks, ids)!;
+    const turned = turnMarks(marks, ids, 90);
+    expect(turned.every((m) => annotationRotation(m) === 90)).toBe(true);
+    const after = selectionBounds(turned, ids)!;
+    // The group's box swaps its extents: the set turned, not two separate marks.
+    expect(after.width).toBeCloseTo(before.height, 3);
+    expect(after.height).toBeCloseTo(before.width, 3);
+    // Each mark kept its own drawn size and travelled along the arc instead.
+    expect(turned[0].rect.width).toBe(marks[0].rect.width);
+    expect(turned[0].rect.x).not.toBe(marks[0].rect.x);
+    // One step back is one undo, however many marks swung.
+    const history = pushHistory(createHistory(marks), turned);
+    expect(undoHistory(history).present).toEqual(marks);
+  });
+
+  it('sets an absolute angle from the inspector and a right angle from R', () => {
+    const marks = markList().slice(0, 2);
+    const ids = group(marks, 2);
+    expect(annotationRotation(marks[0])).toBe(0);
+    expect(setMarksRotation(marks, ids, 45).every((m) => annotationRotation(m) === 45)).toBe(true);
+    expect(setMarksRotation(marks, ids, -90).every((m) => annotationRotation(m) === 270)).toBe(true);
+    expect(rotationStepForKey('r', {})).toBe(90);
+    expect(rotationStepForKey('R', { shift: true })).toBe(-90);
+    expect(rotationStepForKey('r', { ctrl: true })).toBe(null);
+    expect(rotationForDrag(37)).toBe(30);
+    expect(rotationForDrag(37, true)).toBe(37);
+  });
+
+  it('refuses to turn a link, because nothing about a link is drawn', () => {
+    const link = build('link', { drag: { x: 70, y: 95, width: 100, height: 14 }, link: { type: 'goTo', page: 0 } })!;
+    expect(canRotate(link)).toBe(false);
+    expect(rotationRefusedNotice('Link')).toContain('cannot be turned');
+    const drawn = [
+      build('square', { drag: { x: 70, y: 95, width: 100, height: 14 } })!,
+      build('note', { drag: { x: 70, y: 95, width: 0, height: 0 }, text: 'x' })!,
+      build('ink', { points: [{ x: 60, y: 100 }, { x: 90, y: 130 }, { x: 120, y: 100 }] })!,
+      build('line', { points: [{ x: 60, y: 100 }, { x: 160, y: 130 }] })!,
+      build('redact', { drag: { x: 70, y: 95, width: 100, height: 14 } })!,
+    ];
+    expect(drawn).toHaveLength(5);
+    expect(drawn.every(canRotate)).toBe(true);
+  });
+
+  it('a turned mark really does occupy a bigger box, and counts as unsaved work', () => {
+    const square = markList()[0];
+    expect(markBounds(square)).toEqual(square.rect);
+    const turned = markBounds({ ...square, rotation: 45 });
+    expect(turned.width).toBeGreaterThan(square.rect.width);
+    expect(turned.x).toBeLessThan(square.rect.x);
+    expect(workSignature([square])).not.toBe(workSignature([{ ...square, rotation: 45 }]));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 8. Undo and redo are reportable                                     *
  * ------------------------------------------------------------------ */
 
 describe('history reporting', () => {
@@ -417,7 +655,7 @@ describe('history reporting', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 8. The palette DOM: toolbar, pins, live region, focus               *
+ * 9. The palette DOM: toolbar, pins, live region, focus               *
  * ------------------------------------------------------------------ */
 
 describe('annotation palette DOM', () => {
@@ -485,7 +723,7 @@ describe('annotation palette DOM', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 9. The old palette expectations still hold next to the pins         *
+ * 10. The old palette expectations still hold next to the pins         *
  * ------------------------------------------------------------------ */
 
 describe('palette regression guards', () => {

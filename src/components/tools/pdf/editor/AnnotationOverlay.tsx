@@ -12,10 +12,19 @@
  */
 import { useRef } from 'react';
 import type { EditorAnnotation, EditorToolId } from './types';
-import type { PageGeom, Point } from './geometry';
-import { pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
+import type { CssRect, PageGeom, Point } from './geometry';
+import { markScreenRotation, pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
 import { TOOL_BY_ID } from './tools';
-import { HANDLE_HIT_PX, HANDLE_SIZE_PX, RESIZE_HANDLES, handleCursor, type ResizeHandle } from './specs';
+import {
+  HANDLE_HIT_PX,
+  HANDLE_SIZE_PX,
+  RESIZE_HANDLES,
+  handleScreenPoints,
+  rotateHandlePoint,
+  rotatedHandleCursor,
+  selectionScreenBounds,
+  type ResizeHandle,
+} from './specs';
 
 export interface OverlayProps {
   geom: PageGeom;
@@ -28,13 +37,22 @@ export interface OverlayProps {
   tool: EditorToolId;
   /** Whether the armed tool is pinned; it only changes the hint text. */
   pinned: boolean;
-  selectedId: string | null;
+  /**
+   * The selected ids, oldest first. One id is the selection the editor has
+   * always shown; two or more draw a group, which is a different thing to draw
+   * and a different thing to grab.
+   */
+  selection: string[];
   editingId: string | null;
-  onSurfacePointerDown: (point: Point) => void;
-  onAnnotationPointerDown: (id: string, point: Point) => void;
+  /** The marquee being dragged out of empty paper, in screen pixels. */
+  marquee: CssRect | null;
+  onSurfacePointerDown: (point: Point, additive: boolean) => void;
+  onAnnotationPointerDown: (id: string, point: Point, additive: boolean) => void;
   onAnnotationDoubleClick: (id: string) => void;
   /** Grabbing a resize handle, whatever tool is armed. */
   onHandlePointerDown: (id: string, handle: ResizeHandle, point: Point) => void;
+  /** Grabbing the rotate handle above the selection. */
+  onRotatePointerDown: (point: Point) => void;
   /** Double-click on the page while a vertex tool is armed. */
   onFinishVertices: () => void;
   onTextDraft: (id: string, text: string) => void;
@@ -44,6 +62,29 @@ export interface OverlayProps {
 /** Where a sticky note's body is shown next to its icon. */
 const NOTE_CARD_PX = 190;
 
+/**
+ * The CSS/SVG transform that turns one mark's drawing about its own centre.
+ *
+ * The geometry is drawn unrotated because that is how it is stored, and the
+ * browser then rotates the picture — and, with it, the pointer's idea of what it
+ * is over. That is what makes a hit test on a turned mark exact rather than an
+ * approximation of its bounding box.
+ */
+function turn(annotation: EditorAnnotation, geom: PageGeom): { transform?: string } {
+  const angle = annotation.rotation ?? 0;
+  if (!angle) return {};
+  const { centre, degrees } = markScreenRotation(annotation.rect, angle, geom);
+  return { transform: `rotate(${round(degrees)} ${round(centre.x)} ${round(centre.y)})` };
+}
+
+/** The same turn for an HTML layer, which measures its origin in its own box. */
+function turnStyle(annotation: EditorAnnotation, geom: PageGeom): React.CSSProperties {
+  const angle = annotation.rotation ?? 0;
+  if (!angle) return {};
+  const { centre, degrees } = markScreenRotation(annotation.rect, angle, geom);
+  return { transform: `rotate(${degrees}deg)`, transformOrigin: `${centre.x}px ${centre.y}px` };
+}
+
 export function AnnotationOverlay({
   geom,
   annotations,
@@ -51,12 +92,14 @@ export function AnnotationOverlay({
   vertices,
   tool,
   pinned,
-  selectedId,
+  selection,
   editingId,
+  marquee,
   onSurfacePointerDown,
   onAnnotationPointerDown,
   onAnnotationDoubleClick,
   onHandlePointerDown,
+  onRotatePointerDown,
   onFinishVertices,
   onTextDraft,
   onTextCommit,
@@ -71,8 +114,14 @@ export function AnnotationOverlay({
 
   const toolMeta = TOOL_BY_ID[tool];
   const selectable = tool === 'select';
-  const selectedMark = annotations.find((a) => a.id === selectedId) ?? null;
-  const selectedBox = selectedMark ? pdfToScreenRect(selectedMark.rect, geom) : null;
+  const selectedMarks = annotations.filter((a) => selection.includes(a.id));
+  /**
+   * Corner handles belong to one mark. A group gets an outline and a rotate
+   * handle instead, because four handles on four marks is a wall of squares and
+   * scaling a whole group is not a command this editor offers yet.
+   */
+  const handleMark = selectedMarks.length === 1 ? selectedMarks[0] : null;
+  const group = selectedMarks.length > 1 ? selectionScreenBounds(selectedMarks, geom) : null;
   const textLayers = annotations.filter((a) => a.kind === 'FreeText');
 
   return (
@@ -82,9 +131,10 @@ export function AnnotationOverlay({
       style={{ touchAction: 'none', cursor: selectable ? 'default' : 'crosshair' }}
       data-tool-gesture={toolMeta.gesture}
       data-armed-pinned={pinned ? 'true' : 'false'}
+      data-selection={selection.join(' ')}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
-        onSurfacePointerDown(localPoint(event));
+        onSurfacePointerDown(localPoint(event), event.shiftKey);
       }}
       onDoubleClick={() => {
         if (tool === 'polygon' || tool === 'polyline') onFinishVertices();
@@ -97,9 +147,15 @@ export function AnnotationOverlay({
         style={{ pointerEvents: 'none' }}
       >
         {annotations.map((annotation) => (
-          <Mark key={annotation.id} annotation={annotation} geom={geom} />
+          <g key={annotation.id} {...turn(annotation, geom)}>
+            <Mark annotation={annotation} geom={geom} />
+          </g>
         ))}
-        {draft ? <Mark annotation={draft} geom={geom} draft /> : null}
+        {draft ? (
+          <g {...turn(draft, geom)}>
+            <Mark annotation={draft} geom={geom} draft />
+          </g>
+        ) : null}
 
         {vertices && vertices.points.length > 0 ? (
           <g>
@@ -123,50 +179,75 @@ export function AnnotationOverlay({
               const box = pdfToScreenRect(annotation.rect, geom);
               const pad = Math.max(6 - box.width / 2, 0);
               return (
-                <rect
-                  key={`hit-${annotation.id}`}
-                  x={box.x - pad}
-                  y={box.y}
-                  width={box.width + pad * 2}
-                  height={Math.max(box.height, 10)}
-                  fill="transparent"
-                  style={{ pointerEvents: 'all', cursor: 'move' }}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return;
-                    event.stopPropagation();
-                    onAnnotationPointerDown(annotation.id, localPoint(event));
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    onAnnotationDoubleClick(annotation.id);
-                  }}
-                />
+                // The same turn as the drawing, so the grab area is the shape the
+                // user sees — not the box around it.
+                <g key={`hit-${annotation.id}`} {...turn(annotation, geom)}>
+                  <rect
+                    x={box.x - pad}
+                    y={box.y}
+                    width={box.width + pad * 2}
+                    height={Math.max(box.height, 10)}
+                    fill="transparent"
+                    style={{ pointerEvents: 'all', cursor: 'move' }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.stopPropagation();
+                      onAnnotationPointerDown(annotation.id, localPoint(event), event.shiftKey);
+                    }}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      onAnnotationDoubleClick(annotation.id);
+                    }}
+                  />
+                </g>
               );
             })
           : null}
 
-        {/* The selected mark keeps its outline whatever tool is armed. */}
-        {selectedMark && selectedBox ? (
-          <>
-            <rect
-              x={selectedBox.x - 1}
-              y={selectedBox.y - 1}
-              width={selectedBox.width + 2}
-              height={selectedBox.height + 2}
-              fill="none"
-              stroke="#2563EB"
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
-              style={{ pointerEvents: 'none' }}
-            />
-            {/*
-               Corner handles: 10 px to see, 22 px to grab, at a fixed screen
-               size so they stay catchable when the page is zoomed out. The
-               selection's handles belong to the selection, so they answer the
-               pointer under any armed tool.
-            */}
-            {RESIZE_HANDLES.map((handle) => {
-              const corner = handleCorner(selectedBox, handle);
+        {/* Every selected mark keeps its outline, whatever tool is armed. */}
+        {selectedMarks.map((annotation) => {
+          const box = pdfToScreenRect(annotation.rect, geom);
+          return (
+            <g key={`sel-${annotation.id}`} {...turn(annotation, geom)}>
+              <rect
+                x={box.x - 1}
+                y={box.y - 1}
+                width={box.width + 2}
+                height={box.height + 2}
+                fill="none"
+                stroke="#2563EB"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                style={{ pointerEvents: 'none' }}
+              />
+            </g>
+          );
+        })}
+
+        {/*
+           A group also gets one box around the whole set, so it is visible what
+           the rotate handle and a drag will act on. Handles are omitted: see
+           `handleMark`.
+        */}
+        {group ? (
+          <rect
+            data-selection-group="true"
+            x={group.x - 3}
+            y={group.y - 3}
+            width={group.width + 6}
+            height={group.height + 6}
+            fill="none"
+            stroke="#2563EB"
+            strokeWidth={1}
+            strokeDasharray="2 3"
+            opacity={0.8}
+            style={{ pointerEvents: 'none' }}
+          />
+        ) : null}
+
+        {handleMark
+          ? RESIZE_HANDLES.map((handle) => {
+              const corner = handleScreenPoints(handleMark.rect, handleMark.rotation ?? 0, geom)[handle];
               return (
                 <g key={`handle-${handle}`}>
                   <rect
@@ -176,11 +257,14 @@ export function AnnotationOverlay({
                     width={HANDLE_HIT_PX}
                     height={HANDLE_HIT_PX}
                     fill="transparent"
-                    style={{ pointerEvents: 'all', cursor: handleCursor(handle) }}
+                    style={{
+                      pointerEvents: 'all',
+                      cursor: rotatedHandleCursor(handle, handleMark.rotation ?? 0),
+                    }}
                     onPointerDown={(event) => {
                       if (event.button !== 0) return;
                       event.stopPropagation();
-                      onHandlePointerDown(selectedMark.id, handle, localPoint(event));
+                      onHandlePointerDown(handleMark.id, handle, localPoint(event));
                     }}
                   />
                   <rect
@@ -193,12 +277,82 @@ export function AnnotationOverlay({
                     stroke="#2563EB"
                     strokeWidth={1.5}
                     pointerEvents="none"
-                    aria-label={`Resize ${selectedMark.tool} ${handle}`}
+                    aria-label={`Resize ${handleMark.tool} ${handle}`}
                   />
                 </g>
               );
-            })}
-          </>
+            })
+          : null}
+
+        {/*
+           The rotate handle hangs above whatever is selected — one mark above its
+           own top edge, a group above the group's box — and drags freely; the
+           editor snaps it to 15° unless Shift is held.
+        */}
+        {(() => {
+          if (selectedMarks.length === 0) return null;
+          // A single mark turns with its own top edge, so its handle rides that
+          // edge; a group's handle sits over the box that holds them all.
+          const box = handleMark ? pdfToScreenRect(handleMark.rect, geom) : group;
+          if (!box) return null;
+          const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+          const corners = handleMark
+            ? handleScreenPoints(handleMark.rect, handleMark.rotation ?? 0, geom)
+            : null;
+          const knob = corners
+            ? rotateHandlePoint(corners.nw, corners.ne, centre)
+            : rotateHandlePoint({ x: box.x, y: box.y }, { x: box.x + box.width, y: box.y }, centre);
+          return (
+            <g data-rotate-handle="true">
+              <line
+                x1={centre.x}
+                y1={box.y}
+                x2={knob.x}
+                y2={knob.y}
+                stroke="#2563EB"
+                strokeWidth={1}
+                strokeDasharray="2 2"
+              />
+              <circle
+                data-rotate-hit="true"
+                cx={knob.x}
+                cy={knob.y}
+                r={HANDLE_HIT_PX / 2}
+                fill="transparent"
+                style={{ pointerEvents: 'all', cursor: 'grab' }}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.stopPropagation();
+                  onRotatePointerDown(localPoint(event));
+                }}
+              />
+              <circle
+                cx={knob.x}
+                cy={knob.y}
+                r={HANDLE_SIZE_PX / 2}
+                fill="#FFFFFF"
+                stroke="#2563EB"
+                strokeWidth={1.5}
+                pointerEvents="none"
+                aria-label="Rotate the selection"
+              />
+            </g>
+          );
+        })()}
+
+        {marquee ? (
+          <rect
+            data-marquee="true"
+            x={marquee.x}
+            y={marquee.y}
+            width={marquee.width}
+            height={marquee.height}
+            fill="rgba(37, 99, 235, 0.08)"
+            stroke="#2563EB"
+            strokeWidth={1}
+            strokeDasharray="4 3"
+            style={{ pointerEvents: 'none' }}
+          />
         ) : null}
       </svg>
 
@@ -230,6 +384,7 @@ export function AnnotationOverlay({
                 color: annotation.color,
                 fontSize: Math.max((annotation.fontSize ?? 12) * geom.zoom, 8),
                 lineHeight: 1.25,
+                ...turnStyle(annotation, geom),
               }}
             />
           );
@@ -248,6 +403,7 @@ export function AnnotationOverlay({
               lineHeight: 1.25,
               opacity: annotation.opacity,
               pointerEvents: 'none',
+              ...turnStyle(annotation, geom),
             }}
           >
             {annotation.text ?? ''}
@@ -256,7 +412,7 @@ export function AnnotationOverlay({
       })}
 
       {annotations
-        .filter((a) => a.kind === 'Text' && a.id === selectedId && a.id !== editingId && a.contents)
+        .filter((a) => a.kind === 'Text' && selection.includes(a.id) && a.id !== editingId && a.contents)
         .map((a) => {
           const box = pdfToScreenRect(a.rect, geom);
           return (
@@ -572,14 +728,6 @@ function Mark({
 /* ------------------------------------------------------------------ *
  * Geometry helpers used only by the overlay                           *
  * ------------------------------------------------------------------ */
-
-/** Screen-space centre of one corner handle of a selected box. */
-function handleCorner(box: { x: number; y: number; width: number; height: number }, handle: ResizeHandle): Point {
-  return {
-    x: handle.includes('w') ? box.x : box.x + box.width,
-    y: handle.includes('n') ? box.y : box.y + box.height,
-  };
-}
 
 /** The quad order written by `geometry.pdfQuadFromViewportBox`: UL, UR, LL, LR. */
 function chunkQuads(points: number[], geom: PageGeom): Point[][] {

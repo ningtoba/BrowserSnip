@@ -25,7 +25,7 @@ import { useProcessStore } from '@/stores/process-store';
 import { openRender, type ExtractedTextItem, type PdfSession } from '@/lib/pdf/core/render';
 import { normaliseRotation } from '@/lib/pdf/core/pages';
 import { decodeImage, encodeImageBytes, resolveImageMime, sniffImageMime } from '@/lib/pdf/core/images';
-import { addAnnotations, applyRedactions } from '@/lib/pdf/core/annotations';
+import { addAnnotations, applyRedactions, rasterisePageToImage } from '@/lib/pdf/core/annotations';
 import {
   PasswordRequiredError,
   clonePDF,
@@ -42,9 +42,15 @@ import {
   clampZoom,
   fitWidthZoom,
   isMeaningfulDrag,
+  normaliseAngle,
   normaliseDrag,
+  pdfToScreenPoint,
+  quadsToPoints,
+  rotationForDrag,
+  screenAngle,
   screenToPdfPoint,
   screenToViewportBox,
+  unrotateDelta,
   type CssRect,
   type PageGeom,
   type Point,
@@ -58,33 +64,49 @@ import {
   settleHistory,
 } from './history';
 import {
+  ROTATE_SNAP_HINT,
   TOOL_SHORTCUT_KEYS,
   escapeLevelNotice,
   historyCommandForKey,
   isDuplicateKey,
+  isSelectAllKey,
   isTypeToEditKey,
   isTypingTarget,
   keyForTool,
   nextEscapeLevel,
   nudgeStep,
+  rotationStepForKey,
   toolForKey,
 } from './shortcuts';
 import { pageHasText, snapTextLines } from './quads';
 import {
+  annotationRotation,
   buildAnnotation,
+  canRotate,
   describeAnnotation,
   dropEmptyMarks,
-  duplicateAnnotation,
+  duplicateMarks,
   emptyMarks,
   exportPlan,
+  marksInMarquee,
   marksSummary,
   markAtPoint,
-  moveAnnotation,
+  moveMarks,
   nextAnnotationId,
+  pageSelection,
+  removeMarks,
   resizeAnnotation,
+  selectedMarks,
+  selectionScreenBounds,
+  selectionSummary,
+  setMarksRotation,
+  styleMarks,
+  turnMarks,
   workSignature,
   withText,
   type ResizeHandle,
+  type SelectionSummary,
+  type SharedStyle,
 } from './specs';
 import {
   BUILT_IN_STAMPS,
@@ -117,38 +139,73 @@ import {
 } from './quickModes';
 import { DropReassurance, QuickModeChips } from './QuickModeChips';
 import {
+  addToSelection,
   applyWorkStep,
   clampPageIndex,
   createWork,
+  deleteNotice,
   docWork,
   documentKey,
   formatPageExtent,
   isUnsaved,
+  marqueeNotice,
+  moveSelectionNotice,
   pageContextNotes,
+  pruneSelection,
+  rotationNotice,
+  rotationRefusedNotice,
+  selectAllNotice,
+  selectOnly,
+  selectionNotice,
+  sharedStyleNotice,
   switchNotice,
+  toggleSelected,
+  transferSelectionToPage,
   type DocWork,
 } from './workspace';
 import { MAX_DOCUMENTS, type EditorAnnotation, type EditorToolId, type PlacedRaster, type ToolStyle } from './types';
 
 type Phase = 'empty' | 'loading' | 'ready' | 'locked' | 'error';
 
+/**
+ * What the pointer is doing.
+ *
+ * `additive` rides along with a drag because the modifier is only true while the
+ * button is down: reading it at pointer-up would let Shift-off mid-drag change
+ * whether the marquee adds to the selection or replaces it.
+ */
 type Gesture =
-  | { mode: 'drag'; from: Point; to: Point }
+  | { mode: 'drag'; from: Point; to: Point; additive?: boolean }
   | { mode: 'path'; points: Point[] }
   | { mode: 'vertices'; points: Point[]; cursor: Point | null };
 
+/**
+ * A drag that moves marks. It names the whole selection rather than the mark
+ * under the pointer, and keeps the list it started from, because a group drag is
+ * one edit: one undo step, not one per mark.
+ */
 interface MoveState {
-  id: string;
+  ids: string[];
   /** Pointer position at drag start, in PDF user space. */
   origin: Point;
-  /** The annotation as it was before the drag. */
-  before: EditorAnnotation;
-  /** The whole list before the drag, for one undo step. */
+  /** The whole list as it was before the drag. */
   beforeList: EditorAnnotation[];
 }
 
-/** A corner-drag is the same three-part shape as a move: what, from where, undo how. */
-type ResizeState = MoveState & { handle: ResizeHandle };
+/** A corner-drag is the same three-part shape as a move, with one mark. */
+type ResizeState = MoveState & { id: string; handle: ResizeHandle };
+
+/** A rotate-handle drag: the arc is measured from the selection's centre. */
+interface RotateState {
+  ids: string[];
+  /** Screen-space pivot the handle swings around. */
+  centre: Point;
+  /** Pointer angle at drag start, in degrees. */
+  startAngle: number;
+  /** The angle the selection had when the drag began. */
+  startRotation: number;
+  beforeList: EditorAnnotation[];
+}
 
 interface Notice {
   tone: 'info' | 'success' | 'warn' | 'danger';
@@ -458,11 +515,37 @@ export function AnnotationEditor(): JSX.Element {
   );
   const style = styles[tool] ?? defaultStyleFor(tool);
 
+  /**
+   * Change the pen, and whatever the pen is standing on.
+   *
+   * With marks picked, a colour or a width is a statement about *them*, so the
+   * same edit lands on every selected mark as one undo step — and the pen
+   * remembers it too, because the next mark should match the last one. With
+   * nothing picked this is exactly what it always was: the pen's appearance.
+   *
+   * Fill and stamp face stay pen-only. "Fill these four marks" is a question
+   * about shapes the group did not agree to be asked, and the panel says so.
+   */
   const patchStyle = useCallback(
     (patch: Partial<ToolStyle>) => {
       setStyles((current) => ({ ...current, [tool]: { ...current[tool], ...patch } }));
+      const ids = work?.selection ?? [];
+      if (ids.length === 0) return;
+      const shared: SharedStyle = {
+        ...(patch.color !== undefined ? { color: patch.color } : {}),
+        ...(patch.opacity !== undefined ? { opacity: patch.opacity } : {}),
+        ...(patch.strokeWidth !== undefined ? { strokeWidth: patch.strokeWidth } : {}),
+        ...(patch.fontSize !== undefined ? { fontSize: patch.fontSize } : {}),
+      };
+      const changed = Object.keys(shared) as (keyof SharedStyle)[];
+      if (changed.length === 0) return;
+      updateWork((current) => ({
+        ...current,
+        history: pushHistory(current.history, styleMarks(current.history.present, current.selection, shared)),
+      }));
+      setStatus(sharedStyleNotice(changed, ids.length));
     },
-    [tool],
+    [tool, updateWork, work?.selection],
   );
 
   /**
@@ -523,6 +606,7 @@ export function AnnotationEditor(): JSX.Element {
   const [exporting, setExporting] = useState(false);
   const moveRef = useRef<MoveState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
+  const rotateRef = useRef<RotateState | null>(null);
 
   const imageInput = useRef<HTMLInputElement>(null);
   const documentInput = useRef<HTMLInputElement>(null);
@@ -592,7 +676,7 @@ export function AnnotationEditor(): JSX.Element {
       return {
         ...current,
         history: pushHistory(current.history, kept),
-        selectedId: kept.some((entry) => entry.id === current.selectedId) ? current.selectedId : null,
+        selection: pruneSelection(current.selection, kept, current.page),
       };
     });
     setNotice({
@@ -614,7 +698,7 @@ export function AnnotationEditor(): JSX.Element {
       updateWork((current) => ({
         ...current,
         history: pushHistory(current.history, [...current.history.present, annotation]),
-        selectedId: annotation.id,
+        selection: selectOnly(annotation.id),
       }));
       if (options.edit) setEditingId(annotation.id);
       setNotice(null);
@@ -639,16 +723,80 @@ export function AnnotationEditor(): JSX.Element {
     [armTool, pinnedFor, updateWork],
   );
 
+  /** Delete the whole selection as one edit, so one undo brings it all back. */
   const removeSelected = useCallback(() => {
-    const id = work?.selectedId;
-    if (!id) return;
+    const ids = work?.selection ?? [];
+    if (ids.length === 0) return;
     updateWork((current) => ({
       ...current,
-      history: pushHistory(current.history, current.history.present.filter((a) => a.id !== id)),
-      selectedId: null,
+      history: pushHistory(current.history, removeMarks(current.history.present, current.selection)),
+      selection: [],
     }));
-    setEditingId((current) => (current === id ? null : current));
-  }, [updateWork, work?.selectedId]);
+    setEditingId((current) => (current !== null && ids.includes(current) ? null : current));
+  }, [updateWork, work?.selection]);
+
+  /**
+   * Turn the selection about its own middle: `R` and `Shift`+`R`.
+   *
+   * A group swings around the centre of the group, which is what a rotate key is
+   * for on several marks at once; a single mark spins in place because its centre
+   * is the pivot. Marks that cannot carry an angle are refused by name.
+   */
+  const turnSelected = useCallback(
+    (delta: number) => {
+      const ids = work?.selection ?? [];
+      if (ids.length === 0 || delta === 0) return false;
+      const marks = selectedMarks(work?.history.present ?? [], ids);
+      const refused = marks.filter((mark) => !canRotate(mark));
+      if (refused.length === marks.length) {
+        setStatus(rotationRefusedNotice(TOOL_BY_ID[refused[0].tool]?.label ?? 'This'));
+        return false;
+      }
+      updateWork((current) => ({
+        ...current,
+        history: pushHistory(current.history, turnMarks(current.history.present, current.selection, delta)),
+      }));
+      const angle = normaliseAngle(annotationRotation(marks[0]) + delta);
+      setStatus(rotationNotice(ids.length, angle, false));
+      if (refused.length > 0) {
+        setStatus(
+          `${rotationNotice(ids.length - refused.length, angle, false)} ${rotationRefusedNotice(
+            TOOL_BY_ID[refused[0].tool]?.label ?? 'Those',
+          )}`,
+        );
+      }
+      return true;
+    },
+    [updateWork, work?.history.present, work?.selection],
+  );
+
+  /** Set the angle of the whole selection from the inspector's number field. */
+  const rotateSelectedTo = useCallback(
+    (degrees: number) => {
+      const ids = work?.selection ?? [];
+      if (ids.length === 0) return;
+      const marks = selectedMarks(work?.history.present ?? [], ids);
+      const turned = marks.filter(canRotate).map((mark) => annotationRotation(mark));
+      // One field, one angle: the set is turned *by* the difference so marks that
+      // were already at different angles keep the difference between them rather
+      // than snapping onto top of each other.
+      const delta =
+        turned.length > 1
+          ? normaliseAngle(degrees) - turned[turned.length - 1]
+          : undefined;
+      updateWork((current) => ({
+        ...current,
+        history: pushHistory(
+          current.history,
+          delta === undefined
+            ? setMarksRotation(current.history.present, current.selection, degrees)
+            : turnMarks(current.history.present, current.selection, delta),
+        ),
+      }));
+      setStatus(rotationNotice(ids.length, normaliseAngle(degrees), false));
+    },
+    [updateWork, work?.history.present, work?.selection],
+  );
 
   const undo = useCallback(() => {
     const stepped = applyWorkStep(work, 'undo');
@@ -724,7 +872,7 @@ export function AnnotationEditor(): JSX.Element {
   }, []);
 
   const finishDrag = useCallback(
-    (drag: CssRect) => {
+    (drag: CssRect, additive = false) => {
       if (!geom || !work) return;
 
       if (tool === 'link') {
@@ -746,8 +894,13 @@ export function AnnotationEditor(): JSX.Element {
           if (tapped) {
             // The tool stays in the hand (Highlight is sticky by ruling); only the
             // selection moves, which is what makes Delete and arrow-nudge work on
-            // the mark that was clicked.
-            updateWork((current) => ({ ...current, selectedId: tapped.id }));
+            // the mark that was clicked. Shift takes it into the set instead.
+            updateWork((current) => ({
+              ...current,
+              selection: additive
+                ? toggleSelected(current.selection, tapped.id)
+                : selectOnly(tapped.id),
+            }));
             setStatus(`Selected ${describeAnnotation(tapped)} instead of drawing a second mark.`);
             return;
           }
@@ -816,11 +969,14 @@ export function AnnotationEditor(): JSX.Element {
   }, [commit, gesture, geom, hint, page, style, tool, work]);
 
   const onSurfacePointerDown = useCallback(
-    (point: Point) => {
+    (point: Point, additive = false) => {
       if (!activeFile || phase !== 'ready') return;
       setEditingId(null);
       if (tool === 'select') {
-        updateWork((current) => ({ ...current, selectedId: null }));
+        // Paper, not a mark: a press starts a marquee, and the marquee decides on
+        // release whether this was a click (clear) or a band (select). Clearing on
+        // press would throw the selection away while the user is still drawing.
+        setGesture({ mode: 'drag', from: point, to: point, additive });
         return;
       }
       if ((tool === 'image' || tool === 'signature') && !rasterReady) {
@@ -840,25 +996,41 @@ export function AnnotationEditor(): JSX.Element {
         );
         return;
       }
-      setGesture({ mode: 'drag', from: point, to: point });
+      setGesture({ mode: 'drag', from: point, to: point, additive });
     },
-    [activeFile, phase, raster, rasterTool, tool, updateWork],
+    [activeFile, phase, rasterReady, tool],
   );
 
+  /**
+   * Grabbing a mark starts a drag of the **whole selection**, not of the mark
+   * under the pointer: a group is moved as one object, which is the only reason
+   * to have selected several.
+   *
+   * Shift+click is the membership edit — it takes a mark in or back out and does
+   * not start a drag, because the thing being dragged after a toggle is the set
+   * the user has just changed their mind about, and moving it by two pixels while
+   * adding it is how a selection ends up somewhere the user did not put it.
+   */
   const onAnnotationPointerDown = useCallback(
-    (id: string, point: Point) => {
+    (id: string, point: Point, additive = false) => {
       if (!geom || !work) return;
       const target = work.history.present.find((a) => a.id === id);
       if (!target) return;
-      updateWork((current) => ({ ...current, selectedId: id }));
+      if (additive) {
+        updateWork((current) => ({ ...current, selection: toggleSelected(current.selection, id) }));
+        const rest = toggleSelected(work.selection, id);
+        setStatus(selectionNotice(rest.length, page, rest.includes(id) ? [target] : []));
+        return;
+      }
+      const ids = work.selection.includes(id) ? work.selection : selectOnly(id);
+      if (!work.selection.includes(id)) updateWork((current) => ({ ...current, selection: ids }));
       moveRef.current = {
-        id,
+        ids,
         origin: screenToPdfPoint(point, geom),
-        before: target,
         beforeList: work.history.present,
       };
     },
-    [geom, updateWork, work],
+    [geom, page, updateWork, work],
   );
 
   /**
@@ -871,16 +1043,44 @@ export function AnnotationEditor(): JSX.Element {
       if (!geom || !work) return;
       const target = work.history.present.find((a) => a.id === id);
       if (!target) return;
-      updateWork((current) => ({ ...current, selectedId: id }));
+      updateWork((current) => ({ ...current, selection: selectOnly(id) }));
       resizeRef.current = {
         id,
         handle,
+        ids: [id],
         origin: screenToPdfPoint(point, geom),
-        before: target,
         beforeList: work.history.present,
       };
     },
     [geom, updateWork, work],
+  );
+
+  /**
+   * Grabbing the rotate handle. The drag is measured as an arc around the
+   * selection's screen centre, so the mark follows the pointer instead of
+   * jumping to an angle read off the page.
+   */
+  const onRotatePointerDown = useCallback(
+    (point: Point) => {
+      if (!geom || !work) return;
+      const marks = selectedMarks(work.history.present, work.selection);
+      if (marks.length === 0) return;
+      if (!marks.some(canRotate)) {
+        setStatus(rotationRefusedNotice(TOOL_BY_ID[marks[0].tool]?.label ?? 'This'));
+        return;
+      }
+      const box = selectionScreenBounds(marks, geom);
+      if (!box) return;
+      const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      rotateRef.current = {
+        ids: [...work.selection],
+        centre,
+        startAngle: screenAngle(centre, point),
+        startRotation: annotationRotation(marks[marks.length - 1]),
+        beforeList: work.history.present,
+      };
+    },
+    [geom, work],
   );
 
   const onAnnotationDoubleClick = useCallback(
@@ -911,7 +1111,9 @@ export function AnnotationEditor(): JSX.Element {
         ...current,
         history: liveHistory(
           current.history,
-          current.history.present.map((a) => (a.id === move.id ? moveAnnotation(move.before, dx, dy) : a)),
+          // Every mark moves from where it was when the drag began, so a long
+          // drag cannot drift the set apart the way per-frame deltas would.
+          moveMarks(move.beforeList, move.ids, dx, dy),
         ),
       }));
       return;
@@ -919,16 +1121,32 @@ export function AnnotationEditor(): JSX.Element {
     const resize = resizeRef.current;
     if (resize && geom) {
       const now = screenToPdfPoint(pointFrom(event), geom);
-      const dx = now.x - resize.origin.x;
-      const dy = now.y - resize.origin.y;
+      const before = resize.beforeList.find((a) => a.id === resize.id);
+      if (!before) return;
+      // The pull is along the mark's own axes, which a turned mark's are not.
+      const local = unrotateDelta(now.x - resize.origin.x, now.y - resize.origin.y, annotationRotation(before));
       updateWork((current) => ({
         ...current,
         history: liveHistory(
           current.history,
           current.history.present.map((a) =>
-            a.id === resize.id ? resizeAnnotation(resize.before, resize.handle, dx, dy) : a,
+            a.id === resize.id ? resizeAnnotation(before, resize.handle, local.x, local.y) : a,
           ),
         ),
+      }));
+      return;
+    }
+    const rotate = rotateRef.current;
+    if (rotate && geom) {
+      const point = pointFrom(event);
+      const angle = rotationForDrag(
+        rotate.startAngle + (screenAngle(rotate.centre, point) - rotate.startAngle),
+        !event.shiftKey,
+      );
+      const delta = angle - rotate.startRotation;
+      updateWork((current) => ({
+        ...current,
+        history: liveHistory(current.history, turnMarks(rotate.beforeList, rotate.ids, delta)),
       }));
       return;
     }
@@ -949,7 +1167,14 @@ export function AnnotationEditor(): JSX.Element {
     const move = moveRef.current;
     if (move) {
       moveRef.current = null;
+      const from = move.origin;
       updateWork((current) => ({ ...current, history: settleHistory(current.history, move.beforeList) }));
+      if (geom) {
+        const now = screenToPdfPoint(pointFrom(event), geom);
+        const dx = now.x - from.x;
+        const dy = now.y - from.y;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) setStatus(moveSelectionNotice(move.ids.length, dx, dy));
+      }
       return;
     }
     const resize = resizeRef.current;
@@ -958,10 +1183,38 @@ export function AnnotationEditor(): JSX.Element {
       updateWork((current) => ({ ...current, history: settleHistory(current.history, resize.beforeList) }));
       return;
     }
+    const rotate = rotateRef.current;
+    if (rotate) {
+      rotateRef.current = null;
+      const point = pointFrom(event);
+      const angle = rotationForDrag(
+        rotate.startAngle + (screenAngle(rotate.centre, point) - rotate.startAngle),
+        !event.shiftKey,
+      );
+      updateWork((current) => ({ ...current, history: settleHistory(current.history, rotate.beforeList) }));
+      setStatus(rotationNotice(rotate.ids.length, angle, !event.shiftKey));
+      return;
+    }
     const current = gesture;
     if (!current) return;
     if (current.mode === 'drag') {
-      finishDrag(normaliseDrag(current.from, pointFrom(event)));
+      const box = normaliseDrag(current.from, pointFrom(event));
+      // With Select armed, a band drawn on empty paper is a marquee; a click is
+      // the release of the selection.
+      if (tool === 'select') {
+        setGesture(null);
+        if (!isMeaningfulDrag(box)) {
+          updateWork((next) => ({ ...next, selection: [] }));
+          setStatus(selectionNotice(0, page));
+          return;
+        }
+        const ids = marksInMarquee(annotations, page, box, geom ?? { zoom: 1, cssWidth: 0, cssHeight: 0, rotation: 0 });
+        const merged = current.additive ? addToSelection(work?.selection ?? [], ids) : ids;
+        updateWork((next) => ({ ...next, selection: merged }));
+        setStatus(marqueeNotice(ids.length, page));
+        return;
+      }
+      finishDrag(box, Boolean(current.additive));
       setGesture(null);
       return;
     }
@@ -984,11 +1237,27 @@ export function AnnotationEditor(): JSX.Element {
 
   /* ── keyboard ────────────────────────────────────────────────────── */
 
+  /**
+   * Turn the page.
+   *
+   * The selection does not come with: marks are geometry in one page's user
+   * space, so taking page 2's four selected shapes to page 5 would either move
+   * them sideways into another page's coordinates or silently drop three of them
+   * at the border. The editor refuses, says so, and leaves the set where it is
+   * drawn.
+   */
   const goToPage = useCallback(
     (next: number) => {
       const total = numPages || 1;
-      updateWork((current) => ({ ...current, page: Math.min(Math.max(next, 0), total - 1) }));
+      const target = Math.min(Math.max(next, 0), total - 1);
+      let leftBehind: string | null = null;
+      updateWork((current) => {
+        const moved = transferSelectionToPage(current.selection, current.page, target);
+        leftBehind = moved.notice;
+        return { ...current, page: target, selection: moved.selection };
+      });
       setEditingId(null);
+      if (leftBehind) setStatus(leftBehind);
     },
     [numPages, updateWork],
   );
@@ -996,43 +1265,59 @@ export function AnnotationEditor(): JSX.Element {
   /**
    * Move the selection by an arrow step. The step is a screen distance (1 px, or
    * 10 px with Shift) and is mapped through the page geometry, so it looks the
-   * same size at every zoom and on a rotated page.
+   * same size at every zoom and on a rotated page — and it moves every mark the
+   * selection names, because the set is what the arrows act on.
    */
   const nudgeSelected = useCallback(
     (step: { dx: number; dy: number }) => {
-      if (!geom || !work?.selectedId) return false;
-      const before = work.history.present.find((a) => a.id === work.selectedId);
-      if (!before) return false;
+      if (!geom || !work || work.selection.length === 0) return false;
+      const ids = work.selection;
+      const before = selectedMarks(work.history.present, ids);
+      if (before.length === 0) return false;
       const origin = screenToPdfPoint({ x: 0, y: 0 }, geom);
       const moved = screenToPdfPoint({ x: step.dx, y: step.dy }, geom);
       const dx = moved.x - origin.x;
       const dy = moved.y - origin.y;
       updateWork((current) => ({
         ...current,
-        history: pushHistory(
-          current.history,
-          current.history.present.map((a) => (a.id === before.id ? moveAnnotation(before, dx, dy) : a)),
-        ),
+        history: pushHistory(current.history, moveMarks(current.history.present, ids, dx, dy)),
       }));
       const across = step.dx < 0 ? 'left' : step.dx > 0 ? 'right' : step.dy < 0 ? 'up' : 'down';
-      setStatus(`Nudged ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} ${Math.abs(step.dx) + Math.abs(step.dy)} px ${across}.`);
+      setStatus(
+        `${before.length === 1 ? `Nudged ${TOOL_BY_ID[before[0].tool]?.label ?? 'mark'}` : `Nudged ${before.length} marks`} ${Math.abs(step.dx) + Math.abs(step.dy)} px ${across}.`,
+      );
       return true;
     },
     [geom, updateWork, work],
   );
 
+  /** `Cmd/Ctrl-A`: the current page's marks, and no one else's. */
+  const selectAllOnPage = useCallback(() => {
+    if (!work) return false;
+    const ids = pageSelection(work.history.present, page);
+    updateWork((current) => ({ ...current, selection: ids }));
+    setStatus(selectAllNotice(ids.length, page));
+    return true;
+  }, [page, updateWork, work]);
+
   /** `Cmd/Ctrl-D`: a copy of the selection, offset, and immediately the selection. */
   const duplicateSelected = useCallback(() => {
-    if (!work?.selectedId) return false;
-    const before = work.history.present.find((a) => a.id === work.selectedId);
-    if (!before) return false;
-    const copy = duplicateAnnotation(before);
-    updateWork((current) => ({
-      ...current,
-      history: pushHistory(current.history, [...current.history.present, copy]),
-      selectedId: copy.id,
-    }));
-    setStatus(`Duplicated ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} — the copy is selected.`);
+    if (!work || work.selection.length === 0) return false;
+    const before = selectedMarks(work.history.present, work.selection);
+    if (before.length === 0) return false;
+    updateWork((current) => {
+      const { marks, ids } = duplicateMarks(current.history.present, current.selection);
+      return {
+        ...current,
+        history: pushHistory(current.history, [...current.history.present, ...marks]),
+        selection: ids,
+      };
+    });
+    setStatus(
+      before.length === 1
+        ? `Duplicated ${TOOL_BY_ID[before[0].tool]?.label ?? 'mark'} — the copy is selected.`
+        : `Duplicated ${before.length} marks in one step — the copies are selected.`,
+    );
     return true;
   }, [updateWork, work]);
 
@@ -1040,12 +1325,17 @@ export function AnnotationEditor(): JSX.Element {
    * `Alt` + arrow: the keyboard equivalent of dragging a resize handle. A handle
    * is 10 px on screen with a 22 px grab, but it is still a pointer-only target,
    * and the brief asks for a key route to every pointer action.
+   *
+   * With a group selected, every mark takes the same edge — the alternative is a
+   * key that silently does nothing once the user has selected more than one
+   * thing. Each pull runs along the mark's own axes, so a turned mark grows along
+   * its edges rather than along the page's.
    */
   const resizeSelected = useCallback(
     (key: string, shift: boolean) => {
-      if (!geom || !work?.selectedId) return false;
-      const before = work.history.present.find((a) => a.id === work.selectedId);
-      if (!before) return false;
+      if (!geom || !work || work.selection.length === 0) return false;
+      const before = selectedMarks(work.history.present, work.selection);
+      if (before.length === 0) return false;
       const step = nudgeStep(key, shift);
       if (!step) return false;
       const origin = screenToPdfPoint({ x: 0, y: 0 }, geom);
@@ -1055,16 +1345,21 @@ export function AnnotationEditor(): JSX.Element {
       const dy = horizontal ? 0 : moved.y - origin.y;
       const handle: ResizeHandle =
         key === 'ArrowLeft' ? 'sw' : key === 'ArrowRight' ? 'se' : key === 'ArrowUp' ? 'nw' : 'sw';
-      const next = resizeAnnotation(before, handle, dx, dy);
       updateWork((current) => ({
         ...current,
         history: pushHistory(
           current.history,
-          current.history.present.map((a) => (a.id === before.id ? next : a)),
+          current.history.present.map((a) => {
+            if (!current.selection.includes(a.id)) return a;
+            const local = unrotateDelta(dx, dy, annotationRotation(a));
+            return resizeAnnotation(a, handle, local.x, local.y);
+          }),
         ),
       }));
       setStatus(
-        `Resized ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} from the ${key.replace('Arrow', '').toLowerCase()} edge.`,
+        before.length === 1
+          ? `Resized ${TOOL_BY_ID[before[0].tool]?.label ?? 'mark'} from the ${key.replace('Arrow', '').toLowerCase()} edge.`
+          : `Resized ${before.length} marks from the ${key.replace('Arrow', '').toLowerCase()} edge.`,
       );
       return true;
     },
@@ -1076,9 +1371,12 @@ export function AnnotationEditor(): JSX.Element {
    * documented rule rather than the order of a switch statement.
    */
   const stepBack = useCallback(() => {
+    const ids = work?.selection ?? [];
     const level = nextEscapeLevel({
-      editing: editingId !== null || gesture !== null || linkDraft !== null || signOpen,
-      selected: Boolean(work?.selectedId),
+      // A marquee in progress is a half-drawn selection, so it is dismissed
+      // first; a marquee that has not been dragged yet is just a pressed cursor.
+      editing: editingId !== null || linkDraft !== null || signOpen || gesture !== null,
+      selected: ids.length > 0,
       pinned: pinnedFor(tool),
       armed: tool !== 'select',
     });
@@ -1090,7 +1388,7 @@ export function AnnotationEditor(): JSX.Element {
         setSignOpen(false);
         break;
       case 'selection':
-        updateWork((current) => ({ ...current, selectedId: null }));
+        updateWork((current) => ({ ...current, selection: [] }));
         break;
       case 'unpin':
         setPinnedTools((current) => ({ ...current, [tool]: false }));
@@ -1101,9 +1399,9 @@ export function AnnotationEditor(): JSX.Element {
       default:
         break;
     }
-    if (level !== 'none') setStatus(escapeLevelNotice(level));
+    if (level !== 'none') setStatus(escapeLevelNotice(level, level === 'selection' ? ids.length : undefined));
     return level;
-  }, [armTool, editingId, gesture, linkDraft, pinnedFor, signOpen, tool, updateWork, work?.selectedId]);
+  }, [armTool, editingId, gesture, linkDraft, pinnedFor, signOpen, tool, updateWork, work?.selection]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1121,12 +1419,24 @@ export function AnnotationEditor(): JSX.Element {
         else redo();
         return;
       }
+      // `Cmd/Ctrl-A` is the page's, not the document's: a mark belongs to one
+      // page's user space, so a selection that crossed pages could not be nudged,
+      // drawn or exported as one thing anyway.
+      if (isSelectAllKey(event.key, modifiers)) {
+        event.preventDefault();
+        selectAllOnPage();
+        return;
+      }
       if (isDuplicateKey(event.key, modifiers)) {
         event.preventDefault();
         duplicateSelected();
         return;
       }
-      const selectedMark = annotations.find((a) => a.id === work?.selectedId) ?? null;
+      // Only a one-mark selection can take typed text: a group has no single
+      // object's body to write into, and inventing one would be the inspector
+      // pretending to show something it does not hold.
+      const picked = work ? selectedMarks(work.history.present, work.selection) : [];
+      const selectedMark = picked.length === 1 ? picked[0] : null;
       // Type-to-edit: a selected text box or note takes the next character, the
       // way pdf.js hands focus to the box it just made. This has to be tested
       // before the single-key tool arms, or typing "p" would swap the pen.
@@ -1140,6 +1450,14 @@ export function AnnotationEditor(): JSX.Element {
         setEditingId(selectedMark.id);
         const current = selectedMark.kind === 'Text' ? selectedMark.contents ?? '' : selectedMark.text ?? '';
         draftText(selectedMark.id, current + event.key);
+        return;
+      }
+      // `R` turns the selection a quarter turn, `Shift+R` back. It sits after
+      // type-to-edit on purpose: with a text box selected, `r` is a letter.
+      const turn = rotationStepForKey(event.key, modifiers);
+      if (turn !== null && (work?.selection.length ?? 0) > 0) {
+        event.preventDefault();
+        turnSelected(turn);
         return;
       }
       // Single-key tool arms (V H T P) — only bare keys, so Ctrl+P still prints.
@@ -1169,10 +1487,11 @@ export function AnnotationEditor(): JSX.Element {
         }
         case 'Delete':
         case 'Backspace':
-          if (work?.selectedId) {
+          if ((work?.selection.length ?? 0) > 0) {
             event.preventDefault();
+            const count = work?.selection.length ?? 0;
             removeSelected();
-            setStatus('Removed the selected mark.');
+            setStatus(deleteNotice(count));
           }
           break;
         case 'Escape':
@@ -1210,7 +1529,10 @@ export function AnnotationEditor(): JSX.Element {
     stepBack,
     tool,
     undo,
-    work?.selectedId,
+    turnSelected,
+    selectAllOnPage,
+    work?.selection,
+    work?.history.present,
   ]);
 
   /* ── unsaved changes ─────────────────────────────────────────────── */
@@ -1287,6 +1609,30 @@ export function AnnotationEditor(): JSX.Element {
         }
       }
 
+      /*
+         A redaction turned to an angle that is not a right one covers a
+         parallelogram, and the text engine cuts axis-aligned boxes: handing it the
+         bounding box would delete whole words the mark never touched, and handing
+         it the unrotated box would delete the wrong ones altogether. So those
+         regions burn their page as pixels instead — which is why the notice says
+         the page is a picture now.
+      */
+      let burnedNotice = '';
+      if (plan.rasterisations.length > 0) {
+        store.setPercent(55, `Burning ${plan.rasterisations.length} rotated redaction${plan.rasterisations.length === 1 ? '' : 's'}…`);
+        const burned = await burnRotatedRedactions(copy, session, plan.rasterisations, styles.redact.color);
+        const pages = burned.burned.join(', ');
+        if (burned.burned.length > 0) {
+          burnedNotice = `Page${burned.burned.length === 1 ? '' : 's'} ${pages} ${burned.burned.length === 1 ? 'was' : 'were'} rasterised to burn a rotated redaction: the text there is pixels now, not selectable words.`;
+          store.appendLog(burnedNotice);
+        }
+        if (burned.failed.length > 0) {
+          const failed = burned.failed.join(', ');
+          burnedNotice = `${burnedNotice} ${failed === pages ? 'The rotated redaction could not be burned' : `Page${burned.failed.length === 1 ? '' : 's'} ${failed} could not be painted`}, so nothing was deleted there — draw the redaction unrotated, or run Convert → PDF to Image on that page.`.trim();
+          store.appendLog(burnedNotice);
+        }
+      }
+
       store.setPercent(70, `Writing ${plan.counts.total} annotation${plan.counts.total === 1 ? '' : 's'}…`);
       addAnnotations(copy, plan.specs);
       store.setPercent(90, 'Saving…');
@@ -1296,8 +1642,10 @@ export function AnnotationEditor(): JSX.Element {
       const signature = workSignature(list);
       updateWork((current) => ({ ...current, exportedSignature: signature }));
       setNotice({
-        tone: warning ? 'warn' : 'success',
-        text: warning || `Exported ${plan.counts.total} annotation(s)${plan.counts.redactions ? `, including ${plan.counts.redactions} redaction(s)` : ''}.`,
+        tone: warning || burnedNotice ? 'warn' : 'success',
+        text:
+          [warning, burnedNotice].filter(Boolean).join(' ') ||
+          `Exported ${plan.counts.total} annotation(s)${plan.counts.redactions ? `, including ${plan.counts.redactions} redaction(s)` : ''}.`,
       });
     } catch (error) {
       const message =
@@ -1308,7 +1656,7 @@ export function AnnotationEditor(): JSX.Element {
     } finally {
       setExporting(false);
     }
-  }, [activeFile, hint, password, sourceBytes, styles.redact.color, updateWork, work]);
+  }, [activeFile, hint, password, session, sourceBytes, styles.redact.color, updateWork, work]);
 
   /* ── tabs ────────────────────────────────────────────────────────── */
 
@@ -1436,7 +1784,27 @@ export function AnnotationEditor(): JSX.Element {
   /* ── derived render data ─────────────────────────────────────────── */
 
   const pageAnnotations = annotations.filter((a) => a.page === page);
-  const selected = annotations.find((a) => a.id === work?.selectedId) ?? null;
+  /**
+   * The selection, in the order it was built. `primary` is the newest id and is
+   * what the corner handles, the rotate handle and the inspector's angle field
+   * point at; `selected` is only a selection of one, because "the selected
+   * object" stops being a true phrase once there are two of them.
+   */
+  const selection = work?.selection ?? [];
+  const selectionMarks = selectedMarks(pageAnnotations, selection);
+  const primary = selectionMarks.length > 0 ? selectionMarks[selectionMarks.length - 1] : null;
+  const selected = selectionMarks.length === 1 ? selectionMarks[0] : null;
+  /**
+   * What the selection panel prints. For one mark it names the mark; for a group
+   * it prints the set and the properties the set agrees on, and never one mark's
+   * text — that is the difference between a summary and a lie.
+   */
+  const selectionView = selectionMarks.length > 0 ? selectionSummary(pageAnnotations, selection) : null;
+  const selectionGroup = selectionView && selectionView.count > 1 ? selectionView : null;
+  /** The marquee being dragged with Select, or `null` for any other gesture. */
+  const marqueeBand =
+    tool === 'select' && gesture?.mode === 'drag' ? normaliseDrag(gesture.from, gesture.to) : null;
+  const marquee = marqueeBand && isMeaningfulDrag(marqueeBand) ? marqueeBand : null;
   const toolMeta = TOOL_BY_ID[tool];
   /**
    * The footer sentence for the armed tool. It states the pin state out loud, so
@@ -1614,6 +1982,37 @@ export function AnnotationEditor(): JSX.Element {
               </InspectorSection>
             </motion.div>
 
+            {/*
+               The selection's own card. For one mark it is a short readout; for a
+               group it is a summary — count, kinds, pages — plus the properties the
+               set shares. It deliberately never shows a body of text for a group:
+               "the note says X" is a sentence about one object, and a group has
+               none.
+            */}
+            {selectionView && primary ? (
+              <motion.div variants={fadeUp}>
+                <InspectorSection
+                  id="selection"
+                  title={selectionGroup ? `${selectionGroup.count} marks selected` : 'Selected mark'}
+                  meta={selectionGroup ? 'shared properties' : (TOOL_BY_ID[primary.tool]?.label ?? 'mark')}
+                >
+                  <SelectionPanel
+                    summary={selectionView}
+                    angle={annotationRotation(primary)}
+                    turnable={selectionMarks.some(canRotate)}
+                    refusedLabel={
+                      selectionMarks.length > 0 && !canRotate(primary)
+                        ? (TOOL_BY_ID[primary.tool]?.label ?? 'This')
+                        : null
+                    }
+                    onStyle={(shared) => patchStyle(shared)}
+                    onAngle={rotateSelectedTo}
+                    onTurn={(delta) => turnSelected(delta)}
+                  />
+                </InspectorSection>
+              </motion.div>
+            ) : null}
+
             {/* Once a document is open the chips carry it across, which is the
                 only reason a chip beats opening the other tool by hand. In the
                 empty state the chooser below is the single source of chips. */}
@@ -1632,8 +2031,7 @@ export function AnnotationEditor(): JSX.Element {
                 id="options"
                 title={`${toolMeta.label} options`}
                 meta={toolGroupById(GROUP_FOR_TOOL[tool] ?? '')?.label ?? 'marks'}
-              >
-                <div className="space-y-2">
+              >                <div className="space-y-2">
 
               <div className="flex items-center gap-2">
                 <input
@@ -1876,17 +2274,23 @@ export function AnnotationEditor(): JSX.Element {
                   <div
                     key={annotation.id}
                     className={`flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] ${
-                      annotation.id === work?.selectedId
+                      selection.includes(annotation.id)
                         ? 'border-accent/40 bg-accent/[0.06] text-ink'
                         : 'border-cream-border bg-white text-ink-soft hover:border-[#D5D5CD]'
                     }`}
                   >
                     <button
                       type="button"
-                      title="Select this mark"
-                      onClick={() => {
+                      title="Select this mark; Shift adds it to the selection"
+                      aria-pressed={selection.includes(annotation.id)}
+                      onClick={(event) => {
                         setTool('select');
-                        updateWork((current) => ({ ...current, selectedId: annotation.id }));
+                        updateWork((current) => ({
+                          ...current,
+                          selection: event.shiftKey
+                            ? toggleSelected(current.selection, annotation.id)
+                            : selectOnly(annotation.id),
+                        }));
                       }}
                       className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                     >
@@ -1899,14 +2303,14 @@ export function AnnotationEditor(): JSX.Element {
                       type="button"
                       aria-label="Delete annotation"
                       onClick={() => {
-                        updateWork((current) => ({
-                          ...current,
-                          history: pushHistory(
-                            current.history,
-                            current.history.present.filter((a) => a.id !== annotation.id),
-                          ),
-                          selectedId: null,
-                        }));
+                        updateWork((current) => {
+                          const kept = current.history.present.filter((a) => a.id !== annotation.id);
+                          return {
+                            ...current,
+                            history: pushHistory(current.history, kept),
+                            selection: pruneSelection(current.selection, kept, current.page),
+                          };
+                        });
                       }}
                       className="shrink-0 text-ink-muted transition-colors hover:text-danger"
                     >
@@ -2089,12 +2493,14 @@ export function AnnotationEditor(): JSX.Element {
                   vertices={verticesPreview}
                   tool={tool}
                   pinned={pinnedFor(tool)}
-                  selectedId={work?.selectedId ?? null}
+                  selection={selection}
                   editingId={editingId}
+                  marquee={marquee}
                   onSurfacePointerDown={onSurfacePointerDown}
                   onAnnotationPointerDown={onAnnotationPointerDown}
                   onAnnotationDoubleClick={onAnnotationDoubleClick}
                   onHandlePointerDown={onHandlePointerDown}
+                  onRotatePointerDown={onRotatePointerDown}
                   onFinishVertices={finishVertices}
                   onTextDraft={draftText}
                   onTextCommit={() => setEditingId(null)}
@@ -2246,6 +2652,79 @@ async function loadForExport(bytes: Uint8Array, password: string): Promise<PDFDo
   }
 }
 
+/** Pixels per PDF point for a burned page — the same 2× a thumbnail uses. */
+const BURN_SCALE = 2;
+
+/**
+ * Paint each rotated redaction's page back into `doc` as one picture.
+ *
+ * The page is rendered through the editor's own session (the only canvas this tab
+ * has), the rotated quads are filled over it in the burn colour, and the result
+ * replaces the page's content — so the words under the turn are gone rather than
+ * merely covered. Pages this tab cannot paint are reported, not pretended about:
+ * an unburned rotated redaction deletes nothing, which is the safe direction.
+ *
+ * `regions` come from `exportPlan`, whose `quad` is already in PDF user space.
+ */
+async function burnRotatedRedactions(
+  doc: PDFDocument,
+  session: PdfSession | null,
+  regions: { page: number; quad: number[] }[],
+  fill: string,
+): Promise<{ burned: number[]; failed: number[] }> {
+  const burned: number[] = [];
+  const failed: number[] = [];
+  if (!session) {
+    failed.push(...new Set(regions.map((region) => region.page + 1)));
+    return { burned, failed };
+  }
+
+  const byPage = new Map<number, number[][]>();
+  for (const region of regions) {
+    const quads = byPage.get(region.page) ?? [];
+    quads.push(region.quad);
+    byPage.set(region.page, quads);
+  }
+
+  for (const [pageIndex, quads] of byPage) {
+    try {
+      const proxy = await session.page(pageIndex + 1);
+      const viewport = proxy.getViewport({ scale: BURN_SCALE });
+      const rotation = normaliseRotation(proxy.rotate);
+      const pageGeom: PageGeom = {
+        zoom: BURN_SCALE,
+        cssWidth: viewport.width,
+        cssHeight: viewport.height,
+        rotation,
+      };
+      proxy.cleanup();
+      const render = await session.renderPage(pageIndex + 1, BURN_SCALE, { background: '#ffffff' });
+      const ctx = render.ctx;
+      ctx.save();
+      ctx.fillStyle = fill;
+      for (const quad of quads) {
+        const points = quadsToPoints(quad).map((point) => pdfToScreenPoint(point, pageGeom));
+        ctx.beginPath();
+        points.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      const encoded = await encodeImageBytes(render.canvas, {
+        format: 'jpeg',
+        quality: 0.92,
+        background: '#ffffff',
+      });
+      rasterisePageToImage(doc, pageIndex, encoded.bytes, { rotation });
+      render.cancel();
+      burned.push(pageIndex + 1);
+    } catch {
+      failed.push(pageIndex + 1);
+    }
+  }
+  return { burned, failed };
+}
+
 /* ------------------------------------------------------------------ *
  * Panels that are only about presentation                            *
  * ------------------------------------------------------------------ */
@@ -2287,6 +2766,140 @@ function Slider({
         className="w-full accent-[#2563EB]"
       />
     </label>
+  );
+}
+
+/**
+ * The selection card: what is picked, and the properties a group can share.
+ *
+ * `onStyle` is the pen's own patch handler, which also writes the selection — so
+ * the sliders here and the ones in the tool card cannot disagree, and one of them
+ * is the source of truth for the value shown.
+ */
+function SelectionPanel({
+  summary,
+  angle,
+  turnable,
+  refusedLabel,
+  onStyle,
+  onAngle,
+  onTurn,
+}: {
+  summary: SelectionSummary;
+  angle: number;
+  turnable: boolean;
+  refusedLabel: string | null;
+  onStyle: (shared: SharedStyle) => void;
+  onAngle: (degrees: number) => void;
+  onTurn: (delta: number) => void;
+}): JSX.Element {
+  const group = summary.count > 1;
+  const mixed = new Set(summary.mixed);
+  const what = summary.kinds.map((kind) => `${kind.label} ×${kind.count}`).join(', ');
+  return (
+    <div className="space-y-2" data-selection-panel={group ? 'group' : 'single'}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" data-selection-summary>
+        {summary.text}
+      </p>
+      {what ? <p className="text-[10px] leading-relaxed text-ink-soft">{what}</p> : null}
+      {group ? (
+        <p className="text-[10px] leading-relaxed text-ink-muted">
+          A group has no single body of text, so nothing is shown here that belongs to only one mark — select one
+          to edit its words.{' '}
+          {mixed.size > 0
+            ? `${[...mixed].join(', ')} differ between these marks; setting one below writes it into all ${summary.count}.`
+            : ''}
+        </p>
+      ) : null}
+
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={/^#[0-9a-f]{6}$/i.test(summary.shared.color ?? '') ? (summary.shared.color as string) : '#000000'}
+          onChange={(event) => onStyle({ color: event.target.value })}
+          className="h-7 w-10 cursor-pointer rounded border border-cream-border bg-white"
+          aria-label="Colour of the selection"
+        />
+        <span className="text-[10px] text-ink-muted">{mixed.has('color') ? 'mixed colours' : 'colour'}</span>
+      </div>
+
+      <Slider
+        label="Opacity"
+        value={summary.shared.opacity}
+        min={0.05}
+        max={1}
+        step={0.05}
+        display={mixed.has('opacity') ? 'mixed' : `${Math.round(summary.shared.opacity * 100)}%`}
+        onChange={(opacity) => onStyle({ opacity })}
+      />
+      <Slider
+        label="Stroke"
+        value={summary.shared.strokeWidth}
+        min={0.5}
+        max={12}
+        step={0.5}
+        unit="pt"
+        display={mixed.has('strokeWidth') ? 'mixed' : undefined}
+        onChange={(strokeWidth) => onStyle({ strokeWidth })}
+      />
+      {summary.shared.fontSize !== undefined || mixed.has('fontSize') ? (
+        <Slider
+          label="Text size"
+          value={summary.shared.fontSize ?? 12}
+          min={6}
+          max={72}
+          step={1}
+          unit="pt"
+          display={mixed.has('fontSize') ? 'mixed' : undefined}
+          onChange={(fontSize) => onStyle({ fontSize })}
+        />
+      ) : null}
+
+      <label className="block space-y-1">
+        <span className="flex items-baseline justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
+          <span>Rotation</span>
+          <span className="font-display text-[11px] normal-case tracking-normal text-ink-soft tabular-nums">
+            {Math.round(angle)}°
+          </span>
+        </span>
+        <input
+          type="number"
+          min={0}
+          max={359}
+          step={15}
+          value={Math.round(angle)}
+          disabled={!turnable}
+          onChange={(event) => onAngle(event.target.valueAsNumber)}
+          className="doodle-input text-[11px] disabled:opacity-50"
+          aria-label="Rotation in degrees"
+        />
+      </label>
+      <div className="flex gap-1">
+        <button
+          type="button"
+          disabled={!turnable}
+          onClick={() => onTurn(-90)}
+          className={`${MINI_BTN} disabled:opacity-40`}
+          title="Turn the selection 90° back (Shift+R)"
+        >
+          ↺ 90°
+        </button>
+        <button
+          type="button"
+          disabled={!turnable}
+          onClick={() => onTurn(90)}
+          className={`${MINI_BTN} disabled:opacity-40`}
+          title="Turn the selection 90° (R)"
+        >
+          90° ↻
+        </button>
+      </div>
+      {!turnable && refusedLabel ? (
+        <p className="text-[10px] leading-relaxed text-ink-muted">{rotationRefusedNotice(refusedLabel)}</p>
+      ) : (
+        <p className="text-[10px] leading-relaxed text-ink-muted">{ROTATE_SNAP_HINT}</p>
+      )}
+    </div>
   );
 }
 

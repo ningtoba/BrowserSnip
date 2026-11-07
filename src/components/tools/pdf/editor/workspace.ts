@@ -22,13 +22,161 @@ export interface DocWork {
   history: HistoryState<EditorAnnotation[]>;
   /** 0-based page index the document was last left on. */
   page: number;
-  selectedId: string | null;
+  /**
+   * The selection set, ordered oldest-first. It replaces the single id the
+   * editor used to hold: every old one-mark command now runs over this list,
+   * so a one-element selection behaves exactly as that id did.
+   *
+   * Ids only ever name marks on `page` — a selection is per-page, because a
+   * mark's geometry lives in one page's user space and cannot be nudged into
+   * another's.
+   */
+  selection: string[];
   /** `workSignature` of the list that was last exported; drives "unsaved". */
   exportedSignature: string | null;
 }
 
 export function createWork(): DocWork {
-  return { history: createHistory<EditorAnnotation[]>([]), page: 0, selectedId: null, exportedSignature: null };
+  return { history: createHistory<EditorAnnotation[]>([]), page: 0, selection: [], exportedSignature: null };
+}
+
+/* ------------------------------------------------------------------ *
+ * The selection set                                                   *
+ * ------------------------------------------------------------------ */
+
+/** The whole selection, as a fresh array — an empty selection is `[]`. */
+export function selectOnly(id: string | null | undefined): string[] {
+  return id ? [id] : [];
+}
+
+/** Add `id` if it is out, drop it if it is in; Shift+click's whole meaning. */
+export function toggleSelected(selection: readonly string[], id: string): string[] {
+  return selection.includes(id) ? selection.filter((entry) => entry !== id) : [...selection, id];
+}
+
+/** Every id in `ids` that is not already selected, appended in list order. */
+export function addToSelection(selection: readonly string[], ids: readonly string[]): string[] {
+  const next = [...selection];
+  for (const id of ids) if (!next.includes(id)) next.push(id);
+  return next;
+}
+
+/**
+ * Drop selected ids that no longer name a mark on `page`.
+ *
+ * Undo, a delete from the layer list and turning the page all take marks out
+ * from under the selection; a stale id would make the inspector claim a mark is
+ * selected that the canvas no longer shows.
+ */
+export function pruneSelection(
+  selection: readonly string[],
+  annotations: readonly { id: string; page: number }[],
+  page: number | null = null,
+): string[] {
+  const alive = new Set(annotations.filter((a) => (page === null || a.page === page)).map((a) => a.id));
+  return selection.filter((id) => alive.has(id));
+}
+
+/**
+ * What turning the page does to a selection, and what the editor says about it.
+ *
+ * A selection cannot travel: marks are geometry in one page's user space, so
+ * page N's set is simply left behind. Returning the reason is the point — the
+ * alternative is marks that look unselected because the user turned over, with
+ * no explanation of where they went.
+ */
+export function transferSelectionToPage(
+  selection: readonly string[],
+  fromPage: number,
+  toPage: number,
+): { selection: string[]; notice: string | null } {
+  if (toPage === fromPage) return { selection: [...selection], notice: null };
+  if (selection.length === 0) return { selection: [], notice: null };
+  return {
+    selection: [],
+    notice:
+      `Left ${selection.length} selected mark${selection.length === 1 ? '' : 's'} on page ${fromPage + 1} — ` +
+      `a selection belongs to one page and cannot move to page ${toPage + 1}.`,
+  };
+}
+
+/**
+ * Sentence for the live region after a selection change.
+ *
+ * Multi-select is otherwise invisible feedback: nothing on the page announces
+ * that the target of the keyboard commands just changed from one mark to four.
+ */
+export function selectionNotice(
+  count: number,
+  page: number,
+  marks?: { tool?: string }[],
+): string {
+  if (count === 0) return 'Cleared the selection.';
+  if (count === 1) {
+    const label = marks?.[0]?.tool ?? 'mark';
+    return `Selected the ${label} on page ${page + 1}.`;
+  }
+  return `Selected ${count} marks on page ${page + 1} — commands now act on the set.`;
+}
+
+/** What a marquee took, or failed to take. */
+export function marqueeNotice(count: number, page: number): string {
+  return count === 0
+    ? `That band crossed no marks on page ${page + 1}.`
+    : `Selected ${count} mark${count === 1 ? '' : 's'} the band touched on page ${page + 1}.`;
+}
+
+/** What `Cmd/Ctrl-A` took — and it never takes another page's marks. */
+export function selectAllNotice(count: number, page: number): string {
+  return count === 0
+    ? `Page ${page + 1} has no marks to select.`
+    : `Selected all ${count} mark${count === 1 ? '' : 's'} on page ${page + 1} — other pages keep their own.`;
+}
+
+/** What a delete took. */
+export function deleteNotice(count: number): string {
+  return count === 1
+    ? 'Removed the selected mark.'
+    : `Removed ${count} marks in one step — one undo brings them all back.`;
+}
+
+/** What a group drag did, said once at the end of the drag. */
+export function moveSelectionNotice(count: number, dx: number, dy: number): string {
+  const axis = Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+  return `Moved ${count} mark${count === 1 ? '' : 's'} ${axis} as one selection.`;
+}
+
+/** Names of the shared properties the inspector just changed. */
+const STYLE_LABELS: Record<string, string> = {
+  color: 'colour',
+  opacity: 'opacity',
+  strokeWidth: 'stroke width',
+  fontSize: 'text size',
+};
+
+/** What a style edit did to the set. */
+export function sharedStyleNotice(changed: string[], count: number): string {
+  const what = changed.map((key) => STYLE_LABELS[key] ?? key).join(' and ');
+  return count === 1
+    ? `Set the ${what} of the selected mark.`
+    : `Set the ${what} of all ${count} selected marks in one step.`;
+}
+
+/**
+ * What a rotation did.
+ *
+ * A right angle is said as a quarter turn because that is what the user asked
+ * for; any other angle is said in degrees because that is what they dialled in.
+ */
+export function rotationNotice(count: number, degrees: number, snapped: boolean): string {
+  const whose = count === 1 ? 'mark' : 'marks';
+  const turned = `Turned the selected ${whose} to ${Math.round(degrees)}\u00b0`;
+  return snapped ? `${turned} — snapped to 15\u00b0; hold Shift for a free angle.` : `${turned}.`;
+}
+
+/** Why a rotation did nothing to a mark that cannot carry one. */
+export function rotationRefusedNotice(label: string): string {
+  return `${label} marks a region of the page rather than a shape on it, so it cannot be turned.`;
 }
 
 /** Identity of a file for the work cache: same bytes → same workspace. */

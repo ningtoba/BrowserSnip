@@ -11,15 +11,22 @@
 import type { AnnotationKind, AnnotationSpec, QuadRect } from '@/lib/pdf/core/annotations';
 import {
   boundsOfPoints,
+  boxToMarkFrame,
   centeredRect,
   clampRectToPage,
   fitRectInBox,
   isMeaningfulDrag,
+  normaliseAngle,
   normaliseDrag,
   pdfQuadFromViewportBox,
   pdfRectFromViewportBox,
+  pdfToScreenPoint,
   pointsToPairList,
   quadsToPoints,
+  rectCentre,
+  rectCorners,
+  rotatePointAbout,
+  rotatedBounds,
   screenToPdfPoint,
   screenToPdfRect,
   translateLineEnds,
@@ -287,6 +294,309 @@ export function withText(
 }
 
 /* ------------------------------------------------------------------ *
+ * Rotation                                                            *
+ * ------------------------------------------------------------------ *
+ *
+ * A mark carries its own angle and nothing else changes: the geometry stays
+ * unrotated, so nudge, resize, snapping and the text quads keep working, and
+ * every consumer applies the same turn about the centre of `rect`.
+ */
+
+/** The angle a mark holds, normalised — an unset mark is straight (0°). */
+export function annotationRotation(annotation: Pick<EditorAnnotation, 'rotation'>): number {
+  return normaliseAngle(annotation.rotation ?? 0);
+}
+
+/** Set the angle absolutely, about the mark's own centre. */
+export function setAnnotationRotation(
+  annotation: EditorAnnotation,
+  degrees: number,
+): EditorAnnotation {
+  const angle = normaliseAngle(degrees);
+  if (angle === annotationRotation(annotation)) return annotation;
+  return { ...annotation, rotation: angle };
+}
+
+/** Add `delta` degrees, about the mark's own centre. */
+export function turnAnnotation(annotation: EditorAnnotation, delta: number): EditorAnnotation {
+  if (!Number.isFinite(delta) || normaliseAngle(delta) === 0) return annotation;
+  return setAnnotationRotation(annotation, annotationRotation(annotation) + delta);
+}
+
+/**
+ * Turn a mark by `delta` about a point that is not its own centre.
+ *
+ * This is what a rotate handle on a *group* does: the set swings around the
+ * middle of the selection, so every mark moves along the arc and takes the same
+ * new angle. Pivoting on the mark's own centre collapses to a pure spin, which
+ * is why one function serves both cases.
+ */
+export function orbitAnnotation(
+  annotation: EditorAnnotation,
+  pivot: Point,
+  delta: number,
+): EditorAnnotation {
+  const turned = turnAnnotation(annotation, delta);
+  const centre = rectCentre(annotation.rect);
+  const moved = rotatePointAbout(centre, pivot, delta);
+  return moveAnnotation(turned, moved.x - centre.x, moved.y - centre.y);
+}
+
+/** The box a mark really occupies on the page: `rect`, turned. */
+export function markBounds(annotation: EditorAnnotation): QuadRect {
+  return rotatedBounds(annotation.rect, annotationRotation(annotation));
+}
+
+/**
+ * Whether a mark can carry an angle at all.
+ *
+ * A link is a clickable rectangle: its dictionary offers nothing but `/Rect`, so a
+ * turned link would draw an outline no viewer honours while the click area stayed
+ * the axis-aligned box — a difference between the picture and the behaviour. Every
+ * other kind paints something the appearance stream can turn, so it can be asked.
+ */
+export function canRotate(annotation: Pick<EditorAnnotation, 'kind'>): boolean {
+  return annotation.kind !== 'Link';
+}
+
+/* ------------------------------------------------------------------ *
+ * The selection set                                                   *
+ * ------------------------------------------------------------------ *
+ *
+ * Every command the editor offers on a selection runs over these functions, so
+ * "one drag is one undo step" and "a style change hits the set" are properties
+ * of the model rather than of a click handler.
+ */
+
+/** The marks a selection names, in the order the list holds them. */
+export function selectedMarks(
+  annotations: readonly EditorAnnotation[],
+  selection: readonly string[],
+): EditorAnnotation[] {
+  return annotations.filter((a) => selection.includes(a.id));
+}
+
+/** Every mark drawn on one page, in creation order — what Cmd/Ctrl+A selects. */
+export function marksOnPage(
+  annotations: readonly EditorAnnotation[],
+  page: number,
+): EditorAnnotation[] {
+  return annotations.filter((a) => a.page === page);
+}
+
+/** Ids of every mark on `page`; the page boundary is the selection boundary. */
+export function pageSelection(
+  annotations: readonly EditorAnnotation[],
+  page: number,
+): string[] {
+  return marksOnPage(annotations, page).map((a) => a.id);
+}
+
+/** A list with `ids` moved by one delta — one array, so one undo step. */
+export function moveMarks(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+  dx: number,
+  dy: number,
+): EditorAnnotation[] {
+  if (dx === 0 && dy === 0) return annotations.slice();
+  return annotations.map((a) => (ids.includes(a.id) ? moveAnnotation(a, dx, dy) : a));
+}
+
+/** A list with `ids` turned about the centre of the selection. */
+export function turnMarks(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+  delta: number,
+  pivot?: Point,
+): EditorAnnotation[] {
+  const centre = pivot ?? selectionBounds(annotations, ids) ?? null;
+  return annotations.map((a) => {
+    if (!ids.includes(a.id)) return a;
+    return centre ? orbitAnnotation(a, centre, delta) : turnAnnotation(a, delta);
+  });
+}
+
+/** A list with every mark in `ids` set to the same angle, each about its centre. */
+export function setMarksRotation(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+  degrees: number,
+): EditorAnnotation[] {
+  const angle = normaliseAngle(degrees);
+  return annotations.map((a) => (ids.includes(a.id) ? setAnnotationRotation(a, angle) : a));
+}
+
+/** A list without the marks `ids` names. */
+export function removeMarks(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+): EditorAnnotation[] {
+  return annotations.filter((a) => !ids.includes(a.id));
+}
+
+/**
+ * The four properties the inspector offers to a group.
+ *
+ * Deliberately narrow: text, link target and stamp face belong to one object,
+ * so a group summary never pretends to edit them.
+ */
+export interface SharedStyle {
+  color?: string;
+  opacity?: number;
+  strokeWidth?: number;
+  fontSize?: number;
+}
+
+/**
+ * Apply a shared property to every selected mark.
+ *
+ * A colour rewrites whichever colour fields the mark actually carries, because
+ * a note paints its body from `color` while a rectangle strokes it — leaving
+ * `fillColor` alone would change one shape and not the other. Opacity is the one
+ * property a redaction refuses: it is burned in, so a translucent burn would
+ * promise a page that still shows the words.
+ */
+export function styleMarks(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+  style: SharedStyle,
+): EditorAnnotation[] {
+  return annotations.map((annotation) => {
+    if (!ids.includes(annotation.id)) return annotation;
+    const next: EditorAnnotation = { ...annotation };
+    if (style.color !== undefined) {
+      const previous = annotation.color;
+      next.color = style.color;
+      if (annotation.borderColor === previous || annotation.borderColor !== undefined) {
+        next.borderColor = style.color;
+      }
+      if (annotation.fillColor === previous) next.fillColor = style.color;
+    }
+    if (style.opacity !== undefined && annotation.kind !== 'Redact') {
+      next.opacity = style.opacity;
+    }
+    if (style.strokeWidth !== undefined) {
+      // Markup must stay at least as thick as the glyphs it covers.
+      next.borderWidth =
+        annotation.quadPoints && annotation.kind !== 'Underline' && annotation.kind !== 'StrikeOut'
+          ? Math.max(style.strokeWidth, 0.6)
+          : style.strokeWidth;
+    }
+    if (style.fontSize !== undefined && annotation.fontSize !== undefined) {
+      next.fontSize = style.fontSize;
+    }
+    return next;
+  });
+}
+
+/** Copies of `ids`, offset so both sets are visible, as one edit. */
+export function duplicateMarks(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+  offset: { dx?: number; dy?: number } = {},
+): { marks: EditorAnnotation[]; ids: string[] } {
+  const copies = selectedMarks(annotations, ids).map((a) => duplicateAnnotation(a, offset));
+  return { marks: copies, ids: copies.map((a) => a.id) };
+}
+
+/** The box that contains a whole selection, or `null` when nothing is picked. */
+export function selectionBounds(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+): QuadRect | null {
+  const marks = selectedMarks(annotations, ids);
+  if (marks.length === 0) return null;
+  return boundsOfPoints(
+    marks.flatMap((mark) => rectCornersOf(markBounds(mark))),
+  );
+}
+
+function rectCornersOf(rect: QuadRect): Point[] {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+}
+
+/**
+ * What a group is, said honestly.
+ *
+ * Two selected marks are not one mark with two of everything: the inspector
+ * shows the count, the kinds, the pages, and only the properties the whole set
+ * already agrees on. `mixed` names what it will not pretend to show.
+ */
+export interface SelectionSummary {
+  count: number;
+  pages: number[];
+  /** One entry per tool in the set, most used first.
+   */
+  kinds: { tool: EditorToolId; label: string; count: number }[];
+  /** Properties every selected mark shares, ready for the controls to show. */
+  shared: Required<Pick<SharedStyle, 'opacity' | 'strokeWidth'>> & {
+    color?: string;
+    fontSize?: number;
+  };
+  /** Property names the set disagrees about. */
+  mixed: (keyof SharedStyle)[];
+  /** True when the set holds a text mark whose body the panel will not show. */
+  hasText: boolean;
+  /** One line for the panel heading and the live region. */
+  text: string;
+}
+
+function agrees<T>(values: T[]): { same: true; value: T } | { same: false } {
+  if (values.length === 0) return { same: false };
+  const first = values[0];
+  return values.every((value) => Object.is(value, first)) ? { same: true, value: first } : { same: false };
+}
+
+export function selectionSummary(
+  annotations: readonly EditorAnnotation[],
+  ids: readonly string[],
+): SelectionSummary {
+  const marks = selectedMarks(annotations, ids);
+  const counts = new Map<EditorToolId, number>();
+  for (const mark of marks) counts.set(mark.tool, (counts.get(mark.tool) ?? 0) + 1);
+  const kinds = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tool, count]) => ({ tool, label: TOOL_BY_ID[tool]?.label ?? tool, count }));
+  const pages = [...new Set(marks.map((mark) => mark.page))].sort((a, b) => a - b);
+
+  const mixed: (keyof SharedStyle)[] = [];
+  const shared: SelectionSummary['shared'] = {
+    opacity: 1,
+    strokeWidth: 0,
+  };
+  const color = agrees(marks.map((mark) => mark.color));
+  if (color.same) shared.color = color.value;
+  else mixed.push('color');
+  const opacity = agrees(marks.map((mark) => mark.opacity));
+  if (opacity.same) shared.opacity = opacity.value;
+  else mixed.push('opacity');
+  const stroke = agrees(marks.map((mark) => mark.borderWidth));
+  if (stroke.same) shared.strokeWidth = stroke.value;
+  else mixed.push('strokeWidth');
+  const sized = marks.filter((mark) => mark.fontSize !== undefined);
+  const fontSize = sized.length > 0 ? agrees(sized.map((mark) => mark.fontSize as number)) : { same: false as const };
+  if (fontSize.same) shared.fontSize = fontSize.value;
+  else if (sized.length > 0) mixed.push('fontSize');
+
+  const hasText = marks.some((mark) => EDITABLE_TEXT_KINDS.has(mark.kind));
+  const where = pages.length === 1 ? `page ${pages[0] + 1}` : `${pages.length} pages`;
+  const what = kinds.map((kind) => `${kind.label} ×${kind.count}`).join(', ');
+  const text =
+    marks.length === 0
+      ? 'Nothing selected.'
+      : `${marks.length} marks selected on ${where}${what ? ` — ${what}` : ''}`;
+  return { count: marks.length, pages, kinds, shared, mixed, hasText, text };
+}
+
+const EDITABLE_TEXT_KINDS = new Set<AnnotationKind>(['Text', 'FreeText']);
+
+/* ------------------------------------------------------------------ *
  * Nudge, duplicate, resize                                            *
  * ------------------------------------------------------------------ */
 
@@ -298,6 +608,56 @@ export const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'ne', 'sw', 'se'];
 /** Direction-correct cursor, so the pointer says which way the corner pulls. */
 export function handleCursor(handle: ResizeHandle): string {
   return handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize';
+}
+
+/**
+ * Which way each corner pulls, as a screen axis in degrees.
+ *
+ * `nwse-resize` is the axis that runs from the top-left of the screen to the
+ * bottom-right, which is 45° measured clockwise from +x with the y axis down.
+ */
+const HANDLE_AXIS_DEG: Record<ResizeHandle, number> = { nw: 45, se: 45, ne: 135, sw: 135 };
+
+/** The four resize cursors, at the axes they describe. */
+const AXIS_CURSORS = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'];
+
+/**
+ * The cursor for one corner of a **turned** mark.
+ *
+ * Rotating the mark rotates the diagonal it pulls along, and a pointer sitting
+ * on a handle whose drag now moves the mark up-and-down has to be told so —
+ * `nwse-resize` on a 45°-turned corner would promise a pull that cannot happen.
+ */
+export function rotatedHandleCursor(handle: ResizeHandle, degrees: number): string {
+  const axis = (HANDLE_AXIS_DEG[handle] + normaliseAngle(degrees)) % 180;
+  return AXIS_CURSORS[Math.round(axis / 45) % AXIS_CURSORS.length];
+}
+
+/** How far above the selection the rotate handle floats, in screen pixels. */
+export const ROTATE_HANDLE_OFFSET_PX = 24;
+
+/**
+ * Where the rotate handle sits, above the edge the selection points with.
+ *
+ * Built from the edge's own two corners rather than from an angle, so a mark on
+ * a turned page gets its handle on the outside just the same as one on a flat
+ * page: the offset points away from the shape's centre, whatever the screen
+ * happens to be doing to get there.
+ */
+export function rotateHandlePoint(
+  from: Point,
+  to: Point,
+  centre: Point,
+  offsetPx = ROTATE_HANDLE_OFFSET_PX,
+): Point {
+  const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  // Two normals to the edge; keep the one that points away from the centre.
+  const first = { x: dy / length, y: -dx / length };
+  const away = first.x * (mid.x - centre.x) + first.y * (mid.y - centre.y) >= 0 ? first : { x: -first.x, y: -first.y };
+  return { x: mid.x + away.x * offsetPx, y: mid.y + away.y * offsetPx };
 }
 
 /** Drawn size and grabbable size, in screen px: small to see, easy to catch. */
@@ -317,6 +677,44 @@ export function handlePoint(rect: QuadRect, handle: ResizeHandle): { x: number; 
 }
 
 /**
+ * Where the four corner handles sit for a mark that may be turned.
+ *
+ * Handles belong to the corners of the *shape*, so a rotated mark's handles go
+ * with it: four squares on the axis-aligned box would let the user grab paper
+ * the mark does not cover and pull the wrong corner.
+ */
+export function handleScreenPoints(
+  rect: QuadRect,
+  degrees: number,
+  geom: PageGeom,
+): Record<ResizeHandle, Point> {
+  const angle = normaliseAngle(degrees);
+  const pivot = rectCentre(rect);
+  const points = {} as Record<ResizeHandle, Point>;
+  for (const handle of RESIZE_HANDLES) {
+    const corner = handlePoint(rect, handle);
+    points[handle] = pdfToScreenPoint(angle === 0 ? corner : rotatePointAbout(corner, pivot, angle), geom);
+  }
+  return points;
+}
+
+/** The screen box that holds a whole selection, or `null` for an empty one. */
+export function selectionScreenBounds(
+  marks: readonly EditorAnnotation[],
+  geom: PageGeom,
+): CssRect | null {
+  const corners = marks.flatMap((mark) =>
+    rectCorners(markBounds(mark)).map((corner) => pdfToScreenPoint(corner, geom)),
+  );
+  if (corners.length === 0) return null;
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/**
  * Pull one corner of a mark, in PDF user space.
  *
  * Every point list travels with the box: a resized highlight keeps one quad per
@@ -324,6 +722,11 @@ export function handlePoint(rect: QuadRect, handle: ResizeHandle): { x: number; 
  * hugged two text lines still hugs two text lines after a resize instead of
  * collapsing to a rectangle. A corner can never cross its opposite: the box
  * keeps at least `MIN_SIZE_PT` of both extents.
+ *
+ * `dx`/`dy` live on the mark's own axes. A rotated mark's edges are not the
+ * page's, so a pointer delta is un-turned first (`unrotateDelta`); the angle
+ * itself survives the resize, which is what keeps a turned mark turned while it
+ * is pulled.
  */
 export const MIN_SIZE_PT = 1;
 
@@ -385,6 +788,11 @@ const MARKUP_KINDS = new Set<AnnotationKind>(['Highlight', 'Underline', 'StrikeO
  * *selects that mark*; only a click on bare paper starts a new one. Quads are
  * consulted before the bounding rect, so a multi-line highlight is picked up by a
  * line it actually covers rather than by the empty leading between them.
+ *
+ * A rotated mark is asked in its own frame: the point is turned back by the
+ * mark's angle and tested against the stored geometry. Testing the axis-aligned
+ * box instead would let a click in the corner of a turned highlight land on
+ * paper the mark does not cover.
  */
 export function markAtPoint(
   annotations: readonly EditorAnnotation[],
@@ -394,18 +802,85 @@ export function markAtPoint(
   const marks = annotations.filter((a) => a.page === page && MARKUP_KINDS.has(a.kind));
   for (let index = marks.length - 1; index >= 0; index -= 1) {
     const mark = marks[index];
+    const local = toMarkFrame(point, mark);
     const quads = mark.quadPoints ?? [];
     if (quads.length >= 8) {
       const boxes: QuadRect[] = [];
       for (let at = 0; at + 7 < quads.length; at += 8) {
         boxes.push(boundsOfPoints(quadsToPoints(quads.slice(at, at + 8))));
       }
-      if (boxes.some((box) => containsPoint(box, point))) return mark;
+      if (boxes.some((box) => containsPoint(box, local))) return mark;
       continue;
     }
-    if (containsPoint(mark.rect, point)) return mark;
+    if (containsPoint(mark.rect, local)) return mark;
   }
   return null;
+}
+
+/** Bring a page-space point into a mark's unrotated frame. */
+function toMarkFrame(point: Point, mark: EditorAnnotation): Point {
+  const angle = annotationRotation(mark);
+  if (angle === 0) return point;
+  return rotatePointAbout(point, rectCentre(mark.rect), -angle);
+}
+
+/** Whether one mark's real ink covers a page-space point, rotation included. */
+export function markCoversPoint(annotation: EditorAnnotation, point: Point): boolean {
+  const local = toMarkFrame(point, annotation);
+  const quads = annotation.quadPoints ?? [];
+  if (MARKUP_KINDS.has(annotation.kind) && quads.length >= 8) {
+    for (let at = 0; at + 7 < quads.length; at += 8) {
+      if (containsPoint(boundsOfPoints(quadsToPoints(quads.slice(at, at + 8))), local)) return true;
+    }
+    return false;
+  }
+  return containsPoint(annotation.rect, local);
+}
+
+/**
+ * The marks a marquee takes, as ids in list order.
+ *
+ * The rule is stated because it is the one thing a marquee user checks: a mark
+ * is selected when its drawn area shares any point with the band, **including a
+ * mark that only touches an edge**. Touching counts because the alternative —
+ * "overlap must have area" — hides a mark the user can plainly see the band
+ * reaching, and a marquee is drawn to be swept generously. Text markup answers
+ * through its quads, so a band in the leading between two highlighted lines does
+ * not take that highlight.
+ */
+export function marksInMarquee(
+  annotations: readonly EditorAnnotation[],
+  page: number,
+  box: CssRect,
+  geom: PageGeom,
+): string[] {
+  const world = screenToPdfRect(box, geom);
+  return annotations
+    .filter((a) => a.page === page && markIntersectsBox(a, world))
+    .map((a) => a.id);
+}
+
+/** Whether a mark — turned, quad-shaped or plain — shares a point with a box. */
+export function markIntersectsBox(annotation: EditorAnnotation, box: QuadRect): boolean {
+  const local = boxToMarkFrame(box, annotation.rect, annotationRotation(annotation));
+  const quads = annotation.quadPoints ?? [];
+  if (MARKUP_KINDS.has(annotation.kind) && quads.length >= 8) {
+    for (let at = 0; at + 7 < quads.length; at += 8) {
+      if (boxesTouch(boundsOfPoints(quadsToPoints(quads.slice(at, at + 8))), local)) return true;
+    }
+    return false;
+  }
+  return boxesTouch(annotation.rect, local);
+}
+
+/** Overlap that counts, edges included — the rule `marksInMarquee` states. */
+function boxesTouch(a: QuadRect, b: QuadRect): boolean {
+  return (
+    a.x <= b.x + b.width &&
+    b.x <= a.x + a.width &&
+    a.y <= b.y + b.height &&
+    b.y <= a.y + a.height
+  );
 }
 
 function containsPoint(rect: QuadRect, point: Point): boolean {
@@ -470,6 +945,11 @@ export function annotationToSpec(annotation: EditorAnnotation): AnnotationSpec {
     borderWidth: annotation.borderWidth,
     createdAt: new Date(annotation.createdAt),
   };
+  // The angle travels with the shape rather than being applied here: the writer
+  // owns turning `/Rect`, the quads and the appearance stream, and only it can
+  // keep the three in step.
+  const rotation = annotationRotation(annotation);
+  if (rotation !== 0) spec.rotation = rotation;
   if (annotation.fillColor) spec.fillColor = annotation.fillColor;
   if (annotation.borderColor) spec.borderColor = annotation.borderColor;
   if (annotation.contents) spec.contents = annotation.contents;
@@ -491,8 +971,40 @@ export function annotationToSpec(annotation: EditorAnnotation): AnnotationSpec {
   if (annotation.imageBytes) spec.stampImage = annotation.imageBytes;
   if (annotation.link) spec.link = annotation.link;
   // A /Redact annotation is what Acrobat lists after the content is rewritten.
-  if (annotation.kind === 'Redact') spec.redact = true;
+  // A redaction that has to be burned is *not* marked that way: its /Rect is a
+  // bounding box, and a reader applying the annotation later would clear words
+  // the mark never covered.
+  if (annotation.kind === 'Redact') spec.redact = !redactionNeedsRasterising(annotation);
   return spec;
+}
+
+/**
+ * Whether a redaction has to be burned as pixels instead of cut as vectors.
+ *
+ * The text engine deletes glyphs inside an **axis-aligned** box. A redaction
+ * turned to any angle that is not a right one covers a parallelogram, so no
+ * axis-aligned box is both honest and useful: the bounding box would take whole
+ * words the user did not mark, and a smaller box would leave marked words in the
+ * file under the fill. Those redactions rasterise their page instead. A right
+ * angle is different — turning a rectangle by 90° leaves a rectangle, and its
+ * bounding box is exactly the mark — so it keeps the vector path.
+ */
+export function redactionNeedsRasterising(annotation: EditorAnnotation): boolean {
+  if (annotation.kind !== 'Redact') return false;
+  return annotationRotation(annotation) % 90 !== 0;
+}
+
+/** The four corners a redaction really covers, as 8 numbers in PDF order. */
+export function redactionQuad(annotation: EditorAnnotation): number[] {
+  const angle = annotationRotation(annotation);
+  const centre = rectCentre(annotation.rect);
+  const at = (x: number, y: number) => rotatePointAbout({ x, y }, centre, angle);
+  const { x, y, width, height } = annotation.rect;
+  const ul = at(x, y + height);
+  const ur = at(x + width, y + height);
+  const ll = at(x, y);
+  const lr = at(x + width, y);
+  return [ul.x, ul.y, ur.x, ur.y, ll.x, ll.y, lr.x, lr.y].map(round);
 }
 
 export interface ExportPlan {
@@ -500,7 +1012,18 @@ export interface ExportPlan {
   specs: AnnotationSpec[];
   /** Redaction regions: the same geometry `applyRedactions` must cut out. */
   redactions: { page: number; rect: QuadRect }[];
-  counts: { total: number; redactions: number; byKind: { kind: AnnotationKind; count: number }[] };
+  /**
+   * Redactions that cannot be cut: `rect` bounds them, `quad` is the region the
+   * user marked. Deliberately absent from `redactions`, so the page is burned by
+   * pixels rather than sliced by a box that is too big.
+   */
+  rasterisations: { page: number; rect: QuadRect; quad: number[] }[];
+  counts: {
+    total: number;
+    redactions: number;
+    rasterisations: number;
+    byKind: { kind: AnnotationKind; count: number }[];
+  };
 }
 
 /**
@@ -562,26 +1085,41 @@ export function dropEmptyMarks(annotations: EditorAnnotation[]): EditorAnnotatio
 
 /** One-line honest summary for the export button's neighbour. */
 export function marksSummary(annotations: EditorAnnotation[]): string {
-  const redactions = annotations.filter((a) => a.kind === 'Redact').length;
+  const redactions = annotations.filter((a) => a.kind === 'Redact');
+  const burned = redactions.filter(redactionNeedsRasterising).length;
   const total = annotations.length;
   if (total === 0) return 'Nothing on the page yet.';
   const head = `${total} mark${total === 1 ? '' : 's'} on ${new Set(annotations.map((a) => a.page)).size} page(s)`;
-  return redactions > 0 ? `${head} · ${redactions} redaction${redactions === 1 ? '' : 's'} delete text on export` : `${head}.`;
+  if (redactions.length === 0) return `${head}.`;
+  const cut = redactions.length - burned;
+  const how =
+    burned === 0
+      ? `${redactions.length} redaction${redactions.length === 1 ? '' : 's'} delete text on export`
+      : `${cut} redaction${cut === 1 ? '' : 's'} delete text and ${burned} turned one${burned === 1 ? '' : 's'} burn their page as pixels on export`;
+  return `${head} · ${how}`;
 }
 
 export function exportPlan(annotations: EditorAnnotation[]): ExportPlan {
   const specs = annotations.map(annotationToSpec);
   const redactions = annotations
-    .filter((a) => a.kind === 'Redact')
-    .map((a) => ({ page: a.page, rect: a.rect }));
+    .filter((a) => a.kind === 'Redact' && !redactionNeedsRasterising(a))
+    // The cut box is the turned one: at a right angle it is exactly the mark.
+    .map((a) => ({ page: a.page, rect: markBounds(a) }));
+  const rasterisations = annotations.filter(redactionNeedsRasterising).map((a) => ({
+    page: a.page,
+    rect: markBounds(a),
+    quad: redactionQuad(a),
+  }));
   const byKind = new Map<AnnotationKind, number>();
   for (const a of annotations) byKind.set(a.kind, (byKind.get(a.kind) ?? 0) + 1);
   return {
     specs,
     redactions,
+    rasterisations,
     counts: {
       total: annotations.length,
       redactions: redactions.length,
+      rasterisations: rasterisations.length,
       byKind: [...byKind.entries()]
         .map(([kind, count]) => ({ kind, count }))
         .sort((a, b) => a.kind.localeCompare(b.kind)),
@@ -633,6 +1171,7 @@ export function workSignature(annotations: EditorAnnotation[]): string {
         a.contents ?? '',
         a.stampName ?? '',
         a.imageBytes?.byteLength ?? 0,
+        a.rotation ?? 0,
         a.link ? `${a.link.type}:${linkTarget(a.link)}` : '',
       ].join(''),
     )

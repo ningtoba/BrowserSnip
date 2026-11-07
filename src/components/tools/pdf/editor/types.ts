@@ -101,6 +101,16 @@ export interface EditorAnnotation {
   /** 0-based page index. */
   page: number;
   rect: QuadRect;
+  /**
+   * Degrees clockwise relative to the page, turned about the centre of `rect`.
+   *
+   * Stored geometry stays unrotated on purpose: `rect`, `quadPoints`, `inkPath`
+   * and `lineEnds` describe the mark as it was drawn, and every consumer —
+   * overlay, hit test, handles, export — applies the same turn. Export writes
+   * `/Rect` as the bounding box of the *rotated* geometry, never as `rect`.
+   * Absent means 0°.
+   */
+  rotation?: number;
   color: string;
   fillColor?: string;
   borderColor?: string;

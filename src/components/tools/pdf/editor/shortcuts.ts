@@ -64,7 +64,11 @@ export const EDITOR_SHORTCUTS: Shortcut[] = [
   { keys: ['Delete'], label: 'Remove the selected mark', group: 'marks' },
   { keys: ['←', '→', '↑', '↓'], label: 'Nudge the selected mark 1 px, or 10 px with Shift', group: 'marks' },
   { keys: ['Alt', '←'], label: 'Move the selected edge instead of the whole mark', group: 'marks' },
+  { keys: ['Shift', 'Click'], label: 'Add a mark to the selection, or take it back out', group: 'marks' },
+  { keys: ['Drag'], label: 'Draw a band from empty paper to select the marks it touches', group: 'marks' },
+  { keys: ['Ctrl', 'A'], label: 'Select every mark on this page', group: 'marks' },
   { keys: ['Ctrl', 'D'], label: 'Duplicate the selected mark', group: 'marks' },
+  { keys: ['R'], label: 'Turn the selection 90° clockwise, or back with Shift', group: 'marks' },
   { keys: ['Ctrl', 'Z'], label: 'Undo the last change', group: 'marks' },
   { keys: ['Ctrl', 'Shift', 'Z'], label: 'Re-apply the change just undone', group: 'marks' },
   { keys: ['Ctrl', 'Y'], label: 'Redo, the Windows way', group: 'marks' },
@@ -170,12 +174,14 @@ export function nextEscapeLevel(input: EscapeInput): EscapeLevel {
 }
 
 /** What the status line says after a level was taken. */
-export function escapeLevelNotice(level: EscapeLevel): string {
+export function escapeLevelNotice(level: EscapeLevel, selected?: number): string {
   switch (level) {
     case 'dismiss':
       return 'Dropped the mark that was half-drawn.';
     case 'selection':
-      return 'Cleared the selection; the tool is still armed.';
+      return typeof selected === 'number' && selected > 1
+        ? `Cleared the ${selected} selected marks; the tool is still armed.`
+        : 'Cleared the selection; the tool is still armed.';
     case 'unpin':
       return 'Unpinned the tool — it will hand control back after one placement.';
     case 'disarm':
@@ -222,6 +228,45 @@ export function isDuplicateKey(
   if (!modifiers.ctrl && !modifiers.meta) return false;
   return key.trim().toLowerCase() === 'd';
 }
+
+/**
+ * `Ctrl`/`Cmd` + A: select the current page's marks.
+ *
+ * Shift is accepted (some browsers deliver `A` with it for an upper-case select)
+ * but Alt is not, because `Alt+A` belongs to whatever the operating system says.
+ */
+export function isSelectAllKey(
+  key: string,
+  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean },
+): boolean {
+  if (modifiers.alt) return false;
+  if (!modifiers.ctrl && !modifiers.meta) return false;
+  return key.trim().toLowerCase() === 'a';
+}
+
+/**
+ * How far `R` turns the selection: 90° clockwise, or back with Shift.
+ *
+ * A right-angle step is the one rotation every keyboard can be trusted with; the
+ * finer angles come from the handle or the inspector's number field, because
+ * nudging 15° at a time would take a dozen presses to square a mark again.
+ */
+export function rotationStepForKey(
+  key: string,
+  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean },
+): number | null {
+  if (modifiers.ctrl || modifiers.meta || modifiers.alt) return null;
+  if (key.trim().toLowerCase() !== 'r') return null;
+  return modifiers.shift ? -90 : 90;
+}
+
+/**
+ * The rotate handle's snapping rule, in one sentence for the shortcut list and
+ * the inspector: a drag snaps to 15° and `Shift` breaks the snap. The maths that
+ * decides the angle is `rotationForDrag` in `geometry.ts`.
+ */
+export const ROTATE_SNAP_HINT = 'Drag the round handle to turn the mark; it snaps to 15° unless Shift is held.';
+
 
 /**
  * True when a bare printable key should go *into* the selected mark instead of

@@ -284,3 +284,206 @@ export function quadsToPoints(quads: number[]): Point[] {
 export function pointsToPairList(points: Point[]): number[][] {
   return points.map((p) => [p.x, p.y]);
 }
+
+/* ------------------------------------------------------------------ *
+ * A mark's own rotation                                               *
+ * ------------------------------------------------------------------ */
+
+/**
+ * A mark is stored *unrotated* — `rect`, `/QuadPoints`, ink and line ends all
+ * describe the shape as it was drawn — and turned about the centre of its rect
+ * by `EditorAnnotation.rotation`. That is what lets nudge, resize and snap keep
+ * working unchanged while the overlay and the export both apply the same turn.
+ *
+ * Degrees are **clockwise as the page is read**, which is the direction PDF's
+ * own `/Rotate` entry means; user space has +y up, so the maths is the negative
+ * of the textbook counter-clockwise rotation.
+ */
+export const ROTATE_SNAP_DEG = 15;
+
+/** Degrees into `[0, 360)`. A non-number is 0, i.e. straight. */
+export function normaliseAngle(degrees: number): number {
+  if (!Number.isFinite(degrees)) return 0;
+  return ((degrees % 360) + 360) % 360;
+}
+
+/** Straight when unset, so every existing annotation stays a plain `false`. */
+export function isRotated(degrees: number | undefined): boolean {
+  return normaliseAngle(degrees ?? 0) !== 0;
+}
+
+/** Turn an angle to the nearest multiple of `step`, keeping it inside `[0, 360)`. */
+export function snapAngle(degrees: number, step = ROTATE_SNAP_DEG): number {
+  if (!Number.isFinite(degrees)) return 0;
+  const size = step > 0 ? step : 1;
+  return normaliseAngle(Math.round(degrees / size) * size);
+}
+
+/** The centre of a rect — the pivot every rotated mark turns about. */
+export function rectCentre(rect: QuadRect): Point {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+/** Rotate one PDF-space point clockwise about `centre`. */
+export function rotatePointAbout(point: Point, centre: Point, degrees: number): Point {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return { x: point.x, y: point.y };
+  const rad = (angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = point.x - centre.x;
+  const dy = point.y - centre.y;
+  return { x: centre.x + dx * cos + dy * sin, y: centre.y - dx * sin + dy * cos };
+}
+
+/** The four corners of a rect, in PDF space, lower-left first, counter-clockwise. */
+export function rectCorners(rect: QuadRect): Point[] {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+}
+
+/**
+ * The axis-aligned box that contains `rect` turned about its own centre.
+ *
+ * This is what the exported `/Rect` always holds, never the pre-rotation box:
+ * a viewer that ignores our appearance stream, and anything that clips, prints
+ * or hit-tests by `/Rect`, then cannot crop a rotated mark.
+ */
+export function rotatedBounds(rect: QuadRect, degrees: number): QuadRect {
+  return rotatedBoundsAbout(rect, rectCentre(rect), degrees);
+}
+
+/**
+ * The axis-aligned box that contains `rect` turned about any pivot.
+ *
+ * A mark turns about its own centre; a *query* region is turned about that same
+ * centre to be read in the mark's frame, which is why the pivot is a parameter.
+ */
+export function rotatedBoundsAbout(rect: QuadRect, pivot: Point, degrees: number): QuadRect {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return { ...rect };
+  return boundsOfPoints(rectCorners(rect).map((corner) => rotatePointAbout(corner, pivot, angle)));
+}
+
+/** A flat quad list (8 numbers per quad) turned about the centre of `rect`. */
+export function rotateQuads(quads: number[], rect: QuadRect, degrees: number): number[] {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return quads.slice();
+  const centre = rectCentre(rect);
+  const out: number[] = [];
+  for (let i = 0; i + 1 < quads.length; i += 2) {
+    const point = rotatePointAbout({ x: quads[i], y: quads[i + 1] }, centre, angle);
+    out.push(point.x, point.y);
+  }
+  return out;
+}
+
+/** Ink strokes turned about the centre of `rect`. */
+export function rotateStrokes(strokes: number[][][], rect: QuadRect, degrees: number): number[][][] {
+  const angle = normaliseAngle(degrees);
+  const centre = rectCentre(rect);
+  return strokes.map((stroke) =>
+    stroke.map(([x, y]) => {
+      if (angle === 0) return [x, y];
+      const point = rotatePointAbout({ x, y }, centre, angle);
+      return [point.x, point.y];
+    }),
+  );
+}
+
+/** Line endpoints turned about the centre of `rect`. */
+export function rotateLineEnds(
+  ends: [number, number, number, number],
+  rect: QuadRect,
+  degrees: number,
+): [number, number, number, number] {
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return [ends[0], ends[1], ends[2], ends[3]];
+  const centre = rectCentre(rect);
+  const from = rotatePointAbout({ x: ends[0], y: ends[1] }, centre, angle);
+  const to = rotatePointAbout({ x: ends[2], y: ends[3] }, centre, angle);
+  return [from.x, from.y, to.x, to.y];
+}
+
+/**
+ * Bring a PDF-space delta back into the mark's own frame.
+ *
+ * A pointer or arrow-key delta lives in page space; a rotated mark's edges do
+ * not, so resizing pulls along the rotated axes by un-turning the delta first.
+ */
+export function unrotateDelta(dx: number, dy: number, degrees: number): Point {
+  return rotatePointAbout({ x: dx, y: dy }, { x: 0, y: 0 }, -normaliseAngle(degrees));
+}
+
+/**
+ * Where a rotated mark lands on screen: the pivot in CSS pixels and the angle
+ * to hand an SVG or CSS `rotate()`.
+ *
+ * The angle is measured from the mapped page axes rather than assumed, because
+ * the page's own `/Rotate` and the y-flip together decide which way a PDF-clock
+ * turn draws. Deriving it keeps the overlay honest on a turned page instead of
+ * rotating marks the wrong way there.
+ */
+export function markScreenRotation(
+  rect: QuadRect,
+  degrees: number,
+  geom: PageGeom,
+): { centre: Point; degrees: number } {
+  const pivot = rectCentre(rect);
+  const centre = pdfToScreenPoint(pivot, geom);
+  const angle = normaliseAngle(degrees);
+  if (angle === 0) return { centre, degrees: 0 };
+  const edge = pdfToScreenPoint(rotatePointAbout({ x: pivot.x + 1, y: pivot.y }, pivot, angle), geom);
+  return { centre, degrees: (Math.atan2(edge.y - centre.y, edge.x - centre.x) * 180) / Math.PI };
+}
+
+/** The four corners of a rotated mark, in screen pixels — where handles live. */
+export function rotatedScreenCorners(
+  rect: QuadRect,
+  degrees: number,
+  geom: PageGeom,
+): Point[] {
+  const angle = normaliseAngle(degrees);
+  const pivot = rectCentre(rect);
+  return rectCorners(rect).map((corner) =>
+    pdfToScreenPoint(angle === 0 ? corner : rotatePointAbout(corner, pivot, angle), geom),
+  );
+}
+
+/**
+ * Express a page-space box in one mark's own, unrotated frame.
+ *
+ * Hit tests and marquee selection run against stored (unrotated) geometry, so
+ * the query region is turned back about the mark's centre and re-bounded.
+ * Doing that instead of testing the axis-aligned box is what stops a marquee
+ * from taking a rotated mark it only clips the corner of.
+ */
+export function boxToMarkFrame(box: QuadRect, rect: QuadRect, degrees: number): QuadRect {
+  return rotatedBoundsAbout(box, rectCentre(rect), -normaliseAngle(degrees));
+}
+
+/**
+ * The clockwise angle of `point` seen from `centre`, in screen degrees.
+ *
+ * Screen space has +y down, so a rising angle is a turn to the right — the same
+ * direction a rotate handle travels, and the reason the drag can be read here
+ * without a sign flip.
+ */
+export function screenAngle(centre: Point, point: Point): number {
+  return normaliseAngle((Math.atan2(point.y - centre.y, point.x - centre.x) * 180) / Math.PI);
+}
+
+/**
+ * The angle a rotate drag asks for.
+ *
+ * Snapped to 15° because the angles people reach for are square and tidy; `free`
+ * (Shift held) is the escape hatch for the mark that has to sit at 12° to line up
+ * with a scanned page.
+ */
+export function rotationForDrag(degrees: number, free = false): number {
+  return free ? normaliseAngle(degrees) : snapAngle(degrees);
+}

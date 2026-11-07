@@ -26,6 +26,7 @@ import {
   hexToRgb01,
   listAnnotations,
   removeAnnotations,
+  rotatedRectBounds,
   applyRedactions,
   type AnnotationKind,
   type AnnotationSpec,
@@ -862,5 +863,98 @@ describe('applyRedactions', () => {
     expect(() => applyRedactions(doc, [{ page: 7, rect: { x: 0, y: 0, width: 5, height: 5 } }])).toThrow(/has 1 page/);
     expect(() => applyRedactions(doc, [{ page: 0, rect: { x: 0, y: 0, width: 5, height: 5 } }], { fill: 'oops' })).toThrow(/hex value/);
     expect(applyRedactions(doc, [])).toEqual({ removed: 0, rasterised: false });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A mark turned to an angle                                           *
+ * ------------------------------------------------------------------ */
+
+describe('a rotated annotation in the file', () => {
+  /** The declared `/Rotate`, or 0 when the dictionary does not carry one. */
+  const declared = (dict: PDFDict) => dict.lookupMaybe(PDFName.of('Rotate'), PDFNumber)?.asNumber() ?? 0;
+  const line = (over: Partial<AnnotationSpec> = {}) =>
+    baseSpec('Line', { lineEnds: [40, 212, 160, 212], lineArrow: 'none', ...over });
+
+  it('writes /Rect as the box the turned shape occupies, never the box it was drawn in', async () => {
+    const doc = await docWithPages();
+    const drawn = baseSpec('Square').rect;
+    addAnnotation(doc, baseSpec('Square', { rotation: 30 }));
+    addAnnotation(doc, baseSpec('Square', {}));
+    const [turned, straight] = listAnnotations(await roundTrip(doc));
+    // The turned box, measured from the corners the writer itself turns. A flat
+    // mark swept 30° gets taller and narrower, so the claim is only ever
+    // "/Rect is the bounding box", never "/Rect grew".
+    const box = rotatedRectBounds(drawn, 30);
+    expect(turned.rect.x).toBeCloseTo(box.x, 1);
+    expect(turned.rect.y).toBeCloseTo(box.y, 1);
+    expect(turned.rect.width).toBeCloseTo(box.width, 1);
+    expect(turned.rect.height).toBeCloseTo(box.height, 1);
+    expect(turned.rect.height).toBeGreaterThan(straight.rect.height);
+    expect(turned.rect).not.toEqual(straight.rect);
+  });
+
+  it('bakes the turn into the appearance stream, so the page cannot paint it straight', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, baseSpec('Square', { rotation: 30 }));
+    addAnnotation(doc, baseSpec('Square', {}));
+    const [turnedOps, straightOps] = annotationDicts(doc).map((dict) => appearanceOps(doc, dict));
+    expect(turnedOps).toMatch(/cm/);
+    expect(turnedOps.trimStart().startsWith('q')).toBe(true);
+    expect(turnedOps.trimEnd().endsWith('Q')).toBe(true);
+    // An unrotated mark keeps the operators it always had: no matrix, no claim.
+    expect(straightOps).not.toMatch(/cm/);
+  });
+
+  it('declares /Rotate only where PDF allows it, and only in right angles', async () => {
+    const doc = await docWithPages();
+    const quad = [40, 224, 160, 224, 40, 200, 160, 200];
+    addAnnotation(doc, line({ rotation: 90 }));
+    addAnnotation(doc, baseSpec('Underline', { rotation: 90, quadPoints: quad }));
+    addAnnotation(doc, baseSpec('Highlight', { rotation: 90, quadPoints: quad }));
+    addAnnotation(doc, baseSpec('Square', { rotation: 90 }));
+    addAnnotation(doc, line({ rotation: 30 }));
+    const dicts = annotationDicts(doc);
+    expect(declared(dicts[0])).toBe(90);
+    expect(declared(dicts[1])).toBe(90);
+    // Highlight is the one markup subtype PDF denies /Rotate, so the writer turns
+    // its quads itself. A second turn by the reader would double it.
+    expect(declared(dicts[2])).toBe(0);
+    expect(declared(dicts[3])).toBe(0);
+    expect(declared(dicts[4])).toBe(0);
+    const turnedQuads = numbers(dicts[2].get(PDFName.of('QuadPoints')), doc);
+    expect(turnedQuads).not.toEqual(quad);
+    expect(numbers(dicts[4].get(PDFName.of('L'))!, doc)).not.toEqual([40, 212, 160, 212]);
+  });
+
+  it('reads a declared angle back out, and keeps a baked one in the geometry', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, line({ rotation: 90 }));
+    addAnnotation(doc, baseSpec('Square', { rotation: 30 }));
+    const [turnedLine, square] = listAnnotations(await roundTrip(doc));
+    expect(turnedLine.rotation).toBe(90);
+    // A baked angle is not lost, it is never in /Rotate: /Rect and the stream hold
+    // it, which is why `rotation` reads back 0 for a mark that is visibly turned.
+    expect(square.rotation).toBe(0);
+    expect(square.rect.height).toBeGreaterThan(24);
+  });
+
+  it('turns a highlight one quad per line, so the lines keep their leading', async () => {
+    const doc = await docWithPages();
+    const quads = [
+      40, 224, 160, 224, 40, 200, 160, 200, // line one
+      40, 184, 160, 184, 40, 160, 160, 160, // line two
+    ];
+    addAnnotation(doc, baseSpec('Highlight', { rect: { x: 40, y: 160, width: 120, height: 64 }, quadPoints: quads, rotation: 45 }));
+    const points = numbers(firstAnnotation(doc).get(PDFName.of('QuadPoints')), doc);
+    expect(points).toHaveLength(16);
+    // Still one quad per line: eight numbers, not a box drawn around both.
+    const xs = points.filter((_, index) => index % 2 === 0);
+    const ys = points.filter((_, index) => index % 2 === 1);
+    const rect = numbers(firstAnnotation(doc).get(PDFName.of('Rect')), doc);
+    expect(rect[0]).toBeLessThanOrEqual(Math.min(...xs) + 0.01);
+    expect(rect[1]).toBeLessThanOrEqual(Math.min(...ys) + 0.01);
+    expect(rect[2]).toBeGreaterThanOrEqual(Math.max(...xs) - 0.01);
+    expect(rect[3]).toBeGreaterThanOrEqual(Math.max(...ys) - 0.01);
   });
 });
