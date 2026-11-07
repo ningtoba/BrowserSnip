@@ -21,7 +21,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # pdfjs-dist calls Promise.withResolvers, which Node added in 22.
+          # On 20 every text-extraction test dies with
+          # "Promise.withResolvers is not a function" inside pdfjs, which
+          # reads like a broken build rather than an old runtime. Browsers
+          # are not the constraint here - the CI runner is.
+          node-version: 22
           cache: npm
 
       - run: npm ci
