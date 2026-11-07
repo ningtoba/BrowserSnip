@@ -77,7 +77,19 @@ export interface ToolField {
   half?: boolean;
   /** Hide the field while `when` is false. */
   when?: (values: ToolValues) => boolean;
-  required?: boolean;
+  /**
+   * Refuse an empty value. A predicate makes it conditional, so a field that is
+   * only required in one mode is required *there* — inline, on the field itself —
+   * instead of via a tool-level `validate` whose message no field owns and no
+   * control can point at.
+   */
+  required?: boolean | ((values: ToolValues) => boolean);
+  /**
+   * The imperative sentence shown when a required field is empty. The default
+   * "<label> is required." is a status report; this is where a tool says what to
+   * type and why, which matters most on a form with several look-alike fields.
+   */
+  missing?: string;
 }
 
 /**

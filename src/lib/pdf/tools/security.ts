@@ -163,13 +163,30 @@ export const securityTools: PdfToolDefinition[] = [
         ],
         help: 'An open password blocks reading. A permissions-only password lets anyone open the file but restricts printing, copying and editing in readers that honour it.',
       },
-      { key: 'userPassword', label: 'Open password', type: 'password', group: 'Password', placeholder: 'What a reader types to see the pages', when: (v) => v.mode !== 'owner', help: 'Anyone without it cannot read the document; the bytes are encrypted, so renaming or zipping does not get around it.' },
+      {
+        key: 'userPassword',
+        label: 'Open password',
+        type: 'password',
+        group: 'Password',
+        placeholder: 'What a reader types to see the pages',
+        when: (v) => v.mode !== 'owner',
+        // A required field the user can actually find: the message lands on the
+        // box it belongs to, which is the whole difference between three adjacent
+        // password fields and one of them being clearly the one still needed.
+        required: true,
+        missing: 'Enter the password readers must type to open this PDF.',
+        help: 'Anyone without it cannot read the document; the bytes are encrypted, so renaming or zipping does not get around it.',
+      },
       {
         key: 'ownerPassword',
         label: 'Owner password',
         type: 'password',
         group: 'Password',
         placeholder: 'Blank reuses the open password',
+        // Only a permissions-only PDF needs this on its own; in every other mode
+        // a blank owner password legitimately reuses the open one.
+        required: (v) => stringValue(v, 'mode', 'both') === 'owner',
+        missing: 'Enter an owner password — it is what unlocks the restrictions.',
         help: 'Leave empty to reuse the open password. A random one is generated if both are blank.',
       },
       { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
@@ -179,8 +196,6 @@ export const securityTools: PdfToolDefinition[] = [
       const mode = stringValue(values, 'mode', 'both');
       const user = stringValue(values, 'userPassword');
       const owner = stringValue(values, 'ownerPassword');
-      if (mode !== 'owner' && user.length === 0) return 'Enter the password readers must type to open this PDF.';
-      if (mode === 'owner' && owner.length === 0) return 'Enter an owner password — it is what unlocks the restrictions.';
       if (mode === 'both' && owner.length > 0 && user === owner) {
         return 'Use a different owner password, or choose "Open password" only. Sharing one password means anyone who can open the file can also remove the restrictions.';
       }

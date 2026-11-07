@@ -863,6 +863,23 @@ function isVisible(field: ToolField, values: ToolValues): boolean {
 }
 
 /**
+ * Is this empty field a problem? A predicate decides per state, and a predicate
+ * that throws does not: unlike `isVisible`, which errs towards validating, this
+ * one errs towards *not* blocking a run whose requirement is unknown — a field
+ * the form cannot reason about must not refuse to let the user proceed.
+ */
+function demandsValue(field: ToolField, values: ToolValues): boolean {
+  if (typeof field.required === 'function') {
+    try {
+      return field.required(values) === true;
+    } catch {
+      return false;
+    }
+  }
+  return field.required === true;
+}
+
+/**
  * Every visible field that is wrong, in declaration order. Used by the rail for
  * inline messages and by the runner as a last line of defence (E15/E18).
  */
@@ -876,12 +893,12 @@ export function validateFields(
     const value = values[field.key];
     const optional = field.optional === true || field.required === false;
     if (isEmpty(value)) {
-      if (!optional && field.required === true) {
+      if (!optional && demandsValue(field, values)) {
         issues.push({
           key: field.key,
           label: field.label,
           code: 'REQUIRED',
-          message: `${field.label} is required.`,
+          message: field.missing ?? `${field.label} is required.`,
         });
       }
       continue;
