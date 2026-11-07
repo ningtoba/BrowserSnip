@@ -268,10 +268,6 @@ function scriptSource(): string | null {
   return `${normalizeBaseUrl(engines.getUrl('cpdf'))}coherentpdf.browser.min.js`;
 }
 
-export function cpdfConfigured(): boolean {
-  return engines.isConfigured('cpdf');
-}
-
 function existingApi(): CpdfApi | null {
   if (typeof window === 'undefined') return null;
   return window.coherentpdf ?? null;
@@ -286,8 +282,8 @@ function injectScript(src: string): Promise<void> {
     script.onerror = () =>
       reject(
         new Error(
-          `Could not load CoherentPDF from ${src}. Check the address in Engine Settings, ` +
-            `then press Test to confirm the file is reachable.`,
+          `Could not load CoherentPDF from ${src}: the browser could not reach that address, ` +
+            `or refused the request.`,
         ),
       );
     document.head.appendChild(script);
@@ -303,9 +299,11 @@ export function loadCpdf(): Promise<CpdfApi> {
     const api = existingApi();
     if (api) return Promise.resolve(api);
   }
-  // Not configured is a state the user can leave, so it is never memoised.
+  // A failed load is never memoised, so the next run can try the network again.
   const src = scriptSource();
-  if (!src) return Promise.reject(new EngineUnavailable('cpdf'));
+  if (!src) {
+    return Promise.reject(new EngineUnavailable('cpdf', 'no address is set'));
+  }
   if (!pending) {
     pending = (async () => {
       const already = existingApi();

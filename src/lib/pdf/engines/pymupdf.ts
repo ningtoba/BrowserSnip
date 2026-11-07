@@ -457,15 +457,14 @@ let instance: PyMuPDFInstance | null = null;
 let pending: Promise<PyMuPDFInstance> | null = null;
 
 /**
- * True when PyMuPDF could be loaded: both it and Ghostscript need an address,
- * because the loader refuses otherwise.
+ * PyMuPDF calls out to Ghostscript for some of its conversions, so the loader
+ * refuses when Ghostscript has no address: loading PyMuPDF alone would fail
+ * later, in a worse place to explain.
  */
-export function pymupdfConfigured(): boolean {
-  return engines.isConfigured('pymupdf') && engines.isConfigured('ghostscript');
-}
-
 async function loadPymupdf(): Promise<PyMuPDFInstance> {
-  if (!engines.isConfigured('pymupdf')) throw new EngineUnavailable('pymupdf');
+  if (!engines.isConfigured('pymupdf')) {
+    throw new EngineUnavailable('pymupdf', 'no address is set');
+  }
   if (!engines.isConfigured('ghostscript')) {
     throw new EngineUnavailable(
       'ghostscript',

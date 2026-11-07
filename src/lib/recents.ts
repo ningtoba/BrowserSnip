@@ -11,7 +11,7 @@
  *
  * Everything is defensive on read: a malformed, hand-edited or older-shaped
  * entry is dropped rather than thrown on, and both lists are re-capped on the
- * way out so a bloated store cannot make the rail unscrollable.
+ * way out so a bloated store cannot make the palette's Recent band unscrollable.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -19,10 +19,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 export const RECENT_FILES_KEY = 'browsersnip:recent-files:v1';
 export const STARRED_TOOLS_KEY = 'browsersnip:starred-tools:v1';
 
-/** How many files the rail remembers before the oldest falls off. */
+/** How many files the palette remembers before the oldest falls off. */
 export const RECENT_FILES_CAP = 12;
 
-/** How many tools the sidebar expands to before it collapses behind "more". */
+/** How many tools may be starred; the oldest entries stop being recorded past this. */
 export const STARRED_TOOLS_CAP = 24;
 
 /** One remembered pick. Deliberately has no way to carry file contents. */
@@ -171,7 +171,7 @@ export function toggleStarredTool(toolId: string): string[] {
   return next;
 }
 
-/** `5 min ago` / `3 days ago` — the rail shows age, not a wall of timestamps. */
+/** `5 min ago` / `3 days ago` — the palette's recent rows show age, not a wall of timestamps. */
 export function formatRelativeTime(at: number, now: number = Date.now()): string {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
   if (seconds < 45) return 'just now';
@@ -186,7 +186,7 @@ export function formatRelativeTime(at: number, now: number = Date.now()): string
   return `${Math.round(months / 12)} yr ago`;
 }
 
-/** Live view of recent files for the rail. */
+/** Live view of recent files, for the palette's Recent band and its Clear button. */
 export function useRecentFiles(): {
   recents: RecentFileEntry[];
   clear: () => void;
@@ -213,7 +213,7 @@ export function useRecentFiles(): {
   return { recents, clear };
 }
 
-/** Live view of starred tools, with the toggle the rail and header share. */
+/** Live view of starred tools, with the toggle the palette and the tool header share. */
 export function useStarredTools(): {
   starred: string[];
   isStarred: (toolId: string) => boolean;

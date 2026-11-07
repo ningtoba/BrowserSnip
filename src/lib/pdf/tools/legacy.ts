@@ -4,17 +4,36 @@
  *
  * These ids existed before the registry was introduced, and they are the ones a
  * returning visitor or a saved bookmark is most likely to use, so they stay
- * registered here even though their interaction is not expressible as a field
- * list. Their `run` is intentionally absent: the panel drives
- * `usePDFEngine`/`useProcessStore` directly, and `runPdfTool` refuses with that
- * explanation rather than producing a file the pane never asked for.
+ * registered here. They are *not* a second implementation: each one has a `run`
+ * on the same contract as every other tool, and the pane supplies the state a
+ * field list cannot describe — placed marks, the dragged rectangle, the captured
+ * frames — through `values`. So the guards (`core/guard`), the field clamping
+ * (E15), the structural `warnings` and the per-file progress arrive through the
+ * runner exactly as they do for the 100 generated tools, and the pane's only
+ * private job is the interaction.
  *
- * Because the generated rail cannot describe them, the honesty has to live in
- * the definition: `promise` says what pressing the button gets you, and `notes`
- * say what the pane will *not* do — the same contract the field-driven tools get
- * from their validators.
+ * A run with no pane state is the one case that must refuse rather than guess:
+ * cropping by nothing, signing with nothing and scanning zero captures would all
+ * hand back a file that is not what the user saw. Each refusal names the pane.
+ *
+ * Because the generated rail cannot fully describe them, the honesty also lives
+ * in the definition: `promise` says what pressing the button gets you, and
+ * `notes` say what the pane will *not* do.
  */
-import type { PdfToolDefinition } from './types';
+// `cropModel` is the crop pane's pure geometry module (no React), so the run and
+// the rail agree on what "too little left to be a page" means.
+import { MIN_KEPT_PT } from '@/components/tools/pdf/edit/cropModel';
+import { clampNumber, ToolInputError, openInputs, openPrimary, pdfResult } from './helpers';
+import { mediaBox, resolvePageSet, setMediaAndCrop, toPoints, type LengthUnit } from '../core/pages';
+import {
+  arrayValue,
+  booleanValue,
+  numberValue,
+  objectValue,
+  stringValue,
+  type PdfToolDefinition,
+  type ToolRunContext,
+} from './types';
 
 export const legacyTools: PdfToolDefinition[] = [
   {
@@ -32,6 +51,28 @@ export const legacyTools: PdfToolDefinition[] = [
       'This places a visual signature: the picture or typed name is drawn onto the page. It is not a cryptographic signature — a later edit leaves no trace. "Digital sign PDF" adds a PKCS#7 signature that does.',
       'Nothing is uploaded; the document never leaves this tab.',
     ],
+    async run(context: ToolRunContext) {
+      const input = await openPrimary(context);
+      const marks = objectValue<PaneSignatureMark[]>(context.values, 'marks') ?? [];
+      if (marks.length === 0) throw paneOnlyError('Sign PDF', 'a signature placed on the page');
+      const { drawSignatureMarks } = await import('@/lib/pdf-engine/commands');
+      const outcome = await drawSignatureMarks(input.doc, marks, {
+        progress: context.progress,
+        signal: context.signal,
+      });
+      if (outcome.placed === 0) {
+        throw new ToolInputError(
+          'OUT_OF_RANGE',
+          'None of the placed signatures could be written — every one sat on a page this document does not have, or had nothing inside it.',
+          { fileName: input.name, hint: 'Place a signature on a page you can see in the preview.' },
+        );
+      }
+      const pages = new Set(marks.map((mark) => mark.page)).size;
+      const result = await pdfResult(input.doc, {
+        message: `Wrote ${count(outcome.placed, 'signature')} onto ${count(pages, 'page')} of "${input.name}".`,
+      });
+      return { ...result, warnings: outcome.notes };
+    },
   },
   {
     id: 'pdf-crop',
@@ -48,6 +89,67 @@ export const legacyTools: PdfToolDefinition[] = [
       'Cropping sets the page’s visible box. Ink outside it is hidden, not deleted: the file barely shrinks, and text you cropped away can still be extracted. Use redaction to remove content for good.',
       'Margins are applied per page in the page’s own units, so mixed page sizes each keep their own geometry.',
     ],
+    fields: [
+      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'top', label: 'Top margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
+      { key: 'right', label: 'Right margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
+      { key: 'bottom', label: 'Bottom margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
+      { key: 'left', label: 'Left margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
+      {
+        key: 'unit',
+        label: 'Margins are in',
+        type: 'select',
+        default: 'pt',
+        options: [
+          { value: 'pt', label: 'Points' },
+          { value: 'mm', label: 'Millimetres' },
+          { value: 'cm', label: 'Centimetres' },
+          { value: 'in', label: 'Inches' },
+        ],
+      },
+      { key: 'allPages', label: 'Every page', type: 'toggle', default: true },
+    ],
+    async run(context: ToolRunContext) {
+      const input = await openPrimary(context);
+      const unit = stringValue(context.values, 'unit', 'pt') as LengthUnit;
+      const margins = (['top', 'right', 'bottom', 'left'] as const).map((side) =>
+        marginPoints(numberValue(context.values, side, 0), unit),
+      );
+      const [top, right, bottom, left] = margins;
+      if (top + right + bottom + left <= 0) throw paneOnlyError('Crop PDF', 'a crop rectangle');
+      const targets = resolveTargets(context, input.pageCount);
+      const tooSmall: number[] = [];
+      let cropped = 0;
+      for (const index of targets) {
+        const page = input.doc.getPage(index);
+        const box = mediaBox(page);
+        const width = box.width - left - right;
+        const height = box.height - top - bottom;
+        // A page this panel never measured can still be too small for these
+        // margins: report it instead of writing a zero-area page (E8, E13).
+        if (width < MIN_KEPT_PT || height < MIN_KEPT_PT) {
+          tooSmall.push(index + 1);
+          continue;
+        }
+        setMediaAndCrop(page, { x: box.x + left, y: box.y + bottom, width, height });
+        cropped += 1;
+      }
+      if (cropped === 0) {
+        throw new ToolInputError(
+          'OUT_OF_RANGE',
+          `These margins leave nothing to keep on ${count(targets.length, 'page')} of "${input.name}".`,
+          { fileName: input.name, hint: 'Drag the rectangle smaller, or crop fewer pages.' },
+        );
+      }
+      const warnings: string[] = [];
+      if (tooSmall.length > 0) {
+        warnings.push(`${count(tooSmall.length, 'page')} (${formatPageList(tooSmall)}) was smaller than the crop leaves room for and kept its own size.`);
+      }
+      const result = await pdfResult(input.doc, {
+        message: `Cropped ${count(cropped, 'page')} to the kept rectangle; ${describeMargins(margins, unit)}`,
+      });
+      return { ...result, warnings };
+    },
   },
   {
     id: 'scan-to-pdf',
@@ -70,6 +172,83 @@ export const legacyTools: PdfToolDefinition[] = [
       'Captures are photographs: each page is an image with no text layer, so the result cannot be searched or selected until you run OCR on it.',
       'This pane does not find the edges of the paper or correct perspective. It straightens tones (greyscale plus contrast) when enhancement is on; crop the page or re-shoot if the document fills too little of the frame.',
     ],
+    fields: [
+      {
+        key: 'pageSize',
+        label: 'Page size',
+        type: 'select',
+        default: 'a4',
+        options: [
+          { value: 'a4', label: 'A4' },
+          { value: 'letter', label: 'US Letter' },
+          { value: 'fit', label: 'Fit to image' },
+          { value: 'original', label: 'Original size' },
+        ],
+      },
+      {
+        key: 'orientation',
+        label: 'Orientation',
+        type: 'select',
+        default: 'portrait',
+        when: (values) => values['pageSize'] !== 'fit' && values['pageSize'] !== 'original',
+        options: [
+          { value: 'portrait', label: 'Portrait' },
+          { value: 'landscape', label: 'Landscape' },
+        ],
+      },
+      { key: 'margin', label: 'Margin', type: 'slider', default: 10, min: 0, max: 40, step: 1, unit: 'pt' },
+      {
+        key: 'fit',
+        label: 'Fit',
+        type: 'select',
+        default: 'contain',
+        options: [
+          { value: 'contain', label: 'Fit inside the page' },
+          { value: 'cover', label: 'Fill the page (crop)' },
+          { value: 'stretch', label: 'Stretch' },
+        ],
+      },
+    ],
+    async run(context: ToolRunContext) {
+      if (context.inputs.length === 0) throw paneOnlyError('Scan to PDF', 'a captured page');
+      const images = await Promise.all(
+        context.inputs.map(async (file) => ({
+          name: file.name,
+          mime: file.type || 'image/jpeg',
+          bytes: await file.bytes(),
+        })),
+      );
+      const { scanImagesToPdf } = await import('@/lib/pdf-engine/commands');
+      const packed = await scanImagesToPdf(
+        images,
+        {
+          pageSize: stringValue(context.values, 'pageSize', 'a4'),
+          orientation: stringValue(context.values, 'orientation', 'portrait') as 'portrait' | 'landscape',
+          margin: numberValue(context.values, 'margin', 10),
+          fit: stringValue(context.values, 'fit', 'contain') as 'contain' | 'cover' | 'stretch',
+        },
+        { progress: context.progress, signal: context.signal },
+      );
+      if (packed.pages === 0) {
+        throw new ToolInputError(
+          'UNSUPPORTED',
+          `None of the ${count(images.length, 'capture')} could be decoded by this browser.`,
+          { hint: `The first said: ${packed.skipped[0]?.reason ?? 'no reason given'}. Re-shoot or convert the photo, then add it again.` },
+        );
+      }
+      const warnings = packed.skipped.map(
+        (skip) => `"${skip.name}" was not written to the PDF: ${skip.reason}.`,
+      );
+      if (packed.pages < images.length) {
+        warnings.push(`${count(images.length - packed.pages, 'captured page')} became ${count(packed.pages, 'page')} in the file.`);
+      }
+      return {
+        kind: 'pdf' as const,
+        bytes: packed.bytes,
+        message: `Built a ${count(packed.pages, 'page')} PDF from ${count(images.length, 'capture')}; each page is a photograph, so it is not searchable until you run OCR.`,
+        warnings,
+      };
+    },
   },
   {
     id: 'compare',
@@ -90,5 +269,103 @@ export const legacyTools: PdfToolDefinition[] = [
       'Only the pages both files have are compared. If one document is shorter, the extra pages are reported and left out of the result.',
       'Both PDFs are opened in this tab; nothing is uploaded.',
     ],
+    fields: [
+      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 30, min: 5, max: 150, step: 1 },
+      { key: 'highlightColor', label: 'Highlight colour', type: 'color', default: '#ff0000' },
+    ],
+    async run(context: ToolRunContext) {
+      const [first, second] = await openInputs(context);
+      const { comparePDFs } = await import('@/lib/pdf-engine/commands');
+      const outcome = await comparePDFs(first.bytes, second.bytes, {
+        sensitivity: numberValue(context.values, 'sensitivity', 30),
+        highlightColor: stringValue(context.values, 'highlightColor', '#ff0000'),
+      }, { progress: context.progress, signal: context.signal });
+      if (outcome.compared === 0) {
+        throw new ToolInputError(
+          'UNSUPPORTED',
+          'Neither document has a page, so there is nothing to compare.',
+        );
+      }
+      const warnings: string[] = [];
+      if (outcome.onlyInFirst > 0 || outcome.onlyInSecond > 0) {
+        warnings.push(
+          `Only the first ${count(outcome.compared, 'page')} were compared: "${first.name}" has ${count(outcome.onlyInFirst, 'extra page')} the other does not, and "${second.name}" has ${count(outcome.onlyInSecond, 'extra page')}.`,
+        );
+      }
+      return {
+        kind: 'pdf' as const,
+        bytes: outcome.bytes,
+        message: `Compared ${count(outcome.compared, 'page')} of "${first.name}" against "${second.name}" and painted the differences onto the copy.`,
+        warnings,
+      };
+    },
   },
 ];
+
+/* ── helpers ──────────────────────────────────────────────────────────────── */
+
+/** A mark the sign pane placed; `x`/`y` are fractions of the target page. */
+interface PaneSignatureMark {
+  type: 'text' | 'image';
+  text: string;
+  image?: Uint8Array | null;
+  mime?: string;
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+  fontFamily?: string;
+}
+
+/** Largest margin the rail will accept, in points (about 28 inches). */
+const MAX_MARGIN_PT = 2000;
+
+/**
+ * The four bespoke panes all have the same empty state: the work lives in the
+ * pane, and the Run button was pressed before anything was put in it. Saying
+ * "nothing to do" without naming where the input comes from is how a user
+ * concludes the tool is broken.
+ */
+function paneOnlyError(tool: string, expected: string): ToolInputError {
+  return new ToolInputError(
+    'OUT_OF_RANGE',
+    `${tool} needs ${expected} from its own editor pane, and there is none yet.`,
+    { hint: 'Set it on the page preview first, then run again.' },
+  );
+}
+
+/**
+ * Which pages to crop.
+ *
+ * The pane resolves its own page numbers (it knows the rectangle came from the
+ * page it drew) and passes them as a 1-based list; a rail-driven run passes a
+ * spec string. `core/pages` is the only parser for either.
+ */
+function resolveTargets(context: ToolRunContext, total: number): number[] {
+  const list = arrayValue(context.values, 'pages');
+  if (list.length > 0) return resolvePageSet(list, total);
+  if (booleanValue(context.values, 'allPages', true)) return resolvePageSet('all', total);
+  return resolvePageSet(stringValue(context.values, 'pages', 'all'), total);
+}
+
+/** The margins as points, whatever unit the caller declared. */
+function marginPoints(value: number, unit: LengthUnit): number {
+  return Math.round(toPoints(clampNumber(value, 0, MAX_MARGIN_PT), unit) * 10) / 10;
+}
+
+/** "48 pt, 48 pt, 48 pt, 48 pt (top, right, bottom, left)" for the result card. */
+function describeMargins(margins: number[], unit: LengthUnit): string {
+  const [top, right, bottom, left] = margins;
+  return `${top}/${right}/${bottom}/${left} ${unit} (top/right/bottom/left) were taken off each kept page.`;
+}
+
+function formatPageList(pages: number[]): string {
+  if (pages.length <= 6) return pages.join(', ');
+  return `${pages.slice(0, 6).join(', ')}, …`;
+}
+
+function count(value: number, noun: string, plural?: string): string {
+  return value === 1 ? `1 ${noun}` : `${value} ${plural ?? `${noun}s`}`;
+}

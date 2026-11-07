@@ -21,7 +21,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { useFileStore } from '@/stores/file-store';
-import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { useProcessStore } from '@/stores/process-store';
+import { usePdfTool } from '@/hooks/usePdfTool';
 import { openPDF } from '@/lib/pdf/core/doc';
 import { displayedSize, mediaBox } from '@/lib/pdf/core/pages';
 import { getCropRect, getPageSizePt, subscribeCrop } from './CropMain';
@@ -46,7 +47,8 @@ interface DocumentGeometry {
 
 export function CropTool() {
   const file = useFileStore((s) => s.file);
-  const { process } = usePDFEngine();
+  const { run, isRunning } = usePdfTool('pdf-crop');
+  const warnings = useProcessStore((s) => s.warnings);
 
   const [rect, setRect] = useState<CropFractions>(getCropRect());
   const [allPages, setAllPages] = useState(true);
@@ -139,24 +141,19 @@ export function CropTool() {
 
   const applyCrop = useCallback(() => {
     if (!report.valid) return;
-    // SAFETY: `process` takes the loose param bag every legacy panel uses; the
-    // keys and the `unit: 'pt'` discriminator are exactly what
-    // `pdf-engine/commands.cropPages` reads out of it.
-    process({
-      toolId: 'pdf-crop',
-      params: {
-        pages: targets.pages,
-        top: round(report.marginsPt.top),
-        right: round(report.marginsPt.right),
-        bottom: round(report.marginsPt.bottom),
-        left: round(report.marginsPt.left),
-        allPages,
-        // The margins are already points of the stored page box, so the engine
-        // must not convert them again.
-        unit: 'pt',
-      } as unknown as Record<string, unknown>,
+    void run({
+      // Points of each page's own stored box, plus the 1-based pages the panel
+      // resolved from the typed spec. `unit: 'pt'` stops the tool converting a
+      // measurement that is already in points.
+      pages: targets.pages,
+      top: round(report.marginsPt.top),
+      right: round(report.marginsPt.right),
+      bottom: round(report.marginsPt.bottom),
+      left: round(report.marginsPt.left),
+      unit: 'pt',
+      allPages,
     });
-  }, [allPages, process, report, targets]);
+  }, [allPages, report, run, targets.pages]);
 
   return (
     <motion.div
@@ -279,16 +276,30 @@ export function CropTool() {
         </motion.ul>
       )}
 
+      {warnings.length > 0 && (
+        <motion.ul
+          variants={scaleIn}
+          role="status"
+          data-crop-warnings={warnings.length}
+          className="space-y-1 rounded-[12px] border border-warn/25 bg-warn/[0.07] px-3 py-2.5 text-[10px] leading-relaxed text-warn"
+        >
+          {warnings.map((warning) => (
+            <li key={warning}>· {warning}</li>
+          ))}
+        </motion.ul>
+      )}
+
       <button
         type="button"
         onClick={applyCrop}
         id="tool-process-btn"
-        disabled={!report.valid || !file}
+        disabled={!report.valid || !file || isRunning}
         title={report.valid ? 'Write the cropped PDF' : 'Fix the crop first — it would not produce a page.'}
         className="doodle-btn disabled:opacity-50"
       >
-        Apply crop
-        {report.valid && targets.pages.length > 0 ? ` (${targets.pages.length} page${targets.pages.length === 1 ? '' : 's'})` : ''}
+        {isRunning
+          ? 'Cropping…'
+          : `Apply crop${report.valid && targets.pages.length > 0 ? ` (${targets.pages.length} page${targets.pages.length === 1 ? '' : 's'})` : ''}`}
       </button>
     </motion.div>
   );

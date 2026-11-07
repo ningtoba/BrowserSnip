@@ -40,6 +40,7 @@ import {
 } from '../core/content';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
+import { EngineUnavailable } from '../engines/provider';
 import { repairPDF } from '@/lib/pdf-engine/commands';
 import {
   ToolInputError,
@@ -70,6 +71,18 @@ const PRESET_OPTIONS = (Object.keys(COMPRESSION_PRESETS) as CompressionPreset[])
 const PRESET_IDS = Object.keys(COMPRESSION_PRESETS) as CompressionPreset[];
 
 /* ── what a run actually did ─────────────────────────────────────────────── */
+
+/**
+ * The clause to drop into a tool's own sentence about a failed engine run.
+ *
+ * `EngineUnavailable` carries a full sentence for the no-fallback case; inside
+ * a degrade warning the tool has already named the engine, so only the loader's
+ * cause belongs there — one honest sentence, not two.
+ */
+function engineReason(error: unknown): string {
+  if (error instanceof EngineUnavailable) return error.detail ?? error.message;
+  return error instanceof Error ? error.message : String(error);
+}
 
 /** A numeric option, bounded exactly as the rail bounds it (E15). */
 interface Bound {
@@ -1099,26 +1112,26 @@ export const optimizeTools: PdfToolDefinition[] = [
         repaired = await repairPDF(toArrayBuffer(bytes));
       } catch (error) {
         const local = error instanceof Error ? error.message : String(error);
-        const { rebuildWithGhostscript, engineReady } = await import('../core/engine-ops');
-        if (!engineReady('ghostscript')) {
-          throw new ToolInputError('CORRUPT', `${file.name}: ${local}`, {
-            fileName: file.name,
-            hint: 'Ghostscript can rebuild files this parser gives up on; enable it in WASM settings and run again.',
-          });
-        }
+        const { rebuildWithGhostscript } = await import('../core/engine-ops');
         context.log('The local parser gave up; asking Ghostscript to rebuild the file.');
         try {
-          const outcome = await rebuildWithGhostscript(bytes);
+          const outcome = await rebuildWithGhostscript(bytes, { onStatus: context.log });
           repaired = outcome.bytes;
           engine = 'ghostscript';
         } catch (gsError) {
-          const reason = gsError instanceof Error ? gsError.message : String(gsError);
+          // A failed download explains itself in full; anything else came out of
+          // Ghostscript and has to be attributed to it.
+          const said = gsError instanceof EngineUnavailable
+            ? gsError.message
+            : `Ghostscript said: ${engineReason(gsError)}`;
           throw new ToolInputError(
             'CORRUPT',
-            `${file.name} could not be repaired: ${local} Ghostscript said: ${reason}`,
+            `${file.name} could not be repaired: ${local} ${said}`,
             {
               fileName: file.name,
-              hint: 'If the file was downloaded, download it again — a truncated transfer loses the tail of the document.',
+              hint:
+                'If the file was downloaded, download it again — a truncated transfer loses the tail of the '
+                + 'document. Running this tool again while online lets Ghostscript rebuild it.',
             },
           );
         }
@@ -1254,44 +1267,39 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Linearize',
     promise: 'A file whose first page loads first — or a clear statement that this build only rebuilt it.',
     notes: [
-      'True linearization is performed by the optional CoherentPDF module (AGPL-3.0, downloaded once from a CDN). Without it, BrowserSnip rebuilds the file with object streams, which helps some viewers but is not a conforming linearized PDF.',
+      'True linearization is performed by CoherentPDF (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser). If it cannot be reached, BrowserSnip rebuilds the file with object streams, which helps some viewers but is not a conforming linearized PDF.',
       'The output is checked for a /Linearized dictionary, so the result never claims more than the file contains.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const warnings: string[] = [];
-      const { linearizeWithCpdf, engineReady } = await import('../core/engine-ops');
+      const { linearizeWithCpdf } = await import('../core/engine-ops');
 
-      if (engineReady('cpdf')) {
-        try {
-          const out = await linearizeWithCpdf(input.bytes, context.password);
-          const check = await verifyOutput(out, input.name, input.pageCount);
-          if (check.problem) {
-            warnings.push(`CoherentPDF returned a file that does not reopen cleanly (${check.problem}); the local rebuild below is used instead.`);
-          } else {
-            const linear = isLinearized(out);
-            if (!linear) {
-              warnings.push('CoherentPDF returned the file without a /Linearized dictionary, so it is a plain rebuild rather than a linearized PDF.');
-            }
-            const change = sizeChange(input.bytes.byteLength, out.byteLength);
-            context.progress(1, 'Linearized with CoherentPDF');
-            return {
-              kind: 'pdf',
-              bytes: out,
-              message: linear
-                ? `Linearized with CoherentPDF: ${sizeSentence(change)}, page 1 first.`
-                : `Rewritten by CoherentPDF: ${sizeSentence(change)}, but not linearized.`,
-              warnings,
-            };
+      try {
+        const out = await linearizeWithCpdf(input.bytes, context.password, { onStatus: context.log });
+        const check = await verifyOutput(out, input.name, input.pageCount);
+        if (check.problem) {
+          warnings.push(`CoherentPDF returned a file that does not reopen cleanly (${check.problem}); the local rebuild below is used instead.`);
+        } else {
+          const linear = isLinearized(out);
+          if (!linear) {
+            warnings.push('CoherentPDF returned the file without a /Linearized dictionary, so it is a plain rebuild rather than a linearized PDF.');
           }
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          warnings.push(
-            `CoherentPDF could not be reached (${reason}), so this file was rebuilt locally and is not linearized.`,
-          );
+          const change = sizeChange(input.bytes.byteLength, out.byteLength);
+          context.progress(1, 'Linearized with CoherentPDF');
+          return {
+            kind: 'pdf',
+            bytes: out,
+            message: linear
+              ? `Linearized with CoherentPDF: ${sizeSentence(change)}, page 1 first.`
+              : `Rewritten by CoherentPDF: ${sizeSentence(change)}, but not linearized.`,
+            warnings,
+          };
         }
-      } else {
-        warnings.push('CoherentPDF is not configured, so this file was rebuilt locally and is not linearized.');
+      } catch (error) {
+        warnings.push(
+          `CoherentPDF could not be reached (${engineReason(error)}), so this file was rebuilt locally and is not linearized.`,
+        );
       }
 
       const deflated = await deflateAll(input.doc);
@@ -1303,7 +1311,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       if (check.problem) {
         throw new ToolInputError('CORRUPT', `The rebuilt file did not reopen cleanly: ${check.problem}.`, {
           fileName: input.name,
-          hint: 'Enable CoherentPDF in WASM settings to linearize without rebuilding.',
+          hint: 'Run again while online: CoherentPDF can linearize this file without a rebuild.',
         });
       }
       const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
@@ -1346,43 +1354,38 @@ export const optimizeTools: PdfToolDefinition[] = [
       },
     ],
     notes: [
-      'A conforming conversion needs the optional Ghostscript module (AGPL-3.0, fetched from a CDN on first use). Without it BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag, which most validators read as a starting point but not as proof of conformance.',
+      'A conforming conversion runs on Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser). If it cannot be reached, BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag, which most validators read as a starting point but not as proof of conformance.',
       'Nothing here is uploaded: only the engine binary is fetched.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const warnings: string[] = [];
       const part = stringValue(context.values, 'part', '2b');
-      const { convertToPdfA, engineReady } = await import('../core/engine-ops');
+      const { convertToPdfA } = await import('../core/engine-ops');
 
-      if (engineReady('ghostscript')) {
-        try {
-          const { bytes, log } = await convertToPdfA(input.bytes, part);
-          const check = await verifyOutput(bytes, input.name, input.pageCount);
-          if (check.problem) {
-            warnings.push(`Ghostscript produced a file that does not reopen cleanly (${check.problem}); the local conversion below is used instead.`);
-          } else {
-            for (const line of log) warnings.push(`Ghostscript: ${line}`);
-            const declared = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
-            const fonts = auditFonts(declared);
-            if (fonts.total > fonts.embedded) {
-              warnings.push(`${fonts.total - fonts.embedded} of ${fonts.total} font(s) in the output are still not embedded, so PDF/A conformance will be rejected by a strict validator.`);
-            }
-            const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
-            context.progress(1, 'Converted with Ghostscript');
-            return {
-              kind: 'pdf',
-              bytes,
-              message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
-              warnings,
-            };
+      try {
+        const { bytes, log } = await convertToPdfA(input.bytes, part, { onStatus: context.log });
+        const check = await verifyOutput(bytes, input.name, input.pageCount);
+        if (check.problem) {
+          warnings.push(`Ghostscript produced a file that does not reopen cleanly (${check.problem}); the local conversion below is used instead.`);
+        } else {
+          for (const line of log) warnings.push(`Ghostscript: ${line}`);
+          const declared = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
+          const fonts = auditFonts(declared);
+          if (fonts.total > fonts.embedded) {
+            warnings.push(`${fonts.total - fonts.embedded} of ${fonts.total} font(s) in the output are still not embedded, so PDF/A conformance will be rejected by a strict validator.`);
           }
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          warnings.push(`Ghostscript could not be reached (${reason}); the file below was produced by the local path.`);
+          const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
+          context.progress(1, 'Converted with Ghostscript');
+          return {
+            kind: 'pdf',
+            bytes,
+            message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
+            warnings,
+          };
         }
-      } else {
-        warnings.push('Ghostscript is not configured, so this file was produced by the local path.');
+      } catch (error) {
+        warnings.push(`Ghostscript could not be reached (${engineReason(error)}); the file below was produced by the local path.`);
       }
 
       const written = bestEffortPdfA(input.doc, part);
@@ -1391,7 +1394,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       if (check.problem) {
         throw new ToolInputError('CORRUPT', `The PDF/A candidate did not reopen cleanly: ${check.problem}.`, {
           fileName: input.name,
-          hint: 'Enable Ghostscript in WASM settings for a conforming conversion.',
+          hint: 'Run again while online: a conforming conversion is the one thing Ghostscript can do that this build cannot.',
         });
       }
       const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
@@ -1430,34 +1433,27 @@ export const optimizeTools: PdfToolDefinition[] = [
     outputSuffix: '_outlined.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Outline',
-    promise: 'Text that cannot reflow or substitute, or a clear refusal when Ghostscript is unreachable.',
+    promise: 'Text that cannot reflow or substitute, or a clear refusal when Ghostscript cannot be fetched.',
     notes: [
       'Glyphs become vector paths: the text can no longer be selected, searched or edited.',
       'This tool has no degraded path — a rebuild without Ghostscript would leave the fonts in place and only look outlined.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
-      const { textToOutlines, engineReady, enginePurpose } = await import('../core/engine-ops');
-      if (!engineReady('ghostscript')) {
-        throw new ToolInputError('NEEDS_ENGINE', `Font to Outline needs the optional Ghostscript module. ${enginePurpose('ghostscript')} Open WASM settings to enable it.`, {
-          fileName: input.name,
-          hint: 'Rasterize PDF does the same job with no download if you do not need vector paths.',
-        });
-      }
+      const { textToOutlines } = await import('../core/engine-ops');
       let bytes: Uint8Array;
       let outlineLog: string[] = [];
       try {
-        const outcome = await textToOutlines(input.bytes);
+        const outcome = await textToOutlines(input.bytes, { onStatus: context.log });
         bytes = outcome.bytes;
         outlineLog = outcome.log;
       } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
         throw new ToolInputError(
           'NEEDS_ENGINE',
-          `Ghostscript could not be reached, so nothing was outlined: ${reason}`,
+          `Ghostscript could not be reached, so nothing was outlined: ${engineReason(error)}`,
           {
             fileName: input.name,
-            hint: 'Enable Ghostscript in WASM settings, or use Rasterize PDF if selectable text does not matter.',
+            hint: 'Run again once you are online, or use Rasterize PDF if selectable text does not matter.',
           },
         );
       }

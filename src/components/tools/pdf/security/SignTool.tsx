@@ -7,8 +7,9 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { usePdfTool } from '@/hooks/usePdfTool';
 import { useFileStore } from '@/stores/file-store';
+import { useProcessStore } from '@/stores/process-store';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { clampPageNumber, fitMarkToPage } from '@/components/tools/pdf/editor/placement';
 import { adoptedFile, takeEditorIntent } from '@/components/tools/pdf/editor/quickModes';
@@ -30,7 +31,8 @@ const FONTS = [
 type SigTab = 'text' | 'image' | 'draw';
 
 export function SignTool() {
-  const { process } = usePDFEngine();
+  const { run, isRunning } = usePdfTool('sign');
+  const warnings = useProcessStore((s) => s.warnings);
   const file = useFileStore((s) => s.file);
   const setFile = useFileStore((s) => s.setFile);
   const activeToolId = useFileStore((s) => s.activeTool);
@@ -236,24 +238,31 @@ export function SignTool() {
   );
 
   const handleProcess = useCallback(() => {
-    const pageSize = getSignPageSize();
-    const sigs = usable.map((item) => ({
-      type: item.type === 'draw' ? 'image' as const : item.type,
-      imageData: item.type !== 'text' ? item.imageBytes : null,
-      text: item.text,
-      page: item.page,
-      x: Math.round(item.x * pageSize.width),
-      y: Math.round(item.y * pageSize.height),
-      width: item.w, height: item.h,
-      color: item.color, fontFamily: item.fontFamily,
-    }));
     if (unusable.length > 0) {
       setNotice(
         `${unusable.length} signature${unusable.length === 1 ? '' : 's'} sat on a page this document does not have and were left out.`,
       );
     }
-    process({ toolId: 'sign', params: { signatures: sigs } });
-  }, [process, unusable, usable]);
+    void run({
+      // The pane's own geometry, unresolved: `x`/`y` are fractions of the page
+      // each mark sits on and `width`/`height` are points, so the tool converts
+      // them against *that* page's box. Multiplying by the first page's size
+      // here put a mark in the wrong corner of every page that differed (E8).
+      marks: usable.map((item) => ({
+        type: item.type === 'text' ? ('text' as const) : ('image' as const),
+        text: item.text,
+        image: item.imageBytes ? new Uint8Array(item.imageBytes) : null,
+        mime: 'image/png',
+        page: item.page,
+        x: item.x,
+        y: item.y,
+        width: item.w,
+        height: item.h,
+        color: item.color,
+        fontFamily: item.fontFamily,
+      })),
+    });
+  }, [run, unusable, usable]);
 
   const allReady = usable.length > 0 && usable.every(
     (s) => s.type === 'text' ? s.text.trim().length > 0 : s.imageBytes,
@@ -292,6 +301,21 @@ export function SignTool() {
         >
           {notice}
         </motion.p>
+      )}
+
+      {/* What the run had to admit: marks it pulled inside the page, fonts it
+          could not load offline, images it could not embed. */}
+      {warnings.length > 0 && (
+        <motion.ul
+          variants={scaleIn}
+          role="status"
+          data-sign-warnings={warnings.length}
+          className="space-y-1 rounded-[12px] border border-warn/25 bg-warn/[0.07] p-2.5"
+        >
+          {warnings.map((warning) => (
+            <li key={warning} className="text-[10px] leading-relaxed text-ink-soft">· {warning}</li>
+          ))}
+        </motion.ul>
       )}
 
       {/* Tab bar */}
@@ -471,7 +495,7 @@ export function SignTool() {
         onClick={handleProcess}
         id="tool-process-btn"
         className="doodle-btn"
-        disabled={!allReady || !file}
+        disabled={!allReady || !file || isRunning}
         title={
           !file
             ? 'Open a PDF to sign first'
@@ -482,7 +506,7 @@ export function SignTool() {
               : undefined
         }
       >
-        Apply {usable.length > 0 ? `${usable.length} ` : ''}Signature{usable.length === 1 ? '' : 's'}
+        {isRunning ? 'Placing…' : `Apply ${usable.length > 0 ? `${usable.length} ` : ''}Signature${usable.length === 1 ? '' : 's'}`}
       </button>
     </motion.div>
   );

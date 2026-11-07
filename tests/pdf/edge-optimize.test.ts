@@ -559,7 +559,7 @@ describe('repair opens the files the normal gate refuses (E3)', () => {
     await expect(runPdfTool({ toolId: 'repair', files: [pdfFile(junk, 'broken.pdf')], values: {} }))
       .rejects.toThrow(/Ghostscript said: gs exited 1/);
 
-    // Engine unavailable: the refusal must say how to get one.
+    // The engine could not be fetched: the refusal must say what to do next.
     engine.rebuild = null;
     engine.ready = false;
     const result = await directRun('repair', {}, [pdfFile(junk, 'broken.pdf')]).catch((error) => error);
@@ -567,7 +567,9 @@ describe('repair opens the files the normal gate refuses (E3)', () => {
     expect(isToolInputError(result)).toBe(true);
     const caught = result as { code: string; hint?: string };
     expect(caught.code).toBe('CORRUPT');
-    expect(caught.hint).toMatch(/WASM settings/i);
+    // The engine is fetched, not enabled: the hint points at the network and a
+    // repeat run, because there is no settings screen to send anyone to.
+    expect(caught.hint).toMatch(/download it again|while online/i);
   });
 });
 
@@ -686,18 +688,23 @@ describe('linearize-pdf says which kind of file it produced (E20)', () => {
     engine.failure = null;
   });
 
-  it('names the missing engine when it is not configured at all', async () => {
+  it('names the engine it could not fetch, and still delivers a file', async () => {
     const source = await textPdf(1);
-    // The rail refuses up front for an engine tool, so the tool's own sentence
-    // is what a caller that skips the runner (the legacy hook) gets.
-    engine.ready = false;
+    // There is no engine setting left to leave off: a tool that declares an
+    // engine always tries it, through the runner or straight from a caller.
+    engine.failure = 'no address answered';
     const result = (await directRun('linearize-pdf', {}, [pdfFile(source, 'noengine.pdf')]))!;
-    expect((result.warnings ?? []).join(' ')).toMatch(/CoherentPDF is not configured/i);
+    expect((result.warnings ?? []).join(' ')).toMatch(/CoherentPDF could not be reach.*no address answered/i);
     expect(result.message).toMatch(/not a conforming linearized PDF/i);
-    await expect(
-      runPdfTool({ toolId: 'linearize-pdf', files: [pdfFile(source, 'noengine.pdf')], values: {} }),
-    ).rejects.toThrow(/needs the optional cpdf module/i);
-    engine.ready = true;
+    const outcome = await runPdfTool({
+      toolId: 'linearize-pdf',
+      files: [pdfFile(source, 'noengine.pdf')],
+      values: {},
+    });
+    expect(outcome.outputs).toHaveLength(1);
+    expect(outcome.warnings.join(' ')).toMatch(/CoherentPDF could not be reach/i);
+    expect(`${outcome.message} ${outcome.warnings.join(' ')}`).not.toMatch(/settings|enable/i);
+    engine.failure = null;
   });
 });
 
@@ -790,9 +797,10 @@ describe('pdf-to-pdfa states what it actually did', () => {
 /* ── font-to-outline ─────────────────────────────────────────────────────── */
 
 describe('font-to-outline refuses instead of faking (E20)', () => {
-  it('the runner refuses an unconfigured engine before any work', async () => {
+  it('the runner surfaces the tool’s refusal instead of an empty outline', async () => {
     const source = await textPdf(1);
-    engine.ready = false;
+    // The runner no longer gates on a setting: the run starts, the engine is
+    // fetched, and the failure comes back as the tool’s own refusal.
     let caught: unknown;
     try {
       await runPdfTool({ toolId: 'font-to-outline', files: [pdfFile(source, 'type.pdf')], values: {} });

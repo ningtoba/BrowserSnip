@@ -138,7 +138,6 @@ import {
 import { historyCommandForKey, isTypingTarget } from '@/components/tools/pdf/editor/shortcuts';
 import { TEXT_EDITOR_SHORTCUTS, textModeForKey } from './keys';
 import { adviceActionLabel, pageAdvice, type AdviceAction } from './pageAdvice';
-import { EngineSettingsDialog } from '@/lib/pdf/engines/EngineGate';
 
 /** Extra padding around a block when it is converted into an editable box. */
 const BLOCK_PADDING = 2;
@@ -189,7 +188,6 @@ export function TextEditor() {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [hitIndex, setHitIndex] = useState(0);
   const [findStatus, setFindStatus] = useState('Type something to search every page.');
-  const [engineSettingsOpen, setEngineSettingsOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -567,10 +565,6 @@ export function TextEditor() {
       if (action === 'run-ocr') {
         toast('info', 'Opening OCR PDF with this document still loaded — the recognised page comes back editable.');
         navigateToTool('ocr-pdf');
-        return;
-      }
-      if (action === 'open-engine') {
-        setEngineSettingsOpen(true);
         return;
       }
       if (action === 'add-text') armMode('add-text');
@@ -1452,7 +1446,6 @@ export function TextEditor() {
         )}
       </div>
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))} />
-      <EngineSettingsDialog open={engineSettingsOpen} onClose={() => setEngineSettingsOpen(false)} />
     </div>
   );
 }

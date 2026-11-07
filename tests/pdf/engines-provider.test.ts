@@ -3,16 +3,12 @@
  * `validateUrl` against a stubbed `fetch`.
  *
  * The provider is the security boundary for the optional engines — the string
- * it hands back is passed to `import()`, `<script src>` and `fetch()` — so the
- * refused-and-scrubbed paths matter more than the happy path here.
+ * it hands back is passed to `import()`, `<script src>` and `fetch()`, and there
+ * is no UI left to police it — so the refused-and-scrubbed paths matter more
+ * than the happy path here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createElement } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
-  EngineBadge,
-  EngineGate,
-  EngineSettingsDialog,
   ENGINE_DEFAULTS,
   ENGINE_IDS,
   ENGINE_LABELS,
@@ -77,7 +73,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -381,88 +376,30 @@ describe('validateUrl', () => {
 });
 
 describe('EngineUnavailable', () => {
-  it('carries the engine id, a full-sentence message and a remediation', () => {
+  it('carries the engine id, the host and the loader’s own reason', () => {
     const error = new EngineUnavailable('cpdf', 'the CDN returned an HTML page');
 
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('EngineUnavailable');
     expect(error.engine).toBe('cpdf');
+    expect(error.host).toBe('cdn.jsdelivr.net');
+    expect(error.detail).toBe('the CDN returned an HTML page');
     expect(error.message).toContain(ENGINE_LABELS.cpdf);
     expect(error.message).toMatch(/the CDN returned an HTML page/);
-    expect(error.remediation).toMatch(/Engine Settings/);
-    expect(error.remediation).toMatch(/never leaves the device/);
-  });
-});
-
-describe('engine UI', () => {
-  beforeEach(() => {
-    engines.reset();
+    expect(error.message).toMatch(/cdn\.jsdelivr\.net/);
   });
 
-  it('badges an engine that has an address', () => {
-    render(createElement(EngineBadge, { id: 'cpdf' }));
-
-    expect(screen.getByText(/CoherentPDF/)).toHaveTextContent('Default CDN');
-  });
-
-  it('passes children through EngineGate while the engine is reachable', () => {
-    render(
-      createElement(EngineGate, { id: 'pymupdf' }, createElement('p', null, 'the tool panel')),
-    );
-
-    expect(screen.getByText('the tool panel')).toBeInTheDocument();
-  });
-
-  it('lists every engine, its address and the licence terms', () => {
-    render(createElement(EngineSettingsDialog, { open: true, onClose: vi.fn() }));
-
-    expect(screen.getByRole('dialog', { name: 'Optional PDF engines' })).toBeInTheDocument();
+  it('never tells the user to enable or configure anything', () => {
+    // The engine UI is gone, so a sentence that sends someone to settings is a
+    // dead end: name the failure and what happens instead.
     for (const id of ENGINE_IDS) {
-      expect(screen.getAllByText(ENGINE_LABELS[id]).length).toBeGreaterThan(0);
-      expect(screen.getByPlaceholderText(ENGINE_DEFAULTS[id])).toBeInTheDocument();
+      const message = new EngineUnavailable(id, 'offline').message;
+      expect(message, id).not.toMatch(/settings|enable|configure/i);
+      expect(message, id).toMatch(/cached by your browser/);
     }
-    // The honest copy the contract asks for, in one sentence each.
-    expect(screen.getByText(/AGPL-3\.0/)).toHaveTextContent(/BrowserSnip is MIT/);
-    expect(screen.getByText(/never leaves the device/)).toBeInTheDocument();
-  });
-
-  it('saves a mirror address and shows where it came from', async () => {
-    render(createElement(EngineSettingsDialog, { open: true, onClose: vi.fn() }));
-
-    const field = screen.getByPlaceholderText(ENGINE_DEFAULTS.cpdf) as HTMLInputElement;
-    fireEvent.change(field, { target: { value: FOREIGN_URL } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[2]);
-
-    await waitFor(() => expect(engines.isUserConfigured('cpdf')).toBe(true));
-    expect(engines.getUrl('cpdf')).toBe(normalizeBaseUrl(FOREIGN_URL));
-    expect(screen.getAllByText('Your mirror').length).toBeGreaterThan(0);
-
-    engines.reset();
-  });
-
-  it('refuses to save an address with no host, and says so', async () => {
-    render(createElement(EngineSettingsDialog, { open: true, onClose: vi.fn() }));
-
-    const field = screen.getByPlaceholderText(ENGINE_DEFAULTS.pymupdf) as HTMLInputElement;
-    fireEvent.change(field, { target: { value: 'pymupdf-wasm@0.11.16/' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]);
-
-    expect(await screen.findByText(/is not a full web address for PyMuPDF/)).toBeInTheDocument();
-    expect(engines.isUserConfigured('pymupdf')).toBe(false);
-  });
-
-  it('Test in the dialog probes the engine entry point', async () => {
-    const mock = vi.fn(async () => responseStub());
-    vi.stubGlobal('fetch', mock);
-
-    render(createElement(EngineSettingsDialog, { open: true, onClose: vi.fn() }));
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Test' })[1]);
-
-    expect(await screen.findByText(/Reachable/)).toBeInTheDocument();
-    expect(mock).toHaveBeenCalledWith(
-      `${ENGINE_DEFAULTS.ghostscript}gs.js`,
-      expect.objectContaining({ mode: 'cors' }),
-    );
   });
 });
+
+// There is no engine UI to test any more: `EngineGate.tsx` is gone, and an
+// engine is resolved from the default address inside a run. That behaviour is
+// covered by `tests/pdf/engine-auto.test.ts`.

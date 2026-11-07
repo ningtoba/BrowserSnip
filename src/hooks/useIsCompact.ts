@@ -13,14 +13,15 @@
  * is correct on the first render, and a safe `false` when the host has no
  * `matchMedia` (jsdom without a stub, a worker, a server render) so a component
  * never crashes just to ask how wide it is.
+ *
+ * A second query used to live here for the app's left sidebar rail. The rail is
+ * gone — the ⌘K palette and the dashboard carry the same list — so this module
+ * answers one question, and no shell control hides behind a width it cannot reach.
  */
 import { useEffect, useState } from 'react';
 
 /** Phone-width layout: one pane, controls stacked under the preview. */
 export const COMPACT_QUERY = '(max-width: 639px)';
-
-/** Wide enough for the persistent tool rail (categories, recents, stars). */
-export const RAIL_QUERY = '(min-width: 1024px)';
 
 function matches(query: string): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -49,9 +50,4 @@ export function useMediaQuery(query: string): boolean {
 
 export function useIsCompact(): boolean {
   return useMediaQuery(COMPACT_QUERY);
-}
-
-/** Whether there is room for the sidebar rail instead of the drawer. */
-export function useHasRail(): boolean {
-  return useMediaQuery(RAIL_QUERY);
 }

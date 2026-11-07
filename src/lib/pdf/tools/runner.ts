@@ -10,7 +10,6 @@ import { PDFDocument } from '@maxwbh/pdf-lib';
 import { saveEncrypted } from '../core/doc';
 import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolValues } from './types';
 import { getPdfTool } from './registry';
-import { engineReady, enginePurpose } from '../core/engine-ops';
 import { defaultValues } from './types';
 import {
   ToolInputError,
@@ -201,16 +200,10 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const problem = fileProblem(tool, request.files);
   if (problem) throw problem;
 
-  const missing = (tool.engines ?? []).filter((id) => !engineReady(id));
-  if (missing.length > 0) {
-    throw new ToolInputError(
-      'NEEDS_ENGINE',
-      `${tool.name} needs the optional ${missing.join(' and ')} module. ${missing
-        .map((id) => enginePurpose(id))
-        .join(' ')} Open WASM settings to enable it.`,
-      { hint: 'The built-in tools run without it; this one cannot.' },
-    );
-  }
+  // No engine gate here any more. A tool that needs Ghostscript or CoherentPDF
+  // resolves it from `core/engine-ops`, which fetches the default CDN address on
+  // first use and logs one honest line while it does; the run is not blocked on
+  // a setting the user can no longer see.
 
   // A tool that admits a compromise in the log ("warning: fonts are degraded")
   // must not have it buried in a pane nobody opens. Structural `result.warnings`

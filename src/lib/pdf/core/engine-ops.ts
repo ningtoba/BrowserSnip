@@ -2,39 +2,43 @@
  * High-level operations built on the optional CDN engines.
  *
  * `src/lib/pdf/engines/*` types the raw module surfaces (PyMuPDF, Ghostscript,
- * CoherentPDF). This module turns them into the handful of verbs the tools
- * need, and is the only place that knows which capability requires which
- * engine, so a tool can say *why* it needs a download.
+ * CoherentPDF) and resolves their addresses; this module turns them into the
+ * handful of verbs the tools need, and is the only place that knows which
+ * capability requires which engine.
  *
- * Every function here is optional: callers must check `engineReady(id)` first
- * and provide a degraded path or a clear message. Files never leave the
- * device — the engine binary is what is fetched.
+ * There is no engine UI and nothing to enable. Every operation here calls
+ * `requireEngine` first, which fetches the module from the resolved address —
+ * the built-in jsDelivr default unless a trusted mirror is stored — on first
+ * use and reuses it afterwards. Nothing is fetched at page load: these are
+ * 0.5–54 MB downloads, so they only ever start behind a run the user asked
+ * for. Pass `onStatus` so a run's log says what it is waiting on.
+ *
+ * When the fetch fails (offline, blocked CDN, dead mirror) `requireEngine`
+ * throws `EngineUnavailable`, whose message names the engine, the host and the
+ * reason. A caller with a degraded path catches it and reports one honest
+ * sentence through `result.warnings`; a caller with no fallback lets it reach
+ * the user as the error. Files never leave the device — the engine binary is
+ * what is fetched.
  */
 import {
   EngineUnavailable,
-  cpdf,
-  cpdfConfigured,
+  ensureEngine,
   engines,
-  ghostscript,
-  ghostscriptConfigured,
-  pymupdf,
-  pymupdfConfigured,
   run as gsRun,
 } from '../engines';
-import type { CpdfDocument, EngineId } from '../engines';
+import type { CpdfApi, CpdfDocument, EngineId, PyMuPDFInstance } from '../engines';
 
 export type { EngineId };
 
-/** Is the engine reachable without the user opening settings? */
+/** Lets a long download explain itself instead of looking like a hang. */
+export interface EngineHooks {
+  onStatus?: (line: string) => void;
+}
+
+/** Is this engine fetchable at all, i.e. does it have an address? */
 export function engineReady(id: EngineId): boolean {
   return engines.isConfigured(id);
 }
-
-export const ENGINE_IS_CONFIGURED: Record<EngineId, () => boolean> = {
-  pymupdf: pymupdfConfigured,
-  ghostscript: ghostscriptConfigured,
-  cpdf: cpdfConfigured,
-};
 
 /** A short, human explanation of what an engine buys the user. */
 export function enginePurpose(id: EngineId): string {
@@ -48,6 +52,24 @@ export function enginePurpose(id: EngineId): string {
   )[id];
 }
 
+/**
+ * Resolve and load an engine now, or throw with the reason it could not.
+ *
+ * This is the only place the loaders are called from, so a tool cannot start a
+ * second download for a module the tab already has. The loaders memoise the
+ * live instance; a *failure* is not memoised, so being offline once does not
+ * poison the tab.
+ */
+async function provideEngine(id: EngineId, hooks: EngineHooks = {}): Promise<unknown> {
+  const provision = await ensureEngine(id, hooks);
+  if (!provision.ok) throw new EngineUnavailable(id, provision.reason);
+  return provision.module;
+}
+
+async function requireEngine(id: EngineId, hooks: EngineHooks = {}): Promise<void> {
+  await provideEngine(id, hooks);
+}
+
 // ── Ghostscript ─────────────────────────────────────────────────────────────
 
 const GS_SANDBOX_IN = '/tmp/input.pdf';
@@ -58,7 +80,12 @@ interface GsOutcome {
   log: string[];
 }
 
-async function runGhostscript(args: string[], input: Uint8Array): Promise<GsOutcome> {
+async function runGhostscript(
+  args: string[],
+  input: Uint8Array,
+  hooks: EngineHooks = {},
+): Promise<GsOutcome> {
+  await requireEngine('ghostscript', hooks);
   const result = await gsRun(args, { [GS_SANDBOX_IN]: input }, { outputs: [GS_SANDBOX_OUT] });
   const output = result.outputs[GS_SANDBOX_OUT];
   const warnings = result.log.filter((line) => /error|cannot|failed|unable/i.test(line));
@@ -78,6 +105,7 @@ async function runGhostscript(args: string[], input: Uint8Array): Promise<GsOutc
 export async function convertToPdfA(
   bytes: Uint8Array,
   part: '1b' | '2b' | '3b' | string,
+  hooks?: EngineHooks,
 ): Promise<GsOutcome> {
   const number = Number.parseInt(part, 10) || 2;
   const compatibility = number >= 2 ? '1.7' : '1.4';
@@ -103,14 +131,17 @@ export async function convertToPdfA(
     '-sOutputFile',
     GS_SANDBOX_OUT,
     GS_SANDBOX_IN,
-  ], bytes);
+  ], bytes, hooks);
 }
 
 /**
  * Turn every glyph into a vector path with `-dNoOutputFonts`, so the file
  * renders identically without any font on the machine.
  */
-export async function textToOutlines(bytes: Uint8Array): Promise<GsOutcome> {
+export async function textToOutlines(
+  bytes: Uint8Array,
+  hooks?: EngineHooks,
+): Promise<GsOutcome> {
   return runGhostscript([
     '-dQUIET',
     '-dNOPAUSE',
@@ -124,11 +155,14 @@ export async function textToOutlines(bytes: Uint8Array): Promise<GsOutcome> {
     '-sOutputFile',
     GS_SANDBOX_OUT,
     GS_SANDBOX_IN,
-  ], bytes);
+  ], bytes, hooks);
 }
 
 /** Ghostscript's own lossless rewrite, used as a repair last resort. */
-export async function rebuildWithGhostscript(bytes: Uint8Array): Promise<GsOutcome> {
+export async function rebuildWithGhostscript(
+  bytes: Uint8Array,
+  hooks?: EngineHooks,
+): Promise<GsOutcome> {
   return runGhostscript([
     '-dQUIET',
     '-dNOPAUSE',
@@ -141,7 +175,7 @@ export async function rebuildWithGhostscript(bytes: Uint8Array): Promise<GsOutco
     '-sOutputFile',
     GS_SANDBOX_OUT,
     GS_SANDBOX_IN,
-  ], bytes);
+  ], bytes, hooks);
 }
 
 // ── CoherentPDF ─────────────────────────────────────────────────────────────
@@ -154,9 +188,10 @@ export async function rebuildWithGhostscript(bytes: Uint8Array): Promise<GsOutco
 async function withCpdf<T>(
   bytes: Uint8Array,
   password: string | undefined,
-  body: (api: Awaited<ReturnType<typeof cpdf>>, pdf: CpdfDocument) => T,
+  body: (api: CpdfApi, pdf: CpdfDocument) => T,
+  hooks: EngineHooks = {},
 ): Promise<T> {
-  const api = await cpdf();
+  const api = (await provideEngine('cpdf', hooks)) as CpdfApi;
   let pdf: CpdfDocument | undefined;
   try {
     pdf = api.fromMemory(bytes, password ?? '');
@@ -170,19 +205,21 @@ async function withCpdf<T>(
 export async function linearizeWithCpdf(
   bytes: Uint8Array,
   password?: string,
+  hooks?: EngineHooks,
 ): Promise<Uint8Array> {
-  return withCpdf(bytes, password, (api, pdf) => api.toMemory(pdf, true, false));
+  return withCpdf(bytes, password, (api, pdf) => api.toMemory(pdf, true, false), hooks);
 }
 
 /** Compress + remove duplicate objects, without touching the image pixels. */
 export async function compressWithCpdf(
   bytes: Uint8Array,
   password?: string,
+  hooks?: EngineHooks,
 ): Promise<Uint8Array> {
   return withCpdf(bytes, password, (api, pdf) => {
     api.compress(pdf);
     return api.toMemory(pdf, false, false);
-  });
+  }, hooks);
 }
 
 export interface CpdfOutlineEntry {
@@ -196,6 +233,7 @@ export interface CpdfOutlineEntry {
 export async function readBookmarksWithCpdf(
   bytes: Uint8Array,
   password?: string,
+  hooks?: EngineHooks,
 ): Promise<CpdfOutlineEntry[]> {
   return withCpdf(bytes, password, (api, pdf) => {
     const entries: CpdfOutlineEntry[] = [];
@@ -214,13 +252,14 @@ export async function readBookmarksWithCpdf(
       api.endGetBookmarkInfo();
     }
     return entries;
-  });
+  }, hooks);
 }
 
 /** List the fonts CoherentPDF finds, used by the font and PDF/A reports. */
 export async function listFontsWithCpdf(
   bytes: Uint8Array,
   password?: string,
+  hooks?: EngineHooks,
 ): Promise<{ name: string; page: string; type: string; encoding: string }[]> {
   return withCpdf(bytes, password, (api, pdf) => {
     const fonts: { name: string; page: string; type: string; encoding: string }[] = [];
@@ -234,7 +273,7 @@ export async function listFontsWithCpdf(
       });
     }
     return fonts;
-  });
+  }, hooks);
 }
 
 // ── PyMuPDF ─────────────────────────────────────────────────────────────────
@@ -243,8 +282,12 @@ export async function listFontsWithCpdf(
  * Open a document with PyMuPDF. It accepts a `Blob`, so the bytes are wrapped
  * rather than passed raw. The caller must `close()` the document.
  */
-export async function openWithPyMuPDF(bytes: Uint8Array, password?: string) {
-  const instance = await pymupdf();
+export async function openWithPyMuPDF(
+  bytes: Uint8Array,
+  password?: string,
+  hooks?: EngineHooks,
+) {
+  const instance = (await provideEngine('pymupdf', hooks)) as PyMuPDFInstance;
   const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
   const doc = await instance.open(blob);
   if (doc.needsPass) {
@@ -256,17 +299,25 @@ export async function openWithPyMuPDF(bytes: Uint8Array, password?: string) {
   return { instance, doc };
 }
 
+export interface PyMuPdfSaveOptions {
+  password?: string;
+  clean?: boolean;
+  deflate?: boolean;
+  garbage?: number;
+}
+
 /** PyMuPDF's own lossy-free structural cleanup (garbage collect + deflate). */
 export async function scrubWithPyMuPDF(
   bytes: Uint8Array,
-  options: { password?: string; clean?: boolean; deflate?: boolean; garbage?: number } = {},
+  options: PyMuPdfSaveOptions & { onStatus?: (line: string) => void } = {},
 ): Promise<Uint8Array> {
-  const { doc } = await openWithPyMuPDF(bytes, options.password);
+  const { onStatus, ...save } = options;
+  const { doc } = await openWithPyMuPDF(bytes, save.password, { onStatus });
   try {
     return doc.save({
-      garbage: options.garbage ?? 3,
-      deflate: options.deflate ?? true,
-      clean: options.clean ?? true,
+      garbage: save.garbage ?? 3,
+      deflate: save.deflate ?? true,
+      clean: save.clean ?? true,
     });
   } finally {
     doc.close();
@@ -279,15 +330,23 @@ export async function scrubWithPyMuPDF(
  */
 export async function deskewWithPyMuPDF(
   bytes: Uint8Array,
-  options: { password?: string; maxAngle?: number; threshold?: number; dpi?: number; pages?: number[] } = {},
+  options: {
+    password?: string;
+    maxAngle?: number;
+    threshold?: number;
+    dpi?: number;
+    pages?: number[];
+    onStatus?: (line: string) => void;
+  } = {},
 ): Promise<{ bytes: Uint8Array; angles: number[]; corrected: number[] }> {
-  const instance = await pymupdf();
+  const { onStatus, ...deskew } = options;
+  const instance = (await provideEngine('pymupdf', { onStatus })) as PyMuPDFInstance;
   const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
   const { pdf, result } = await instance.deskewPdf(blob, {
-    maxAngle: options.maxAngle ?? 15,
-    threshold: options.threshold,
-    dpi: options.dpi,
-    pages: options.pages,
+    maxAngle: deskew.maxAngle ?? 15,
+    threshold: deskew.threshold,
+    dpi: deskew.dpi,
+    pages: deskew.pages,
   });
   const corrected = result.corrected
     .map((wasCorrected, index) => (wasCorrected ? index + 1 : 0))

@@ -13,7 +13,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
-import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { useProcessStore } from '@/stores/process-store';
+import { usePdfTool } from '@/hooks/usePdfTool';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { openPDF } from '@/lib/pdf/core/doc';
 import {
@@ -29,7 +30,8 @@ import {
 
 export function CompareTool() {
   const files = useFileStore((s) => s.files);
-  const { process } = usePDFEngine();
+  const { run, isRunning } = usePdfTool('compare');
+  const warnings = useProcessStore((s) => s.warnings);
   const [st, setSt] = useState(getCompareState());
   const [counts, setCounts] = useState<{ a: DocPageCount | null; b: DocPageCount | null }>({ a: null, b: null });
 
@@ -87,16 +89,11 @@ export function CompareTool() {
 
   const handleProcess = useCallback(() => {
     if (!report.valid) return;
-    // SAFETY: the legacy panel API takes a loose param bag; `compare` reads only
-    // these two keys out of it.
-    process({
-      toolId: 'compare',
-      params: {
-        highlightColor: st.highlightColor,
-        sensitivity: clampSensitivity(st.sensitivity),
-      } as unknown as Record<string, unknown>,
+    void run({
+      highlightColor: st.highlightColor,
+      sensitivity: clampSensitivity(st.sensitivity),
     });
-  }, [process, report.valid, st.highlightColor, st.sensitivity]);
+  }, [report.valid, run, st.highlightColor, st.sensitivity]);
 
   if (files.length < 2) {
     return (
@@ -207,14 +204,29 @@ export function CompareTool() {
         document A with differences from B highlighted.
       </motion.p>
 
+      {/* What the run had to admit: pages only one document has, files it could
+          not open, thresholds it moved. */}
+      {warnings.length > 0 && (
+        <motion.ul
+          variants={scaleIn}
+          role="status"
+          data-compare-warnings={warnings.length}
+          className="space-y-1 rounded-[12px] border border-warn/25 bg-warn/[0.07] px-3 py-2.5 text-[10px] leading-relaxed text-warn"
+        >
+          {warnings.map((warning) => (
+            <li key={warning}>· {warning}</li>
+          ))}
+        </motion.ul>
+      )}
+
       <button
         onClick={handleProcess}
         id="tool-process-btn"
         className="doodle-btn disabled:opacity-50"
-        disabled={!report.valid}
+        disabled={!report.valid || isRunning}
         title={report.valid ? undefined : report.headline}
       >
-        Generate Comparison PDF
+        {isRunning ? 'Comparing…' : 'Generate Comparison PDF'}
       </button>
     </motion.div>
   );

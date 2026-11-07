@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useFileStore } from '@/stores/file-store';
-import { usePDFEngine } from '@/hooks/usePDFEngine';
+import { useProcessStore } from '@/stores/process-store';
+import { usePdfTool } from '@/hooks/usePdfTool';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { navigateToTool } from '@/components/tools/pdf/editor/quickModes';
 
@@ -68,7 +69,8 @@ export function scanPlanReport(input: {
 
 export function ScanTool() {
   const files = useFileStore((s) => s.files);
-  const { process } = usePDFEngine();
+  const { run, isRunning } = usePdfTool('scan-to-pdf');
+  const warnings = useProcessStore((s) => s.warnings);
   const [pageSize, setPageSize] = useState<PageSize>('a4');
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [margin, setMargin] = useState(10);
@@ -82,16 +84,8 @@ export function ScanTool() {
 
   const handleProcess = useCallback(() => {
     if (!plan.valid) return;
-    process({
-      toolId: 'scan-to-pdf',
-      params: {
-        pageSize,
-        orientation,
-        margin,
-        fitMode: 'contain' as const,
-      },
-    });
-  }, [margin, orientation, pageSize, plan.valid, process]);
+    void run({ pageSize, orientation, margin, fit: 'contain' });
+  }, [margin, orientation, pageSize, plan.valid, run]);
 
   if (imageCount === 0) {
     return (
@@ -217,8 +211,29 @@ export function ScanTool() {
         <span className="font-mono text-xs font-semibold tabular-nums text-accent">{imageCount}</span>
       </motion.div>
 
-      <button onClick={handleProcess} id="tool-process-btn" className="doodle-btn w-full" disabled={!plan.valid}>
-        Generate PDF{plan.valid ? ` (${plan.pages} page${plan.pages === 1 ? '' : 's'})` : ''}
+      {/* Captures the run could not decode are named, not swallowed. */}
+      {warnings.length > 0 && (
+        <motion.ul
+          variants={scaleIn}
+          role="status"
+          data-scan-warnings={warnings.length}
+          className="space-y-1 rounded-[12px] border border-warn/25 bg-warn/[0.07] px-3 py-2.5 text-[10px] leading-relaxed text-warn"
+        >
+          {warnings.map((warning) => (
+            <li key={warning}>· {warning}</li>
+          ))}
+        </motion.ul>
+      )}
+
+      <button
+        onClick={handleProcess}
+        id="tool-process-btn"
+        className="doodle-btn w-full"
+        disabled={!plan.valid || isRunning}
+      >
+        {isRunning
+          ? 'Building PDF…'
+          : `Generate PDF${plan.valid ? ` (${plan.pages} page${plan.pages === 1 ? '' : 's'})` : ''}`}
       </button>
     </motion.div>
   );

@@ -2,21 +2,21 @@
  * The three optional CDN engines: PyMuPDF, Ghostscript and CoherentPDF.
  *
  * None of them can be bundled. PyMuPDF is a Pyodide runtime plus Python WASM
- * wheels (tens of megabytes), Ghostscript is a large `gs.js` / `gs.wasm` pair,
- * and CoherentPDF is 1.3 MB of OCaml compiled to JavaScript — and all three are
- * AGPL-3.0 while BrowserSnip is MIT. They are fetched on first use from an
- * address the user may override with a mirror of their own.
+ * wheels, Ghostscript is a large `gs.js` / `gs.wasm` pair, and CoherentPDF is
+ * OCaml compiled to JavaScript — and all three are AGPL-3.0 while BrowserSnip
+ * is MIT. They are therefore fetched from the default address below, lazily,
+ * the first time a tool actually needs one (see `auto.ts`); the browser cache
+ * covers every run after that. There is no engine UI and nothing to enable.
  *
- * Because that override is stored in `localStorage`, and because the loaders
- * hand the stored string to `import()` / `<script src>` / `fetch()`, a stray or
- * hostile entry would make this origin execute someone else's JavaScript. The
- * rule set below is copied from BentoPDF's shipped `wasm-provider` bundle and
- * closes that hole:
+ * A mirror can still live in `localStorage`, written by an older build or by an
+ * advanced user. Because the loaders hand that string to `import()` /
+ * `<script src>` / `fetch()`, a stray or hostile entry would make this origin
+ * execute someone else's JavaScript. The rule set below is copied from
+ * BentoPDF's shipped `wasm-provider` bundle and closes that hole:
  *
  *   - the trusted-host set is `location.hostname` plus the hosts of the
  *     built-in default URLs, and it lives in memory only;
- *   - a URL the user saves deliberately is trusted for this session (that is
- *     the whole point of the settings dialog);
+ *   - a URL saved through `setUrl` is trusted for this session;
  *   - a stored URL is refused and scrubbed when it is stale (an older version
  *     or path of the same jsDelivr package) or foreign (a host nobody chose).
  */
@@ -28,6 +28,17 @@ export type EngineId = (typeof ENGINE_IDS)[number];
 
 /** `localStorage` key holding the user's own engine addresses. */
 export const ENGINE_STORAGE_KEY = 'browsersnip:wasm-engines';
+
+/**
+ * Roughly what each download costs the user, measured from the published
+ * packages (`data.jsdelivr.com`, 2026-07). Quoted in the one line a run prints
+ * before it waits on the network, so a 15 MB stall is not a blank pane.
+ */
+export const ENGINE_DOWNLOAD_SIZE: Record<EngineId, string> = {
+  pymupdf: 'about 54 MB',
+  ghostscript: 'about 15 MB',
+  cpdf: 'about 0.5 MB',
+};
 
 /** Default addresses, verified against BentoPDF's shipped bundles. */
 export const ENGINE_DEFAULTS: Record<EngineId, string> = {
@@ -53,40 +64,12 @@ export const ENGINE_LABELS: Record<EngineId, string> = {
   cpdf: 'CoherentPDF',
 };
 
-/** One-line role, used by the badge and the gate heading. */
+/** One-line role: what the engine is for, used in the sentences a run prints. */
 export const ENGINE_ROLES: Record<EngineId, string> = {
   pymupdf: 'document conversion and high-quality text extraction',
   ghostscript: 'PDF/A conversion and font outlining',
   cpdf: 'bookmarks, metadata, page labels and attachments',
 };
-
-/** What each engine unlocks — shown so the download is an informed choice. */
-export const ENGINE_FEATURES: Record<EngineId, string[]> = {
-  pymupdf: [
-    'PDF to text, Markdown, HTML, JSON and SVG',
-    'PDF to images at a chosen DPI',
-    'PDF to DOCX, and EPUB/MOBI/FB2/CBZ/XPS to PDF',
-    'Deskew and optional-content layers',
-  ],
-  ghostscript: [
-    'PDF/A-1b, PDF/A-2b and PDF/A-3b conversion',
-    'Text fonts converted to outlines',
-    'CMYK and separated colour spaces normalised to sRGB',
-  ],
-  cpdf: [
-    'Merge and alternate merge',
-    'Bookmarks, tables of contents and page labels',
-    'Document and XMP metadata',
-    'Embedded file attachments, and PDF to JSON',
-  ],
-};
-
-/** Licence copy. Shown verbatim in the settings dialog. */
-export const ENGINE_LICENCE_NOTE =
-  'PyMuPDF, Ghostscript and CoherentPDF are licensed AGPL-3.0. BrowserSnip is MIT, ' +
-  'so none of them is bundled: each is downloaded once from a CDN on first use and ' +
-  'cached by your browser. Everything still happens in this tab — your PDF never ' +
-  'leaves the device.';
 
 /** How long a single `validateUrl` probe may take before it is abandoned. */
 export const ENGINE_VALIDATION_TIMEOUT_MS = 10_000;
@@ -98,13 +81,13 @@ export interface EngineValidationResult {
 }
 
 export interface EngineProvider {
-  /** Effective address for an engine: the user's, if trusted, else the default. */
+  /** Effective address for an engine: a stored mirror if trusted, else the default. */
   getUrl(id: EngineId): string;
   /** True when an engine has any address at all, so a tool may try to load it. */
   isConfigured(id: EngineId): boolean;
-  /** True when the address in use came from the user rather than the default. */
+  /** True when the address in use came from storage rather than the default. */
   isUserConfigured(id: EngineId): boolean;
-  /** Save a mirror address. A URL the user types deliberately becomes trusted. */
+  /** Save a mirror address. An address typed deliberately becomes trusted. */
   setUrl(id: EngineId, url: string): void;
   /** Drop one engine's override and fall back to the built-in address. */
   removeUrl(id: EngineId): void;
@@ -158,20 +141,30 @@ export function isStaleEngineUrl(id: EngineId, url: string): boolean {
   return url.startsWith(`${prefix}@`) || url.startsWith(`${prefix}/`);
 }
 
-/** Thrown by a loader when its engine has no usable address, or failed to load. */
+/**
+ * Thrown when an engine could not be fetched — offline, a blocked CDN, or a
+ * mirror that stopped answering. The sentence names the engine, the host and
+ * the reason, and says what happens instead; it never tells the user to enable
+ * something, because there is nothing left to enable.
+ */
 export class EngineUnavailable extends Error {
   readonly name = 'EngineUnavailable';
   readonly engine: EngineId;
-  readonly remediation: string;
+  /** Host the default address points at, so copy can name where it failed. */
+  readonly host: string;
+  /** The loader's own cause, kept separate so callers can quote just that. */
+  readonly detail?: string;
 
   constructor(engine: EngineId, detail?: string) {
-    const remediation =
-      `Open Engine Settings, press Test on the recommended ${ENGINE_LABELS[engine]} ` +
-      `address and Save it. The module downloads once from a CDN and is cached by ` +
-      `your browser; your PDF never leaves the device.`;
-    super(`${ENGINE_LABELS[engine]} is not available${detail ? `: ${detail}` : '.'} ${remediation}`);
+    const host = hostnameOf(ENGINE_DEFAULTS[engine]) ?? 'the CDN';
+    super(
+      `${ENGINE_LABELS[engine]} could not be fetched from ${host}` +
+        `${detail ? ` (${detail})` : ''}. It is downloaded once, when a tool needs ` +
+        `it, and cached by your browser; nothing was uploaded.`,
+    );
     this.engine = engine;
-    this.remediation = remediation;
+    this.host = host;
+    this.detail = detail;
   }
 }
 
@@ -257,8 +250,8 @@ export function createEngineProvider(): EngineProvider {
       if (!isTrustedUrl(value)) {
         scrubbed = true;
         console.warn(
-          `[engines] "${value}" points at a host this app does not trust. ` +
-            `Re-enter it in Engine Settings to use that mirror.`,
+          `[engines] "${value}" points at a host this app does not trust; ` +
+            `using the built-in address instead.`,
         );
         continue;
       }

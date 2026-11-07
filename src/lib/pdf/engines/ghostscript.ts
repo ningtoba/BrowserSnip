@@ -57,12 +57,10 @@ export interface GhostscriptRun {
 let pendingModule: Promise<GhostscriptModule> | null = null;
 let loadedModule: GhostscriptModule | null = null;
 
-export function ghostscriptConfigured(): boolean {
-  return engines.isConfigured('ghostscript');
-}
-
 async function loadGhostscript(): Promise<GhostscriptModule> {
-  if (!engines.isConfigured('ghostscript')) throw new EngineUnavailable('ghostscript');
+  if (!engines.isConfigured('ghostscript')) {
+    throw new EngineUnavailable('ghostscript', 'no address is set');
+  }
 
   const base = normalizeBaseUrl(engines.getUrl('ghostscript'));
   const scriptUrl = `${base}gs.js`;
