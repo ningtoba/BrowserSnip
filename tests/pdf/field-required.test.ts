@@ -8,8 +8,11 @@
  * its own requirement, optionally per-state, plus the imperative sentence to show.
  */
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { render } from '@testing-library/react';
 import { validateFields } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
+import { FieldControl } from '@/components/tools/pdf/shared/FieldControls';
 import type { ToolValues } from '@/lib/pdf/tools/types';
 
 const empty: ToolValues = { userPassword: '', ownerPassword: '' };
@@ -64,5 +67,54 @@ describe('a required field', () => {
       },
     }];
     expect(validateFields(fields, { word: '' })).toEqual([]);
+  });
+});
+
+/**
+ * The message only helps if the person who cannot see it hears it. A red line
+ * under a box is decoration to a screen reader focused on that box, so the
+ * association has to exist in the DOM, not just in the layout.
+ */
+describe('a field message is bound to its control', () => {
+  const password = { key: 'userPassword', label: 'Open password', type: 'password' } as const;
+  const values = { userPassword: '' };
+
+  it('points the input at the sentence that explains it', () => {
+    const { container } = render(createElement(FieldControl, {
+      field: password,
+      values,
+      onChange: () => {},
+      issue: 'Enter the password readers must type to open this PDF.',
+    }));
+    const input = container.querySelector('input')!;
+    const describedBy = input.getAttribute('aria-describedby');
+    expect(describedBy).toBe('tool-field-userPassword-issue');
+    expect(document.getElementById(describedBy!)?.textContent).toMatch(/readers must type/i);
+  });
+
+  it('lists both the notice and the issue when a field has two', () => {
+    const { container } = render(createElement(FieldControl, {
+      field: password,
+      values,
+      onChange: () => {},
+      notice: 'The rebuild kept every page.',
+      issue: 'Enter the password readers must type to open this PDF.',
+    }));
+    const input = container.querySelector('input')!;
+    expect(input.getAttribute('aria-describedby')?.split(' ')).toEqual([
+      'tool-field-userPassword-notice',
+      'tool-field-userPassword-issue',
+    ]);
+    expect(document.getElementById('tool-field-userPassword-notice')).not.toBeNull();
+  });
+
+  it('says nothing about a description it did not render', () => {
+    const { container } = render(createElement(FieldControl, {
+      field: password,
+      values,
+      onChange: () => {},
+    }));
+    // A dangling aria-describedby is worse than none: it announces an empty id.
+    expect(container.querySelector('input')!.getAttribute('aria-describedby')).toBeNull();
   });
 });

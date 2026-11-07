@@ -371,6 +371,9 @@ export function FieldControl({
   // rather than a floating caption a screen reader never reaches.
   const inputId = `tool-field-${field.key}`;
   const bound = LABELABLE_TYPES.has(field.type) ? inputId : undefined;
+  const noticeId = `${inputId}-notice`;
+  const issueId = `${inputId}-issue`;
+  const describedBy = [notice ? noticeId : null, issue ? issueId : null].filter(Boolean).join(' ') || undefined;
 
   return (
     <motion.div variants={fadeUp} className="space-y-1">
@@ -381,10 +384,11 @@ export function FieldControl({
         onChange={set}
         pageCount={pageCount}
         inputId={bound}
+        describedBy={bound ? describedBy : undefined}
         compact={compact}
       />
-      {notice && <p className="text-[10px] leading-relaxed text-warn">{notice}</p>}
-      {issue && <p className="text-[10px] leading-relaxed text-danger">{issue}</p>}
+      {notice && <p id={noticeId} className="text-[10px] leading-relaxed text-warn">{notice}</p>}
+      {issue && <p id={issueId} className="text-[10px] leading-relaxed text-danger">{issue}</p>}
       {!compact && !notice && !issue && field.help && (
         <p className="text-[10px] leading-relaxed text-ink-muted">{field.help}</p>
       )}
@@ -460,11 +464,18 @@ interface ControlProps {
   pageCount?: number | null;
   /** Present when the label can be bound to this control. */
   inputId?: string;
+  /**
+   * Ids of the notice and issue lines under this control. A visible caption is
+   * not an announced one: without this a screen reader reads "Open password"
+   * and never hears "Enter the password readers must type to open this PDF",
+   * which is the entire reason the message exists.
+   */
+  describedBy?: string;
   /** See `FieldControlProps.compact`. */
   compact?: boolean;
 }
 
-function Control({ field, value, onChange, pageCount, inputId, compact = false }: ControlProps) {
+function Control({ field, value, onChange, pageCount, inputId, describedBy, compact = false }: ControlProps) {
   switch (field.type) {
     case 'toggle':
       return (
@@ -488,6 +499,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
       return (
         <textarea
           id={inputId}
+          aria-describedby={describedBy}
           value={String(value ?? '')}
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
@@ -503,6 +515,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
         <input
           type="number"
           id={inputId}
+          aria-describedby={describedBy}
           value={typed}
           min={field.min}
           max={field.max}
@@ -517,6 +530,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
         <input
           type="range"
           id={inputId}
+          aria-describedby={describedBy}
           min={field.min ?? 0}
           max={field.max ?? 1}
           step={field.step ?? 0.01}
@@ -547,6 +561,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
       return (
         <select
           id={inputId}
+          aria-describedby={describedBy}
           value={String(value ?? field.default ?? '')}
           onChange={(event) => onChange(coerce(field, event.target.value))}
           className="doodle-input"
@@ -619,6 +634,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
           onChange={onChange}
           pageCount={pageCount}
           inputId={inputId}
+          describedBy={describedBy}
           compact={compact}
         />
       );
@@ -627,6 +643,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
         <input
           type="password"
           id={inputId}
+          aria-describedby={describedBy}
           value={String(value ?? '')}
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
@@ -664,6 +681,7 @@ function Control({ field, value, onChange, pageCount, inputId, compact = false }
       return (
         <input
           id={inputId}
+          aria-describedby={describedBy}
           value={String(value ?? '')}
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
@@ -685,12 +703,15 @@ function PagePicker({
   onChange,
   pageCount,
   inputId,
+  describedBy,
   compact = false,
 }: {
   value: unknown;
   onChange: (next: unknown) => void;
   pageCount?: number | null;
   inputId?: string;
+  /** See `ControlProps.describedBy`. */
+  describedBy?: string;
   compact?: boolean;
 }) {
   const file = useFileStore((s) => s.file);
@@ -761,6 +782,7 @@ function PagePicker({
         <ErrorPanel message={error} fileName={file?.name} />
         <input
           id={inputId}
+          aria-describedby={describedBy}
           value={spec}
           onChange={(event) => onChange(event.target.value)}
           placeholder="1,3,5-7"
@@ -774,6 +796,7 @@ function PagePicker({
     return (
       <input
         id={inputId}
+          aria-describedby={describedBy}
         value={spec === 'all' ? '' : spec}
         onChange={(event) => onChange(event.target.value || 'all')}
         placeholder="1,3,5-7"
@@ -787,6 +810,7 @@ function PagePicker({
       <div className="flex items-center gap-1">
         <input
           id={inputId}
+          aria-describedby={describedBy}
           value={spec}
           onChange={(event) => onChange(event.target.value)}
           className="doodle-input flex-1 font-mono text-[10px]"
