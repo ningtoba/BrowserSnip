@@ -96,7 +96,10 @@ function parseList(input: string, total: number): number[] {
       for (let i = start; i <= total; i += interval) out.push(i - 1);
       continue;
     }
-    const single = Number(chunk);
+    // Only digits name a page. `Number()` also reads `0x10` as 16 and `1e2` as
+    // 100, which would quietly select a page nobody typed; the guard’s parser is
+    // this strict already, so the two halves of the grammar now agree (E15).
+    const single = /^\d+$/.test(chunk) ? Number(chunk) : Number.NaN;
     if (!Number.isInteger(single)) {
       throw new PageSpecError(`"${chunk}" is not a page number or range (try 1,3,5-7).`);
     }

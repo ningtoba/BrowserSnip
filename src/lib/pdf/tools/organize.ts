@@ -459,6 +459,15 @@ async function savable(input: OpenedInput, notes: Notes): Promise<PDFDocument> {
  */
 const safeStem = downloadStem;
 
+/**
+ * What a split file's name says about its contents: one sheet is `page-5`,
+ * several are `pages-2-7`. `pages-5-5` named a single sheet as if it were a
+ * range, which reads like a mistake in a folder full of downloads (E17).
+ */
+function rangeName(first: number, last: number): string {
+  return first === last ? `page-${first}` : `pages-${first}-${last}`;
+}
+
 /** Make `name` unique within `used` by suffixing `-2`, `-3`, … */
 function uniqueName(used: Set<string>, name: string): string {
   if (!used.has(name)) {
@@ -602,7 +611,7 @@ const GUTTER: ToolField = {
   step: 1,
   unit: 'pt',
   group: 'Spacing',
-  help: 'Extra space down the middle of the sheet, for a fold or a binder.',
+  help: 'Space between neighbouring cells: down the middle of a two-up sheet, where the fold or the binder goes, and along every join of a denser grid.',
 
 };
 
@@ -645,6 +654,100 @@ const DPI: ToolField = {
   unit: 'dpi',
   group: 'Images',
   help: 'Higher means a bigger archive and more memory in this tab.',
+};
+
+/**
+ * The counting fields of the two cutting tools.
+ *
+ * E15 says a numeric field declares its bounds once, on the field itself. These
+ * were written twice — once for the rail and again through `TILES` for the clamp
+ * at the point of use — and the two spellings had drifted (1 to 9 for the rail,
+ * 1 to 12 for the run), so the same value could be corrected two different ways.
+ * One declaration each, read by both halves.
+ */
+const POSTER_ACROSS: ToolField = {
+  key: 'columns',
+  label: 'Tiles across',
+  type: 'number',
+  default: 2,
+  min: 1,
+  max: 12,
+  step: 1,
+  integer: true,
+  half: true,
+  group: 'Grid',
+  help: 'How many tiles the page is cut into horizontally; with tiles down this sets the size of each piece.',
+};
+
+const POSTER_DOWN: ToolField = {
+  key: 'rows',
+  label: 'Tiles down',
+  type: 'number',
+  default: 2,
+  min: 1,
+  max: 12,
+  step: 1,
+  integer: true,
+  half: true,
+  group: 'Grid',
+  help: 'How many tiles the page is cut into vertically; with tiles across this sets the size of each piece.',
+};
+
+const POSTER_BLEED: ToolField = {
+  key: 'bleed',
+  label: 'Overlap for trimming',
+  type: 'slider',
+  default: 10,
+  min: 0,
+  max: 100,
+  step: 1,
+  unit: 'pt',
+  group: 'Grid',
+  help: 'How much neighbouring tiles repeat, so a small cutting error still meets up.',
+};
+
+const DIVIDE_PARTS: ToolField = {
+  key: 'parts',
+  label: 'Number of parts',
+  type: 'number',
+  default: 2,
+  min: 2,
+  max: 9,
+  step: 1,
+  integer: true,
+  group: 'Cut',
+  when: (v) => v.axis !== 'grid',
+  help: 'How many strips the page is cut into along the chosen direction.',
+};
+
+const DIVIDE_COLUMNS: ToolField = {
+  key: 'columns',
+  label: 'Columns',
+  type: 'number',
+  default: 2,
+  min: 1,
+  max: 9,
+  step: 1,
+  integer: true,
+  half: true,
+  group: 'Cut',
+  when: (v) => v.axis === 'grid',
+  help: 'Cells across the page in grid mode.',
+};
+
+const DIVIDE_ROWS: ToolField = {
+  key: 'rows',
+  label: 'Rows',
+  type: 'number',
+  default: 2,
+  min: 1,
+  max: 9,
+  step: 1,
+  integer: true,
+  half: true,
+  group: 'Cut',
+  when: (v) => v.axis === 'grid',
+  help: 'Cells down the page in grid mode.',
 };
 
 /* ── tools ────────────────────────────────────────────────────────────────── */
@@ -834,7 +937,7 @@ export const organizeTools: PdfToolDefinition[] = [
           const pages: number[] = [];
           for (let p = i; p < Math.min(i + size, total); p++) pages.push(p);
           groups.push({
-            name: `pages-${pages[0] + 1}-${pages[pages.length - 1] + 1}`,
+            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1),
             pages,
           });
         }
@@ -846,9 +949,10 @@ export const organizeTools: PdfToolDefinition[] = [
           // Per-chunk so the refusal names the range that is wrong *and* the
           // page count that makes it wrong (E6, E15).
           const pages = selection({ pages: trimmed }, total, { verb: 'split out' });
-          const first = pages[0] + 1;
-          const last = pages[pages.length - 1] + 1;
-          groups.push({ name: `pages-${first}-${last}`, pages });
+          groups.push({
+            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1),
+            pages,
+          });
         }
         if (groups.length === 0) {
           throw new ToolInputError('NO_PAGES', `"${spec}" did not contain a usable page range.`, {
@@ -1105,7 +1209,11 @@ export const organizeTools: PdfToolDefinition[] = [
       const notes = createNotes();
       const asked = numberValue(context.values, 'degrees', 90);
       const delta = normaliseRotation(asked);
-      if (delta !== normalise180(asked)) {
+      // E15: announce a correction only when one happened. A stored `/Rotate` is
+      // a multiple of 90, so the value to compare against is the request itself;
+      // comparing it against that request rounded to the nearest half turn made
+      // an ordinary 90° run warn “90° became 90°”.
+      if (normalise360(asked) !== delta) {
         notes.add(`Rotation must be 90°, 180° or 270°: ${asked}° became ${delta}°.`);
       }
       if (delta === 0) {
@@ -1244,7 +1352,7 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['insert', 'empty', 'spacer', 'sheet'],
     outputSuffix: '_with_blanks.pdf',
     actionLabel: 'Add blanks',
-    promise: 'Your PDF with blank sheets inserted where you choose, sized to the page beside them.',
+    promise: 'Your PDF with blank sheets inserted where you choose, sized to the page beside them or to the sheet size you pick.',
     notes: [PAGE_COPY_NOTE],
     fields: [
       {
@@ -1763,11 +1871,17 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const total = pages.length;
       const cells: { sheet: number; cell: number; page: number }[] = [];
+      // One loop turn is one physical sheet: the outer pair goes on the front
+      // side, the inner pair on the back. They are separate PDF pages because a
+      // duplex run prints page 1 on one side of a sheet and page 2 on the other
+      // — four cells on one page would stack two booklet pages in each half and
+      // leave the back of every sheet blank (E13: the file must match the
+      // “printed sides” the sentence counts).
       for (let i = 0; i < total / 4; i++) {
-        cells.push({ sheet: i, cell: 0, page: pages[total - 1 - 2 * i] });
-        cells.push({ sheet: i, cell: 1, page: pages[2 * i] });
-        cells.push({ sheet: i, cell: 0, page: pages[2 * i + 1] });
-        cells.push({ sheet: i, cell: 1, page: pages[total - 2 - 2 * i] });
+        cells.push({ sheet: 2 * i, cell: 0, page: pages[total - 1 - 2 * i] });
+        cells.push({ sheet: 2 * i, cell: 1, page: pages[2 * i] });
+        cells.push({ sheet: 2 * i + 1, cell: 0, page: pages[2 * i + 1] });
+        cells.push({ sheet: 2 * i + 1, cell: 1, page: pages[total - 2 - 2 * i] });
       }
       const target = await sheetDocument(input.doc, sheet, cells, 2, box, notes);
       noteMixedSizes('The booklet', input.doc, source, notes);
@@ -1804,7 +1918,7 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'a4', label: 'A4 width' },
           { value: 'letter', label: 'Letter width' },
         ],
-      help: 'Everything is scaled to this width, so pages narrower than it gain side margins rather than stretching.',
+      help: 'Every page is drawn at exactly this width — a narrower page is enlarged to meet it rather than left with bare margins at the sides, so the scroll has one measure throughout.',
     },
       {
         key: 'splitOverflow',
@@ -1826,9 +1940,8 @@ export const organizeTools: PdfToolDefinition[] = [
       const boxes = source.map((index) => visibleBox(input.doc.getPage(index)));
       const widest = Math.max(...boxes.map((box) => box.width));
       const width = widthMode === 'widest' ? widest : resolvePageSize(widthMode)[0];
-      if (width < widest) {
-        notes.add(`Every page is scaled down to ${Math.round(width)} pt wide, so text that was ${Math.round(widest)} pt is now smaller on the sheet.`);
-      }
+      let enlarged = 0;
+      let shrunk = 0;
       // A PDF page edge may not exceed 14 400 units, so a long scroll has to
       // overflow onto another sheet — or say plainly that it was cut.
       const maxHeight = split ? PDF_MAX_EDGE : Infinity;
@@ -1842,6 +1955,11 @@ export const organizeTools: PdfToolDefinition[] = [
         throwIfAborted(context.signal);
         const box = boxes[i];
         const scale = width / box.width;
+        // The sheet is one width, so a page reaches it from whichever side it
+        // starts: a wider page is reduced, a narrower one is enlarged. Both are
+        // worth saying, and "every page is scaled down" was only half true (E13).
+        if (scale > 1.005) enlarged += 1;
+        else if (scale < 0.995) shrunk += 1;
         const drawHeight = box.height * scale;
         if (!current || yFromTop + drawHeight > maxHeight) {
           // Each sheet is exactly as tall as the content it carries, capped at
@@ -1872,6 +1990,16 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       if (blank > 0) {
         notes.add(`${pageCountLabel(blank)} of the stitched pages had no content to draw, so those strips are blank.`);
+      }
+      if (shrunk > 0) {
+        notes.add(
+          `${pageCountLabel(shrunk)} ${shrunk === 1 ? 'is' : 'are'} wider than the ${Math.round(width)} pt target and scaled down to it: the widest page measured ${Math.round(widest)} pt and now measures ${Math.round(width)} pt.`,
+        );
+      }
+      if (enlarged > 0) {
+        notes.add(
+          `${pageCountLabel(enlarged)} ${enlarged === 1 ? 'is' : 'are'} narrower than ${Math.round(width)} pt and scaled up to it rather than left with bare margins at the sides, so ${enlarged === 1 ? 'its' : 'their'} type prints bigger than it did in the source.`,
+        );
       }
       if (clipped > 0) {
         notes.add(
@@ -1909,17 +2037,17 @@ export const organizeTools: PdfToolDefinition[] = [
     promise: 'Tiles that print at one scale and overlap by the amount you set, ready to trim and paste.',
     notes: [FLATTEN_NOTE],
     fields: [
-      { key: 'columns', label: 'Tiles across', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid', help: 'How many tiles the page is cut into horizontally; with tiles down this sets the size of each piece.' },
-      { key: 'rows', label: 'Tiles down', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid', help: 'How many tiles the page is cut into vertically; with tiles across this sets the size of each piece.' },
-      { key: 'bleed', label: 'Overlap for trimming', type: 'slider', default: 10, min: 0, max: 100, step: 1, unit: 'pt', group: 'Grid', help: 'How much neighbouring tiles repeat, so a small cutting error still meets up.' },
+      POSTER_ACROSS,
+      POSTER_DOWN,
+      POSTER_BLEED,
       ALL_PAGES,
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const notes = createNotes();
-      const columns = numberOf(context.values, { ...TILES, key: 'columns', label: 'Tiles across' }, notes);
-      const rows = numberOf(context.values, { ...TILES, key: 'rows', label: 'Tiles down' }, notes);
-      const bleed = numberOf(context.values, { ...GUTTER, key: 'bleed', label: 'Overlap for trimming', default: 10, max: 100 }, notes);
+      const columns = numberOf(context.values, POSTER_ACROSS, notes);
+      const rows = numberOf(context.values, POSTER_DOWN, notes);
+      const bleed = numberOf(context.values, POSTER_BLEED, notes);
       const source = selection(context.values, input.pageCount, { fallback: 'all', verb: 'posterize' });
       if (columns === 1 && rows === 1) {
         notes.add('One tile across and one down copies each page rather than splitting it — raise one of them to make a poster.');
@@ -2013,21 +2141,21 @@ export const organizeTools: PdfToolDefinition[] = [
         ],
         help: 'Measured as the page is displayed, so a rotated page is cut along the line you see.',
       },
-      { key: 'parts', label: 'Number of parts', type: 'number', default: 2, min: 2, max: 9, step: 1, integer: true, group: 'Cut', when: (v) => v.axis !== 'grid', help: 'How many strips the page is cut into along the chosen direction.' },
-      { key: 'columns', label: 'Columns', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid', help: 'Cells across the page in grid mode.' },
-      { key: 'rows', label: 'Rows', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid', help: 'Cells down the page in grid mode.' },
+      DIVIDE_PARTS,
+      DIVIDE_COLUMNS,
+      DIVIDE_ROWS,
       ALL_PAGES,
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const notes = createNotes();
       const axis = stringValue(context.values, 'axis', 'vertical');
-      const parts = numberOf(context.values, { ...TILES, key: 'parts', label: 'Number of parts', default: 2, min: 2 }, notes);
+      const parts = numberOf(context.values, DIVIDE_PARTS, notes);
       const columns = axis === 'grid'
-        ? numberOf(context.values, { ...TILES, key: 'columns', label: 'Columns' }, notes)
+        ? numberOf(context.values, DIVIDE_COLUMNS, notes)
         : axisParts(axis, parts, 'vertical');
       const rows = axis === 'grid'
-        ? numberOf(context.values, { ...TILES, key: 'rows', label: 'Rows' }, notes)
+        ? numberOf(context.values, DIVIDE_ROWS, notes)
         : axisParts(axis, parts, 'horizontal');
       if (columns === 1 && rows === 1) {
         notes.add('One column and one row copies each page instead of dividing it — set at least two parts.');
@@ -2334,8 +2462,14 @@ export const organizeTools: PdfToolDefinition[] = [
       for (const input of inputs) {
         throwIfAborted(context.signal);
         const leaf = (input.name.split(/[\\/]/).pop() ?? input.name).trim() || 'document.pdf';
-        const name = uniqueNameIn(used, /\.pdf$/i.test(leaf) ? leaf : `${leaf}.pdf`);
-        if (name !== leaf) notes.add(`Two files share the name "${leaf}"; the second was stored as "${name}".`);
+        // Only a name this helper had to change is a clash: an extensionless file
+        // is stored as `scan.pdf`, and that is a repair, not two files fighting
+        // over one entry (E16, E17).
+        const wanted = /\.pdf$/i.test(leaf) ? leaf : `${leaf}.pdf`;
+        const name = uniqueNameIn(used, wanted);
+        if (name !== wanted) {
+          notes.add(`Two files share the name "${wanted}"; the second was stored as "${name}".`);
+        }
         entries.push({ name, data: input.bytes.slice() });
       }
       const total = inputs.reduce((sum, input) => sum + input.bytes.length, 0);
@@ -2464,17 +2598,6 @@ export const organizeTools: PdfToolDefinition[] = [
 
 /* ── helpers shared by this group ─────────────────────────────────────────── */
 
-const TILES: ToolField = {
-  key: 'columns',
-  label: 'Tiles',
-  type: 'number',
-  default: 2,
-  min: 1,
-  max: 12,
-  step: 1,
-  integer: true,
-};
-
 /** Files added twice by accident (E16) — kept, because a repeat is work. */
 function noteRepeated(inputs: OpenedInput[], notes: Notes): void {
   const seen = new Map<string, number>();
@@ -2504,11 +2627,6 @@ function uniqueNameIn(used: Set<string>, name: string): string {
   const candidate = `${stem}-${n}${ext}`;
   used.add(candidate);
   return candidate;
-}
-
-/** 90° and 270° are turns; 0/180/360 are not. Used to report a snapped angle. */
-function normalise180(degrees: number): number {
-  return ((Math.round(degrees / 180) * 180) % 360 + 360) % 360;
 }
 
 /**
@@ -2548,9 +2666,12 @@ async function sheetDocument(
   const blank = new Array(sheetCount).fill(0).map(() => target.addPage(size));
   let missing = 0;
   for (const item of cells) {
+    // A negative source index is a cell the caller *chose* to leave empty — the
+    // booklet pads the last sheet that way and says so in its own words. Only a
+    // cell that should have held a page, and did not, is worth a warning (E13).
+    if (item.page < 0) continue;
     const page = blank[item.sheet];
-    if (!page) continue;
-    if (item.page < 0 || item.page >= source.getPageCount()) {
+    if (!page || item.page >= source.getPageCount()) {
       missing += 1;
       continue;
     }
@@ -2558,7 +2679,7 @@ async function sheetDocument(
     if (!ok) missing += 1;
   }
   if (missing > 0) {
-    notes.add(`${pageCountLabel(missing)} of the planned cells stayed blank: the source page was empty or had no content to draw.`);
+    notes.add(`${pageCountLabel(missing)} of the planned cells stayed blank: the source page had no content to draw.`);
   }
   return target;
 }
@@ -2735,7 +2856,12 @@ function planFromIndices(raw: unknown[], total: number): PlanItem[] {
  */
 function parsePlan(spec: string, total: number, notes: Notes): PlanItem[] {
   const out: PlanItem[] = [];
-  for (const raw of spec.split(/[,\s]+/)) {
+  // `2 - 5` is a range with the spaces a person types. Folding them away before
+  // the split is the rule `core/pages.parseList` applies, and taking `;` as a
+  // separator too means the plan and the page list answer the same input the
+  // same way (E15) — this grammar used to read the spaced range as three tokens
+  // and refuse the middle one.
+  for (const raw of spec.replace(/\s*(-{1,2}|–|\.\.)\s*/g, '$1').split(/[,\s;]+/)) {
     const token = raw.trim();
     if (!token) continue;
     if (/^blank$/i.test(token)) {

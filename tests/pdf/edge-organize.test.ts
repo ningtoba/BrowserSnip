@@ -4,9 +4,10 @@
  * Same discipline as `tools-e2e.test.ts`: real PDF bytes are built here with
  * pdf-lib, the tool is driven through `runPdfTool` (the exact path the rail
  * uses — guard, field clamping, validation, the warnings bridge), and the
- * **returned bytes** are re-opened and measured. Nothing about the PDF work is
- * mocked, so a tool that reports a confident sentence over a broken file fails
- * here, which is the whole complaint the refinement pass started from.
+ * **returned bytes** are re-opened and measured. Only the pdf.js worker is
+ * stood in for, and it is stood in for with the page's real content stream, so a
+ * tool that reports a confident sentence over a broken file fails here — which is
+ * the whole complaint the refinement pass started from.
  *
  * Matrix rows covered: E1/E2 (the gate names the file), E5 (an unlocked output
  * must not still be encrypted), E6 (page 9 of a 3-page file names the real
@@ -17,12 +18,19 @@
  * names), E18 (the rail blocks before the click), E19 (a cancelled run leaves
  * nothing behind), E20 (a rebuild that needs an optional engine says so).
  *
- * `remove-blank-pages` and `pdf-to-cbz` render through pdf.js, which cannot spin
- * a worker inside this jsdom suite (`Setting up fake worker failed`), so they are
- * covered by the rail-contract block below rather than by a byte test.
+ * `remove-blank-pages` and `pdf-to-cbz` are the two tools that need a display
+ * list, and jsdom cannot spin the pdf.js worker (`Setting up fake worker
+ * failed`). `core/render` is doubled below — each page's actual content stream
+ * translated into pdf.js operator ids, and the canvas answered with a real 1×1
+ * image — so `core/blank`, the tool bodies, the archive writer and the saved
+ * bytes still run for real and are measured here rather than only in the rail
+ * contract.
+ *
+ * The last block drives `core/pages.resolvePages` directly: it is the grammar
+ * every field on this list ends up in, and some inputs reach it without passing
+ * the rail’s own pre-check.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { OPS } from 'pdfjs-dist';
 import {
   PDFArray,
   PDFDict,
@@ -35,6 +43,7 @@ import {
   rgb,
 } from '@maxwbh/pdf-lib';
 import { organizeTools } from '@/lib/pdf/tools/organize';
+import { resolvePages } from '@/lib/pdf/core/pages';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
@@ -519,6 +528,20 @@ describe('page selections name the real document', () => {
     const outcome = await run('rotate', { degrees: 90, pages: '2,2' });
     const doc = await open(await bytesOf(outcome));
     expect(doc.getPages().map((page) => page.getRotation().angle)).toEqual([0, 90, 0, 0]);
+  });
+
+  it('reads a spaced range in a plan the way the page list does (E15)', async () => {
+    const outcome = await run('organize', { pageOrder: '1 - 2, 4' });
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 2', 'sheet 4']);
+
+    await expect(run('organize', { pageOrder: '2 - ' })).rejects.toThrow(/is not a page token/i);
+  });
+
+  it('copies a page that the plan lists twice', async () => {
+    const outcome = await run('organize', { pageOrder: '1,1,2' });
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 1', 'sheet 2']);
   });
 
   it('clamps an out-of-range number and announces the correction (E15)', async () => {
@@ -1151,7 +1174,7 @@ describe('each tool is checked against its own output file', () => {
     const bytes = await bytesOf(outcome);
     const doc = await open(bytes);
     expect(doc.getPageCount()).toBe(1);
-    expect(text(bytes)).not.toMatch(/\/Subtype\s*\/Image/, 'N-up must not rasterise');
+    expect(text(bytes), 'N-up must not rasterise').not.toMatch(/\/Subtype\s*\/Image/);
     // All four sheets are still words in the file, just smaller and moved.
     for (const label of ['sheet 1', 'sheet 2', 'sheet 3', 'sheet 4']) {
       expect(drawnText(doc, 0)).toContain(label);
@@ -1319,5 +1342,315 @@ describe('each tool is checked against its own output file', () => {
     const notes = (getPdfTool('merge')?.notes ?? []).join(' ');
     expect(notes).toMatch(/form/i);
     expect(notes).not.toMatch(/form fields travel|form fields inside them keep working/i);
+  });
+
+  it('rotate turns the pages the field names, and calls nothing a correction it did not make (E15)', async () => {
+    const odd = await run('rotate', { degrees: 90, pages: 'odd' });
+    expect(odd.warnings, warn(odd)).toEqual([]);
+    expect((await open(await bytesOf(odd))).getPages().map((page) => page.getRotation().angle)).toEqual([
+      90,
+      0,
+      90,
+      0,
+    ]);
+
+    const openEnd = await run('rotate', { degrees: 180, pages: '3-' });
+    expect(openEnd.warnings, warn(openEnd)).toEqual([]);
+    expect((await open(await bytesOf(openEnd))).getPages().map((page) => page.getRotation().angle)).toEqual([
+      0,
+      0,
+      180,
+      180,
+    ]);
+
+    // A half turn is a quarter turn twice over: no snapping happened, so the run
+    // must not claim one, and the pages must say otherwise too.
+    const turned = await run('rotate', { degrees: 270, pages: 'all' });
+    expect(turned.warnings, warn(turned)).toEqual([]);
+    expect((await open(await bytesOf(turned))).getPages().every((page) => page.getRotation().angle === 270)).toBe(true);
+  });
+
+  it('split odd/even puts each side of the sheet in its own file', async () => {
+    const five = fileOf(await sheets(grid(5)), 'five.pdf');
+    const outcome = await run('split', { mode: 'oddEven', oddEven: 'both' }, [five]);
+    expect(outcome.outputs.map((output) => output.name)).toEqual(['five_odd-pages.pdf', 'five_even-pages.pdf']);
+    const sides: string[][] = [];
+    for (const output of outcome.outputs) {
+      sides.push(pageTexts(await open(new Uint8Array(await output.blob.arrayBuffer()))));
+    }
+    expect(sides).toEqual([
+      ['sheet 1', 'sheet 3', 'sheet 5'],
+      ['sheet 2', 'sheet 4'],
+    ]);
+  });
+
+  it('split names a one-page range for the one page it holds (E17)', async () => {
+    const outcome = await run('split', { mode: 'ranges', ranges: '2,2,2-3' });
+    expect(outcome.outputs.map((output) => output.name)).toEqual([
+      'fixture_page-2.pdf',
+      'fixture_page-2-2.pdf',
+      'fixture_pages-2-3.pdf',
+    ]);
+    const counts: number[] = [];
+    for (const output of outcome.outputs) {
+      counts.push((await open(new Uint8Array(await output.blob.arrayBuffer()))).getPageCount());
+    }
+    expect(counts).toEqual([1, 1, 2]);
+
+    // Chunks cut the same way: whole files first, and the short tail is the one
+    // sheet it is, not `pages-5-5`.
+    const five = fileOf(await sheets(grid(5)), 'five.pdf');
+    const chunks = await run('split', { mode: 'chunks', chunkSize: 2 }, [five]);
+    expect(chunks.outputs.map((output) => output.name)).toEqual([
+      'five_pages-1-2.pdf',
+      'five_pages-3-4.pdf',
+      'five_page-5.pdf',
+    ]);
+    const grouped: string[][] = [];
+    for (const output of chunks.outputs) {
+      grouped.push(pageTexts(await open(new Uint8Array(await output.blob.arrayBuffer()))));
+    }
+    expect(grouped).toEqual([
+      ['sheet 1', 'sheet 2'],
+      ['sheet 3', 'sheet 4'],
+      ['sheet 5'],
+    ]);
+  });
+
+  it('merge’s spacer sheet belongs beside the file it follows, and bookmarks can be switched off', async () => {
+    const a = fileOf(await sheets(grid(2)), 'a.pdf');
+    const b = fileOf(await sheets(Array.from({ length: 2 }, () => ({ width: 300, height: 200 }))), 'b.pdf');
+    const outcome = await run('merge', { blankBetween: true, bookmarks: false }, [a, b]);
+    const bytes = await bytesOf(outcome);
+    const doc = await open(bytes);
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 2', '', 'sheet 1', 'sheet 2']);
+    // The spacer copies the sheet before it — page 3 measures like `a`, not `b`.
+    expect(doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())])).toEqual([
+      [200, 100],
+      [200, 100],
+      [200, 100],
+      [300, 200],
+      [300, 200],
+    ]);
+    expect(text(bytes), 'the toggle says no entries are written when it is off').not.toMatch(/\/Outlines/);
+    expect(outcome.message).toBe('Merged 2 files into 5 pages.');
+  });
+
+  it('booklet gives every printed side one spread, in saddle-stitch order', async () => {
+    const six = fileOf(
+      await sheets(Array.from({ length: 6 }, (_, i) => ({ width: 150 + i * 10, height: 100 }))),
+      'six.pdf',
+    );
+    const outcome = await run('booklet', { sheetSize: 'a4', landscape: true, gutter: 0, margin: 0 }, [six]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(4);
+    const half = doc.getPage(0).getWidth() / 2;
+    // A sheet is identified by the width its source page was drawn at, and by
+    // which half of the printed side it landed on.
+    const sides = doc.getPages().map((_, index) =>
+      stampsOf(doc, index)
+        .map((stamp) => {
+          const box = mappedBox(stamp, [0, 0, stamp.bbox[2], stamp.bbox[3]]);
+          return `${box.x + box.width / 2 > half ? 1 : 0}:${Math.round(stamp.bbox[2])}`;
+        })
+        .sort(),
+    );
+    // Front of sheet 1: the padded blank at the outer left, page 1 at the right.
+    // Back of sheet 1: page 2 with the second blank beside it. Sheet 2 is the
+    // inner pair. Four booklet pages per side would mean two sheets of the
+    // imposed file printing on top of each other and two printing blank.
+    expect(sides).toEqual([['1:150'], ['0:160'], ['0:200', '1:170'], ['0:180', '1:190']]);
+    // The padding is the sheets-of-four sentence's business; it is not a page
+    // that failed to draw.
+    expect(warn(outcome)).toMatch(/sheets of four, so 2 pages were padded in/i);
+    expect(warn(outcome)).not.toMatch(/planned cells stayed blank/i);
+  });
+
+  it('n-up fills the cells in the order the field names', async () => {
+    const varied = fileOf(
+      await sheets([
+        { width: 100, height: 100 },
+        { width: 200, height: 100 },
+        { width: 300, height: 100 },
+        { width: 400, height: 100 },
+      ]),
+      'varied.pdf',
+    );
+    const runOrder = async (order: string): Promise<string[]> => {
+      const doc = await open(
+        await bytesOf(await run('n-up', { perSheet: 4, order, sheetSize: 'a4', landscape: true, gutter: 0, margin: 0 }, [varied])),
+      );
+      const sheet = doc.getPage(0);
+      const mid = { x: sheet.getWidth() / 2, y: sheet.getHeight() / 2 };
+      return stampsOf(doc, 0).map((stamp) => {
+        const box = mappedBox(stamp, [0, 0, stamp.bbox[2], stamp.bbox[3]]);
+        const col = box.x + box.width / 2 > mid.x ? 1 : 0;
+        // PDF y grows upward; row 0 is the top of the sheet as it prints.
+        const row = box.y + box.height / 2 > mid.y ? 0 : 1;
+        return `${Math.round(stamp.bbox[2])}@${row * 2 + col}`;
+      });
+    };
+
+    expect(await runOrder('across')).toEqual(['100@0', '200@1', '300@2', '400@3']);
+    expect(await runOrder('down')).toEqual(['100@0', '200@2', '300@1', '400@3']);
+  });
+
+  it('fix-page-size takes the most common sheet, or the largest, as its target', async () => {
+    const mixed = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 200, height: 100 },
+        { width: 400, height: 300 },
+      ]),
+      'mixed.pdf',
+    );
+    const sizes = (doc: PDFDocument) =>
+      doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())]);
+
+    const common = await run('fix-page-size', { size: 'most-common', orientation: 'keep', fit: 'contain' }, [mixed]);
+    const commonDoc = await open(await bytesOf(common));
+    expect(sizes(commonDoc)).toEqual([
+      [200, 100],
+      [200, 100],
+      [200, 100],
+    ]);
+    expect(common.message).toMatch(/Normalised 1 page to 200 × 100 pt/i);
+
+    const biggest = await run('fix-page-size', { size: 'largest', orientation: 'keep', fit: 'contain' }, [mixed]);
+    const bigDoc = await open(await bytesOf(biggest));
+    expect(sizes(bigDoc)).toEqual([
+      [400, 300],
+      [400, 300],
+      [400, 300],
+    ]);
+    // "Largest avoids shrinking anything": the 200 × 100 sheet fills the width.
+    expect(Math.round(mappedBox(stampsOf(bigDoc, 0)[0], [0, 0, 200, 100]).width)).toBe(400);
+  });
+
+  it('combine-single-page brings every page to one width and keeps the gap between them', async () => {
+    const ragged = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 100, height: 100 },
+      ]),
+      'ragged.pdf',
+    );
+    const outcome = await run('combine-single-page', { gap: 20, width: 'widest', splitOverflow: true }, [ragged]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(1);
+    const sheet = doc.getPage(0);
+    expect(Math.round(sheet.getWidth())).toBe(200);
+    // 100 pt of page, a 20 pt gap, then the 100 pt square blown up to the full
+    // 200 pt width — 320 pt of sheet, not the 220 pt a bare-margin reading gives.
+    expect(Math.round(sheet.getHeight())).toBe(320);
+    const narrow = stampsOf(doc, 0).find((stamp) => Math.round(stamp.bbox[2]) === 100);
+    expect(narrow, 'the narrow page must still be in the file').toBeTruthy();
+    expect(mappedBox(narrow!, [0, 0, 100, 100]).width).toBeCloseTo(200, 0);
+    expect(warn(outcome)).toMatch(/1 page is narrower than 200 pt and scaled up to it/i);
+  });
+
+  it('duplex-collate leaves the back block in scan order when it was not reversed', async () => {
+    const outcome = await run('duplex-collate', { backReversed: false, offset: 0 });
+    expect(pageTexts(await open(await bytesOf(outcome)))).toEqual(['sheet 1', 'sheet 3', 'sheet 2', 'sheet 4']);
+  });
+
+  it('pdfs-to-zip repairs a name with no extension without claiming a clash (E16, E17)', async () => {
+    const bytes = await sheets(grid(1));
+    const odd = new File([new Uint8Array(bytes)], 'scan', { type: 'application/pdf' });
+    const single = await run('pdfs-to-zip', { includeReport: false }, [odd]);
+    expect(await zipEntries(single.outputs[0].blob)).toEqual(['scan.pdf']);
+    expect(warn(single)).not.toMatch(/share the name/i);
+    expect(single.outputs[0].name).toBe('scan-bundle.zip');
+
+    const twin = new File([new Uint8Array(bytes)], 'scan', { type: 'application/pdf' });
+    const both = await run('pdfs-to-zip', { includeReport: false }, [odd, twin]);
+    expect(await zipEntries(both.outputs[0].blob)).toEqual(['scan.pdf', 'scan-2.pdf']);
+    expect(warn(both)).toMatch(/Two files share the name "scan\.pdf"; the second was stored as "scan-2\.pdf"/i);
+  });
+
+  it('divide-pages cuts strips from the top of the sheet down, and bounds the count it declares (E15)', async () => {
+    const one = fileOf(await sheets([{ width: 200, height: 100 }]), 'one.pdf');
+    const outcome = await run('divide-pages', { axis: 'horizontal', parts: 3 }, [one]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())])).toEqual([
+      [200, 33],
+      [200, 33],
+      [200, 33],
+    ]);
+    // `/BBox` in the page's own space, where the words sit at the top: the first
+    // sheet out is the strip that carries them.
+    const strips = doc
+      .getPages()
+      .map((_, index) => stampsOf(doc, index)[0].bbox.map((n) => Math.round(n) || 0));
+    expect(strips).toEqual([
+      [0, 67, 200, 100],
+      [0, 33, 200, 67],
+      [0, 0, 200, 33],
+    ]);
+    // The fixture writes its line 24 pt below the top of the sheet, so it falls
+    // inside the first strip's clipping rectangle and outside the last one's.
+    // Which piece *shows* the words is decided by `/BBox`, not by the content
+    // stream — the same operators are copied into every piece.
+    const line = 76;
+    expect(strips.map((box) => box[1] <= line && line <= box[3])).toEqual([true, false, false]);
+
+    // The rail bounds the grid at 9; the run must apply that same ceiling rather
+    // than a number written down twice and drifted.
+    const wide = await run('divide-pages', { axis: 'grid', columns: 20, rows: 1, pages: '1' });
+    expect(warn(wide)).toMatch(/Columns must be between 1 and 9: 20 became 9/i);
+    expect((await open(await bytesOf(wide))).getPageCount()).toBe(9);
+
+    // …and a caller that reaches `run()` without the rail’s clamp (a surface,
+    // a future tool composing this one) must be corrected the same way, because
+    // there is only one declaration of the bounds. This used to cut 12 columns
+    // and say “between 1 and 12”.
+    const tool = getPdfTool('divide-pages')!;
+    const alone = await tool.run!({
+      inputs: [
+        {
+          name: 'one.pdf',
+          size: one.size,
+          type: 'application/pdf',
+          bytes: async () => new Uint8Array(await one.arrayBuffer()),
+          blob: () => one,
+        },
+      ],
+      values: { axis: 'grid', columns: 20, rows: 1, pages: 'all' },
+      progress: () => {},
+      log: () => {},
+      signal: new AbortController().signal,
+    });
+    expect(alone.warnings?.join(' ')).toMatch(/Columns must be between 1 and 9: 20 became 9/i);
+    expect(alone.kind).toBe('pdf');
+    expect(alone.kind === 'pdf' && (await open(alone.bytes)).getPageCount()).toBe(9);
+  });
+});
+
+/* ── the page grammar both halves of a selection field share ──────────── */
+
+/**
+ * `core/pages.resolvePages` is the parser every "which pages" field in this
+ * category ends up in, and `core/guard` re-implements the same grammar to block
+ * the click before it. These are the inputs where the two readings differed — a
+ * range with the spaces a person types, a bare dash, a number written in a base
+ * nobody counts pages in — measured on the parser the tools actually call.
+ */
+describe('the page-list grammar refuses what it cannot mean', () => {
+  it('reads the ranges a person types', () => {
+    expect(resolvePages('1 - 3', 6)).toEqual([0, 1, 2]);
+    expect(resolvePages('5-', 6)).toEqual([4, 5]);
+    expect(resolvePages('odd', 6)).toEqual([0, 2, 4]);
+    // A backwards range is the one thing this parser keeps rather than refusing:
+    // it means "those pages in that order" to a reordering plan.
+    expect(resolvePages('4-2', 6)).toEqual([3, 2, 1]);
+  });
+
+  it('refuses a token that names no page instead of reading it as all of them (E15)', () => {
+    expect(() => resolvePages('-', 6)).toThrow(/range with no page numbers/i);
+    expect(() => resolvePages('to', 6)).toThrow(/range with no page numbers/i);
+    expect(() => resolvePages('0x10', 20)).toThrow(/is not a page number or range/i);
+    expect(() => resolvePages('1e2', 200)).toThrow(/is not a page number or range/i);
+    expect(() => resolvePages('9-4x', 6)).toThrow(/is not a page number or range/i);
+    expect(() => resolvePages('7', 6)).toThrow(/has 6 pages/i);
   });
 });
