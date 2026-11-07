@@ -385,6 +385,16 @@ describe('a loaded file and a finished run, for every generated tool', () => {
 });
 
 describe('the bespoke surfaces', () => {
+  /**
+   * Panes the shell opens on their own surface rather than on the shared intake.
+   *
+   * `ToolWorkspace` carves out `isImageTool` and `isNoFileTool`: the Scan camera and
+   * the typed-HTML source work with nothing loaded, so an intake that asks for a PDF
+   * first would be a lie. Written down by id so the exception stays auditable; the
+   * test below still requires each of them to mount a real surface.
+   */
+  const PANE_WITHOUT_INTAKE = ['scan-to-pdf'];
+
   it('opens on the same intake as every other tool', async () => {
     const problems: string[] = [];
     for (const tool of bespoke) {
@@ -395,12 +405,15 @@ describe('the bespoke surfaces', () => {
         await waitFor(
           () => {
             if (document.body.textContent?.includes('Tool not found')) throw new Error('fell through to not-found');
-            const intake = document.querySelector('[data-intake]');
-            if (!intake) throw new Error('the route did not open on an intake');
+            if (PANE_WITHOUT_INTAKE.includes(tool.id)) {
+              if (document.body.children.length === 0) throw new Error('nothing mounted');
+              return;
+            }
+            if (!document.querySelector('[data-intake]')) throw new Error('the route did not open on an intake');
           },
           { timeout: 6000 },
         );
-        if (document.querySelectorAll('[data-drop-target]').length !== 1) {
+        if (!PANE_WITHOUT_INTAKE.includes(tool.id) && document.querySelectorAll('[data-drop-target]').length !== 1) {
           problems.push(`${tool.id}: the intake is not one primary action`);
         }
       } catch (error) {
@@ -415,21 +428,33 @@ describe('the bespoke surfaces', () => {
     const problems: string[] = [];
     for (const tool of bespoke) {
       if (!getPdfTool(tool.id)) continue;
-      loadFile();
+      // The route first, the file second — the order a visitor uses. Going the other
+      // way lands on `file-store`'s per-tool session restore, which clears a file
+      // that was never part of this tool's session.
       routePage(tool.id);
       try {
         await waitFor(
           () => {
-            if (document.querySelector('[data-intake]')) throw new Error('still on the intake with a file loaded');
-            if (document.body.textContent?.includes('Tool not found')) throw new Error('fell through to not-found');
-            if (document.body.children.length === 0) throw new Error('nothing mounted');
+            if (document.body.children.length === 0) throw new Error('the route mounted nothing');
           },
           { timeout: 8000 },
+        );
+        act(() => {
+          useFileStore.getState().setActiveTool(tool.id as never);
+          useFileStore.getState().setFiles([sample]);
+        });
+        await waitFor(
+          () => {
+            if (document.querySelector('[data-intake]')) throw new Error('still on the intake with a file loaded');
+            if (document.body.textContent?.includes('Tool not found')) throw new Error('fell through to not-found');
+          },
+          { timeout: 12_000 },
         );
       } catch (error) {
         problems.push(`${tool.id}: ${(error as Error).message}`);
       }
       cleanup();
+      resetStores();
     }
     expect(problems).toEqual([]);
   }, 240_000);
