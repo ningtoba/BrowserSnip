@@ -116,7 +116,7 @@ export function intakeFormats(accept?: string): string[] {
 }
 
 /** How many formats the line can name before it counts the rest. */
-const FOOT_NOTE_FORMATS = 3;
+const FOOT_NOTE_FORMATS = 4;
 /** Characters the footnote has to live in — one line under the button, not a paragraph. */
 const FOOT_NOTE_BUDGET = 112;
 
@@ -125,17 +125,17 @@ const FOOT_NOTE_BUDGET = 112;
  *
  * An intake with no options to show — which is every tool before a file exists,
  * by design — otherwise says only its title, its promise and its button. A tool
- * taking `.docx`, `.odt` and `.rtf` hid that behind a generic "Select file",
- * and a tool with no fields at all had nothing else on the page. So the footnote
- * names the accepted formats, says how many the tool takes, and adds the
- * definition's first note while there is room for it.
+ * taking `.docx`, `.odt` and `.rtf` hid that behind a generic "Select file", and
+ * a tool with no fields at all had nothing else on the page. So the footnote
+ * names the formats in three parts: what it takes, how many files it takes, and
+ * the definition's own first note while there is room for it.
  */
 export function intakeFootNote(accept?: string, multiple = false, notes: string[] = []): string {
   const formats = intakeFormats(accept);
   if (formats.length === 0) return '';
   const overflow = formats.length - FOOT_NOTE_FORMATS;
   const list = `${formats.slice(0, FOOT_NOTE_FORMATS).join(', ')}${overflow > 0 ? ` +${overflow} more` : ''}`;
-  const head = multiple ? `Accepts ${list} files` : `Accepts ${list} — one file at a time`;
+  const head = `Accepts ${list} · ${multiple ? 'any number of files' : 'one file at a time'}`;
   const note = notes.find((line) => line.trim() !== '')?.trim() ?? '';
   const room = FOOT_NOTE_BUDGET - head.length - 3;
   if (note.length < 24 || room < 24) return head;

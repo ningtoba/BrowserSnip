@@ -353,7 +353,7 @@ export function downloadName(sourceName: string, suffix: string, index = 0, tota
  * One spelling of the "which pages" answer.
  *
  * The label, the default and the promise that an out-of-range page is refused
- * rather than skipped are identical in all ~124 tools: `core/guard` validates
+ * rather than skipped are identical across the whole catalogue: `core/guard` validates
  * every `pages` field against the open document's page count before the run
  * starts (E6, E15), so a definition must not promise a milder outcome.
  */
