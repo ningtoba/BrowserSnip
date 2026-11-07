@@ -109,7 +109,7 @@ const RASTER_LOSS =
 
 /** Shared admissions for the text routes — true of the bundled layout engine. */
 const TEXT_NOTES = [
-  'Text is drawn as real, selectable PDF text through core/fonts, so it stays searchable and copyable.',
+  'Text is drawn as real, selectable PDF text through embedded fonts, so it stays searchable and copyable.',
   'Author styling is structural, not pixel-exact: no CSS box model, no widow/orphan control, no kerning or hyphenation, and the standard 14 faces plus Noto Sans are used instead of the document’s own fonts.',
   'Chinese, Japanese, Korean, Arabic, Hebrew, Thai and Indic faces are fetched from the CDN the first time they are needed. Offline, the run is refused with the script named rather than printed as empty boxes.',
 ];

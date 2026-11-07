@@ -32,7 +32,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { LogMonitor } from '@/components/ui/LogMonitor';
 import { OutputActions } from '@/components/ui/OutputActions';
 import { PdfToolPanel, ReportView } from '@/components/tools/pdf/shared/PdfToolPanel';
-import { FileIntake, PDF_ACCEPT, intakeCopy, useIntake } from '@/components/tools/pdf/shared/FileIntake';
+import { FileIntake, PDF_ACCEPT, intakeCopy, intakeFootNote, useIntake } from '@/components/tools/pdf/shared/FileIntake';
 import { ResultPane } from '@/components/tools/pdf/shared/ToolSurface';
 import { promiseFor } from '@/components/tools/pdf/shared/toolForm';
 import { useIsCompact } from '@/hooks/useIsCompact';
@@ -244,6 +244,10 @@ export function ToolWorkspace() {
           title={title}
           promise={definition ? promiseFor(definition) : tool.description ?? ''}
           copy={intakeCopy(definition?.accept, isMultiFile)}
+          // The editors share the generated page's intake, so they owe it the same
+          // footnote: what belongs here should be legible before the picker opens,
+          // not after a rejected drop. Empty when there is nothing to add.
+          footNote={intakeFootNote(definition?.accept, isMultiFile, definition?.notes ?? [])}
           controls={intake}
         />
         <input {...intake.inputProps} />
