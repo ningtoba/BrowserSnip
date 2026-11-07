@@ -451,7 +451,8 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     const gate = await inspectPdf(bytes, 'out.pdf');
     expect(gate.encrypted).toBe(true);
     expect(gate.algorithm).toBe('AES-128');
-    const recorded = gate.permissions!;
+    const recorded = gate.permissions;
+    if (!recorded) throw new Error('the saved file carries no /P dictionary, so nothing was recorded');
     expect(recorded.printing).toBe(false);
     expect(recorded.copying).toBe(false);
     expect(recorded.modifying).toBe(true);
@@ -462,7 +463,8 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     await expect(PDFDocument.load(bytes, { password: '' })).resolves.toBeTruthy();
     // Either a reader confirmed it, or the tool says it was only written that way
     // and warns — the copy is never described as verified by a reader it failed.
-    const message = outcome.message ?? '';
+    const message = outcome.message;
+    if (!message) throw new Error('the result has to say what the saved file does');
     expect(message).toMatch(/no password|without a password/i);
     if (/A PDF reader opens it/.test(message)) {
       expect(outcome.warnings.join(' ')).not.toMatch(/will not open the saved copy without a password/i);

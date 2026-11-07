@@ -19,6 +19,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFNumber,
   PDFRef,
   openPDF,
   savePDF,
@@ -204,7 +205,7 @@ export const securityTools: PdfToolDefinition[] = [
         // requirement in the same breath.
         required: (v) => v.mode !== 'owner',
         missing: 'Enter the password readers must type to open this PDF.',
-        help: 'Anyone who does not type it is refused by every reader that honours /Encrypt — renaming the file or zipping it does not get around the prompt. The page streams are copied through as they are, so a tool that ignores /Encrypt can still read the text inside.',
+        help: 'Renaming or zipping the file does not get around this prompt in a reader that honours /Encrypt. The page streams themselves are copied through, so a tool that ignores /Encrypt can still read the text.',
       },
       {
         key: 'ownerPassword',
@@ -509,11 +510,12 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['merge layers', 'non-editable', 'print ready'],
     outputSuffix: '_flattened.pdf',
-    promise: 'Answers and comments baked into the page, so what a reader sees is what was signed — nobody can move or re-edit a mark afterwards.',
+    promise: 'Form answers baked into the page, and comments baked wherever they have an appearance to draw — the result counts what is still live.',
     actionLabel: 'Flatten',
     notes: [
       'A flattened mark is page content: it can no longer be selected, moved, deleted or read as a comment by another reader.',
       'Annotations with no stored appearance have nothing to bake, and the result names how many were left live instead of pretending they were flattened.',
+      'Baking changes the bytes, so it breaks a signature that is already on the file — flatten first, then sign.',
     ],
     fields: [
       { key: 'forms', label: 'Flatten form fields', type: 'toggle', default: true, group: 'What to bake in', help: 'Field values are drawn into the page and the interactive field is removed, so the answers cannot be retyped.' },
@@ -621,7 +623,7 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The words under each box deleted from the page, then painted over — select the black bar and there is nothing left to copy.',
     actionLabel: 'Redact',
     notes: [
-      'Redaction deletes glyphs from page content. Text held in the document properties, the outline and any embedded file is deleted too when that option is on; pixels are painted over, not cut out, and the result names what still holds the words.',
+      'Redaction deletes glyphs from page content. With the metadata option on the same words are deleted from the document properties, the XMP packet and the bookmark titles as well; a comment’s own text and an embedded file’s bytes are never rewritten, and the result names whatever still holds the words.',
       'An area that lands inside an image is painted over rather than cut out: the pixels of a scanned page still contain the shape of what was there.',
     ],
     fields: [
@@ -727,7 +729,7 @@ export const securityTools: PdfToolDefinition[] = [
                 after
                   ? destroyed.length > 0
                     ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.`
-                    : '; no whole word sat under the marks, so the deletion was confirmed from the page content alone.'
+                    : '; no whole word under the marks could be located in the page text layer, so the deletion was confirmed from the page content alone.'
                   : '.'
               }`,
         warnings,
@@ -2006,13 +2008,13 @@ function permissionMismatches(
 }
 
 /**
- * Where else this document holds words that a page-content redaction cannot
- * reach.
+ * Which stores outside the page still hold text at all.
  *
- * The `alsoMetadata` option asks for the secret to be gone from the *file*, and
- * the only honest answer is to name what is still in it: `/Info` entries, the
- * XMP packet, bookmark titles and embedded files all survive a content-stream
- * rewrite (E13, E20).
+ * This is the *other text* inventory — the caveat that a redaction rewrites page
+ * content, `/Info`, the XMP packet and bookmark titles, and nothing else. Whether
+ * a **redacted** word specifically survived in a comment or an enclosure is
+ * `redactedWordsStillHeld`'s question, and the two are reported as separate
+ * sentences because only one of them is a leak (E13, E20).
  */
 function textHeldOutsidePageContent(doc: PDFDocument): string[] {
   const stores: string[] = [];
@@ -2089,6 +2091,69 @@ function timestampFailure(error: unknown, tsaUrl: string, signatureCount: number
 }
 
 /**
+ * The crypt filter an encryption revision requires (ISO 32000-1 §7.6.2, Table 30).
+ *
+ * RC4 needs no `/CF` entry at all — `/V 1` and `/V 2` mean RC4 with the key length
+ * read from `/Length` — which is why the older revisions answer `undefined`.
+ */
+function requiredCryptFilter(revision: number): 'AESV3' | 'AESV2' | undefined {
+  if (revision >= 5) return 'AESV3';
+  if (revision === 4) return 'AESV2';
+  return undefined;
+}
+
+/** The encryption dictionary itself, whether the trailer inlines it or points at it. */
+function encryptDictOf(doc: PDFDocument): PDFDict | undefined {
+  const entry = doc.context.trailerInfo.Encrypt;
+  if (entry instanceof PDFDict) return entry;
+  return entry instanceof PDFRef ? doc.context.lookupMaybe(entry, PDFDict) : undefined;
+}
+
+/** Every `/CFM` name the file's crypt filter dictionary declares. */
+function cryptFilterNames(doc: PDFDocument): string[] {
+  const filters = encryptDictOf(doc)?.lookupMaybe(PDFName.of('CF'), PDFDict);
+  if (!filters) return [];
+  const names: string[] = [];
+  for (const [, value] of filters.entries()) {
+    const filter = value instanceof PDFRef ? doc.context.lookupMaybe(value, PDFDict) : value;
+    if (!(filter instanceof PDFDict)) continue;
+    const name = filter.lookupMaybe(PDFName.of('CFM'), PDFName)?.decodeText();
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Where the encryption dictionary disagrees with itself about the cipher.
+ *
+ * `/V` and `/R` are what this app's guard reads to name a cipher, while a reader
+ * that follows the crypt filter dictionary obeys `/CFM` instead — and the engine
+ * in this browser writes `/V 5 /R 6 /Length 256` beside `/CFM /AESV2`, a 128-bit
+ * AES filter. One label, two strengths, and the file is the only place the truth
+ * can be checked (E5, E13).
+ */
+function cryptFilterMismatch(doc: PDFDocument, cipherLabel: string): string | null {
+  const dict = encryptDictOf(doc);
+  if (!dict) return null;
+  const revision = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber();
+  if (revision === undefined) return null;
+  const expected = requiredCryptFilter(revision);
+  const names = [...new Set(cryptFilterNames(doc))];
+  const quoted = names.map((name) => `/${name}`).join(', ');
+  if (expected === undefined) {
+    return names.length > 0 && names.some((name) => name !== 'RC4')
+      ? `/V ${revision} means RC4, but the file also declares a crypt filter of ${quoted}; a reader that follows /CFM will not use RC4.`
+      : null;
+  }
+  if (names.length === 0) {
+    return `/V ${revision} declares ${expected === 'AESV3' ? 'AES-256' : 'AES-128'}, but the file carries no /CF crypt filter, so a reader that needs /CFM has nothing to obey.`;
+  }
+  const wrong = names.filter((name) => name !== expected);
+  if (wrong.length === 0) return null;
+  return `/V and /R record ${cipherLabel}, but the file's own crypt filter declares ${wrong.map((name) => `/${name}`).join(', ')} — ${wrong.length === 1 && wrong[0] === 'AESV2' ? 'a 128-bit AES filter' : 'a different cipher'}. Readers split on which half they obey, so this copy does not carry ${cipherLabel} everywhere.`;
+}
+
+/**
  * Re-read the bytes a protection tool just wrote, and describe what they say.
  *
  * Returns the recorded permissions plus the warnings the tool must carry: wrong
@@ -2138,6 +2203,8 @@ async function verifyProtection(
         ? 'The page content came out of the engine unchanged, so the restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. This file opens on the empty password and a tool that ignores /Encrypt can read the page just as easily.'
         : 'The page content came out of the engine unchanged, so the password and restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. Readers will prompt for the password; a tool that ignores /Encrypt can still read the page.');
     }
+    const filterMismatch = cryptFilterMismatch(written, cipherLabel);
+    if (filterMismatch) warnings.push(filterMismatch);
   } catch {
     // Nothing to admit: the streams could not be re-read, which is what a file
     // whose content really was encrypted looks like from this side.
