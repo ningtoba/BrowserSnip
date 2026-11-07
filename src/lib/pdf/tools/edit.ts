@@ -644,7 +644,7 @@ export const editTools: PdfToolDefinition[] = [
       pagesField({ group: 'Repeat' }),
     ],
     notes: [
-      'Behind content moves the mark in front of the page\u2019s own drawing operators, so text stays readable on top of it.',
+      'Behind content puts the mark before the page\u2019s own drawing operators, so it sits underneath and the text stays readable on top.',
       'A mark wider than the page is centred and reported rather than clipped silently.',
     ],
     validate: (values) => {
@@ -862,6 +862,10 @@ export const editTools: PdfToolDefinition[] = [
       const prefix = stringValue(context.values, 'prefix', 'DOC');
       let counter = start;
       let stamped = 0;
+      // The literal last number painted, so the admission cannot disagree with
+      // the file: with "restart in every file" the batch total is not the last
+      // number anything carries.
+      let lastNumber = '';
       const total = inputs.reduce((sum, input) => sum + input.pageCount, 0);
       const seen = new Set<string>();
       for (const input of inputs) {
@@ -874,6 +878,7 @@ export const editTools: PdfToolDefinition[] = [
         for (let index = 0; index < input.pageCount; index++) {
           throwIfAborted(context.signal);
           const number = String(counter).padStart(digits, '0');
+          lastNumber = number;
           const text = expand(format, {
             n: number,
             page: String(index + 1),
@@ -896,7 +901,7 @@ export const editTools: PdfToolDefinition[] = [
         if (perFile) counter = start;
       }
       if (stamped > 0 && stamped < 10) {
-        note(notes, `The last number written was ${String(perFile ? start + stamped - 1 : counter - 1).padStart(digits, '0')}.`);
+        note(notes, `The last number written was ${lastNumber}.`);
       }
       const files = [];
       for (const input of inputs) {
@@ -1005,9 +1010,11 @@ export const editTools: PdfToolDefinition[] = [
         throw new Error(`No bookmark could be read from that text. ${notes[0] ?? 'Use one entry per line, "Title :: page".'}`.trim());
       }
       const replace = booleanValue(context.values, 'replace', true);
-      const existing = replace ? readOutline(input.doc) : [];
-      const before = replace ? countOutline(existing).total : readOutline(input.doc).length;
-      writeOutline(input.doc, replace ? nodes : [...readOutline(input.doc), ...nodes]);
+      const current = readOutline(input.doc);
+      // Counted the same way in both modes: the whole tree, not just its top
+      // level, so "after the 2 existing outline" cannot describe 2 of 9 entries.
+      const before = countOutline(current).total;
+      writeOutline(input.doc, replace ? nodes : [...current, ...nodes]);
       const written = countOutline(nodes);
       return pdfOutput(
         input.doc,
@@ -1218,9 +1225,12 @@ export const editTools: PdfToolDefinition[] = [
       const from = stringValue(context.values, 'from', 'any');
       const to = stringValue(context.values, 'to', '#000000');
       let changed = 0;
+      const untouched: number[] = [];
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
+        const before = changed;
         changed += recolourText(input.doc.getPage(pages[i]), from, to);
+        if (changed === before) untouched.push(pages[i] + 1);
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
       if (changed === 0) {
@@ -1236,6 +1246,12 @@ export const editTools: PdfToolDefinition[] = [
           ),
           notes,
         );
+      }
+      // E13 in the partial case: a recolour that reached three of ten pages has
+      // to say which seven it did not, or the user assumes the whole file changed.
+      if (untouched.length > 0 && untouched.length < pages.length) {
+        const list = untouched.slice(0, 8).join(', ') + (untouched.length > 8 ? ', …' : '');
+        note(notes, `Page ${list} ${untouched.length === 1 ? 'has' : 'have'} no text drawn in ${from === 'any' ? 'a colour operator' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
       }
       return pdfOutput(input.doc, notes, `Recoloured ${countLabel(changed, 'text run')} to ${to}.`);
     },
@@ -1460,6 +1476,11 @@ export const editTools: PdfToolDefinition[] = [
           );
         }
         const rebuilt = await textOnlyPdf(input.doc, results);
+        if (results.length < input.pageCount) {
+          // The rebuilt file is a new document: whatever was not recognised is
+          // simply not in it, which the user must hear before they download it.
+          note(notes, `The result is a new ${countLabel(results.length, 'page')} document, so the ${countLabel(input.pageCount - results.length, 'other page')} of "${input.name}" ${input.pageCount - results.length === 1 ? 'is' : 'are'} not in the download.`);
+        }
         return pdfOutput(
           rebuilt,
           notes,
@@ -1506,9 +1527,22 @@ export const editTools: PdfToolDefinition[] = [
         ? values as Record<string, string | boolean>
         : {};
       const result = fillForm(input.doc, record);
+      let baked = '';
       if (booleanValue(context.values, 'flatten')) {
-        const { flattenAnnotations } = await import('../core/flatten');
-        await flattenAnnotations(input.doc, undefined, { kinds: ['Widget'] });
+        // `core/forms` owns the field-aware baker: the generic annotation
+        // flattener chokes on the appearance streams pdf-lib writes for a widget
+        // (`Expected instance of PDFDict, but got instance of PDFContentStream`),
+        // which turned "flatten when saving" into a crash on our own forms.
+        const { flattenForm } = await import('../core/forms');
+        const outcome = await flattenForm(input.doc);
+        if (outcome.flattened === 0) {
+          note(notes, 'Nothing could be baked into the page, so the fields were left interactive.');
+        } else {
+          baked = ` ${countLabel(outcome.flattened, 'field')} became page content.`;
+        }
+        if (outcome.needsRender) {
+          note(notes, 'Some answers had no appearance this browser could draw, so they may be missing from the flattened page.');
+        }
       }
       if (result.filled === 0) {
         note(notes, `No value reached any of the ${countLabel(fields.length, 'field')} in this form, so it was saved unchanged.`);
@@ -1517,8 +1551,8 @@ export const editTools: PdfToolDefinition[] = [
         input.doc,
         notes,
         result.missing.length > 0
-          ? `Filled ${countLabel(result.filled, 'field')}; no value given for ${result.missing.slice(0, 4).join(', ')}${result.missing.length > 4 ? ', …' : ''}.`
-          : `Filled ${countLabel(result.filled, 'field')}.`,
+          ? `Filled ${countLabel(result.filled, 'field')}; no value given for ${result.missing.slice(0, 4).join(', ')}${result.missing.length > 4 ? ', …' : ''}.${baked}`
+          : `Filled ${countLabel(result.filled, 'field')}.${baked}`,
       );
     },
   },
@@ -1537,7 +1571,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'A field dropped on a page that no longer exists is moved to the nearest page and the run says how many moved.',
     ],
-    fields: [{ key: 'fields', label: 'Fields', group: 'Design', type: 'text', default: '', help: 'Filled in by the field designer.' }],
+    fields: [{ key: 'fieldSpecs', label: 'Fields', group: 'Design', type: 'text', default: '', help: 'Holds the fields you dropped in the designer, in tab order. The designer writes it; typing here does nothing.' }],
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
@@ -1545,20 +1579,53 @@ export const editTools: PdfToolDefinition[] = [
       if (!Array.isArray(specs) || specs.length === 0) {
         throw new Error('Drag at least one field onto the page first.');
       }
-      const { createFormField } = await import('../core/forms');
+      const { createFormField, listFormFields } = await import('../core/forms');
+      // Field names are the form's addresses: two widgets called the same thing
+      // is what pdf-lib refuses outright, and the pane lets the name be typed.
+      const taken = new Set(listFormFields(input.doc).map((field) => field.name));
       let created = 0;
       let offPage = 0;
+      const unwritable: string[] = [];
       for (const spec of specs as (CreateFieldSpec & { page: number })[]) {
         // E15: a field left on a page that no longer exists is clamped to the
         // nearest one, and the run says how many moved.
         const page = bounded(notes, 'Field page', Math.trunc(Number(spec.page)) || 0, { min: 0, max: input.pageCount - 1, integer: true });
         if (page !== spec.page) offPage += 1;
+        const asked = String(spec.name ?? '').trim();
+        // A radio group is one widget per option. With none, `createFormField`
+        // makes a field nobody can see or type into, so it is refused out loud
+        // instead of being counted as "created".
+        if (spec.type === 'radio' && (spec.options?.length ?? 0) === 0) {
+          unwritable.push(`the radio group${asked ? ` "${asked}"` : ''} has no options, so nothing could be placed for it`);
+          continue;
+        }
+        if (!asked) {
+          unwritable.push(`a ${spec.type} field with no name`);
+          continue;
+        }
+        let name = asked;
+        if (taken.has(name)) {
+          let suffix = 2;
+          while (taken.has(`${asked}_${suffix}`)) suffix += 1;
+          name = `${asked}_${suffix}`;
+          note(notes, `Two fields were both named "${asked}"; the second is stored as "${name}" so both stay reachable.`);
+        }
+        taken.add(name);
         const { page: _dropped, ...field } = spec;
-        if (createFormField(input.doc, page, field) >= 0) created += 1;
-        else note(notes, `The "${spec.type}" field${spec.name ? ` named ${spec.name}` : ''} could not be created on page ${page + 1}.`);
+        try {
+          if (createFormField(input.doc, page, { ...field, name }) >= 0) created += 1;
+          else note(notes, `The "${spec.type}" field "${name}" could not be created on page ${page + 1}.`);
+        } catch (error) {
+          note(notes, `The "${spec.type}" field "${name}" could not be created: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       if (created === 0) {
-        throw new Error(`None of the ${countLabel(specs.length, 'field')} could be placed. ${notes[0] ?? 'Check the page each field was dropped on.'}`);
+        throw new Error(
+          `None of the ${countLabel(specs.length, 'field')} could be placed. ${unwritable[0] ?? notes[0] ?? 'Check the page each field was dropped on.'}`,
+        );
+      }
+      if (unwritable.length > 0) {
+        note(notes, `${countLabel(unwritable.length, 'field')} was not added: ${unwritable.join('; ')}.`);
       }
       if (offPage > 0) {
         note(notes, `${countLabel(offPage, 'field')} was dropped on a page outside this document and moved to the nearest one.`);
@@ -1612,10 +1679,18 @@ export const editTools: PdfToolDefinition[] = [
         });
       }
       const missing: string[] = [];
-      for (const name of stringValues(context.values, 'hide')) {
+      const hidden = stringValues(context.values, 'hide');
+      const shown = stringValues(context.values, 'show');
+      const both = hidden.filter((name) => shown.some((other) => other.toLowerCase() === name.toLowerCase()));
+      if (both.length > 0) {
+        // The lists are applied in order, so a name in both is switched off and
+        // the user needs to know which instruction the file ended up obeying.
+        note(notes, `${both.map((name) => `"${name}"`).join(', ')} was listed in both hide and show, so it is hidden — the show instruction did nothing.`);
+      }
+      for (const name of hidden) {
         if (!setLayerVisibility(input.doc, name, false)) missing.push(name);
       }
-      for (const name of stringValues(context.values, 'show')) {
+      for (const name of shown) {
         if (!setLayerVisibility(input.doc, name, true)) missing.push(name);
       }
       let added = '';
@@ -1646,7 +1721,7 @@ export const editTools: PdfToolDefinition[] = [
       return pdfOutput(
         input.doc,
         notes,
-        `${added ? `Added "${added}" and ` : ''}${deleted > 0 ? `deleted ${countLabel(deleted, 'layer')} and ` : ''}the document now has ${countLabel(remaining.length, 'layer')}: ${remaining.map((layer) => layer.name).join(', ') || 'none'}${visible.length > 0 ? `, of which ${visible.map((name) => `"${name}"`).join(', ')} show${remaining.length === 1 ? 's' : ''} by default` : ''}.`,
+        `${added ? `Added "${added}" and ` : ''}${deleted > 0 ? `deleted ${countLabel(deleted, 'layer')} and ` : ''}the document now has ${countLabel(remaining.length, 'layer')}: ${remaining.map((layer) => layer.name).join(', ') || 'none'}${visible.length > 0 ? `, of which ${visible.map((name) => `"${name}"`).join(', ')} ${visible.length === 1 ? 'shows' : 'show'} by default` : ''}.`,
       );
     },
   },
@@ -1997,22 +2072,39 @@ function toLetters(value: number): string {
   return out;
 }
 
-const LABEL_STYLES: Record<string, 'D' | 'R' | 'r' | 'A' | 'a' | ''> = {
+const LABEL_STYLE_NAMES: Record<string, 'D' | 'R' | 'r' | 'A' | 'a' | ''> = {
   decimal: 'D',
+  D: 'D',
   roman: 'r',
+  r: 'r',
+  Roman: 'R',
+  R: 'R',
   romancaps: 'R',
   alpha: 'a',
+  a: 'a',
+  Alpha: 'A',
+  A: 'A',
   alphacaps: 'A',
   letters: 'a',
   none: '',
 };
 
+interface LabelRange {
+  start: number;
+  end: number;
+  /** The end page the user typed, before the document's length trimmed it. */
+  askedEnd: number;
+  style: 'D' | 'R' | 'r' | 'A' | 'a' | '';
+  prefix?: string;
+  firstPageNumber?: number;
+}
+
 function parseLabelRanges(
   raw: string,
   total: number,
   notes: string[],
-): { start: number; end: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] {
-  const out: { start: number; end: number; style: 'D' | 'R' | 'r' | 'A' | 'a' | ''; prefix?: string; firstPageNumber?: number }[] = [];
+): LabelRange[] {
+  const out: LabelRange[] = [];
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const match = /^\s*(\d+)\s*-\s*(\d+)\s+(\w+)(?:\s+(\d+))?(?:\s+(\S+))?\s*$/.exec(line);
@@ -2030,7 +2122,10 @@ function parseLabelRanges(
       note(notes, `"${line.trim()}" starts at page ${from}, but this document has ${countLabel(total, 'page')}.`);
       continue;
     }
-    const style = LABEL_STYLES[match[3].toLowerCase()];
+    // The spelling the user typed decides upper-case from lower-case: the help
+    // lists `roman` and `Roman` as different styles, so folding the case made
+    // "Roman" produce i, ii, iii.
+    const style = LABEL_STYLE_NAMES[match[3]] ?? LABEL_STYLE_NAMES[match[3].toLowerCase()];
     if (style === undefined) {
       note(notes, `"${match[3]}" is not a label style, so "${line.trim()}" was read as decimal. Use decimal, roman, Roman, alpha, Alpha or none.`);
     }
@@ -2042,6 +2137,9 @@ function parseLabelRanges(
     out.push({
       start,
       end: Math.min(to, total) - 1,
+      // What the user asked for, kept apart from what the document can hold:
+      // a range typed `1-3` on a 2-page file has to say so out loud.
+      askedEnd: to,
       style: style ?? 'D',
       firstPageNumber: match[4] ? Number(match[4]) : undefined,
       prefix: match[5],
@@ -2053,9 +2151,11 @@ function parseLabelRanges(
   // document with correct front matter and one with a mystery (E15).
   for (let i = 0; i < out.length; i++) {
     const reached = (i + 1 < out.length ? out[i + 1].start : total) - 1;
-    if (reached !== out[i].end) {
-      note(notes, `The labels from page ${out[i].start + 1} run to page ${reached + 1}, not page ${out[i].end + 1}: PDF labels last until the next range starts.`);
-    }
+    if (reached === out[i].askedEnd - 1) continue;
+    const reason = reached + 1 < out[i].askedEnd
+      ? 'PDF labels last until the next range starts'
+      : `this document has ${countLabel(total, 'page')}`;
+    note(notes, `The labels from page ${out[i].start + 1} run to page ${reached + 1}, not page ${out[i].askedEnd}: ${reason}.`);
   }
   return out;
 }

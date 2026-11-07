@@ -44,6 +44,24 @@ export interface SnapOptions {
  */
 export const RUN_GAP_EM = 0.5;
 
+/**
+ * How far past the drag band a markup tool reaches, in CSS pixels.
+ *
+ * A highlighter grip that grazes a line should still mark it. The built-in
+ * `tolerance` is 2 PDF *points*, which at 100 % is 2 screen pixels: a band drawn
+ * a few pixels above the words creates nothing and the user drags the same line
+ * a second time. Measuring the slop on screen keeps the reach the same physical
+ * distance at every zoom, and it stays well under the leading of a paragraph so
+ * a near miss cannot reach the line above.
+ */
+export const MARKUP_SNAP_SLOP_PX = 4;
+
+/** The `snapTextLines` tolerance for a drag at this zoom, never below its 2 pt default. */
+export function markupSnapTolerance(zoom: number): number {
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  return Math.max(2, MARKUP_SNAP_SLOP_PX / scale);
+}
+
 /** True when the page carries any selectable text at all. */
 export function pageHasText(items: ExtractedTextItem[]): boolean {
   return items.some((item) => typeof item.str === 'string' && item.str.trim().length > 0);

@@ -13,7 +13,7 @@
  * converter-side guard in `tools/convert-to`, which refuses a 0-byte upload and
  * a mislabelled file by naming the format the bytes really are.
  */
-import { marginField, orientationField, pageSizeField, ToolInputError } from './helpers';
+import { marginField, orientationField, pageSizeField, ToolInputError, clampNumber } from './helpers';
 import {
   blocksResult,
   layoutOptionsFor,
@@ -45,6 +45,21 @@ const OPC: { kinds: SourceKind[]; label: string; hint?: string } = {
 const LAYOUT_LOSS =
   'Text is re-flowed and drawn as selectable PDF text with the app’s own faces: your document’s fonts, exact pagination, headers and footers, footnotes, comments and text-box positions are not preserved.';
 
+/**
+ * Drop page breaks that cannot start or end a document.
+ *
+ * The slide and fixed-page readers emit one break *before* every page, which
+ * would open the result with a blank sheet — "one page per slide" shipping two
+ * pages for one slide, and an extra empty page on the end.
+ */
+function trimStrayBreaks(blocks: Block[]): Block[] {
+  let from = 0;
+  let to = blocks.length;
+  while (from < to && blocks[from].kind === 'pagebreak') from += 1;
+  while (to > from && blocks[to - 1].kind === 'pagebreak') to -= 1;
+  return from === 0 && to === blocks.length ? blocks : blocks.slice(from, to);
+}
+
 /** Shared block → PDF tail, so every office route reports pages the same way. */
 async function blocksToPdf(
   blocks: Block[],
@@ -52,7 +67,7 @@ async function blocksToPdf(
   message: string,
   warnings: string[] = [],
 ) {
-  return blocksResult(blocks, layoutOptionsFor(values), `${message} with selectable text into`, warnings);
+  return blocksResult(trimStrayBreaks(blocks), layoutOptionsFor(values), `${message} with selectable text into`, warnings);
 }
 
 export const officeTools: PdfToolDefinition[] = [
@@ -144,6 +159,7 @@ export const officeTools: PdfToolDefinition[] = [
     notes: [
       LAYOUT_LOSS,
       'Slide geometry is not reproduced: text frames are read in order and re-laid out, so positions, masters, themes, animations, speaker notes and pictures do not survive.',
+      'Text is read out of the presentation shapes in `content.xml`; a deck whose slides hold only pictures is refused rather than converted into blank pages.',
       'The output page uses the aspect ratio you choose, not the deck’s own slide size.',
     ],
     fields: [
@@ -174,9 +190,9 @@ export const officeTools: PdfToolDefinition[] = [
       const [width, height] = stringValue(context.values, 'slideSize', '16:9') === '4:3'
         ? [720, 540]
         : [960, 540];
-      const margin = numberValue(context.values, 'margin', 28);
+      const margin = clampNumber(numberValue(context.values, 'margin', 28), 0, 144, { integer: true });
       return blocksResult(
-        blocks,
+        trimStrayBreaks(blocks),
         { pageSize: [width, height], margin, baseFontSize: 14, lineHeight: 1.4 },
         `Converted the OpenDocument presentation into`,
         [
@@ -202,6 +218,7 @@ export const officeTools: PdfToolDefinition[] = [
     promise: 'The text of every fixed page, re-flowed as selectable PDF text.',
     notes: [
       'Text runs are recovered from each page’s `UnicodeString` attributes, so wording and reading order survive.',
+      'A package whose text runs this reader cannot see is refused with that said, rather than converted into pages that look fine and contain nothing.',
       'Strokes, gradients, images, exact glyph positioning, embedded fonts and page geometry are not reproduced — a server engine would keep them as vector content.',
       LAYOUT_LOSS,
     ],
@@ -289,7 +306,7 @@ const LEGACY_ONLY: {
     name: 'Pages to PDF',
     label: 'Apple Pages',
     accept: '.pages',
-    hint: 'In Pages choose File → Export To → PDF, or unzip the .pages bundle and convert the PDF inside it.',
+    hint: 'In Pages choose File → Export To → PDF. A .pages bundle is a ZIP: if it already holds a PDF, that file is the one to use.',
   },
   {
     id: 'pub-to-pdf',

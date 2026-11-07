@@ -33,6 +33,7 @@ import {
   PDFRawStream,
   PDFRef,
   PDFStream,
+  StandardFontEmbedder,
   decodePDFRawStream,
 } from '@maxwbh/pdf-lib';
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
@@ -931,8 +932,15 @@ function serialiseLiteral(bytes: Uint8Array): string {
 }
 
 function serialiseString(op: StringOperand): string {
-  if (op.hex) return `<${latin1(op.bytes).replace(/[\-]/g, '')}>`;
-  return serialiseLiteral(op.bytes);
+  if (!op.hex) return serialiseLiteral(op.bytes);
+  // The payload must go back as hex digits. Writing the decoded bytes as
+  // characters turned `<426f647920…>` into `<Body text>`, which every parser
+  // (ours included) reads as three garbage glyphs — so *recolouring* or
+  // *redacting* one run destroyed the text of every hex run on the page while
+  // still reporting "Recoloured 1 text run".
+  let out = '<';
+  for (const byte of op.bytes) out += byte.toString(16).padStart(2, '0');
+  return `${out}>`;
 }
 
 function serialiseDictBody(dict: DictOperand): string {
@@ -1289,37 +1297,124 @@ interface FontInfo {
   descent: number;
 }
 
-function standardMetrics(baseFont: string) {
-  // `StandardFontEmbedder` is a public pdf-lib export and carries the AFM
-  // metrics for the standard 14, which is what lets `textRects` measure text
-  // on pages that reference Helvetica without embedding it.
-  const name = normaliseStandardFontName(baseFont);
-  if (!name) return null;
-  return STANDARD[name as keyof typeof STANDARD] ?? null;
+/** The AFM-derived metrics of one standard-14 face, in 1/1000 em units. */
+interface StandardFace {
+  width(code: number): number;
+  unicode(code: number): number | undefined;
+  /** `/Ascender` equivalent, in 1/1000 units (the caller divides by 1000). */
+  ascent: number;
+  descent: number;
 }
 
-const STANDARD: Record<string, { width(code: number): number; unicode(code: number): number | undefined; ascent: number; descent: number }> = {};
+/**
+ * The face behind a `/BaseFont`, or `null` when it is not a standard-14 font.
+ *
+ * Built once per family from `StandardFontEmbedder` — the same AFM tables
+ * pdf-lib uses to lay the text out in the first place — so a page that merely
+ * *references* Helvetica (no embedded font, no `/Widths`) still gets true
+ * widths and a code→Unicode map. Guessing 500 units for every glyph instead
+ * makes every run the wrong length, which the text editor then redraws in the
+ * wrong box and redaction reports as needing a raster fallback it never needed.
+ */
+const STANDARD_FACES = new Map<string, StandardFace | null>();
+
+const STANDARD_NAMES = [
+  'Courier',
+  'Courier-Bold',
+  'Courier-Oblique',
+  'Courier-BoldOblique',
+  'Helvetica',
+  'Helvetica-Bold',
+  'Helvetica-Oblique',
+  'Helvetica-BoldOblique',
+  'Times-Roman',
+  'Times-Bold',
+  'Times-Italic',
+  'Times-BoldItalic',
+  'Symbol',
+  'ZapfDingbats',
+] as const;
+
+/** Metric-compatible substitutes that producers write instead of the Adobe names. */
+const STANDARD_ALIASES: Record<string, string> = {
+  Arial: 'Helvetica',
+  'Arial-BoldMT': 'Helvetica-Bold',
+  'Arial-Bold': 'Helvetica-Bold',
+  'Arial-ItalicMT': 'Helvetica-Oblique',
+  'Arial-Italic': 'Helvetica-Oblique',
+  'Arial-BoldItalicMT': 'Helvetica-BoldOblique',
+  'Arial-BoldItalic': 'Helvetica-BoldOblique',
+  HelveticaNeue: 'Helvetica',
+  NimbusSans: 'Helvetica',
+  TimesNewRoman: 'Times-Roman',
+  'Times-New-Roman': 'Times-Roman',
+  TimesNewRomanPSMT: 'Times-Roman',
+  'TimesNewRomanPS': 'Times-Roman',
+  TimesNewRomanPSBoldMT: 'Times-Bold',
+  'TimesNewRomanPS-BoldMT': 'Times-Bold',
+  TimesNewRomanPSItalicMT: 'Times-Italic',
+  'TimesNewRomanPS-ItalicMT': 'Times-Italic',
+  TimesNewRomanPSBoldItalicMT: 'Times-BoldItalic',
+  'TimesNewRomanPS-BoldItalicMT': 'Times-BoldItalic',
+  NimbusRomNo9L: 'Times-Roman',
+  LiberationSerif: 'Times-Roman',
+  LiberationSans: 'Helvetica',
+  CourierNew: 'Courier',
+  'CourierNewPSMT': 'Courier',
+};
 
 function normaliseStandardFontName(baseFont: string): string | null {
-  const clean = baseFont.replace(/^[A-Z]{6}\+/, '').replace(/,-*SC*$/i, '').replace(/-.*/g, '');
-  const known = [
-    'Courier',
-    'Courier-Bold',
-    'Courier-Oblique',
-    'Courier-BoldOblique',
-    'Helvetica',
-    'Helvetica-Bold',
-    'Helvetica-Oblique',
-    'Helvetica-BoldOblique',
-    'Times-Roman',
-    'Times-Bold',
-    'Times-Italic',
-    'Times-BoldItalic',
-    'Symbol',
-    'ZapfDingbats',
-  ];
-  const exact = known.find((n) => n.toLowerCase() === clean.toLowerCase());
-  return exact ?? null;
+  // `/BaseFont` arrives as a PDF name, so the leading `/` comes along; a subset
+  // prefix (`ABCDEF+Helvetica`) is stripped as well. The weight and slant are
+  // part of the metrics, so the rest is matched **whole** — trimming `-Roman`
+  // off `Times-Roman` (as an earlier `-.+` strip did) meant Times pages never
+  // measured at all.
+  const clean = baseFont
+    .trim()
+    .replace(/^\//, '')
+    .replace(/^[A-Za-z0-9]{6}\+/, '');
+  const exact = STANDARD_NAMES.find((name) => name.toLowerCase() === clean.toLowerCase());
+  if (exact) return exact;
+  const alias = STANDARD_ALIASES[clean] ?? STANDARD_ALIASES[clean.replace(/[\s_.]/g, '')];
+  return alias ?? null;
+}
+
+function buildStandardFace(name: string): StandardFace | null {
+  try {
+    const embedder = StandardFontEmbedder.for(name as never);
+    // `CharMetrics` is indexed by character code, exactly like the AFM `C` field.
+    const widths = new Map<number, number>();
+    embedder.font.CharMetrics.forEach((metric, code) => {
+      if (typeof metric.WX === 'number') widths.set(code, metric.WX);
+    });
+    // The encoding knows which Unicode code points the face can hold; reading it
+    // backwards is what turns a WinAnsi byte (or a Symbol/Zapf code) into text.
+    const unicode = new Map<number, number>();
+    for (const codePoint of embedder.encoding.supportedCodePoints) {
+      try {
+        const code = embedder.encoding.encodeUnicodeCodePoint(codePoint).code;
+        if (!unicode.has(code)) unicode.set(code, codePoint);
+      } catch {
+        // A code point the face cannot encode simply has no reverse mapping.
+      }
+    }
+    const { Ascender, Descender, FontBBox } = embedder.font;
+    return {
+      width: (code: number) => widths.get(code) ?? 250,
+      unicode: (code: number) => unicode.get(code),
+      ascent: typeof Ascender === 'number' ? Ascender : FontBBox[3],
+      descent: typeof Descender === 'number' ? Descender : FontBBox[1],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function standardMetrics(baseFont: string): StandardFace | null {
+  const name = normaliseStandardFontName(baseFont);
+  if (!name) return null;
+  if (!STANDARD_FACES.has(name)) STANDARD_FACES.set(name, buildStandardFace(name));
+  return STANDARD_FACES.get(name) ?? null;
 }
 
 /** WinAnsi code → Unicode. 0x20-0x7e and 0xa0-0xff are positional. */
@@ -1368,38 +1463,62 @@ function parseToUnicode(bytes: Uint8Array): Map<number, number> {
   const map = new Map<number, number>();
   const ops = parseContentStream(bytes);
   let mode: 'none' | 'bfchar' | 'bfrange' = 'none';
+  // A CMap block writes its pairs as bare tokens with no operator between them:
+  // `7 beginbfchar <0001> <004E> <0002> <006F> endbfchar`. The tokenizer hands
+  // every one of those tokens to the operator that *closes* the block, so the
+  // mapping is read out of the pool collected between `begin*` and `end*`.
+  // Reading the opening operator's operands instead — as an earlier version did
+  // — silently produced an empty map, and every CID run came back as raw glyph
+  // numbers (`\u0001` where the text said "Noto run").
+  let pool: ContentOperand[] = [];
+  const stringsOf = (operand: ContentOperand): StringOperand[] =>
+    operand.kind === 'string'
+      ? [operand]
+      : operand.kind === 'array'
+        ? operand.items.filter((item): item is StringOperand => item.kind === 'string')
+        : [];
+  const flush = (): void => {
+    if (mode === 'bfchar') {
+      for (let i = 0; i + 1 < pool.length; i += 2) {
+        const src = stringsOf(pool[i]);
+        const dst = stringsOf(pool[i + 1]);
+        if (src.length && dst.length) map.set(codeOf(src[0]), unicodeOfFirst(dst[0]));
+      }
+    } else if (mode === 'bfrange') {
+      for (let i = 0; i + 2 < pool.length; i += 3) {
+        const low = stringsOf(pool[i]);
+        const high = stringsOf(pool[i + 1]);
+        if (!low.length || !high.length) continue;
+        const start = codeOf(low[0]);
+        const end = codeOf(high[0]);
+        const dest = pool[i + 2];
+        if (dest.kind === 'array') {
+          stringsOf(dest).forEach((item, offset) => map.set(start + offset, unicodeOfFirst(item)));
+          continue;
+        }
+        const base = stringsOf(dest)[0];
+        if (!base) continue;
+        const first = unicodeOfFirst(base);
+        for (let code = start; code <= Math.min(end, start + 65535); code++) {
+          map.set(code, first + (code - start));
+        }
+      }
+    }
+    pool = [];
+  };
   for (const op of ops) {
-    if (op.name === 'beginbfchar') {
-      mode = 'bfchar';
+    if (op.name === 'beginbfchar' || op.name === 'beginbfrange') {
+      mode = op.name === 'beginbfchar' ? 'bfchar' : 'bfrange';
+      pool = [];
       continue;
     }
     if (op.name === 'endbfchar' || op.name === 'endbfrange') {
+      pool.push(...op.operands);
+      flush();
       mode = 'none';
       continue;
     }
-    if (op.name === 'beginbfrange') {
-      mode = 'bfrange';
-      continue;
-    }
-    if (mode === 'none') continue;
-    const strings = op.operands.filter((o): o is StringOperand => o.kind === 'string');
-    if (mode === 'bfchar' && strings.length >= 2) {
-      map.set(codeOf(strings[0]), unicodeOfFirst(strings[1]));
-      continue;
-    }
-    if (mode === 'bfrange' && strings.length >= 2) {
-      const low = codeOf(strings[0]);
-      const high = codeOf(strings[1]);
-      if (op.operands[2]?.kind === 'array') {
-        const items = (op.operands[2] as ArrayOperand).items.filter(
-          (i): i is StringOperand => i.kind === 'string',
-        );
-        items.forEach((item, i) => map.set(low + i, unicodeOfFirst(item)));
-      } else if (strings[2]) {
-        const base = unicodeOfFirst(strings[2]);
-        for (let code = low; code <= high; code++) map.set(code, base + (code - low));
-      }
-    }
+    if (mode !== 'none') pool.push(...op.operands);
   }
   return map;
 }
@@ -1535,12 +1654,14 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
       unicodeOf: (code: number) => {
         const viaDifferences = encodingDifferences?.get(code);
         if (viaDifferences !== undefined) return viaDifferences;
-        if (standard) return standard.unicode(code);
+        if (standard) return standard.unicode(code) ?? (assumedWinAnsi ? winAnsiToUnicode(code) : undefined);
         if (assumedWinAnsi) return winAnsiToUnicode(code);
         return code;
       },
-      ascent: ascent / 1000,
-      descent: descent / 1000,
+      // A standard-14 face has no `/FontDescriptor`, so its real ascender and
+      // descender come from the AFM rather than the 750/-250 guess.
+      ascent: (descriptor ? ascent : standard?.ascent ?? ascent) / 1000,
+      descent: (descriptor ? descent : standard?.descent ?? descent) / 1000,
     };
   })();
   cache.fonts.set(resourceName, info);
@@ -1731,20 +1852,21 @@ function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
     if (!bytes.length) return;
     const codeSize = font?.codeSize ?? 1;
     let advance = 0;
-    const chars: string[] = [];
     const ascender = (font?.ascent ?? 0.75) * Math.abs(size) * scaleOf(multiply(ctm, tm));
     const descender = (font?.descent ?? -0.25) * Math.abs(size) * scaleOf(multiply(ctm, tm));
     for (let i = 0; i + codeSize - 1 < bytes.length; i += codeSize) {
       let code = 0;
       for (let j = 0; j < codeSize; j++) code = code * 256 + bytes[i + j];
       const unicode = font?.unicodeOf(code) ?? code;
-      chars.push(unicode ? String.fromCodePoint(unicode) : '');
+      // One segment per glyph, each carrying **its own** character: an earlier
+      // version labelled only the first glyph of the string and blanked the
+      // rest, so `textRects` returned "P" for "Plain Helvetica text" — which is
+      // what made a page this app had just written look like it had no text.
+      const character = unicode ? String.fromCodePoint(unicode) : '';
       const widthUnits = (font?.widthOf(code) ?? 500) + (dx(code) / (Math.abs(size) || 1)) * 1000;
       const glyphAdvance =
         (widthUnits / 1000) * Math.abs(size) * horizontalScale + (code === 0x20 ? wordSpacing : 0) + charSpacing;
       advance += glyphAdvance;
-      // Emit the run so far, then continue: a single segment per shown string
-      // keeps the geometry simple while still allowing per-glyph removal.
       const from = apply(multiply(ctm, tm), advance - glyphAdvance, rise);
       const to = apply(multiply(ctm, tm), advance, rise);
       const left = Math.min(from[0], to[0]);
@@ -1752,7 +1874,7 @@ function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
       const top = Math.max(from[1], to[1]) + Math.max(ascender, 0);
       const bottom = Math.min(from[1], to[1]) + Math.min(descender, 0);
       segments.push({
-        text: chars.length === 1 ? chars[0] : '',
+        text: character,
         rect: { x: left, y: bottom, width: right - left, height: top - bottom },
         opIndex,
         font: font?.name ?? '',
@@ -1868,8 +1990,11 @@ function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
       if (!array) continue;
       const strings = array.items.filter((i): i is StringOperand => i.kind === 'string');
       const kerned = array.items.some((i) => i.kind === 'number' && i.value !== 0);
-      // Each string in the array is its own run; the numbers between them
-      // shift the pen left/right and are folded into the following run.
+      // Each string in the array is its own run. The numbers between them are
+      // **not** applied: the pen is advanced by glyph widths alone, so a kerned
+      // line comes back as one contiguous run whose rect is a shade wide. That
+      // is deliberate — every consumer here removes or replaces whole runs, and
+      // a run measured from its own widths is the same run pdf-lib will redraw.
       for (const value of strings) showString(value.bytes, index, kerned, () => 0);
       continue;
     }
@@ -1941,7 +2066,6 @@ export function removeTextInRects(page: PDFPage, rects: ContentRect[]): { remove
   // merged segments above lost the per-glyph split, measure from the operands:
   const dropByOp = new Map<number, { all: boolean; kept: string }>();
   for (const segment of affected) {
-    const op = ops[segment.opIndex];
     const kept = segment.text;
     dropByOp.set(segment.opIndex, { all: kept.length === 0, kept });
   }
@@ -1969,11 +2093,7 @@ export function removeTextInRects(page: PDFPage, rects: ContentRect[]): { remove
     // when the operator count still lines up; otherwise fall back to writing
     // `cleaned` verbatim.
     if (current.length === ops.length) {
-      let index = -1;
-      return current.filter((op) => {
-        index++;
-        return dropByOp.has(index) ? false : true;
-      });
+      return current.filter((_, index) => !dropByOp.has(index));
     }
     return cleaned;
   });
@@ -2140,21 +2260,6 @@ export function prependBackground(page: PDFPage, rect: ContentRect, color: strin
 }
 
 // ── Document level edits ───────────────────────────────────────────
-
-function forEachDict(
-  doc: PDFDocument,
-  visit: (dict: PDFDict, ref: PDFRef | undefined) => void,
-): void {
-  for (const [ref, object] of doc.context.enumerateIndirectObjects()) {
-    if (object instanceof PDFDict) visit(object, ref);
-    else if (object instanceof PDFStream && object.dict instanceof PDFDict) visit(object.dict, ref);
-  }
-}
-
-function isJavaScriptAction(dict: PDFDict): boolean {
-  const action = dict.lookupMaybe(PDFName.of('S'), PDFName)?.asString();
-  return action === '/JavaScript' || action === '/JS';
-}
 
 function dropJavaScriptKeys(dict: PDFDict): number {
   let removed = 0;

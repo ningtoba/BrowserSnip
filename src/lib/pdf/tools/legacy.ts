@@ -23,7 +23,15 @@
 // `cropModel` is the crop pane's pure geometry module (no React), so the run and
 // the rail agree on what "too little left to be a page" means.
 import { MIN_KEPT_PT } from '@/components/tools/pdf/edit/cropModel';
-import { clampNumber, ToolInputError, openInputs, openPrimary, pagesField, pdfResult } from './helpers';
+import {
+  ToolInputError,
+  clampFields,
+  clampNumber,
+  openInputs,
+  openPrimary,
+  pagesField,
+  pdfResult,
+} from './helpers';
 import { mediaBox, resolvePageSet, setMediaAndCrop, toPoints, type LengthUnit } from '../core/pages';
 import {
   arrayValue,
@@ -32,8 +40,108 @@ import {
   objectValue,
   stringValue,
   type PdfToolDefinition,
+  type ToolField,
   type ToolRunContext,
+  type ToolValues,
 } from './types';
+
+/* ── field lists the run also reads ─────────────────────────────────────────
+ *
+ * These four tools have panes that can call `run` without the rail in front,
+ * and `run` must not accept a value the rail would have refused (E15). So the
+ * field list is a named constant the definition and the clamping share, instead
+ * of a literal the run would have to describe a second time — and get wrong.
+ */
+
+/** Largest margin the rail will accept, in points (about 28 inches). */
+const MAX_MARGIN_PT = 2000;
+
+/**
+ * The crop margins as the rail shows them.
+ *
+ * `unit: 'pt'` used to be printed beside a number the user could declare in
+ * millimetres, and the help said “in points” two fields above a selector that
+ * says otherwise — so the rail labelled 10 as `10 pt` while the crop took 28.3 pt
+ * off the page. The bounds carry no unit for the same reason: `core/guard`’s
+ * clamp sentence quotes them with the field's unit attached, and “at most 2000
+ * pt” is not what a millimetre rail means.
+ */
+const CROP_SIDES = ['top', 'right', 'bottom', 'left'] as const;
+
+const CROP_FIELDS: ToolField[] = [
+  pagesField({ group: 'Pages' }),
+  ...CROP_SIDES.map((side): ToolField => ({
+    key: side,
+    label: `${side.charAt(0).toUpperCase()}${side.slice(1)} margin`,
+    type: 'number',
+    default: 0,
+    min: 0,
+    max: MAX_MARGIN_PT,
+    step: 1,
+    half: true,
+    group: 'Margins',
+    help: 'Cut from that edge of the visible box, measured in the unit chosen below (points by default; 72 pt is one inch).',
+  })),
+  {
+    key: 'unit',
+    label: 'Margins are in',
+    type: 'select',
+    default: 'pt',
+    group: 'Margins',
+    help: 'A display unit only — the margins above are converted to the page’s own points when the crop is written.',
+    options: [
+      { value: 'pt', label: 'Points' },
+      { value: 'mm', label: 'Millimetres' },
+      { value: 'cm', label: 'Centimetres' },
+      { value: 'in', label: 'Inches' },
+    ],
+  },
+  {
+    key: 'allPages',
+    label: 'Every page',
+    type: 'toggle',
+    default: true,
+    group: 'Pages',
+    help: 'Off crops only the pages listed below, which is how a stray scan border is removed from one sheet.',
+  },
+];
+
+/** The comparison knobs, clamped by the run as well as by the rail. */
+const COMPARE_FIELDS: ToolField[] = [
+  {
+    key: 'sensitivity',
+    label: 'Sensitivity',
+    type: 'slider',
+    default: 30,
+    min: 5,
+    max: 150,
+    step: 1,
+    group: 'Marking',
+    help: 'How far a pixel has to change before it is marked. Raise it when antialiasing makes every page look different.',
+  },
+  {
+    key: 'highlightColor',
+    label: 'Highlight colour',
+    type: 'color',
+    default: '#ff0000',
+    group: 'Marking',
+    help: 'Drawn over the changed area, so choose a colour that still lets the text underneath be read.',
+  },
+];
+
+/**
+ * Bound a pane's values with the rail's own rule, collecting the corrections
+ * for the result card (E15).
+ */
+function clampToFields(
+  fields: readonly ToolField[],
+  values: ToolValues,
+  warnings: string[],
+): ToolValues {
+  const clamped = clampFields(fields, values);
+  for (const change of clamped.changes) warnings.push(change.message);
+  return clamped.values;
+}
 
 export const legacyTools: PdfToolDefinition[] = [
   {
@@ -89,42 +197,18 @@ export const legacyTools: PdfToolDefinition[] = [
       'Cropping sets the page’s visible box. Ink outside it is hidden, not deleted: the file barely shrinks, and text you cropped away can still be extracted. Use redaction to remove content for good.',
       'Margins are applied per page in the page’s own units, so mixed page sizes each keep their own geometry.',
     ],
-    fields: [
-      pagesField({ group: 'Pages' }),
-      { key: 'top', label: 'Top margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins', help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.' },
-      { key: 'right', label: 'Right margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
-        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
-      },
-      { key: 'bottom', label: 'Bottom margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
-        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
-      },
-      { key: 'left', label: 'Left margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
-        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
-      },
-      {
-        key: 'unit',
-        label: 'Margins are in',
-        type: 'select',
-        default: 'pt',
-        group: 'Margins',
-        help: 'A display unit only — the margins above are converted to the page’s own points when the crop is written.',
-        options: [
-          { value: 'pt', label: 'Points' },
-          { value: 'mm', label: 'Millimetres' },
-          { value: 'cm', label: 'Centimetres' },
-          { value: 'in', label: 'Inches' },
-        ],
-      },
-      { key: 'allPages', label: 'Every page', type: 'toggle', default: true, group: 'Pages',
-        help: 'Off crops only the pages listed below, which is how a stray scan border is removed from one sheet.',
-      },
-    ],
+    fields: CROP_FIELDS,
     async run(context: ToolRunContext) {
       const input = await openPrimary(context);
-      const unit = stringValue(context.values, 'unit', 'pt') as LengthUnit;
-      const margins = (['top', 'right', 'bottom', 'left'] as const).map((side) =>
-        marginPoints(numberValue(context.values, side, 0), unit),
-      );
+      const warnings: string[] = [];
+      // E15 again: the rail bounds the margins, a pane may not. Clamped through
+      // the same `core/guard` call the rail uses so the sentence matches.
+      const values = clampToFields(CROP_FIELDS, context.values, warnings);
+      const unit = stringValue(values, 'unit', 'pt') as LengthUnit;
+      // What the user typed, and what the page box will actually lose: the two
+      // are only the same number when the unit is points.
+      const asked = CROP_SIDES.map((side) => numberValue(values, side, 0));
+      const margins = asked.map((value) => marginPoints(value, unit));
       const [top, right, bottom, left] = margins;
       if (top + right + bottom + left <= 0) throw paneOnlyError('Crop PDF', 'a crop rectangle');
       const targets = resolveTargets(context, input.pageCount);
@@ -151,12 +235,11 @@ export const legacyTools: PdfToolDefinition[] = [
           { fileName: input.name, hint: 'Drag the rectangle smaller, or crop fewer pages.' },
         );
       }
-      const warnings: string[] = [];
       if (tooSmall.length > 0) {
         warnings.push(`${count(tooSmall.length, 'page')} (${formatPageList(tooSmall)}) was smaller than the crop leaves room for and kept its own size.`);
       }
       const result = await pdfResult(input.doc, {
-        message: `Cropped ${count(cropped, 'page')} to the kept rectangle; ${describeMargins(margins, unit)}`,
+        message: `Cropped ${count(cropped, 'page')} to the kept rectangle; ${describeMargins(margins, asked, unit)}`,
       });
       return { ...result, warnings };
     },
@@ -288,16 +371,20 @@ export const legacyTools: PdfToolDefinition[] = [
       'Only the pages both files have are compared. If one document is shorter, the extra pages are reported and left out of the result.',
       'Both PDFs are opened in this tab; nothing is uploaded.',
     ],
-    fields: [
-      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 30, min: 5, max: 150, step: 1, group: 'Marking', help: 'How far a pixel has to change before it is marked. Raise it when antialiasing makes every page look different.' },
-      { key: 'highlightColor', label: 'Highlight colour', type: 'color', default: '#ff0000', group: 'Marking', help: 'Drawn over the changed area, so choose a colour that still lets the text underneath be read.' },
-    ],
+    fields: COMPARE_FIELDS,
     async run(context: ToolRunContext) {
       const [first, second] = await openInputs(context);
+      const warnings: string[] = [];
+      // E15, the same rule the rail applies: a pane (or a test) can hand `run`
+      // a sensitivity of 9000, which marks every pixel on every page as changed
+      // and still returns a file that looks like a verdict.
+      const values = clampToFields(COMPARE_FIELDS, context.values, warnings);
+      const sensitivity = numberValue(values, 'sensitivity', 30);
+      const highlightColor = compareColor(values, warnings);
       const { comparePDFs } = await import('@/lib/pdf-engine/commands');
       const outcome = await comparePDFs(first.bytes, second.bytes, {
-        sensitivity: numberValue(context.values, 'sensitivity', 30),
-        highlightColor: stringValue(context.values, 'highlightColor', '#ff0000'),
+        sensitivity,
+        highlightColor,
       }, { progress: context.progress, signal: context.signal });
       if (outcome.compared === 0) {
         throw new ToolInputError(
@@ -305,7 +392,6 @@ export const legacyTools: PdfToolDefinition[] = [
           'Neither document has a page, so there is nothing to compare.',
         );
       }
-      const warnings: string[] = [];
       if (outcome.onlyInFirst > 0 || outcome.onlyInSecond > 0) {
         warnings.push(
           `Only the first ${count(outcome.compared, 'page')} were compared: "${first.name}" has ${count(outcome.onlyInFirst, 'extra page')} the other does not, and "${second.name}" has ${count(outcome.onlyInSecond, 'extra page')}.`,
@@ -341,9 +427,6 @@ interface PaneSignatureMark {
   fontFamily?: string;
 }
 
-/** Largest margin the rail will accept, in points (about 28 inches). */
-const MAX_MARGIN_PT = 2000;
-
 /**
  * The four bespoke panes all have the same empty state: the work lives in the
  * pane, and the Run button was pressed before anything was put in it. Saying
@@ -372,15 +455,38 @@ function resolveTargets(context: ToolRunContext, total: number): number[] {
   return resolvePageSet(stringValue(context.values, 'pages', 'all'), total);
 }
 
-/** The margins as points, whatever unit the caller declared. */
+/**
+ * The highlight colour, in the `#rrggbb` spelling the comparison paints with.
+ *
+ * E15 again, for a value the browser's colour picker can leave empty while the
+ * user is still typing it: an unparseable colour used to reach the pixel diff as
+ * black, so the result said "painted the differences" in a colour nobody chose.
+ * The default is used and the substitution is announced.
+ */
+function compareColor(values: ToolValues, warnings: string[]): string {
+  const hex = stringValue(values, 'highlightColor', '#ff0000').trim();
+  if (/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return hex.startsWith('#') ? hex : `#${hex}`;
+  warnings.push(`"${hex}" is not a colour the comparison can paint with, so the default #ff0000 was used.`);
+  return '#ff0000';
+}
+
+/** The margins in the page’s own points, whatever unit was typed. */
 function marginPoints(value: number, unit: LengthUnit): number {
   return Math.round(toPoints(clampNumber(value, 0, MAX_MARGIN_PT), unit) * 10) / 10;
 }
 
-/** "48 pt, 48 pt, 48 pt, 48 pt (top, right, bottom, left)" for the result card. */
-function describeMargins(margins: number[], unit: LengthUnit): string {
-  const [top, right, bottom, left] = margins;
-  return `${top}/${right}/${bottom}/${left} ${unit} (top/right/bottom/left) were taken off each kept page.`;
+/**
+ * What the page boxes lost, in the unit the file is written in.
+ *
+ * `setMediaAndCrop` stores points, so printing the typed numbers with `mm` after
+ * them claimed a 10 mm margin had taken 10 points off the page — the one figure
+ * a person checks before trusting a crop. Both spellings appear now: the points
+ * that went, and what the user entered to get there.
+ */
+function describeMargins(margins: number[], asked: number[], unit: LengthUnit): string {
+  const points = `${margins[0]}/${margins[1]}/${margins[2]}/${margins[3]} pt (top/right/bottom/left)`;
+  const typed = unit === 'pt' ? '' : ` — the ${asked.join('/')} ${unit} you entered, converted`;
+  return `${points}${typed} were taken off each kept page.`;
 }
 
 function formatPageList(pages: number[]): string {

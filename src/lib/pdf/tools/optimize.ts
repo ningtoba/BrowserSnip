@@ -39,12 +39,13 @@ import {
   stripJavaScript,
 } from '../core/content';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
+import { listLayers } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
 import { EngineUnavailable } from '../engines/provider';
 import { repairPDF } from '@/lib/pdf-engine/commands';
 import {
   ToolInputError,
-  clampNumber,
+  clampFields,
   describeSize,
   emptyFileError,
   expandPageRanges,
@@ -61,6 +62,7 @@ import {
   numberValue,
   stringValue,
   type PdfToolDefinition,
+  type ToolField,
   type ToolValues,
 } from './types';
 
@@ -104,28 +106,33 @@ interface Bound {
  *
  * The runner clamps too (`clampFields`), but tools are also called straight from
  * the legacy engine hook and from tests, and a silent clamp is the difference
- * between "200 dpi" and a 30-second rasterise at 0 dpi.
+ * between "200 dpi" and a 30-second rasterise at 0 dpi. The correcting sentence
+ * is produced by `core/guard` itself rather than written again here, so the rail
+ * and the tool cannot drift into two wordings for one correction (E15).
  */
 function readBound(values: ToolValues, bound: Bound, warnings: string[]): number {
-  const raw = numberValue(values, bound.key, bound.fallback);
-  const fixed = clampNumber(raw, bound.min, bound.max, { integer: bound.integer === true });
-  if (fixed !== raw) warnings.push(boundSentence(bound, raw, fixed));
-  return fixed;
+  const { values: fixed, changes } = clampFields([fieldFor(bound)], values);
+  warnings.push(...changes.map((change) => change.message));
+  return numberValue(fixed, bound.key, bound.fallback);
 }
 
-function rangePhrase(bound: Bound): string {
-  const unit = bound.unit ? ` ${bound.unit}` : '';
-  if (Number.isFinite(bound.min) && Number.isFinite(bound.max)) {
-    return `between ${bound.min} and ${bound.max}${unit}`;
-  }
-  if (Number.isFinite(bound.min)) return `at least ${bound.min}${unit}`;
-  if (Number.isFinite(bound.max)) return `at most ${bound.max}${unit}`;
-  return 'a number';
-}
-
-/** Same sentence shape `core/guard` uses, so one wording covers both clamps. */
-function boundSentence(bound: Bound, from: number, to: number): string {
-  return `${bound.label} must be ${rangePhrase(bound)}: ${from} became ${to}.`;
+/**
+ * The same bound, expressed as the field the rail would have shown.
+ *
+ * Deliberately without `when`: a field the rail hid still has to be clamped when
+ * a caller hands the tool a value for it, or `targetEnabled` would let a quality
+ * of 200 reach the JPEG encoder unannounced.
+ */
+function fieldFor(bound: Bound): ToolField {
+  return {
+    key: bound.key,
+    label: bound.label,
+    type: 'number',
+    min: bound.min,
+    max: bound.max,
+    ...(bound.integer === true ? { integer: true } : {}),
+    ...(bound.unit ? { unit: bound.unit } : {}),
+  };
 }
 
 /** Byte counts a message is allowed to print — measured, never estimated. */
@@ -221,26 +228,28 @@ interface FontAudit {
 /**
  * Count the fonts a document draws with and how many carry a `/FontFile`.
  *
- * Entries are resolved by hand rather than with `lookupMaybe(dict, PDFDict)`:
+ * Entries are resolved by hand rather than with `lookupMaybe(dict, XClass)`:
  * a font resource may be a dictionary or a reference, and the same is true of
- * the `/Font` map itself.
+ * the `/Font` map itself — and of what that map holds, which a producer is free
+ * to make an array or a name. Asking pdf-lib for a `PDFDict` there throws
+ * `UnexpectedObjectTypeError`, which would end a PDF/A run with a parser stack
+ * trace instead of a report.
  */
 function auditFonts(doc: PDFDocument): FontAudit {
   const audit: FontAudit = { total: 0, embedded: 0 };
   const seen = new Set<string>();
+  const dictOf = (value: unknown): PDFDict | undefined => {
+    const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
+    return resolved instanceof PDFDict ? resolved : undefined;
+  };
   for (const page of doc.getPages()) {
     const resources = page.node.Resources();
-    const map = resources instanceof PDFRef
-      ? doc.context.lookupMaybe(resources, PDFDict)
-      : resources instanceof PDFDict
-        ? resources
-        : undefined;
-    const fonts = map?.get(PDFName.of('Font'));
-    const fontDict = fonts instanceof PDFRef ? doc.context.lookup(fonts, PDFDict) : fonts;
-    if (!(fontDict instanceof PDFDict)) continue;
+    const map = dictOf(resources);
+    const fontDict = dictOf(map?.get(PDFName.of('Font')));
+    if (!fontDict) continue;
     for (const [, value] of fontDict.entries()) {
-      const dict = value instanceof PDFRef ? doc.context.lookupMaybe(value, PDFDict) : value;
-      if (!(dict instanceof PDFDict)) continue;
+      const dict = dictOf(value);
+      if (!dict) continue;
       const key = `${dict.get(PDFName.of('BaseFont'))}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -520,10 +529,14 @@ function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; confo
   doc.setModificationDate(new Date());
 
   const xmp = buildPdfAExtension(number, conformance, doc.getTitle() ?? '', doc.getAuthor() ?? '');
+  // `/N` on a metadata stream is the component count of the data, and
+  // ISO 32000-1 Table 162 says it is 0 there — an integer, not the `[0 0]` this
+  // used to write. A validator reads the type, not the intention, and the whole
+  // claim of this tool is that the file is readable by one.
   const metadata = flateStream(doc, xmp, {
     Type: 'Metadata',
     Subtype: 'XML',
-    N: doc.context.obj([doc.context.obj(0), doc.context.obj(0)]),
+    N: doc.context.obj(0),
   });
   doc.catalog.set(PDFName.of('Metadata'), doc.context.register(metadata));
 
@@ -792,7 +805,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         type: 'toggle',
         default: true,
         group: 'Images',
-        help: 'Turning this off saves more space but can turn a transparent logo into a black box.',
+        help: 'Off throws the transparency mask away as well, so a logo sits on its own box of paper instead of on the page.',
       },
       { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: false, group: 'Images', help: 'Colour images become grey, which usually saves more space than lowering quality. Text and vector colour are left alone.' },
       {
@@ -1047,17 +1060,19 @@ export const optimizeTools: PdfToolDefinition[] = [
       try {
         const target = await newPDF();
         const scale = dpi / 72;
+        let encodedAs: 'jpeg' | 'png' = format;
         for (let i = 0; i < source.length; i++) {
           if (context.signal.aborted) throw new DOMException('Cancelled.', 'AbortError');
           const size = displayedSize(source[i]);
           const render: PageRender = await session.renderPage(i + 1, scale, {
             background: format === 'jpeg' ? '#ffffff' : undefined,
           });
-          const image = await embedRenderedPage(target, render, format, quality);
+          const placed = await embedRenderedPage(target, render, format, quality);
+          encodedAs = placed.encodedAs;
           const width = keepPageSize ? size.width : render.width;
           const height = keepPageSize ? size.height : render.height;
           const page = target.addPage([width, height]);
-          page.drawImage(image, { x: 0, y: 0, width, height });
+          page.drawImage(placed.image, { x: 0, y: 0, width, height });
           render.cancel();
           context.progress(((i + 1) / source.length) * 0.95, `Rasterised page ${i + 1} of ${source.length}`);
         }
@@ -1070,6 +1085,11 @@ export const optimizeTools: PdfToolDefinition[] = [
           });
         }
         const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
+        if (encodedAs !== format) {
+          warnings.push(
+            `This browser would not encode ${format.toUpperCase()}, so each page was written as ${encodedAs.toUpperCase()}: the file is heavier than the setting suggests, and the format named below is the one the bytes are.`,
+          );
+        }
         warnings.push(
           withText > 0
             ? `${withText} of ${source.length} page(s) carried text and are now pictures: nothing in the output can be selected or searched.`
@@ -1084,7 +1104,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           kind: 'pdf',
           bytes,
           pages: target.getPageCount(),
-          message: `Rasterised ${source.length} page(s) to ${format.toUpperCase()} at ${dpi} dpi. ${sizeSentence(change)}.`,
+          message: `Rasterised ${source.length} page(s) to ${encodedAs.toUpperCase()} at ${dpi} dpi. ${sizeSentence(change)}.`,
           warnings,
         };
       } finally {
@@ -1158,10 +1178,17 @@ export const optimizeTools: PdfToolDefinition[] = [
         );
       }
       if (before.error) warnings.push(`The input would not open (${before.message})${before.truncated ? ' — it has no end-of-file marker' : ''}.`);
-      else if (!before.recovered) warnings.push('The input already opened; this run re-wrote its structure without losing pages.');
       if (engine === 'ghostscript') warnings.push('Ghostscript rebuilt this file; the local parser could not read it at all.');
       const declared = before.declaredPages ?? before.pages;
       const lost = declared > after.pages ? declared - after.pages : 0;
+      // Only after both counts are read: "without losing pages" used to be
+      // printed from the *input*'s health, so a run that lost three pages said it
+      // lost none two lines above admitting it did.
+      if (!before.error && !before.recovered) {
+        warnings.push(lost > 0
+          ? `The input already opened with ${declared} page(s); the rebuild reads ${after.pages}.`
+          : `The input already opened; this run re-wrote its structure without losing pages (${after.pages} in, ${after.pages} out).`);
+      }
       if (lost > 0) {
         warnings.push(`${lost} page(s) could not be recovered${before.recovered ? ` (${declared} were listed in the page tree)` : ''}.`);
       }
@@ -1214,9 +1241,19 @@ export const optimizeTools: PdfToolDefinition[] = [
         const present = countScriptReferences(doc);
         const stripped = stripJavaScript(doc);
         const left = countScriptReferences(doc);
-        const found = Math.max(stripped, present);
-        actions.push(found > 0 ? `${found} script reference(s) removed` : 'no script references were present');
-        if (found > 0) removed.push('scripts');
+        // What the bytes actually lost, not what was in there: counting the
+        // references found *before* the pass as "removed" let a document whose
+        // scripts hang off widget actions report 3 removed and 3 survived in the
+        // same sentence.
+        const gone = Math.max(stripped, present - left);
+        actions.push(
+          gone > 0
+            ? `${gone} script reference(s) removed`
+            : present > 0
+              ? 'no script reference this tool could remove'
+              : 'no script references were present',
+        );
+        if (gone > 0) removed.push('scripts');
         if (left > 0) warnings.push(`${left} script reference(s) survived in a place this tool does not look.`);
       }
       if (booleanValue(values, 'attachments', true)) {
@@ -1252,6 +1289,19 @@ export const optimizeTools: PdfToolDefinition[] = [
         if (fields > 0) {
           warnings.push(`${fields} form field value(s) were removed with their widgets; filled-in answers typed into a form can live in the page content and stay visible.`);
         }
+      }
+
+      // Optional content is neither an annotation nor an attachment, so nothing
+      // above touches it — but "sanitized" reads like "nothing hidden is left",
+      // and a CAD export with twelve switched-off layers still ships all twelve.
+      const layers = listLayers(doc);
+      if (layers.length > 0) {
+        const off = layers.filter((layer) => !layer.on).length;
+        warnings.push(
+          `${layers.length} optional content group(s) (layer${layers.length === 1 ? '' : 's'}) were left in place${
+            off > 0 ? `, ${off} of them hidden in the default view` : ''
+          }; their content is still in the file.`,
+        );
       }
 
       context.progress(0.9, 'Writing the sanitized file');
@@ -1631,10 +1681,17 @@ async function embedRenderedPage(
   render: PageRender,
   format: 'jpeg' | 'png',
   quality: number,
-): Promise<PDFImage> {
+): Promise<{ image: PDFImage; encodedAs: 'jpeg' | 'png' }> {
   const blob = await canvasToBlob(render.canvas, format, quality, {
     background: format === 'jpeg' ? '#ffffff' : undefined,
   });
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  return format === 'jpeg' ? doc.embedJpg(bytes) : doc.embedPng(bytes);
+  // The bytes, not the request, choose the embedder. A canvas that cannot
+  // encode the asked-for type answers PNG and says nothing about it — that is
+  // the HTML spec's fallback — and `embedJpg` on those bytes dies inside
+  // pdf-lib with "SOI not found in JPEG". `core/measure` learned this once
+  // already; this is the second copy of the helper, given the same lesson.
+  const encodedAs = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'jpeg' : 'png';
+  const image = encodedAs === 'jpeg' ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+  return { image, encodedAs };
 }

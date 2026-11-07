@@ -17,6 +17,7 @@
  * Options and previews never appear before a file exists, and a finished run
  * never leaves the user back on the drop zone wondering whether it worked.
  */
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { fadeUp, staggerParent, tapDown } from '@/lib/motion';
 import { useFileStore } from '@/stores/file-store';
@@ -29,6 +30,7 @@ import { ErrorPanel } from './ErrorPanel';
 import { FileCards } from './FileCards';
 import { FileIntake, intakeCopy, intakeFootNote, useIntake, type IntakeControls, type IntakeCopy } from './FileIntake';
 import { GroupHeading, OptionsPanel, useTouchedFields } from './FieldControls';
+import { OutputPreview, type PreviewMode } from './OutputPreview';
 import { ProgressBar } from './ProgressBar';
 import { ResultCard, type ResultItem } from './ResultCard';
 import { runStatusText } from './toolForm';
@@ -522,6 +524,12 @@ export interface ResultPaneProps {
  * name, the numbers that prove it happened, one dominant download, and two quiet
  * actions that say what can happen next.
  *
+ * The download decision is now preceded by the thing itself: the produced file
+ * is opened through the same pdf.js path the rest of the app uses and its first
+ * page is drawn above the card, so "what did I just make" is answered before
+ * "take it". What the preview costs in height is measured, not guessed — see
+ * [`usePreviewRoom`].
+ *
  * It reads the process store directly, so a bespoke editor's own save gets the
  * same screen as a schema-driven run without instantiating the tool hook — the
  * produced page count included, which the runner reports and the store holds.
@@ -536,6 +544,7 @@ export function ResultPane({
 }: ResultPaneProps) {
   const blobs = useProcessStore((s) => s.outputBlobs);
   const names = useProcessStore((s) => s.outputNames);
+  const urls = useProcessStore((s) => s.outputUrls);
   const pagesOut = useProcessStore((s) => s.pagesOut);
   const sizeBefore = useProcessStore((s) => s.sizeBefore);
   const warnings = useProcessStore((s) => s.warnings);
@@ -547,9 +556,14 @@ export function ResultPane({
     blob,
   }));
   const degraded = warnings.some((warning) => /degrad/i.test(warning));
+  const room = usePreviewRoom(blobs[0] ?? null, outputs.length);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6" data-result="true">
+    <div
+      ref={room.scroller}
+      className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6"
+      data-result="true"
+    >
       <motion.div
         variants={fadeUp}
         initial="hidden"
@@ -573,19 +587,25 @@ export function ResultPane({
           <RunStatusText />
         </div>
 
-        <ResultCard
-          className="mt-5 text-left"
-          hero
-          outputs={outputs}
-          sizeBefore={sizeBefore}
-          pagesIn={pagesIn}
-          pages={pagesOut}
-          warnings={warnings}
-          message={statusMessage || undefined}
-          engine={engines[0] ?? null}
-          degraded={degraded}
-          original={file ? { name: file.name, blob: file } : null}
-        />
+        <div ref={room.block} data-preview-room={room.mode} className="mt-5 text-left">
+          <OutputPreview
+            items={outputs.map((item, index) => ({ ...item, url: urls[index] }))}
+            mode={room.mode}
+            className="mb-4"
+          />
+          <ResultCard
+            hero
+            outputs={outputs}
+            sizeBefore={sizeBefore}
+            pagesIn={pagesIn}
+            pages={pagesOut}
+            warnings={warnings}
+            message={statusMessage || undefined}
+            engine={engines[0] ?? null}
+            degraded={degraded}
+            original={file ? { name: file.name, blob: file } : null}
+          />
+        </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button
@@ -607,4 +627,64 @@ export function ResultPane({
       </motion.div>
     </div>
   );
+}
+
+/**
+ * How much vertical room the preview is allowed, measured rather than guessed.
+ *
+ * The user's rule is that the download comes first and the picture supports it,
+ * so the preview may never push the Download button below the fold. "The fold"
+ * is not a number anyone can write down — it is this window, this zoom, this
+ * font size and how tall this particular card came out (a 4-file result lists
+ * four rows) — so the hook measures the block that holds both and steps the
+ * preview down, strip first then the whole frame, until that block ends inside
+ * the pane. `data-preview-room` on that block records the decision for the
+ * screenshot
+ * harness, because "it fits at this size" is a claim about layout that prose
+ * cannot prove.
+ *
+ * The decision sticks for the result it was made about: shrinking the preview
+ * makes the block fit again, and a frame that flickered back up on the next
+ * measurement would be worse than one that is quietly absent. A new produced
+ * file starts the decision over.
+ */
+function usePreviewRoom(
+  output: Blob | null,
+  count: number,
+): { mode: PreviewMode; scroller: React.RefObject<HTMLDivElement>; block: React.RefObject<HTMLDivElement> } {
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const block = useRef<HTMLDivElement | null>(null);
+  const [mode, setMode] = useState<PreviewMode>('full');
+
+  useEffect(() => {
+    setMode('full');
+  }, [output, count]);
+
+  const check = useCallback(() => {
+    const pane = scroller.current?.getBoundingClientRect();
+    const body = block.current?.getBoundingClientRect();
+    // jsdom reports no layout at all; a zero-height pane means "cannot tell",
+    // never "it does not fit", or every test would run folded.
+    if (!pane || !body || pane.height < 80) return;
+    if (body.bottom > pane.bottom - 12) {
+      setMode((current) => (current === 'full' ? 'brief' : 'off'));
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    check();
+  }, [check, mode, output, count]);
+
+  useEffect(() => {
+    const body = block.current;
+    if (!body || typeof ResizeObserver === 'undefined') return;
+    // The strip and the page raster land after the first paint, so the block
+    // grows under this effect; watching it is what catches a preview that only
+    // becomes too tall once the page is drawn.
+    const observer = new ResizeObserver(check);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [check, output]);
+
+  return { mode, scroller, block };
 }

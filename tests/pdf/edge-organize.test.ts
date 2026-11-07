@@ -21,7 +21,8 @@
  * a worker inside this jsdom suite (`Setting up fake worker failed`), so they are
  * covered by the rail-contract block below rather than by a byte test.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { OPS } from 'pdfjs-dist';
 import {
   PDFArray,
   PDFDict,
@@ -36,7 +37,7 @@ import {
 import { organizeTools } from '@/lib/pdf/tools/organize';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
-import { pageContentStreams } from '@/lib/pdf/core/content';
+import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 
 /* ── fixtures ─────────────────────────────────────────────────────────────── */
 
@@ -47,6 +48,8 @@ interface SheetSpec {
   rotate?: number;
   /** Paint nothing, for the blank-page tests. */
   empty?: boolean;
+  /** Paint only a raster image, the way a scan looks (no text, no vector ink). */
+  image?: boolean;
 }
 
 /**
@@ -62,6 +65,11 @@ async function sheets(specs: SheetSpec[]): Promise<Uint8Array> {
     const page = doc.addPage([spec.width, spec.height]);
     if (spec.rotate) page.setRotation(degrees(spec.rotate));
     if (spec.empty) continue;
+    if (spec.image) {
+      const scan = await doc.embedJpg(TINY_JPEG);
+      page.drawImage(scan, { x: 0, y: 0, width: spec.width, height: spec.height });
+      continue;
+    }
     page.drawRectangle({ x: 0, y: 0, width: 50, height: spec.height, color: rgb(0, 0, 0) });
     page.drawText(`sheet ${i + 1}`, { x: 60, y: spec.height - 24, size: 12, font, color: rgb(0, 0, 0) });
   }
@@ -224,6 +232,196 @@ async function encrypt(bytes: Uint8Array, password = 'hunter2'): Promise<Uint8Ar
     encrypt: { userPassword: password, ownerPassword: 'owner', version: 4, permissions: {} as never },
   });
 }
+
+/* ── reading the words back out of a file ─────────────────────────────────── */
+
+/** A 1×1 JPEG and PNG: the render double hands out real image bytes. */
+const TINY_JPEG = Uint8Array.from(
+  Buffer.from(
+    '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDL/wAALCAABAAEBAREA/8QAFAABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AmAA/9k=',
+    'base64',
+  ),
+);
+const TINY_PNG = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
+
+/** A dictionary, whether it is inline or behind a reference. */
+function dictOf(doc: PDFDocument, value: unknown): PDFDict | null {
+  const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
+  return resolved instanceof PDFDict ? resolved : null;
+}
+
+/** The strings a content stream shows with `Tj`, `TJ`, `'` or `"`. */
+function shownStrings(content: string): string[] {
+  const decode = (raw: string, hex: boolean): string =>
+    hex
+      ? Buffer.from(raw.length % 2 === 0 ? raw : `${raw}0`, 'hex').toString('latin1')
+      : raw.replace(/\\([()\\])/g, '$1');
+  const out: string[] = [];
+  for (const match of content.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*(?:Tj|'|")/g)) out.push(decode(match[1], false));
+  for (const match of content.matchAll(/<([0-9A-Fa-f\s]*)>\s*(?:Tj|'|")/g)) out.push(decode(match[1].replace(/\s+/g, ''), true));
+  for (const array of content.matchAll(/\[([^\]]*)\]\s*TJ/g)) {
+    for (const piece of array[1].matchAll(/\(((?:[^()\\]|\\.)*)\)|<([0-9A-Fa-f\s]*)>/g)) {
+      out.push(piece[1] !== undefined ? decode(piece[1], false) : decode((piece[2] ?? '').replace(/\s+/g, ''), true));
+    }
+  }
+  return out;
+}
+
+/**
+ * The text a page shows, read out of the saved bytes.
+ *
+ * The imposition tools move a page's words into a form XObject, so the walk
+ * covers the page's own content *and* every form it draws. A tool that quietly
+ * rasterised — while its notes promise the text stays selectable — shows up here
+ * as a page with no words at all.
+ */
+function drawnText(doc: PDFDocument, index: number): string {
+  const page = doc.getPages()[index];
+  if (!page) return '';
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  const walk = (content: string, resources: unknown): void => {
+    parts.push(...shownStrings(content));
+    const forms = dictOf(doc, dictOf(doc, resources)?.get(PDFName.of('XObject')));
+    if (!forms) return;
+    for (const [, value] of forms.entries()) {
+      const key = String(value);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const stream = value instanceof PDFRef ? doc.context.lookup(value) : value;
+      if (!(stream instanceof PDFRawStream)) continue;
+      walk(
+        Buffer.from(streamBytes(stream)).toString('latin1'),
+        stream.dict.get(PDFName.of('Resources')),
+      );
+    }
+  };
+  walk(
+    pageContentStreams(page).map((stream) => Buffer.from(stream.bytes).toString('latin1')).join('\n'),
+    page.node.Resources(),
+  );
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** What each page of a fixture shows, in document order. */
+const pageTexts = (doc: PDFDocument): string[] => doc.getPages().map((_, index) => drawnText(doc, index));
+
+/** The text a PDF string object holds, including the UTF-16BE form. */
+function pdfText(value: unknown): string {
+  const raw = String(value ?? '');
+  const hex = /^<([0-9A-Fa-f\s]*)>$/.exec(raw);
+  if (hex) {
+    const bytes = Buffer.from(hex[1].replace(/\s+/g, ''), 'hex');
+    if (bytes.length >= 2 && bytes.readUInt16BE(0) === 0xfeff) {
+      return Buffer.from(bytes.subarray(2)).swap16().toString('utf16le');
+    }
+    return bytes.toString('latin1');
+  }
+  const literal = /^\(((?:[^()\\]|\\.)*)\)$/.exec(raw);
+  return (literal ? literal[1] : raw).replace(/\\([()\\])/g, '$1');
+}
+
+
+/* ── the pdf.js double ────────────────────────────────────────────────────── */
+
+/**
+ * jsdom cannot boot the pdf.js worker ("Only URLs with a scheme in: file and
+ * data …"), so `openRender` is answered with a session that translates each
+ * page's **real content stream** into the numeric operator ids pdf.js puts on
+ * its display list. `core/blank`, the tool body, the archive writer and the
+ * saved bytes all run for real.
+ *
+ * The operator list deliberately carries no `ops` property, because neither does
+ * pdf.js's — that is the fact the blank-detection regression test rests on.
+ * `renderPage`/`canvasToBlob` stand in for the rasteriser with a real 1×1 image,
+ * since jsdom has no canvas (same shape as `edge-optimize.test.ts`).
+ */
+vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/core/render')>();
+  const { OPS } = await import('pdfjs-dist');
+  const { PDFDocument: Loader } = await import('@maxwbh/pdf-lib');
+  const { pageContentStreams: streams } = await import('@/lib/pdf/core/content');
+  const ids: Record<string, number> = {
+    Tj: OPS.showText,
+    TJ: OPS.showSpacedText,
+    "'": OPS.nextLineShowText,
+    '"': OPS.nextLineSetSpacingShowText,
+    Do: OPS.paintXObject,
+    BI: OPS.beginInlineImage,
+    f: OPS.fill,
+    'f*': OPS.eoFill,
+    B: OPS.fillStroke,
+    'B*': OPS.eoFillStroke,
+    S: OPS.stroke,
+    sh: OPS.shadingFill,
+  };
+  const paintable = new Set<number>(Object.values(ids));
+  return {
+    ...real,
+    openRender: async (bytes: Uint8Array) => {
+      const doc = await Loader.load(bytes, { updateMetadata: false });
+      const lists = doc.getPages().map((page) => {
+        const content = streams(page)
+          .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
+          .join('\n');
+        const fnArray: number[] = [];
+        const argsArray: unknown[] = [];
+        for (const token of content.split(/[\s\n]+/)) {
+          const id = ids[token];
+          if (id === undefined || !paintable.has(id)) continue;
+          fnArray.push(id);
+          argsArray.push(id === OPS.paintXObject || id === OPS.beginInlineImage ? { width: 100, height: 50 } : undefined);
+        }
+        const items = shownStrings(content)
+          .filter((str) => str.trim() !== '')
+          .map((str) => ({ str, transform: [12, 0, 0, 12, 0, 0] }));
+        return { fnArray, argsArray, items };
+      });
+      const numPages = lists.length;
+      return {
+        numPages,
+        page: async (n: number) => ({
+          getViewport: ({ scale = 1 }: { scale?: number }) => ({ width: 200 * scale, height: 100 * scale, scale }),
+          getTextContent: async () => ({ items: lists[n - 1].items, styles: {}, lang: null }),
+          getOperatorList: async () => ({
+            fnArray: lists[n - 1].fnArray,
+            argsArray: lists[n - 1].argsArray,
+            lastChunk: true,
+          }),
+          cleanup: () => {},
+        }),
+        renderPage: async (n: number, scale: number) => ({
+          canvas: {} as HTMLCanvasElement,
+          ctx: {} as CanvasRenderingContext2D,
+          width: Math.round(200 * scale),
+          height: Math.round(100 * scale),
+          unitsPerPixel: 1 / scale,
+          pageNumber: n,
+          cancel: () => {},
+        }),
+        metadata: async () => ({ numPages, fingerprint: 'organize-render-double', formFields: 0 }),
+        attachments: async () => ({}),
+        destroy: async () => {},
+      } as unknown as Awaited<ReturnType<typeof real.openRender>>;
+    },
+  };
+});
+
+vi.mock('@/lib/pdf/core/raster', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/core/raster')>();
+  return {
+    ...real,
+    canvasToBlob: async (_canvas: unknown, format: string) =>
+      new Blob([format === 'png' ? TINY_PNG : TINY_JPEG], {
+        type: format === 'png' ? 'image/png' : 'image/jpeg',
+      }),
+  };
+});
 
 /* ── the rail contract: E15, E18, E20 before the click ───────────────────── */
 
@@ -638,7 +836,7 @@ describe('empty results are reported, not downloaded', () => {
   it('bounds the back-side offset to what the scan can hold (E15)', async () => {
     const source = fileOf(await sheets(grid(6)), 'six.pdf');
     const outcome = await run('duplex-collate', { offset: 5 }, [source]);
-    expect(warn(outcome)).toMatch(/back-side page offset must be between 0 and 3: 5 became 3/i);
+    expect(warn(outcome)).toMatch(/back-side page offset must be between 0 and 3 pages: 5 became 3/i);
   });
 
   it('tells you when the stamp ran out of pages (E6)', async () => {
@@ -699,15 +897,15 @@ describe('compromises reach the result card', () => {
       await sheets(Array.from({ length: 6 }, (_, i) => ({ width: 150 + i * 10, height: 100 }))),
       'six.pdf',
     );
-    const outcome = await run('booklet', { sheetSize: 'a4', landscape: true, blankFill: false }, [source]);
+    const outcome = await run('booklet', { sheetSize: 'a4', landscape: true }, [source]);
     const doc = await open(await bytesOf(outcome));
-    // 6 pages → 8 cells → 2 physical sheets, printed on both sides: four PDF
-    // pages of two cells each, and none of the 6 source pages may go missing.
+    // 6 pages → 8 cells → 4 PDF pages of two cells each, which is 2 physical
+    // sheets printed duplex, and none of the 6 source pages may go missing.
     expect(doc.getPageCount()).toBe(4);
     const seen = doc.getPages().flatMap((_, index) => stampsOf(doc, index).map((stamp) => stamp.bbox.join(' ')));
     expect(new Set(seen).size).toBe(6);
-    expect(outcome.message).toMatch(/with 2 pages added/i);
-    expect(warn(outcome)).toMatch(/whole sheets.*blank pages were switched off/i);
+    expect(outcome.message).toMatch(/4 printed sides on 2 double-sided sheets with 2 pages added/i);
+    expect(warn(outcome)).toMatch(/sheets of four, so 2 pages were padded in to complete the last sheet/i);
   });
 
   it('says when the PDF height limit cuts or splits the scroll (E12)', async () => {
@@ -742,5 +940,384 @@ describe('compromises reach the result card', () => {
     expect(deleted.message).toBe('Removed 1 page, kept 3 pages.');
     const rotated = await run('rotate', { degrees: 180, pages: '1,4' });
     expect(rotated.message).toBe('Rotated 2 pages by 180°, left 2 pages alone.');
+  });
+});
+
+/* ── every tool measured on the bytes it wrote ────────────────────────────── */
+
+/**
+ * The bar this block exists to hold: each organize tool runs on a real document
+ * and the assertion is about the file that comes back — page count, page sizes,
+ * rotation values, the order the words appear in, the image bytes in an archive.
+ * A tool whose sentence is right and whose file is wrong fails here.
+ */
+describe('each tool is checked against its own output file', () => {
+  it('extract-pages writes the pages it was asked for, in the order typed', async () => {
+    const merged = await run('extract-pages', { pages: '3,1', mergeIntoOne: true });
+    const doc = await open(await bytesOf(merged));
+    expect(pageTexts(doc)).toEqual(['sheet 3', 'sheet 1']);
+
+    const separate = await run('extract-pages', { pages: '1,3', mergeIntoOne: false });
+    expect(separate.outputs.map((output) => output.name)).toEqual([
+      'fixture_page-1.pdf',
+      'fixture_page-3.pdf',
+    ]);
+    const each: string[] = [];
+    for (const output of separate.outputs) {
+      const one = await open(new Uint8Array(await output.blob.arrayBuffer()));
+      expect(one.getPageCount()).toBe(1);
+      each.push(drawnText(one, 0));
+    }
+    expect(each).toEqual(['sheet 1', 'sheet 3']);
+  });
+
+  it('remove-pages takes out the sheet it names and leaves the rest in order', async () => {
+    const outcome = await run('remove-pages', { pages: '2' });
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 3', 'sheet 4']);
+  });
+
+  it('reverse-pages hands back the last sheet first', async () => {
+    const outcome = await run('reverse-pages');
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 4', 'sheet 3', 'sheet 2', 'sheet 1']);
+  });
+
+  it('organize writes the order, rotation and blanks the plan describes', async () => {
+    const outcome = await run('organize', { pageOrder: '3, 1, blank' });
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(3);
+    expect(drawnText(doc, 0)).toBe('sheet 3');
+    expect(drawnText(doc, 1)).toBe('sheet 1');
+    expect(drawnText(doc, 2), 'the planned blank sheet must hold nothing').toBe('');
+    // The blank borrows the size of the sheet before it (E8).
+    expect(doc.getPage(2).getSize()).toEqual(doc.getPage(1).getSize());
+  });
+
+  it('alternate-merge interleaves, and reverses only the later files', async () => {
+    const a = fileOf(await sheets(grid(3)), 'a.pdf');
+    const b = fileOf(await sheets(grid(3)), 'b.pdf');
+
+    const oneOne = await open(await bytesOf(await run('alternate-merge', { pattern: '1-1' }, [a, b])));
+    expect(oneOne.getPageCount()).toBe(6);
+
+    // Both files say "sheet 1..3", so the order is read from their sizes:
+    // `a` is 200 × 100 and `b` is built 300 × 100 wide below.
+    const wide = fileOf(
+      await sheets(Array.from({ length: 3 }, () => ({ width: 300, height: 100 }))),
+      'b.pdf',
+    );
+    const size = (doc: PDFDocument) => doc.getPages().map((page) => Math.round(page.getWidth()));
+
+    expect(size(oneOne)).toEqual([200, 200, 200, 200, 200, 200]);
+    const pair = await open(await bytesOf(await run('alternate-merge', { pattern: '1-1' }, [a, wide])));
+    expect(size(pair)).toEqual([200, 300, 200, 300, 200, 300]);
+
+    const twoTwo = await open(await bytesOf(await run('alternate-merge', { pattern: '2-2' }, [a, wide])));
+    expect(size(twoTwo)).toEqual([200, 200, 300, 300, 200, 300]);
+
+    // The option says "later files reversed": the first file keeps its order.
+    const turned = await open(await bytesOf(await run('alternate-merge', { pattern: 'reverse-alternate' }, [a, wide])));
+    expect(size(turned)).toEqual([200, 300, 200, 300, 200, 300]);
+    const turnedTexts = turned.getPages().map((_, index) => drawnText(turned, index));
+    expect(turnedTexts[0], 'the front block must start at its own page 1').toBe('sheet 1');
+    expect(turnedTexts[1], 'the back block starts at the last page of the later file').toBe('sheet 3');
+  });
+
+  it('duplex-collate places each back page beside its own front page', async () => {
+    const outcome = await run('duplex-collate', { backReversed: true, offset: 0 });
+    const doc = await open(await bytesOf(outcome));
+    // 4 pages: fronts 1,2 and backs 4,3 → sheets 1|4 and 2|3.
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 4', 'sheet 2', 'sheet 3']);
+  });
+
+  it('posterize keeps every tile at one scale and overlaps its neighbour', async () => {
+    const one = fileOf(await sheets([{ width: 200, height: 100 }]), 'one.pdf');
+    const outcome = await run('posterize', { columns: 2, rows: 2, bleed: 10, pages: 'all' }, [one]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(4);
+    for (const page of doc.getPages()) {
+      expect(page.getSize()).toEqual({ width: 110, height: 60 });
+    }
+    // Each sheet is the tile plus 10 pt taken from the sheet before it, so the
+    // cut lines meet. `/BBox` is `[left, bottom, right, top]` in the source
+    // page's own space: x 0-110 / 90-200 and y 40-100 / 0-60.
+    const boxes = doc.getPages().map((_, index) => stampsOf(doc, index)[0].bbox);
+    expect(boxes).toEqual([
+      [0, 40, 110, 100],
+      [90, 40, 200, 100],
+      [0, 0, 110, 60],
+      [90, 0, 200, 60],
+    ]);
+    // …and nothing is magnified to fill the sheet, which is what used to make the
+    // edge tiles print bigger than the middle ones.
+    for (const [index, source] of boxes.entries()) {
+      const stamp = stampsOf(doc, index)[0];
+      const region = [source[0], source[1], source[2] - source[0], source[3] - source[1]] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      const box = mappedBox(stamp, region);
+      expect(box.width, `tile ${index} must be drawn at its own scale`).toBeCloseTo(region[2], 3);
+      expect(box.height, `tile ${index} must be drawn at its own scale`).toBeCloseTo(region[3], 3);
+    }
+  });
+
+  it('divide-pages writes the count of pieces the sentence reports', async () => {
+    const outcome = await run('divide-pages', { axis: 'grid', columns: 2, rows: 2, pages: 'all' });
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(16);
+    expect(outcome.message).toBe('Divided 4 pages into 16 pages.');
+    // Quarter of a 200 × 100 sheet: 100 × 50, and the words survive the cut.
+    for (const page of doc.getPages()) expect(page.getSize()).toEqual({ width: 100, height: 50 });
+    expect(drawnText(doc, 0)).toContain('sheet 1');
+    expect(drawnText(doc, 8)).toContain('sheet 3');
+  });
+
+  it('fix-page-size resizes the chosen pages and carries the others through', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 400, height: 300 },
+        { width: 200, height: 100 },
+      ]),
+      'mixed.pdf',
+    );
+    const outcome = await run('fix-page-size', { size: 'a4', orientation: 'keep', fit: 'contain', pages: '2' }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    // The pages that were not picked are not pages to delete (E13).
+    expect(doc.getPageCount()).toBe(3);
+    expect(doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())])).toEqual([
+      [200, 100],
+      [595, 842],
+      [200, 100],
+    ]);
+    expect(warn(outcome)).toMatch(/2 pages you did not select were copied through at their own size/i);
+    expect(outcome.message).toMatch(/Normalised 1 page to 595 × 842 pt.*carried 2 pages over unchanged/i);
+  });
+
+  it('fix-page-size says so when the selection already matches the target', async () => {
+    const letter = fileOf(
+      await sheets(Array.from({ length: 3 }, () => ({ width: 612, height: 792 }))),
+      'letter.pdf',
+    );
+    const outcome = await run('fix-page-size', { size: 'letter', orientation: 'keep', fit: 'contain' }, [letter]);
+    expect(warn(outcome)).toMatch(/already 612 × 792 pt, so only the rebuild changed/i);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(3);
+    expect(outcome.message).toMatch(/Every selected page already matched 612 × 792 pt/i);
+  });
+
+  it('add-blank-page puts an empty sheet where it was told', async () => {
+    const source = fileOf(await sheets(grid(3)), 'three.pdf');
+    const start = await open(await bytesOf(await run('add-blank-page', { position: 'start', count: 2, size: 'same' }, [source])));
+    expect(start.getPageCount()).toBe(5);
+    expect([drawnText(start, 0), drawnText(start, 1)]).toEqual(['', '']);
+    expect(drawnText(start, 2)).toBe('sheet 1');
+
+    const before = await open(await bytesOf(await run('add-blank-page', { position: 'before', anchor: 2, count: 1, size: 'letter' }, [source])));
+    expect(before.getPages().map((page) => Math.round(page.getWidth()))).toEqual([200, 612, 200, 200]);
+    // The named sheet was not overwritten on the way (E13).
+    expect(pageTexts(before)).toEqual(['sheet 1', '', 'sheet 2', 'sheet 3']);
+  });
+
+  it('overlay fits the stamp to the base sheet rather than to its own size', async () => {
+    const base = fileOf(await sheets([{ width: 200, height: 100 }]), 'base.pdf');
+    const stamp = fileOf(await sheets([{ width: 400, height: 100 }]), 'stamp.pdf');
+    const outcome = await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(1);
+    const drawn = mappedBox(stampsOf(doc, 0)[0], [0, 0, 400, 100]);
+    // 1× means "cover the base page": the 400 × 100 stamp lands 200 × 50 inside
+    // it, which is what the field's help now says.
+    expect(drawn.width).toBeCloseTo(200, 3);
+    expect(drawn.height).toBeCloseTo(50, 3);
+    expect(drawn.x).toBeCloseTo(0, 3);
+  });
+
+  it('overlay says when the stamp file has pages the base will never reach', async () => {
+    const base = fileOf(await sheets(grid(1)), 'base.pdf');
+    const stamp = fileOf(await sheets(grid(3)), 'stamp.pdf');
+    const outcome = await run('overlay-pdf', { mode: 'overlay', mapping: 'same', opacity: 1, scale: 1 }, [base, stamp]);
+    expect(warn(outcome)).toMatch(/stamp pages 2-3 were never used/i);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(1);
+  });
+
+  it('n-up lays the pages on one sheet and keeps them as text', async () => {
+    const outcome = await run('n-up', { perSheet: 4, sheetSize: 'a4', landscape: false, gutter: 0, margin: 0, pages: 'all' });
+    const bytes = await bytesOf(outcome);
+    const doc = await open(bytes);
+    expect(doc.getPageCount()).toBe(1);
+    expect(text(bytes)).not.toMatch(/\/Subtype\s*\/Image/, 'N-up must not rasterise');
+    // All four sheets are still words in the file, just smaller and moved.
+    for (const label of ['sheet 1', 'sheet 2', 'sheet 3', 'sheet 4']) {
+      expect(drawnText(doc, 0)).toContain(label);
+    }
+    expect(stampsOf(doc, 0)).toHaveLength(4);
+  });
+
+  it('combine-single-page stacks the sheets into one long page', async () => {
+    const outcome = await run('combine-single-page', { gap: 0, width: 'widest', splitOverflow: true, pages: 'all' });
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(1);
+    const page = doc.getPage(0);
+    expect(Math.round(page.getWidth())).toBe(200);
+    // Four 200 × 100 sheets, one after another, is 400 pt of content on a
+    // 400 pt sheet — and every word is still in the file.
+    expect(Math.round(page.getHeight())).toBe(400);
+    for (const label of ['sheet 1', 'sheet 4']) expect(drawnText(doc, 0)).toContain(label);
+  });
+
+  it('split by page writes one real file per sheet', async () => {
+    const outcome = await run('split', { mode: 'every' });
+    expect(outcome.outputs).toHaveLength(4);
+    const texts: string[] = [];
+    for (const output of outcome.outputs) {
+      const doc = await open(new Uint8Array(await output.blob.arrayBuffer()));
+      expect(doc.getPageCount()).toBe(1);
+      texts.push(drawnText(doc, 0));
+    }
+    expect(texts).toEqual(['sheet 1', 'sheet 2', 'sheet 3', 'sheet 4']);
+    expect(outcome.outputs.map((output) => output.name)).toEqual([
+      'fixture_page-1.pdf',
+      'fixture_page-2.pdf',
+      'fixture_page-3.pdf',
+      'fixture_page-4.pdf',
+    ]);
+  });
+
+  it('pdfs-to-zip stores the files byte for byte', async () => {
+    const a = fileOf(await sheets(grid(2)), 'first.pdf');
+    const b = fileOf(await sheets(grid(2)), 'second.pdf');
+    const outcome = await run('pdfs-to-zip', { includeReport: true }, [a, b]);
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    expect(Object.keys(zip.files).sort()).toEqual(['first.pdf', 'manifest.txt', 'second.pdf']);
+    for (const [name, file] of [['first.pdf', a], ['second.pdf', b]] as [string, File][]) {
+      const stored = await zip.file(name)!.async('uint8array');
+      expect(Buffer.from(stored).equals(Buffer.from(new Uint8Array(await file.arrayBuffer())))).toBe(true);
+    }
+    const manifest = await zip.file('manifest.txt')!.async('string');
+    expect(manifest).toMatch(/first\.pdf — 2 pages —/);
+  });
+
+  it('remove-blank-pages drops the sheet that paints nothing', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 200, height: 100, empty: true },
+        { width: 300, height: 150 },
+      ]),
+      'scan.pdf',
+    );
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 3']);
+    expect(outcome.message).toMatch(/Removed 1 page \(2\), kept 2 pages/i);
+  });
+
+  it('remove-blank-pages treats a scanned sheet as ink, not as blank', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 300, height: 150, image: true },
+        { width: 200, height: 100, empty: true },
+      ]),
+      'scan.pdf',
+    );
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    // The scan carries no text at all: if the display list were unread, this is
+    // the page that would have been thrown away.
+    expect(doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())])).toEqual([[300, 150]]);
+  });
+
+  it('remove-blank-pages keeps a document whose pages all have content', async () => {
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true });
+    expect(outcome.message).toMatch(/No blank pages were found in 4 pages — nothing was removed/i);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(4);
+  });
+
+  it('remove-blank-pages refuses a file that is nothing but blanks', async () => {
+    const source = fileOf(await sheets(grid(2, { empty: true })), 'blank.pdf');
+    await expect(run('remove-blank-pages', { keepAnnotated: true }, [source])).rejects.toThrow(
+      /look blank, and deleting every one/i,
+    );
+  });
+
+  it('pdf-to-cbz archives the pages it was given, as real images', async () => {
+    const source = fileOf(await sheets(grid(4)), 'comic.pdf');
+    const outcome = await run('pdf-to-cbz', { format: 'png', dpi: 96, pages: '2-4' }, [source]);
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const entries = Object.keys(zip.files).sort();
+    // Three sheets, not the whole document, numbered in reading order. The
+    // archive layer flattens `/` in entry names, so the tool names them flat.
+    expect(entries).toEqual(['comic-001.png', 'comic-002.png', 'comic-003.png']);
+    for (const entry of entries) {
+      const bytes = await zip.file(entry)!.async('uint8array');
+      expect([...bytes.slice(0, 4)], `${entry} is not a PNG`).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    }
+    expect(outcome.outputs[0].name).toBe('comic.cbz');
+  });
+
+  it('a spaced page range selects the pages it names, not the document (E15)', async () => {
+    const outcome = await run('extract-pages', { pages: '1 - 2', mergeIntoOne: true });
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 2']);
+
+    await expect(run('extract-pages', { pages: '-', mergeIntoOne: true })).rejects.toThrow(
+      /range with no page numbers/i,
+    );
+  });
+
+  it('merge writes a bookmark that lands on each file’s own first page', async () => {
+    const a = fileOf(await sheets(grid(2)), 'a.pdf');
+    const b = fileOf(await sheets([{ width: 300, height: 100 }]), 'b.pdf');
+    const outcome = await run('merge', { bookmarks: true }, [a, b]);
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 2', 'sheet 1']);
+
+    const outlines = dictOf(doc, doc.catalog.get(PDFName.of('Outlines')));
+    expect(outlines, 'merge should have written an outline').not.toBeNull();
+    const refs = doc.getPages().map((page) => String(page.ref));
+    const titles: [string, number][] = [];
+    let item = dictOf(doc, outlines!.get(PDFName.of('First')));
+    for (let guard = 0; item && guard < 10; guard++) {
+      const dest = doc.context.lookup(item.get(PDFName.of('Dest')));
+      const target = dest instanceof PDFArray ? String(dest.get(0)) : '';
+      titles.push([pdfText(item.get(PDFName.of('Title'))), refs.indexOf(target)]);
+      item = dictOf(doc, item.get(PDFName.of('Next')));
+    }
+    expect(titles.map(([title]) => title)).toEqual(['a.pdf', 'b.pdf']);
+    expect(titles.map(([, page]) => page)).toEqual([0, 2]);
+  });
+
+  it('merge leaves the form field list behind, as its note says', async () => {
+    const withForm = await PDFDocument.create();
+    const page = withForm.addPage([200, 100]);
+    withForm.getForm().createTextField('answer').addToPage(page, { x: 20, y: 40, width: 80, height: 20 });
+    const form = fileOf(await withForm.save({ useObjectStreams: false }), 'form.pdf');
+    const plain = fileOf(await sheets(grid(1)), 'plain.pdf');
+
+    const outcome = await run('merge', {}, [form, plain]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(2);
+    // The widget annotation is still on the page, but the catalogue's /AcroForm
+    // is gone — which is why PAGE_COPY_NOTE says a form stops being editable
+    // rather than claiming form fields travel intact.
+    const annots = doc.getPages().map((leaf) => {
+      const array = doc.context.lookup(leaf.node.get(PDFName.of('Annots')), PDFArray);
+      return array instanceof PDFArray ? array.size() : 0;
+    });
+    expect(annots).toEqual([1, 0]);
+    expect(doc.catalog.get(PDFName.of('AcroForm')), 'the field list should be gone').toBeUndefined();
+
+    const notes = (getPdfTool('merge')?.notes ?? []).join(' ');
+    expect(notes).toMatch(/form/i);
+    expect(notes).not.toMatch(/form fields travel|form fields inside them keep working/i);
   });
 });

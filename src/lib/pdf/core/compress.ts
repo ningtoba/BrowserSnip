@@ -7,10 +7,19 @@
  * colour space and soft mask, only touches images that are actually larger
  * than they need to be, and guarantees it never returns a file bigger than the
  * input — the property BentoPDF advertises for its own engine.
+ *
+ * Two paths that looked like this and were not: re-encoding wrote PNG bytes
+ * under a `/FlateDecode` filter (a PNG container is not a deflate stream of
+ * samples, and PDF images have no alpha channel to put it in), and downsampling
+ * used `putImageData`, which copies pixels without resampling — so a scan asked
+ * for at 150 dpi came back as the top-left quarter of itself. Both live in
+ * `recompressImage`, and `tests/pdf/optimize-bytes.test.ts` measures the bytes
+ * they produce.
  */
 import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray } from './doc';
 import type { PDFDocument } from './doc';
 import { openPDF, savePDF, toBytes } from './doc';
+import { pageContentOps } from './content';
 import { canvasContext2d } from './raster';
 import { formatBytes } from '@/lib/utils/format';
 
@@ -155,7 +164,19 @@ async function runCompression(
     undecodable: 0,
   };
 
-  if (settings.resample || settings.quality < 0.95) {
+  // A browser with no 2D canvas cannot decode or re-encode a picture at all.
+  // Asking it 200 times produced 200 failures and a report that read as though
+  // the images had simply refused to shrink (E14, and E20 for the platform
+  // rather than for an engine).
+  const raster = settings.resample || settings.quality < 0.95;
+  const canRasterise = images.length === 0 || !raster || canDrawImages();
+  if (raster && !canRasterise) {
+    result.skipped = images.length;
+    notes.push(
+      `This browser cannot re-encode images, so all ${images.length} image${images.length === 1 ? '' : 's'} are byte-for-byte the originals and only the file structure was rebuilt.`,
+    );
+  }
+  if (raster && canRasterise) {
     for (let i = 0; i < images.length; i++) {
       if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
       const image = images[i];
@@ -171,7 +192,14 @@ async function runCompression(
   }
 
   if (options.grayscale) {
-    notes.push('Colour images were converted to greyscale.');
+    // Only claim the pixels changed if something actually reached a canvas:
+    // lossless mode re-encodes nothing, and a browser without a 2D context
+    // re-encodes nothing either, but both used to report a greyscale pass.
+    notes.push(
+      result.replaced > 0
+        ? `${result.replaced} image${result.replaced === 1 ? '' : 's'} re-encoded as greyscale.`
+        : 'Greyscale was asked for, but no image was re-encoded, so every colour in the file is unchanged.',
+    );
   }
   if (options.stripMetadata) {
     stripDocumentMetadata(doc);
@@ -185,7 +213,6 @@ async function runCompression(
   if (!settings.resample) {
     notes.push('Lossless mode: no image was resampled or re-encoded.');
   }
-
   const bytes = await savePDF(doc, { useObjectStreams: true });
   options.onProgress?.(1, 'Writing the compressed file');
 
@@ -227,7 +254,12 @@ async function compressToTarget(
       dpi: COMPRESSION_PRESETS[preset].dpi,
       resample: COMPRESSION_PRESETS[preset].resample,
     });
-    best = attempt;
+    // The *closest* attempt, not simply the last one. A harder rung can come back
+    // larger — a masked logo that only survives as PNG, an image that stops being
+    // worth re-encoding — and the tool promises to "stop with the closest attempt
+    // when it cannot", so handing back rung five because it ran last would be a
+    // claim about the loop rather than about the bytes (E14).
+    if (!best || attempt.bytes.byteLength < best.bytes.byteLength) best = attempt;
     options.onProgress?.((i + 1) / TARGET_LADDER.length, `${preset} preset → ${(attempt.bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
     if (attempt.bytes.byteLength <= target) {
       attempt.report.notes.unshift(
@@ -256,13 +288,20 @@ interface ImageRef {
 /**
  * Walk every page's `/Resources /XObject` map. Images are de-duplicated by
  * reference so a logo used on 200 pages is re-encoded once.
+ *
+ * The display box comes from `displayedImageBoxes`, not from `/Width`: effective
+ * resolution is pixels over the size on the page, and reading the pixel width
+ * back out again made every image exactly 72 dpi — so "maximum image
+ * resolution" never downsampled anything, and a 300 dpi scan stayed a 300 dpi
+ * scan while the report said the dpi cap had been applied.
  */
 async function collectImages(doc: PDFDocument): Promise<ImageRef[]> {
+  const boxes = displayedImageBoxes(doc);
   const byRef = new Map<string, ImageRef>();
   for (const page of doc.getPages()) {
-    const resources = readDict(page.node.Resources?.());
+    const resources = readDict(page.node.Resources?.(), doc);
     if (!resources) continue;
-    const xobjects = readDict(resources.get(PDFName.of('XObject')));
+    const xobjects = readDict(resources.get(PDFName.of('XObject')), doc);
     if (!xobjects) continue;
     for (const [, value] of xobjects.entries()) {
       const ref = value instanceof PDFRef ? value : null;
@@ -274,22 +313,102 @@ async function collectImages(doc: PDFDocument): Promise<ImageRef[]> {
       const key = `${ref.toString()}`;
       const existing = byRef.get(key);
       if (existing) continue;
+      const box = boxes.get(key);
       byRef.set(key, {
         ref,
         dict,
-        displayWidth: Number(readNumber(dict, 'Width')) || 0,
-        displayHeight: Number(readNumber(dict, 'Height')) || 0,
+        displayWidth: box?.width ?? 0,
+        displayHeight: box?.height ?? 0,
       });
     }
   }
   return [...byRef.values()];
 }
 
-function readDict(value: unknown): PDFDict | null {
-  const resolved = value as { maybe?: unknown };
-  if (resolved instanceof PDFDict) return resolved;
-  if (value instanceof PDFRef) {
-    return null; // callers resolve through the document context
+type Matrix = [number, number, number, number, number, number];
+
+const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
+
+function multiplyMatrix(a: Matrix, b: Matrix): Matrix {
+  return [
+    a[0] * b[0] + a[2] * b[1],
+    a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3],
+    a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4],
+    a[1] * b[4] + a[3] * b[5] + a[5],
+  ];
+}
+
+/**
+ * The box, in points, each image XObject is painted into, by reference string.
+ *
+ * A page draws an image as `[w 0 0 h x y] cm /Im1 Do` after any number of `q` /
+ * `cm` / `Q` pairs, so the honest measure of "how big is this on the page" is
+ * the unit square through the CTM that was current when `Do` ran. The widest
+ * placement wins: an image used once at poster size and once as a thumbnail has
+ * to keep enough pixels for the poster. Inline images (`BI … EI`) need no
+ * lookup and are not in this map.
+ *
+ * Only page-level resources are walked, which is what `collectImages` encodes;
+ * a picture buried in a Form XObject is neither found nor resized here.
+ */
+function displayedImageBoxes(doc: PDFDocument): Map<string, { width: number; height: number }> {
+  const boxes = new Map<string, { width: number; height: number }>();
+  for (const page of doc.getPages()) {
+    const resources = readDict(page.node.Resources?.(), doc);
+    const xobjects = readDict(resources?.get(PDFName.of('XObject')), doc);
+    if (!xobjects) continue;
+    const byName = new Map<string, string>();
+    for (const [key, value] of xobjects.entries()) {
+      if (!(value instanceof PDFRef)) continue;
+      byName.set(String(key).replace(/^\//, ''), value.toString());
+    }
+    let ops;
+    try {
+      ops = pageContentOps(page);
+    } catch {
+      // A content stream this parser cannot read simply reports no placement, and
+      // the image keeps its own resolution rather than being guessed smaller.
+      continue;
+    }
+    let ctm = IDENTITY_MATRIX;
+    const stack: Matrix[] = [];
+    for (const op of ops) {
+      if (op.name === 'q') {
+        stack.push(ctm);
+      } else if (op.name === 'Q') {
+        ctm = stack.pop() ?? IDENTITY_MATRIX;
+      } else if (op.name === 'cm') {
+        const values = op.operands.filter((item) => item.kind === 'number').map((item) => (item as { value: number }).value);
+        if (values.length === 6) ctm = multiplyMatrix(values as Matrix, ctm);
+      } else if (op.name === 'Do') {
+        const name = op.operands.find((item) => item.kind === 'name') as { value?: string } | undefined;
+        const key = name?.value ? byName.get(name.value) : undefined;
+        if (!key) continue;
+        const corners = [
+          [ctm[4], ctm[5]],
+          [ctm[0] + ctm[4], ctm[1] + ctm[5]],
+          [ctm[2] + ctm[4], ctm[3] + ctm[5]],
+          [ctm[0] + ctm[2] + ctm[4], ctm[1] + ctm[3] + ctm[5]],
+        ];
+        const width = Math.abs(Math.max(...corners.map((c) => c[0])) - Math.min(...corners.map((c) => c[0])));
+        const height = Math.abs(Math.max(...corners.map((c) => c[1])) - Math.min(...corners.map((c) => c[1])));
+        const seen = boxes.get(key);
+        if (!seen || width * height > seen.width * seen.height) boxes.set(key, { width, height });
+      }
+    }
+  }
+  return boxes;
+}
+
+function readDict(value: unknown, doc?: PDFDocument): PDFDict | null {
+  if (value instanceof PDFDict) return value;
+  // A dictionary may be stored behind a reference, which `PDFPageLeaf`'s own
+  // accessors resolve but a plain `dict.get` does not.
+  if (value instanceof PDFRef && doc) {
+    const resolved = doc.context.lookup(value);
+    return resolved instanceof PDFDict ? resolved : null;
   }
   return null;
 }
@@ -310,6 +429,28 @@ function readNumber(dict: PDFDict, key: string): number | null {
 // ── image re-encoding ───────────────────────────────────────────────────────
 
 type RecompressOutcome = 'undecodable' | 'skipped' | number;
+
+/**
+ * Can this browser put pixels on a canvas and take them back out again?
+ *
+ * Probed once per document rather than per image: `getImageData` and `toBlob`
+ * both fail without the optional `canvas` package (this repo's own test
+ * environment), and an image that cannot be drawn cannot be re-encoded — a
+ * 200-image scan should say so in one sentence, not fail 200 times and report
+ * that the images merely refused to shrink.
+ */
+function canDrawImages(): boolean {
+  try {
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    const ctx = canvasContext2d(probe);
+    ctx.getImageData(0, 0, 1, 1);
+    return typeof probe.toBlob === 'function';
+  } catch {
+    return false;
+  }
+}
 
 async function recompressImage(
   doc: PDFDocument,
@@ -342,45 +483,59 @@ async function recompressImage(
     return 'skipped';
   }
 
+  // Full size first, then one scaled draw. `putImageData` copies a rectangle of
+  // pixels without resampling and clips it to the canvas, so painting a 2480 px
+  // scan straight into the 1240 px canvas used to keep its top-left quarter and
+  // call that "downsampled to 150 dpi": a silent crop of the user's page, with
+  // the bottom half of every line of text gone. `drawImage` is the operator that
+  // resamples.
+  const full = document.createElement('canvas');
+  full.width = width;
+  full.height = height;
+  canvasContext2d(full).putImageData(decoded.imageData, 0, 0);
+
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
   canvas.height = targetHeight;
   const ctx = canvasContext2d(canvas);
+  if (decoded.hasAlpha) {
+    // Paper, not ink, underneath: the soft mask is kept as it stands, so any
+    // pixel it fully hides is invisible either way, but a *partly* transparent
+    // edge (an anti-aliased logo) blends with whatever is underneath it. Left
+    // unfilled, those pixels composite to black and the logo grows a dark halo.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+  }
+  ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.putImageData(decoded.imageData, 0, 0, 0, 0, targetWidth, targetHeight);
-  if (scale < 0.99) {
-    const shrunk = document.createElement('canvas');
-    shrunk.width = targetWidth;
-    shrunk.height = targetHeight;
-    const shrinkCtx = canvasContext2d(shrunk);
-    shrinkCtx.imageSmoothingEnabled = true;
-    shrinkCtx.imageSmoothingQuality = 'high';
-    if (options.grayscale) shrinkCtx.filter = 'grayscale(1)';
-    shrinkCtx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    canvasContext2d(canvas).drawImage(shrunk, 0, 0);
-  } else if (options.grayscale) {
+  ctx.drawImage(full, 0, 0, targetWidth, targetHeight);
+  if (options.grayscale) {
     const grey = document.createElement('canvas');
     grey.width = targetWidth;
     grey.height = targetHeight;
     const greyCtx = canvasContext2d(grey);
     greyCtx.filter = 'grayscale(1)';
     greyCtx.drawImage(canvas, 0, 0);
-    canvasContext2d(canvas).clearRect(0, 0, canvas.width, canvas.height);
-    canvasContext2d(canvas).drawImage(grey, 0, 0);
+    const back = canvasContext2d(canvas);
+    back.clearRect(0, 0, canvas.width, canvas.height);
+    back.drawImage(grey, 0, 0);
   }
 
-  const keepAlpha = (options.keepTransparency ?? true) && decoded.hasAlpha;
-  const encoded = await encodeCanvas(canvas, keepAlpha ? 'png' : 'jpeg', settings.quality);
+  // JPEG for the picture, the file's own `/SMask` for the transparency.
+  // A PDF image has no alpha channel of its own, so the PNG bytes this used to
+  // write — labelled `/FlateDecode`, which a PNG container is not — either lost
+  // the mask or failed to decode at all, and the loss happened whether or not
+  // the user asked to keep transparency. Dropping the mask is now what
+  // `keepTransparency: false` actually does.
+  const encoded = await encodeCanvas(canvas, settings.quality);
   if (!encoded) return 'undecodable';
-  if (encoded.bytes.byteLength >= originalBytes.byteLength) {
+  if (encoded.byteLength >= originalBytes.byteLength) {
     // Re-encoding made it bigger (common for small icons and flat graphics).
     return 'skipped';
   }
 
-  applyImageStream(doc, image, encoded, { width: targetWidth, height: targetHeight });
-  return originalBytes.byteLength - encoded.bytes.byteLength;
+  applyImageStream(doc, image, encoded, { width: targetWidth, height: targetHeight }, options.keepTransparency ?? true);
+  return originalBytes.byteLength - encoded.byteLength;
 }
 
 interface DecodedRaster {
@@ -578,26 +733,32 @@ function jpegQualityOf(bytes: Uint8Array): number {
   return 0;
 }
 
+/** Encode the re-drawn picture; `null` when this browser will not produce a JPEG. */
 async function encodeCanvas(
   canvas: HTMLCanvasElement,
-  format: 'png' | 'jpeg',
   quality: number,
-): Promise<{ bytes: Uint8Array; filter: 'DCTDecode' | 'FlateDecode' } | null> {
-  const mime = format === 'png' ? 'image/png' : 'image/jpeg';
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, quality));
+): Promise<Uint8Array | null> {
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', quality),
+  );
   if (!blob) return null;
-  return {
-    bytes: new Uint8Array(await blob.arrayBuffer()),
-    filter: format === 'png' ? 'FlateDecode' : 'DCTDecode',
-  };
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** Replace an image XObject in place, preserving colour space and soft mask. */
+/**
+ * Replace an image XObject in place, keeping its colour space and — when asked
+ * — its soft mask.
+ *
+ * The mask reference is copied rather than re-encoded: its own resolution may
+ * differ from the picture's, which PDF allows and readers scale, so downsizing
+ * the image does not have to downsize the alpha.
+ */
 function applyImageStream(
   doc: PDFDocument,
   image: ImageRef,
-  encoded: { bytes: Uint8Array; filter: 'DCTDecode' | 'FlateDecode' },
+  encoded: Uint8Array,
   size: { width: number; height: number },
+  keepTransparency: boolean,
 ): void {
   const dictionary = doc.context.obj({
     Type: 'XObject',
@@ -605,17 +766,22 @@ function applyImageStream(
     Width: size.width,
     Height: size.height,
     BitsPerComponent: 8,
-    ColorSpace: readName(image.dict, 'ColorSpace') === 'DeviceGray' ? 'DeviceGray' : encoded.filter === 'FlateDecode' ? 'DeviceRGB' : readColorSpaceName(image.dict),
-    Filter: encoded.filter,
+    ColorSpace:
+      readName(image.dict, 'ColorSpace') === 'DeviceGray' ? 'DeviceGray' : readColorSpaceName(image.dict),
+    Filter: 'DCTDecode',
   });
-  const smaskRef = readReference(image.dict, 'SMask', doc);
-  if (encoded.filter === 'DCTDecode' && smaskRef) {
-    // JPEG has no alpha: keep the existing soft mask and rescale its geometry
-    // by rewriting the display CTM-independent size fields only.
-    dictionary.set(PDFName.of('SMask'), smaskRef);
+  if (keepTransparency) {
+    const mask = image.dict.get(PDFName.of('SMask'));
+    // A mask is nearly always indirect; the spec also allows the stream object
+    // itself, which `context.lookup` cannot answer for, so it is registered.
+    const ref = mask instanceof PDFRef
+      ? mask
+      : mask instanceof PDFRawStream
+        ? doc.context.register(mask)
+        : null;
+    if (ref) dictionary.set(PDFName.of('SMask'), ref);
   }
-  const stream = PDFRawStream.of(dictionary, encoded.bytes);
-  doc.context.assign(image.ref, stream);
+  doc.context.assign(image.ref, PDFRawStream.of(dictionary, encoded));
 }
 
 function readColorSpaceName(dict: PDFDict): string {

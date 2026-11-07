@@ -6,6 +6,7 @@
  * a page holding a scanned image or a signature.
  */
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
+import { OPS } from 'pdfjs-dist';
 import { cropBox, mediaBox } from './pages';
 import type { PdfSession } from './render';
 
@@ -23,16 +24,36 @@ export interface PageContentProfile {
   blankByAppearance: boolean;
 }
 
-const PAINTING_OPS = new Set([
-  'f', 'f*', 'B', 'B*', 'S', 'b', 'b*', 's',
-  'Do', 'BI', 'sh',
-  'Tj', 'TJ', "'", '"',
+/**
+ * The display-list operators that put ink on a page.
+ *
+ * pdf.js numbers its operator list with `OPS`, whose keys are *semantic* names
+ * (`showText`), not the mnemonics a content stream uses (`Tj`). This module used
+ * to compare mnemonics against a reverse lookup of `operators.ops` — a property
+ * `getOperatorList()` never returns — so nothing ever matched, `paintOps` was
+ * always 0 and every page without annotations was called blank: "Remove blank
+ * pages" would have deleted a text document's pages, and a scan, while claiming
+ * they painted nothing (E13). The ids are resolved once from the same table the
+ * renderer works from.
+ */
+const PAINTING_OPS: Set<number> = operatorIds([
+  'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke',
+  'closeFillStroke', 'closeEOFillStroke', 'shadingFill', 'paintXObject',
+  'beginInlineImage',
+  'showText', 'showSpacedText', 'nextLineShowText', 'nextLineSetSpacingShowText',
+]);
+
+/** Operators that paint raster — a scanned page is ink, not a blank sheet. */
+const IMAGE_OPS: Set<number> = operatorIds([
+  'paintXObject', 'beginInlineImage', 'paintImageXObject', 'paintInlineImageXObject',
+  'paintImageMaskXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup',
+  'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat', 'paintSolidColorImageMask',
 ]);
 
 /**
  * Profile one page from pdf.js. `getOperatorList` gives the display list the
- * renderer consumes, so inline images, XObject `Do` and every fill/stroke
- * operator are counted without decoding the stream by hand.
+ * renderer consumes, so inline images, XObjects and every fill/stroke operator
+ * are counted without decoding the stream by hand.
  */
 export async function profilePage(
   session: PdfSession,
@@ -61,10 +82,9 @@ export async function profilePage(
     let inkArea = 0;
     const ops = operators.fnArray;
     for (let i = 0; i < ops.length; i++) {
-      const name = opName(operators, ops[i]);
-      if (!name) continue;
-      if (PAINTING_OPS.has(name)) paintOps += 1;
-      if (name === 'Do' || name === 'BI') {
+      const id = ops[i];
+      if (PAINTING_OPS.has(id)) paintOps += 1;
+      if (IMAGE_OPS.has(id)) {
         images += 1;
         const args = operators.argsArray[i];
         inkArea += estimateImageArea(args, viewport.width, viewport.height);
@@ -98,20 +118,20 @@ function estimateImageArea(args: unknown, fallbackW: number, fallbackH: number):
 }
 
 /**
- * pdf.js reports operator ids, not names. `OPS` maps name → id, so the reverse
- * lookup identifies the operator without depending on internal ordering.
+ * Resolve names to pdf.js's numeric operator ids.
+ *
+ * SAFETY: `OPS` is the frozen name → id table the renderer and the worker are
+ * both built from, so reading it by name is the same mapping the display list is
+ * encoded with; the index signature is only how TypeScript is told that.
  */
-let reverseOps: Map<number, string> | null = null;
-function opName(operators: unknown, id: number): string | undefined {
-  if (!reverseOps) {
-    const module = operators as { ops?: Record<string, number> };
-    const table = module.ops ?? {};
-    reverseOps = new Map<number, string>();
-    for (const [name, value] of Object.entries(table)) {
-      if (!reverseOps.has(value)) reverseOps.set(value, name);
-    }
+function operatorIds(names: string[]): Set<number> {
+  const table = OPS as unknown as Record<string, number>;
+  const ids = new Set<number>();
+  for (const name of names) {
+    const id = table[name];
+    if (typeof id === 'number') ids.add(id);
   }
-  return reverseOps.get(id);
+  return ids;
 }
 
 export interface BlankPageOptions {

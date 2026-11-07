@@ -26,12 +26,17 @@ import {
 } from '../core/doc';
 import { looksEncrypted } from '../core/doc';
 import type { PDFPermissions } from '../core/doc';
-import { formatPages } from '../core/pages';
-import { formatBytes, readInfo, readXmp } from '../core/metadata';
+import type { PDFPage } from '../core/doc';
+import { cropBox, formatPages, normaliseRotation } from '../core/pages';
+import type { PageFrame } from '../core/tables';
+import { viewerRectToUserSpace } from '../core/tables';
+import { formatBytes, formatPdfDate, readInfo, readXmp, scrubMetadataText } from '../core/metadata';
 import { listAttachments, removeAttachments } from '../core/attachments';
 import { openRender } from '../core/render';
+import type { ExtractedTextItem } from '../core/render';
 import { annotationCount } from '../core/annotations';
-import { readOutline } from '../core/bookmarks';
+import { readOutline, writeOutline } from '../core/bookmarks';
+import type { OutlineNode } from '../core/bookmarks';
 import { pageContentStreams } from '../core/content';
 import {
   booleanValue,
@@ -50,6 +55,7 @@ import {
   filesResult,
   rebuildDocument,
   reportResult,
+  type OpenedInput,
   type PdfInspection,
   type PdfPermissions,
 } from './helpers';
@@ -240,6 +246,27 @@ export const securityTools: PdfToolDefinition[] = [
       if (!reopened.passwordAccepted) {
         warnings.push(`The saved file did not open with the password that was just set${reopened.error ? `: ${reopened.message}` : '.'}`);
       }
+      // One password for both jobs is the common case and the least protected
+      // one, so it is named rather than left to the tooltip.
+      if (user && !stringValue(context.values, 'ownerPassword')) {
+        warnings.push('The open password is also the owner password here: anyone who can open the file can remove its restrictions. Set a separate owner password if that matters.');
+      }
+      // The gate is then checked from the outside, with the reader this app
+      // draws its own previews with. Whatever the built-in engine recorded, a
+      // reader that refuses the password is the fact the user needs (E5).
+      const reader = user ? await probeReader(bytes, user) : await probeReader(bytes);
+      const gateOpens = user ? reader.verdict === 'opens' : reader.verdict === 'opens';
+      if (reader.verdict === 'unavailable' || reader.verdict === 'unreadable') {
+        warnings.push(`No PDF reader could be started in this browser to re-check the saved file${reader.detail ? ` (${reader.detail})` : ''}, so only the built-in engine's own view of it was verified.`);
+      } else if (user && reader.verdict !== 'opens') {
+        warnings.push(`A PDF reader refused the password you set on the saved file (${reader.verdict === 'wrong-password' ? '“not correct”' : 'it still asks before it will open'}) while the built-in engine accepts it, so the gate is recorded but not portable. Open the copy in the reader your recipient uses before you rely on it.`);
+      } else if (!user && reader.verdict !== 'opens') {
+        warnings.push('No open password was set, yet a PDF reader will not open the saved file without one — check the copy before sending it.');
+      }
+      const pagesMatch = gateOpens && reader.pages === input.doc.getPageCount();
+      if (gateOpens && !pagesMatch) {
+        warnings.push(`The saved file shows ${reader.pages} page(s) to a PDF reader but ${input.doc.getPageCount()} to the engine that wrote it.`);
+      }
       const how = user
         ? `${cipherName} and an open password`
         : `${cipherName}, restrictions only — no open password was set`;
@@ -249,7 +276,13 @@ export const securityTools: PdfToolDefinition[] = [
         // The bytes were saved from `input.doc` a moment ago, so its page count
         // is the output's — the only moment this number is free.
         pages: input.doc.getPageCount(),
-        message: `Protected with ${how}. As written to the file: ${permissionSentence(inspection.permissions ?? flags)}.`,
+        message: `Protected with ${how}. As written to the file: ${permissionSentence(inspection.permissions ?? flags)}. ${
+          gateOpens && user
+            ? `A PDF reader opened the copy with that password and read ${reader.pages} page(s).`
+            : gateOpens
+              ? `A PDF reader opened the copy with no password and read ${reader.pages} page(s), with the restrictions above in force.`
+              : 'Re-read by the built-in engine only; no independent reader could confirm the gate.'
+        }`,
         warnings,
       };
     },
@@ -269,8 +302,9 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The same pages, opening with no password asked — and a refusal to hand back a file that still carries one.',
     actionLabel: 'Unlock',
     notes: [
-      'The pages are copied into a fresh document, which is the only reliable way to drop the /Encrypt entry. A file that needs the password just to be read cannot lose it here: unlock it with the open password first.',
-      'Comment drafts, form field values and bookmarks are reported as lost when the rebuild cannot carry them, rather than silently dropped.',
+      'Protection lives in the trailer, so it is removed there: the page tree, the form fields, the comments, the bookmarks and any embedded files all stay where they were.',
+      'A file that needs the password just to be read cannot lose it here: unlock it with the open password first. A restricted-but-openable one needs no password at all.',
+      'If the fields, comments or bookmarks of the source do come out missing, the result names them; the page count is refused outright rather than reported.',
     ],
     fields: [{ key: 'password', label: 'Current password', type: 'password', group: 'Password', placeholder: 'The password this file opens with', help: 'Either the user or the owner password works. Leave blank if the file is restricted but readable.' }],
     async run(context) {
@@ -287,35 +321,14 @@ export const securityTools: PdfToolDefinition[] = [
           warnings: ['No /Encrypt entry was found, so there was no password to remove.'],
         };
       }
-      const doc = await openPDF(input.bytes, { password });
-      const before = contentFingerprint(doc);
-      const losses = rebuildLosses(doc);
-      // Rebuild rather than re-save: saving a document that was loaded with a
-      // password keeps the `/Encrypt` entry, so the "unlocked" file would still
-      // ask for one.
-      const cleared = await rebuildDocument(doc);
-      const bytes = await savePDF(cleared, { useObjectStreams: true });
-      const after = await inspectPdf(bytes, input.name);
-      if (after.encrypted) {
-        throw new Error('The unlocked copy still carries an /Encrypt entry and would ask for a password, so it was not returned.');
-      }
-      if (after.pages !== doc.getPageCount()) {
-        throw new Error(`The unlocked copy has ${after.pages} of the ${doc.getPageCount()} pages the source has, so it was not returned.`);
-      }
-      const contentKept = contentFingerprint(cleared) === before;
-      const warnings: string[] = [];
-      if (!contentKept) {
-        warnings.push('Some page content read differently after the rebuild, so check the copy before relying on it.');
-      }
-      if (losses.length > 0) {
-        warnings.push(`Dropping the protection copies the pages into a fresh document, so ${losses.join(', ')} did not carry over.`);
-      }
+      const doc = await openForStripping(input, password);
+      const removed = await stripProtectionFrom(input, doc, await sourceTextOf(input.bytes, password));
       return {
         kind: 'pdf',
-        bytes,
-        pages: cleared.getPageCount(),
-        message: `Removed protection — the file opens without a password now: ${after.pages} page(s), ${contentKept ? 'page content verified' : 'page content re-read with differences'}.`,
-        warnings,
+        bytes: removed.bytes,
+        pages: removed.pages,
+        message: `Removed protection — the file opens without a password now: ${removed.pages} page(s), ${removed.contentKept ? 'page content verified' : 'page content re-read with differences'}, carrying ${structureSentence(removed.kept)}.`,
+        warnings: removed.warnings,
       };
     },
   },
@@ -350,7 +363,7 @@ export const securityTools: PdfToolDefinition[] = [
           { value: 'set', label: 'Apply these permissions' },
           { value: 'clear', label: 'Remove all restrictions' },
         ],
-        help: 'Remove all restrictions rebuilds the document, which is also the only way to clear a permissions-only file for good.',
+        help: 'Remove all restrictions drops the encryption dictionary, which is also the only way to clear a permissions-only file for good.',
       },
       { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', when: (v) => v.action === 'set', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
       ...permissionFields((v) => v.action === 'set'),
@@ -358,7 +371,7 @@ export const securityTools: PdfToolDefinition[] = [
     async run(context) {
       const [input] = await openInputs(context);
       const owner = stringValue(context.values, 'ownerPassword') || context.password || '';
-      const doc = await openPDF(input.bytes, { password: owner });
+      const doc = await openForStripping(input, owner);
       const wasProtected = input.inspection?.encrypted === true;
       if (stringValue(context.values, 'action', 'set') === 'clear') {
         if (!wasProtected) {
@@ -370,26 +383,21 @@ export const securityTools: PdfToolDefinition[] = [
             warnings: ['Nothing to clear: this PDF is not protected.'],
           };
         }
-        const losses = rebuildLosses(doc);
-        const cleared = await rebuildDocument(doc);
-        const bytes = await savePDF(cleared);
-        const after = await inspectPdf(bytes, input.name);
-        if (after.encrypted) {
-          throw new Error('The saved copy still carries an /Encrypt entry, so the restrictions were not actually removed.');
-        }
+        const cleared = await stripProtectionFrom(input, doc, await sourceTextOf(input.bytes, owner));
         return {
           kind: 'pdf',
-          bytes,
-          pages: cleared.getPageCount(),
-          message: `All restrictions and the password were removed — ${after.pages} page(s) verified, opens freely.`,
-          warnings: losses.length
-            ? [`Removing the restrictions copies the pages into a fresh document, so ${losses.join(', ')} did not carry over.`]
-            : [],
+          bytes: cleared.bytes,
+          pages: cleared.pages,
+          message: `All restrictions and the password were removed — ${cleared.pages} page(s) verified readable with no password, carrying ${structureSentence(cleared.kept)}.`,
+          warnings: cleared.warnings,
         };
       }
       const flags = permissionsObject({
         printing: booleanValue(context.values, 'allowPrinting', true),
-        printLevel: 'high',
+        // Read from the form, not assumed: this panel shows the same print-quality
+        // choice `protect` does, and a recorded bit that ignores it is a
+        // restriction the file does not carry.
+        printLevel: stringValue(context.values, 'printLevel', 'high'),
         modifying: booleanValue(context.values, 'allowModifying', true),
         copying: booleanValue(context.values, 'allowCopying', true),
         annotating: booleanValue(context.values, 'allowAnnotating', true),
@@ -413,11 +421,23 @@ export const securityTools: PdfToolDefinition[] = [
       if (!owner) {
         warnings.push('No owner password was entered, so a random one was used: the restrictions can be changed again but not lifted by name.');
       }
+      // The promise of this mode is that the file still opens: asked of a reader
+      // rather than assumed from the empty user password we passed in.
+      const reader = await probeReader(bytes);
+      if (reader.verdict === 'unavailable' || reader.verdict === 'unreadable') {
+        warnings.push(`No PDF reader could be started in this browser to re-open the saved copy${reader.detail ? ` (${reader.detail})` : ''}, so the restrictions were confirmed only with the built-in engine.`);
+      } else if (reader.verdict !== 'opens') {
+        warnings.push(`A PDF reader will not open the saved copy without a password (${reader.detail ?? reader.verdict}) even though no open password was set.`);
+      }
       return {
         kind: 'pdf',
         bytes,
         pages: doc.getPageCount(),
-        message: `Restrictions as recorded in the file (${cipherName}): ${permissionSentence(inspection.permissions ?? flags)}. The document opens without a password.`,
+        message: `Restrictions as recorded in the file (${cipherName}): ${permissionSentence(inspection.permissions ?? flags)}. ${
+          reader.verdict === 'opens'
+            ? `A PDF reader opens it with no password: ${reader.pages} page(s) readable.`
+            : 'The document is written to open without a password.'
+        }`,
         warnings,
       };
     },
@@ -437,7 +457,7 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'Every restriction lifted — the copy opens, prints, copies and edits without a password or an owner key.',
     actionLabel: 'Remove restrictions',
     notes: [
-      'The pages are rebuilt into a fresh document to clear the encryption dictionary, so a signature in the source is broken by this: verify it first if the file is signed.',
+      'A signature in the source is broken by clearing its restrictions, whether the page tree is rebuilt or only the encryption entry is dropped: verify the signature first if the file is signed.',
       'A file with no /Encrypt entry is returned unchanged, and the result says so rather than claiming a removal.',
     ],
     async run(context) {
@@ -452,22 +472,14 @@ export const securityTools: PdfToolDefinition[] = [
           warnings: ['Nothing to clear: this PDF carries no /Encrypt entry, so a reader cannot be told to hold it back.'],
         };
       }
-      const doc = await openPDF(input.bytes, { password, ignoreEncryption: password === '' });
-      const losses = rebuildLosses(doc);
-      const rebuilt = await rebuildDocument(doc);
-      const bytes = await savePDF(rebuilt);
-      const after = await inspectPdf(bytes, input.name);
-      if (after.encrypted) {
-        throw new Error('The saved copy is still listed as encrypted, so its restrictions were not actually cleared.');
-      }
+      const doc = await openForStripping(input, password);
+      const cleared = await stripProtectionFrom(input, doc, await sourceTextOf(input.bytes, password));
       return {
         kind: 'pdf',
-        bytes,
-        pages: rebuilt.getPageCount(),
-        message: `Restrictions cleared — ${after.pages} page(s) verified readable with no /Encrypt entry and no password needed.`,
-        warnings: losses.length
-          ? [`Clearing the restrictions copies the pages into a fresh document, so ${losses.join(', ')} did not carry over.`]
-          : [],
+        bytes: cleared.bytes,
+        pages: cleared.pages,
+        message: `Restrictions cleared — ${cleared.pages} page(s) verified readable with no /Encrypt entry and no password needed, carrying ${structureSentence(cleared.kept)}.`,
+        warnings: cleared.warnings,
       };
     },
   },
@@ -497,46 +509,82 @@ export const securityTools: PdfToolDefinition[] = [
       const { flattenAnnotations } = await import('../core/flatten');
       const { flattenForm } = await import('../core/forms');
       const needsRender = booleanValue(context.values, 'annotations', true);
+      const keepLinks = booleanValue(context.values, 'keepLinks', true);
       const session = needsRender ? await openRender(input.bytes, { password: context.password }) : null;
+      const warnings: string[] = [];
+      let bakedAnnotations = 0;
+      let pagesTouched = 0;
+      let skippedNoAppearance = 0;
+      let fieldsBaked = 0;
       try {
         const fields = booleanValue(context.values, 'forms', true)
           ? await flattenForm(input.doc, session ?? undefined)
           : { flattened: 0, needsRender: false };
-        const outcome = await flattenAnnotations(
-          input.doc,
-          session ?? undefined,
-          {
-            kinds: needsRender ? undefined : ['Link'],
-            keepLinks: booleanValue(context.values, 'keepLinks', true),
-            onProgress: context.progress,
-          },
-        );
-        const bytes = await savePDF(input.doc);
-        const warnings: string[] = [];
-        if (outcome.skippedNoAppearance > 0) {
-          warnings.push(`${outcome.skippedNoAppearance} annotation(s) had no appearance to draw and were left as live comments instead of being baked in.`);
-        }
+        fieldsBaked = fields.flattened;
         if (fields.needsRender && fields.flattened === 0) {
           warnings.push('The form fields could not be baked from their appearances, so they are still interactive in the output.');
         }
-        if (!needsRender) {
-          warnings.push('Annotation flattening was off, so comments stayed live — only link annotations were considered.');
+        try {
+          const outcome = await flattenAnnotations(
+            input.doc,
+            session ?? undefined,
+            {
+              kinds: needsRender ? undefined : ['Link'],
+              keepLinks,
+              onProgress: context.progress,
+            },
+          );
+          bakedAnnotations = outcome.flattened;
+          pagesTouched = outcome.pagesTouched;
+          skippedNoAppearance = outcome.skippedNoAppearance;
+        } catch (error) {
+          // An appearance the engine cannot draw is a comment left where it is,
+          // not a flattened one: the run continues and the saved file is read
+          // back, so the result reports what is really still live.
+          warnings.push(
+            `The comments could not be drawn into the page content (${error instanceof Error ? error.message : 'unknown reason'}), so they were left as live annotations rather than reported as flattened.`,
+          );
         }
-        if (outcome.flattened === 0 && fields.flattened === 0) {
-          warnings.push('This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.');
-        }
-        return {
-          kind: 'pdf',
-          bytes,
-          pages: input.doc.getPageCount(),
-          message: needsRender
-            ? `Baked ${outcome.flattened} annotation(s) and ${fields.flattened} form field(s) into the content of ${outcome.pagesTouched} page(s).`
-            : `Baked ${fields.flattened} form field(s) into the page content. Turn on annotation flattening to bake comments as well.`,
-          warnings,
-        };
       } finally {
         await session?.destroy();
       }
+      const bytes = await savePDF(input.doc);
+      // The claim is read out of the output, not out of the counters: a field
+      // that survived the bake is still typeable, whatever this run tallied.
+      const saved = await liveMarks(bytes);
+      if (skippedNoAppearance > 0) {
+        warnings.push(`${skippedNoAppearance} annotation(s) had no appearance to draw and were left as live comments instead of being baked in.`);
+      }
+      if (saved.fields > 0) {
+        warnings.push(`${saved.fields} form field(s) are still interactive in the saved file, so their answers can still be retyped.`);
+      }
+      const liveMarksLeft = keepLinks ? saved.marks - saved.links : saved.marks;
+      if (needsRender && liveMarksLeft > 0) {
+        warnings.push(`${liveMarksLeft} comment(s) are still live annotations in the saved file rather than page content.`);
+      }
+      if (!needsRender) {
+        warnings.push('Annotation flattening was off, so comments stayed live — only link annotations were considered.');
+      }
+      if (bakedAnnotations === 0 && fieldsBaked === 0) {
+        warnings.push('This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.');
+      }
+      const stillLive = [
+        ...(saved.fields > 0 ? [`${saved.fields} form field(s) still interactive`] : []),
+        ...(liveMarksLeft > 0 ? [`${liveMarksLeft} comment(s) still live`] : []),
+      ];
+      return {
+        kind: 'pdf',
+        bytes,
+        pages: input.doc.getPageCount(),
+        message: needsRender
+          ? `Baked ${bakedAnnotations} annotation(s) and ${fieldsBaked} form field(s) into the content of ${pagesTouched} page(s)${
+              stillLive.length > 0 ? `; ${stillLive.join(', ')} in the saved file` : '; nothing of the selected kind is left live'
+            }.`
+          : `Baked ${fieldsBaked} form field(s) into the page content${
+              saved.fields > 0 ? `; ${saved.fields} field(s) are still interactive in the saved file` : ''
+            }. Turn on annotation flattening to bake comments as well.`,
+        warnings,
+      };
     },
   },
 
@@ -552,7 +600,7 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The words under each box deleted from the page, then painted over — select the black bar and there is nothing left to copy.',
     actionLabel: 'Redact',
     notes: [
-      'Redaction deletes glyphs from page content. Text held in bookmarks, the document properties or an image underneath is not deleted by it, and the result names what still holds the words.',
+      'Redaction deletes glyphs from page content. Text held in the document properties, the outline and any embedded file is deleted too when that option is on; pixels are painted over, not cut out, and the result names what still holds the words.',
       'An area that lands inside an image is painted over rather than cut out: the pixels of a scanned page still contain the shape of what was there.',
     ],
     fields: [
@@ -569,12 +617,32 @@ export const securityTools: PdfToolDefinition[] = [
       // be the covered-but-selectable failure this tool exists to avoid (E13).
       const marked = rects.filter((r) => r.width > 0 && r.height > 0);
       const skipped = rects.length - marked.length;
-      const outcome = applyRedactions(
-        input.doc,
-        marked.map((r) => ({ page: r.page, rect: { x: r.x, y: r.y, width: r.width, height: r.height } })),
-        { fill },
-      );
-      const bytes = await savePDF(input.doc);
+      const pages = input.doc.getPages();
+      const outOfRange = marked.filter((r) => !Number.isInteger(r.page) || r.page < 0 || r.page >= pages.length);
+      if (outOfRange.length > 0) {
+        throw new Error(
+          `A redaction targets page ${(Number.isInteger(outOfRange[0].page) ? outOfRange[0].page : 0) + 1}, but this document has ${pages.length} page${pages.length === 1 ? '' : 's'}. Choose pages inside the document.`,
+        );
+      }
+      // The marks arrive in the space the editor shows: the page as displayed,
+      // origin top-left, `/Rotate` and an offset `/MediaBox` already folded in.
+      // Page content is addressed in unrotated user space from the bottom-left,
+      // so every mark is turned back through the same quarter-turn maths the
+      // table and OCR paths use. Skipping that redacts the mirrored band: the
+      // bar lands where the user drew it, the deleted words are someone else's.
+      const placed = marked.map((region) => ({
+        page: region.page,
+        rect: viewerRectToUserSpace(
+          { x: region.x, y: region.y, width: region.width, height: region.height },
+          frameOf(pages[region.page]),
+        ),
+      }));
+      // What a reader can lift out from under the marks beforehand. The claim
+      // afterwards is only as good as this comparison, so a redaction that
+      // painted a bar over still-selectable text cannot pass for one.
+      const before = await readMarkedWords(input.bytes, context.password, marked);
+      const outcome = applyRedactions(input.doc, placed, { fill });
+
       const warnings: string[] = [];
       if (skipped > 0) {
         warnings.push(`${skipped} marked area(s) had no width or height and were skipped — a redaction has to cover something to delete something.`);
@@ -582,11 +650,39 @@ export const securityTools: PdfToolDefinition[] = [
       if (outcome.rasterised) {
         warnings.push('At least one area fell inside an image, so the pixels there were painted over rather than cut out: text that is part of a scanned page survives as image data.');
       }
-      if (booleanValue(context.values, 'alsoMetadata', true)) {
-        const elsewhere = textHeldOutsidePageContent(input.doc);
-        if (elsewhere.length > 0) {
-          warnings.push(`Redaction deletes text from page content. ${elsewhere.join(', ')} still holds words this tool did not touch — clear them with Remove Metadata.`);
+      if (!before.ok) {
+        warnings.push(`No PDF reader could be started in this browser to re-read the text under the marked areas${before.detail ? ` (${before.detail})` : ''}, so the deletion was confirmed from the page content alone — spot-check the copy.`);
+      }
+
+      // The option promises the words go from the properties and the bookmarks
+      // too, so they are deleted there and the result says where they were found.
+      // Only words that sit under a mark and nowhere else on the page are taken
+      // as redacted text: a term repeated in a heading the user did not mark is
+      // not a secret.
+      if (booleanValue(context.values, 'alsoMetadata', true) && before.unique.length > 0) {
+        const scrubbed = scrubMetadataText(input.doc, before.unique);
+        const titles = scrubOutlineTitles(input.doc, before.unique);
+        if (scrubbed.properties.length > 0 || scrubbed.xmp || titles > 0) {
+          const where = [
+            ...(scrubbed.properties.length > 0
+              ? [`${scrubbed.properties.length} document propert${scrubbed.properties.length === 1 ? 'y' : 'ies'}`]
+              : []),
+            ...(scrubbed.xmp ? ['the XMP packet'] : []),
+            ...(titles > 0 ? [`${titles} bookmark title(s)`] : []),
+          ];
+          warnings.push(`Also deleted the redacted words from ${where.join(', ')} — a search that reads properties or the outline no longer finds them.`);
         }
+      }
+      const elsewhere = textHeldOutsidePageContent(input.doc);
+      if (booleanValue(context.values, 'alsoMetadata', true) && elsewhere.length > 0) {
+        warnings.push(`Redaction deletes text from page content, the document properties and the outline. ${elsewhere.join(', ')} still holds words this tool does not rewrite — clear them with Remove Metadata.`);
+      }
+      const bytes = await savePDF(input.doc);
+      const after = before.ok ? await readMarkedWords(bytes, undefined, marked) : null;
+      const survivors = after ? before.unique.filter((word) => after.all.includes(word)) : [];
+      const destroyed = before.unique.length > 0 ? before.unique.filter((word) => !survivors.includes(word)) : [];
+      if (survivors.length > 0) {
+        warnings.push(`${survivors.length} word(s) under the marked areas are still extractable from the saved file: ${previewList(survivors)}. They are covered, not gone — widen the mark to cover the whole line, or convert that page to an image and redact the image.`);
       }
       return {
         kind: 'pdf',
@@ -594,7 +690,11 @@ export const securityTools: PdfToolDefinition[] = [
         pages: input.doc.getPageCount(),
         message: outcome.removed === 0
           ? `Marked ${marked.length} area(s); none of them held text, so nothing was deleted — the fill was painted over the page only.`
-          : `Redacted ${outcome.removed} text run(s) by deleting the glyphs themselves — selecting the area now returns nothing.`,
+          : survivors.length > 0
+            ? `Deleted ${outcome.removed} text run(s) under ${marked.length} area(s) and painted the fill, but ${survivors.length} word(s) under those areas still extract from the saved file.`
+            : `Redacted ${outcome.removed} text run(s) under ${marked.length} area(s) by deleting the glyphs themselves${
+                after ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.` : '.'
+              }`,
         warnings,
       };
     },
@@ -645,6 +745,7 @@ export const securityTools: PdfToolDefinition[] = [
       const pages = Math.max(a.pageCount, b.pageCount);
       const rows: { label: string; value: string }[] = [];
       const images: { label: string; blob: Blob }[] = [];
+      const textlessPages: number[] = [];
       const sa = await openRender(a.bytes, { password: context.password });
       const sb = await openRender(b.bytes, { password: context.password });
       try {
@@ -660,10 +761,19 @@ export const securityTools: PdfToolDefinition[] = [
           if (mode !== 'visual' && mode !== 'both') {
             const ta = (await sa.textItems(page)).map((i) => i.str).join(' ');
             const tb = (await sb.textItems(page)).map((i) => i.str).join(' ');
+            // Two pages with no text layer are not a match: they are two pages
+            // this mode cannot read. Saying "identical text" over two different
+            // scans told the user the documents agreed (E10, E13).
+            const silent = ta.trim() === '' && tb.trim() === '';
             rows.push({
               label: `Page ${page}`,
-              value: ta === tb ? 'identical text' : `text differs (${diffWords(ta, tb)})`,
+              value: silent
+                ? 'neither page has any extractable text — a scanned page: run OCR on both, or compare pixels'
+                : ta === tb
+                  ? 'identical text'
+                  : `text differs (${diffWords(ta, tb)})`,
             });
+            if (silent) textlessPages.push(page);
             continue;
           }
           const scale = dpi / 72;
@@ -690,10 +800,15 @@ export const securityTools: PdfToolDefinition[] = [
         await sb.destroy();
       }
       const changed = rows.filter((r) => /differ|only in/.test(r.value)).length;
-      const message = changed === 0
-            ? `No differences found across ${pages} page(s).`
-            : `${changed} of ${pages} page(s) differ.`;
-      return reportResult([{ title: 'Page-by-page comparison', rows }], { message });
+      const message = textlessPages.length === pages
+        ? `Nothing could be compared: none of the ${pages} page(s) carries a text layer. Run OCR on both files, or compare pixels.`
+        : changed === 0
+          ? `No differences found across ${pages} page(s).`
+          : `${changed} of ${pages} page(s) differ.`;
+      const warnings = textlessPages.length > 0 && textlessPages.length < pages
+        ? [`${textlessPages.length} of ${pages} page(s) have no extractable text, so text mode could not compare them at all (pages ${textlessPages.join(', ')}). Run OCR, or compare pixels.`]
+        : [];
+      return { ...reportResult([{ title: 'Page-by-page comparison', rows }], { message }), warnings };
     },
   },
 
@@ -784,30 +899,50 @@ export const securityTools: PdfToolDefinition[] = [
       const { writeInfo, readInfo, writeXmp } = await import('../core/metadata');
       const current = readInfo(input.doc);
       const keywords = stringValue(context.values, 'keywords');
-      writeInfo(
-        input.doc,
-        {
-          title: stringValue(context.values, 'title') || current.title,
-          author: stringValue(context.values, 'author') || current.author,
-          subject: stringValue(context.values, 'subject') || current.subject,
-          keywords: keywords ? keywords.split(',').map((k) => k.trim()).filter(Boolean).join(', ') : current.keywords,
-          creator: stringValue(context.values, 'creator') || current.creator,
-          producer: stringValue(context.values, 'producer') || current.producer,
-          lang: stringValue(context.values, 'docLanguage') || current.lang,
-        },
-        { freshDates: booleanValue(context.values, 'touchDates', true) },
-      );
+      const written: Parameters<typeof writeInfo>[1] = {
+        title: stringValue(context.values, 'title') || current.title,
+        author: stringValue(context.values, 'author') || current.author,
+        subject: stringValue(context.values, 'subject') || current.subject,
+        keywords: keywords ? keywords.split(',').map((k) => k.trim()).filter(Boolean).join(', ') : current.keywords,
+        creator: stringValue(context.values, 'creator') || current.creator,
+        producer: stringValue(context.values, 'producer') || current.producer,
+        lang: stringValue(context.values, 'docLanguage') || current.lang,
+      };
+      // The control reads "Set the modification date to now", and `freshDates`
+      // also overwrote CreationDate — a document's birthday is not this tool's to
+      // change, and auditors read it.
+      if (booleanValue(context.values, 'touchDates', true)) written.modDate = formatPdfDate(new Date());
+      writeInfo(input.doc, written);
       if (booleanValue(context.values, 'syncXmp', true)) {
         const info = readInfo(input.doc);
+        const previous = readXmp(input.doc);
+        const subjects = (info.keywords ?? '')
+          .split(/[,;]+/)
+          .map((word) => word.trim())
+          .filter(Boolean)
+          .map((word) => `<rdf:li>${escapeXml(word)}</rdf:li>`)
+          .join('');
+        // A packet that declared PDF/A conformance keeps it: editing the
+        // properties must not silently un-archive a filed document, and that
+        // identity exists only in the XMP.
+        const pdfa = previous?.pdfaPart !== undefined
+          ? `<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">` +
+            `<pdfaid:part>${previous.pdfaPart}</pdfaid:part>` +
+            (previous.pdfaConformance ? `<pdfaid:conformance>${escapeXml(previous.pdfaConformance)}</pdfaid:conformance>` : '') +
+            `</rdf:Description>`
+          : '';
         writeXmp(
           input.doc,
           `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
-          `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
-          `<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+          `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#">` +
+          `<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">` +
           `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(info.title ?? '')}</rdf:li></rdf:Alt></dc:title>` +
           `<dc:creator><rdf:Seq><rdf:li>${escapeXml(info.author ?? '')}</rdf:li></rdf:Seq></dc:creator>` +
           `<dc:description><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(info.subject ?? '')}</rdf:li></rdf:Alt></dc:description>` +
-          `</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`,
+          (subjects ? `<dc:subject><rdf:Seq>${subjects}</rdf:Seq></dc:subject>` : '') +
+          (info.producer ? `<pdf:Producer>${escapeXml(info.producer)}</pdf:Producer>` : '') +
+          (info.creator ? `<xmp:CreatorTool>${escapeXml(info.creator)}</xmp:CreatorTool>` : '') +
+          `</rdf:Description>${pdfa}</rdf:RDF></x:xmpmeta><?xpacket end="w"?>`,
         );
       }
       return pdfResult(input.doc, { message: 'Updated the document properties.' });
@@ -905,15 +1040,39 @@ export const securityTools: PdfToolDefinition[] = [
       const extras = fileValues(context.values, 'files');
       if (extras.length === 0) throw new Error('Choose at least one file to attach.');
       const description = stringValue(context.values, 'description');
-      const count = await addAttachments(input.doc, extras.map((f) => ({
+      const wanted = extras.map((f) => ({
         name: f.name,
         bytes: f.bytes,
         mimeType: f.mimeType,
         description: description || undefined,
-      })));
-      return pdfResult(input.doc, {
-        message: `Embedded ${count} file(s). Readers with an attachments panel will list them.`,
-      });
+      }));
+      const before = new Map(listAttachments(input.doc).map((a) => [a.name, a]));
+      // `addAttachments` returns how many the document carries afterwards, which
+      // is not how many this run embedded: a document with one attachment and one
+      // new file did not gain two. The names are diffed instead, and the saved
+      // bytes are asked what they really carry.
+      const total = await addAttachments(input.doc, wanted);
+      const requested = [...new Set(wanted.map((file) => file.name))];
+      const replaced = requested.filter((name) => before.has(name));
+      const added = requested.filter((name) => !before.has(name));
+      const collided = wanted.length - requested.length;
+      const bytes = await savePDF(input.doc);
+      const carried = listAttachments(await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }));
+      const warnings: string[] = [];
+      if (collided > 0) {
+        warnings.push(`${collided} file(s) shared a name with another in this run, and a PDF stores one attachment per name: only the last copy of each is embedded.`);
+      }
+      const missing = requested.filter((name) => !carried.some((a) => a.name === name));
+      if (missing.length > 0) {
+        warnings.push(`${missing.map((name) => `"${name}"`).join(', ')} is not in the saved file, so it is not among the attachments the recipient will see.`);
+      }
+      return {
+        kind: 'pdf' as const,
+        bytes,
+        pages: input.doc.getPageCount(),
+        message: `Embedded ${added.length} new file(s)${replaced.length > 0 ? ` and replaced ${replaced.length} already stored under the same name(s)` : ''}. The document now carries ${carried.length} attachment(s) (it held ${total}). Readers with an attachments panel will list them.`,
+        warnings,
+      };
     },
   },
 
@@ -1238,13 +1397,167 @@ export const securityTools: PdfToolDefinition[] = [
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-/** Region captured by the redaction surface, in PDF user space. */
+/** Region captured by the redaction surface, in the space of the *displayed* page. */
 interface RedactionRegion {
+  /** 0-based page index. */
   page: number;
+  /**
+   * Top-left corner in points on the page as the editor shows it: origin
+   * top-left, `/Rotate` applied, so on a quarter-turned sheet `width` runs
+   * along the displayed long edge. `redact-pdf` turns each mark back into
+   * unrotated user space before deleting anything.
+   */
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+/* ------------------------------------------------------------------ *\n * Redaction proof — read the words back, do not infer them            *
+ * ------------------------------------------------------------------ */
+
+/** The frame a page's displayed coordinates are measured against. */
+function frameOf(page: PDFPage): PageFrame {
+  const box = cropBox(page);
+  return {
+    x0: box.x,
+    y0: box.y,
+    width: box.width,
+    height: box.height,
+    rotation: normaliseRotation(page.getRotation().angle),
+  };
+}
+
+/** One word, with its box in the displayed page's space. */
+interface MarkWord {
+  word: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The words of one extracted run, with a box each.
+ *
+ * pdf.js hands back a run per styling change, which is often a whole line. A
+ * run is split on whitespace and its box shared out by character position: the
+ * mark/word overlap only decides which words are *candidates* for verification,
+ * so an approximate box widens the sample without ever letting a redaction pass
+ * a word it did not delete.
+ */
+function wordsOfRun(item: ExtractedTextItem): MarkWord[] {
+  const text = item.str ?? '';
+  if (text.trim() === '') return [];
+  const boxWidth = Math.abs(item.w) || 1;
+  const height = Math.abs(item.h) || 1;
+  const out: MarkWord[] = [];
+  const pattern = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const start = match.index / text.length;
+    const end = (match.index + match[0].length) / text.length;
+    out.push({
+      word: match[0],
+      x: item.x + start * boxWidth,
+      y: item.y,
+      width: (end - start) * boxWidth,
+      height,
+    });
+  }
+  return out;
+}
+
+/** Whether the centre of a word box falls inside one marked area. */
+function underMark(word: MarkWord, marks: { page: number; x: number; y: number; width: number; height: number }[], page: number): boolean {
+  const cx = word.x + word.width / 2;
+  const cy = word.y + word.height / 2;
+  return marks.some((mark) =>
+    mark.page === page
+    && cx >= Math.min(mark.x, mark.x + mark.width) && cx <= Math.max(mark.x, mark.x + mark.width)
+    && cy >= Math.min(mark.y, mark.y + mark.height) && cy <= Math.max(mark.y, mark.y + mark.height),
+  );
+}
+
+/**
+ * What a PDF reader can still extract from the pages the marks cover.
+ *
+ * `unique` is the useful half: words that sit under a mark and nowhere else on
+ * that page. Those are the words the user meant to destroy, so their presence in
+ * the saved file is a redaction that only looks like one, and their absence is
+ * the proof the fill is covering deleted text rather than hiding live text.
+ */
+async function readMarkedWords(
+  bytes: Uint8Array,
+  password: string | undefined,
+  marks: RedactionRegion[],
+): Promise<{ ok: boolean; detail?: string; all: string[]; under: string[]; unique: string[] }> {
+  const empty = { ok: false, detail: undefined as string | undefined, all: [] as string[], under: [] as string[], unique: [] as string[] };
+  if (marks.length === 0) return { ...empty, ok: true };
+  let session;
+  try {
+    session = await openRender(bytes, password ? { password } : {});
+  } catch (error) {
+    return { ...empty, detail: error instanceof Error ? error.message : String(error) };
+  }
+  try {
+    const all = new Set<string>();
+    const under = new Set<string>();
+    const elsewhere = new Set<string>();
+    const pages = [...new Set(marks.map((mark) => mark.page))];
+    for (const page of pages) {
+      if (!Number.isInteger(page) || page < 0 || page >= session.numPages) continue;
+      for (const item of await session.textItems(page + 1)) {
+        for (const word of wordsOfRun(item)) {
+          all.add(word.word);
+          if (underMark(word, marks, page)) under.add(word.word);
+          else elsewhere.add(word.word);
+        }
+      }
+    }
+    return {
+      ok: true,
+      all: [...all],
+      under: [...under],
+      unique: [...under].filter((word) => !elsewhere.has(word)),
+    };
+  } catch (error) {
+    return { ...empty, detail: error instanceof Error ? error.message : String(error) };
+  } finally {
+    await session.destroy();
+  }
+}
+
+/**
+ * Delete `terms` from every bookmark title, in place.
+ *
+ * An outline entry is a string the reader searches, so a title carrying a
+ * redacted name leaks it back. The tree is rewritten through the same model the
+ * bookmarks tool uses, which keeps destinations, nesting and styling.
+ *
+ * @returns how many titles changed.
+ */
+function scrubOutlineTitles(doc: PDFDocument, terms: readonly string[]): number {
+  const wanted = [...new Set(terms.map((term) => term.trim()).filter(Boolean))];
+  if (wanted.length === 0) return 0;
+  const pattern = new RegExp(`(${wanted.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const nodes = readOutline(doc);
+  if (nodes.length === 0) return 0;
+  let changed = 0;
+  const scrub = (list: OutlineNode[]): OutlineNode[] => list.map((node) => {
+    const title = node.title.replace(pattern, '').replace(/\s+/g, ' ').trim();
+    if (title !== node.title) changed += 1;
+    return { ...node, title: title === '' ? '[redacted]' : title, children: node.children ? scrub(node.children) : undefined };
+  });
+  const next = scrub(nodes);
+  if (changed > 0) writeOutline(doc, next);
+  return changed;
+}
+
+/** A short, quoted list for a warning that has to name what it found. */
+function previewList(words: readonly string[], limit = 6): string {
+  const shown = words.slice(0, limit).map((word) => `“${word}”`).join(', ');
+  return words.length > limit ? `${shown}, and ${words.length - limit} more` : shown;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1287,6 +1600,97 @@ function dictAt(doc: PDFDocument, value: unknown): PDFDict | undefined {
   return value instanceof PDFDict ? value : undefined;
 }
 
+/* ------------------------------------------------------------------ *
+ * The reader's point of view — what an independent engine can do      *
+ * ------------------------------------------------------------------ */
+
+/**
+ * How this app's own rendering engine (pdf.js) answered when asked to open a
+ * file. `protect`, `unlock` and the restriction tools report this, not the
+ * options they were handed: a password gate nobody else can pass is not
+ * protection, and a file that still demands a password is not unlocked (E4/E5).
+ */
+type ReaderVerdict = 'opens' | 'needs-password' | 'wrong-password' | 'unreadable' | 'unavailable';
+
+interface ReaderProbe {
+  verdict: ReaderVerdict;
+  /** Pages the reader counted, when it got that far. */
+  pages: number;
+  /** Text of the sampled pages, in page order, when it could read them. */
+  text: string[];
+  detail?: string;
+}
+
+/** Pages sampled by `probeReader`: enough to prove content survived, bounded for E7. */
+function sampledPages(total: number): number[] {
+  const picks = [...new Set([1, Math.ceil(total / 2), total])];
+  return picks.filter((page) => page >= 1 && page <= total);
+}
+
+async function probeReader(bytes: Uint8Array, password?: string): Promise<ReaderProbe> {
+  let session;
+  try {
+    session = await openRender(bytes, password ? { password } : {});
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const named = error instanceof Error ? error.name : '';
+    if (named !== 'PasswordRequiredError' && !/password/i.test(message)) {
+      return { verdict: 'unavailable', pages: 0, text: [], detail: message };
+    }
+    return {
+      verdict: /not correct/i.test(message) ? 'wrong-password' : 'needs-password',
+      pages: 0,
+      text: [],
+      detail: message,
+    };
+  }
+  try {
+    const text: string[] = [];
+    for (const page of sampledPages(session.numPages)) {
+      text.push((await session.textItems(page)).map((item) => item.str).join(' '));
+    }
+    return { verdict: 'opens', pages: session.numPages, text };
+  } catch (error) {
+    return {
+      verdict: 'unreadable',
+      pages: session.numPages,
+      text: [],
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    await session.destroy();
+  }
+}
+
+/**
+ * Save `doc` with no `/Encrypt` entry, page tree and all.
+ *
+ * Protection lives in the trailer and in the dictionary it points at, so
+ * dropping both is the whole removal — and it is the only removal that keeps the
+ * form fields, comments, bookmarks and embedded files a page-tree rebuild
+ * leaves behind. The rebuild stays as the fallback for a file this does not
+ * clear; the caller verifies which one it got.
+ */
+async function saveUnprotected(doc: PDFDocument): Promise<Uint8Array> {
+  const entry = doc.context.trailerInfo.Encrypt;
+  if (entry instanceof PDFRef) doc.context.delete(entry);
+  doc.context.trailerInfo.Encrypt = undefined;
+  return savePDF(doc, { useObjectStreams: true });
+}
+
+/**
+ * A document opened however the file allows: with the password when it has one,
+ * and without demanding one when the guard already read the file on the empty
+ * password. `openPDF` refuses any `/Encrypt` entry it is not given a password
+ * for, which used to make `unlock` answer "this PDF is password protected" for a
+ * restricted-but-openable file — the exact case the tool exists for (E4/E5).
+ */
+async function openForStripping(input: OpenedInput, password: string): Promise<PDFDocument> {
+  if (password) return openPDF(input.bytes, { password });
+  if (input.inspection?.opensWithEmptyPassword) return input.doc;
+  return openPDF(input.bytes, { password: '', ignoreEncryption: true });
+}
+
 function arrayAt(doc: PDFDocument, value: unknown): PDFArray | undefined {
   if (value instanceof PDFRef) return doc.context.lookupMaybe(value, PDFArray);
   return value instanceof PDFArray ? value : undefined;
@@ -1299,24 +1703,173 @@ function formFieldCount(doc: PDFDocument): number {
 }
 
 /**
- * What copying the page tree into a fresh document leaves behind.
+ * The parts of a document a page-tree rebuild is known to leave behind.
  *
- * `rebuildDocument` is the only reliable way to drop the trailer's `/Encrypt`
- * entry, and page copying does not carry form fields, comments, bookmarks or
- * embedded files across. Losing a filled-in form while "just" removing a
- * password is the silent failure this list exists to prevent (E13).
+ * `countStructure` measures them, `missingStructure` turns a difference into the
+ * sentence a result has to carry.
  */
-function rebuildLosses(doc: PDFDocument): string[] {
-  const losses: string[] = [];
-  const fields = formFieldCount(doc);
-  const annotations = annotationCount(doc);
-  const bookmarks = readOutline(doc).length;
-  const attachments = listAttachments(doc).length;
-  if (fields > 0) losses.push(`${fields} form field(s)`);
-  if (annotations > 0) losses.push(`${annotations} annotation(s) / comment(s)`);
-  if (bookmarks > 0) losses.push(`${bookmarks} bookmark(s)`);
-  if (attachments > 0) losses.push(`${attachments} embedded file(s)`);
-  return losses;
+interface StructureCounts {
+  fields: number;
+  annotations: number;
+  bookmarks: number;
+  attachments: number;
+}
+
+/** What a saved file still carries that a reader can edit or select. */
+interface LiveMarks {
+  /** Entries in `AcroForm /Fields`. */
+  fields: number;
+  /** Annotation objects reachable from a page, of any subtype. */
+  marks: number;
+  /** The `/Link` subset of `marks`. */
+  links: number;
+}
+
+/**
+ * Count the live fields and annotations in bytes that were just written.
+ *
+ * Flattening is the operation whose success is invisible from the document a run
+ * mutated: an appearance that could not be drawn leaves its annotation exactly
+ * where it was. Re-reading the output is the only way to tell "baked" from
+ * "attempted", and it is what stops a result promising a page the reader can no
+ * longer type into.
+ */
+async function liveMarks(bytes: Uint8Array): Promise<LiveMarks> {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  let marks = 0;
+  let links = 0;
+  for (const page of doc.getPages()) {
+    const annots = arrayAt(doc, page.node.get(PDFName.of('Annots')));
+    if (!annots) continue;
+    for (let index = 0; index < annots.size(); index++) {
+      const annotation = dictAt(doc, annots.get(index));
+      if (!annotation) continue;
+      marks += 1;
+      const subtype = annotation.get(PDFName.of('Subtype'));
+      if (subtype instanceof PDFName && subtype.asString() === '/Link') links += 1;
+    }
+  }
+  return { fields: formFieldCount(doc), marks, links };
+}
+
+/**
+ * What one document holds of the four kinds a rebuild is known to lose.
+ *
+ * The tools that drop protection used to rebuild the page tree — the only way
+ * they knew to clear the trailer's `/Encrypt` entry — and hand back a file
+ * missing its form fields, comments, bookmarks or embedded files. Losing a
+ * filled-in form while "just" removing a password is the silent failure this
+ * measurement exists to prevent (E13).
+ */
+function countStructure(doc: PDFDocument): StructureCounts {
+  return {
+    fields: formFieldCount(doc),
+    annotations: annotationCount(doc),
+    bookmarks: readOutline(doc).length,
+    attachments: listAttachments(doc).length,
+  };
+}
+
+const STRUCTURE_LABELS: [keyof StructureCounts, (count: number) => string][] = [
+  ['fields', (n) => `${n} form field(s)`],
+  ['annotations', (n) => `${n} annotation(s) / comment(s)`],
+  ['bookmarks', (n) => `${n} bookmark(s)`],
+  ['attachments', (n) => `${n} embedded file(s)`],
+];
+
+/** The parts of `before` that `after` no longer carries, phrased for a warning. */
+function missingStructure(before: StructureCounts, after: StructureCounts): string[] {
+  return STRUCTURE_LABELS
+    .map(([key, label]) => ({ key, label, gone: before[key] - after[key] }))
+    .filter((entry) => entry.gone > 0)
+    .map((entry) => entry.label(entry.gone));
+}
+
+/** What the file still holds, as a clause for the result message. */
+function structureSentence(counts: StructureCounts): string {
+  const held = STRUCTURE_LABELS
+    .filter(([key]) => counts[key] > 0)
+    .map(([key, label]) => label(counts[key]));
+  return held.length > 0 ? held.join(', ') : 'no form fields, comments, bookmarks or embedded files';
+}
+
+/** The text a reader gets from a file, or `null` when it cannot read it. */
+async function sourceTextOf(bytes: Uint8Array, password: string): Promise<string[] | null> {
+  const probe = await probeReader(bytes, password || undefined);
+  return probe.verdict === 'opens' ? probe.text : null;
+}
+
+interface StripResult {
+  bytes: Uint8Array;
+  pages: number;
+  kept: StructureCounts;
+  contentKept: boolean;
+  rebuilt: boolean;
+  warnings: string[];
+}
+
+/**
+ * Remove the protection from `doc` and prove it from the saved bytes.
+ *
+ * The trailer's `/Encrypt` entry *is* protection, so dropping it and saving is
+ * both the removal and the cheap one: the page tree, the AcroForm, the
+ * annotations, the outline and the embedded files are untouched. The page-tree
+ * rebuild is kept as the fallback for a file that still reports itself encrypted
+ * afterwards, and the result says which path ran.
+ *
+ * Four facts are then re-read from the output rather than assumed: the
+ * encryption flag and page count (through the same guard the file queue uses),
+ * the structure counts, and — where a reader can be started at all — whether it
+ * opens the copy with no password and still extracts the text it extracted from
+ * the source. A file whose streams really are ciphertext loses its content when
+ * the dictionary goes, and that is named instead of shipped quietly (E5).
+ */
+async function stripProtectionFrom(
+  input: OpenedInput,
+  doc: PDFDocument,
+  sourceText: string[] | null,
+): Promise<StripResult> {
+  const source = countStructure(doc);
+  const sourceContent = contentFingerprint(doc);
+  let bytes = await saveUnprotected(doc);
+  let inspection = await inspectPdf(bytes, input.name);
+  let rebuilt = false;
+  if (inspection.encrypted) {
+    const cleared = await rebuildDocument(doc);
+    bytes = await savePDF(cleared, { useObjectStreams: true });
+    inspection = await inspectPdf(bytes, input.name);
+    rebuilt = true;
+  }
+  if (inspection.encrypted) {
+    throw new Error('The saved copy still carries an /Encrypt entry and would ask for a password, so it was not returned.');
+  }
+  if (inspection.pages !== doc.getPageCount()) {
+    throw new Error(`The saved copy has ${inspection.pages} of the ${doc.getPageCount()} pages the source has, so it was not returned.`);
+  }
+  const output = await PDFDocument.load(bytes, { updateMetadata: false });
+  const kept = countStructure(output);
+  const warnings: string[] = [];
+  const lost = missingStructure(source, kept);
+  if (lost.length > 0) {
+    warnings.push(rebuilt
+      ? `Dropping the protection had to copy the pages into a fresh document, so ${lost.join(', ')} did not carry over.`
+      : `${lost.join(', ')} present in the source are missing from the copy that was unlocked, so check it before relying on it.`);
+  }
+  const contentKept = contentFingerprint(output) === sourceContent;
+  if (!contentKept) {
+    warnings.push('Some page content read differently once the password was removed, so check the copy before relying on it.');
+  }
+  const reader = await probeReader(bytes);
+  if (reader.verdict === 'unavailable' || reader.verdict === 'unreadable') {
+    warnings.push(`No PDF reader could be started in this browser to re-open the unlocked copy${reader.detail ? ` (${reader.detail})` : ''}; its /Encrypt entry was confirmed gone, but the pages were only checked with the built-in engine.`);
+  } else if (reader.verdict !== 'opens') {
+    warnings.push(`A PDF reader still will not open the saved copy without a password (${reader.detail ?? reader.verdict}), so this file is not free of its protection yet.`);
+  } else if (reader.pages !== inspection.pages) {
+    warnings.push(`A PDF reader counts ${reader.pages} page(s) in the saved copy where the engine that wrote it counts ${inspection.pages}.`);
+  } else if (sourceText && sourceText.join('\n') !== reader.text.join('\n')) {
+    warnings.push('A PDF reader extracts different text from the unlocked copy than it could read from the protected one: the page content was stored as ciphertext this browser cannot decrypt, so check the copy before relying on it.');
+  }
+  return { bytes, pages: inspection.pages, kept, contentKept, rebuilt, warnings };
 }
 
 /** The eight `/P` flags, in the order the report text lists them. */

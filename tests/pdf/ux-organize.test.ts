@@ -10,6 +10,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
+import { PDFDocument, degrees } from '@maxwbh/pdf-lib';
+import { runPdfTool } from '@/lib/pdf/tools/runner';
 import {
   EMPTY_SELECTION,
   ORGANIZE_SHORTCUTS,
@@ -973,5 +975,94 @@ describe('pane shell', () => {
     expect(screen.getByText(/Add one or more PDFs/)).toBeInTheDocument();
     expect(screen.getByText(/first becomes the page order you edit/)).toBeInTheDocument();
     cleanup();
+  });
+});
+
+// ── the pane's plan and the registry's tool must describe one file ──────────
+
+/**
+ * The pane writes `params.pageOrder`; the registry tool reads it and writes a
+ * PDF. Everything above tests the pane's side of that seam, so this section
+ * runs the real tool on the real bytes and asks whether the file the plan
+ * promises is the file that arrives. Where the two disagree the reason is in
+ * `docs/tasks/organize-request.md` — the pane's files belong to another worker.
+ */
+
+/** Sheets of distinguishable widths, so an order claim can be checked in bytes. */
+async function fixture(
+  specs: { width?: number; rotate?: number }[] = [{}, {}, {}, {}],
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  specs.forEach((spec, index) => {
+    const page = doc.addPage([spec.width ?? 200 + index * 10, 100]);
+    if (spec.rotate) page.setRotation(degrees(spec.rotate));
+  });
+  return doc.save({ useObjectStreams: false });
+}
+
+const fileOf = (bytes: Uint8Array, name = 'plan.pdf'): File =>
+  new File([new Uint8Array(bytes)], name, { type: 'application/pdf' });
+
+async function organizeWith(pageOrder: unknown, bytes: Uint8Array): Promise<PDFDocument> {
+  const outcome = await runPdfTool({
+    toolId: 'organize',
+    files: [fileOf(bytes)],
+    values: { pageOrder },
+    onProgress: () => {},
+    onLog: () => {},
+  });
+  expect(outcome.outputs).toHaveLength(1);
+  return PDFDocument.load(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+}
+
+const widths = (doc: PDFDocument): number[] => doc.getPages().map((page) => Math.round(page.getWidth()));
+const rotations = (doc: PDFDocument): number[] => doc.getPages().map((page) => page.getRotation().angle);
+
+describe('plan → file', () => {
+  it('writes the order the grid built, in the bytes that come back', async () => {
+    const state = fourPages();
+    const reordered = run(state, { type: 'nudge', index: 3, delta: -3 });
+    const spec = planToPageOrder(reordered.plan);
+    expect(spec).toBe('4, 1, 2, 3');
+    const doc = await organizeWith(spec, await fixture());
+    // The fixture's page n is 200 + 10(n-1) wide, so the widths are the order.
+    expect(widths(doc)).toEqual([230, 200, 210, 220]);
+  });
+
+  it('turns a page further from where the preview says it is going (known gap)', async () => {
+    const bytes = await fixture([{ rotate: 90 }, {}, {}, {}]);
+    const state = fourPages();
+    const turned = run(state, { type: 'rotate', index: 0, delta: 90 });
+    expect(turned.plan[0]).toMatchObject({ kind: 'page', page: 0, rotate: 90 });
+    // The preview promises the source angle plus the plan's turn…
+    expect(outputRotation(90, 90)).toBe(180);
+    // …and the serialiser writes `r90`, which the tool reads as an absolute
+    // /Rotate. The file therefore lands at 90° — the page appears not to have
+    // moved at all. Pinned here so the fix is visible from both sides.
+    const doc = await organizeWith(planToPageOrder(turned.plan), bytes);
+    expect(rotations(doc)).toEqual([90, 0, 0, 0]);
+  });
+
+  it('straightens only when an explicit r0 reaches the tool, which the pane never writes', async () => {
+    const bytes = await fixture([{ rotate: 90 }, {}, {}, {}]);
+    const doc = await organizeWith('1r0, 2', bytes);
+    expect(rotations(doc)).toEqual([0, 0]);
+
+    // The pane's serialiser drops a zero turn (`item.rotate ? … : ''`), so the
+    // "straighten" the user performed is silently lost on the way out.
+    const plan: Plan = [pageItem(0, 0, 0), pageItem(0, 1)];
+    expect(planToPageOrder(plan)).toBe('1, 2');
+  });
+
+  it('refuses a two-file plan instead of organising the wrong document', async () => {
+    const bytes = await fixture();
+    const state = openDocs([
+      { name: 'report.pdf', pages: 4 },
+      { name: 'appendix.pdf', pages: 3 },
+    ]);
+    const fromSecond = run(state, { type: 'useAsBase', source: 1 });
+    const spec = planToPageOrder(fromSecond.plan);
+    expect(spec).toBe('f2:1, f2:2, f2:3');
+    await expect(organizeWith(spec, bytes)).rejects.toThrow(/one document at a time/i);
   });
 });

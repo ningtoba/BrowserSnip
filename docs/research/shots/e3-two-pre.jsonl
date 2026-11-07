@@ -1,0 +1,4 @@
+{"step":"markA","state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “Malaysia Nationality”. Select is a","count":1,"sel":"amw6pwz3sb","painted":["amw6pwz3sb@70,466,265x14"]}}
+{"step":"markB","state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “CYBERJAYA, Selangor, Malaysia Curr","count":2,"sel":"amw6pwzzvm","painted":["amw6pwz3sb@70,466,265x14","amw6pwzzvm@70,522,420x14"]}}
+{"step":"markA","state":{"armed":"highlight","tone":"idle","text":"Drag across the words — the mark snaps to each text line it ","count":0,"sel":"","painted":[]}}
+{"step":"markB","state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “CYBERJAYA, Selangor, Malaysia Curr","count":1,"sel":"amw6px7eab","painted":["amw6px7eab@70,522,420x14"]}}

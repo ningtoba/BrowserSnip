@@ -1,0 +1,13 @@
+{"step":"loaded","state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. A","count":0}}
+{"mode":"fast","frac":0.3,"created":true,"before":0,"after":1,"armed":"select","status":"Placed Highlight · p.1 · “luqmanhakim.dev@gmail.com Email address”. Se"}
+{"mode":"fast","frac":0.325,"created":false,"before":1,"after":1,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}
+{"mode":"fast","frac":0.35,"created":true,"before":1,"after":2,"armed":"select","status":"Placed Highlight · p.1 · “+6001111070825 Phone number”. Select is arme"}
+{"mode":"fast","frac":0.375,"created":false,"before":2,"after":2,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}
+{"mode":"fast","frac":0.4,"created":true,"before":2,"after":3,"armed":"select","status":"Placed Highlight · p.1 · “Malaysia”. Select is armed."}
+{"mode":"slow","frac":0.3,"created":true,"before":3,"after":4,"armed":"select","status":"Placed Highlight · p.1 · “luqmanhakim.dev@gmail.com Email address”. Se"}
+{"mode":"slow","frac":0.325,"created":false,"before":4,"after":4,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}
+{"mode":"slow","frac":0.35,"created":true,"before":4,"after":5,"armed":"select","status":"Placed Highlight · p.1 · “+6001111070825 Phone number”. Select is arme"}
+{"mode":"slow","frac":0.375,"created":false,"before":5,"after":5,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}
+{"mode":"slow","frac":0.4,"created":true,"before":5,"after":6,"armed":"select","status":"Placed Highlight · p.1 · “Malaysia”. Select is armed."}
+{"mode":"tap","frac":0.51,"created":false,"after":6,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}
+{"mode":"tap","frac":0.53,"created":false,"after":6,"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag across"}

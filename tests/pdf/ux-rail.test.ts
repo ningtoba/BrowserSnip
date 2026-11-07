@@ -19,13 +19,19 @@
  * with `createElement`, and every fake run waits for an explicit `release()`
  * so a mid-run assertion can never race the timer it is racing.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { createElement as h } from 'react';
 import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import { usePdfTool } from '@/hooks/usePdfTool';
+import * as renderLib from '@/lib/pdf/core/render';
 import type { PdfSession } from '@/lib/pdf/core/render';
+import {
+  OutputPreview,
+  PREVIEW_PAGE_LIMIT,
+  previewPages,
+} from '@/components/tools/pdf/shared/OutputPreview';
 import { ErrorPanel, readableMessage } from '@/components/tools/pdf/shared/ErrorPanel';
 import { FileQueue, type FileQueueItem } from '@/components/tools/pdf/shared/FileQueue';
 import { PageThumbs } from '@/components/tools/pdf/shared/PageThumbs';
@@ -529,6 +535,101 @@ describe('PreviewPane keyboard, fit and placeholders', () => {
   it('announces which page the pane is on', () => {
     render(h(PreviewPane, { session: fakeSession(5), page: 3 }));
     expect(screen.getByRole('status').textContent).toContain('Page 3 of 5');
+  });
+});
+
+// ── the result preview: bounded work that knows when to stop ────────────────
+
+describe('OutputPreview as a bounded job', () => {
+  /** The mocked `core/render` surface, typed for assertions. */
+  const open = renderLib.openRender as unknown as ReturnType<typeof vi.fn>;
+  const thumbs = renderLib.thumbnails as unknown as ReturnType<typeof vi.fn>;
+
+  /** A document pdf.js hands back, with a countable teardown. */
+  function documentOf(pages: number) {
+    const destroy = vi.fn(async () => {});
+    return {
+      destroy,
+      session: {
+        numPages: pages,
+        fingerprint: `rail-${pages}-${Math.random().toString(36).slice(2)}`,
+        page: async () => ({
+          getViewport: () => ({ width: 612, height: 792, rotation: 0 }),
+          cleanup() {},
+        }),
+        renderToCanvas: async () => ({}),
+        destroy,
+      },
+    };
+  }
+
+  /** A produced file, as the result screen holds it. */
+  function produced(name = 'merged.pdf'): Blob {
+    return new Blob([pdfBytes(80)], { type: 'application/pdf' });
+  }
+
+  // The rail's own tests above leave thumbnail requests in the mock and in the
+  // hand-pumped queue; counting this job's work starts by emptying both.
+  beforeEach(() => {
+    queue.thumbs.length = 0;
+    thumbs.mockClear();
+    open.mockClear();
+  });
+
+  it('rasterises a bounded set of pages out of five hundred', async () => {
+    open.mockResolvedValueOnce(documentOf(500).session);
+    render(h(OutputPreview, { items: [{ name: 'merged.pdf', blob: produced() }] }));
+    await waitFor(() => expect(thumbs).toHaveBeenCalled());
+    // Every tile reports in the same tick it mounts; drain them before counting.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    /** Every raster this screen asked for, as the page and size it asked for. */
+    const tiles = thumbs.mock.calls.flatMap((call) => {
+      const options = call[1] as { pages: number[]; maxSide: number };
+      return options.pages.map((page) => ({ page, maxSide: options.maxSide }));
+    });
+    // One request per tile — never a batch of 500 — and the tiles are the poster
+    // plus the bounded strip. This is the mistake E12 was written about.
+    expect(tiles).toHaveLength(thumbs.mock.calls.length);
+    expect(tiles.length).toBeLessThanOrEqual(PREVIEW_PAGE_LIMIT + 1);
+
+    const pages = [...new Set(tiles.map((tile) => tile.page))];
+    expect(pages).toEqual(previewPages(500));
+    expect(pages).toContain(1);
+    expect(pages).toContain(500);
+    expect(pages).not.toContain(250);
+    // The big frame is a bigger raster than the chip it matches, and nothing is
+    // drawn at a size the screen never shows.
+    expect(new Set(tiles.map((tile) => tile.maxSide))).toEqual(new Set([380, 48]));
+  });
+
+  it('destroys the document it opened when the result it belongs to is gone', async () => {
+    const first = documentOf(3);
+    const second = documentOf(4);
+    open.mockResolvedValueOnce(first.session).mockResolvedValueOnce(second.session);
+    const { rerender, unmount } = render(
+      h(OutputPreview, { items: [{ name: 'a.pdf', blob: produced('a.pdf') }] }),
+    );
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(first.destroy).not.toHaveBeenCalled();
+
+    // A new run publishes a different blob: the old document is nobody's business
+    // now, and leaving it open is how a preview turns into a memory leak.
+    rerender(h(OutputPreview, { items: [{ name: 'b.pdf', blob: produced('b.pdf') }] }));
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(first.destroy).toHaveBeenCalledTimes(1));
+    expect(second.destroy).not.toHaveBeenCalled();
+
+    unmount();
+    expect(second.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks pdf.js for nothing when the screen has folded the preview away', async () => {
+    render(h(OutputPreview, { items: [{ name: 'a.pdf', blob: produced() }], mode: 'off' }));
+    expect(open).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-preview="off"]')).not.toBeNull();
   });
 });
 

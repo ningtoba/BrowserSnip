@@ -25,9 +25,10 @@
  *   floating at the bottom of a page that does not scroll;
  * - a run is centred progress that names the file and can be cancelled;
  * - the result is a screen of its own — checkmark, output name, size before →
- *   after, pages in → out, warnings, a dominant download, and two quiet ways
- *   onward; the output count comes from the producer that held the document, and
- *   a run that produced no PDF says so instead of claiming pages;
+ *   after, pages in → out, warnings, the produced file drawn before the user is
+ *   asked to take it, a dominant download, and two quiet ways onward; the output
+ *   count comes from the producer that held the document, and a run that produced
+ *   no PDF says so instead of claiming pages;
  * - a failure prints its reason once, names the file, and offers Retry.
  *
  * jsdom has no canvas and no layout, so sizing is asserted through the classes
@@ -45,6 +46,7 @@ import { ToolPageHeader } from '@/components/layout/AppLayout';
 import { describeOptions, leadField, quietSummary, splitFileName, verbFor } from '@/components/tools/pdf/shared/toolForm';
 import { intakeCopy, intakeFootNote, intakeFormats } from '@/components/tools/pdf/shared/FileIntake';
 import { surfaceState } from '@/components/tools/pdf/shared/ToolSurface';
+import { openRender } from '@/lib/pdf/core/render';
 import type { PdfToolDefinition, ToolField } from '@/lib/pdf/tools/types';
 
 // ── module mocks ────────────────────────────────────────────────────────────
@@ -237,7 +239,106 @@ const STANDS: Record<string, PdfToolDefinition> = {
     fields: [ownerField, stampField, dpiField],
     run: heldRun({ size: 100, message: 'Marked.' }),
   },
+  /** A real container: the result screen has to open it and list its entries. */
+  'shell-archive': {
+    id: 'shell-archive',
+    name: 'Bundle Shell',
+    description: 'Put the parts in an archive',
+    icon: '🗂',
+    category: 'convert-from',
+    actionLabel: 'Bundle',
+    outputSuffix: '.zip',
+    run: async () => {
+      const { default: JSZip } = await import('jszip');
+      const archive = new JSZip();
+      archive.file('page-001.png', new Uint8Array(900));
+      archive.file('page-002.png', new Uint8Array(800));
+      archive.file('notes.txt', 'written in this tab');
+      const blob = await archive.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+      return {
+        kind: 'files',
+        files: [{ blob, name: 'bundle.zip' }],
+        message: 'One archive.',
+        // A careless producer's page count; a zip has none (see the card's row).
+        pages: 3,
+      };
+    },
+  },
+  /** A format with nothing to draw and nothing to open. */
+  'shell-csv': {
+    id: 'shell-csv',
+    name: 'Table Shell',
+    description: 'Write the data out',
+    icon: '🧮',
+    category: 'convert-to',
+    actionLabel: 'Export',
+    outputSuffix: '.csv',
+    run: async () => ({
+      kind: 'files',
+      files: [{ blob: new Blob([bytes(20)], { type: 'text/csv' }), name: 'table.csv' }],
+      message: 'Tabulated.',
+    }),
+  },
+  /** Several files out, none of them a PDF: an image result. */
+  'shell-snapshot': {
+    id: 'shell-snapshot',
+    name: 'Snapshot Shell',
+    description: 'Turn the pages into images',
+    icon: '🖼',
+    category: 'convert-from',
+    actionLabel: 'Snapshot',
+    outputSuffix: '.png',
+    run: async () => ({
+      kind: 'files',
+      files: [0, 1, 2].map((index) => ({
+        blob: new Blob([bytes(30)], { type: 'image/png' }),
+        name: `page-00${index + 1}.png`,
+      })),
+      message: 'Three images.',
+      pages: 3,
+    }),
+  },
 };
+
+/**
+ * A stand-in for a document pdf.js handed back.
+ *
+ * `openRender` is mocked file-wide, so a test that needs a specific page count
+ * builds the session itself and pumps the promise by hand — that is the only way
+ * to see which document a preview belongs to after two runs have raced.
+ */
+function documentSession(pages: number, fingerprint = 'late-session') {
+  return {
+    numPages: pages,
+    fingerprint,
+    page: async () => ({ getViewport: () => ({ width: 612, height: 792, rotation: 0 }), cleanup() {} }),
+    renderToCanvas: async () => ({}),
+    destroy: async () => {},
+  };
+}
+
+/**
+ * What the result preview's pdf.js request answers with, for one test.
+ *
+ * Two callers open a document on a tool page: the loaded-file cards read the
+ * input, and the preview reads what the run wrote — and the preview is the only
+ * one that asks for the read to be cancellable (E19). Keying the fake on that
+ * signal is what stops a card's request from eating the answer a preview test is
+ * waiting for. Returns the restore.
+ */
+function previewAnswers(
+  answer: (resolve: (session: unknown) => void, reject: (error: unknown) => void) => void,
+): () => void {
+  const open = openRender as unknown as ReturnType<typeof vi.fn>;
+  const settled = open.getMockImplementation() as ((...args: unknown[]) => unknown) | undefined;
+  open.mockImplementation((src: unknown, options?: { signal?: AbortSignal }) => {
+    if (!options?.signal) return settled?.(src, options);
+    return new Promise((resolve, reject) => answer(resolve, reject));
+  });
+  return () => {
+    if (settled) open.mockImplementation(settled as (...args: unknown[]) => unknown);
+  };
+}
 
 /** A real PDF, so the pre-flight can read the page count out of it. */
 async function realPdf(name = 'shell.pdf', pages = 2): Promise<File> {
@@ -972,6 +1073,209 @@ describe('the produced page count', () => {
     const outcome = await runPdfTool({ toolId: 'shell-uncounted', files: [await realPdf('a.pdf', 2)] });
     expect(outcome.outputs).toHaveLength(1);
     expect(outcome.pagesOut).toBeNull();
+  });
+});
+
+// ── what the result screen shows before it asks for the download ────────────
+
+describe('the produced file, shown', () => {
+  /** The preview block of the success screen, when there is one. */
+  function preview(): HTMLElement | null {
+    const pane = document.querySelector('[data-result]');
+    return pane ? pane.querySelector<HTMLElement>('[aria-label="Output preview"]') : null;
+  }
+
+  /**
+   * Wait for the preview to reach one state, then hand back that node.
+   *
+   * Asking again each poll matters: the loading frame and the drawn page are
+   * different nodes, so a handle taken while the raster is in flight goes stale
+   * the moment it lands.
+   */
+  async function shownAs(state: string): Promise<HTMLElement> {
+    await waitFor(() =>
+      expect(document.querySelector(`[data-result] [data-preview="${state}"]`)).not.toBeNull(),
+    );
+    return preview() as HTMLElement;
+  }
+
+  /** Run a stand to its result screen and hand back that screen. */
+  async function finish(
+    toolId: string,
+    verb: string,
+    options: { input?: File; held?: boolean; owner?: string } = {},
+  ): Promise<HTMLElement> {
+    loadFiles([options.input ?? (await realPdf('shell.pdf'))]);
+    render(<PdfToolPanel toolId={toolId} />);
+    if (options.owner !== undefined) {
+      fireEvent.change(await screen.findByLabelText('Owner name'), { target: { value: options.owner } });
+    }
+    fireEvent.click(await screen.findByRole('button', { name: verb }));
+    if (options.held !== false) await release();
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+    return document.querySelector('[data-result]') as HTMLElement;
+  }
+
+  it('draws the file it made before offering the download', async () => {
+    const pane = await finish('shell-compress', 'Compress', { owner: 'ACME' });
+    const frame = await shownAs('pdf');
+    const card = within(pane).getByRole('region', { name: 'Result' });
+
+    // The document opened is the OUTPUT, not the input: the caption names the
+    // file the run wrote, which is the only handle the screen has on it.
+    expect(frame.textContent).toContain('shell_compressed.pdf');
+    // And it says what it is, because a raster is not the document.
+    expect(frame.textContent).toMatch(/drawn in this tab/);
+    expect(frame.textContent).toMatch(/not the file itself/);
+    // The page frame exists whether or not this browser can paint into it.
+    expect(frame.querySelector('[data-preview-poster]')).not.toBeNull();
+
+    // Preview first, download after: the file is seen before it is taken.
+    const download = within(card).getByRole('button', { name: 'Download' });
+    expect(frame.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The claims the screen already made are still made.
+    expect(card.textContent).toMatch(/\d+% smaller/);
+    expect(card.textContent).toContain('2 in · out not counted');
+  });
+
+  it('draws a bounded strip — the first pages and the last, never all forty', async () => {
+    const restore = previewAnswers((resolve) => resolve(documentSession(40, 'forty-pages')));
+    try {
+      await finish('shell-repair', 'Repair');
+      const frame = await shownAs('pdf');
+      expect(frame).toHaveAttribute('data-preview-pages', '40');
+
+      const chips = [...frame.querySelectorAll<HTMLButtonElement>('button[aria-label^="Page "]')];
+      // Eleven from the front, plus the last page standing in for the middle: a
+      // merge is checked at its end, and 40 rasters nobody scrolls to is not a
+      // preview (E12).
+      expect(chips).toHaveLength(12);
+      expect(chips[0]).toHaveAttribute('aria-label', 'Page 1');
+      expect(chips[11]).toHaveAttribute('aria-label', 'Page 40');
+      expect(frame.textContent).toContain('Pages 1–11 and 40 are drawn here; the file holds all 40.');
+
+      // Picking a page puts it in the big frame; the bound itself never moves.
+      expect(chips[0]).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(chips[11]);
+      await waitFor(() =>
+        expect(frame.textContent).toMatch(/Page 40 of 40 of shell_repaired\.pdf/),
+      );
+      expect(chips[11]).toHaveAttribute('aria-pressed', 'true');
+      expect(frame.querySelectorAll('button[aria-label^="Page "]')).toHaveLength(12);
+    } finally {
+      restore();
+    }
+  });
+
+  it('lists what is inside an archive, and claims no page count for it', async () => {
+    const pane = await finish('shell-archive', 'Bundle', {
+      input: await realPdf('shell.pdf', 5),
+      held: false,
+    });
+    const frame = await shownAs('archive');
+
+    expect(frame.textContent).toContain('bundle.zip · 3 files inside');
+    expect(frame.textContent).toContain('page-001.png');
+    expect(frame.textContent).toContain('notes.txt');
+    // An archive has entries, not pages, and the preview says which it shows.
+    expect(frame.textContent).toMatch(/the download is the archive itself/);
+    expect(frame.querySelector('[data-preview-poster]')).toBeNull();
+
+    const card = within(pane).getByRole('region', { name: 'Result' });
+    // The producer handed `pages: 3` for a zip; the card refuses the claim.
+    expect(card.textContent).toContain('5 in · out not counted');
+    expect(within(card).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+
+  it('shows produced images as thumbnails, with every file still downloadable', async () => {
+    const pane = await finish('shell-snapshot', 'Snapshot', { held: false });
+    const frame = preview() as HTMLElement;
+    expect(frame).toHaveAttribute('data-preview', 'images');
+    expect(frame.getAttribute('data-preview-pages')).toBe('3');
+    expect(frame.querySelectorAll('img')).toHaveLength(3);
+    expect(frame.textContent).toMatch(/3 images/);
+    expect(frame.textContent).toMatch(/shown as they are/);
+
+    const card = within(pane).getByRole('region', { name: 'Result' });
+    expect(within(card).getByRole('button', { name: 'Download all' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Download page-002.png' })).toBeInTheDocument();
+  });
+
+  it('says so when a format has nothing to draw, instead of showing a blank frame', async () => {
+    const pane = await finish('shell-csv', 'Export', { held: false });
+    const frame = preview() as HTMLElement;
+    expect(frame).toHaveAttribute('data-preview', 'none');
+    expect(frame.textContent).toMatch(/csv/i);
+    expect(frame.textContent).toMatch(/data, not a page/);
+    expect(frame.querySelector('img')).toBeNull();
+    // The download is the point of this branch.
+    const card = within(pane).getByRole('region', { name: 'Result' });
+    expect(within(card).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+
+  it('degrades to the download rather than an error screen when the file will not draw', async () => {
+    const restore = previewAnswers((_resolve, reject) =>
+      reject(new Error('Invalid PDF structure.')),
+    );
+    try {
+      const pane = await finish('shell-repair', 'Repair');
+      const frame = await shownAs('none');
+
+      expect(frame.textContent).toMatch(/could not draw shell_repaired\.pdf/);
+      expect(frame.textContent).toMatch(/the download is still the file/);
+      expect(frame.querySelector('[data-preview-poster]')).toBeNull();
+      // A missing picture is not a failed run: no alert, no Retry, no stack trace.
+      expect(within(pane).queryByRole('alert')).toBeNull();
+      expect(within(pane).queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(frame.textContent).not.toMatch(/Invalid PDF structure/);
+
+      const card = within(pane).getByRole('region', { name: 'Result' });
+      expect(within(card).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+      expect(card.textContent).toContain('Rebuilt.');
+    } finally {
+      restore();
+    }
+  });
+
+  it('throws away a preview that arrives after its run was superseded', async () => {
+    const waiting: Array<(session: unknown) => void> = [];
+    const restore = previewAnswers((resolve) => {
+      waiting.push(resolve);
+    });
+    try {
+      loadFiles([await realPdf('shell.pdf')]);
+      render(<PdfToolPanel toolId="shell-repair" />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Repair' }));
+      await release();
+      await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+      // The first result screen asks pdf.js for its document; the answer is held.
+      await waitFor(() => expect(waiting).toHaveLength(1));
+
+      // A second result replaces it while that request is still in the air.
+      act(() => {
+        const store = useProcessStore.getState();
+        store.reset();
+        store.setOutput(new Blob([bytes(70)], { type: 'application/pdf' }), 'blob:second', 'again_repaired.pdf');
+        store.complete('Rebuilt again.');
+      });
+      await waitFor(() => expect(waiting).toHaveLength(2));
+
+      // The current run answers first: nine pages, and its own name.
+      act(() => waiting[1](documentSession(9, 'current-run')));
+      await waitFor(() => expect(preview()?.textContent).toContain('again_repaired.pdf'));
+
+      // The superseded document arrives late, two pages long.
+      act(() => waiting[0](documentSession(2, 'previous-run')));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(preview()).toHaveAttribute('data-preview-pages', '9');
+      expect(preview()?.textContent).toContain('again_repaired.pdf');
+      expect(preview()?.textContent).not.toContain('shell_repaired.pdf');
+    } finally {
+      restore();
+    }
   });
 });
 

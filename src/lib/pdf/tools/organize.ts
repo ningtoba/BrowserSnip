@@ -489,9 +489,15 @@ const MAX_EDGE_TEXT = '14 400 pt';
  * What a page-tree copy costs. Every tool that rebuilds the document rather than
  * editing it in place loses the outline, and the run only says so when the file
  * happened to have one — so the standing disclosure belongs on the tool.
+ *
+ * The form-field half of this sentence is measured, not assumed: `copyPages`
+ * carries a page's widget annotations but never the catalogue's `/AcroForm`, so
+ * a reopened output reports zero fields (see the byte test in
+ * `tests/pdf/edge-organize.test.ts`). Saying "form fields travel with the
+ * pages" would be the overclaim this pass exists to remove.
  */
 const PAGE_COPY_NOTE =
-  'The pages are copied into a new file, so this document’s own bookmarks are not in the output; page content, links and form fields travel with the pages.';
+  'The pages are copied into a new file: the ink and the link annotations travel with them, but this document’s own bookmarks do not, and a fillable form loses the field list that makes its boxes editable.';
 
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
@@ -530,16 +536,33 @@ const ANCHOR: ToolField = {
 
 const BLANK_COUNT: ToolField = {
   key: 'count',
-  label: 'How many',
+  label: 'Blank pages to add',
   type: 'number',
   default: 1,
   min: 1,
   max: 200,
   step: 1,
   integer: true,
+  unit: 'pages',
   group: 'Position',
   help: 'Inserted as one run at the chosen position, not spread through the document.',
 
+};
+
+const OFFSET: ToolField = {
+  key: 'offset',
+  label: 'Back-side page offset',
+  type: 'number',
+  default: 0,
+  min: 0,
+  // The rail only knows the ceiling the field can carry; `duplex-collate` bounds
+  // it to the scan in hand and says so (E6, E15).
+  max: 500,
+  step: 1,
+  integer: true,
+  unit: 'pages',
+  group: 'Scan order',
+  help: 'For when the back-side block starts a page or two later than half the document — a cover scanned on its own, say. Pages between the two blocks are left out of the collation, and the run names them.',
 };
 
 const OPACITY: ToolField = {
@@ -557,14 +580,15 @@ const OPACITY: ToolField = {
 
 const SCALE: ToolField = {
   key: 'scale',
-  label: 'Stamp scale',
+  label: 'Stamp size',
   type: 'slider',
   default: 1,
   min: 0.1,
   max: 3,
   step: 0.05,
+  unit: '×',
   group: 'Placement',
-  help: '1 draws the stamp page at its own size. Larger than 1 can push it past the edge of the base page.',
+  help: '1 covers the base page: the stamp is scaled to its sheet, so a letterhead designed for the same paper lands exactly. Above 1 it grows past the edge, below 1 it shrinks towards the middle.',
 
 };
 
@@ -637,9 +661,9 @@ export const organizeTools: PdfToolDefinition[] = [
     minFiles: 1,
     outputSuffix: '_merged.pdf',
     actionLabel: 'Merge',
-    promise: 'One PDF with every file’s pages in your order, plus a bookmark to each source.',
+    promise: 'One PDF with every file’s pages in your order, and — while bookmarks are switched on — one entry per source file.',
     notes: [
-      'Pages are copied rather than flattened, so links and form fields inside them keep working and the source files are untouched.',
+      'Pages are copied rather than redrawn, so the source files are untouched and their link annotations come with them. The catalogue’s form field list does not, so a fillable form needs filling before it is merged.',
       'A bookmark is written for the first page of each file. Bookmarks *inside* a source file are not carried over — use the bookmark editor for those.',
     ],
     fields: [
@@ -649,7 +673,7 @@ export const organizeTools: PdfToolDefinition[] = [
         type: 'toggle',
         default: true,
         group: 'Output',
-        help: 'Creates a top-level outline entry pointing at the first page of every merged file.',
+        help: 'Creates a top-level outline entry pointing at the first page of every merged file. Switch it off for a merge that adds nothing but pages.',
       },
       {
         key: 'blankBetween',
@@ -756,7 +780,7 @@ export const organizeTools: PdfToolDefinition[] = [
       CHUNK_SIZE,
       {
         key: 'oddEven',
-        label: 'Which side',
+        label: 'Which side of the sheet',
         type: 'select',
         default: 'both',
         group: 'Split by',
@@ -1055,7 +1079,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_rotated.pdf',
     surface: 'pages',
     actionLabel: 'Rotate',
-    promise: 'The same pages turned by a quarter turn. Only the orientation changes — nothing is redrawn.',
+    promise: 'The same PDF with the pages you chose turned by 90°, 180° or 270°. Only the orientation changes — nothing is redrawn.',
     notes: [
       'Rotation is stored on the page, so text, links and bookmarks stay exactly where they were.',
       'The turn is added to each page’s existing rotation: a page already at 90° ends at 180°.',
@@ -1225,7 +1249,7 @@ export const organizeTools: PdfToolDefinition[] = [
     fields: [
       {
         key: 'position',
-        label: 'Position',
+        label: 'Where the blank sheets go',
         type: 'select',
         default: 'end',
         group: 'Position',
@@ -1239,7 +1263,7 @@ export const organizeTools: PdfToolDefinition[] = [
     },
       ANCHOR,
       BLANK_COUNT,
-      { key: 'size', label: 'Size', type: 'select', default: 'same', options: PAGE_SIZE_OPTIONS, group: 'Size', help: 'Same as source matches the page beside it, which is what keeps a mixed-size document printing squarely.' },
+      { key: 'size', label: 'Blank sheet size', type: 'select', default: 'same', options: PAGE_SIZE_OPTIONS, group: 'Size', help: 'Same as source matches the page beside it, which is what keeps a mixed-size document printing squarely.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1303,9 +1327,9 @@ export const organizeTools: PdfToolDefinition[] = [
         options: [
           { value: '1-1', label: 'One page from each file in turn' },
           { value: '2-2', label: 'Two pages from each file in turn' },
-          { value: 'reverse-alternate', label: 'Alternate, second file reversed' },
+          { value: 'reverse-alternate', label: 'Alternate, later files reversed' },
         ],
-        help: 'Files are used in the order they appear in the queue.',
+        help: 'Files are mixed in the order they sit in the queue. "Later files reversed" keeps the first file top-to-bottom and turns every file after it back-to-front — the shape a duplex scan needs when the backs came out last-page-first.',
       },
     ],
     validate: (_v, { fileCount }) =>
@@ -1316,9 +1340,13 @@ export const organizeTools: PdfToolDefinition[] = [
       noteRepeated(inputs, notes);
       const pattern = stringValue(context.values, 'pattern', '1-1');
       const runLength = pattern === '2-2' ? 2 : 1;
-      const queues = inputs.map((input) => {
+      const queues = inputs.map((input, index) => {
         const pages = resolvePages('all', input.pageCount);
-        return pattern === 'reverse-alternate' ? [...pages].reverse() : pages;
+        // Only the files after the first are turned around: reversing the front
+        // block as well would print the document backwards while the option says
+        // it reverses the second file (E9's "do what the label says").
+        const reversed = pattern === 'reverse-alternate' && index > 0;
+        return reversed ? [...pages].reverse() : pages;
       });
       const plan: { source: number; page: number }[] = [];
       const cursors = queues.map(() => 0);
@@ -1381,18 +1409,7 @@ export const organizeTools: PdfToolDefinition[] = [
         group: 'Scan order',
         help: 'Most single-pass duplex scanners output the back side upside-down and last-page-first.',
       },
-      {
-        key: 'offset',
-        label: 'Back-side page offset',
-        type: 'number',
-        default: 0,
-        min: 0,
-        max: 500,
-        step: 1,
-        integer: true,
-        group: 'Scan order',
-        help: 'Use this when the back-side block starts a page later than half the document.',
-      },
+      OFFSET,
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1481,8 +1498,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'first', label: 'Always the first stamp page' },
           { value: 'last', label: 'Always the last stamp page' },
         ],
-      help: 'When the stamp file is shorter than the base, its last page is reused for the rest.',
-    },
+        help: 'When the stamp file is shorter than the base, its last page is reused for the rest. When it is longer, the extra stamp pages are not used.',
+      },
       OPACITY,
       SCALE,
     ],
@@ -1536,6 +1553,14 @@ export const organizeTools: PdfToolDefinition[] = [
       if (shortBy > 0) {
         notes.add(
           `The stamp has ${pageCountLabel(stampTotal)} and the base has ${pageCountLabel(pages.length)}, so the last ${pageCountLabel(shortBy)} reused stamp page ${stampTotal}. Choose "Always the first stamp page" to make that deliberate.`,
+        );
+      }
+      if (mapping === 'same' && stampTotal > pages.length) {
+        // The mirror of running short: pages 5+ of the stamp file are quietly
+        // never drawn, and a letterhead whose back side lives on page 2 would
+        // look applied while only page 1 ever was.
+        notes.add(
+          `The stamp has ${pageCountLabel(stampTotal)} but the base has ${pageCountLabel(pages.length)}, so stamp pages ${formatPages(resolvePages('all', stampTotal).slice(pages.length))} were never used. Choose "Always the last stamp page" to stamp with the final one.`,
         );
       }
       if (skipped === pages.length && pages.length > 0) {
@@ -1666,7 +1691,7 @@ export const organizeTools: PdfToolDefinition[] = [
       FLATTEN_NOTE,
     ],
     fields: [
-      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Sheet', help: 'The finished sheet, before folding: an A4 booklet is imposed two-up on A3 landscape.' },
+      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Sheet', help: 'The paper you print on. Two booklet pages go on each side of a sheet, so A4 paper makes an A5 booklet — pick A3 paper for a finished A4 booklet.' },
       { key: 'landscape', label: 'Landscape sheet', type: 'toggle', default: true, group: 'Sheet', help: 'Saddle-stitch sheets are landscape by definition; portrait here prints a booklet that folds the wrong way.' },
       {
         key: 'gutter',
@@ -1692,14 +1717,6 @@ export const organizeTools: PdfToolDefinition[] = [
         group: 'Sheet',
       help: 'Space at the outer edge of each sheet, which becomes the trim edge when you fold.',
     },
-      {
-        key: 'blankFill',
-        label: 'Add blank pages to complete the last sheet',
-        type: 'toggle',
-        default: true,
-        group: 'Sheet',
-      help: 'A booklet must fill a whole number of sheets, so the last one is padded with blanks.',
-    },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1709,16 +1726,16 @@ export const organizeTools: PdfToolDefinition[] = [
       const sheet = resolvePageSize(stringValue(context.values, 'sheetSize', 'a4'), booleanValue(context.values, 'landscape', true));
       const gutter = numberOf(context.values, { ...GUTTER, label: 'Gutter', default: 12 }, notes);
       const margin = numberOf(context.values, { ...MARGIN, label: 'Margin', default: 12 }, notes);
-      const fill = booleanValue(context.values, 'blankFill', true);
       const pages = [...source];
       // A saddle-stitched sheet carries four pages, so a booklet that is short
-      // of a multiple of four has to be padded — with or without the toggle,
-      // otherwise the odd pages would silently disappear from the print run.
+      // of a multiple of four has to be padded. There is no option about it: the
+      // alternative is dropping the odd pages from the print run, so the padding
+      // is unconditional and the run says how much of the last sheet is blank.
       const padTo = Math.ceil(pages.length / 4) * 4;
       while (pages.length < padTo) pages.push(-1);
       const blanks = pages.length - source.length;
-      if (blanks > 0 && !fill) {
-        notes.add(`A booklet needs whole sheets, so ${pageCountLabel(blanks)} were padded in even though blank pages were switched off.`);
+      if (blanks > 0) {
+        notes.add(`A booklet is made of sheets of four, so ${pageCountLabel(blanks)} were padded in to complete the last sheet.`);
       }
       if (source.length < input.pageCount) {
         const left = resolvePages('all', input.pageCount).filter((page) => !source.includes(page));
@@ -1758,7 +1775,7 @@ export const organizeTools: PdfToolDefinition[] = [
       return pdfOut(
         target,
         notes,
-        `Imposed ${pageCountLabel(source.length)} onto ${target.getPageCount()} booklet sheets${blanks > 0 ? ` with ${pageCountLabel(blanks)} added` : ''}. Print duplex, flip on long edge.`,
+        `Imposed ${pageCountLabel(source.length)} onto ${target.getPageCount()} printed sides on ${Math.ceil(target.getPageCount() / 2)} double-sided sheet${target.getPageCount() > 2 ? 's' : ''}${blanks > 0 ? ` with ${pageCountLabel(blanks)} added` : ''}. Print duplex, flip on long edge.`,
       );
     },
   },
@@ -1889,7 +1906,7 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['tiled', 'banner', 'large format', 'split pages'],
     outputSuffix: '_poster.pdf',
     actionLabel: 'Make poster',
-    promise: 'A grid of printable tiles with the overlap you set at their edges, ready to trim and paste.',
+    promise: 'Tiles that print at one scale and overlap by the amount you set, ready to trim and paste.',
     notes: [FLATTEN_NOTE],
     fields: [
       { key: 'columns', label: 'Tiles across', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid', help: 'How many tiles the page is cut into horizontally; with tiles down this sets the size of each piece.' },
@@ -1919,18 +1936,41 @@ export const organizeTools: PdfToolDefinition[] = [
         }
         const tileWidth = size.width / columns;
         const tileHeight = size.height / rows;
+        // Every tile sheet is `tile + overlap` on both axes and its content is
+        // drawn into it 1:1. The previous version let the default `contain` fit
+        // magnify the tiles that lose an outer overlap to the page boundary, so
+        // edge pieces printed bigger than inner ones and would not meet up (E8).
+        const sheetWidth = tileWidth + bleed;
+        const sheetHeight = tileHeight + bleed;
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < columns; col++) {
-            const newPage = target.addPage([tileWidth + bleed, tileHeight + bleed]);
-            // Tiles are chosen in the *displayed* frame, then converted to the
-            // page's own coordinates, so a rotated page splits the way it looks (E9).
-            const region = displayRegion(page, {
-              x: Math.max(0, col * tileWidth - (col > 0 ? bleed : 0)),
-              y: Math.max(0, row * tileHeight - (row < rows - 1 ? bleed : 0)),
-              width: Math.min(tileWidth + bleed, size.width - Math.max(0, col * tileWidth - (col > 0 ? bleed : 0))),
-              height: Math.min(tileHeight + bleed, size.height - Math.max(0, row * tileHeight - (row < rows - 1 ? bleed : 0))),
-            });
-            await stamp(target, newPage, page, { x: 0, y: 0, width: tileWidth + bleed, height: tileHeight + bleed }, { region });
+            const newPage = target.addPage([sheetWidth, sheetHeight]);
+            // The window this sheet shows, in the frame a viewer displays, so a
+            // rotated page splits along the line the user sees (E9).
+            const windowX = col * tileWidth - (col > 0 ? bleed : 0);
+            const windowY = row * tileHeight - (row > 0 ? bleed : 0);
+            const left = Math.max(0, windowX);
+            const top = Math.max(0, windowY);
+            const content = {
+              x: left,
+              y: top,
+              width: Math.min(sheetWidth - (left - windowX), size.width - left),
+              height: Math.min(sheetHeight - (top - windowY), size.height - top),
+            };
+            if (content.width <= 0 || content.height <= 0) continue;
+            await stamp(
+              target,
+              newPage,
+              page,
+              {
+                x: left - windowX,
+                // The sheet's own space has y growing upward; the window does not.
+                y: sheetHeight - (top - windowY) - content.height,
+                width: content.width,
+                height: content.height,
+              },
+              { region: displayRegion(page, content), fit: 'exact' },
+            );
           }
         }
         context.progress((p + 1) / source.length, `Tiled page ${source[p] + 1}`);
@@ -1994,7 +2034,8 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const source = selection(context.values, input.pageCount, { fallback: 'all', verb: 'divide' });
       const target = await newPDF();
-      let produced = 0;
+      const planned = source.length * columns * rows;
+      let blank = 0;
       for (const index of source) {
         throwIfAborted(context.signal);
         const page = input.doc.getPage(index);
@@ -2009,32 +2050,36 @@ export const organizeTools: PdfToolDefinition[] = [
             const newPage = target.addPage([tileWidth, tileHeight]);
             const region = displayRegion(page, { x: col * tileWidth, y: row * tileHeight, width: tileWidth, height: tileHeight });
             const ok = await stamp(target, newPage, page, { x: 0, y: 0, width: tileWidth, height: tileHeight }, { region });
-            produced += ok ? 1 : 0;
-            if (!ok) notes.add(`A page had no drawable content, so ${pageCountLabel(source.length * columns * rows - produced)} of the planned pieces are missing from the output.`);
+            // The sheet is in the file whether or not it had ink to draw, so the
+            // count the message reports is the page count of the bytes (E13).
+            if (!ok) blank += 1;
           }
         }
-        context.progress(produced / (source.length * columns * rows || 1), `Page ${index + 1}`);
+        context.progress((index + 1) / source.length, `Page ${index + 1}`);
       }
-      if (produced === 0) {
-        throw new ToolInputError('NO_PAGES', 'Dividing these pages produced nothing.', {
+      if (blank > 0) {
+        notes.add(`A page had no drawable content, so ${pageCountLabel(blank)} of the ${pageCountLabel(planned)} pieces are blank sheets in the output.`);
+      }
+      if (blank === planned) {
+        throw new ToolInputError('NO_PAGES', 'Dividing these pages produced nothing but blank sheets.', {
           hint: 'The pages have no visible content; try "Extract Pages" instead.',
         });
       }
       noteRebuildLoss('Dividing', input.doc, source, notes);
-      return pdfOut(target, notes, `Divided ${pageCountLabel(source.length)} into ${pageCountLabel(produced)}.`);
+      return pdfOut(target, notes, `Divided ${pageCountLabel(source.length)} into ${pageCountLabel(planned)}.`);
     },
   },
 
   {
     id: 'fix-page-size',
     name: 'Fix Page Size',
-    description: 'Standardise every page to one size and orientation',
+    description: 'Standardise the pages you pick to one size and orientation',
     icon: '📐',
     category: 'organize',
     keywords: ['uniform', 'normalise', 'resize', 'same size', 'a4'],
     outputSuffix: '_resized.pdf',
     actionLabel: 'Resize pages',
-    promise: 'A PDF where every sheet is the size you chose, with each page scaled and positioned the way you set.',
+    promise: 'The pages you chose redrawn onto one sheet size, every other page passed through untouched.',
     notes: [FLATTEN_NOTE],
     fields: [
       {
@@ -2085,51 +2130,72 @@ export const organizeTools: PdfToolDefinition[] = [
       const orientation = stringValue(context.values, 'orientation', 'keep');
       const fit = stringValue(context.values, 'fit', 'contain');
       const source = selection(context.values, input.pageCount, { fallback: 'all', verb: 'resize' });
+      const chosen = new Set(source);
       const boxes = source.map((index) => visibleBox(input.doc.getPage(index)));
+      const boxOf = new Map(source.map((index, position) => [index, boxes[position]]));
       let base: [number, number];
       if (sizeMode === 'most-common') base = modalSize(boxes);
       else if (sizeMode === 'largest') base = [Math.max(...boxes.map((b) => b.width)), Math.max(...boxes.map((b) => b.height))];
       else base = resolvePageSize(sizeMode);
+      // The orientation is folded into the sheet once, so the size the run
+      // reports is the size the bytes carry.
+      let [sheetWidth, sheetHeight] = base;
+      if (orientation === 'portrait' && sheetWidth > sheetHeight) [sheetWidth, sheetHeight] = [sheetHeight, sheetWidth];
+      if (orientation === 'landscape' && sheetHeight > sheetWidth) [sheetWidth, sheetHeight] = [sheetHeight, sheetWidth];
       const target = await newPDF();
       let cropped = 0;
       let stretched = 0;
       let worstLoss = 0;
-      for (let i = 0; i < source.length; i++) {
+      let carried = 0;
+      for (let index = 0; index < input.pageCount; index++) {
         throwIfAborted(context.signal);
-        const pageBox = boxes[i];
-        let [width, height] = base;
-        if (orientation === 'portrait' && width > height) [width, height] = [height, width];
-        if (orientation === 'landscape' && height > width) [width, height] = [height, width];
-        const page = target.addPage([width, height]);
+        if (!chosen.has(index)) {
+          // A page the user did not select is not a page to delete. The first
+          // build emitted only the selection, so "resize page 1" of a 4-page
+          // file answered with a 1-page document (E13).
+          const [copy] = await target.copyPages(input.doc, [index]);
+          target.addPage(copy);
+          carried += 1;
+          continue;
+        }
+        const pageBox = boxOf.get(index) ?? boxes[0];
+        const page = target.addPage([sheetWidth, sheetHeight]);
         const uniform =
           fit === 'cover'
-            ? Math.max(width / pageBox.width, height / pageBox.height)
-            : Math.min(width / pageBox.width, height / pageBox.height);
-        const xScale = fit === 'stretch' ? width / pageBox.width : uniform;
-        const yScale = fit === 'stretch' ? height / pageBox.height : uniform;
+            ? Math.max(sheetWidth / pageBox.width, sheetHeight / pageBox.height)
+            : Math.min(sheetWidth / pageBox.width, sheetHeight / pageBox.height);
+        const xScale = fit === 'stretch' ? sheetWidth / pageBox.width : uniform;
+        const yScale = fit === 'stretch' ? sheetHeight / pageBox.height : uniform;
         // The source is drawn through `stamp`, which applies the page's own
         // /Rotate — scaling a `/Rotate 90` page by its stored box instead would
         // swap the axes and spill the content off the sheet (E9).
-        const ok = await stamp(target, page, input.doc.getPage(source[i]), {
-          x: (width - pageBox.width * xScale) / 2,
-          y: (height - pageBox.height * yScale) / 2,
+        const ok = await stamp(target, page, input.doc.getPage(index), {
+          x: (sheetWidth - pageBox.width * xScale) / 2,
+          y: (sheetHeight - pageBox.height * yScale) / 2,
           width: pageBox.width * xScale,
           height: pageBox.height * yScale,
         });
         if (!ok) notes.add('A page had no content to draw, so its new sheet is blank.');
         if (fit === 'cover') {
-          const loss = 1 - (pageBox.width * pageBox.height) / (width * height);
+          const loss = 1 - (pageBox.width * pageBox.height) / (sheetWidth * sheetHeight);
           if (loss > 0.005) {
             cropped += 1;
             worstLoss = Math.max(worstLoss, loss);
           }
         }
         if (fit === 'stretch' && Math.abs(xScale - yScale) > 0.01) stretched += 1;
-        context.progress((i + 1) / source.length, `Page ${source[i] + 1}`);
+        context.progress((index + 1) / input.pageCount, `Page ${index + 1}`);
       }
-      const already = boxes.filter((b) => Math.abs(b.width - base[0]) <= 1 && Math.abs(b.height - base[1]) <= 1).length;
+      const already = boxes.filter(
+        (b) => Math.abs(b.width - sheetWidth) <= 1 && Math.abs(b.height - sheetHeight) <= 1,
+      ).length;
       if (already === source.length) {
-        notes.add(`Every selected page is already ${Math.round(base[0])} × ${Math.round(base[1])} pt, so only the rebuild changed.`);
+        notes.add(`Every selected page is already ${Math.round(sheetWidth)} × ${Math.round(sheetHeight)} pt, so only the rebuild changed.`);
+      }
+      if (carried > 0) {
+        notes.add(
+          `${pageCountLabel(carried)} you did not select were copied through at their own size, so the file still mixes page sizes.`,
+        );
       }
       if (cropped > 0) {
         notes.add(`"Fill the page" runs content off the edge on ${pageCountLabel(cropped)} — up to ${Math.round(worstLoss * 100)}% of the sheet. Choose "Fit inside" to keep all of it.`);
@@ -2141,7 +2207,7 @@ export const organizeTools: PdfToolDefinition[] = [
       return pdfOut(
         target,
         notes,
-        `${already === source.length ? 'Every page already matched' : `Normalised ${pageCountLabel(source.length - already)} to`} ${Math.round(base[0])} × ${Math.round(base[1])} pt (${(base[0] * 25.4 / 72).toFixed(0)} × ${(base[1] * 25.4 / 72).toFixed(0)} mm).`,
+        `${already === source.length ? 'Every selected page already matched' : `Normalised ${pageCountLabel(source.length - already)} to`} ${Math.round(sheetWidth)} × ${Math.round(sheetHeight)} pt (${(sheetWidth * 25.4 / 72).toFixed(0)} × ${(sheetHeight * 25.4 / 72).toFixed(0)} mm)${carried > 0 ? `, carried ${pageCountLabel(carried)} over unchanged` : ''}.`,
       );
     },
   },
@@ -2185,7 +2251,10 @@ export const organizeTools: PdfToolDefinition[] = [
         // it would drop the wrong pages (E19).
         throwIfAborted(context.signal);
         const blank = found.blank;
-        const keep = resolvePages('all', input.pageCount).filter((p) => !blank.includes(p + 1));
+        const blankSet = new Set(blank);
+        // A `Set`, not `blank.includes()` per page: a 500-page scan would
+        // otherwise re-scan the blank list for every sheet (E7).
+        const keep = resolvePages('all', input.pageCount).filter((p) => !blankSet.has(p + 1));
         const ocrOnly = found.profiles.filter((profile) => profile.blankByAppearance && profile.invisibleTextItems > 0);
         if (ocrOnly.length > 0) {
           notes.add(
@@ -2291,7 +2360,7 @@ export const organizeTools: PdfToolDefinition[] = [
         notes.add(`The archive (${describeSize(blob.size)}) is no smaller than the files (${describeSize(total)}): PDFs are already compressed.`);
       }
       return filesOut(
-        [{ blob, name: uniqueName(new Set([`${stem}-bundle.zip`]), `${stem}-bundle.zip`) }],
+        [{ blob, name: `${stem}-bundle.zip` }],
         notes,
         `Packed ${inputs.length} PDFs (${describeSize(total)}) into one ZIP.`,
       );
@@ -2308,7 +2377,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'none',
     outputSuffix: '.cbz',
     actionLabel: 'Make CBZ',
-    promise: 'A comic-book archive: every page rendered to an image, numbered in reading order.',
+    promise: 'A comic-book archive: the pages you pick rendered to images, numbered in reading order.',
     notes: [
       'A CBZ is a ZIP archive of page images: comic readers open it directly, and nothing in it is selectable or searchable.',
     ],
@@ -2350,6 +2419,10 @@ export const organizeTools: PdfToolDefinition[] = [
         const rendered = await rasterizePages(session, {
           format,
           scale: dpi / 72,
+          // The selection, not the whole document: rendering every page while the
+          // archive was described as the chosen pages produced a CBZ with the
+          // pages the user had just switched off (E13, E18).
+          pages: pages.map((index) => index + 1),
           onProgress: (done, total) => context.progress(done / total, `Rendered page ${done}`),
         });
         if (rendered.length === 0) {
@@ -2361,14 +2434,17 @@ export const organizeTools: PdfToolDefinition[] = [
         const width = String(rendered.length).length;
         const blob = await createZip(
           rendered.map((page, i) => ({
-            name: `${stem}/${String(i + 1).padStart(Math.max(3, width), '0')}.${page.name.split('.').pop()}`,
+            // Flat names: `core/archive` replaces `/` in an entry name, so a
+            // folder prefix would silently arrive as `comic-001.jpg` anyway.
+            // Zero padding is what makes a comic reader sort them in reading order.
+            name: `${stem}-${String(i + 1).padStart(Math.max(3, width), '0')}.${page.name.split('.').pop()}`,
             data: page.blob,
             store: format === 'png',
           })),
           { compression: format === 'png' ? 'STORE' : 'DEFLATE' },
         );
-        if (pages.length !== input.pageCount) {
-          notes.add(`Only the ${pageCountLabel(pages.length)} you selected were rendered; the archive has ${pageCountLabel(rendered.length)}.`);
+        if (rendered.length !== pages.length) {
+          notes.add(`Only ${pageCountLabel(rendered.length)} of the ${pageCountLabel(pages.length)} pages you chose could be rendered.`);
         }
         const raw = rendered.reduce((sum, page) => sum + page.blob.size, 0);
         if (blob.size >= raw) {
@@ -2387,17 +2463,6 @@ export const organizeTools: PdfToolDefinition[] = [
 ];
 
 /* ── helpers shared by this group ─────────────────────────────────────────── */
-
-const OFFSET: ToolField = {
-  key: 'offset',
-  label: 'Back-side page offset',
-  type: 'number',
-  default: 0,
-  min: 0,
-  max: 500,
-  step: 1,
-  integer: true,
-};
 
 const TILES: ToolField = {
   key: 'columns',

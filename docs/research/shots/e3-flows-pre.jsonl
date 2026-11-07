@@ -1,0 +1,23 @@
+{"step":"loaded","page":{"x":632,"y":209.5,"w":834,"h":1179.5},"state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. After one placement the tool hands control back to Select.","count":0,"marks":0,"images":[]}}
+{"inputs":[".pdf,application/pdf","application/pdf,.pdf","image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg"]}
+{"step":"image-armed","state":{"armed":"image","status":"Choose a PNG or JPEG, then click or drag to place it. After one placement the tool hands control back to Select.","count":0,"marks":0,"images":[]}}
+{"chooser":"opened","backEndNodeId":627}
+{"step":"image-click-page-1st (opens picker)","state":{"armed":"image","status":"Choose a PNG or JPEG, then click or drag to place it. After one placement the tool hands control back to Select.","count":0,"marks":0,"images":[]}}
+{"step":"image-file-chosen","state":{"armed":"image","status":"Click or drag on page 1 to place e3-sample.png.","count":0,"marks":0,"images":[]}}
+{"shot":"e3-10-image-armed-after-pick.png","at":"2026-11-07T18:01:36.891Z"}
+{"step":"image-click-page-2nd (should place)","state":{"armed":"select","status":"Placed Image · p.1. Select is armed.","count":1,"marks":1,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}}]},"hrefs":"[\"blob:http: DEAD: Failed to fetch\"]"}
+{"shot":"e3-11-image-after-one-click.png","at":"2026-11-07T18:01:37.989Z"}
+{"step":"image-click-page-3rd","state":{"armed":"select","status":"Cleared the selection.","count":1,"marks":1,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}}]},"hrefs":"[\"blob:http: DEAD: Failed to fetch\"]"}
+{"shot":"e3-12-image-after-second-click.png","at":"2026-11-07T18:01:39.070Z"}
+{"step":"signature-click-page-1st (pad open?)","padOpen":true,"state":{"armed":"signature","status":"Draw your signature in the pad, then place it on the page. After one placement the tool hands control back to Select.","count":1,"marks":1,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}}]}}
+{"shot":"e3-13-signature-pad.png","at":"2026-11-07T18:01:40.746Z"}
+{"step":"signature-confirmed(pad)","padOpenNow":false,"state":{"armed":"signature","status":"Click or drag on the page to place the signature.","count":1,"marks":1,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}}]}}
+{"shot":"e3-14-signature-after-confirm.png","at":"2026-11-07T18:01:42.882Z"}
+{"step":"signature-click-page-after-confirm","state":{"armed":"select","status":"Placed Signature · p.1. Select is armed.","count":2,"marks":2,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}},{"href":"data:image/jpeg;base64,/","w":"280.2042736191372","h":"55.25628275769384","box":{"w":280,"h":55}}]},"hrefs":"[\"blob:http: DEAD: Failed to fetch\",\"data:image status 200\"]"}
+{"shot":"e3-15-signature-placed.png","at":"2026-11-07T18:01:44.078Z"}
+{"step":"signature-second-click-page","state":{"armed":"select","status":"Cleared the selection.","count":2,"marks":2,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}},{"href":"data:image/jpeg;base64,/","w":"280.2042736191372","h":"55.25628275769384","box":{"w":280,"h":55}}]},"hrefs":"[\"blob:http: DEAD: Failed to fetch\",\"data:image status 200\"]"}
+{"shot":"e3-16-signature-second-click.png","at":"2026-11-07T18:01:45.263Z"}
+{"step":"highlight-drag","before":2,"after":3,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":3,"marks":3,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}},{"href":"data:image/jpeg;base64,/","w":"280.2042736191372","h":"55.25628275769384","box":{"w":280,"h":55}}]}}
+{"shot":"e3-17-highlight-after-drag.png","at":"2026-11-07T18:01:47.196Z"}
+{"step":"highlight-then-click","state":{"armed":"select","status":"Cleared the selection.","count":3,"marks":3,"images":[{"href":"blob:http://localhost:52","w":"336.2451283429647","h":"210.1532052143529","box":{"w":336,"h":210}},{"href":"data:image/jpeg;base64,/","w":"280.2042736191372","h":"55.25628275769384","box":{"w":280,"h":55}}]}}
+{"shot":"e3-18-highlight-after-click.png","at":"2026-11-07T18:01:48.186Z"}

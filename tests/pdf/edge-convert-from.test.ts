@@ -35,6 +35,7 @@ import { convertFromTools } from '@/lib/pdf/tools/convert-from';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { readZip } from '@/lib/pdf/core/archive';
+import { pageUsesColor } from '@/lib/pdf/core/content';
 import { ToolInputError } from '@/lib/pdf/core/guard';
 import type { PageRender } from '@/lib/pdf/core/render';
 import type { ToolFile, ToolResult, ToolRunContext, ToolValues } from '@/lib/pdf/tools/types';
@@ -351,7 +352,7 @@ function decodePng(bytes: Uint8Array): DecodedImage {
       const up = previous[x];
       const upLeft = x >= channels ? previous[x - channels] : 0;
       const value = raw[y * (stride + 1) + 1 + x];
-      current[x] = (value + reconstruction(filter, value, left, up, upLeft)) & 0xff;
+      current[x] = (value + reconstruction(filter, left, up, upLeft)) & 0xff;
     }
     for (let x = 0; x < width; x++) {
       const to = (y * width + x) * 4;
@@ -370,7 +371,6 @@ function decodePng(bytes: Uint8Array): DecodedImage {
 /** How much to add to a filtered byte, per PNG filter type. */
 function reconstruction(
   filter: number,
-  value: number,
   left: number,
   up: number,
   upLeft: number,
@@ -424,8 +424,8 @@ function decodeBmp(bytes: Uint8Array): DecodedImage {
 }
 
 /** Every page of a (possibly multi-page) TIFF, decoded by the app's own dep. */
-async function decodeTiff(blob: Blob): Promise<DecodedImage[]> {
-  const buffer = await blob.arrayBuffer();
+async function decodeTiffSource(bytes: Uint8Array): Promise<DecodedImage[]> {
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const ifds = UTIF.decode(buffer);
   return ifds.map((ifd) => {
     UTIF.decodeImage(buffer, ifd);
@@ -443,6 +443,11 @@ async function decodeTiff(blob: Blob): Promise<DecodedImage[]> {
     expect(height, 'the TIFF states its page height').toBeGreaterThan(0);
     return { width, height, data: new Uint8ClampedArray(rgba) };
   });
+}
+
+/** The bytes of a TIFF output, then every page of it. */
+async function decodeTiff(outcome: RunOutcome, index = 0): Promise<DecodedImage[]> {
+  return decodeTiffSource(await bytesOf(outcome, index));
 }
 
 function pixelAt(image: DecodedImage, x: number, y: number): number[] {
@@ -679,6 +684,32 @@ function cjkPdf(): Uint8Array {
 
 /** Ids this suite actually executed, asserted at the end so no tool hides. */
 const COVERED = new Set<string>();
+
+/**
+ * Which tools this suite proved with **bytes**, not with a log line.
+ *
+ * Both serious defects this family has shipped (an images exporter that threw on
+ * every PDF holding an image, and TIFFs whose IFD pointed past the entry table)
+ * survived a suite that read `result.message`. An id is recorded here only by
+ * the helpers that actually parse or decode an output file, so the gate at the
+ * bottom of this file cannot be satisfied by a promise string.
+ */
+const BYTES_CHECKED = new Set<string>();
+const RUN_IDS = new WeakMap<RunOutcome, string>();
+
+function noteBytes(outcome: RunOutcome): void {
+  const id = RUN_IDS.get(outcome);
+  if (id) BYTES_CHECKED.add(id);
+}
+
+/** The raw bytes of one output, recorded as a byte-level proof for that tool. */
+async function bytesOf(outcome: RunOutcome, index = 0): Promise<Uint8Array> {
+  const output = outcome.outputs[index];
+  expect(output, `${index} was not in the output list`).toBeTruthy();
+  noteBytes(outcome);
+  return new Uint8Array(await output.blob.arrayBuffer());
+}
+
 const CONVERT_FROM_IDS = convertFromTools
   .filter((tool) => tool.category === 'convert-from' && tool.run)
   .map((tool) => tool.id);
@@ -698,6 +729,7 @@ async function run(
     onLog: () => undefined,
   });
   expect(outcome, `${id} produced no outcome`).toBeTruthy();
+  RUN_IDS.set(outcome, id);
   return outcome;
 }
 
@@ -743,14 +775,11 @@ async function failures(id: string, values: ToolValues, files: File[]): Promise<
 }
 
 async function textOf(outcome: RunOutcome, index = 0): Promise<string> {
-  const output = outcome.outputs[index];
-  expect(output, `${index} was not in the output list`).toBeTruthy();
+  const bytes = await bytesOf(outcome, index);
   // `ignoreBOM` because the CSV tools write a UTF-8 BOM on purpose and the test
   // has to be able to see it: the default decoder silently eats those three
   // bytes, which made "Excel needs the BOM" unassertable.
-  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(
-    new Uint8Array(await output.blob.arrayBuffer()),
-  );
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
 }
 
 function reportText(outcome: RunOutcome): string {
@@ -761,9 +790,9 @@ function reportText(outcome: RunOutcome): string {
 }
 
 async function zipEntries(outcome: RunOutcome, index = 0) {
-  const output = outcome.outputs[index];
-  expect(output, 'expected a zip output').toBeTruthy();
-  return readZip(await output.blob.arrayBuffer());
+  const bytes = await bytesOf(outcome, index);
+  noteBytes(outcome);
+  return readZip(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
 
 /** Cached so a 500-page fixture is built once per suite, not once per test. */
@@ -851,17 +880,66 @@ function controlCharPdf(): Uint8Array {
 
 /** Minimal valid xref PDF from a list of already-serialised bodies (E10 fixtures). */
 function assemblePdf(objects: string[]): Uint8Array {
-  let pdf = '%PDF-1.7\n';
+  return assembleObjects(objects.map((body) => [body]));
+}
+
+/**
+ * The same writer, byte-exact.
+ *
+ * A stream payload cannot ride through a JS string: `Buffer.from(text,'latin1')`
+ * survives binary bytes but `Length` has to count them, and the samples of a
+ * 16-bit image are not text. Each object is a list of string/`Uint8Array`
+ * parts so an image stream can be spliced in without an encoding step.
+ */
+function assembleObjects(objects: readonly (string | Uint8Array)[][]): Uint8Array {
+  const encode = (text: string) => Uint8Array.from(Buffer.from(text, 'latin1'));
+  const chunks: Uint8Array[] = [encode('%PDF-1.7\n')];
   const offsets: number[] = [];
-  objects.forEach((body, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  let length = chunks[0].length;
+  objects.forEach((parts, index) => {
+    offsets.push(length);
+    for (const part of [encode(`${index + 1} 0 obj\n`), ...parts.map((one) => (typeof one === 'string' ? encode(one) : one)), encode('\nendobj\n')]) {
+      chunks.push(part);
+      length += part.length;
+    }
   });
-  const start = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
-  return new Uint8Array(Buffer.from(pdf, 'latin1'));
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) xref += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`;
+  chunks.push(encode(xref));
+  const total = chunks.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const part of chunks) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
+/**
+ * Pack image samples the way PDF does: MSB first, one pixel per channel value,
+ * and **each row padded out to a whole byte** — the padding is what makes a
+ * 4-pixel 1-bit row cost a byte rather than half of one.
+ */
+function packSamples(
+  values: readonly number[],
+  bits: number,
+  width: number,
+  channels: number,
+): Uint8Array {
+  const perRow = Math.ceil((width * channels * bits) / 8);
+  const out = new Uint8Array(perRow * Math.ceil(values.length / (width * channels)));
+  values.forEach((value, index) => {
+    const row = Math.floor(index / (width * channels));
+    const bitInRow = (index % (width * channels)) * bits;
+    for (let bit = 0; bit < bits; bit++) {
+      if (!((value >> (bits - 1 - bit)) & 1)) continue;
+      const position = bitInRow + bit;
+      out[row * perRow + (position >> 3)] |= 0x80 >> (position & 7);
+    }
+  });
+  return out;
 }
 
 function expectPageSignature(image: DecodedImage, page: number, label: string): void {
@@ -1252,7 +1330,7 @@ describe('pdf-to-excel', () => {
       fileOf(await tablePdf(5), 'prices.pdf'),
     ]);
     expect(outcome.outputs[0].name).toBe('prices.xlsx');
-    const entries = await readZip(await outcome.outputs[0].blob.arrayBuffer());
+    const entries = await zipEntries(outcome);
     const names = entries.map((entry) => entry.name);
     expect(names).toContain('[Content_Types].xml');
     expect(names.some((name) => /^xl\/worksheets\/sheet1\.xml$/.test(name))).toBe(true);
@@ -1269,7 +1347,7 @@ describe('pdf-to-excel', () => {
       fileOf(await tablePdf(5), 'prices.pdf'),
     ]);
     expect(outcome.message).toMatch(/1 worksheet/);
-    const entries = await readZip(await outcome.outputs[0].blob.arrayBuffer());
+    const entries = await zipEntries(outcome);
     expect(entries.map((entry) => entry.name)).toContain('xl/worksheets/sheet1.xml');
   });
 
@@ -1284,12 +1362,13 @@ describe('pdf-to-excel', () => {
 
 /* ── pdf-to-word ──────────────────────────────────────────────────────────── */
 
-/** Concatenated text inside a WordprocessingML part, tags removed. */
-async function documentXml(outcome: RunOutcome): Promise<string> {
-  const entries = await readZip(await outcome.outputs[0].blob.arrayBuffer());
+/** Concatenated text inside a WordprocessingML part, tags removed by default. */
+async function documentXml(outcome: RunOutcome, raw = false): Promise<string> {
+  const entries = await zipEntries(outcome);
   const part = entries.find((entry) => entry.name === 'word/document.xml');
   expect(part, `word/document.xml missing from ${entries.map((e) => e.name).join(', ')}`).toBeTruthy();
-  return new TextDecoder().decode(part!.bytes).replace(/<[^>]+>/g, '');
+  const xml = new TextDecoder().decode(part!.bytes);
+  return raw ? xml : xml.replace(/<[^>]+>/g, '');
 }
 
 describe('pdf-to-word', () => {
@@ -1298,7 +1377,7 @@ describe('pdf-to-word', () => {
     const xml = await documentXml(outcome);
     expect(xml).toContain('Heading for page 1');
     expect(xml).toContain('Body text number 4');
-    const entries = await readZip(await outcome.outputs[0].blob.arrayBuffer());
+    const entries = await zipEntries(outcome);
     expect(entries.some((entry) => entry.name.startsWith('word/media/'))).toBe(false);
     expect(outcome.outputs[0].name).toBe('report.docx');
   });
@@ -1307,7 +1386,7 @@ describe('pdf-to-word', () => {
     const outcome = await run('pdf-to-word', { pages: 'all' }, [
       fileOf(await headingGridPdf(), 'prices.pdf'),
     ]);
-    const entries = await readZip(await outcome.outputs[0].blob.arrayBuffer());
+    const entries = await zipEntries(outcome);
     const raw = new TextDecoder().decode(entries.find((entry) => entry.name === 'word/document.xml')!.bytes);
     expect(raw).toContain('Heading1');
     expect(raw).toContain('<w:tbl>');
@@ -1372,7 +1451,7 @@ describe('extract-images', () => {
     expect(single.outputs).toHaveLength(1);
     expect(single.outputs[0].name).toBe('photo-p001-001.jpg');
     // A JPEG stream is handed back untouched, at its original resolution.
-    const kept = new Uint8Array(await single.outputs[0].blob.arrayBuffer());
+    const kept = await bytesOf(single);
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.subarray(0, 2)).toEqual(TINY_JPEG.subarray(0, 2));
     expect(kept).toEqual(TINY_JPEG);
@@ -1380,7 +1459,7 @@ describe('extract-images', () => {
     const painted = await run('extract-images', { pages: 'all', smallest: 0 }, [
       fileOf(await scanPdf(1), 'stamp.pdf'),
     ]);
-    const image = decodePng(new Uint8Array(await painted.outputs[0].blob.arrayBuffer()));
+    const image = decodePng(await bytesOf(painted));
     expect([image.width, image.height]).toEqual([40, 24]);
     expect(pixelAt(image, 5, 5)).toEqual([200, 30, 40, 255]);
   });
@@ -1429,7 +1508,14 @@ async function rasterPages(outcome: RunOutcome): Promise<{ name: string; bytes: 
     return entries.map((entry) => ({ name: entry.name, bytes: entry.bytes }));
   }
   expect(outcome.outputs.length, 'expected at least one raster output').toBeGreaterThan(0);
-  return outcome.outputs.map((output) => ({ name: output.name, bytes: new Uint8Array(0) }));
+  return Promise.all(
+    outcome.outputs.map(async (output, index) => ({
+      // Reading the real bytes here matters: a stub that handed back an empty
+      // buffer would let every decode assertion below pass on nothing.
+      name: output.name,
+      bytes: await bytesOf(outcome, index),
+    })),
+  );
 }
 
 function decodeRaster(bytes: Uint8Array, extension: string): DecodedImage {
@@ -1473,7 +1559,7 @@ describe('raster export', () => {
       if (extension === 'tif') {
         // Multi-page TIFF is one file, not a zip: decode it with the app's own dep.
         expect(outcome.outputs[0].name).toBe('sizes.tif');
-        const pages = await decodeTiff(outcome.outputs[0].blob);
+        const pages = await decodeTiff(outcome);
         expect(pages).toHaveLength(2);
         expect([pages[0].width, pages[0].height]).toEqual([595, 841]);
         expect([pages[1].width, pages[1].height]).toEqual([792, 612]);
@@ -1528,7 +1614,7 @@ describe('raster export', () => {
         // Multi-page TIFF is one file, not a zip, and `utif` is the app's own
         // dependency — so this is the byte-level round trip for that encoder.
         expect(outcome.outputs[0].name).toBe('sizes.tif');
-        const pages = await decodeTiff(outcome.outputs[0].blob);
+        const pages = await decodeTiff(outcome);
         expect(pages.map((page) => [page.width, page.height] as [number, number])).toEqual(expected);
         pages.forEach((page, index) => expectPageSignature(page, index + 1, `${id} page ${index + 1}`));
         continue;
@@ -1554,7 +1640,7 @@ describe('raster export', () => {
     const outcome = await run('pdf-to-bmp', { dpi: 72, pages: '1' }, [fileOf(await mixedPdf(), 'sizes.pdf')]);
     expect(outcome.outputs).toHaveLength(1);
     expect(outcome.outputs[0].name).toBe('sizes-page-001.bmp');
-    const bytes = new Uint8Array(await outcome.outputs[0].blob.arrayBuffer());
+    const bytes = await bytesOf(outcome);
     const image = decodeBmp(bytes);
     expect([image.width, image.height]).toEqual([595, 841]);
     expectPageSignature(image, 1, 'bmp');
@@ -1612,7 +1698,7 @@ describe('raster export', () => {
       fileOf(await mixedPdf(), 'sizes.pdf'),
     ]);
     expect(outcome.warnings.join(' ')).toMatch(/Resolution must be|72 became 10|10 became 72/i);
-    const image = decodePng(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const image = decodePng(await bytesOf(outcome));
     expect([image.width, image.height]).toEqual([595, 841]);
   });
 
@@ -1661,7 +1747,7 @@ describe('pdf-to-greyscale', () => {
     const outcome = await run('pdf-to-greyscale', { mode: 'vectors', pages: 'all' }, [
       fileOf(await colouredPdf(), 'colour.pdf'),
     ]);
-    const doc = await PDFDocument.load(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const doc = await PDFDocument.load(await bytesOf(outcome));
     expect(doc.getPageCount()).toBe(1);
     expect(outcome.message).toMatch(/colour operation|Text stays selectable/i);
     expect(outcome.outputs[0].name).toBe('colour_greyscale.pdf');
@@ -1683,7 +1769,7 @@ describe('pdf-to-greyscale', () => {
       { mode: 'raster', dpi: 96, pages: 'all' },
       [fileOf(await mixedPdf(), 'sizes.pdf')],
     );
-    const doc = await PDFDocument.load(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const doc = await PDFDocument.load(await bytesOf(outcome));
     expect(doc.getPageCount()).toBe(4);
     expect(outcome.message).toMatch(/Re-rendered|Text is now part of the image/i);
     expect(RASTER.pages).toEqual([1, 2, 3, 4]);
@@ -1713,6 +1799,452 @@ describe('page-dimensions', () => {
   }, 60_000);
 });
 
+/* ── audit pass: the colour spaces, cell shapes and escapes a real file throws at these tools ── */
+
+/** Four RGB triples: the palette an `/Indexed` image indexes into. */
+const MATRIX_PALETTE = [16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192];
+
+/** One 4×4 image per colour space and bit depth, in the order they are written. */
+const MATRIX_ORDER = ['Idx', 'Bi1', 'G4', 'G8', 'Rgb', 'Cmy', 'R16', 'Icc'];
+
+/** The first pixel of each, which is what the exported PNG has to reproduce. */
+const MATRIX_FIRST_PIXEL: Record<string, number[]> = {
+  Idx: [16, 32, 48],
+  Bi1: [255, 255, 255],
+  G4: [0, 0, 0],
+  G8: [10, 10, 10],
+  Rgb: [10, 20, 30],
+  Cmy: [255, 255, 255],
+  R16: [64, 128, 192],
+  Icc: [200, 100, 50],
+};
+
+const repeat = (count: number, make: (index: number) => number[]): number[] =>
+  Array.from({ length: count }, (_, index) => make(index)).flat();
+
+interface MatrixImage {
+  name: string;
+  colorSpace: string;
+  bits: number;
+  samples: Uint8Array;
+}
+
+/**
+ * A page holding one image of every kind a scanner, a screenshot or an
+ * Illustrator export actually produces.
+ *
+ * Each is a raw (unfiltered) sample array, so what comes back is entirely down
+ * to how `core/images-out` reads `/ColorSpace`, `/BitsPerComponent` and the
+ * palette — not to a compression accident.
+ */
+function imageMatrixPdf(): Uint8Array {
+  const grey = (values: number[], bits: number) => packSamples(values, bits, 4, 1);
+  const images: MatrixImage[] = [
+    {
+      name: 'Idx',
+      colorSpace: `[/Indexed /DeviceRGB 3 <${Buffer.from(MATRIX_PALETTE).toString('hex')}>]`,
+      bits: 8,
+      samples: grey([0, 1, 2, 3, 3, 2, 1, 0, 0, 0, 1, 1, 2, 2, 3, 3], 8),
+    },
+    { name: 'Bi1', colorSpace: '/DeviceGray', bits: 1, samples: grey([1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1], 1) },
+    { name: 'G4', colorSpace: '/DeviceGray', bits: 4, samples: grey([0, 5, 10, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 4) },
+    { name: 'G8', colorSpace: '/DeviceGray', bits: 8, samples: grey(repeat(16, (i) => [10 + i * 10]), 8) },
+    { name: 'Rgb', colorSpace: '/DeviceRGB', bits: 8, samples: packSamples(repeat(16, (i) => [10 + i, 20 + i, 30 + i]), 8, 4, 3) },
+    {
+      name: 'Cmy',
+      colorSpace: '/DeviceCMYK',
+      bits: 8,
+      samples: packSamples(
+        [0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 255].concat(repeat(13, (i) => [i, 0, 0, 0])),
+        8, 4, 4,
+      ),
+    },
+    {
+      name: 'R16',
+      colorSpace: '/DeviceRGB',
+      bits: 16,
+      samples: packSamples(
+        [0x4040, 0x8080, 0xc0c0].concat(repeat(15, (i) => [0x0101 * i, 0x0202 * i, 0x0303 * i])),
+        16, 4, 3,
+      ),
+    },
+    { name: 'Icc', colorSpace: '[/ICCBased 12 0 R]', bits: 8, samples: packSamples([200, 100, 50].concat(repeat(15, (i) => [i, i + 1, i + 2])), 8, 4, 3) },
+  ];
+  const entries = images.map((image, index) => `/${image.name} ${4 + index} 0 R`).join(' ');
+  const objects: (string | Uint8Array)[][] = [
+    ['<< /Type /Catalog /Pages 2 0 R >>'],
+    ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'],
+    [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << ${entries} >> >> >>`],
+    ...images.map((image) => [
+      `<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace ${image.colorSpace} ` +
+        `/BitsPerComponent ${image.bits} /Length ${image.samples.length} >>\nstream\n`,
+      image.samples,
+      '\nendstream',
+    ]),
+    ['<< /N 3 /Alternate /DeviceRGB /Length 0 >>\nstream\n\nendstream'],
+  ];
+  return assembleObjects(objects);
+}
+
+describe('extract-images: every colour space a real PDF carries', () => {
+  it('returns the palette, bilevel, 4-bit, 16-bit and ICC images with their pixels (E12)', async () => {
+    const outcome = await run('extract-images', { pages: 'all', smallest: 0 }, [
+      fileOf(imageMatrixPdf(), 'matrix.pdf'),
+    ]);
+    expect(outcome.outputs).toHaveLength(1);
+    const entries = await zipEntries(outcome);
+    expect(entries.map((entry) => entry.name)).toEqual(
+      MATRIX_ORDER.map((_, index) => `matrix-p001-${String(index + 1).padStart(3, '0')}.png`),
+    );
+    entries.forEach((entry, index) => {
+      const label = MATRIX_ORDER[index];
+      const image = decodePng(entry.bytes);
+      expect([image.width, image.height], `${label} keeps its sample grid`).toEqual([4, 4]);
+      expect(pixelAt(image, 0, 0).slice(0, 3), `${label} first pixel`).toEqual(MATRIX_FIRST_PIXEL[label]);
+    });
+    // A 1-bit sample of 0 is black, not near-white: scaling by 255 rather than
+    // by 1 is the classic "everything washed out" export.
+    expect(pixelAt(decodePng(entries[1].bytes), 1, 0).slice(0, 3)).toEqual([0, 0, 0]);
+    // Cyan 100 % stays cyan; a CMYK triple read as RGB comes back near-black.
+    expect(pixelAt(decodePng(entries[5].bytes), 1, 0).slice(0, 3)).toEqual([0, 255, 255]);
+    // 4-bit 5 of 15 scales to 85, not to 5.
+    expect(pixelAt(decodePng(entries[2].bytes), 1, 0).slice(0, 3)).toEqual([85, 85, 85]);
+  });
+
+  it('names the images it cannot decode instead of reporting that there are none (E13, E20)', async () => {
+    const fax = assembleObjects([
+      ['<< /Type /Catalog /Pages 2 0 R >>'],
+      ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'],
+      ['<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Frx 4 0 R >> >> >>'],
+      [
+        '<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceGray /BitsPerComponent 1 ' +
+          '/Filter /CCITTFaxDecode /DecodeParms << /Columns 4 /K -1 >> /Length 4 >>\nstream\n',
+        Uint8Array.from([1, 2, 3, 4]),
+        '\nendstream',
+      ],
+    ]);
+    const outcome = await run('extract-images', { pages: 'all', smallest: 0 }, [fileOf(fax, 'fax.pdf')]);
+    expect(outcome.outputs).toHaveLength(0);
+    const text = reportText(outcome);
+    expect(text, 'a fax image must be named, not reported as absent').toMatch(/fax|CCITT|JBIG2/i);
+    expect(text).not.toMatch(/no embedded image was found/i);
+    expect(text).toMatch(/PDF to Image/i);
+  });
+
+  it('warns when some images came out and others could not be read (E10, E13)', async () => {
+    const both = assembleObjects([
+      ['<< /Type /Catalog /Pages 2 0 R >>'],
+      ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'],
+      ['<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Ok 4 0 R /Jb 5 0 R >> >> >>'],
+      [
+        '<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 48 >>\nstream\n',
+        packSamples(repeat(16, (i) => [i * 3, i * 5, i * 7]), 8, 4, 3),
+        '\nendstream',
+      ],
+      [
+        '<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceGray /BitsPerComponent 1 ' +
+          '/Filter /JBIG2Decode /Length 4 >>\nstream\n',
+        Uint8Array.from([1, 2, 3, 4]),
+        '\nendstream',
+      ],
+    ]);
+    const outcome = await run('extract-images', { pages: 'all', smallest: 0 }, [fileOf(both, 'both.pdf')]);
+    expect(outcome.outputs).toHaveLength(1);
+    expect(decodePng(await bytesOf(outcome)).width).toBe(4);
+    expect(outcome.warnings.join(' ')).toMatch(/JBIG2|could not/i);
+  });
+});
+
+/** A grid whose cells hold commas, quotes, a pipe, a currency sign and accents (E11). */
+async function moneyTablePdf(): Promise<Uint8Array> {
+  return cached('money-table', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([620, 800]);
+    const rows = [
+      ['Item', 'Quantity', 'Price'],
+      ['Widget', '1,200', '$3.50'],
+      ['Gadget "Pro"', '40', '$12.00'],
+      ['Cafe, Zurich', '7', 'EUR 1.99'],
+      ['Pipe|line', '3', 'GBP 4.00'],
+    ];
+    rows.forEach((row, r) => {
+      row.forEach((cell, c) => {
+        page.drawText(cell, { x: 50 + c * 170, y: 700 - r * 24, size: 11, font });
+      });
+    });
+    return doc.save({ useObjectStreams: false });
+  });
+}
+
+/** RFC 4180 reader, written here so it is an independent oracle for the writer. */
+function parseCsv(text: string, delimiter = ','): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at];
+    if (quoted) {
+      if (char !== '"') field += char;
+      else if (text[at + 1] === '"') {
+        field += '"';
+        at++;
+      } else quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === delimiter) {
+      row.push(field);
+      field = '';
+    } else if (char === '\r' && text[at + 1] === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      at++;
+    } else field += char;
+  }
+  row.push(field);
+  rows.push(row);
+  return rows.filter((cells) => cells.some((cell) => cell !== ''));
+}
+
+/** Drop the BOM the CSV writers add on purpose (E11) so the grid can be compared. */
+const stripBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+
+describe('the shape of the table trio (E11)', () => {
+  it('writes the grid the document holds: same rows, same columns, quoted where it must be', async () => {
+    const outcome = await run('pdf-to-csv', { pages: 'all' }, [fileOf(await moneyTablePdf(), 'money.pdf')]);
+    const rows = parseCsv(stripBom(await textOf(outcome)));
+    expect(rows).toEqual([
+      ['Item', 'Quantity', 'Price'],
+      ['Widget', '1,200', '$3.50'],
+      ['Gadget "Pro"', '40', '$12.00'],
+      ['Cafe, Zurich', '7', 'EUR 1.99'],
+      ['Pipe|line', '3', 'GBP 4.00'],
+    ]);
+    expect(new Set(rows.map((row) => row.length))).toEqual(new Set([3]));
+    expect(outcome.message).toMatch(/5 row/);
+  });
+
+  it('switches the separator without dragging the comma into the quoting rules', async () => {
+    const outcome = await run('pdf-to-csv', { pages: 'all', delimiter: ';' }, [
+      fileOf(await moneyTablePdf(), 'money.pdf'),
+    ]);
+    const text = stripBom(await textOf(outcome));
+    expect(parseCsv(text, ';')[3]).toEqual(['Cafe, Zurich', '7', 'EUR 1.99']);
+    expect(text).not.toContain('"1,200"');
+  });
+
+  it('escapes a pipe so a Markdown table keeps its column count', async () => {
+    const outcome = await run('extract-tables', { pages: 'all', format: 'md' }, [
+      fileOf(await moneyTablePdf(), 'money.pdf'),
+    ]);
+    const text = await textOf(outcome);
+    const lines = text.split('\n').filter((line) => line.startsWith('|'));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.every((line) => line.startsWith('| ') && line.endsWith(' |'))).toBe(true);
+    const widths = new Set(lines.map((line) => line.split(/(?<!\\)\|/).length));
+    expect([...widths]).toHaveLength(1);
+    expect(text).toContain('Pipe\\|line');
+  });
+
+  it('keeps a number a number in the workbook and the words as words', async () => {
+    const outcome = await run('pdf-to-excel', { pages: 'all' }, [
+      fileOf(await moneyTablePdf(), 'money.pdf'),
+    ]);
+    const entries = await zipEntries(outcome);
+    const sheet = entries.find((entry) => entry.name === 'xl/worksheets/sheet1.xml');
+    expect(sheet, 'the first worksheet is missing').toBeTruthy();
+    const xml = new TextDecoder().decode(sheet!.bytes);
+    expect(xml).toMatch(/<c r="B2"[^>]*><v>1200<\/v>/);
+    const shared = entries.find((entry) => entry.name === 'xl/sharedStrings.xml');
+    expect(shared, 'text cells belong in the shared string table').toBeTruthy();
+    expect(new TextDecoder().decode(shared!.bytes)).toContain('Widget');
+  });
+});
+
+/* ── resolution metadata, invisible bytes, reflow and the greyscale claim ──── */
+
+/** The tags a viewer reads before it touches a pixel, one entry per TIFF page. */
+function tiffPages(bytes: Uint8Array): { width: number; height: number; x: number[]; y: number[]; unit: number[] }[] {
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return UTIF.decode(buffer).map((ifd) => {
+    const tags = ifd as unknown as Record<string, number[] | undefined>;
+    return {
+      width: tags.t256?.[0] ?? 0,
+      height: tags.t257?.[0] ?? 0,
+      x: tags.t282 ?? [],
+      y: tags.t283 ?? [],
+      unit: tags.t296 ?? [],
+    };
+  });
+}
+
+describe('raster resolution metadata (E12, E15)', () => {
+  it('writes the requested dpi into the TIFF, and keeps it there across pages', async () => {
+    const one = await run('pdf-to-tiff', { dpi: 300, pages: '1' }, [fileOf(await singlePagePdf(), 'one.pdf')]);
+    const [tags] = tiffPages(await bytesOf(one));
+    // 400 pt wide at 300 dpi is 1666 px, and the file has to *say* 300 dpi or
+    // every viewer inserts the page at 4× the size it was rendered for.
+    expect([tags.width, tags.height]).toEqual([1666, 1250]);
+    expect(tags.x).toEqual([300, 1]);
+    expect(tags.y).toEqual([300, 1]);
+    expect(tags.unit).toEqual([2]);
+
+    // A merged file moves every IFD and every out-of-line value, so the density
+    // has to survive the rebase on all four pages, not just the first.
+    const many = await run('pdf-to-tiff', { dpi: 150, pages: 'all' }, [fileOf(await mixedPdf(), 'sizes.pdf')]);
+    const pages = tiffPages(await bytesOf(many));
+    expect(pages).toHaveLength(4);
+    expect(pages.map((page) => [page.width, page.height])).toEqual([
+      [1240, 1753],
+      [1650, 1275],
+      [625, 833],
+      [833, 625],
+    ]);
+    pages.forEach((page, index) => {
+      expect([page.x, page.y, page.unit], `tiff page ${index + 1}`).toEqual([[150, 1], [150, 1], [2]]);
+    });
+  });
+
+  it('states the density in the BMP header in pixels per metre', async () => {
+    const outcome = await run('pdf-to-bmp', { dpi: 300, pages: '1' }, [fileOf(await singlePagePdf(), 'one.pdf')]);
+    const bytes = await bytesOf(outcome);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const perMetre = Math.round(300 / 0.0254);
+    expect(view.getInt32(38, true)).toBe(perMetre);
+    expect(view.getInt32(42, true)).toBe(perMetre);
+    expect([view.getInt32(18, true), view.getInt32(22, true)]).toEqual([1666, 1250]);
+  });
+});
+
+/** One paragraph wrapped across two lines, then a second paragraph (E11 copy check). */
+async function wrappedLinesPdf(): Promise<Uint8Array> {
+  return cached('wrapped', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595, 800]);
+    page.drawText('The quick brown fox jumps over the lazy', { x: 60, y: 700, size: 11, font });
+    page.drawText('dog and keeps running for a while longer', { x: 60, y: 688, size: 11, font });
+    page.drawText('Second paragraph stands on its own.', { x: 60, y: 640, size: 11, font });
+    return doc.save({ useObjectStreams: false });
+  });
+}
+
+describe('pdf-to-text: what the layout switch actually switches', () => {
+  it('keeps the line breaks on, and reflows them into paragraphs off', async () => {
+    const file = [fileOf(await wrappedLinesPdf(), 'wrap.pdf')];
+    const kept = await textOf(await run('pdf-to-text', { pages: 'all' }, file));
+    expect(kept).toContain('jumps over the lazy\ndog and keeps');
+    expect(kept).toContain('\f');
+
+    const flowed = await textOf(await run('pdf-to-text', { pages: 'all', layout: false }, file));
+    expect(flowed).toContain('The quick brown fox jumps over the lazy dog and keeps running for a while longer');
+    expect(flowed).toContain('Second paragraph stands on its own.');
+    expect(flowed.split('\n').filter((line) => line.trim() !== '')).toHaveLength(2);
+    expect(flowed).not.toContain('\f');
+  });
+});
+
+/** Text with every character that breaks an XML or HTML document. */
+async function symbolsPdf(): Promise<Uint8Array> {
+  return cached('symbols', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([500, 300]).drawText('R&D <quarter> "Q1" & friends', { x: 30, y: 200, size: 14, font });
+    return doc.save({ useObjectStreams: false });
+  });
+}
+
+describe('pdf-to-svg (E9, E11)', () => {
+  it('is well-formed XML at the page’s displayed size, with the text escaped', async () => {
+    const outcome = await run('pdf-to-svg', { pages: 'all' }, [fileOf(await mixedPdf(), 'sizes.pdf')]);
+    const expected: [number, number][] = [
+      [595.28, 841.89],
+      [792, 612],
+      [300, 400],
+      [400, 300],
+    ];
+    for (const [index, page] of expected.entries()) {
+      const text = await textOf(outcome, index);
+      const parsed = new DOMParser().parseFromString(text, 'image/svg+xml');
+      expect(parsed.querySelector('parsererror'), `page ${index + 1} is not well-formed`).toBeNull();
+      const root = parsed.documentElement;
+      expect(Number(root.getAttribute('width'))).toBeCloseTo(page[0], 1);
+      expect(Number(root.getAttribute('height'))).toBeCloseTo(page[1], 1);
+    }
+    const symbols = await run('pdf-to-svg', { pages: '1' }, [fileOf(await symbolsPdf(), 'amp.pdf')]);
+    const text = await textOf(symbols);
+    expect(text).toContain('R&amp;D &lt;quarter&gt;');
+    expect(new DOMParser().parseFromString(text, 'image/svg+xml').querySelector('parsererror')).toBeNull();
+  });
+
+  it('leaves the raster out when the toggle says so, and puts it in when it says yes', async () => {
+    const file = [fileOf(await scanPdf(1), 'scan.pdf')];
+    const embedded = await textOf(await run('pdf-to-svg', { pages: '1', embedImages: true }, file));
+    const linked = await textOf(await run('pdf-to-svg', { pages: '1', embedImages: false }, file));
+    expect(embedded).toContain('<image');
+    expect(embedded).toContain('data:image/');
+    expect(linked).not.toContain('<image');
+  });
+});
+
+describe('pdf-to-word: what really lands in the WordprocessingML (E10, E11)', () => {
+  it('keeps invisible glyph-map bytes out of document.xml', async () => {
+    const outcome = await run('pdf-to-word', { pages: 'all' }, [fileOf(controlCharPdf(), 'junk.pdf')]);
+    const xml = await documentXml(outcome, true);
+    const offenders = [...xml]
+      .map((char) => char.codePointAt(0) ?? 0)
+      .filter((code) => code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d);
+    expect(offenders, `document.xml carries ${offenders.length} control byte(s) Word cannot open`).toEqual([]);
+    expect(await documentXml(outcome)).toContain('lead tail');
+  });
+
+  it('carries CJK and accented words in as themselves', async () => {
+    const cjk = await documentXml(await run('pdf-to-word', { pages: 'all' }, [fileOf(cjkPdf(), 'han.pdf')]));
+    expect(cjk).toContain('中文');
+    const accents = await documentXml(
+      await run('pdf-to-word', { pages: '2' }, [fileOf(await textPdfCached(), 'acc.pdf')]),
+    );
+    expect(accents).toContain('Zürich');
+  });
+
+  it('escapes the characters that would otherwise restructure the XML', async () => {
+    const xml = await documentXml(await run('pdf-to-word', { pages: '1' }, [fileOf(await symbolsPdf(), 'amp.pdf')]));
+    expect(xml).toContain('R&amp;D &lt;quarter&gt;');
+    expect(xml).toContain('"Q1"');
+  });
+});
+
+describe('pdf-to-greyscale: the claim in the message, checked (E10, E11)', () => {
+  it('recolours the paint operators and leaves the words selectable', async () => {
+    const outcome = await run('pdf-to-greyscale', { mode: 'vectors', pages: 'all' }, [
+      fileOf(await colouredPdf(), 'colour.pdf'),
+    ]);
+    const bytes = await bytesOf(outcome);
+    const doc = await PDFDocument.load(bytes);
+    expect(pageUsesColor(doc.getPage(0)), 'a recoloured page must paint with grey operators only').toBe(false);
+    const reread = await run('pdf-to-text', { pages: 'all' }, [fileOf(bytes, 'grey.pdf')]);
+    expect(await textOf(reread)).toContain('Colour heading');
+  });
+
+  it('re-renders into a real PDF whose text layer is gone, as promised', async () => {
+    const outcome = await run('pdf-to-greyscale', { mode: 'raster', dpi: 96, pages: '1' }, [
+      fileOf(await colouredPdf(), 'colour.pdf'),
+    ]);
+    const bytes = await bytesOf(outcome);
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getPageCount()).toBe(1);
+    expect(outcome.message).toMatch(/can no longer be selected/i);
+    const reread = await run('pdf-to-text', { pages: 'all' }, [fileOf(bytes, 'grey.pdf')]);
+    expect(reread.outputs).toHaveLength(0);
+    expect(reportText(reread)).toMatch(/text layer|scan|blank/i);
+  });
+});
+
+
 /* ── coverage gate (must stay last: it reads what the run helpers recorded) ── */
 
 describe('suite coverage', () => {
@@ -1724,5 +2256,12 @@ describe('suite coverage', () => {
     // size counted it as a missing tool.
     expect(CONVERT_FROM_IDS.filter((id) => COVERED.has(id))).toEqual(CONVERT_FROM_IDS);
     expect([...COVERED].every((id) => getPdfTool(id) !== undefined), 'every covered id is registered').toBe(true);
+  });
+
+  it('proved every tool that writes a file with that file’s own bytes', () => {
+    // The two defects this family has shipped both hid behind a message string.
+    // A tool that only ever had its `result.message` asserted is listed here.
+    const promises = CONVERT_FROM_IDS.filter((id) => !BYTES_CHECKED.has(id));
+    expect(promises, `no byte-level test for: ${promises.join(', ')}`).toEqual([]);
   });
 });

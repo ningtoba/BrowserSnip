@@ -1,0 +1,9 @@
+{"step":"anchor","state":{"armed":"select","status":"Placed Highlight · p.1 · “luqmanhakim.dev@gmail.com Email addres","count":1,"boxes":[{"x":70,"y":354,"w":398,"h":14}]},"pageLocalAnchor":{"x":70,"y":354,"w":398,"h":14}}
+{"case":"H1-tap-on-words","created":false,"state":{"armed":"highlight","status":"That drag did not cross any selectable text on this page — drag ","count":1,"boxes":[{"x":70,"y":354,"w":398,"h":14}]}}
+{"case":"H2-near-miss-4to8px-above","created":false,"status":"That drag did not cross any selectable text on this page — drag "}
+{"case":"H3-release-off-page","created":true,"status":"Placed Highlight · p.1 · “Email address”. Select is armed."}
+{"case":"H4-two-drags-one-arm","firstCreated":false,"secondCreated":false,"armedAfterFirst":"highlight","statusAfterSecond":"Drag across the words — the mark snaps to each text line it cros"}
+{"case":"S1-pad-opened-from-panel","pad":false,"padOpen":true}
+{"case":"I1-raster-arrived-no-page-click","createdImmediately":false,"armed":"image","status":"Click or drag on page 1 to place e3-sample.png."}
+{"case":"I1-page-click","created":false,"armed":"image","status":"Click or drag on page 1 to place e3-sample.png.","hrefs":"[]"}
+{"shot":"e3-23-human-flows.png","at":"2026-11-07T18:06:13.138Z"}

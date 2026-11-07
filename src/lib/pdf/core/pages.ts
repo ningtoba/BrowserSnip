@@ -60,11 +60,22 @@ export function resolvePageSet(spec: PageSpec, total: number): number[] {
 
 function parseList(input: string, total: number): number[] {
   const out: number[] = [];
-  for (const rawChunk of input.split(/[,\s]+/)) {
+  // `1 - 3` is a range with the spaces a person types. Splitting on whitespace
+  // first leaves a bare `-`, which used to read as "every page" — so a
+  // three-page request quietly extracted the whole document. The spaces around a
+  // range operator go away before the split, and a range with no page numbers in
+  // it at all is refused rather than treated as "all" (E15).
+  const collapsed = input
+    .replace(/\s*(--|-|–|\.\.)\s*/g, '$1')
+    .replace(/\s*to\s*/gi, 'to');
+  for (const rawChunk of collapsed.split(/[,\s;]+/)) {
     const chunk = rawChunk.trim();
     if (!chunk) continue;
-    const range = chunk.match(/^(\d+)?\s*(?:-|–|to|\.\.)\s*(\d+)?$/i);
+    const range = chunk.match(/^(\d+)?\s*(?:--|-|–|to|\.\.)\s*(\d+)?$/i);
     if (range) {
+      if (range[1] === undefined && range[2] === undefined) {
+        throw new PageSpecError(`"${chunk}" is a range with no page numbers in it. Write 1-3, 5- or -5.`);
+      }
       const from = range[1] ? Number(range[1]) : 1;
       const to = range[2] ? Number(range[2]) : total;
       assertPage(from, total, chunk);

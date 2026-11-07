@@ -17,6 +17,7 @@ import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 // object model `./doc` does not re-export, so they come straight from the
 // package.
 import { PDFString, PDFStream, decodePDFRawStream } from '@maxwbh/pdf-lib';
+import type { PDFContext, PDFObject } from '@maxwbh/pdf-lib';
 import {
   PDFArray,
   PDFDict,
@@ -392,18 +393,27 @@ export interface XmpSummary {
   raw: string | null;
 }
 
-function metadataStreamRef(doc: PDFDocument): PDFRef | undefined {
+/**
+ * The catalog `/Metadata` stream and the reference that holds it.
+ *
+ * Producers write it both ways — as an indirect object (the common case, and the
+ * only one `writeXmp` produces) and inlined straight into the catalog. Reading
+ * only the `PDFRef` form made an inlined packet invisible to the properties
+ * panel *and* to `stripXmp`, so "Remove metadata" reported an untouched XMP
+ * stream that was sitting in the file.
+ */
+function metadataStream(doc: PDFDocument): { stream: PDFStream; ref: PDFRef | undefined } | undefined {
   const value = doc.catalog.get(PDFName.of('Metadata'));
-  return value instanceof PDFRef ? value : undefined;
+  const resolved = value instanceof PDFRef ? context(doc).lookup(value) : value;
+  if (!(resolved instanceof PDFStream)) return undefined;
+  return { stream: resolved, ref: value instanceof PDFRef ? value : undefined };
 }
 
 /** The XMP packet text, or `undefined` when the document has no `/Metadata`. */
 export function readXmpText(doc: PDFDocument): string | undefined {
-  const ref = metadataStreamRef(doc);
-  if (!ref) return undefined;
-  const stream = context(doc).lookup(ref);
-  if (!(stream instanceof PDFStream)) return undefined;
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(streamBytes(stream));
+  const found = metadataStream(doc);
+  if (!found) return undefined;
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(streamBytes(found.stream));
   return text.replace(/^\uFEFF/, '');
 }
 
@@ -440,7 +450,7 @@ export function readXmp(doc: PDFDocument): XmpSummary | null {
 /** Write (replace) the XMP packet and point catalog `/Metadata` at it. */
 export function writeXmp(doc: PDFDocument, xmp: string): void {
   const ctx = context(doc);
-  const old = metadataStreamRef(doc);
+  const old = metadataStream(doc)?.ref;
   const bytes = toLocalBytes(new TextEncoder().encode(xmp));
   // XMP packets are stored uncompressed: Acrobat, pdfium and pdf.js all read
   // `/Metadata` before they have a filter list, and a compressed packet is a
@@ -463,11 +473,74 @@ export function writeXmp(doc: PDFDocument, xmp: string): void {
  * @returns true when the document carried XMP and it is now gone.
  */
 export function stripXmp(doc: PDFDocument): boolean {
-  const ref = metadataStreamRef(doc);
-  if (!ref) return false;
+  const found = metadataStream(doc);
+  if (!found) return false;
   doc.catalog.delete(PDFName.of('Metadata'));
-  context(doc).delete(ref);
+  // An inlined packet disappears with the catalog key; only an indirect one
+  // needs the object itself deleted, or it would survive as an orphan stream.
+  if (found.ref) context(doc).delete(found.ref);
   return true;
+}
+
+/**
+ * Delete `terms` from every place outside the page content that can repeat them:
+ * the `/Info` strings and the XMP packet.
+ *
+ * A redaction that blacks out a name but leaves it in `/Title` and `dc:title`
+ * has not removed it — a search in any reader still finds it. Values that end up
+ * blank lose the key rather than keeping an empty string, and the XMP packet is
+ * re-written from the surviving text so its own `/Info` twin cannot disagree.
+ *
+ * @returns which properties changed, and whether the packet was rewritten.
+ */
+export function scrubMetadataText(
+  doc: PDFDocument,
+  terms: readonly string[],
+): { properties: string[]; xmp: boolean } {
+  const wanted = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))];
+  const result: { properties: string[]; xmp: boolean } = { properties: [], xmp: false };
+  if (wanted.length === 0) return result;
+  const pattern = new RegExp(`(${wanted.map(escapeRegExp).join('|')})`, 'gi');
+  const collapse = (value: string): string => value.replace(pattern, '').replace(/\s+/g, ' ').trim();
+
+  const info = readInfo(doc);
+  const patch: DocumentInfo = {};
+  for (const [field, label] of [
+    ['title', 'Title'], ['author', 'Author'], ['subject', 'Subject'],
+    ['keywords', 'Keywords'], ['creator', 'Creator'], ['producer', 'Producer'],
+  ] as const) {
+    const current = info[field];
+    if (!current) continue;
+    const kept = collapse(current);
+    if (kept === current) continue;
+    (patch as Record<string, string>)[field] = kept;
+    result.properties.push(label);
+  }
+  const extra = info.extra ?? {};
+  for (const [key, value] of Object.entries(extra)) {
+    const kept = collapse(value);
+    if (kept === value) continue;
+    patch.extra = { ...(patch.extra ?? {}), [key]: kept };
+    result.properties.push(key);
+  }
+  if (Object.keys(patch).length > 0) {
+    // Dates are never the redacted word, and `freshDates` would stamp them.
+    writeInfo(doc, patch);
+  }
+
+  const packet = readXmpText(doc);
+  if (packet !== undefined) {
+    const kept = packet.replace(pattern, '').replace(/[ \t]{2,}/g, ' ');
+    if (kept !== packet) {
+      writeXmp(doc, kept);
+      result.xmp = true;
+    }
+  }
+  return result;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function parseXml(text: string): Document | null {
@@ -690,7 +763,209 @@ export function metadataReport(
     rows: pageRows.length > 0 ? pageRows : [{ label: 'Empty', value: 'no pages' }],
   });
 
+  const fonts = listFonts(doc);
+  sections.push({
+    title: 'Fonts',
+    rows: fonts.length > 0
+      ? fonts.map((font) => ({
+          label: font.name,
+          value: [
+            font.type,
+            font.embedded ? 'embedded' : 'not embedded — substituted on screen',
+            font.subset ? `subset ${font.subset}` : 'full font',
+            font.encoding,
+          ].filter(Boolean).join(' · '),
+        }))
+      : [{ label: 'None', value: 'no fonts in this PDF: the pages hold no drawn text' }],
+  });
+
+  const images = listImages(doc);
+  const imageRows: MetadataRow[] = images.slice(0, REPORT_LIMIT).map((image) => ({
+    label: `${image.width} × ${image.height} px`,
+    value: [
+      image.filter ?? 'raw samples',
+      `${image.bitsPerComponent}-bit`,
+      image.colorSpace,
+      formatBytes(image.bytes),
+      image.pages.length > 1 ? `on ${image.pages.length} pages` : 'on 1 page',
+    ].filter(Boolean).join(' · '),
+  }));
+  if (images.length > REPORT_LIMIT) {
+    imageRows.push({
+      label: 'More',
+      value: `${images.length - REPORT_LIMIT} further image(s) not listed`,
+    });
+  }
+  sections.push({
+    title: 'Images',
+    rows: imageRows.length > 0 ? imageRows : [{ label: 'None', value: 'no raster images are embedded' }],
+  });
+
   return sections;
+}
+
+/** How many rows the resource inventories list before summarising (E7). */
+const REPORT_LIMIT = 20;
+
+/** A font face a page draws with, as the file declares it. */
+export interface FontInventory {
+  /** `/BaseFont`, with the `ABCDEF+` subset prefix kept in `name` and split out. */
+  name: string;
+  /** `TrueType`, `Type0`, `Type1`, `CIDFontType2` … */
+  type: string;
+  /** True when a `/FontFile`, `/FontFile2` or `/FontFile3` backs the face. */
+  embedded: boolean;
+  /** The `ABCDEF+` tag of an embedded subset, when the producer wrote one. */
+  subset?: string;
+  /** Encoding summary — `Identity-H`, `WinAnsiEncoding`, a CID `Ordering`. */
+  encoding?: string;
+}
+
+/** A raster image a page places, measured from its own dictionary. */
+export interface ImageInventory {
+  width: number;
+  height: number;
+  bitsPerComponent: number;
+  /** `/Filter` name (`DCTDecode`, `FlateDecode`, …) or `null` for raw samples. */
+  filter: string | null;
+  colorSpace: string;
+  /** Stored bytes — what the image costs in this file, not its pixel weight. */
+  bytes: number;
+  /** 1-based pages that place this image. */
+  pages: number[];
+}
+
+/** Read a dictionary entry that may be a reference, narrowing by hand. */
+function resolve(context: PDFContext, value: unknown): PDFObject | undefined {
+  if (value === undefined || value === null) return undefined;
+  return value instanceof PDFRef ? context.lookup(value) : (value as PDFObject);
+}
+
+/**
+ * Bytes this object actually costs the file: the encoded payload, not the
+ * inflated one a viewer draws from it.
+ */
+function storedLength(stream: PDFStream): number {
+  try {
+    return stream.getContents().length;
+  } catch {
+    return 0;
+  }
+}
+
+function nameText(value: unknown): string | undefined {
+  return value instanceof PDFName ? value.decodeText() : undefined;
+}
+
+/**
+ * Every font face the pages reference, once each.
+ *
+ * `/Encoding` is a name on a simple font and a dictionary on a CID font, so it
+ * is resolved and narrowed rather than looked up with a class — `lookupMaybe`
+ * throws on that mismatch. Shared resource dictionaries mean one face appears on
+ * many pages; it is reported once, under the name the file carries.
+ */
+export function listFonts(doc: PDFDocument): FontInventory[] {
+  const ctx = context(doc);
+  const found = new Map<string, FontInventory>();
+  for (const page of doc.getPages()) {
+    const resources = resolve(ctx, page.node.get(PDFName.of('Resources')));
+    if (!(resources instanceof PDFDict)) continue;
+    const fonts = resolve(ctx, resources.get(PDFName.of('Font')));
+    if (!(fonts instanceof PDFDict)) continue;
+    for (const [, entry] of fonts.entries()) {
+      const font = resolve(ctx, entry);
+      if (!(font instanceof PDFDict)) continue;
+      const type = nameText(resolve(ctx, font.get(PDFName.of('Subtype')))) ?? 'unknown';
+      let descriptor: PDFDict | undefined;
+      let encodingName = nameText(resolve(ctx, font.get(PDFName.of('Encoding'))));
+      const descendants = resolve(ctx, font.get(PDFName.of('DescendantFonts')));
+      const descendant =
+        descendants instanceof PDFArray
+          ? resolve(ctx, descendants.get(0))
+          : (descendants instanceof PDFDict ? descendants : undefined);
+      const cid = descendant instanceof PDFDict ? descendant : undefined;
+      if (cid) {
+        const registry = nameText(resolve(ctx, cid.get(PDFName.of('Registry'))));
+        const ordering = nameText(resolve(ctx, cid.get(PDFName.of('Ordering'))))
+          ?? nameText(resolve(ctx, cid.get(PDFName.of('ROS'))));
+        if (registry || ordering) {
+          encodingName = [registry, ordering].filter(Boolean).join('-');
+        }
+      }
+      const rawDescriptor = resolve(ctx, (cid ?? font).get(PDFName.of('FontDescriptor')));
+      if (rawDescriptor instanceof PDFArray) {
+        const first = resolve(ctx, rawDescriptor.get(0));
+        if (first instanceof PDFDict) descriptor = first;
+      } else if (rawDescriptor instanceof PDFDict) {
+        descriptor = rawDescriptor;
+      }
+      const base = nameText(resolve(ctx, (cid ?? font).get(PDFName.of('BaseFont')))) ?? 'unnamed';
+      const subset = /^([A-Z]{6})\+/.exec(base)?.[1];
+      const key = `${base}|${type}|${descriptor ? 'e' : 'x'}`;
+      if (found.has(key)) continue;
+      found.set(key, {
+        name: base,
+        type,
+        embedded:
+          descriptor !== undefined
+          && ['FontFile', 'FontFile2', 'FontFile3'].some((name) => descriptor!.has(PDFName.of(name))),
+        subset,
+        encoding: encodingName ?? (cid ? 'CID (unspecified encoding)' : undefined),
+      });
+    }
+  }
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Every raster image the pages place, deduplicated by object so one logo used
+ * on 300 pages is reported once with its page count (E7).
+ */
+export function listImages(doc: PDFDocument): ImageInventory[] {
+  const ctx = context(doc);
+  const found = new Map<string, ImageInventory>();
+  doc.getPages().forEach((page, index) => {
+    const resources = resolve(ctx, page.node.get(PDFName.of('Resources')));
+    if (!(resources instanceof PDFDict)) return;
+    const xobjects = resolve(ctx, resources.get(PDFName.of('XObject')));
+    if (!(xobjects instanceof PDFDict)) return;
+    for (const [, entry] of xobjects.entries()) {
+      const stream = resolve(ctx, entry);
+      if (!(stream instanceof PDFStream)) continue;
+      if (nameText(resolve(ctx, stream.dict.get(PDFName.of('Subtype')))) !== 'Image') continue;
+      const number = (name: string): number => {
+        const value = resolve(ctx, stream.dict.get(PDFName.of(name)));
+        return value instanceof PDFNumber ? value.asNumber() : 0;
+      };
+      const filterValue = resolve(ctx, stream.dict.get(PDFName.of('Filter')));
+      const filter = filterValue instanceof PDFName
+        ? filterValue.decodeText()
+        : (filterValue instanceof PDFArray ? nameText(resolve(ctx, filterValue.get(0))) ?? null : null);
+      const colorSpaceValue = resolve(ctx, stream.dict.get(PDFName.of('ColorSpace')));
+      const colorSpace = colorSpaceValue instanceof PDFName
+        ? colorSpaceValue.decodeText()
+        : (colorSpaceValue instanceof PDFArray
+          ? nameText(resolve(ctx, colorSpaceValue.get(0))) ?? 'separated/ICCBased'
+          : 'unknown');
+      const key = entry instanceof PDFRef ? entry.toString() : `${number('Width')}x${number('Height')}:${storedLength(stream)}`;
+      const existing = found.get(key);
+      if (existing) {
+        existing.pages.push(index + 1);
+        continue;
+      }
+      found.set(key, {
+        width: number('Width'),
+        height: number('Height'),
+        bitsPerComponent: number('BitsPerComponent') || 1,
+        filter,
+        colorSpace,
+        bytes: storedLength(stream),
+        pages: [index + 1],
+      });
+    }
+  });
+  return [...found.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
 function addRow(rows: MetadataRow[], label: string, value: string | undefined): void {

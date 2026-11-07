@@ -4,10 +4,31 @@ import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import { downloadBlob, downloadMultipleBlobs, getOutputFileName, formatFileSize, formatCompressionRatio } from '@/lib/utils/download';
 import { fadeUp, scaleIn, springSoft, tapDown } from '@/lib/motion';
+import {
+  OutputPreview,
+  noPreviewCopy,
+  outputKind,
+  type OutputKind,
+} from '@/components/tools/pdf/shared/OutputPreview';
 
 interface OutputActionsProps {
   onCancel?: () => void;
 }
+
+/** Named after what the bytes are, never after which tool was open. */
+const DOCUMENT_LABEL: Partial<Record<OutputKind, string>> = {
+  document: 'Word Document',
+  spreadsheet: 'Spreadsheet',
+  text: 'Text file',
+  other: 'File',
+};
+
+const DOCUMENT_GLYPH: Partial<Record<OutputKind, string>> = {
+  document: '📝',
+  spreadsheet: '📊',
+  text: '📃',
+  other: '📄',
+};
 
 export function OutputActions({ onCancel }: OutputActionsProps) {
   const { outputBlob, outputUrl, outputBlobs, outputUrls, outputNames, label, suffix } = useProcessStore();
@@ -32,6 +53,12 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
     !outputBlob?.type.includes('pdf') && !(outputBlob?.type.startsWith('image/') ?? false);
   /** More than one non-image result, e.g. Split PDF or unmerged Extract Pages. */
   const isFileList = blobCount > 1 && !isImageGallery;
+  /** What the single file actually is, so the panel never guesses "Excel". */
+  const primaryKind: OutputKind = outputBlob
+    ? outputKind(outputNames[0] ?? 'output.bin', outputBlob.type)
+    : 'other';
+  /** A container has entries to list; the shared preview does that honestly. */
+  const isArchive = !hasMultiple && primaryKind === 'archive';
 
   useEffect(() => {
     if (blobCount !== prevLengthRef.current) {
@@ -92,7 +119,6 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
       void downloadAllAsZip();
       return;
     }
-    handleDownloadSelected.caller === undefined;
     allIndices.forEach((index, order) => {
       setTimeout(() => downloadBlob(allBlobs[index], nameFor(index)), order * 220);
     });
@@ -121,23 +147,37 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
     }
   };
 
+  /**
+   * Copying is a courtesy, so a refusal is quiet.
+   *
+   * The bytes are always reachable through Download; the clipboard can say no for
+   * reasons the user cannot act on here (no permission, a non-secure context, a
+   * format the clipboard will not take), so each failure falls to the next
+   * option and the button simply never changes if none of them work.
+   */
   const handleCopy = useCallback(async () => {
+    const copied = () => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    };
     try {
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
         await navigator.clipboard.write([
           new ClipboardItem({ [outputBlob.type || 'application/pdf']: outputBlob }),
         ]);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        copied();
         return;
       }
-    } catch {}
+    } catch {
+      // No file on the clipboard: the name below is the next best thing to it.
+    }
     try {
       const fileName = getOutputFileName(file?.name ?? 'document.pdf', activeTool ?? 'merge');
       await navigator.clipboard.writeText(fileName);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
+      copied();
+    } catch {
+      // Nothing was copied, and saying so is the button's job: it stays "Copy".
+    }
   }, [outputBlob, file, activeTool]);
 
   // Simple output bar for video tools
@@ -357,22 +397,32 @@ export function OutputActions({ onCancel }: OutputActionsProps) {
             );
           })}
         </div>
+      ) : isArchive ? (
+        /*
+         * A zip has no page to draw, but "here is your archive" and a bare icon
+         * is a weak answer: the shared preview opens the container in the tab and
+         * lists what is inside, so the user can see the run worked before taking
+         * the file. The bar above still owns the download.
+         */
+        <div className="min-h-0 flex-1 overflow-y-auto bg-cream-soft p-4">
+          <OutputPreview
+            items={[{ name: nameFor(0), blob: outputBlob, url: outputUrl }]}
+          />
+        </div>
       ) : isDocumentOutput ? (
         <div className="flex-1 min-h-0 flex items-center justify-center bg-cream-soft p-8">
           <div className="text-center max-w-xs">
-            <div className="mb-4 text-5xl">
-              {activeTool === 'pdf-to-word' ? '📝' : '📊'}
+            <div className="mb-4 text-5xl" aria-hidden>
+              {DOCUMENT_GLYPH[primaryKind] ?? '\u{1F4C4}'}
             </div>
             <p className="text-sm font-semibold text-ink">
-              {activeTool === 'pdf-to-word' ? 'Word Document' : 'Excel Spreadsheet'}
+              {DOCUMENT_LABEL[primaryKind] ?? 'File'}
             </p>
             <p className="mt-1.5 text-xs text-ink-muted">
               {formatFileSize(outputBlob.size)} — ready to download
             </p>
-            <p className="mt-3 text-[10px] text-ink-muted/70">
-              {activeTool === 'pdf-to-word'
-                ? 'Opens in Microsoft Word, Google Docs, or any word processor.'
-                : 'Opens in Microsoft Excel, Google Sheets, or any spreadsheet app.'}
+            <p className="mt-3 text-[10px] leading-relaxed text-ink-muted/70">
+              {noPreviewCopy(primaryKind, nameFor(0))}
             </p>
           </div>
         </div>

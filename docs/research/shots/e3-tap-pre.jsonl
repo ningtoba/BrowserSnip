@@ -1,0 +1,8 @@
+{"step":"created","state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “Malaysia Nationality”. Select is armed","count":1,"sel":"amw6pvyx7b","painted":[[70,466,265,14]],"rects":[[70,466,265,14]]}}
+{"step":"tap-target","bbox":[70,466,265,14],"client":[835,683]}
+{"case":"tap-centre","beforeSel":"amw6pvyx7b","afterSel":"amw6pvyx7b","count":1,"armed":"highlight","tone":"warn","text":"That drag did not cross any selectable text on this page — drag "}
+{"case":"tap-centre-left-of-text","beforeSel":"amw6pvyx7b","afterSel":"amw6pvyx7b","count":1,"armed":"highlight","tone":"warn","text":"That drag did not cross any selectable text on this page — drag "}
+{"case":"tap-top+1","beforeSel":"amw6pvyx7b","afterSel":"amw6pvyx7b","count":1,"armed":"highlight","tone":"warn","text":"That drag did not cross any selectable text on this page — drag "}
+{"case":"tap-bottom-1","beforeSel":"amw6pvyx7b","afterSel":"amw6pvyx7b","count":1,"armed":"highlight","tone":"warn","text":"That drag did not cross any selectable text on this page — drag "}
+{"case":"tap-with-select","state":{"armed":"select","tone":"warn","text":"That drag did not cross any selectable text on this page — drag ","count":1,"sel":"amw6pvyx7b","painted":[[70,466,265,14]],"rects":[[70,466,265,14]]}}
+{"shot":"e3-25-tap-mark.png","at":"2026-11-07T18:08:49.760Z"}

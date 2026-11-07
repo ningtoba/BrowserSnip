@@ -65,6 +65,53 @@ export function fitWidthZoom(paneWidthPx: number, pageWidthPt: number, paddingPx
   return clampZoom((paneWidthPx - paddingPx) / pageWidthPt);
 }
 
+/**
+ * The zoom a freshly-opened document is shown at.
+ *
+ * `fitWidthZoom` on its own is the wrong first impression twice over: in a pane
+ * wider than the page it lands above 100 %, so a portrait page grows until most
+ * of it sits below the fold and the reader scrolls to see one line at a time,
+ * and in a narrow pane it lands below 100 %, shrinking body text under its real
+ * size. A viewer opens a page so the words read, which is the *smaller* of
+ * "fit the width" and actual size — never more. A page wider than the pane
+ * still fits the pane, and the answer stays inside the range the ＋／− buttons
+ * can reach, so the number in the toolbar is always one the user can get back to.
+ */
+export function readingZoom(paneWidthPx: number, pageWidthPt: number, paddingPx = 48): number {
+  return clampZoom(Math.min(fitWidthZoom(paneWidthPx, pageWidthPt, paddingPx), 1));
+}
+
+/** A box in CSS pixels, as `getBoundingClientRect` reports it. */
+export interface ClientBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The middle of the part of the page the user can actually see, in page-local
+ * CSS pixels — the space a pointer position lives in.
+ *
+ * For a mark that has to land with no pointer to follow, e.g. a picture that
+ * arrives after a file dialog. The centre of the *page* is often scrolled away,
+ * and a mark the user cannot see reads as a click that did nothing; the middle
+ * of what is on screen is always visible. A page fully outside the pane is
+ * clamped onto the page rather than placed off its edge.
+ */
+export function visiblePageCentre(page: ClientBox, pane: ClientBox): Point {
+  const overlap = (lo: number, hi: number, from: number, to: number): [number, number] => [
+    Math.min(Math.max(lo, from), hi),
+    Math.max(Math.min(hi, to), lo),
+  ];
+  const [left, right] = overlap(page.left, page.left + page.width, pane.left, pane.left + pane.width);
+  const [top, bottom] = overlap(page.top, page.top + page.height, pane.top, pane.top + pane.height);
+  return {
+    x: (left + right) / 2 - page.left,
+    y: (top + bottom) / 2 - page.top,
+  };
+}
+
 /** Page size as drawn, in PDF points (rotation applied). */
 function viewportSize(geom: PageGeom): { width: number; height: number } {
   return { width: geom.cssWidth / geom.zoom, height: geom.cssHeight / geom.zoom };

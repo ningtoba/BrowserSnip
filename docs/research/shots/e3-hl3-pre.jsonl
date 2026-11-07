@@ -1,0 +1,10 @@
+{"step":"page-box","H":{"left":632,"top":209.5,"w":834,"h":1179.5},"zoom":1.4016806722689075}
+{"step":"page-box","H":{"left":632,"top":209.5,"w":834,"h":1179.5},"zoom":1.4016806722689075}
+{"case":"A-thin-drag","probeStart":{"err":"ReferenceError: x is not defined"}}
+{"case":"A-thin-drag","created":true,"state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “Malaysia Nationality”. Select is armed.","count":1,"sel":"amw6pudkdb"}}
+{"case":"B-tap-line","probe":{"err":"ReferenceError: x is not defined"}}
+{"case":"B-tap-line","created":true,"state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “Current location”. Select is armed.","count":2,"sel":"amw6puec8e"}}
+{"case":"C-tap-existing-mark","state":{"armed":"highlight","tone":"warn","text":"That drag did not cross any selectable text on this page — drag across t","count":2,"sel":"amw6puec8e"},"prevSel":"amw6puec8e"}
+{"case":"D-tall-drag","created":true,"state":{"armed":"select","tone":"idle","text":"Placed Highlight · p.1 · “https://www.linkedin.com/in/ningtoba/ Lin…”. S","count":3,"sel":"amw6pufzxr"}}
+{"case":"E-viewport-pts","thinDragPt":{"y0":336.73860911270987,"y1":338.1654676258993,"x0":67.7757793764988,"x1":214.02877697841728},"tapPt":{"y":378.83093525179856,"x":85.61151079136691}}
+{"shot":"e3-24-highlight-probe.png","at":"2026-11-07T18:07:33.538Z"}

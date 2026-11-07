@@ -35,6 +35,9 @@ import { inspectPdf, validateFields } from '@/lib/pdf/core/guard';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { createSelfSignedCertificate, readSignatures } from '@/lib/pdf/core/signature';
+import { annotationCount } from '@/lib/pdf/core/annotations';
+import { listAttachments } from '@/lib/pdf/core/attachments';
+import { readOutline } from '@/lib/pdf/core/bookmarks';
 import type { PdfToolDefinition, ToolValues } from '@/lib/pdf/tools/types';
 
 const latin1 = new TextDecoder('latin1');
@@ -403,21 +406,31 @@ describe('protect and unlock round trip (E4, E5)', () => {
     expect(await bytesOf(outcome)).toEqual(source);
   });
 
-  it('warns when dropping the protection also drops form fields, comments, bookmarks and attachments', async () => {
+  it('keeps the form, the comments, the bookmarks and the embedded files it was not asked to touch', async () => {
+    // Removing a password is a change to the trailer, not to the document. The
+    // first version of this test asserted the opposite — that unlock reported
+    // the AcroForm, the annotations, the outline and the attachments as lost —
+    // because it rebuilt the page tree to clear /Encrypt. Losing a filled-in form
+    // while "just" removing a password is the failure this now guards against, so
+    // the assertions point the other way.
     const source = await loadedFixture();
+    const before = await PDFDocument.load(source);
     const locked = await saveEncrypted(await PDFDocument.load(source), {
       userPassword: 'gate',
       ownerPassword: 'gate',
       version: 4,
     });
     const outcome = await run('unlock', { password: 'gate' }, [pdfFile(locked, 'form.pdf')]);
-    const warnings = outcome.warnings.join(' ');
-    expect(warnings).toMatch(/form field/i);
-    expect(warnings).toMatch(/annotation|comment/i);
-    expect(warnings).toMatch(/bookmark/i);
-    expect(warnings).toMatch(/embedded file/i);
-    // And the file it does return is genuinely unlocked.
-    await expect(PDFDocument.load(await bytesOf(outcome))).resolves.toBeTruthy();
+    const bytes = await bytesOf(outcome);
+    const after = await PDFDocument.load(bytes);
+    expect(after.getForm().getFields().map((f) => f.getName()))
+      .toEqual(before.getForm().getFields().map((f) => f.getName()));
+    expect(annotationCount(after)).toBe(annotationCount(before));
+    expect(readOutline(after).map((n) => n.title)).toEqual(['Chapter one']);
+    expect(listAttachments(after).map((a) => a.name)).toEqual(['source.csv']);
+    // Genuinely unlocked, and nothing is admitted as lost.
+    await expect(PDFDocument.load(bytes)).resolves.toBeTruthy();
+    expect(outcome.warnings.join(' ')).not.toMatch(/did not carry over|missing from the copy/i);
   }, 120_000);
 });
 
@@ -447,7 +460,14 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     expect(recorded.documentAssembly).toBe(false);
     // No open password, so a reader opens it and merely obeys the flags.
     await expect(PDFDocument.load(bytes, { password: '' })).resolves.toBeTruthy();
-    expect(outcome.message).toMatch(/opens without a password/i);
+    // Either a reader confirmed it, or the tool says it was only written that way
+    // and warns — the copy is never described as verified by a reader it failed.
+    expect(outcome.message).toMatch(/no password|without a password/i);
+    if (/A PDF reader opens it/.test(outcome.message)) {
+      expect(outcome.warnings.join(' ')).not.toMatch(/will not open the saved copy without a password/i);
+    } else {
+      expect(outcome.warnings.join(' ')).toMatch(/will not open the saved copy without a password|does not open on the empty password/i);
+    }
     expect(outcome.warnings.join(' ')).not.toMatch(/not what was asked for/i);
   }, 120_000);
 
@@ -510,9 +530,12 @@ describe('redact-pdf destroys the text it covers (E6, E13)', () => {
     const outcome = await run('redact-pdf', {
       fill: '#000000',
       alsoMetadata: false,
+      // Displayed-page coordinates, exactly as `redactionRegions()` in the
+      // editor produces them: the fixture's two runs sit at user-space y 600 and
+      // y 100 of an 842 pt sheet, i.e. 242 and 742 from the top.
       regions: [
-        { page: 0, x: 40, y: 580, width: 320, height: 30 },
-        { page: 0, x: 40, y: 80, width: 320, height: 40 },
+        { page: 0, x: 40, y: 224, width: 320, height: 30 },
+        { page: 0, x: 40, y: 710, width: 320, height: 40 },
       ],
     }, [pdfFile(source, 'contract.pdf')]);
 
@@ -532,7 +555,7 @@ describe('redact-pdf destroys the text it covers (E6, E13)', () => {
     const outcome = await run('redact-pdf', {
       fill: '#000000',
       alsoMetadata: false,
-      regions: [{ page: 0, x: 40, y: 580, width: 320, height: 30 }],
+      regions: [{ page: 0, x: 40, y: 224, width: 320, height: 30 }],
     }, [pdfFile(source, 'contract.pdf')]);
     const after = await readableText(await bytesOf(outcome));
     expect(after).not.toContain('Zephyr Bravo Content');
@@ -544,7 +567,8 @@ describe('redact-pdf destroys the text it covers (E6, E13)', () => {
     const outcome = await run('redact-pdf', {
       fill: '#000000',
       alsoMetadata: false,
-      regions: [{ page: 0, x: 40, y: 200, width: 320, height: 20 }],
+      // Between the two runs: covers glyphs that are not there (E13).
+      regions: [{ page: 0, x: 40, y: 400, width: 320, height: 20 }],
     }, [pdfFile(source, 'contract.pdf')]);
     expect(outcome.message).toMatch(/none of them held text|nothing was deleted/i);
     expect(outcome.message).not.toMatch(/deleting the glyphs/i);
@@ -556,7 +580,7 @@ describe('redact-pdf destroys the text it covers (E6, E13)', () => {
       fill: '#000000',
       alsoMetadata: false,
       regions: [
-        { page: 0, x: 40, y: 580, width: 320, height: 30 },
+        { page: 0, x: 40, y: 224, width: 320, height: 30 },
         { page: 0, x: 100, y: 400, width: 0, height: 0 },
       ],
     }, [pdfFile(source, 'contract.pdf')]);
@@ -586,7 +610,7 @@ describe('redact-pdf destroys the text it covers (E6, E13)', () => {
     const outcome = await run('redact-pdf', {
       fill: '#000000',
       alsoMetadata: true,
-      regions: [{ page: 0, x: 40, y: 580, width: 320, height: 30 }],
+      regions: [{ page: 0, x: 40, y: 224, width: 320, height: 30 }],
     }, [pdfFile(source, 'contract.pdf')]);
     const warnings = outcome.warnings.join(' ');
     expect(warnings).toMatch(/document propert/i);

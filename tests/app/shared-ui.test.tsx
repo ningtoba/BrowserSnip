@@ -26,6 +26,17 @@ import { PreviewPane } from '@/components/tools/pdf/shared/PreviewPane';
 import { ProgressBar } from '@/components/tools/pdf/shared/ProgressBar';
 import { ResultCard, describeDelta, type ResultItem } from '@/components/tools/pdf/shared/ResultCard';
 import {
+  OutputPreview,
+  PREVIEW_PAGE_LIMIT,
+  noPreviewCopy,
+  outputKind,
+  previewCaption,
+  previewOmission,
+  previewPages,
+  type OutputKind,
+} from '@/components/tools/pdf/shared/OutputPreview';
+import { OutputActions } from '@/components/ui/OutputActions';
+import {
   checkFields,
   groupFields,
   promiseFor,
@@ -1079,5 +1090,237 @@ describe('PdfToolPanel', () => {
     expect(alert.textContent).toContain('doc.pdf');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(useProcessStore.getState().error).toContain('truncated'));
+  });
+});
+
+// ── the produced file, shown before the download ────────────────────────────
+
+function blobFor(type: string, size = 40): Blob {
+  return new Blob([new Uint8Array(size)], { type });
+}
+
+describe('output classification', () => {
+  it('names a file by what it is, not by which tool wrote it', () => {
+    expect(outputKind('report_compressed.pdf')).toBe('pdf');
+    expect(outputKind('parts.zip')).toBe('archive');
+    expect(outputKind('page-001.png')).toBe('images');
+    expect(outputKind('essay.docx')).toBe('document');
+    expect(outputKind('grid.xlsx')).toBe('spreadsheet');
+    expect(outputKind('table.csv')).toBe('text');
+    expect(outputKind('mystery')).toBe('other');
+  });
+
+  it('falls back to the MIME type when the name says nothing', () => {
+    expect(outputKind('download', 'application/pdf')).toBe('pdf');
+    expect(outputKind('download', 'application/zip')).toBe('archive');
+    expect(outputKind('download', 'image/webp')).toBe('images');
+    expect(outputKind('download', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('document');
+    expect(outputKind('download', 'application/octet-stream')).toBe('other');
+  });
+
+  it('trusts the download name over a copied type', () => {
+    // `deriveName` can hand back the wrong MIME for a renamed result; the name is
+    // the thing the user will type into an email.
+    expect(outputKind('bundle.zip', 'application/pdf')).toBe('archive');
+  });
+});
+
+describe('preview bounds', () => {
+  it('takes the first pages and the last, whatever the file holds', () => {
+    expect(previewPages(1)).toEqual([1]);
+    expect(previewPages(3)).toEqual([1, 2, 3]);
+    expect(previewPages(PREVIEW_PAGE_LIMIT)).toHaveLength(PREVIEW_PAGE_LIMIT);
+
+    const long = previewPages(500);
+    expect(long).toHaveLength(PREVIEW_PAGE_LIMIT);
+    expect(long[0]).toBe(1);
+    expect(long[long.length - 1]).toBe(500);
+    expect(long).not.toContain(250);
+  });
+
+  it('says which pages the bound left out', () => {
+    // A file that fits inside the bound is not an omission.
+    expect(previewOmission(previewPages(3), 3)).toBeNull();
+    expect(previewOmission(previewPages(PREVIEW_PAGE_LIMIT), PREVIEW_PAGE_LIMIT)).toBeNull();
+    expect(previewOmission(previewPages(40), 40)).toMatch(/the file holds all 40/);
+  });
+
+  it('names the page it drew and admits a raster is not the file', () => {
+    const line = previewCaption({ page: 3, total: 40, name: 'merged.pdf', files: 1 });
+    expect(line).toContain('Page 3 of 40 of merged.pdf');
+    expect(line).toMatch(/drawn in this tab/);
+    expect(line).toMatch(/not the file itself/);
+    // A multi-file result says so, because the picture is only of the first.
+    expect(previewCaption({ page: 1, total: 4, name: 'part-1.pdf', files: 3 })).toContain('(3 files)');
+  });
+
+  it('points at the download for every kind it cannot draw', () => {
+    const kinds: OutputKind[] = ['pdf', 'archive', 'images', 'document', 'spreadsheet', 'text', 'other'];
+    for (const kind of kinds) {
+      const line = noPreviewCopy(kind, `result.${kind}`);
+      expect(line, kind).toMatch(/download/);
+      expect(line, kind).not.toMatch(/undefined|Error|\[object/);
+    }
+  });
+});
+
+describe('OutputPreview', () => {
+  it('opens the produced file and draws its first page', async () => {
+    render(<OutputPreview items={[{ name: 'merged.pdf', blob: blobFor('application/pdf') }]} />);
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Output preview' })).toHaveAttribute('data-preview', 'pdf'),
+    );
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    // The file-wide fake document has three pages.
+    expect(frame).toHaveAttribute('data-preview-pages', '3');
+    expect(frame.getAttribute('data-preview-pages')).not.toBeNull();
+    expect(frame.textContent).toContain('Page 1 of 3 of merged.pdf');
+    expect(frame.querySelector('[data-preview-poster]')).toHaveAttribute('data-preview-poster', 'image');
+    // Under the bound, so every page is a chip and nothing is left out.
+    expect(frame.querySelectorAll('button[aria-label^="Page "]')).toHaveLength(3);
+    expect(frame.textContent).not.toMatch(/the file holds all/);
+  });
+
+  it('asks for one raster per page it shows, never one per page it has', async () => {
+    thumbnailsMock.mockClear();
+    render(<OutputPreview items={[{ name: 'merged.pdf', blob: blobFor('application/pdf') }]} />);
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Output preview' })).toHaveAttribute('data-preview', 'pdf'),
+    );
+    const pages = thumbnailsMock.mock.calls.map((call) => (call[1] as { pages: number[] }).pages);
+    expect(pages.every((list) => list.length === 1)).toBe(true);
+    expect(pages.flat().length).toBeLessThanOrEqual(PREVIEW_PAGE_LIMIT + 1);
+  });
+
+  it('lists an archive instead of pretending to draw it', async () => {
+    const { default: JSZip } = await import('jszip');
+    const archive = new JSZip();
+    archive.file('a-page.png', new Uint8Array(1200));
+    archive.file('notes.txt', 'written in this tab');
+    const blob = await archive.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+
+    render(<OutputPreview items={[{ name: 'bundle.zip', blob }]} />);
+    // The frame is looked up again each poll: the loading branch and the listing
+    // are different nodes, so a handle taken before the answer lands goes stale.
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Output preview' })).toHaveAttribute('data-preview', 'archive'),
+    );
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    expect(frame.textContent).toContain('bundle.zip · 2 files inside');
+    expect(frame.textContent).toContain('a-page.png');
+    expect(frame.textContent).toContain('notes.txt');
+    // Sizes come from the container, not from the archive blob.
+    expect(frame.textContent).toMatch(/1\.2 KB/);
+    expect(frame.querySelector('img')).toBeNull();
+  });
+
+  it('shows images as thumbnails, from the caller’s own object URLs', () => {
+    render(
+      <OutputPreview
+        items={[
+          { name: 'page-001.png', blob: blobFor('image/png'), url: 'blob:one' },
+          { name: 'page-002.png', blob: blobFor('image/png'), url: 'blob:two' },
+        ]}
+      />,
+    );
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    expect(frame).toHaveAttribute('data-preview', 'images');
+    expect([...frame.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
+      'blob:one',
+      'blob:two',
+    ]);
+    expect(frame.textContent).toMatch(/2 images/);
+  });
+
+  it('gives a format it cannot draw one honest line, not an error', () => {
+    render(<OutputPreview items={[{ name: 'table.csv', blob: blobFor('text/csv') }]} />);
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    expect(frame).toHaveAttribute('data-preview', 'none');
+    expect(frame.textContent).toMatch(/csv/i);
+    expect(frame.querySelector('img')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('stops asking pdf.js for a document once the screen has folded it away', async () => {
+    const open = renderLib.openRender as unknown as ReturnType<typeof vi.fn>;
+    open.mockClear();
+    const items = [{ name: 'merged.pdf', blob: blobFor('application/pdf') }];
+    const { rerender } = render(<OutputPreview items={items} mode="full" />);
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+
+    rerender(<OutputPreview items={items} mode="off" />);
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    expect(frame).toHaveAttribute('data-preview', 'off');
+    expect(frame.textContent).toMatch(/folded away so the download stays on your screen/);
+    expect(frame.textContent).toContain('merged.pdf');
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(frame.querySelector('[data-preview-poster]')).toBeNull();
+  });
+
+  it('is nothing at all when the run produced nothing', () => {
+    render(<OutputPreview items={[]} />);
+    expect(screen.queryByRole('region', { name: 'Output preview' })).toBeNull();
+  });
+});
+
+describe('OutputActions with a result that is not a video', () => {
+  /** Publish one produced file the way a run would, then show the output pane. */
+  function produce(name: string, blob: Blob): void {
+    useProcessStore.setState({
+      outputBlob: blob,
+      outputUrl: 'blob:produced',
+      outputBlobs: [blob],
+      outputUrls: ['blob:produced'],
+      outputNames: [name],
+      label: 'Produced',
+    });
+  }
+
+  /** A container with something in it, built the way the archive tools build one. */
+  async function realZip(entries: Record<string, string | Uint8Array>): Promise<Blob> {
+    const { default: JSZip } = await import('jszip');
+    const archive = new JSZip();
+    for (const [path, data] of Object.entries(entries)) archive.file(path, data);
+    return archive.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+  }
+
+  it('lists the contents of an archive and keeps the download in the bar', async () => {
+    produce('bundle.zip', await realZip({ 'inside.txt': 'one entry' }));
+    render(<OutputActions />);
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Output preview' })).toHaveAttribute('data-preview', 'archive'),
+    );
+    const frame = screen.getByRole('region', { name: 'Output preview' });
+    expect(frame.textContent).toContain('bundle.zip · 1 file inside');
+    const download = screen.getByRole('button', { name: 'Download' });
+    expect(download).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+  });
+
+  it('says so when the archive will not open, instead of failing the result', async () => {
+    // Four KB of zeroes is not a container, and the screen must not pretend.
+    produce('broken.zip', blobFor('application/zip', 4000));
+    render(<OutputActions />);
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Output preview' })).toHaveAttribute('data-preview', 'none'),
+    );
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('names a Word file as Word, whatever tool is open', () => {
+    produce('essay.docx', blobFor('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 4000));
+    render(<OutputActions />);
+    expect(screen.getByText('Word Document')).toBeInTheDocument();
+    expect(screen.getByText(/ready to download/)).toBeInTheDocument();
+    expect(screen.getByText(/open it in Word/)).toBeInTheDocument();
+    expect(screen.queryByText('Excel Spreadsheet')).toBeNull();
+  });
+
+  it('refuses to call an unknown format a spreadsheet', () => {
+    produce('mystery.bin', blobFor('application/octet-stream', 4000));
+    render(<OutputActions />);
+    expect(screen.getByText('File')).toBeInTheDocument();
+    expect(screen.queryByText('Excel Spreadsheet')).toBeNull();
   });
 });

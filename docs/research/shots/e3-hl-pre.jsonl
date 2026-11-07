@@ -1,0 +1,13 @@
+{"step":"loaded","state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. After one placement the tool hands control back to Select.","count":0,"marks":0}}
+{"step":"loaded","state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. After one placement the tool hands control back to Select.","count":0,"marks":0}}
+{"step":"loaded","state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. After one placement the tool hands control back to Select.","count":0,"marks":0}}
+{"step":"loaded","state":{"armed":"highlight","status":"Drag across the words — the mark snaps to each text line it crosses. After one placement the tool hands control back to Select.","count":0,"marks":0}}
+{"case":"drag-line","before":0,"after":1,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":1,"marks":1}}
+{"case":"click-word","before":1,"after":1,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":1,"marks":1}}
+{"case":"drag-rtl","before":1,"after":1,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":1,"marks":1}}
+{"case":"drag-release-off-page","before":1,"after":1,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":1,"marks":1}}
+{"case":"drag-empty","before":1,"after":1,"state":{"armed":"select","status":"Placed Highlight · p.1 · “PERSONAL INFORMATION”. Select is armed.","count":1,"marks":1}}
+{"shot":"e3-20-highlight-cases.png","at":"2026-11-07T18:04:08.849Z"}
+{"case":"stamp-raster-armed","state":{"armed":"stamp","status":"Click or drag on page 1 to place e3-sample.png.","count":1,"marks":1}}
+{"case":"stamp-drag-placed","state":{"armed":"select","status":"Placed Stamp · p.1. Select is armed.","count":2,"marks":2},"hrefs":["blob:http://:DEAD"]}
+{"shot":"e3-21-stamp-custom-image.png","at":"2026-11-07T18:04:11.387Z"}

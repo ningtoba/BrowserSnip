@@ -176,3 +176,30 @@ export function reportMarks<T extends { page: number } & FractionBox>(
   }
   return { usable, empty, offPage, notes, valid: usable.length > 0 };
 }
+
+/** Where a page click asked for a raster mark, in page-local CSS pixels. */
+export interface PendingPlacement {
+  page: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * Where a raster lands the moment it arrives.
+ *
+ * The click that opened the file dialog or the signature pad already said
+ * *where*; asking for a second click to confirm a position the user has already
+ * given is the defect this answers. When the raster was chosen from the panel
+ * with no page click, or the page changed while the dialog was open, the middle
+ * of the part of the page the user can see is the one position that cannot put
+ * the mark off-screen.
+ */
+export function arrivalTarget(
+  pending: PendingPlacement | null,
+  current: { page: number; visibleCentre: { x: number; y: number } },
+): PendingPlacement {
+  if (pending && pending.page === current.page) {
+    return { page: pending.page, x: pending.x, y: pending.y };
+  }
+  return { page: current.page, x: current.visibleCentre.x, y: current.visibleCentre.y };
+}
