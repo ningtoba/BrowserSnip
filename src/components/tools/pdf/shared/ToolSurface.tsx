@@ -337,6 +337,10 @@ function RunBar({
             whileTap={api.canRun && !busy ? tapDown : undefined}
             id="tool-process-btn"
             type="button"
+            // A stable hook for tests and browser automation: the run bar holds
+            // more than one button once the options disclosure exists, so "the
+            // primary action" cannot be found by position or by label text.
+            data-run="true"
             disabled={!api.canRun || busy}
             aria-disabled={!api.canRun || busy}
             aria-describedby={!api.canRun && !busy ? RUN_REASON_ID : undefined}
