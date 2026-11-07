@@ -712,7 +712,10 @@ describe('the runner gate', () => {
       values: { position: 'end', count: 9000, size: 'same' },
       onLog: (line) => logs.push(line),
     });
-    expect(logs.join('\n')).toMatch(/How many must be between 1 and 200: 9000 became 200\./);
+    // The label is copy and the clamp is behaviour, so assert the latter — and
+    // assert the unit too, because a bare "between 1 and 200" on a field counted
+    // in pages is the E15 ambiguity this message exists to remove.
+    expect(logs.join('\n')).toMatch(/must be between 1 and 200 pages: 9000 became 200\./);
     const seen = await inspectPdf(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()), 'blanks.pdf');
     expect(seen.pages).toBe(201);
   });

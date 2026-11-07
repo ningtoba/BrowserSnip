@@ -1249,7 +1249,7 @@ export const organizeTools: PdfToolDefinition[] = [
     fields: [
       {
         key: 'position',
-        label: 'Where the blank sheets go',
+        label: 'Position',
         type: 'select',
         default: 'end',
         group: 'Position',
@@ -1329,7 +1329,7 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: '2-2', label: 'Two pages from each file in turn' },
           { value: 'reverse-alternate', label: 'Alternate, later files reversed' },
         ],
-        help: 'Files are mixed in the order they sit in the queue. "Later files reversed" keeps the first file top-to-bottom and turns every file after it back-to-front — the shape a duplex scan needs when the backs came out last-page-first.',
+        help: 'Mixed in queue order. "Later files reversed" keeps the first file top-to-bottom and turns the rest back-to-front — the shape a duplex scan needs when backs came out last-page-first.',
       },
     ],
     validate: (_v, { fileCount }) =>

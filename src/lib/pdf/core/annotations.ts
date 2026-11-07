@@ -325,6 +325,15 @@ export interface AnnotationSpec {
   rotation?: number;
   /** Rasterised stamp appearance (JPEG, or 8-bit non-interlaced grey/RGB/palette PNG). */
   stampImage?: Uint8Array;
+  /**
+   * A stamp image the caller already embedded.
+   *
+   * Preferred over `stampImage`, which can only carry a raster this module can
+   * splice into the file without decoding it: an RGBA PNG has an alpha channel no
+   * PDF image can hold as a fourth colour component, and embedding it is the
+   * caller's job (`PDFDocument#embedPng` writes the stencil mask for it).
+   */
+  stampXObject?: EmbeddedRaster;
   /** Built-in stamp name, written to `/S` and drawn when no image is supplied. */
   stampName?: string;
   link?: { type: 'goTo'; page: number } | { type: 'uri'; uri: string };
@@ -1308,6 +1317,16 @@ function stampOps(
   edge: [number, number, number],
   ap: Appearance,
 ): string {
+  if (spec.stampXObject) {
+    ap.images = { [IMAGE_KEY]: spec.stampXObject.ref };
+    // Image space is the unit square; scale it onto the whole rect.
+    return [
+      'q',
+      `${round(rect.width)} 0 0 ${round(rect.height)} 0 0 cm`,
+      `/${IMAGE_KEY} Do`,
+      'Q',
+    ].join('\n');
+  }
   if (spec.stampImage && spec.stampImage.length > 0) {
     const image = embedRasterImage(doc, spec.stampImage);
     ap.images = { [IMAGE_KEY]: image.ref };

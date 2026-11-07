@@ -778,13 +778,23 @@ export async function generateTocPage(
     if (row.page !== null) {
       const target = row.page + shiftedBy(row.page);
       if (target >= 0 && target < doc.getPageCount()) {
-        node.drawLink({
+        const targetRef = doc.context.getObjectRef(doc.getPage(target).node);
+        const link = node.drawLink({
           x,
           y: item.y - fontSize * 0.25,
           width: Math.max(titleWidth, 1),
           height: lineHeight * 0.8,
           pageNumber: target,
         });
+        // The destination is written as a `/GoTo` action on top of the `/Dest`
+        // entry: where a reader understands both, `/A` is the one it obeys, and
+        // both name the same page — not two guesses at it.
+        if (targetRef) {
+          doc.context.lookupMaybe(link, PDFDict)?.set(
+            PDFName.of('A'),
+            doc.context.obj({ S: 'GoTo', D: [targetRef, 'XYZ', null, null, null] }),
+          );
+        }
       }
     }
   }

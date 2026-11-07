@@ -35,10 +35,12 @@ import {
   pushGraphicsState,
   rotateInPlace,
   rgb,
+  scale,
   translate,
 } from '@maxwbh/pdf-lib';
 import type { PDFField, PDFWidgetAnnotation } from '@maxwbh/pdf-lib';
 import { context } from './doc';
+import { inlineFormXObject } from './content';
 import { isWinAnsiSafe } from './fonts';
 import type { PdfSession } from './render';
 
@@ -467,6 +469,12 @@ export async function flattenForm(
       }
 
       for (const { page, appearance, rect, rotation } of planned) {
+        // The words have to end up in the page's own content: that is what makes a
+        // flattened answer still findable by search, copy and redaction in this
+        // app and in every other reader. A form this module cannot copy (no box,
+        // an unparsable stream) is still drawn, as a scaled XObject.
+        const baked = inlineFormXObject(page, appearance, { rect, rotation });
+        if (baked) continue;
         const key = page.node.newXObject('FlatWidget', appearance);
         page.pushOperators(
           pushGraphicsState(),
@@ -476,6 +484,9 @@ export async function flattenForm(
             height: rect.height,
             rotation,
           }),
+          // A form XObject is drawn onto the unit square; without this the whole
+          // appearance lands on the page as a one-point speck.
+          scale(rect.width, rect.height),
           drawObject(key),
           popGraphicsState(),
         );
@@ -496,8 +507,7 @@ export async function flattenForm(
   return { flattened, needsRender };
 }
 
-/** The widget's own `/Rot`, snapped to a quarter turn like `rotateInPlace` wants. */
-function widgetRotation(widget: PDFWidgetAnnotation): 0 | 90 | 180 | 270 {
+/** The widget's own `/Rot`, snapped to a quarter turn like `rotateInPlace` wants. */function widgetRotation(widget: PDFWidgetAnnotation): 0 | 90 | 180 | 270 {
   const raw = widget.dict.lookupMaybe(PDFName.of('Rot'), PDFNumber);
   const angle = raw?.asNumber() ?? 0;
   const normalised = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
@@ -541,15 +551,27 @@ async function refreshAppearances(
 // Creating
 // ---------------------------------------------------------------------------
 
+/**
+ * Where the widget goes, and how it is drawn.
+ *
+ * pdf-lib grows the widget `/Rect` by the whole border width, centred on the
+ * box the caller asked for (`x - w/2 … x + width + w/2`), because a border is
+ * drawn on the middle of the path. The designer drops a field at an exact
+ * rectangle, so the border is folded back in: the widget ends up on the rect the
+ * user drew, with its border straddling that edge rather than standing outside
+ * it.
+ */
+const WIDGET_BORDER = 0.5;
+
 function appearanceOptions(spec: CreateFieldSpec) {
   return {
-    x: spec.rect.x,
-    y: spec.rect.y,
-    width: spec.rect.width,
-    height: spec.rect.height,
+    x: spec.rect.x + WIDGET_BORDER / 2,
+    y: spec.rect.y + WIDGET_BORDER / 2,
+    width: Math.max(1, spec.rect.width - WIDGET_BORDER),
+    height: Math.max(1, spec.rect.height - WIDGET_BORDER),
     textColor: rgb(0, 0, 0),
     borderColor: rgb(0.4, 0.4, 0.4),
-    borderWidth: 0.5,
+    borderWidth: WIDGET_BORDER,
   };
 }
 

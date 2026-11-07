@@ -1738,8 +1738,9 @@ async function imageDataUrl(payload: PdfObjectValue): Promise<string | undefined
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return undefined;
-    if (raw instanceof Uint8ClampedArray || raw instanceof Uint8Array) {
-      const bytes = toRgba(raw, width, height);
+    const samples = asLocalBytes(raw);
+    if (samples) {
+      const bytes = toRgba(samples, width, height);
       if (!bytes) return undefined;
       ctx.putImageData(new ImageData(bytes, width, height), 0, 0);
       return canvas.toDataURL('image/png');
@@ -1756,6 +1757,21 @@ async function imageDataUrl(payload: PdfObjectValue): Promise<string | undefined
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The payload’s bytes as a view belonging to **this** realm.
+ *
+ * When pdf.js runs in a worker, the transferred pixels are a typed array built
+ * over there, so `instanceof Uint8Array` is false in here even though the bytes
+ * are perfectly good — and `new ImageData(...)` is entitled to refuse a foreign
+ * one. Wrapping the same buffer is cheap, local, and keeps `Embed raster images`
+ * from quietly producing an SVG with no pictures in it (E10).
+ */
+function asLocalBytes(value: unknown): Uint8Array | undefined {
+  if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(value)) return undefined;
+  const view = value as ArrayBufferView;
+  return view.byteLength === 0 ? undefined : new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
 }
 
 function toRgba(bytes: Uint8Array | Uint8ClampedArray, width: number, height: number): Uint8ClampedArray | undefined {

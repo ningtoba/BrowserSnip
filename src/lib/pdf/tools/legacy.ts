@@ -354,7 +354,10 @@ export const legacyTools: PdfToolDefinition[] = [
   },
   {
     id: 'compare',
-    name: 'Compare PDFs',
+    // `compare-pdfs` (security.ts) exports a difference report and holds the plain
+    // name; this entry is the pane that shows both files at once, and two catalogue
+    // rows called "Compare PDFs" is a choice nobody can read.
+    name: 'Compare Side by Side',
     description: 'View two PDFs side by side and highlight every difference',
     icon: '🔍',
     category: 'security',

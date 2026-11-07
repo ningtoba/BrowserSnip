@@ -30,10 +30,28 @@ export async function odtToBlocks(bytes: Uint8Array): Promise<Block[]> {
   return blocks;
 }
 
+/** The elements `walkOdt` reads as a block of their own. */
+const ODF_BLOCK_NAMES = new Set(['h', 'p', 'list', 'table', 'frame', 'section', 'soft-page-break']);
+
+/**
+ * The OpenDocument name of an element, from either side of the colon.
+ *
+ * `<text:h>` is a heading. A document that writes the pair the other way round,
+ * or binds the prefix to nothing at all, still means the same thing; dropping
+ * the words inside it over a spelling is how a conversion comes back shorter
+ * than the file it read.
+ */
+function odfName(element: Element): string {
+  const local = localName(element);
+  if (ODF_BLOCK_NAMES.has(local)) return local;
+  const [prefix] = (element.nodeName ?? '').split(':');
+  return ODF_BLOCK_NAMES.has(prefix) ? prefix : local;
+}
+
 function walkOdt(element: Element, blocks: Block[], depth = 0): void {
   for (const child of Array.from(element.children ?? [])) {
     if (blocks.length > BLOCK_LIMIT) return;
-    const name = localName(child);
+    const name = odfName(child);
     if (name === 'h') {
       const outline = Number(child.getAttribute('text:outline-level') ?? '1');
       blocks.push({ kind: 'heading', level: clampLevel(outline), inlines: inlineRuns(child) });
@@ -246,11 +264,18 @@ export async function xpsToBlocks(bytes: Uint8Array): Promise<Block[]> {
     blocks.push({ kind: 'pagebreak' });
     const document = parseXml(byName.get(page)!, 'That XPS page is not readable XML.');
     for (const glyph of Array.from(document.getElementsByTagName('*'))) {
+      // The name is compared as written: `<t:Glyphs>` under a prefix this package
+      // never binds, or `<Glyphs>` with a capital, is not the element this reader
+      // recovers, and guessing from a similar spelling is how blank pages get
+      // shipped with confident names.
       if (localName(glyph) !== 'glyphs') continue;
       const text = glyph.getAttribute('UnicodeString') ?? '';
       if (text.trim()) blocks.push({ kind: 'paragraph', inlines: [{ text: text.trim() }] });
     }
   }
+  // A package whose only text is spelled `<t:Glyphs>` comes back as page breaks
+  // and nothing else. `tools/office.ts` turns that into a refusal naming the
+  // file, which is where the reader is told what to do instead.
   return blocks;
 }
 
@@ -347,9 +372,48 @@ async function zipTexts(bytes: Uint8Array, extensions: string[]): Promise<Map<st
 }
 
 function parseXml(xml: string, message: string): Document {
-  const document = new DOMParser().parseFromString(xml, 'application/xml');
+  const document = new DOMParser().parseFromString(declareMissingNamespaces(xml), 'application/xml');
   if (document.getElementsByTagName('parsererror').length > 0) throw new Error(message);
   return document;
+}
+
+/** Namespaces invented for prefixes a document uses but never declares. */
+const PLACEHOLDER_NAMESPACE = 'urn:browsersnip:undeclared:';
+
+/** `xml` is bound by the spec itself; `xmlns` is the declaration keyword. */
+const RESERVED_PREFIXES = new Set(['xml', 'xmlns']);
+
+/**
+ * Bind every prefix the document uses without declaring it.
+ *
+ * A strict XML parse stops at the first undeclared prefix, which turned real
+ * files into "not readable XML" and named the wrong cause: a Windows XPS print
+ * writes `<t:Glyphs>`, whose prefix is bound in a part a text reader never
+ * looks at. Declaring the missing prefixes keeps every qualified name exactly as
+ * the producer wrote it, so a reader that compares names still sees the truth.
+ */
+function declareMissingNamespaces(xml: string): string {
+  const declared = new Set<string>();
+  for (const match of xml.matchAll(/\bxmlns:([\w.-]+)\s*=/g)) declared.add(match[1]);
+  const missing = new Set<string>();
+  const note = (prefix: string | undefined): void => {
+    if (!prefix || RESERVED_PREFIXES.has(prefix) || declared.has(prefix)) return;
+    missing.add(prefix);
+  };
+  // Element names (`<h:text>`, `</h:text>`) and attribute names (`h:href="…"`).
+  for (const match of xml.matchAll(/<\s*\/?\s*([\w.-]+):|[\s"']([\w.-]+):[\w.-]+\s*=/g)) {
+    note(match[1] ?? match[2]);
+  }
+  if (missing.size === 0) return xml;
+  // The first tag whose name starts with a letter: `<?xml`, `<!DOCTYPE` and
+  // `<!--` are excluded by the character class, so this is the root element.
+  const root = /<([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(xml);
+  if (!root) return xml;
+  const insert = [...missing]
+    .map((prefix) => ` xmlns:${prefix}="${PLACEHOLDER_NAMESPACE}${prefix}"`)
+    .join('');
+  const at = root.index + root[0].length;
+  return `${xml.slice(0, at)}${insert}${xml.slice(at)}`;
 }
 
 function localName(element: Element): string {

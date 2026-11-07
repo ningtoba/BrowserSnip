@@ -10,6 +10,7 @@
  * Fidelity note for the UI: this is a *reflow* conversion, not a layout copy —
  * Word re-lays the text. Absolute page positions are not preserved.
  */
+import JSZip from 'jszip';
 import {
   AlignmentType,
   Document,
@@ -47,6 +48,23 @@ const HEADING_LEVELS = [
   HeadingLevel.HEADING_6,
 ] as const;
 
+/**
+ * Characters a reader cannot see and XML may not carry.
+ *
+ * A subset font with a broken `/ToUnicode` map hands pdf.js NUL, SOH and BEL in
+ * the middle of words. `docx` writes them straight into `document.xml`, where a
+ * control code below 0x20 is not legal character data: Word refuses the file
+ * outright, while anything that only counts characters still reports a clean
+ * extraction (E10). Tab, newline and carriage return are legal and mean
+ * something, so they survive.
+ */
+const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+/** Strip what no reader can see; spacing is layout and is left alone. */
+function printable(text: string): string {
+  return (text ?? '').replace(INVISIBLE, '').trim();
+}
+
 export async function buildDocx(
   json: PdfJsonDocument,
   options: DocxOptions = {},
@@ -62,7 +80,7 @@ export async function buildDocx(
         children.push(...tableParagraphs(block));
         continue;
       }
-      const text = (block.text ?? '').trim();
+      const text = printable(block.text ?? '');
       if (!text) continue;
       children.push(...blockParagraphs(block, page, { headingsEnabled, headingHeights }));
     }
@@ -76,10 +94,10 @@ export async function buildDocx(
   }
 
   const doc = new Document({
-    title: options.title ?? asString(json.meta?.title),
+    title: printable(options.title ?? asString(json.meta?.title) ?? '') || undefined,
     creator: options.author ?? 'BrowserSnip',
     description: options.subject ?? undefined,
-    keywords: options.keywords ?? asString(json.meta?.keywords),
+    keywords: printable(options.keywords ?? asString(json.meta?.keywords) ?? '') || undefined,
     styles: {
       default: {
         document: {
@@ -90,7 +108,40 @@ export async function buildDocx(
     sections: [{ properties: {}, children }],
   });
 
-  return Packer.toBlob(doc);
+  return relaxTextEscaping(await Packer.toBlob(doc));
+}
+
+/**
+ * Relax the escaping `docx` applies where it is not needed.
+ *
+ * The library escapes `"` and `'` in every string, including element text, so a
+ * quotation typed into the PDF reaches the file as `&quot;`. That is legal XML
+ * and Word displays it, but it is not what the user wrote, and it is the kind of
+ * difference a diff or a grep trips over (E11). Only the text between tags is
+ * relaxed — attribute values keep their escaped quotes, where dropping them
+ * would genuinely break the document. Rewriting one entry in place leaves every
+ * other part of the package byte-identical.
+ */
+async function relaxTextEscaping(blob: Blob): Promise<Blob> {
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const part = zip.file('word/document.xml');
+  if (!part) return blob;
+  const xml = await part.async('string');
+  const relaxed = xml
+    .split(/(<[^>]*>)/)
+    .map((chunk) =>
+      chunk.startsWith('<')
+        ? chunk
+        : chunk.replace(/&quot;/g, '"').replace(/&apos;/g, "'"),
+    )
+    .join('');
+  if (relaxed === xml) return blob;
+  zip.file('word/document.xml', relaxed);
+  return zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    compression: 'DEFLATE',
+  }) as Promise<Blob>;
 }
 
 function blockParagraphs(
@@ -99,6 +150,7 @@ function blockParagraphs(
   context: { headingsEnabled: boolean; headingHeights: number[] },
 ): Paragraph[] {
   const lines = block.lines?.length ? block.lines : [{ text: block.text ?? '', bbox: block.rect, fontHeight: 11 }];
+  const text = printable(block.text ?? '');
   const height = dominantHeight(lines.map((line) => line.fontHeight));
   const level = context.headingsEnabled ? headingLevelFor(height, context.headingHeights) : 0;
   const align = alignmentFor(block.rect, page);
@@ -106,7 +158,7 @@ function blockParagraphs(
   if (level > 0) {
     return [
       new Paragraph({
-        text: (block.text ?? '').trim(),
+        text,
         heading: HEADING_LEVELS[Math.min(level, 6) - 1],
         alignment: align,
         spacing: { before: 240, after: 120 },
@@ -114,12 +166,12 @@ function blockParagraphs(
     ];
   }
 
-  const listMarker = /^\s*(?:[-•◦*]|\d{1,3}[.)])\s+/.exec(block.text ?? '');
+  const listMarker = /^\s*(?:[-•◦*]|\d{1,3}[.)])\s+/.exec(text);
   if (listMarker) {
     const ordered = /\d/.test(listMarker[0]);
     return [
       new Paragraph({
-        children: [new TextRun({ text: (block.text ?? '').slice(listMarker[0].length).trim() })],
+        children: [new TextRun({ text: printable(text.slice(listMarker[0].length)) })],
         bullet: ordered ? undefined : { level: 0 },
         numbering: ordered ? { reference: 'pdf-list', level: 0 } : undefined,
         alignment: align,
@@ -132,7 +184,7 @@ function blockParagraphs(
       new Paragraph({
         children: [
           new TextRun({
-            text: line.text.trim(),
+            text: printable(line.text),
             bold: height >= 13 && height < 18,
             size: Math.round(clamp(height, 6, 96) * 2),
           }),
@@ -146,7 +198,7 @@ function blockParagraphs(
 function tableParagraphs(block: PdfJsonBlock): Paragraph[] {
   const rows = block.rows ?? [];
   if (rows.length === 0) {
-    const text = (block.text ?? '').trim();
+    const text = printable(block.text ?? '');
     return text ? [new Paragraph({ text })] : [];
   }
   const columns = Math.max(...rows.map((row) => row.length), 1);
@@ -161,7 +213,7 @@ function tableParagraphs(block: PdfJsonBlock): Paragraph[] {
             return new TableCell({
               children: [
                 new Paragraph({
-                  children: [new TextRun({ text: cell, bold: index === 0 })],
+                  children: [new TextRun({ text: printable(cell), bold: index === 0 })],
                 }),
               ],
             });

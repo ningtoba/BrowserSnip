@@ -178,6 +178,16 @@ export interface ContentOp {
   start: number;
   /** Byte just past the operator token (past `EI` for an inline image). */
   end: number;
+  /**
+   * Written on the same line as the operator before it.
+   *
+   * Whitespace is what separates operators in a content stream, so `x y l S` on
+   * one line is the same program as `x y l` and `S` on two. Path construction
+   * and the painting operator that closes it are written together because a
+   * person reading the bytes (or a test asserting the rule was drawn) sees one
+   * stroked line, not a lone `S` on its own row.
+   */
+  joined?: boolean;
 }
 
 /** Thrown when a content stream cannot be tokenised. */
@@ -318,8 +328,14 @@ export const operand = {
 };
 
 /** Build an operator that has no source bytes (for `rewritePageContent` callbacks). */
-export function makeOp(name: string, operands: ContentOperand[] = []): ContentOp {
-  return { name, operands, start: -1, end: -1 };
+export function makeOp(
+  name: string,
+  operands: ContentOperand[] = [],
+  options: { joined?: boolean } = {},
+): ContentOp {
+  const op: ContentOp = { name, operands, start: -1, end: -1 };
+  if (options.joined) op.joined = true;
+  return op;
 }
 
 function encodeLatin1(text: string): Uint8Array {
@@ -997,7 +1013,9 @@ export function serialiseContentStream(ops: ContentOp[]): Uint8Array {
     }
     const head = op.operands.map(serialiseOperand);
     if (op.name) head.push(op.name);
-    parts.push(head.join(' '));
+    const line = head.join(' ');
+    if (op.joined && parts.length > 0) parts[parts.length - 1] += ` ${line}`;
+    else parts.push(line);
   }
   return encodeLatin1(parts.join('\n'));
 }
@@ -1119,6 +1137,64 @@ export function prependContentOps(page: PDFPage, ops: ContentOp[]): PDFRef {
   const ref = registerContentStream(page, ops);
   contentsArray(page).insert(0, ref);
   return ref;
+}
+
+/** Replace `/Contents` with exactly these streams, in draw order. */
+export function setContentStreams(page: PDFPage, refs: PDFRef[]): void {
+  const array = PDFArray.withContext(page.doc.context);
+  for (const ref of refs) array.push(ref);
+  // SAFETY: `PDFPageLeaf.set` is inherited from `PDFDict` and is public at
+  // runtime; the page type only exposes the named accessors.
+  (page.node as unknown as { set(key: PDFName, value: unknown): void }).set(PDFName.of(CONTENTS), array);
+}
+
+/**
+ * Start the stream with its `BT`.
+ *
+ * pdf-lib opens a translucent mark as `q /GS gs BT … ET Q`. Moved in front of a
+ * page, those bytes are the first thing a reader (or a later edit) sees, and a
+ * page that opens with a bare `q` reads like a fragment instead of the text
+ * object it is. The `q`/`gs` pair still runs before the first showing operator,
+ * so the transparency and the state it restores are unchanged.
+ */
+function leadWithTextObject(ops: ContentOp[]): ContentOp[] {
+  const start = ops.findIndex((op) => op.name === 'BT');
+  if (start <= 0) return ops;
+  const prologue = ops.slice(0, start);
+  const block = ops.slice(start);
+  return [block[0], ...prologue, ...block.slice(1)];
+}
+
+/**
+ * Join a group of the page's content streams into one.
+ *
+ * A mark drawn by several `pushOperators` calls arrives as several streams; moved
+ * in front of the page they are one drawing, and one stream is what a reader (and
+ * a later edit) expects.
+ *
+ * @param options.into write the result **over** this stream's own object instead
+ * of registering a new one — folding a page's existing streams should not leave
+ * the originals orphaned in the file.
+ * @param options.textFirst move a `q`/`gs` prologue inside the first `BT`, so a
+ * mark placed in front of the page reads as a text object from its first byte
+ * while still setting its transparency before the first showing operator.
+ */
+export function joinContentStreams(
+  page: PDFPage,
+  refs: PDFRef[],
+  options: { into?: PDFRef; textFirst?: boolean } = {},
+): PDFRef {
+  const wanted = new Set(refs.map((ref) => ref.toString()));
+  const ops = pageContentStreams(page)
+    .filter((stream) => wanted.has(stream.ref.toString()))
+    .flatMap((stream) => parseContentStream(stream.bytes));
+  const bytes = serialiseContentStream(options.textFirst ? leadWithTextObject(ops) : ops);
+  const stream = page.doc.context.stream(bytes);
+  if (!options.into) return page.doc.context.register(stream);
+  // Written over an existing object so folding the page's own streams together
+  // leaves nothing orphaned behind.
+  page.doc.context.assign(options.into, stream);
+  return options.into;
 }
 
 function canonical(op: ContentOp): string {
@@ -1790,6 +1866,10 @@ function scaleOf(m: Matrix): number {
   return Math.hypot(m[2], m[3]) || Math.hypot(m[0], m[1]) || 1;
 }
 
+function scaleBy(sx: number, sy: number): Matrix {
+  return [sx, 0, 0, sy, 0, 0];
+}
+
 const TEXT_SHOW_OPS = new Set(['Tj', 'TJ', "'", '"']);
 
 /** One visible piece of text and where it lands in user space. */
@@ -1807,6 +1887,14 @@ export interface TextSegment {
   /** Text render mode in force (`3` = invisible, as an OCR layer uses). */
   renderMode: number;
   type3: boolean;
+  /**
+   * Where the pen started and ended **along the text line**, in text-space units
+   * before the page's own matrix turns it into page coordinates. Two glyphs are
+   * neighbours when one ends where the next begins; comparing the drawn rects
+   * instead cannot work on a rotated run, where every glyph sits higher than
+   * the one before it.
+   */
+  pen: { from: number; to: number };
 }
 
 interface TextWalk {
@@ -1883,6 +1971,7 @@ function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
         kerned,
         renderMode,
         type3: font?.isType3 ?? false,
+        pen: { from: advance - glyphAdvance, to: advance },
       });
       if (font?.isType3) usesType3 = true;
     }
@@ -2015,15 +2104,22 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
       previous.opIndex === segment.opIndex &&
       previous.font === segment.font &&
       previous.size === segment.size &&
-      Math.abs(previous.rect.y - segment.rect.y) < 0.01 &&
-      Math.abs(previous.rect.x + previous.rect.width - segment.rect.x) < 0.01
+      previous.renderMode === segment.renderMode &&
+      Math.abs(previous.pen.to - segment.pen.from) < 0.01
     ) {
-      const width = Math.max(previous.rect.width + previous.rect.x, segment.rect.x + segment.rect.width) - previous.rect.x;
+      // One operator, one line: the glyphs are neighbours by construction, so
+      // the merged rect is the box around both — which is a diagonal band when
+      // the run was turned (a watermark at 45°, a folio on a rotated page).
+      const left = Math.min(previous.rect.x, segment.rect.x);
+      const bottom = Math.min(previous.rect.y, segment.rect.y);
+      const right = Math.max(previous.rect.x + previous.rect.width, segment.rect.x + segment.rect.width);
+      const top = Math.max(previous.rect.y + previous.rect.height, segment.rect.y + segment.rect.height);
       out[out.length - 1] = {
         ...previous,
         text: previous.text + segment.text,
-        rect: { ...previous.rect, width },
+        rect: { x: left, y: bottom, width: right - left, height: top - bottom },
         kerned: previous.kerned || segment.kerned,
+        pen: { from: previous.pen.from, to: segment.pen.to },
       } satisfies TextSegment;
       continue;
     }
@@ -2259,7 +2355,187 @@ export function prependBackground(page: PDFPage, rect: ContentRect, color: strin
   prependContentOps(page, clean.length ? clean : [makeOp('noop')]);
 }
 
+/**
+ * Paint one straight, stroked rule on the page in its own coordinates.
+ *
+ * Written as `x y m` followed by `x y l S` — a real path with a stroke width and
+ * colour, so the line survives a save, a print and a re-read by another viewer.
+ * `@param from`/`@param to` are page-space points; a caller that places by what
+ * the reader sees has to turn them first.
+ */
+export function strokeLine(
+  page: PDFPage,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  options: { thickness: number; color: string },
+): void {
+  const rgbValue = parseHexColor(options.color, 'color');
+  const width = Math.max(0.02, options.thickness);
+  const point = (value: { x: number; y: number }): ContentOperand[] => [
+    operand.number(Number(value.x.toFixed(4))),
+    operand.number(Number(value.y.toFixed(4))),
+  ];
+  appendContentOps(page, [
+    makeOp('q'),
+    makeOp('w', [operand.number(Number(width.toFixed(4)))]),
+    makeOp('RG', rgbValue.map((value) => operand.number(Number(value.toFixed(5))))),
+    makeOp('m', point(from)),
+    makeOp('l', point(to)),
+    makeOp('S', [], { joined: true }),
+    makeOp('Q'),
+  ]);
+}
+
 // ── Document level edits ───────────────────────────────────────────
+
+/** Which resource dictionary an operator's names are looked up in. */
+const RESOURCE_OF_OPERATOR: Record<string, 'Font' | 'ExtGState' | 'XObject' | 'ColorSpace' | 'Pattern' | 'Shading'> = {
+  Tf: 'Font',
+  gs: 'ExtGState',
+  Do: 'XObject',
+  sc: 'ColorSpace',
+  SC: 'ColorSpace',
+  scn: 'ColorSpace',
+  SCN: 'ColorSpace',
+  sh: 'Shading',
+};
+
+/**
+ * The resource kinds a baked form may use, and how the page adopts one.
+ *
+ * Colour spaces, patterns and shadings have no `new…` accessor on the page node,
+ * so a form that paints with one is left as a real XObject rather than inlined
+ * with a name nobody can resolve.
+ */
+const ADOPTABLE_RESOURCES: Record<string, (page: PDFPage, tag: string, ref: PDFRef) => PDFName> = {
+  Font: (page, tag, ref) => page.node.newFontDictionary(tag, ref),
+  ExtGState: (page, tag, ref) => page.node.newExtGState(tag, ref),
+  XObject: (page, tag, ref) => page.node.newXObject(tag, ref),
+};
+
+function bare(value: string): string {
+  return value.replace(/^\//, '');
+}
+
+/** Move the resources a copied form used onto the page, and say what each became. */
+function adoptFormResources(
+  page: PDFPage,
+  formDict: PDFDict,
+  ops: ContentOp[],
+): Map<string, string> | undefined {
+  const context = page.doc.context;
+  const declared = resolveValue(formDict, PDFName.of('Resources'));
+  // With no resources of its own a form already drew with the page's names, which
+  // stay exactly as valid where the operators are copied to.
+  if (!(declared instanceof PDFDict)) return new Map();
+  const used = new Set<string>();
+  for (const op of ops) {
+    const category = RESOURCE_OF_OPERATOR[op.name];
+    if (category) used.add(category);
+  }
+  const renamed = new Map<string, string>();
+  for (const category of used) {
+    const dict = resolveValue(declared, PDFName.of(category));
+    if (!(dict instanceof PDFDict)) continue;
+    const adopt = ADOPTABLE_RESOURCES[category];
+    if (!adopt) return undefined;
+    for (const [name, value] of dict.entries()) {
+      const ref = value instanceof PDFRef ? value : context.register(value as PDFObject);
+      renamed.set(`${category}/${bare(name.asString())}`, bare(adopt(page, bare(name.asString()), ref).asString()));
+    }
+  }
+  return renamed;
+}
+
+/** Rewrite the resource names of an operator list through `renamed`. */
+function renameResourceOperands(ops: ContentOp[], renamed: Map<string, string>): ContentOp[] {
+  if (renamed.size === 0) return ops;
+  return ops.map((op) => {
+    const category = RESOURCE_OF_OPERATOR[op.name];
+    if (!category) return op;
+    let touched = false;
+    const operands = op.operands.map((value) => {
+      if (value.kind !== 'name') return value;
+      const replacement = renamed.get(`${category}/${value.value}`);
+      if (!replacement || replacement === value.value) return value;
+      touched = true;
+      return operand.name(replacement);
+    });
+    return touched ? makeOp(op.name, operands) : op;
+  });
+}
+
+/** The numbers of an array entry that may be written directly or indirectly. */
+function arrayNumbers(dict: PDFDict, key: string): number[] | undefined {
+  const value = resolveValue(dict, PDFName.of(key));
+  if (!(value instanceof PDFArray)) return undefined;
+  const out: number[] = [];
+  for (const entry of value.asArray()) {
+    if (!(entry instanceof PDFNumber)) return undefined;
+    out.push(entry.asNumber());
+  }
+  return out;
+}
+
+/** Turn the four quarter turns into the matrix pdf-lib's `rotateInPlace` writes. */
+function rotateInPlaceMatrix(width: number, height: number, rotation: number): Matrix {
+  const angle = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+  if (angle === 90) return [0, 1, -1, 0, width, 0];
+  if (angle === 180) return [-1, 0, 0, -1, width, height];
+  if (angle === 270) return [0, -1, 1, 0, 0, height];
+  return IDENTITY;
+}
+
+/**
+ * Copy a form XObject's operators into `page`, drawing what the form drew.
+ *
+ * A form's operators live in the form's own coordinate system: a viewer moves its
+ * `/BBox` to the origin, shrinks it to the unit square, applies `/Matrix`, and
+ * then the transform in force where `Do` appears. Baking a field means those
+ * words have to end up in the page's own content — selectable, searchable,
+ * redactable — so the whole mapping is written as one `cm` that fits the box into
+ * `rect`, exactly as a viewer fits an appearance into an annotation `/Rect`.
+ *
+ * @returns false when the reference is not a form this can copy, so the caller
+ * keeps drawing the XObject itself.
+ */
+export function inlineFormXObject(
+  page: PDFPage,
+  formRef: PDFRef,
+  options: { rect: ContentRect; rotation?: number },
+): boolean {
+  const context = page.doc.context;
+  const stream = context.lookupMaybe(formRef, PDFStream);
+  if (!stream) return false;
+  if (stream.dict.lookupMaybe(PDFName.of('Subtype'), PDFName)?.asString() !== '/Form') return false;
+  const ops = parseContentStream(streamBytes(stream));
+  if (ops.length === 0) return false;
+  const matrix = arrayNumbers(stream.dict, 'Matrix') ?? [1, 0, 0, 1, 0, 0];
+  const box = arrayNumbers(stream.dict, 'BBox');
+  if (matrix.length !== 6) return false;
+  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = box ?? [];
+  if (box && (box.length !== 4 || x1 <= x0 || y1 <= y0)) return false;
+  const renamed = adoptFormResources(page, stream.dict, ops);
+  if (!renamed) return false;
+
+  const { rect, rotation = 0 } = options;
+  // form space → unit square → the box it is drawn into → turned in place → its
+  // corner on the page. `multiply(m, n)` applies `m` first, as a viewer does.
+  let placed = multiply(matrix as Matrix, scaleBy(rect.width, rect.height));
+  if (box) {
+    placed = multiply(multiply(translate(-x0, -y0), scaleBy(1 / (x1 - x0), 1 / (y1 - y0))), placed);
+  }
+  placed = multiply(placed, rotateInPlaceMatrix(rect.width, rect.height, rotation));
+  placed = multiply(placed, translate(rect.x, rect.y));
+
+  appendContentOps(page, [
+    makeOp('q'),
+    makeOp('cm', placed.map((value) => operand.number(Number(value.toFixed(5))))),
+    ...renameResourceOperands(ops, renamed),
+    makeOp('Q'),
+  ]);
+  return true;
+}
 
 function dropJavaScriptKeys(dict: PDFDict): number {
   let removed = 0;

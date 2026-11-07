@@ -33,10 +33,11 @@ export async function canvasToBlob(
   canvas: HTMLCanvasElement,
   format: ImageFormat,
   quality = 0.92,
-  options: { background?: string } = {},
+  options: { background?: string; dpi?: number } = {},
 ): Promise<Blob> {
-  if (format === 'bmp') return encodeBmp(canvas);
-  if (format === 'tiff') return encodeTiff(canvas);
+  const dpi = options.dpi ?? 72;
+  if (format === 'bmp') return encodeBmp(canvas, dpi);
+  if (format === 'tiff') return encodeTiff(canvas, dpi);
   const source = flattenIfNeeded(canvas, format, options.background);
   const blob = await new Promise<Blob | null>((resolve) =>
     source.toBlob(resolve, mimeForImage(format), quality),
@@ -83,8 +84,14 @@ export function hasAlpha(canvas: HTMLCanvasElement, sample = 64): boolean {
   return false;
 }
 
-/** 24-bit, bottom-up, row-padded BMP. */
-export function encodeBmp(canvas: HTMLCanvasElement): Blob {
+/**
+ * 24-bit, bottom-up, row-padded BMP.
+ *
+ * `dpi` goes into the header as **pixels per metre**, which is what the format
+ * asks for (72 dpi is 2835, 300 dpi is 11811); writing the dpi number itself
+ * claims a page is ~4× larger than it was rendered at (E12, E15).
+ */
+export function encodeBmp(canvas: HTMLCanvasElement, dpi = 72): Blob {
   const ctx = canvasContext2d(canvas);
   const { width, height } = canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
@@ -94,6 +101,7 @@ export function encodeBmp(canvas: HTMLCanvasElement): Blob {
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
+  const perMetre = Math.round(dpi / 0.0254);
 
   view.setUint16(0, 0x424d); // 'BM'
   view.setUint32(2, size, true);
@@ -104,8 +112,8 @@ export function encodeBmp(canvas: HTMLCanvasElement): Blob {
   view.setUint16(26, 1, true); // planes
   view.setUint16(28, 24, true); // bpp
   view.setUint32(34, rowBytes * height, true);
-  view.setInt32(38, 2835, true); // 72 dpi
-  view.setInt32(42, 2835, true);
+  view.setInt32(38, perMetre, true);
+  view.setInt32(42, perMetre, true);
 
   for (let y = 0; y < height; y++) {
     const rowStart = pixelOffset + (height - 1 - y) * rowBytes;
@@ -124,8 +132,12 @@ export function encodeBmp(canvas: HTMLCanvasElement): Blob {
 /**
  * Baseline little-endian TIFF: one strip, no compression, RGB. Enough for
  * multi-page output to be opened by Preview, IrfanView and LibreOffice.
+ *
+ * The density is carried as two RATIONALs (`dpi` over 1) plus
+ * `ResolutionUnit = inch`, because a page rendered at 300 dpi that *says* 72 is
+ * inserted into a document at four times the size it was drawn (E12, E15).
  */
-export function encodeTiff(canvas: HTMLCanvasElement): Blob {
+export function encodeTiff(canvas: HTMLCanvasElement, dpi = 72): Blob {
   const ctx = canvasContext2d(canvas);
   const { width, height } = canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
@@ -184,9 +196,9 @@ export function encodeTiff(canvas: HTMLCanvasElement): Blob {
 
   // The two RATIONAL values live after the IFD in the same block we reserved.
   const rat = resolutionOffset;
-  view.setUint32(rat, 72, true);
+  view.setUint32(rat, dpi, true);
   view.setUint32(rat + 4, 1, true);
-  view.setUint32(rat + 8, 72, true);
+  view.setUint32(rat + 8, dpi, true);
   view.setUint32(rat + 12, 1, true);
 
   // One BitsPerSample per sample. Declaring `count: 1, value: 8` next to

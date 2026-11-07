@@ -358,32 +358,49 @@ async function pdfOutput(doc: PDFDocument, notes: string[], message: string): Pr
 /**
  * Draw with `paint`'s operators placed *behind* the page's existing content.
  *
- * pdf-lib appends one content stream per draw call and `/Contents` is painted
- * in order, so the streams that appeared during `paint` move to the front.
- * Without this, "Placement: Behind content" was a zero-size no-op rectangle
- * that still reported a watermark (E13).
+ * pdf-lib appends one content stream per draw call and `/Contents` is painted in
+ * order, so the streams that appeared during `paint` are joined into one and put
+ * in front of the streams that were already there. Without this, "Placement:
+ * Behind content" was a zero-size no-op rectangle that still reported a
+ * watermark (E13).
  */
 async function drawBehind(page: PDFPage, paint: () => Promise<void> | void): Promise<void> {
-  const { pageContentStreams } = await import('../core/content');
-  const seen = new Set(pageContentStreams(page).map((stream) => stream.ref.toString()));
+  const { joinContentStreams, pageContentStreams, setContentStreams } = await import('../core/content');
+  const before = new Set(pageContentStreams(page).map((stream) => stream.ref.toString()));
   await paint();
-  const contents = page.node.lookupMaybe(PDFName.of('Contents'), PDFArray);
-  if (!contents) return;
-  const entries = contents.asArray();
-  const isOld = (index: number): boolean => {
-    const entry = entries[index];
-    return entry instanceof PDFRef && seen.has(entry.toString());
-  };
-  const moved = entries.filter((_, index) => !isOld(index));
-  const kept = entries.filter((_, index) => isOld(index));
-  if (moved.length === 0 || kept.length === 0) return;
-  const ordered = [...moved, ...kept];
-  for (let i = 0; i < ordered.length; i++) contents.set(i, ordered[i]);
+  const streams = pageContentStreams(page);
+  const kept = streams.filter((stream) => before.has(stream.ref.toString()));
+  const fresh = streams.filter((stream) => !before.has(stream.ref.toString()));
+  if (fresh.length === 0) return;
+  const mark = joinContentStreams(page, fresh.map((stream) => stream.ref), { textFirst: true });
+  if (kept.length === 0) {
+    setContentStreams(page, [mark]);
+    return;
+  }
+  // pdf-lib wraps a loaded page's content in its own `q`/`Q` streams. They belong
+  // with the content they wrap, so the group is folded into one stream and the
+  // mark becomes the only stream in front of it.
+  const first = kept[0].ref;
+  joinContentStreams(page, kept.map((stream) => stream.ref), { into: first });
+  setContentStreams(page, [mark, first]);
 }
 
 function rgbColor(hex: string) {
   const { r, g, b } = parseHexColor(hex);
   return rgb(r, g, b);
+}
+
+/**
+ * True when the page writes `/CropBox` as an empty array.
+ *
+ * An absent `/CropBox` means "the MediaBox is the crop"; an empty one is a
+ * producer saying this page has no visible box, which no measurement of the
+ * MediaBox can reveal.
+ */
+function declaredCropBoxIsEmpty(page: PDFPage): boolean {
+  const raw = page.node.get(PDFName.of('CropBox'));
+  const value = raw instanceof PDFRef ? page.doc.context.lookup(raw) : raw;
+  return value instanceof PDFArray && value.size() === 0;
 }
 
 const ANCHOR_OPTIONS = [
@@ -812,12 +829,10 @@ export const editTools: PdfToolDefinition[] = [
             // page: on a /Rotate 90 sheet a page-space horizontal line runs off
             // the side of the paper.
             const y = row.above ? frame.height - margin - size - 4 : margin + size + 4;
-            page.drawLine({
-              start: toUserSpace(frame, margin, y),
-              end: toUserSpace(frame, Math.max(margin, frame.width - margin), y),
-              thickness: 0.5,
-              color: rgbColor(color),
-            });
+            const { strokeLine } = await import('../core/content');
+            const start = toUserSpace(frame, margin, y);
+            const end = toUserSpace(frame, Math.max(margin, frame.width - margin), y);
+            strokeLine(page, start, end, { thickness: 0.5, color });
           }
         }
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
@@ -1140,7 +1155,12 @@ export const editTools: PdfToolDefinition[] = [
           page: region.page,
           rect: { x: region.x, y: region.y, width: region.width, height: region.height },
           stampName: embedded ? undefined : name,
-          stampImage: embedded ? custom ?? undefined : undefined,
+          // The embedded picture, not the bytes: `embedPng` already dealt with an
+          // alpha channel (which a stamp appearance cannot carry inline), and the
+          // appearance draws the very image that was measured for the rect.
+          stampXObject: embedded
+            ? { ref: embedded.ref, width: embedded.width, height: embedded.height }
+            : undefined,
           opacity: readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 1, min: 0.1, max: 1 }),
           color: stringValue(context.values, 'color', '#dc2626'),
           contents: name,
@@ -1171,6 +1191,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'Solid colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
       'The rectangle covers each page\u2019s own crop box, so mixed sizes stay covered edge to edge.',
+      'A page that declares an empty /CropBox is left unpainted and named: painting its media box would cover an area the file says is not there.',
     ],
     async run(context) {
       const notes: string[] = [];
@@ -1178,18 +1199,30 @@ export const editTools: PdfToolDefinition[] = [
       const { prependBackground } = await import('../core/content');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const color = stringValue(context.values, 'color', '#f7f7f4');
+      let painted = 0;
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
         const page = input.doc.getPage(pages[i]);
         const box = cropBox(page);
-        if (box.width <= 0 || box.height <= 0) {
+        // A page may declare `/CropBox []` — an empty array is a box that exists
+        // and covers nothing, and `cropBox` falls back to the MediaBox for it.
+        // Painting there would cover a page whose producer said it has no visible
+        // area, so the page is left alone and named.
+        if (box.width <= 0 || box.height <= 0 || declaredCropBoxIsEmpty(page)) {
           note(notes, `Page ${pages[i] + 1} has an empty crop box, so it was left unpainted.`);
           continue;
         }
         prependBackground(page, { x: box.x, y: box.y, width: box.width, height: box.height }, color);
+        painted += 1;
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
-      return pdfOutput(input.doc, notes, `Painted a ${color} background behind ${countLabel(pages.length, 'page')}.`);
+      const skipped = pages.length - painted;
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Painted a ${color} background behind ${countLabel(painted, 'page')}`
+          + `${skipped > 0 ? `, not ${countLabel(skipped, 'page')} of the ${countLabel(pages.length, 'page')} selected` : ''}.`,
+      );
     },
   },
 
@@ -1214,7 +1247,7 @@ export const editTools: PdfToolDefinition[] = [
       pagesField({ group: 'Pages' }),
     ],
     notes: [
-      'Only text drawn by the page itself is recoloured. Text inside an image is part of the picture.',
+      'Only text drawn in the page\u2019s own content streams is recoloured. Text inside an image is part of the picture, and text carried inside a Form XObject stays in that XObject.',
       'Pages with no matching text are reported, not quietly skipped.',
     ],
     async run(context) {
@@ -1251,7 +1284,8 @@ export const editTools: PdfToolDefinition[] = [
       // to say which seven it did not, or the user assumes the whole file changed.
       if (untouched.length > 0 && untouched.length < pages.length) {
         const list = untouched.slice(0, 8).join(', ') + (untouched.length > 8 ? ', …' : '');
-        note(notes, `Page ${list} ${untouched.length === 1 ? 'has' : 'have'} no text drawn in ${from === 'any' ? 'a colour operator' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
+        const where = untouched.length === 1 ? `page ${list}` : `pages ${list}`;
+        note(notes, `Nothing on ${where} was drawn in ${from === 'any' ? 'a colour operator' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
       }
       return pdfOutput(input.doc, notes, `Recoloured ${countLabel(changed, 'text run')} to ${to}.`);
     },
@@ -1588,27 +1622,34 @@ export const editTools: PdfToolDefinition[] = [
       const unwritable: string[] = [];
       for (const spec of specs as (CreateFieldSpec & { page: number })[]) {
         // E15: a field left on a page that no longer exists is clamped to the
-        // nearest one, and the run says how many moved.
-        const page = bounded(notes, 'Field page', Math.trunc(Number(spec.page)) || 0, { min: 0, max: input.pageCount - 1, integer: true });
-        if (page !== spec.page) offPage += 1;
-        const asked = String(spec.name ?? '').trim();
+        // nearest one, and the run says how many moved. A spec that names no page
+        // at all is on page 1 and has not been moved anywhere.
+        const asked = Number(spec.page);
+        const page = bounded(
+          notes,
+          'Field page',
+          Number.isFinite(asked) ? Math.trunc(asked) : 0,
+          { min: 0, max: input.pageCount - 1, integer: true },
+        );
+        if (Number.isFinite(asked) && Math.trunc(asked) !== page) offPage += 1;
+        const named = String(spec.name ?? '').trim();
         // A radio group is one widget per option. With none, `createFormField`
         // makes a field nobody can see or type into, so it is refused out loud
         // instead of being counted as "created".
         if (spec.type === 'radio' && (spec.options?.length ?? 0) === 0) {
-          unwritable.push(`the radio group${asked ? ` "${asked}"` : ''} has no options, so nothing could be placed for it`);
+          unwritable.push(`the radio group${named ? ` "${named}"` : ''} has no options, so nothing could be placed for it`);
           continue;
         }
-        if (!asked) {
+        if (!named) {
           unwritable.push(`a ${spec.type} field with no name`);
           continue;
         }
-        let name = asked;
+        let name = named;
         if (taken.has(name)) {
           let suffix = 2;
-          while (taken.has(`${asked}_${suffix}`)) suffix += 1;
-          name = `${asked}_${suffix}`;
-          note(notes, `Two fields were both named "${asked}"; the second is stored as "${name}" so both stay reachable.`);
+          while (taken.has(`${named}_${suffix}`)) suffix += 1;
+          name = `${named}_${suffix}`;
+          note(notes, `A field was already named "${named}", so this one is stored as "${name}" and both stay reachable.`);
         }
         taken.add(name);
         const { page: _dropped, ...field } = spec;
@@ -1619,21 +1660,32 @@ export const editTools: PdfToolDefinition[] = [
           note(notes, `The "${spec.type}" field "${name}" could not be created: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
+      if (offPage > 0) {
+        note(notes, `${countLabel(offPage, 'field')} was dropped on a page outside this document and moved to the nearest page.`);
+      }
       if (created === 0) {
-        throw new Error(
-          `None of the ${countLabel(specs.length, 'field')} could be placed. ${unwritable[0] ?? notes[0] ?? 'Check the page each field was dropped on.'}`,
+        // Nothing was placed, so there is no file to hand back — but the reason is
+        // a report the user can act on, not a crash.
+        return admit(
+          reportResult(
+            [{
+              title: 'No field could be placed',
+              text: unwritable.length > 0
+                ? `${countLabel(unwritable.length, 'field')} was refused: ${unwritable.join('; ')}.`
+                : `${countLabel(specs.length, 'field')} was asked for and none of them could be placed. Check the page and name each field was given.`,
+            }],
+            { message: `None of the ${countLabel(specs.length, 'field')} could be placed${unwritable[0] ? `: ${unwritable[0]}` : ''}.`, }
+          ),
+          notes,
         );
       }
       if (unwritable.length > 0) {
         note(notes, `${countLabel(unwritable.length, 'field')} was not added: ${unwritable.join('; ')}.`);
       }
-      if (offPage > 0) {
-        note(notes, `${countLabel(offPage, 'field')} was dropped on a page outside this document and moved to the nearest one.`);
-      }
       return pdfOutput(
         input.doc,
         notes,
-        `Added ${countLabel(created, 'fillable field')} of ${countLabel(specs.length, 'requested')}. Viewers can now type into this document.`,
+        `Added ${countLabel(created, 'fillable field')} of ${countLabel(specs.length, 'field')} requested. Viewers can now type into this document.`,
       );
     },
   },
@@ -1659,7 +1711,7 @@ export const editTools: PdfToolDefinition[] = [
       const asked = stringValues(values, 'hide').length
         + stringValues(values, 'show').length
         + (stringValue(values, 'add').trim() ? 1 : 0)
-        + stringValue(values, 'remove').split(/[\n,]+/).filter((name) => name.trim() !== '').length;
+        + (stringValues(values, 'remove').flatMap((entry) => entry.split(/[\n,]+/)).filter((name) => name.trim() !== '').length);
       return asked === 0
         ? 'Choose layers to hide or show, or name one to add or delete — with none of those ticked nothing would change.'
         : null;
@@ -1691,6 +1743,9 @@ export const editTools: PdfToolDefinition[] = [
         if (!setLayerVisibility(input.doc, name, false)) missing.push(name);
       }
       for (const name of shown) {
+        // A name in both lists is hidden and stays hidden: running the show here
+        // would leave the file disagreeing with the sentence above.
+        if (both.some((other) => other.toLowerCase() === name.toLowerCase())) continue;
         if (!setLayerVisibility(input.doc, name, true)) missing.push(name);
       }
       let added = '';
@@ -1704,8 +1759,8 @@ export const editTools: PdfToolDefinition[] = [
           added = wanted;
         }
       }
-      const deletions = stringValue(context.values, 'remove')
-        .split(/[\n,]+/)
+      const deletions = stringValues(context.values, 'remove')
+        .flatMap((entry) => entry.split(/[\n,]+/))
         .map((name) => name.trim())
         .filter(Boolean);
       let deleted = 0;
@@ -1776,7 +1831,10 @@ export const editTools: PdfToolDefinition[] = [
 
   {
     id: 'redact',
-    name: 'Redact PDF',
+    // The catalogue already carries `redact-pdf` (the annotation editor's redaction
+    // pane). Two entries named "Redact PDF" is one job the user cannot tell apart,
+    // so this one is named for what it takes: boxes, drawn or typed.
+    name: 'Redact Regions',
     description: 'Permanently delete text and regions, not just cover them',
     icon: '⬛',
     category: 'security',

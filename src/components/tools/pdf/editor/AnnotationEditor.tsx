@@ -46,11 +46,13 @@ import {
   normaliseDrag,
   pdfToScreenPoint,
   quadsToPoints,
+  readingZoom,
   rotationForDrag,
   screenAngle,
   screenToPdfPoint,
   screenToViewportBox,
   unrotateDelta,
+  visiblePageCentre,
   type CssRect,
   type PageGeom,
   type Point,
@@ -78,7 +80,8 @@ import {
   rotationStepForKey,
   toolForKey,
 } from './shortcuts';
-import { pageHasText, snapTextLines } from './quads';
+import { arrivalTarget, type PendingPlacement } from './placement';
+import { markupSnapTolerance, pageHasText, snapTextLines } from './quads';
 import {
   annotationRotation,
   buildAnnotation,
@@ -232,8 +235,8 @@ const MINI_BTN =
 /** What the active place tool is still waiting for. */
 function rasterHint(tool: EditorToolId, ready: boolean): string {
   if (ready) return 'Ready to place — click or drag on the page.';
-  if (tool === 'signature') return 'Draw the signature; it is placed as a stamp annotation.';
-  return 'Pick a PNG or JPEG; it is placed as a stamp annotation.';
+  if (tool === 'signature') return 'Click where it should go, then draw it: the signature lands on that spot.';
+  return 'Click where it should go, then pick a PNG or JPEG: it lands on that spot.';
 }
 
 export function AnnotationEditor(): JSX.Element {
@@ -365,7 +368,18 @@ export function AnnotationEditor(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [fitMode, setFitMode] = useState<'fit' | 'manual'>('fit');
+  /**
+   * `reading` is the size a document is first shown at; `fit` and `manual` are
+   * what the toolbar chips say. See [`readingZoom`].
+   *
+   * Fitting a portrait page to a pane wider than the page lands above 100 % —
+   * 130 % at 1440 px wide, 211 % at 1920 — so the first thing a reader meets is a
+   * page running off the bottom of the pane at a number nobody chose. Opening
+   * takes the smaller of fit-width and actual size instead, and holds it across
+   * the pane measurements that land while the document is still settling. Only a
+   * press of `Fit width` asks for the wider number.
+   */
+  const [fitMode, setFitMode] = useState<'reading' | 'fit' | 'manual'>('reading');
 
   useEffect(() => {
     const element = paneRef.current;
@@ -383,8 +397,12 @@ export function AnnotationEditor(): JSX.Element {
 
   useEffect(() => {
     if (!pageInfo || paneWidth <= 0) return;
+    if (fitMode === 'reading') setZoom(readingZoom(paneWidth, pageInfo.width));
     if (fitMode === 'fit') setZoom(fitWidthZoom(paneWidth, pageInfo.width));
   }, [fitMode, pageInfo, paneWidth]);
+
+  /** A different document is a different opening view. */
+  useEffect(() => setFitMode('reading'), [workKey]);
 
   const geom: PageGeom | null = useMemo(() => {
     if (!pageInfo) return null;
@@ -579,10 +597,27 @@ export function AnnotationEditor(): JSX.Element {
   const imageInput = useRef<HTMLInputElement>(null);
   const documentInput = useRef<HTMLInputElement>(null);
   const rasterUrl = useRef<string | null>(null);
+  /**
+   * Blob URLs a placed mark is drawing.
+   *
+   * A pending raster and the mark it becomes hold the same URL, so letting go of
+   * the pending one must not take the picture off the page. This is what made a
+   * placed image a broken-image frame on screen while the exported file carried
+   * it: the commit revoked the URL the commit had just drawn with. They are let
+   * go when the editor unmounts, with the document they belong to.
+   */
+  const drawnImageUrls = useRef(new Set<string>());
+  /** Where the click that opened the picker or the pad asked the picture to go. */
+  const pendingPlacement = useRef<PendingPlacement | null>(null);
 
   const setRasterSafely = useCallback((next: PlacedRaster | null) => {
     const previous = rasterUrl.current;
-    if (previous && previous !== next?.url && previous.startsWith('blob:')) {
+    if (
+      previous &&
+      previous !== next?.url &&
+      previous.startsWith('blob:') &&
+      !drawnImageUrls.current.has(previous)
+    ) {
       URL.revokeObjectURL(previous);
     }
     rasterUrl.current = next?.url ?? null;
@@ -593,6 +628,15 @@ export function AnnotationEditor(): JSX.Element {
     setRasterSafely(null);
     setRasterTool(null);
   }, [setRasterSafely]);
+
+  /** Placed pictures keep their object URL for as long as this editor is open. */
+  useEffect(() => {
+    const drawn = drawnImageUrls.current;
+    return () => {
+      for (const url of drawn) URL.revokeObjectURL(url);
+      drawn.clear();
+    };
+  }, []);
 
   /** A chosen picture/signature is only armed for the tool that asked for it. */
   const rasterReady = raster !== null && rasterTool === tool;
@@ -664,6 +708,9 @@ export function AnnotationEditor(): JSX.Element {
    */
   const commit = useCallback(
     (annotation: EditorAnnotation, options: { edit?: boolean } = {}) => {
+      if (annotation.imageUrl?.startsWith('blob:')) {
+        drawnImageUrls.current.add(annotation.imageUrl);
+      }
       updateWork((current) => ({
         ...current,
         history: pushHistory(current.history, [...current.history.present, annotation]),
@@ -814,7 +861,11 @@ export function AnnotationEditor(): JSX.Element {
   const linesUnder = useCallback(
     (drag: CssRect) => {
       if (!geom) return [];
-      return snapTextLines(textItems, screenToViewportBox(drag, geom));
+      // The slop is measured on screen, so a band a few pixels off the words
+      // still marks them at any zoom instead of asking the user to drag again.
+      return snapTextLines(textItems, screenToViewportBox(drag, geom), {
+        tolerance: markupSnapTolerance(geom.zoom),
+      });
     },
     [geom, textItems],
   );
@@ -953,6 +1004,9 @@ export function AnnotationEditor(): JSX.Element {
         return;
       }
       if ((tool === 'image' || tool === 'signature') && !rasterReady) {
+        // The spot is remembered because the picture lands here when it arrives:
+        // the click that opened the picker is the only click this flow needs.
+        pendingPlacement.current = { page, x: point.x, y: point.y };
         if (tool === 'image') imageInput.current?.click();
         else setSignOpen(true);
         return;
@@ -971,7 +1025,7 @@ export function AnnotationEditor(): JSX.Element {
       }
       setGesture({ mode: 'drag', from: point, to: point, additive });
     },
-    [activeFile, phase, rasterReady, tool],
+    [activeFile, page, phase, rasterReady, tool],
   );
 
   /**
@@ -1526,6 +1580,50 @@ export function AnnotationEditor(): JSX.Element {
 
   /* ── rasters ─────────────────────────────────────────────────────── */
 
+  /** The middle of the part of the page the user can see, page-local CSS px. */
+  const visibleCentre = useCallback((): Point => {
+    const box = pageHostRef.current?.getBoundingClientRect();
+    const pane = paneRef.current?.getBoundingClientRect();
+    if (!box || !geom || box.width < 2 || box.height < 2) {
+      return { x: (geom?.cssWidth ?? 0) / 2, y: (geom?.cssHeight ?? 0) / 2 };
+    }
+    return visiblePageCentre(box, pane ?? box);
+  }, [geom]);
+
+  /**
+   * Put a raster on the page the moment it arrives.
+   *
+   * The click that opened the file dialog, or Accept on the signature pad, has
+   * already said *where*. Asking for a second click to confirm a position the
+   * user gave is a step nobody wanted, and a picture that does not appear reads
+   * as a click that did nothing. With no click to honour — the picture was chosen
+   * from the option panel, or the page changed while the dialog was open — it
+   * lands in the middle of the part of the page the user can see.
+   *
+   * Returns false when the page cannot answer (no document, no geometry), which
+   * leaves the raster armed for the click-or-drag path as before.
+   */
+  const placeArrivedRaster = useCallback(
+    (armed: EditorToolId, arrived: PlacedRaster) => {
+      if (!geom || !work) return false;
+      const target = arrivalTarget(pendingPlacement.current, { page, visibleCentre: visibleCentre() });
+      pendingPlacement.current = null;
+      const built = buildAnnotation({
+        tool: armed,
+        page: target.page,
+        style: styles[armed],
+        geom,
+        drag: { x: target.x, y: target.y, width: 0, height: 0 },
+        raster: arrived,
+      });
+      if (!built) return false;
+      commit(built);
+      clearRaster();
+      return true;
+    },
+    [clearRaster, commit, geom, page, styles, visibleCentre, work],
+  );
+
   const chooseImageFile = useCallback(
     async (file: File) => {
       try {
@@ -1537,14 +1635,18 @@ export function AnnotationEditor(): JSX.Element {
             ? bytes
             : (await encodeImageBytes(decoded.canvas, { format: 'jpeg', quality: 0.92, background: '#ffffff' })).bytes;
         const url = URL.createObjectURL(new Blob([bytes], { type: resolveImageMime(bytes, file.type, file.name) }));
-        setRasterSafely({ bytes: embeddable, url, width: decoded.width, height: decoded.height });
+        const arrived: PlacedRaster = { bytes: embeddable, url, width: decoded.width, height: decoded.height };
+        setRasterSafely(arrived);
         // A raster chosen while the Stamp tool is armed becomes a stamp image;
         // otherwise the Image tool takes it.
         const armed: EditorToolId = tool === 'stamp' || tool === 'signature' ? tool : 'image';
         setRasterTool(armed);
         setTool(armed);
-        hint(`Click or drag on page ${page + 1} to place ${file.name}.`, 'info');
+        if (!placeArrivedRaster(armed, arrived)) {
+          hint(`Click or drag on page ${page + 1} to place ${file.name}.`, 'info');
+        }
       } catch (error) {
+        pendingPlacement.current = null;
         hint(
           error instanceof Error
             ? error.message
@@ -1553,7 +1655,7 @@ export function AnnotationEditor(): JSX.Element {
         );
       }
     },
-    [hint, page, setRasterSafely, tool],
+    [hint, page, placeArrivedRaster, setRasterSafely, tool],
   );
 
   /* ── export ──────────────────────────────────────────────────────── */
@@ -2335,7 +2437,11 @@ export function AnnotationEditor(): JSX.Element {
               >
                 −
               </button>
-              <span className="w-12 text-center font-mono text-[10px] tabular-nums text-ink-muted">
+              <span
+                className="w-12 text-center font-mono text-[10px] tabular-nums text-ink-muted"
+                data-zoom={Math.round(zoom * 100)}
+                data-fit={fitMode}
+              >
                 {Math.round(zoom * 100)}%
               </span>
               <button
@@ -2353,6 +2459,8 @@ export function AnnotationEditor(): JSX.Element {
               <button
                 type="button"
                 onClick={() => setFitMode('fit')}
+                aria-pressed={fitMode === 'fit'}
+                title="Fill the pane with the page width, above 100 % when the pane is wider than the page"
                 className={`${CHIP} ${fitMode === 'fit' ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
               >
                 Fit width
@@ -2555,7 +2663,9 @@ export function AnnotationEditor(): JSX.Element {
           setRasterTool('signature');
           setSignOpen(false);
           setTool('signature');
-          hint('Click or drag on the page to place the signature.', 'info');
+          if (!placeArrivedRaster('signature', next)) {
+            hint('Click or drag on the page to place the signature.', 'info');
+          }
         }}
       />
 

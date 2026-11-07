@@ -48,10 +48,12 @@ import { decodeImage, decodeImagePages, tiffPageDimensions } from '@/lib/pdf/cor
 const FIELD_RECT = { x: 40, y: 700, width: 120, height: 20 };
 
 /**
- * What `listFormFields` reports for `FIELD_RECT`: `createFormField` strokes a
- * 0.5 pt border, and pdf-lib folds that border into the widget rectangle.
+ * What `listFormFields` reports for `FIELD_RECT`: the rectangle the field was
+ * asked for, unchanged. `createFormField` strokes a 0.5 pt border and folds it
+ * *inside* that rectangle, so the widget does not creep half a point past the
+ * spot it was dropped on.
  */
-const WIDGET_RECT = { x: 39.75, y: 699.75, width: 120.5, height: 20.5 };
+const WIDGET_RECT = { x: 40, y: 700, width: 120, height: 20 };
 
 async function onePageDoc(): Promise<PDFDocument> {
   const doc = await PDFDocument.create();

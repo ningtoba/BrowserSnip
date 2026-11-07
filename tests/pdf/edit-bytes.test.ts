@@ -46,6 +46,7 @@ import {
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import { pageContentStreams, textRects } from '@/lib/pdf/core/content';
 import { addAnnotations, listAnnotations } from '@/lib/pdf/core/annotations';
+import { clearFontCache, drawTextU } from '@/lib/pdf/core/fonts';
 import { openPDF } from '@/lib/pdf/core/doc';
 import { PDF_TOOLS, getPdfTool, hasCustomMainView } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
@@ -193,6 +194,10 @@ afterEach(() => {
   OCR_LINES.failWith = null;
   renderJobs().length = 0;
   FONT_URLS.length = 0;
+  // The fetched faces are cached for the life of a tab, so without this the first
+  // CJK test would answer every later one's "which URL did it ask for" from the
+  // cache and record nothing.
+  clearFontCache();
 });
 
 /* ── fixtures and driving a tool ──────────────────────────────────────────── */
@@ -204,17 +209,40 @@ interface PageSpec {
   rotation?: number;
   /** Written with a standard-14 face, so the text is real, selectable content. */
   text?: string;
+  /** The colour the fixture paints that text with; black unless a test says so. */
+  color?: string;
 }
 
+/** `#rrggbb` for a fixture page's own text. */
+function fixtureColor(hex: string | undefined) {
+  const parts = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex ?? '');
+  if (!parts) return rgb(0, 0, 0);
+  return rgb(
+    Number.parseInt(parts[1], 16) / 255,
+    Number.parseInt(parts[2], 16) / 255,
+    Number.parseInt(parts[3], 16) / 255,
+  );
+}
+
+/**
+ * A fixture page, written the way the app writes its own text: a standard-14
+ * face when the string fits WinAnsi, an embedded Unicode face when it does not
+ * (`内容` cannot be handed to Helvetica at all — `page.drawText` throws).
+ */
 async function pdfFixture(pages: PageSpec[], title = 'Edit bytes'): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
   for (const spec of pages) {
     const size = spec.size ?? A4;
     const page = doc.addPage(size);
     if (spec.rotation) page.setRotation(degrees(spec.rotation));
     if (spec.text) {
-      page.drawText(spec.text, { x: 40, y: size[1] - 60, size: 14, font, color: rgb(0, 0, 0) });
+      await drawTextU(page, {
+        text: spec.text,
+        x: 40,
+        y: size[1] - 60,
+        size: 14,
+        color: fixtureColor(spec.color),
+      });
     }
   }
   doc.setTitle(title);
@@ -282,6 +310,9 @@ function streamText(page: PDFPage): string {
 
 function dictOf(doc: PDFDocument, value: unknown): PDFDict | undefined {
   const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
+  // A stream object (an image `/XObject`, an appearance, a `/ToUnicode` CMap) is
+  // not a `PDFDict` in pdf-lib: the dictionary describing it is `stream.dict`.
+  if (resolved instanceof PDFStream) return resolved.dict;
   return resolved instanceof PDFDict ? resolved : undefined;
 }
 
@@ -330,7 +361,9 @@ function runFonts(page: PDFPage): string[] {
   for (const [name, value] of fonts?.entries() ?? []) {
     const dict = dictOf(doc, value);
     const face = dict?.lookupMaybe(PDFName.of('BaseFont'), PDFName)?.asString() ?? '';
-    base.set(name.asString().replace(/^\//, ''), face.replace(/^[A-Za-z0-9]{6}\+/, ''));
+    // `/BaseFont` is a name, so the slash comes along; drop it (and any subset
+    // prefix) to leave the face a reader would report.
+    base.set(name.asString().replace(/^\//, ''), face.replace(/^\//, '').replace(/^[A-Za-z0-9]{6}\+/, ''));
   }
   return [...base.values()];
 }
@@ -374,7 +407,9 @@ describe('page-numbers writes real folios', () => {
     ]);
     const doc = await reopen(outcome);
     const texts = await Promise.all(doc.getPages().map(pageText));
-    expect(texts.map((text) => text.replace('a', '').trim())).toEqual(['I', 'II', 'III']);
+    // Every page carries its own fixture word as well as the folio, so the word
+    // is dropped per page before the folio is read out of the bytes.
+    expect(texts.map((text, index) => text.replace('abc'[index], '').trim())).toEqual(['I', 'II', 'III']);
     expect(runFonts(doc.getPages()[0])).toContain('Times-Roman');
   });
 
@@ -531,7 +566,7 @@ describe('add-page-labels writes the /PageLabels dictionary', () => {
   /** The raw `/Nums` pairs of the produced file, decoded. */
   async function labelRanges(outcome: RunOutcome) {
     const doc = await reopen(outcome);
-    const root = dictOf(doc, doc.catalog.lookupMaybe(PDFName.of('PageLabels'), PDFDict)?.get(PDFName.of('Nums')));
+    const root = arrayOf(doc, doc.catalog.lookupMaybe(PDFName.of('PageLabels'), PDFDict)?.get(PDFName.of('Nums')));
     const ranges: { start: number; style?: string; prefix?: string; first?: number }[] = [];
     for (let i = 0; root && i + 1 < root.size(); i += 2) {
       const start = (root.get(i) as PDFNumber).asNumber();
@@ -681,7 +716,7 @@ describe('add-stamps writes standard annotations', () => {
     const marks = listAnnotations(doc);
     expect(marks.length).toBe(2);
     for (const mark of marks) {
-      expect(mark.type).toMatch(/stamp/iu);
+      expect(mark.kind).toMatch(/stamp/iu);
     }
     const annots = arrayOf(doc, doc.getPages()[0].node.get(PDFName.of('Annots')));
     const first = dictOf(doc, annots?.get(0));
@@ -757,7 +792,9 @@ describe('text-color rewrites colour operators, not pixels', () => {
   it('names the pages where nothing matched when some did', async () => {
     const outcome = await runPdf('text-color', { to: '#0000ff', from: '#000000', pages: 'all' }, [
       { text: 'black words here' },
-      { text: 'another black line' },
+      // Painted a near-black, which the field help says is not the colour being
+      // replaced — that is what makes this a partial match rather than a full one.
+      { text: 'another dark line', color: '#1a1a1a' },
     ]);
     const doc = await reopen(outcome);
     expect(streamText(doc.getPages()[0])).toMatch(/0 0 1 rg/);
@@ -890,7 +927,8 @@ describe('form-creator and form-filler round-trip through a second read', () => 
   it('keeps the field values, options and flags in the saved file', async () => {
     const created = await runPdf('form-creator', {
       fieldSpecs: [
-        { type: 'text', name: 'notes', rect: { x: 60, y: 700, width: 200, height: 20 }, value: 'typed in', required: true },
+        // `multiline` is what the flags below read back, so the spec has to ask for it.
+        { type: 'text', name: 'notes', rect: { x: 60, y: 700, width: 200, height: 20 }, value: 'typed in', required: true, multiline: true },
         { type: 'checkbox', name: 'sent', rect: { x: 60, y: 660, width: 14, height: 14 }, value: 'true' },
         { type: 'dropdown', name: 'country', rect: { x: 60, y: 620, width: 160, height: 20 }, options: ['France', 'Japan'], value: 'Japan' },
       ],

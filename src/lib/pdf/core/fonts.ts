@@ -14,11 +14,16 @@
  * the first time a document actually contains that script, and cached.
  */
 import { StandardFonts } from '@maxwbh/pdf-lib';
-import type { PDFDocument, PDFFont, PDFPage } from '@maxwbh/pdf-lib';
-import { degrees } from '@maxwbh/pdf-lib';
-import type { Color } from '@maxwbh/pdf-lib';
-import { rgb } from '@maxwbh/pdf-lib';
-import { withFontkit } from './doc';
+import type { Color, PDFDocument, PDFFont, PDFPage } from '@maxwbh/pdf-lib';
+import { CustomFontEmbedder, PDFFont as PDFFontClass, degrees, rgb } from '@maxwbh/pdf-lib';
+import { PDFHexString, PDFContext, PDFRef, PDFString, fontkit, withFontkit } from './doc';
+
+/**
+ * The fontkit face behind an embedder. pdf-lib does not export its `Font` and
+ * `Subset` types, so they are read off the embedder that holds them.
+ */
+type Face = CustomFontEmbedder['font'];
+type FaceSubset = ReturnType<Face['createSubset']>;
 
 export type RGBColor = ReturnType<typeof rgb>;
 
@@ -90,6 +95,227 @@ export function needsUnicodeFont(text: string): boolean {
   return !isWinAnsiSafe(text ?? '');
 }
 
+/**
+ * The `/Flags` bits of an embedded face.
+ *
+ * The same reading pdf-lib applies: a viewer uses these to fake a weight or a
+ * slant the face does not carry, and to decide whether to substitute it.
+ */
+function faceFlags(font: Face): number {
+  const familyClass = font['OS/2'] ? font['OS/2'].sFamilyClass : 0;
+  return (font.post && font.post.isFixedPitch ? 1 : 0)
+    | (familyClass >= 1 && familyClass <= 7 ? 2 : 0)
+    | 4 // symbolic: an embedded Unicode face may hold characters outside Latin
+    | (familyClass === 10 ? 8 : 0)
+    | (font.head && font.head.macStyle.italic ? 64 : 0);
+}
+
+/** Four hex digits, the width a CID takes in a `/ToUnicode` CMap. */
+function cmapHex(value: number): string {
+  return value.toString(16).toUpperCase().padStart(4, '0');
+}
+
+/** A code point as the UTF-16 units a CMap maps to. */
+function utf16Hex(codePoint: number): string {
+  if (codePoint <= 0xffff) return cmapHex(codePoint);
+  const shifted = codePoint - 0x10000;
+  return `${cmapHex(0xd800 + (shifted >> 10))}${cmapHex(0xdc00 + (shifted & 0x3ff))}`;
+}
+
+/**
+ * A `/ToUnicode` CMap for the codes this module handed out.
+ *
+ * Blocks are capped at 100 pairs, the most a conforming CMap may put in one
+ * `beginbfchar`.
+ */
+function toUnicodeCmap(codes: Map<number, number>): string {
+  const pairs = [...codes.entries()].map(([codePoint, code]) => `<${cmapHex(code)}> <${utf16Hex(codePoint)}>`);
+  const blocks: string[] = [];
+  for (let i = 0; i < pairs.length; i += 100) {
+    const block = pairs.slice(i, i + 100);
+    blocks.push(`${block.length} beginbfchar\n${block.join('\n')}\nendbfchar`);
+  }
+  return [
+    '/CIDInit /ProcSet findresource begin',
+    '12 dict begin',
+    'begincmap',
+    '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def',
+    '/CMapName /Adobe-Identity-UCS def',
+    '/CMapType 2 def',
+    '1 begincodespacerange',
+    '<0000><FFFF>',
+    'endcodespacerange',
+    ...blocks,
+    'endcmap',
+    'CMapName currentdict /CMap defineresource pop',
+    'end',
+    'end',
+  ].join('\n');
+}
+
+/** Read a subset out of fontkit's evented stream. */
+function encodeSubset(subset: FaceSubset): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const parts: Uint8Array[] = [];
+    const stream = subset.encodeStream();
+    stream.on('data', (bytes: Uint8Array) => parts.push(bytes));
+    stream.on('end', () => {
+      let size = 0;
+      for (const part of parts) size += part.length;
+      const out = new Uint8Array(size);
+      let at = 0;
+      for (const part of parts) {
+        out.set(part, at);
+        at += part.length;
+      }
+      resolve(out);
+    });
+    // `encodeStream` reports a failed encode on `error`; with no listener that
+    // would die as an unhandled event rather than as a message the user sees.
+    // SAFETY: fontkit's stream is an event emitter; only the `error` channel is
+    // missing from the type pdf-lib publishes for it.
+    (stream as unknown as { on(event: 'error', cb: (error: unknown) => void): void })
+      .on('error', (error: unknown) => reject(error instanceof Error ? error : new Error(String(error))));
+  });
+}
+
+/**
+ * An embedded face whose codes, widths and `/ToUnicode` map are written here.
+ *
+ * pdf-lib's own embedder asks fontkit to lay the string out and uses the glyph
+ * numbers that come back, so a character the fetched face does not contain lands
+ * on glyph 0 (`.notdef`) with no `/ToUnicode` entry at all: the page shows a
+ * blank *and* a reader who selects or searches it gets a blank. That is the
+ * failure this module exists to prevent, and nothing in the output reveals it.
+ *
+ * So each code point gets a code of its own (1, 2, 3 …), a `/CIDToGIDMap` stream
+ * points that code at the real glyph in the subset — or at `.notdef` when the
+ * face has none — and the `/ToUnicode` CMap says what every code means.
+ * Extraction then returns the text that was drawn whatever the face happened to
+ * cover, and the widths come from the same table the viewer paints with.
+ */
+class UnicodeFaceEmbedder extends CustomFontEmbedder {
+  /** @param font a face fontkit read, which must not be CFF-flavoured */
+  static create(font: Face, fontData: Uint8Array): UnicodeFaceEmbedder {
+    return new UnicodeFaceEmbedder(font, fontData);
+  }
+
+  /** code point → the character code this font gives it */
+  private readonly codes = new Map<number, number>();
+
+  /** character code → glyph id inside the subset; index 0 is `.notdef` */
+  private readonly glyphs: number[] = [0];
+
+  /** character code → advance width in 1/1000 em */
+  private readonly advances: number[] = [0];
+
+  private readonly subset: FaceSubset;
+
+  private constructor(font: Face, fontData: Uint8Array) {
+    super(font, fontData);
+    this.subset = font.createSubset();
+  }
+
+  /** The codes for every character of `text`, allocating the ones it needs. */
+  private codesFor(text: string): number[] {
+    const out: number[] = [];
+    for (const character of text) {
+      const codePoint = character.codePointAt(0) as number;
+      let code = this.codes.get(codePoint);
+      if (code === undefined) {
+        // `glyphForCodePoint` answers with `.notdef` when the face has nothing
+        // for the character; the code is allocated either way, which is the
+        // point of the class.
+        const glyph = this.font.glyphForCodePoint(codePoint);
+        code = this.glyphs.length;
+        this.glyphs.push(this.subset.includeGlyph(glyph));
+        this.advances.push(glyph.advanceWidth * this.scale);
+        this.codes.set(codePoint, code);
+      }
+      out.push(code);
+    }
+    return out;
+  }
+
+  override encodeText(text: string): PDFHexString {
+    return PDFHexString.of(this.codesFor(text).map((code) => cmapHex(code)).join(''));
+  }
+
+  override widthOfTextAtSize(text: string, size: number): number {
+    let total = 0;
+    for (const code of this.codesFor(text)) total += this.advances[code] ?? 0;
+    return (total / 1000) * size;
+  }
+
+  override async embedIntoContext(context: PDFContext, ref?: PDFRef): Promise<PDFRef> {
+    this.baseFontName = context.addRandomSuffix(this.fontName);
+    const target = ref ?? context.nextRef();
+    const subsetBytes = await encodeSubset(this.subset);
+    const { bbox, ascent, descent, capHeight, xHeight, italicAngle } = this.font;
+    const fontFileRef = context.register(context.flateStream(subsetBytes, { Length1: subsetBytes.length }));
+    // Two bytes per code: the glyph id the viewer should paint for it.
+    const cidToGid = new Uint8Array(this.glyphs.length * 2);
+    this.glyphs.forEach((glyphId, code) => {
+      cidToGid[code * 2] = (glyphId >> 8) & 0xff;
+      cidToGid[code * 2 + 1] = glyphId & 0xff;
+    });
+    const cidToGidRef = context.register(context.flateStream(cidToGid));
+    const descriptorRef = context.register(context.obj({
+      Type: 'FontDescriptor',
+      FontName: this.baseFontName,
+      Flags: faceFlags(this.font),
+      FontBBox: [bbox.minX * this.scale, bbox.minY * this.scale, bbox.maxX * this.scale, bbox.maxY * this.scale],
+      ItalicAngle: italicAngle ?? 0,
+      Ascent: ascent * this.scale,
+      Descent: descent * this.scale,
+      CapHeight: (capHeight || ascent) * this.scale,
+      XHeight: (xHeight || 0) * this.scale,
+      // pdf-lib's own guess: nobody can derive it from the outlines cheaply.
+      StemV: 0,
+      FontFile2: fontFileRef,
+    }));
+    const descendantRef = context.register(context.obj({
+      Type: 'Font',
+      Subtype: 'CIDFontType2',
+      BaseFont: this.baseFontName,
+      CIDSystemInfo: {
+        Registry: PDFString.of('Adobe'),
+        Ordering: PDFString.of('Identity'),
+        Supplement: 0,
+      },
+      FontDescriptor: descriptorRef,
+      CIDToGIDMap: cidToGidRef,
+      // Codes run from 1 to n without a gap, so one range covers them all.
+      W: [1, this.advances.slice(1).map((width) => Number(width.toFixed(3)))],
+    }));
+    const toUnicodeRef = context.register(context.flateStream(toUnicodeCmap(this.codes)));
+    context.assign(target, context.obj({
+      Type: 'Font',
+      Subtype: 'Type0',
+      BaseFont: this.baseFontName,
+      Encoding: 'Identity-H',
+      DescendantFonts: [descendantRef],
+      ToUnicode: toUnicodeRef,
+    }));
+    return target;
+  }
+}
+
+/**
+ * Put an embedded face on pdf-lib's list of things to embed when the document is
+ * written.
+ *
+ * `PDFDocument#fonts` is private, and writing to it is the only way to join that
+ * pass without re-implementing `embedFont` — which builds its own embedder. The
+ * timing matters: by save, every character the document drew has been given a
+ * code, so the font is written once with the whole alphabet it needs.
+ */
+function trackFont(doc: PDFDocument, font: PDFFont): void {
+  // SAFETY: `PDFDocument#fonts` is a private field of the class at runtime; this
+  // is the list `save()` walks to embed everything the document drew.
+  (doc as unknown as { fonts: PDFFont[] }).fonts.push(font);
+}
+
 export function detectScript(text: string): ScriptFont | null {
   for (const s of SCRIPT_FONTS) if (s.test.test(text)) return s;
   return null;
@@ -145,6 +371,18 @@ async function fetchFontBytes(url: string): Promise<Uint8Array> {
   return pending;
 }
 
+/**
+ * Forget the face bytes this module downloaded.
+ *
+ * A CJK face is several megabytes and the cache holds it for the life of the tab,
+ * so this is the one way to hand that memory back. It is also how a test can watch
+ * which URLs a conversion really asks for, instead of inheriting a fetch from the
+ * run before it.
+ */
+export function clearFontCache(): void {
+  fontCache.clear();
+}
+
 export interface FontRequest extends TextStyle {
   text: string;
 }
@@ -193,7 +431,14 @@ export async function getFont(
   if (!pending) {
     pending = (async () => {
       const bytes = await fetchFontBytes(scriptUrl);
-      return doc.embedFont(bytes, { subset: true });
+      const face = fontkit.create(bytes) as Face;
+      // A CFF-flavoured face has no glyph-id map to rewrite — `CIDToGIDMap` must
+      // be Identity for a CIDFontType0 — so pdf-lib's own subsetter keeps it.
+      if (face.cff) return doc.embedFont(bytes, { subset: true });
+      const embedder = UnicodeFaceEmbedder.create(face, bytes);
+      const font = PDFFontClass.of(doc.context.nextRef(), doc, embedder);
+      trackFont(doc, font);
+      return font;
     })();
     pending.catch(() => perDoc?.delete(faceKey));
     perDoc.set(faceKey, pending);
@@ -300,7 +545,11 @@ export async function wrapText(
       if (font.widthOfTextAtSize(attempt, style.size) <= style.maxWidth || current === '') {
         current = attempt;
       } else {
-        lines.push({ line: current, width: font.widthOfTextAtSize(current, style.size) });
+        // The whitespace that caused the break belongs to neither line: left at
+        // the end of this one it widens the run past the text it shows, and two
+        // runs read back as one string come out with a double space in them.
+        const line = current.replace(/\s+$/, '');
+        lines.push({ line, width: font.widthOfTextAtSize(line, style.size) });
         current = word.replace(/^\s+/, '');
       }
     }

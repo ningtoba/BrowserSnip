@@ -17,10 +17,11 @@ import {
   jsonToText,
   detectHeadingHeights,
   type PdfJsonDocument,
+  type PdfJsonPage,
 } from '../core/convert';
 import { detectTables, tablesToCsv, type DetectedTable } from '../core/tables';
 import { canvasToBlob, concatTiffs } from '../core/raster';
-import type { ExtractedImage } from '../core/images-out';
+import type { ExtractedImage, SkippedImage } from '../core/images-out';
 import {
   ToolInputError,
   downloadStem,
@@ -80,6 +81,53 @@ function tidy(text: string): string {
 /** Characters a reader could actually see — the honest "did this work?" test. */
 function readableChars(text: string): number {
   return Array.from(tidy(text).replace(/\s+/g, '')).length;
+}
+
+/**
+ * The text file, laid out the way the switch says.
+ *
+ * **On** (keep line layout) is the page’s own line breaks, with a form feed
+ * where each page ended — what a text editor, `lpr` or `cat` uses to find the
+ * page boundary again. **Off** is reflow: the wrapped lines of one paragraph are
+ * rejoined, because a hard break in the middle of a sentence is damage in a file
+ * whose whole point is that the reader’s window sets the line length. The two
+ * readings genuinely differ, which is what the switch is for (E11).
+ *
+ * A detected table is never reflowed: its rows are the data.
+ */
+function textDocument(
+  json: PdfJsonDocument,
+  options: { layout: boolean; pageMarkers: boolean },
+): string {
+  return json.pages
+    .map((page) => {
+      const body = options.layout
+        ? jsonToText({ pages: [page] }).trimEnd()
+        : reflowedBody(page).trimEnd();
+      const marker = options.pageMarkers ? `--- page ${page.page} ---\n` : '';
+      return `${marker}${body}${options.layout ? '\n\f' : ''}`;
+    })
+    .join('\n')
+    .concat('\n');
+}
+
+/** One paragraph per block, its wrapped lines joined with a single space. */
+function reflowedBody(page: PdfJsonPage): string {
+  const paragraphs = page.blocks
+    .map((block) => {
+      // A table’s rows are the data; rejoining their lines would glue two cells
+      // into one word, so the grid is passed through as it stands.
+      if (block.type === 'table') return (block.text ?? '').trim();
+      const lines = block.lines?.length
+        ? block.lines.map((line) => line.text)
+        : (block.text ?? '').split('\n');
+      return lines.join(' ').replace(/\s+/g, ' ').trim();
+    })
+    .filter((text) => text !== '');
+  // A page whose blocks carry no text still has the page text pdf.js assembled
+  // (an OCR layer, for instance), so fall back to that rather than emit nothing.
+  if (paragraphs.length === 0) return page.text;
+  return `${paragraphs.join('\n\n')}\n`;
 }
 
 interface ExtractionFacts {
@@ -382,7 +430,12 @@ async function exportPages(
           sideways.push(`${page} (image ${render.width}×${render.height} px, page shows as ${box.widthPt}×${box.heightPt} pt)`);
         }
       }
-      const blob = await canvasToBlob(render.canvas, options.format, options.quality, { background: '#ffffff' });
+      const blob = await canvasToBlob(render.canvas, options.format, options.quality, {
+        background: '#ffffff',
+        // The density the user asked for travels into the file, not just into
+        // the pixel count (E12, E15).
+        dpi,
+      });
       files.push({ blob, name: `${stem}-page-${pageNumber(page, input.pageCount)}.${options.extension}` });
       render.cancel();
       context.progress((i + 1) / indices.length, `Exported page ${page} of ${indices.length}`);
@@ -532,9 +585,9 @@ export const convertFromTools: PdfToolDefinition[] = [
       const { input, json, facts } = await buildJson(context);
       const blocker = nothingToRead(input, facts, 'text');
       if (blocker) return blocker;
-      const text = tidy(jsonToText(json, {
+      const text = tidy(textDocument(json, {
+        layout: booleanValue(context.values, 'layout', true),
         pageMarkers: booleanValue(context.values, 'pageMarkers'),
-        formFeed: booleanValue(context.values, 'layout', true),
       }));
       const words = text.split(/\s+/).filter(Boolean).length;
       return withWarnings(
@@ -791,11 +844,11 @@ export const convertFromTools: PdfToolDefinition[] = [
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
       if (booleanValue(context.values, 'oneSheet')) {
-        const rows = tables.flatMap((table) => [...table.rows, []]);
+        const rows = tables.flatMap((table) => [...typedRows(table.rows), []]);
         XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Tables');
       } else {
         tables.forEach((table, index) => {
-          const sheet = XLSX.utils.aoa_to_sheet(table.rows);
+          const sheet = XLSX.utils.aoa_to_sheet(typedRows(table.rows));
           const widths = (table.rows[0] ?? []).map((_, column) => ({
             wch: Math.min(60, Math.max(8, ...tables[index].rows.map((row) => (row[column] ?? '').length))),
           }));
@@ -803,7 +856,10 @@ export const convertFromTools: PdfToolDefinition[] = [
           XLSX.utils.book_append_sheet(workbook, sheet, `Table ${index + 1}`.slice(0, 31));
         });
       }
-      const out: Uint8Array = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+      // `bookSST` puts repeated text in `xl/sharedStrings.xml` and leaves the
+      // cells pointing at it, which is how a workbook exported by Excel itself is
+      // laid out; without it every cell carries its own copy of the string.
+      const out: Uint8Array = XLSX.write(workbook, { type: 'array', bookType: 'xlsx', bookSST: true });
       return withWarnings(
         filesResult(
           [{
@@ -936,6 +992,7 @@ export const convertFromTools: PdfToolDefinition[] = [
       const smallest = numberValue(context.values, 'smallest', 64);
       const stem = outputStem(input.name);
       const found: { name: string; blob: Blob }[] = [];
+      const unreadable: SkippedImage[] = [];
       for (let i = 0; i < indices.length; i++) {
         // The rail's own floor is the only size filter. The core helper also
         // drops anything 2 px or under as a decorative tile, which hid a real
@@ -943,6 +1000,11 @@ export const convertFromTools: PdfToolDefinition[] = [
         const images = await extractPageImages(input.doc, indices[i], {
           minSide: smallest,
           skipMasks: false,
+          // E13: an image that was found and not returned has to say so. A page
+          // of bilevel scans is not a page with "no embedded images", and the
+          // specific cause (fax encoding, 12-bit samples, a /Separation tint
+          // transform) is the only thing that tells the user what to do next.
+          onSkipped: (skip) => unreadable.push({ ...skip, name: skip.name ?? `the ${skip.width}×${skip.height} image on page ${indices[i]}` }),
         });
         images.forEach((image: ExtractedImage, index: number) => {
           found.push({
@@ -955,26 +1017,23 @@ export const convertFromTools: PdfToolDefinition[] = [
         context.progress((i + 1) / indices.length, `Scanned page ${indices[i]}`);
         throwIfAborted(context.signal);
       }
+      const partial = unusableNote(unreadable);
       if (found.length === 0) {
-        return withWarnings(reportResult([{
-          title: 'No embedded images',
-          text: `No embedded image was found on the ${indices.length} selected page(s)${smallest > 0 ? ` at or above the ${smallest} px size limit` : ' at all'}. A page drawn from vectors and text has nothing to pull out; a scanned page has one image of the whole sheet, which PDF to Image renders better.`,
-        }, {
-          title: 'What to try instead',
-          rows: [
-            { label: 'Option 1', value: smallest > 0 ? `Lower "Ignore images smaller than" (now ${smallest} px).` : 'This document holds no images; try PDF to Text.' },
-            { label: 'Option 2', value: 'Use PDF to Image to rasterise the pages themselves.' },
-          ],
-        }], {
-          message: 'No extractable images.',
-        }), inputNotices(input));
+        return withWarnings(reportResult(emptyImageReport(unreadable, indices.length, smallest), {
+          message: unreadable.length > 0
+            ? `${unreadable.length} image(s) found, none of them readable here.`
+            : 'No extractable images.',
+        }), [...inputNotices(input), ...partial]);
       }
-      if (found.length === 1) return filesResult(found);
+      if (found.length === 1) return withWarnings(filesResult(found), partial);
       const { createZip } = await import('../core/archive');
       const blob = await createZip(found.map((file) => ({ name: file.name, data: file.blob })));
-      return filesResult(
-        [{ blob, name: `${stem}-images.zip` }],
-        `Extracted ${found.length} image(s) from ${indices.length} page(s).`,
+      return withWarnings(
+        filesResult(
+          [{ blob, name: `${stem}-images.zip` }],
+          `Extracted ${found.length} image(s) from ${indices.length} page(s).`,
+        ),
+        partial,
       );
     },
   },
@@ -1249,6 +1308,122 @@ function noTablesFound(input: OpenedInput, facts: ExtractionFacts, minRows: numb
       ? ['Run OCR (Searchable PDF) on this file first, then extract the table again.', 'Or export the pages with PDF to Image and read the figures off the picture.']
       : [`Lower the minimum rows setting (now ${minRows}) — a short block still counts.`, 'Use PDF to Text when the page is prose: it keeps the words in reading order.'],
   );
+}
+
+/**
+ * A detected table with the figures typed as numbers.
+ *
+ * Cells lifted out of a PDF arrive as text, and text is what the workbook would
+ * hold: `1,200` left-aligned as a string, refused by `SUM`, which makes "a real
+ * .xlsx" a false claim (E11). Only a cell a reader would unambiguously call a
+ * number is converted — an optional sign, an optional currency mark on either
+ * side, digit groups and a decimal point. `12%` stays text, because the value a
+ * spreadsheet holds for it is `0.12` plus a percent format, and picking a format
+ * the PDF never declared is a guess the cell should not make alone.
+ */
+function typedRows(rows: readonly string[][]): (string | number)[][] {
+  return rows.map((row) => row.map((cell) => numericCell(cell) ?? cell));
+}
+
+/**
+ * The three-letter codes this accepts as a currency, and nothing else: an
+ * unknown 3-letter run like `CPU` must not turn `CPU 8` into the number 8.
+ */
+const ISO_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'CNY', 'HKD', 'SGD', 'INR', 'BRL', 'MXN', 'ZAR', 'KRW', 'PLN', 'RUB'];
+
+const CURRENCY_SYMBOL = '$\u00a2-\u00a5\u20ac\u00a3';
+
+const CURRENCY_LEAD = new RegExp(`^(?:[${CURRENCY_SYMBOL}]|${ISO_CURRENCIES.join('|')})\\s*`);
+
+const CURRENCY_TRAIL = new RegExp(`\\s*(?:[${CURRENCY_SYMBOL}]|${ISO_CURRENCIES.join('|')})$`);
+
+function numericCell(text: string): number | null {
+  let body = (text ?? '').trim();
+  if (body === '') return null;
+  let negative = false;
+  if (/^[+\-\u2212(]/.test(body)) {
+    negative = /^[\-\u2212(]/.test(body);
+    body = body.replace(/^[+-\u2212(]\s*/, '');
+  }
+  if (negative && body.endsWith(')')) body = body.slice(0, -1);
+  body = body.trim();
+  // A currency mark is presentation, not part of the number, so it comes off
+  // either end — but only when a digit sits on its inner side.
+  const lead = body.match(CURRENCY_LEAD);
+  if (lead && /^[+\-]?\d/.test(body.slice(lead[0].length))) body = body.slice(lead[0].length);
+  const trail = body.match(CURRENCY_TRAIL);
+  if (trail && /\d$/.test(body.slice(0, body.length - trail[0].length))) {
+    body = body.slice(0, body.length - trail[0].length);
+  }
+  body = body.trim();
+  if (!/^(?:\d{1,3}(?:[,\u00a0]\d{3})+|\d+)(?:\.\d+)?$/.test(body)) return null;
+  const value = Number(body.replace(/[,\u00a0]/g, ''));
+  return Number.isFinite(value) ? (negative ? -value : value) : null;
+}
+
+/**
+ * The Extract Images report for a run that wrote nothing.
+ *
+ * “No embedded image was found” is only true when the pages hold none, and a
+ * page of fax scans disproves it (E13): the images are there, the browser just
+ * cannot unpack them. When any were refused, each is named with its own cause —
+ * that difference is the whole advice: a size limit the user set is theirs to
+ * lower, a CCITT or JBIG2 stream is not.
+ */
+function emptyImageReport(skipped: SkippedImage[], pages: number, smallest: number): ToolReportSection[] {
+  if (skipped.length === 0) {
+    return [
+      {
+        title: 'No embedded images',
+        text: `No embedded image was found on the ${pages} selected page(s)${smallest > 0 ? ` at or above the ${smallest} px size limit` : ' at all'}. A page drawn from vectors and text has nothing to pull out; a scanned page has one image of the whole sheet, which PDF to Image renders better.`,
+      },
+      {
+        title: 'What to try instead',
+        rows: [
+          { label: 'Option 1', value: smallest > 0 ? `Lower the size limit — "Ignore images smaller than" is now ${smallest} px.` : 'This document holds no images; try PDF to Text.' },
+          { label: 'Option 2', value: 'Use PDF to Image to rasterise the pages themselves.' },
+        ],
+      },
+    ];
+  }
+  const onlyTooSmall = skipped.every((skip) => /size limit/.test(skip.reason));
+  return [
+    {
+      title: `${singular(skipped.length, 'image')} found, none of them readable here`,
+      text: `The ${pages} selected page(s) do hold image${skipped.length === 1 ? '' : 's'}; ${skipped.length} of them could not be turned into pixels, so no file was written. What each one is, and why it was refused:`,
+    },
+    {
+      title: 'Why each image was left out',
+      rows: skipped.map((skip, index) => ({
+        label: `${skip.name || `image ${index + 1}`} (${skip.width}×${skip.height})`,
+        value: skip.reason,
+      })),
+    },
+    {
+      title: 'What to try instead',
+      rows: onlyTooSmall
+        ? [
+          { label: 'Option 1', value: `Every image here is under the size limit you set — lower "Ignore images smaller than" (now ${smallest} px), or set it to 0.` },
+          { label: 'Option 2', value: 'Use PDF to Image to rasterise the pages themselves.' },
+        ]
+        : [
+          { label: 'Option 1', value: 'Use PDF to Image to rasterise the pages themselves: the rendered page paints these images, fax encodings and all.' },
+          { label: 'Option 2', value: 'Lower "Ignore images smaller than", or set it to 0, if a size limit is part of the story.' },
+        ],
+    },
+  ];
+}
+
+/** A partial success says so: some images came out, others did not (E10, E13). */function unusableNote(skipped: readonly SkippedImage[]): string[] {
+  if (skipped.length === 0) return [];
+  const detail = skipped
+    .slice(0, 6)
+    .map((skip) => `${skip.name || `${skip.width}×${skip.height}`}: ${skip.reason}`)
+    .join('; ');
+  const rest = skipped.length > 6 ? `; and ${skipped.length - 6} more` : '';
+  return [
+    `${skipped.length} image(s) could not be read and are missing from the output — ${detail}${rest}.`,
+  ];
 }
 
 function toMarkdownTable(table: DetectedTable): string {

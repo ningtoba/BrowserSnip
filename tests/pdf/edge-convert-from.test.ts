@@ -1911,6 +1911,76 @@ describe('extract-images: every colour space a real PDF carries', () => {
     expect(pixelAt(decodePng(entries[2].bytes), 1, 0).slice(0, 3)).toEqual([85, 85, 85]);
   });
 
+  /**
+   * The rest of the sample-unpacking contract, one image per rule.
+   *
+   * The matrix above proves 1, 4, 8 and 16-bit and palettes; this covers what it
+   * cannot: a 2-bit grid (a 4-pixel row is exactly one byte, so a row offset that
+   * forgets the padding shifts every later pixel), an explicit `/Decode` that
+   * inverts, a stencil `/ImageMask` — which carries no `/ColorSpace` at all — and
+   * a 1-bit `/SMask`, whose alpha used to be read one byte per pixel and so was
+   * dropped.
+   */
+  it('unpacks 2-bit samples, an inverted /Decode, a stencil mask and a 1-bit soft mask (E12)', async () => {
+    const grey2 = packSamples([0, 1, 2, 3, 3, 2, 1, 0], 2, 4, 1);
+    const inverted = packSamples([10, 200, 30, 40, 50, 60, 70, 80], 8, 4, 1);
+    const stencil = packSamples([1, 0, 1, 0, 0, 1, 0, 1], 1, 4, 1);
+    const rgb = packSamples(repeat(8, (index) => [8 * index + 8, 200 - index, 40 + index]), 8, 4, 3);
+    const alpha = packSamples([1, 0, 1, 1, 0, 0, 1, 0], 1, 4, 1);
+    const image = (dict: string, samples: Uint8Array) => [
+      `<< /Type /XObject /Subtype /Image ${dict} /Length ${samples.length} >>\nstream\n`,
+      samples,
+      '\nendstream',
+    ];
+    const depths = assembleObjects([
+      ['<< /Type /Catalog /Pages 2 0 R >>'],
+      ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'],
+      ['<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject '
+        + '<< /G2 4 0 R /Inv 5 0 R /Msk 6 0 R /Smk 7 0 R >> >> >>'],
+      image('/Width 4 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 2', grey2),
+      image('/Width 4 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8 /Decode [1 0]', inverted),
+      image('/ImageMask true /Width 4 /Height 2 /BitsPerComponent 1', stencil),
+      image('/Width 4 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 8 0 R', rgb),
+      image('/Width 4 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 1', alpha),
+    ]);
+
+    const outcome = await run('extract-images', { pages: 'all', smallest: 0 }, [fileOf(depths, 'depths.pdf')]);
+    // Four images come back as one archive; the entries are the four grids.
+    const entries = await zipEntries(outcome);
+    expect(entries.map((entry) => entry.name)).toEqual([
+      'depths-p001-001.png',
+      'depths-p001-002.png',
+      'depths-p001-003.png',
+      'depths-p001-004.png',
+    ]);
+
+    const twoBit = decodePng(entries[0].bytes);
+    expect([twoBit.width, twoBit.height]).toEqual([4, 2]);
+    expect(pixelAt(twoBit, 0, 0).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(pixelAt(twoBit, 1, 0).slice(0, 3)).toEqual([85, 85, 85]);
+    expect(pixelAt(twoBit, 2, 0).slice(0, 3)).toEqual([170, 170, 170]);
+    expect(pixelAt(twoBit, 3, 0).slice(0, 3)).toEqual([255, 255, 255]);
+    // Row 2 is the reverse, which is what a dropped row-padding byte breaks first.
+    expect(pixelAt(twoBit, 0, 1).slice(0, 3)).toEqual([255, 255, 255]);
+    expect(pixelAt(twoBit, 3, 1).slice(0, 3)).toEqual([0, 0, 0]);
+
+    const flipped = decodePng(entries[1].bytes);
+    expect(pixelAt(flipped, 0, 0).slice(0, 3)).toEqual([245, 245, 245]);
+    expect(pixelAt(flipped, 1, 0).slice(0, 3)).toEqual([55, 55, 55]);
+
+    const mask = decodePng(entries[2].bytes);
+    // A stencil paints where the sample is 1 — the `/Decode [1 0]` an image mask
+    // defaults to — which reads back as black in a grey export.
+    expect(pixelAt(mask, 0, 0).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(pixelAt(mask, 1, 0).slice(0, 3)).toEqual([255, 255, 255]);
+
+    const soft = decodePng(entries[3].bytes);
+    expect(pixelAt(soft, 0, 0)).toEqual([8, 200, 40, 255]);
+    expect(pixelAt(soft, 1, 0)[3]).toBe(0);
+    expect(pixelAt(soft, 2, 1)[3]).toBe(255);
+    expect(pixelAt(soft, 3, 1)[3]).toBe(0);
+  });
+
   it('names the images it cannot decode instead of reporting that there are none (E13, E20)', async () => {
     const fax = assembleObjects([
       ['<< /Type /Catalog /Pages 2 0 R >>'],
@@ -2067,19 +2137,47 @@ describe('the shape of the table trio (E11)', () => {
 
 /* ── resolution metadata, invisible bytes, reflow and the greyscale claim ──── */
 
-/** The tags a viewer reads before it touches a pixel, one entry per TIFF page. */
+/**
+ * The tags a viewer reads before it touches a pixel, one entry per TIFF page.
+ *
+ * Parsed out of the file rather than through UTIF, because UTIF *divides* a
+ * RATIONAL on the way out — its `t282` is `[300]`, which cannot tell `300/1`
+ * from `600/2` or prove the second word was written at all. Density is the one
+ * thing this check is about, and `concatTiffs` moves every IFD, so the two
+ * 32-bit words are read where the entry says they live (E12, E15).
+ */
 function tiffPages(bytes: Uint8Array): { width: number; height: number; x: number[]; y: number[]; unit: number[] }[] {
-  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  return UTIF.decode(buffer).map((ifd) => {
-    const tags = ifd as unknown as Record<string, number[] | undefined>;
-    return {
-      width: tags.t256?.[0] ?? 0,
-      height: tags.t257?.[0] ?? 0,
-      x: tags.t282 ?? [],
-      y: tags.t283 ?? [],
-      unit: tags.t296 ?? [],
-    };
-  });
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const little = String.fromCharCode(bytes[0], bytes[1]) === 'II';
+  /** Where a tag's value lives: inline while it fits, an offset as soon as it does not. */
+  const valueAt = (entry: number, type: number, count: number): number => {
+    const size = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 }[type] ?? 1;
+    const total = size * count;
+    return total <= 4 ? entry + 8 : view.getUint32(entry + 8, little);
+  };
+  const pages: { width: number; height: number; x: number[]; y: number[]; unit: number[] }[] = [];
+  let ifd = view.getUint32(4, little);
+  while (ifd > 0 && ifd + 2 <= view.byteLength && pages.length < 64) {
+    const count = view.getUint16(ifd, little);
+    const page = { width: 0, height: 0, x: [] as number[], y: [] as number[], unit: [] as number[] };
+    for (let index = 0; index < count; index++) {
+      const entry = ifd + 2 + index * 12;
+      if (entry + 12 > view.byteLength) break;
+      const tag = view.getUint16(entry, little);
+      const type = view.getUint16(entry + 2, little);
+      const countOfValue = view.getUint32(entry + 4, little);
+      const at = valueAt(entry, type, countOfValue);
+      if (tag === 256) page.width = type === 3 ? view.getUint16(at, little) : view.getUint32(at, little);
+      if (tag === 257) page.height = type === 3 ? view.getUint16(at, little) : view.getUint32(at, little);
+      if (tag === 282) page.x = [view.getUint32(at, little), view.getUint32(at + 4, little)];
+      if (tag === 283) page.y = [view.getUint32(at, little), view.getUint32(at + 4, little)];
+      if (tag === 296) page.unit = [view.getUint16(at, little)];
+    }
+    pages.push(page);
+    const next = ifd + 2 + count * 12;
+    ifd = next + 4 <= view.byteLength ? view.getUint32(next, little) : 0;
+  }
+  return pages;
 }
 
 describe('raster resolution metadata (E12, E15)', () => {

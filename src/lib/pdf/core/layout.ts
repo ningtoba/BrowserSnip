@@ -675,7 +675,10 @@ export async function wrapInlines(
         italic: run.italic,
       });
       if (currentWidth + width > options.maxWidth && (current.length > 0 || buffer !== '')) {
-        if (buffer !== '') current.push({ ...run, text: buffer });
+        // The whitespace that caused the break belongs to neither line: left here
+        // it widens the finished line past the text it shows, and two runs read
+        // back as one string come out with a double space in the middle.
+        if (buffer.trim() !== '') current.push({ ...run, text: buffer.replace(/\s+$/, '') });
         push();
         buffer = chunk.replace(/^\s+/, '');
         const remeasured = await measureText(doc, { text: buffer || ' ', x: 0, y: 0, size, bold, italic: run.italic });
