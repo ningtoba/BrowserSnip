@@ -22,6 +22,20 @@ describe('a required field', () => {
   const open = protect.fields!.find((f) => f.key === 'userPassword')!;
   const owner = protect.fields!.find((f) => f.key === 'ownerPassword')!;
 
+  it('declares the same condition for its requirement and its visibility', () => {
+    // The reason `required` is a predicate and not `true`: a field hidden by
+    // `when` while still required is a gate with nothing behind it, blocking a
+    // run from a control the user cannot see.
+    const demanded = open.required as (v: ToolValues) => boolean;
+    expect(typeof open.required).toBe('function');
+    expect(open.when).toBeDefined();
+    for (const mode of ['user', 'owner', 'both']) {
+      expect(demanded({ mode })).toBe(open.when!({ mode }));
+      expect(demanded({ mode })).toBe(mode !== 'owner');
+    }
+    expect(open.missing).toMatch(/password readers must type/i);
+  });
+
   it('is refused on the box itself, in the tool’s own words', () => {
     const issues = validateFields(protect.fields, { ...empty, mode: 'user' });
     const hit = issues.find((i) => i.key === 'userPassword');
