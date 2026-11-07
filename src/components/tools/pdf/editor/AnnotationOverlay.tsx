@@ -14,6 +14,12 @@ import { useRef } from 'react';
 import type { EditorAnnotation, EditorToolId } from './types';
 import type { CssRect, PageGeom, Point } from './geometry';
 import { markScreenRotation, pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
+import {
+  FREE_TEXT_LINE_EM,
+  freeTextInset,
+  markupRule,
+  quadRing,
+} from '@/lib/pdf/core/annotations';
 import { TOOL_BY_ID } from './tools';
 import {
   HANDLE_HIT_PX,
@@ -35,8 +41,6 @@ export interface OverlayProps {
   /** Rubber-band for the vertex tools: committed points plus the cursor. */
   vertices: { points: Point[]; cursor: Point | null } | null;
   tool: EditorToolId;
-  /** Whether the armed tool is pinned; it only changes the hint text. */
-  pinned: boolean;
   /**
    * The selected ids, oldest first. One id is the selection the editor has
    * always shown; two or more draw a group, which is a different thing to draw
@@ -77,12 +81,20 @@ function turn(annotation: EditorAnnotation, geom: PageGeom): { transform?: strin
   return { transform: `rotate(${round(degrees)} ${round(centre.x)} ${round(centre.y)})` };
 }
 
-/** The same turn for an HTML layer, which measures its origin in its own box. */
+/**
+ * The same turn for an HTML layer.
+ *
+ * CSS measures `transform-origin` inside the element's own border box, so the
+ * pivot is the mark's centre *minus* the offset the element was given — not the
+ * page coordinate, which would swing the text around a point off the box and
+ * make a turned mark look like it jumped. The element covers the mark's rect, so
+ * its own middle is the pivot every other consumer turns about.
+ */
 function turnStyle(annotation: EditorAnnotation, geom: PageGeom): React.CSSProperties {
   const angle = annotation.rotation ?? 0;
   if (!angle) return {};
-  const { centre, degrees } = markScreenRotation(annotation.rect, angle, geom);
-  return { transform: `rotate(${degrees}deg)`, transformOrigin: `${centre.x}px ${centre.y}px` };
+  const { degrees } = markScreenRotation(annotation.rect, angle, geom);
+  return { transform: `rotate(${degrees}deg)`, transformOrigin: 'center' };
 }
 
 export function AnnotationOverlay({
@@ -91,7 +103,6 @@ export function AnnotationOverlay({
   draft,
   vertices,
   tool,
-  pinned,
   selection,
   editingId,
   marquee,
@@ -116,12 +127,18 @@ export function AnnotationOverlay({
   const selectable = tool === 'select';
   const selectedMarks = annotations.filter((a) => selection.includes(a.id));
   /**
-   * Corner handles belong to one mark. A group gets an outline and a rotate
-   * handle instead, because four handles on four marks is a wall of squares and
-   * scaling a whole group is not a command this editor offers yet.
+   * Which marks wear the selection chrome.
+   *
+   * One rule, so a mark never shows two boundaries at once: the mark the caret
+   * is inside is being *edited*, and it wears only the type-in surface; the rest
+   * of the selection is being *looked at*, and it wears the outline, the handles
+   * and the rotate knob. Handles belong to one mark — a group gets an outline
+   * and a rotate handle instead, because four handles on four marks is a wall of
+   * squares and scaling a whole group is not a command this editor offers yet.
    */
-  const handleMark = selectedMarks.length === 1 ? selectedMarks[0] : null;
-  const group = selectedMarks.length > 1 ? selectionScreenBounds(selectedMarks, geom) : null;
+  const chromeMarks = selectedMarks.filter((annotation) => annotation.id !== editingId);
+  const handleMark = chromeMarks.length === 1 ? chromeMarks[0] : null;
+  const group = chromeMarks.length > 1 ? selectionScreenBounds(chromeMarks, geom) : null;
   const textLayers = annotations.filter((a) => a.kind === 'FreeText');
 
   return (
@@ -130,7 +147,6 @@ export function AnnotationOverlay({
       className="absolute inset-0"
       style={{ touchAction: 'none', cursor: selectable ? 'default' : 'crosshair' }}
       data-tool-gesture={toolMeta.gesture}
-      data-armed-pinned={pinned ? 'true' : 'false'}
       data-selection={selection.join(' ')}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
@@ -204,16 +220,18 @@ export function AnnotationOverlay({
             })
           : null}
 
-        {/* Every selected mark keeps its outline, whatever tool is armed. */}
-        {selectedMarks.map((annotation) => {
+        {/* The selection's own outline: drawn on the mark's geometry, not
+            around it, so a selected box never looks like two boxes. */}
+        {chromeMarks.map((annotation) => {
           const box = pdfToScreenRect(annotation.rect, geom);
           return (
             <g key={`sel-${annotation.id}`} {...turn(annotation, geom)}>
               <rect
-                x={box.x - 1}
-                y={box.y - 1}
-                width={box.width + 2}
-                height={box.height + 2}
+                data-selection-outline={annotation.id}
+                x={box.x}
+                y={box.y}
+                width={box.width}
+                height={box.height}
                 fill="none"
                 stroke="#2563EB"
                 strokeWidth={1.5}
@@ -290,7 +308,7 @@ export function AnnotationOverlay({
            editor snaps it to 15° unless Shift is held.
         */}
         {(() => {
-          if (selectedMarks.length === 0) return null;
+          if (chromeMarks.length === 0) return null;
           // A single mark turns with its own top edge, so its handle rides that
           // edge; a group's handle sits over the box that holds them all.
           const box = handleMark ? pdfToScreenRect(handleMark.rect, geom) : group;
@@ -356,14 +374,36 @@ export function AnnotationOverlay({
         ) : null}
       </svg>
 
-      {/* FreeText is live DOM so wrapping matches what the box will hold. */}
+      {/*
+         FreeText is live DOM so wrapping matches what the box will hold.
+
+         Both surfaces sit on `pdfToScreenRect(rect)` — the mark's own geometry,
+         the one the border is stroked on and the one the file writes — and keep
+         their text clear of the edges by the padding and leading the appearance
+         stream uses. Neither is clamped to a minimum size: a type-in surface
+         wider than the mark it stands for is a second box, and the box the user
+         dragged is the box they get.
+      */}
       {textLayers.map((annotation) => {
         const box = pdfToScreenRect(annotation.rect, geom);
+        const size = annotation.fontSize ?? 12;
+        const surface: React.CSSProperties = {
+          left: box.x,
+          top: box.y,
+          width: Math.max(box.width, 1),
+          height: Math.max(box.height, 1),
+          boxSizing: 'border-box',
+          padding: freeTextInset(size) * geom.zoom,
+          color: annotation.color,
+          fontSize: Math.max(size * geom.zoom, 6),
+          lineHeight: FREE_TEXT_LINE_EM,
+        };
         const editing = annotation.id === editingId;
         if (editing) {
           return (
             <textarea
               key={`edit-${annotation.id}`}
+              data-editing-surface={annotation.id}
               autoFocus
               value={annotation.text ?? ''}
               onChange={(event) => onTextDraft(annotation.id, event.target.value)}
@@ -375,15 +415,12 @@ export function AnnotationOverlay({
                 }
               }}
               onPointerDown={(event) => event.stopPropagation()}
-              className="absolute resize-none rounded border border-accent bg-white/95 p-1 outline-none shadow-doodle-focus"
+              className="absolute resize-none overflow-hidden bg-transparent outline-none"
               style={{
-                left: box.x,
-                top: box.y,
-                width: Math.max(box.width, 60),
-                height: Math.max(box.height, 24),
-                color: annotation.color,
-                fontSize: Math.max((annotation.fontSize ?? 12) * geom.zoom, 8),
-                lineHeight: 1.25,
+                ...surface,
+                // Inside the edge, so the focus shows on the boundary the mark
+                // already has instead of drawing another one around it.
+                boxShadow: 'inset 0 0 0 1px var(--accent-line)',
                 ...turnStyle(annotation, geom),
               }}
             />
@@ -394,13 +431,7 @@ export function AnnotationOverlay({
             key={`text-${annotation.id}`}
             className="absolute overflow-hidden whitespace-pre-wrap break-words"
             style={{
-              left: box.x + 2,
-              top: box.y + 1,
-              width: Math.max(box.width - 4, 1),
-              height: Math.max(box.height - 2, 1),
-              color: annotation.color,
-              fontSize: Math.max((annotation.fontSize ?? 12) * geom.zoom, 6),
-              lineHeight: 1.25,
+              ...surface,
               opacity: annotation.opacity,
               pointerEvents: 'none',
               ...turnStyle(annotation, geom),
@@ -485,27 +516,57 @@ function Mark({
     case 'Underline':
     case 'StrikeOut':
     case 'Squiggly': {
-      const quads = chunkQuads(annotation.quadPoints ?? flatRect(annotation.rect), geom);
+      /**
+       * The stored order of `/QuadPoints` is data, not winding. A quad is filled
+       * through `quadRing` and stroked through `markupRule` — the same two
+       * functions the appearance stream in `core/annotations` uses — so the mark
+       * on the page cannot stop being the mark in the file.
+       */
+      const quads = chunkQuads(annotation.quadPoints ?? flatRect(annotation.rect));
+      // Read here rather than inside the map: a callback body does not inherit
+      // the narrowing the switch above worked out for `annotation.kind`.
+      const ruleKind =
+        annotation.kind === 'Underline'
+        || annotation.kind === 'StrikeOut'
+        || annotation.kind === 'Squiggly'
+          ? annotation.kind
+          : null;
       return (
         <g {...common}>
-          {quads.map((quad, index) =>
-            annotation.kind === 'Highlight' ? (
+          {quads.map((quad, index) => {
+            const corners = quadsToPoints(quad);
+            if (ruleKind) {
+              // In PDF space, with the stroke width in points: the same call the
+              // writer makes, then mapped to pixels, so screen and file agree by
+              // construction rather than by two copies of a formula.
+              const rule = markupRule(corners, ruleKind, annotation.borderWidth);
+              const from = pdfToScreenPoint({ x: rule.x1, y: rule.y1 }, geom);
+              const to = pdfToScreenPoint({ x: rule.x2, y: rule.y2 }, geom);
+              return (
+                <line
+                  key={index}
+                  data-markup-rule={ruleKind}
+                  x1={round(from.x)}
+                  y1={round(from.y)}
+                  x2={round(to.x)}
+                  y2={round(to.y)}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
+                />
+              );
+            }
+            return (
               <polygon
                 key={index}
-                points={quad.map((p) => `${round(p.x)},${round(p.y)}`).join(' ')}
+                points={quadRing(corners)
+                  .map((p) => paintedPoint(pdfToScreenPoint(p, geom)))
+                  .join(' ')}
                 fill={annotation.color}
                 stroke="none"
               />
-            ) : (
-              <line
-                key={index}
-                {...baseline(quad, annotation.kind === 'Underline' ? 0.85 : 0.5)}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeLinecap="round"
-              />
-            ),
-          )}
+            );
+          })}
         </g>
       );
     }
@@ -532,20 +593,29 @@ function Mark({
         </g>
       );
     }
-    case 'FreeText':
+    case 'FreeText': {
+      /**
+       * The border is stroked *inside* the rect, half a stroke width off the
+       * edge, because that is what `textBlockOps` writes into the appearance
+       * stream. Centred on the geometry — SVG's default — it stood half outside
+       * the box the file draws, which is the offset that reads as a second,
+       * slightly misplaced rectangle around a selected text box.
+       */
+      const inset = Math.min(strokeWidth / 2, Math.min(box.width, box.height) / 4);
       return (
         <g {...common}>
           <rect
-            x={box.x}
-            y={box.y}
-            width={box.width}
-            height={box.height}
+            x={box.x + inset}
+            y={box.y + inset}
+            width={Math.max(box.width - inset * 2, 0.1)}
+            height={Math.max(box.height - inset * 2, 0.1)}
             fill={annotation.fillColor ?? 'none'}
             stroke={annotation.borderColor ?? 'none'}
             strokeWidth={strokeWidth}
           />
         </g>
       );
+    }
     case 'Square':
       return (
         <rect
@@ -729,11 +799,13 @@ function Mark({
  * Geometry helpers used only by the overlay                           *
  * ------------------------------------------------------------------ */
 
-/** The quad order written by `geometry.pdfQuadFromViewportBox`: UL, UR, LL, LR. */
-function chunkQuads(points: number[], geom: PageGeom): Point[][] {
-  const screen = quadsToPoints(points).map((p) => pdfToScreenPoint(p, geom));
-  const out: Point[][] = [];
-  for (let i = 0; i + 3 < screen.length; i += 4) out.push(screen.slice(i, i + 4));
+/** One stored quad (8 numbers) painted as a `<polygon points>` string. */
+const paintedPoint = (point: Point): string => `${round(point.x)},${round(point.y)}`;
+
+/** The stored quads of a markup mark, eight numbers at a time. */
+function chunkQuads(points: number[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i + 7 < points.length; i += 8) out.push(points.slice(i, i + 8));
   return out;
 }
 
@@ -748,15 +820,6 @@ function flatRect(rect: { x: number; y: number; width: number; height: number })
     rect.x + rect.width,
     rect.y,
   ];
-}
-
-/** A line across a quad at `t` (0 = top edge, 1 = bottom), in screen space. */
-function baseline(quad: Point[], t: number) {
-  const [ul, ur, ll, lr] = quad;
-  const mix = (a: Point, b: Point): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-  const left = mix(ul, ll);
-  const right = mix(ur, lr);
-  return { x1: left.x, y1: left.y, x2: right.x, y2: right.y };
 }
 
 function arrowHead(from: Point, to: Point): string {

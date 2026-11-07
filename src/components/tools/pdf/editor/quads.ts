@@ -9,6 +9,7 @@
  * `geometry.pdfQuadFromViewportBox` later maps into PDF user space.
  */
 import type { ExtractedTextItem } from '@/lib/pdf/core/render';
+import { TEXT_BASELINE_SHARE } from '@/lib/pdf/core/annotations';
 import type { ViewportBox } from './geometry';
 
 /** One visual line of text, boxed in viewport space. */
@@ -18,7 +19,7 @@ export interface SnappedLine extends ViewportBox {
 
 interface ItemBox extends ViewportBox {
   text: string;
-  /** Baseline proxy: the bottom edge of the glyph box. */
+  /** The baseline: the bottom edge of the box the text layer reports. */
   bottom: number;
 }
 
@@ -57,6 +58,18 @@ function hits(box: ItemBox, region: ViewportBox, tolerance: number): boolean {
  * Words are the unit of selection, and the words that share a baseline are merged
  * into one quad that spans them and uses the tallest glyph box in the line — that
  * is what makes a mark cover the words instead of the leading above them.
+ *
+ * The merged box is then re-anchored on the ink. `render.toExtractedItems`
+ * reports a run as one em of box stacked *above* the baseline (its `y` is
+ * `viewportHeight - (baseline + fontSize)`), so as it comes the box has a
+ * quarter-em of air above the tallest letter and stops at the feet of the text:
+ * a highlight misses the tails of `g`, `p`, `q` and `y`, and anything placed as
+ * a share of that box sits high by the same amount. The box keeps its height and
+ * moves down until the baseline is `TEXT_BASELINE_SHARE` of the way down it,
+ * which is where `markupRule` in `core/annotations` strokes from — the same
+ * fraction on the screen and in the file. On the CV's 20pt heading the ink
+ * measured 14.7pt above the baseline and 3.9pt below it: the re-anchored box
+ * spans 16pt, and the original one spanned 20pt ending at the baseline.
  *
  * A drag across several lines is *text*, not a rectangle: the first and last lines
  * stop where the drag stops, but a line in the middle is covered end to end,
@@ -100,9 +113,14 @@ export function snapTextLines(
       const isEdge = index === 0 || index === touched.length - 1;
       const words = touched.length > 2 && !isEdge ? group.line : group.hits;
       const x0 = Math.min(...words.map((b) => b.x0));
-      const y0 = Math.min(...words.map((b) => b.y0));
       const x1 = Math.max(...words.map((b) => b.x1));
-      const y1 = Math.max(...words.map((b) => b.y1));
+      // Every run on the line sits on (within tolerance of) the same baseline,
+      // so the lowest box bottom is the line's baseline and the tallest box is
+      // the line's em.
+      const baseline = Math.max(...words.map((b) => b.bottom));
+      const em = baseline - Math.min(...words.map((b) => b.y0));
+      const y0 = baseline - TEXT_BASELINE_SHARE * em;
+      const y1 = baseline + (1 - TEXT_BASELINE_SHARE) * em;
       const text = words
         .slice()
         .sort((a, b) => a.x0 - b.x0)

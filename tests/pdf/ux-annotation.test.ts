@@ -4,29 +4,32 @@
  * jsdom has no canvas, so this file never looks at pixels. It checks the three
  * things the brief rules on, all of which are pure state, geometry or DOM:
  *
- * 1. `afterCreate` is a *declared* property of each tool, the pin overrides it in
- *    either direction, and Escape unwinds exactly one level.
+ * 1. One rule after a gesture, for every tool and with no pin to set: a created
+ *    mark hands control back to Select, a gesture that made nothing does not —
+ *    and Escape unwinds exactly one level.
  * 2. A markup drag becomes text geometry — one annotation, one quad per real line
  *    box — never a rectangle; a drag over no words builds nothing; a click on an
- *    existing mark resolves to that mark.
- * 3. The palette DOM carries the accessibility contract: `role="toolbar"`,
- *    `aria-pressed` on tools and pins, a permanent live region, and a focus ring
- *    on every control the pointer can reach.
+ *    existing mark resolves to that mark. A quad is painted as a ring and stroked
+ *    by the shared markup rule, so the mark on screen is the mark in the file.
+ * 3. The palette and overlay DOM carry the rest of the contract: `role="toolbar"`,
+ *    `aria-pressed` on tools, a permanent live region, a focus ring on every
+ *    control the pointer can reach, and exactly one boundary on a mark — edit
+ *    chrome while it is being typed into, selection chrome when it is only picked.
  */
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ExtractedTextItem } from '@/lib/pdf/core/render';
 import {
+  AFTER_CREATE_NOTE,
   TOOLS,
   TOOL_BY_ID,
-  defaultPinState,
-  effectiveAfterCreate,
   isPlacementTool,
-  pinLabel,
+  toolAfterGesture,
 } from '@/components/tools/pdf/editor/tools';
 import {
   EDITOR_SHORTCUTS,
+  ESCAPE_LEVELS,
   NUDGE_COARSE_PX,
   NUDGE_PX,
   escapeLevelNotice,
@@ -38,6 +41,14 @@ import {
   rotationStepForKey,
 } from '@/components/tools/pdf/editor/shortcuts';
 import { snapTextLines } from '@/components/tools/pdf/editor/quads';
+import {
+  FREE_TEXT_LINE_EM,
+  TEXT_BASELINE_SHARE,
+  freeTextInset,
+  markupRule,
+  quadRing,
+} from '@/lib/pdf/core/annotations';
+import { AnnotationOverlay } from '@/components/tools/pdf/editor/AnnotationOverlay';
 import {
   RESIZE_HANDLES,
   annotationRotation,
@@ -60,8 +71,15 @@ import {
   styleMarks,
   turnMarks,
   workSignature,
+  HANDLE_HIT_PX,
 } from '@/components/tools/pdf/editor/specs';
-import { rotationForDrag, screenToPdfPoint } from '@/components/tools/pdf/editor/geometry';
+import {
+  pdfToScreenPoint,
+  pdfToScreenRect,
+  rotationForDrag,
+  screenToPdfPoint,
+  type PageGeom,
+} from '@/components/tools/pdf/editor/geometry';
 import {
   addToSelection,
   applyWorkStep,
@@ -149,58 +167,69 @@ function build(
 }
 
 /* ------------------------------------------------------------------ *
- * 1. Sticky vs one-shot is declared, and the pin overrides it         *
+ * 1. One rule after a gesture, for every tool, with nothing to pin    *
  * ------------------------------------------------------------------ */
 
-const RULED_ONESHOT: EditorToolId[] = ['note', 'freetext', 'stamp', 'image', 'signature', 'link'];
-const RULED_STICKY: EditorToolId[] = [
-  'ink',
+/** Every tool that puts something on the page. `select` is the resting tool. */
+const PLACEMENT_TOOLS: EditorToolId[] = TOOLS.filter((meta) => isPlacementTool(meta.id)).map((m) => m.id);
+
+const CREATED_TOOLS: EditorToolId[] = [
   'highlight',
   'underline',
   'strike',
+  'ink',
   'square',
   'circle',
   'line',
   'arrow',
+  'polygon',
   'polyline',
+  'note',
+  'freetext',
+  'stamp',
+  'image',
+  'signature',
+  'link',
+  'redact',
 ];
 
-describe('afterCreate policy', () => {
-  it('declares the ruled one-shot and sticky tools, and nothing else is one-shot', () => {
-    for (const tool of RULED_ONESHOT) expect(TOOL_BY_ID[tool].afterCreate).toBe('default');
-    for (const tool of RULED_STICKY) expect(TOOL_BY_ID[tool].afterCreate).toBe('stay');
-    expect(TOOLS.filter((meta) => isPlacementTool(meta.id) && meta.afterCreate === 'default').map((m) => m.id).sort())
-      .toEqual([...RULED_ONESHOT].sort());
-  });
-
-  it('Select is the resting tool and is never itself a placement tool', () => {
+describe('the rule after a gesture', () => {
+  it('covers every tool that can create, and there are no exceptions left over', () => {
+    expect(PLACEMENT_TOOLS.slice().sort()).toEqual([...CREATED_TOOLS].sort());
     expect(isPlacementTool('select')).toBe(false);
     expect(TOOL_BY_ID.select.gesture).toBe('none');
-    expect(effectiveAfterCreate('select', true)).toBe('stay');
   });
 
-  it('gives every placement tool a pin, and seeds the pin from the declared default', () => {
-    const pins = defaultPinState();
-    for (const meta of TOOLS) {
-      if (!isPlacementTool(meta.id)) continue;
-      expect(pins[meta.id]).toBe(meta.afterCreate === 'stay');
-    }
-    // Select carries no pin state, so Esc can never "unpin" the cursor.
-    expect(pins.select ?? false).toBe(false);
+  it('hands control back to Select after a create, for every tool alike', () => {
+    // The tools that used to be sticky by ruling — pen, highlight, underline,
+    // strike, the shapes, redact — step aside now exactly like the one-shot ones.
+    for (const tool of CREATED_TOOLS) expect(toolAfterGesture(tool, true)).toBe('select');
   });
 
-  it('lets the pin override the default in both directions', () => {
-    // Pinned text box keeps placing; unpinned pen hands control back.
-    expect(effectiveAfterCreate('freetext', true)).toBe('stay');
-    expect(effectiveAfterCreate('freetext', undefined)).toBe('default');
-    expect(effectiveAfterCreate('ink', false)).toBe('default');
-    expect(effectiveAfterCreate('highlight', true)).toBe('stay');
+  it('leaves the tool in the hand when the gesture created nothing', () => {
+    for (const tool of CREATED_TOOLS) expect(toolAfterGesture(tool, false)).toBe(tool);
+    // A drag that caught no words builds no mark, so it cannot move the user off
+    // the tool they armed: this is the pair of assertions that keeps that true.
+    const miss = snapTextLines(threeLines(), { x0: 400, y0: 400, x1: 480, y1: 430 });
+    const built = build('highlight', { drag: { x: 400, y: 400, width: 80, height: 30 }, lines: miss });
+    expect(built).toBeNull();
+    expect(toolAfterGesture('highlight', built !== null)).toBe('highlight');
+    const real = build('highlight', {
+      drag: { x: 60, y: 95, width: 150, height: 60 },
+      lines: snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 }),
+    });
+    expect(real).not.toBeNull();
+    expect(toolAfterGesture('highlight', real !== null)).toBe('select');
   });
 
-  it('says on the button what the next click will do', () => {
-    expect(pinLabel('freetext', false)).toMatch(/returns to Select after one placement/);
-    expect(pinLabel('freetext', true)).toMatch(/stays armed after each placement/);
-    expect(pinLabel('highlight', false)).toMatch(/Highlight/);
+  it('says the rule once, in the palette, instead of per-tool pin affordances', () => {
+    expect(AFTER_CREATE_NOTE).toMatch(/hands control back to Select/);
+    render(createElement(AnnotationEditor));
+    const explained = document.querySelector('[data-after-create-explained]');
+    expect(explained?.textContent).toMatch(/hands control back to Select/);
+    // The pin is gone: no button, no lock glyph anywhere in the palette.
+    expect(document.querySelector('button[data-tool-pin]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\u{1F512}|\u{1F513}/u);
   });
 });
 
@@ -210,23 +239,32 @@ describe('afterCreate policy', () => {
 
 describe('the Escape ladder', () => {
   it('takes the deepest level only, in the ruled order', () => {
-    const full = { editing: true, selected: true, pinned: true, armed: true };
+    const full = { editing: true, selected: true, armed: true };
     expect(nextEscapeLevel(full)).toBe('dismiss');
     expect(nextEscapeLevel({ ...full, editing: false })).toBe('selection');
-    expect(nextEscapeLevel({ ...full, editing: false, selected: false })).toBe('unpin');
-    expect(nextEscapeLevel({ ...full, editing: false, selected: false, pinned: false })).toBe('disarm');
-    expect(
-      nextEscapeLevel({ editing: false, selected: false, pinned: false, armed: false }),
-    ).toBe('none');
+    expect(nextEscapeLevel({ ...full, editing: false, selected: false })).toBe('disarm');
+    expect(nextEscapeLevel({ editing: false, selected: false, armed: false })).toBe('none');
+  });
+
+  it('has no pin rung left to unwind', () => {
+    // The ladder used to be four levels deep and the third one existed only to
+    // undo a lock the palette no longer offers.
+    expect(ESCAPE_LEVELS).toEqual(['dismiss', 'selection', 'disarm']);
+    expect(nextEscapeLevel({ editing: false, selected: false, armed: true })).toBe('disarm');
   });
 
   it('never claims to have done something it did not', () => {
     expect(escapeLevelNotice('none')).toBe('');
-    expect(escapeLevelNotice('unpin')).toMatch(/Unpinned/);
     expect(escapeLevelNotice('disarm')).toMatch(/Select is armed/);
-    for (const level of ['dismiss', 'selection', 'unpin', 'disarm'] as const) {
+    for (const level of ['dismiss', 'selection', 'disarm'] as const) {
       expect(escapeLevelNotice(level).length).toBeGreaterThan(0);
     }
+  });
+
+  it('documents the ladder it walks, in the shortcut list too', () => {
+    const row = EDITOR_SHORTCUTS.find((shortcut) => shortcut.keys.includes('Esc'));
+    expect(row?.label).toMatch(/half-drawn mark.*selection.*tool/s);
+    expect(row?.label).not.toMatch(/pin/i);
   });
 });
 
@@ -288,9 +326,13 @@ describe('highlight geometry', () => {
 
   it('covers the words and not the leading between the lines', () => {
     const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 });
-    expect(lines[0].y0).toBe(100);
-    expect(lines[0].y1).toBe(111);
-    expect(lines[1].y0).toBe(120);
+    // Each line reports its box as 11 pt standing on a baseline 11 pt below the
+    // top of that box, and the mark re-anchors the same 11 pt so 0.8 of it is
+    // above the baseline: the top comes down off the leading, the bottom reaches
+    // past the feet of the letters to hold the descenders.
+    expect(lines[0].y0).toBeCloseTo(111 - TEXT_BASELINE_SHARE * 11, 6);
+    expect(lines[0].y1).toBeCloseTo(111 + (1 - TEXT_BASELINE_SHARE) * 11, 6);
+    expect(lines[1].y0).toBeCloseTo(131 - TEXT_BASELINE_SHARE * 11, 6);
     // The gap between two lines belongs to neither mark.
     expect(lines[0].y1).toBeLessThan(lines[1].y0);
   });
@@ -327,7 +369,7 @@ describe('highlight geometry', () => {
     const highlight = build('highlight', { drag: { x: 60, y: 95, width: 150, height: 60 }, lines })!;
     expect(highlight.snapText).toBe('Callout text here second line of copy third line');
     // /Rect bounds every quad, and is not itself the shape that is painted.
-    expect(highlight.rect.y + highlight.rect.height).toBeCloseTo(PAGE_H - 100, 0);
+    expect(highlight.rect.y + highlight.rect.height).toBeCloseTo(PAGE_H - (111 - TEXT_BASELINE_SHARE * 11), 1);
   });
 });
 
@@ -559,7 +601,7 @@ describe('the selection is a set', () => {
   });
 
   it('Escape takes the selection off as one level, counting what it dropped', () => {
-    expect(nextEscapeLevel({ editing: false, selected: true, pinned: true, armed: true })).toBe('selection');
+    expect(nextEscapeLevel({ editing: false, selected: true, armed: true })).toBe('selection');
     expect(escapeLevelNotice('selection', 3)).toContain('3 selected marks');
     expect(escapeLevelNotice('selection')).toBe('Cleared the selection; the tool is still armed.');
     expect(escapeLevelNotice('selection', 1)).toBe('Cleared the selection; the tool is still armed.');
@@ -655,46 +697,32 @@ describe('history reporting', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 9. The palette DOM: toolbar, pins, live region, focus               *
+ * 9. The palette DOM: toolbar, live region, focus                     *
  * ------------------------------------------------------------------ */
 
 describe('annotation palette DOM', () => {
-  it('exposes the ruled stickiness through aria-pressed on a pin per tool', () => {
+  it('offers one control per tool and no pin anywhere', () => {
     render(createElement(AnnotationEditor));
-    const boxes = (tool: EditorToolId) =>
-      Array.from(document.querySelectorAll(`button[data-tool-pin="${tool}"]`)) as HTMLButtonElement[];
-    // Every placement tool has exactly one pin; Select has none.
     for (const meta of TOOLS) {
-      expect(boxes(meta.id)).toHaveLength(isPlacementTool(meta.id) ? 1 : 0);
+      expect(document.querySelectorAll(`button[data-tool="${meta.id}"]`)).toHaveLength(1);
     }
-    expect(boxes('freetext')[0].getAttribute('aria-pressed')).toBe('false');
-    expect(boxes('highlight')[0].getAttribute('aria-pressed')).toBe('true');
-    expect(boxes('ink')[0].getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelectorAll('button[data-tool-pin]')).toHaveLength(0);
+    // No lock glyph in the palette, and no per-tool sentence about stickiness.
+    expect(document.querySelector('[data-editor-palette]')?.textContent).not.toMatch(/\u{1F512}|\u{1F513}/u);
+    expect(document.querySelector('[data-editor-palette]')?.textContent).not.toMatch(/stays armed/i);
   });
 
-  it('keeps the pin state when another object or tool takes the focus', () => {
+  it('announces the armed tool and every history step through one live region', () => {
     render(createElement(AnnotationEditor));
-    const pin = document.querySelector('button[data-tool-pin="freetext"]') as HTMLButtonElement;
-    fireEvent.click(pin);
-    expect(pin.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(document.querySelector('button[data-tool="highlight"]') as HTMLButtonElement);
-    expect((document.querySelector('[data-editor-palette]') as HTMLElement).dataset.armedTool).toBe('highlight');
-    const still = document.querySelector('button[data-tool-pin="freetext"]') as HTMLButtonElement;
-    expect(still.getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('announces the armed tool, its pin state and every history step through one live region', () => {
-    render(createElement(AnnotationEditor));
-    // Select is the resting tool, so nothing is armed and no pin applies yet.
     expect((document.querySelector('[data-editor-palette]') as HTMLElement).dataset.armedTool).toBe('select');
     fireEvent.click(document.querySelector('button[data-tool="freetext"]') as HTMLButtonElement);
     const status = screen.getByRole('status');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(status.getAttribute('aria-atomic')).toBe('true');
-    expect(status.textContent).toMatch(/Text box.*returns to Select after one placement/s);
-    // Flipping the pin is a state change, so the live region says so.
-    fireEvent.click(document.querySelector('button[data-tool-pin="freetext"]') as HTMLButtonElement);
-    expect(screen.getByRole('status').textContent).toMatch(/Text box: stays armed after each placement/);
+    // The footer states the one rule instead of a pin state, and it is the armed
+    // tool's own hint that carries it.
+    expect(status.textContent).toMatch(/Text box|type into it/);
+    expect(status.textContent).toMatch(/hands control back to Select/);
     // Undo with no document open must not invent a change; the hint stays.
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
     expect(screen.getByRole('status').textContent).not.toMatch(/Undid|Redid/);
@@ -710,43 +738,24 @@ describe('annotation palette DOM', () => {
       expect(button.className).toMatch(/focus-visible:ring-2/);
     }
   });
-
-  it('reaches a pin from the keyboard as a real button', () => {
-    render(createElement(AnnotationEditor));
-    const pin = document.querySelector('button[data-tool-pin="stamp"]') as HTMLButtonElement;
-    expect(pin.getAttribute('aria-label')).toMatch(/returns to Select/);
-    fireEvent.click(pin);
-    expect(pin.getAttribute('aria-pressed')).toBe('true');
-    expect(pin.getAttribute('aria-label')).toMatch(/stays armed/);
-    expect(screen.getByRole('status').textContent).toMatch(/Stamp: stays armed/);
-  });
 });
 
 /* ------------------------------------------------------------------ *
- * 10. The old palette expectations still hold next to the pins         *
+ * 10. The old palette expectations still hold without the pins         *
  * ------------------------------------------------------------------ */
 
 describe('palette regression guards', () => {
-  it('unwinds the armed sticky tool one level per Escape, through the DOM', () => {
+  it('unwinds the armed tool one level per Escape, through the DOM', () => {
     render(createElement(AnnotationEditor));
     fireEvent.keyDown(window, { key: 'h' });
     const toolButton = () => document.querySelector('[data-tool="highlight"]') as HTMLButtonElement;
-    const pinButton = () => document.querySelector('button[data-tool-pin="highlight"]') as HTMLButtonElement;
+    const armedTool = () => (document.querySelector('[data-editor-palette]') as HTMLElement).dataset.armedTool;
     expect(toolButton().getAttribute('aria-pressed')).toBe('true');
-    expect(pinButton().getAttribute('aria-pressed')).toBe('true');
 
-    // Pinning is not arming: a pin click changes the policy, never the tool.
-    fireEvent.click(document.querySelector('button[data-tool-pin="freetext"]') as HTMLButtonElement);
-    expect((document.querySelector('[data-editor-palette]') as HTMLElement).dataset.armedTool).toBe('highlight');
-
-    // 1. unpin  2. disarm  3. nothing left, and no claim that something happened.
+    // 1. disarm  2. nothing left, and no claim that something happened. There is
+    // no pin rung between them any more, so two presses reach the cursor.
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(pinButton().getAttribute('aria-pressed')).toBe('false');
-    expect(toolButton().getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('status').textContent).toMatch(/Unpinned the tool/);
-
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect((document.querySelector('[data-editor-palette]') as HTMLElement).dataset.armedTool).toBe('select');
+    expect(armedTool()).toBe('select');
     expect(screen.getByRole('status').textContent).toMatch(/Put the tool down/);
 
     const statusAfter = screen.getByRole('status').textContent;
@@ -764,5 +773,212 @@ describe('palette regression guards', () => {
     expect(section.querySelectorAll('kbd').length).toBeGreaterThanOrEqual(
       EDITOR_SHORTCUTS.reduce((total, row) => total + row.keys.length, 0),
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 11. What the overlay paints, and what it wears                      *
+ * ------------------------------------------------------------------ *
+ *
+ * jsdom lays nothing out and draws no canvas, but it does keep the SVG
+ * attributes the browser would paint from. That is enough to hold the two
+ * claims that matter here: a quad is painted as a ring (the bowtie was a
+ * painting-order bug, invisible to every model-level test), and a mark wears
+ * one boundary at a time.
+ */
+
+const overlayGeom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, rotation: 0 };
+
+function renderOverlay(over: Partial<Parameters<typeof AnnotationOverlay>[0]> = {}) {
+  const noop = () => {};
+  return render(
+    createElement(AnnotationOverlay, {
+      geom: overlayGeom,
+      annotations: [],
+      draft: null,
+      vertices: null,
+      tool: 'select' as EditorToolId,
+      selection: [],
+      editingId: null,
+      marquee: null,
+      onSurfacePointerDown: noop,
+      onAnnotationPointerDown: noop,
+      onAnnotationDoubleClick: noop,
+      onHandlePointerDown: noop,
+      onRotatePointerDown: noop,
+      onFinishVertices: noop,
+      onTextDraft: noop,
+      onTextCommit: noop,
+      ...over,
+    }),
+  );
+}
+
+const markupMarks = () => {
+  const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 });
+  const drag = { x: 60, y: 95, width: 150, height: 60 };
+  return {
+    highlight: build('highlight', { drag, lines })!,
+    underline: build('underline', { drag, lines })!,
+    strike: build('strike', { drag, lines })!,
+  };
+};
+
+/** `<polygon points>` → the corners the browser will connect in order. */
+function polygonCorners(element: SVGPolygonElement): { x: number; y: number }[] {
+  return (element.getAttribute('points') ?? '')
+    .trim()
+    .split(/\s+/)
+    .map((pair) => {
+      const [x, y] = pair.split(',').map(Number);
+      return { x, y };
+    });
+}
+
+describe('the overlay paints a quad as a ring', () => {
+  it('draws one closed rectangle per line, with no diagonal edge', () => {
+    const { highlight } = markupMarks();
+    renderOverlay({ annotations: [highlight] });
+    const polygons = Array.from(document.querySelectorAll('polygon'));
+    // Three lines, three quads, one annotation — and nothing is merged into a
+    // box across the leading.
+    expect(polygons).toHaveLength(3);
+    for (const polygon of polygons) {
+      const corners = polygonCorners(polygon);
+      expect(corners).toHaveLength(4);
+      for (let i = 0; i < corners.length; i += 1) {
+        const a = corners[i];
+        const b = corners[(i + 1) % corners.length];
+        expect(a.x === b.x || a.y === b.y).toBe(true);
+      }
+      // A ring over the same corners as the stored quad, so no area is lost to a
+      // self-intersection: the shoelace area is the box's own area.
+      let twice = 0;
+      for (let i = 0; i < corners.length; i += 1) {
+        const a = corners[i];
+        const b = corners[(i + 1) % corners.length];
+        twice += a.x * b.y - b.x * a.y;
+      }
+      expect(Math.abs(twice / 2)).toBeGreaterThan(1);
+    }
+  });
+
+  it('strokes the rule where the shared function puts it', () => {
+    // One line, one quad, so the painted `<line>` can be compared with the
+    // number `markupRule` — the very function `core/annotations` strokes the
+    // appearance stream with — without guessing which element is which.
+    const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 });
+    const mark = build('underline', { drag: { x: 70, y: 98, width: 40, height: 8 }, lines: [lines[0]] })!;
+    expect(mark.quadPoints).toHaveLength(8);
+    renderOverlay({ annotations: [mark] });
+    const painted = document.querySelector('line')!;
+    const quad = mark.quadPoints!;
+    const rule = markupRule(
+      [
+        { x: quad[0], y: quad[1] },
+        { x: quad[2], y: quad[3] },
+        { x: quad[4], y: quad[5] },
+        { x: quad[6], y: quad[7] },
+      ],
+      'Underline',
+      mark.borderWidth,
+    );
+    const from = pdfToScreenPoint({ x: rule.x1, y: rule.y1 }, overlayGeom);
+    const to = pdfToScreenPoint({ x: rule.x2, y: rule.y2 }, overlayGeom);
+    expect(Number(painted.getAttribute('x1'))).toBeCloseTo(Math.round(from.x * 10) / 10, 6);
+    expect(Number(painted.getAttribute('y1'))).toBeCloseTo(Math.round(from.y * 10) / 10, 6);
+    expect(Number(painted.getAttribute('x2'))).toBeCloseTo(Math.round(to.x * 10) / 10, 6);
+    expect(Number(painted.getAttribute('y2'))).toBeCloseTo(Math.round(to.y * 10) / 10, 6);
+    // And that is under the feet of the letters, not through them: the rule sits
+    // below the baseline the quad was anchored on.
+    const baselineTop = pdfToScreenPoint({ x: quad[0], y: quad[1] }, overlayGeom).y;
+    const quadBottom = pdfToScreenPoint({ x: quad[4], y: quad[5] }, overlayGeom).y;
+    const baseline = baselineTop + (quadBottom - baselineTop) * TEXT_BASELINE_SHARE;
+    expect(Number(painted.getAttribute('y1'))).toBeGreaterThan(baseline);
+    expect(Number(painted.getAttribute('y1'))).toBeLessThan(quadBottom);
+  });
+});
+
+describe('a mark wears one boundary at a time', () => {
+  const box = () =>
+    build('freetext', { drag: { x: 80, y: 300, width: 240, height: 56 }, text: '' })!;
+
+  it('shows selection chrome on a selected mark that is not being typed into', () => {
+    const mark = box();
+    renderOverlay({ annotations: [mark], selection: [mark.id] });
+    expect(document.querySelector('[data-selection-outline]')).toBeTruthy();
+    expect(document.querySelectorAll('[data-resize-handle]')).toHaveLength(RESIZE_HANDLES.length);
+    expect(document.querySelector('[data-rotate-handle]')).toBeTruthy();
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
+  it('shows edit chrome only, on the mark the caret is inside', () => {
+    const mark = box();
+    renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });
+    const surface = document.querySelector('textarea');
+    expect(surface).toBeTruthy();
+    // No second rectangle: no outline, no handles, no rotate knob.
+    expect(document.querySelector('[data-selection-outline]')).toBeNull();
+    expect(document.querySelector('[data-resize-handle]')).toBeNull();
+    expect(document.querySelector('[data-rotate-handle]')).toBeNull();
+  });
+
+  it('puts the type-in surface on the mark geometry, not on a clamped box of its own', () => {
+    const mark = box();
+    renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });
+    const surface = document.querySelector('textarea') as HTMLTextAreaElement;
+    const rect = pdfToScreenRect(mark.rect, overlayGeom);
+    const style = surface.style;
+    const px = (value: string): number => parseFloat(value);
+    expect(px(style.left)).toBeCloseTo(rect.x, 3);
+    expect(px(style.top)).toBeCloseTo(rect.y, 3);
+    expect(px(style.width)).toBeCloseTo(rect.width, 3);
+    expect(px(style.height)).toBeCloseTo(rect.height, 3);
+    // The inset and the leading come from the writer, so what is typed wraps the
+    // way the page will print — and there is no border of its own to read as a
+    // second rectangle around the box.
+    expect(px(style.padding)).toBeCloseTo(freeTextInset(mark.fontSize ?? 12) * overlayGeom.zoom, 3);
+    expect(px(style.lineHeight)).toBeCloseTo(FREE_TEXT_LINE_EM, 6);
+    expect(style.boxSizing).toBe('border-box');
+    expect(style.border).toBe('');
+  });
+
+  it('turns the text about the middle of its own box, so the mark stays put', () => {
+    const mark = { ...box(), rotation: 90 };
+    renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });
+    const surface = document.querySelector('textarea') as HTMLTextAreaElement;
+    // `center` of the element, which is the mark's rect: a page-space origin
+    // would swing the text around a point off the box and the box would appear to
+    // jump when it turned.
+    expect(surface.style.transformOrigin).toBe('center');
+    expect(surface.style.transform).toMatch(/rotate\(/);
+  });
+
+  it('puts the handles on the turned corners, not on the axis-aligned box', () => {
+    const mark = { ...box(), rotation: 90 };
+    renderOverlay({ annotations: [mark], selection: [mark.id] });
+    const centres = Array.from(document.querySelectorAll('[data-resize-hit]')).map((handle) => ({
+      x: Number((handle as SVGRectElement).getAttribute('x')) + HANDLE_HIT_PX / 2,
+      y: Number((handle as SVGRectElement).getAttribute('y')) + HANDLE_HIT_PX / 2,
+    }));
+    expect(centres).toHaveLength(RESIZE_HANDLES.length);
+    const boxOnScreen = pdfToScreenRect(mark.rect, overlayGeom);
+    const axisAligned = [
+      { x: boxOnScreen.x, y: boxOnScreen.y },
+      { x: boxOnScreen.x + boxOnScreen.width, y: boxOnScreen.y },
+      { x: boxOnScreen.x + boxOnScreen.width, y: boxOnScreen.y + boxOnScreen.height },
+      { x: boxOnScreen.x, y: boxOnScreen.y + boxOnScreen.height },
+    ];
+    // A quarter turn moves every corner off the box the mark was drawn in, so a
+    // handle set that matched `axisAligned` would be the unrotated one.
+    const onAxisCorner = centres.filter((c) =>
+      axisAligned.some((p) => Math.abs(p.x - c.x) < 1 && Math.abs(p.y - c.y) < 1),
+    );
+    expect(onAxisCorner).toHaveLength(0);
+    // And they are the same distance from the middle: the box turned, it did not
+    // travel.
+    const middle = { x: boxOnScreen.x + boxOnScreen.width / 2, y: boxOnScreen.y + boxOnScreen.height / 2 };
+    const radii = centres.map((c) => Math.hypot(c.x - middle.x, c.y - middle.y));
+    for (const radius of radii) expect(radius).toBeCloseTo(radii[0], 3);
   });
 });

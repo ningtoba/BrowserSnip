@@ -22,6 +22,11 @@ import {
   annotationCount,
   applyRedactions,
   listAnnotations,
+  markupRule,
+  quadRing,
+  STRIKE_ABOVE_BASELINE_EM,
+  TEXT_BASELINE_SHARE,
+  UNDERLINE_BELOW_BASELINE_EM,
   type AnnotationSpec,
 } from '@/lib/pdf/core/annotations';
 import type { ExtractedTextItem } from '@/lib/pdf/core/render';
@@ -397,8 +402,17 @@ describe('quad snapping from ExtractedTextItem[]', () => {
 
   it('uses the tallest glyph box on the line so descenders are covered', () => {
     const [line] = snapTextLines(pageText(), { x0: 60, y0: 116, x1: 200, y1: 135 });
-    expect(line.y0).toBe(118);
-    expect(line.y1).toBe(132);
+    // The runs on this line report one em of box *above* their baseline — `jumps`
+    // is 11 pt tall standing on 131, `lazy` is 14 pt tall standing on 132 — so the
+    // line takes the taller em and is re-anchored to put the baseline
+    // TEXT_BASELINE_SHARE of the way down the box. That is what keeps the tails of
+    // `j` and `y` inside the mark instead of under it; the box the text layer
+    // reports ends at the feet of the letters.
+    const baseline = 132;
+    const em = 14;
+    expect(line.y0).toBeCloseTo(baseline - TEXT_BASELINE_SHARE * em, 6);
+    expect(line.y1).toBeCloseTo(baseline + (1 - TEXT_BASELINE_SHARE) * em, 6);
+    expect(line.y1).toBeGreaterThan(baseline);
     expect(line.text).toBe('jumps over the lazy');
   });
 
@@ -438,11 +452,12 @@ describe('building annotations from gestures', () => {
     expect(highlight.kind).toBe('Highlight');
     expect(highlight.quadPoints).toHaveLength(16);
     expect(highlight.snapText).toBe('The quick brown fox jumps over the lazy');
-    // /Rect must contain every quad.
+    // /Rect must contain every quad. Line one stands on 113 with a 15 pt em and
+    // line two on 132 with a 14 pt one, so the re-anchored union is 101..134.8.
     expect(highlight.rect.x).toBeCloseTo(70, 0);
     expect(highlight.rect.width).toBeGreaterThanOrEqual(130);
-    expect(highlight.rect.y).toBeCloseTo(PAGE_H - 132, 0);
-    expect(highlight.rect.y + highlight.rect.height).toBeCloseTo(PAGE_H - 98, 0);
+    expect(highlight.rect.y).toBeCloseTo(PAGE_H - 134.8, 1);
+    expect(highlight.rect.y + highlight.rect.height).toBeCloseTo(PAGE_H - 101, 1);
     expect(annotationToSpec(highlight).quadPoints).toHaveLength(16);
 
     const underline = build('underline', { drag: { x: 60, y: 95, width: 150, height: 45 }, lines })!;
@@ -724,6 +739,116 @@ describe('export compatibility with core/annotations', () => {
       expect(annotation.rect.y).toBeGreaterThanOrEqual(0);
       expect(annotation.rect.x + annotation.rect.width).toBeLessThanOrEqual(PAGE_W + 0.001);
       expect(annotation.rect.y + annotation.rect.height).toBeLessThanOrEqual(PAGE_H + 0.001);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 5b. Winding a quad, and where a rule crosses it                      *
+ * ------------------------------------------------------------------ */
+
+describe('painting one markup quad', () => {
+  const box = { x0: 40, y0: 100, x1: 200, y1: 114 };
+  const numbers = pdfQuadFromViewportBox(box, flat);
+  const stored = [
+    { x: numbers[0], y: numbers[1] },
+    { x: numbers[2], y: numbers[3] },
+    { x: numbers[4], y: numbers[5] },
+    { x: numbers[6], y: numbers[7] },
+  ];
+
+  /** Signed area by the shoelace formula: a rectangle keeps its whole area, a
+   * self-intersecting bowtie cancels itself to about nothing. */
+  const area = (points: { x: number; y: number }[]): number => {
+    let sum = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      sum += a.x * b.y - b.x * a.y;
+    }
+    return sum / 2;
+  };
+
+  it('stores upper-left, upper-right, lower-left, lower-right — the file order', () => {
+    // The order PDF 32000-1 Table 171 wants, and the order `/QuadPoints` is
+    // written with. PDF user space grows upward, so the "upper" corners carry the
+    // larger y. Painting *this* order is what made the bowtie; see the next test.
+    expect(stored.map((p) => [p.x, p.y])).toEqual([[40, 692], [200, 692], [40, 678], [200, 678]]);
+    expect(Math.abs(area(stored))).toBeLessThan(1);
+  });
+
+  it('walks the ring when it paints, so the quad is a rectangle again', () => {
+    const ring = quadRing(stored);
+    expect(ring.map((p) => [p.x, p.y])).toEqual([[40, 692], [200, 692], [200, 678], [40, 678]]);
+    expect(Math.abs(area(ring))).toBeCloseTo(160 * 14, 6);
+    // Every edge of a painted ring runs along one axis: no diagonal, so no bowtie.
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      expect(a.x === b.x || a.y === b.y).toBe(true);
+    }
+  });
+
+  it('puts the underline under the letter feet and the strike through the bodies', () => {
+    const top = stored[0].y;
+    const em = top - stored[2].y;
+    // The baseline is where `snapTextLines` put it: this far down the quad.
+    const baseline = top - TEXT_BASELINE_SHARE * em;
+    const under = markupRule(stored, 'Underline', 1);
+    const strike = markupRule(stored, 'StrikeOut', 1);
+    // Below the baseline (smaller y in PDF space) by the offset plus half the
+    // stroke, so the stroke hangs under the line rather than across it.
+    expect(under.y1).toBeCloseTo(baseline - (UNDERLINE_BELOW_BASELINE_EM * em + 0.5), 6);
+    expect(strike.y1).toBeCloseTo(baseline + STRIKE_ABOVE_BASELINE_EM * em, 6);
+    // Both stay inside the quad, which is what keeps the appearance stream from
+    // clipping the mark at the edge of its own /Rect.
+    for (const rule of [under, strike]) {
+      expect(rule.y1).toBeLessThanOrEqual(top + 1e-6);
+      expect(rule.y1).toBeGreaterThanOrEqual(top - em - 1e-6);
+    }
+    // And they are well apart: the complaint this answers was an underline that
+    // read as a second strike-through.
+    expect(strike.y1 - under.y1).toBeGreaterThan(0.3 * em);
+  });
+
+  it('gives the same mark in PDF space and on the screen at any zoom or page turn', () => {
+    const geometries: PageGeom[] = [
+      flat,
+      { ...flat, zoom: 2.5 },
+      { ...flat, rotation: 90, cssWidth: flat.cssHeight, cssHeight: flat.cssWidth },
+    ];
+    const inPdf = markupRule(stored, 'Underline', 1);
+    for (const geom of geometries) {
+      // The overlay maps the stored corners to pixels first, the writer strokes
+      // in points: affine maths means both are the same line, which is the
+      // fidelity claim, so check it instead of trusting the comment.
+      const onScreen = markupRule(stored.map((p) => pdfToScreenPoint(p, geom)), 'Underline', geom.zoom);
+      const from = pdfToScreenPoint({ x: inPdf.x1, y: inPdf.y1 }, geom);
+      const to = pdfToScreenPoint({ x: inPdf.x2, y: inPdf.y2 }, geom);
+      expect([onScreen.x1, onScreen.y1, onScreen.x2, onScreen.y2]).toEqual([
+        expect.closeTo(from.x, 6),
+        expect.closeTo(from.y, 6),
+        expect.closeTo(to.x, 6),
+        expect.closeTo(to.y, 6),
+      ]);
+    }
+  });
+
+  it('keeps one quad per line in a multi-line mark, in the order the file wants', () => {    const lines = snapTextLines(pageText(), { x0: 60, y0: 95, x1: 210, y1: 140 });
+    const mark = build('highlight', { drag: { x: 60, y: 95, width: 150, height: 45 }, lines })!;
+    const quads = mark.quadPoints!;
+    expect(quads).toHaveLength(16);
+    for (let at = 0; at < quads.length; at += 8) {
+      const q = quads.slice(at, at + 8);
+      // UL then UR share the upper edge, LL then LR share the lower one, and the
+      // upper pair carry the *larger* y because PDF user space grows upward. That
+      // is the stored order, not a ring: `quadRing` is what turns it into one.
+      expect(q[1]).toBeCloseTo(q[3], 6);
+      expect(q[5]).toBeCloseTo(q[7], 6);
+      expect(q[0]).toBeCloseTo(q[4], 6);
+      expect(q[2]).toBeCloseTo(q[6], 6);
+      expect(q[0]).toBeLessThan(q[2]);
+      expect(q[1]).toBeGreaterThan(q[5]);
     }
   });
 });

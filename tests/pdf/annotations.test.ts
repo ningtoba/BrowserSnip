@@ -27,6 +27,8 @@ import {
   annotationCount,
   hexToRgb01,
   listAnnotations,
+  markupRule,
+  quadRing,
   removeAnnotations,
   rotatedRectBounds,
   applyRedactions,
@@ -92,6 +94,12 @@ function decode(doc: PDFDocument, stream: PDFRawStream): string {
   void doc;
   return new TextDecoder().decode(decodePDFRawStream(stream).decode());
 }
+
+/** The number form the appearance stream writes: three decimals, no `-0`. */
+const num = (value: number): string => {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+};
 
 /**
  * The `PDFRawStream` behind a dictionary/array entry, resolved through the
@@ -345,6 +353,53 @@ describe('addAnnotation — dictionary keys', () => {
     expect(numbers(highlight.get(PDFName.of('QuadPoints')), reloaded)).toHaveLength(16);
     // The fallback quad is the rect itself: upper-left, upper-right, lower-left, lower-right.
     expect(numbers(underline.get(PDFName.of('QuadPoints')), reloaded)).toEqual([40, 224, 160, 224, 40, 200, 160, 200]);
+  });
+
+  it('paints the markup from the same geometry it stores', async () => {
+    const doc = await docWithPages();
+    const quad = [40, 224, 160, 224, 40, 200, 160, 200];
+    addAnnotation(doc, baseSpec('Underline', { quadPoints: quad, borderWidth: 1 }));
+    addAnnotation(doc, baseSpec('StrikeOut', { quadPoints: quad, borderWidth: 1 }));
+    addAnnotation(doc, baseSpec('Highlight', { quadPoints: quad }));
+    const reloaded = await roundTrip(doc);
+    const [under, strike, highlight] = annotationDicts(reloaded);
+
+    // The dictionary keeps the stored order whatever the stream is drawn with.
+    expect(numbers(under.get(PDFName.of('QuadPoints')), reloaded)).toEqual(quad);
+
+    // An appearance stream lives in its own space, the rect's origin subtracted,
+    // so the expected corners are built the same way the writer builds them.
+    const rect = { x: 40, y: 200, width: 120, height: 24 };
+    const corners = [
+      { x: quad[0] - rect.x, y: quad[1] - rect.y },
+      { x: quad[2] - rect.x, y: quad[3] - rect.y },
+      { x: quad[4] - rect.x, y: quad[5] - rect.y },
+      { x: quad[6] - rect.x, y: quad[7] - rect.y },
+    ];
+    const stroked = (kind: 'Underline' | 'StrikeOut'): string => {
+      const rule = markupRule(corners, kind, 1);
+      // The writer emits one operator per line.
+      return `${num(rule.x1)} ${num(rule.y1)} m\n${num(rule.x2)} ${num(rule.y2)} l`;
+    };
+    const underOps = stroked('Underline');
+    const strikeOps = stroked('StrikeOut');
+    // The bytes match the shared rule, so the file paints what the overlay drew.
+    expect(appearanceOps(reloaded, under)).toContain(underOps);
+    expect(appearanceOps(reloaded, strike)).toContain(strikeOps);
+    // And the two are different lines: the underline below the baseline of a box
+    // re-anchored on the ink, the strike above it. Both inside the /Rect, where a
+    // viewer cannot clip them at the edge of the mark's own box.
+    const yOf = (ops: string): number => Number(ops.match(/([-\d.]+) m/)?.[1]);
+    expect(yOf(strikeOps)).toBeGreaterThan(yOf(underOps));
+    expect(yOf(underOps)).toBeGreaterThan(0);
+    expect(yOf(strikeOps)).toBeLessThan(rect.height);
+
+    // A highlight fills the ring, never the stored order: a path that crosses
+    // itself paints two triangles meeting in the middle of the line.
+    const ring = quadRing(corners)
+      .map((p, i) => `${num(p.x)} ${num(p.y)} ${i === 0 ? 'm' : 'l'}`)
+      .join(' ');
+    expect(appearanceOps(reloaded, highlight)).toContain(ring);
   });
 
   it('writes /DA and /DR for FreeText so the dictionary and appearance agree', async () => {

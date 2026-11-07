@@ -59,7 +59,7 @@ export const EDITOR_SHORTCUTS: Shortcut[] = [
   { keys: ['H'], label: 'Arm the highlighter', group: 'tools' },
   { keys: ['T'], label: 'Arm the text box', group: 'tools' },
   { keys: ['P'], label: 'Arm the pen', group: 'tools' },
-  { keys: ['Esc'], label: 'Step back one level: the half-drawn mark, then the selection, then the pin, then the tool', group: 'marks' },
+  { keys: ['Esc'], label: 'Step back one level: the half-drawn mark, then the selection, then the tool', group: 'marks' },
   { keys: ['Enter'], label: 'Close a clicked shape or freeform line', group: 'marks' },
   { keys: ['Delete'], label: 'Remove the selected mark', group: 'marks' },
   { keys: ['←', '→', '↑', '↓'], label: 'Nudge the selected mark 1 px, or 10 px with Shift', group: 'marks' },
@@ -147,17 +147,15 @@ export function historyCommandForKey(
  * (pdf.js's two-press complaint in the research notes). So the handler resolves
  * exactly one level per press, deepest first, and reports which level it took.
  */
-export type EscapeLevel = 'dismiss' | 'selection' | 'unpin' | 'disarm' | 'none';
+export type EscapeLevel = 'dismiss' | 'selection' | 'disarm' | 'none';
 
-/** The four levels, deepest first — the order the ladder unwinds in. */
-export const ESCAPE_LEVELS: Exclude<EscapeLevel, 'none'>[] = ['dismiss', 'selection', 'unpin', 'disarm'];
+/** The three levels, deepest first — the order the ladder unwinds in. */
+export const ESCAPE_LEVELS: Exclude<EscapeLevel, 'none'>[] = ['dismiss', 'selection', 'disarm'];
 
 export interface EscapeInput {
   /** A gesture, a half-written note, or a dialog is open. */
   editing: boolean;
   selected: boolean;
-  /** The armed tool is pinned (kept armed) — unpinning is its own level. */
-  pinned: boolean;
   /** Something other than Select is armed. */
   armed: boolean;
 }
@@ -167,7 +165,6 @@ export function nextEscapeLevel(input: EscapeInput): EscapeLevel {
   for (const level of ESCAPE_LEVELS) {
     if (level === 'dismiss' && input.editing) return 'dismiss';
     if (level === 'selection' && input.selected) return 'selection';
-    if (level === 'unpin' && input.pinned) return 'unpin';
     if (level === 'disarm' && input.armed) return 'disarm';
   }
   return 'none';
@@ -182,8 +179,6 @@ export function escapeLevelNotice(level: EscapeLevel, selected?: number): string
       return typeof selected === 'number' && selected > 1
         ? `Cleared the ${selected} selected marks; the tool is still armed.`
         : 'Cleared the selection; the tool is still armed.';
-    case 'unpin':
-      return 'Unpinned the tool — it will hand control back after one placement.';
     case 'disarm':
       return 'Put the tool down; Select is armed.';
     default:

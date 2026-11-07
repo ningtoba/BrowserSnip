@@ -144,6 +144,125 @@ export function rotatedRectBounds(rect: QuadRect, degrees: number): QuadRect {
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * What one text-markup quad means                                     *
+ * ------------------------------------------------------------------ *
+ *
+ * `/QuadPoints` is four points per line, and both the appearance stream below
+ * and the editor's SVG overlay have to agree about two things or the mark on
+ * the screen is not the mark in the file: which order the four points are
+ * stored in, and where across the box a rule is drawn. Both rules live here.
+ */
+
+/** A corner of a quad, in whichever space the caller holds the quad in. */
+export interface QuadCorner {
+  x: number;
+  y: number;
+}
+
+/**
+ * The share of a markup quad's height that sits above the text baseline.
+ *
+ * A markup quad is one em tall and the baseline runs through it rather than
+ * along an edge, so *where the baseline is* is the number every mark position
+ * is measured from. pdf.js cannot hand ascent and descent to
+ * `render.toExtractedItems` (a v4 `TextItem` carries neither), and its own text
+ * layer therefore splits the em with a fallback ratio — `DEFAULT_FONT_ASCENT`,
+ * 0.8 — which is the split used here too. It agrees with the documents this
+ * editor sees: `getTextContent().styles` reports 0.718 over 0.207 for the
+ * Helvetica faces of the test CV, and its ink measured 14.7pt above the
+ * baseline and 3.9pt below on a 20pt line.
+ */
+export const TEXT_BASELINE_SHARE = 0.8;
+
+/**
+ * An underline, in ems below the baseline, measured to the *top* of the stroke:
+ * clear of the feet of the letters and above the bottom of the descenders, so
+ * it reads as an underline and not as a second strike-through. The stroke is
+ * then hung below this line, which is why `markupRule` adds half of it.
+ */
+export const UNDERLINE_BELOW_BASELINE_EM = 0.05;
+
+/** A strike-out, in ems above the baseline: the middle of a Latin glyph body
+ * (x-height about 0.5 em), which is lower than the middle of the em box. */
+export const STRIKE_ABOVE_BASELINE_EM = 0.3;
+
+/* FreeText layout, in fractions of the font size. `textLayout` below is the
+ * authority for what gets written; the editor's type-in surface imports these
+ * numbers instead of inventing its own, so the text the user watches is laid
+ * out the way the page will be printed. The leading assumes the standard 14
+ * Helvetica the FreeText tool embeds: `heightAtSize(size)` is 0.925 em for it,
+ * plus the 0.15 em of gap added below. */
+export const FREE_TEXT_INSET_EM = 0.15;
+export const FREE_TEXT_INSET_MIN_PT = 1;
+export const FREE_TEXT_LINE_EM = 1.075;
+
+/** The left/right (and top) padding FreeText keeps its text away by, in points. */
+export function freeTextInset(size: number): number {
+  return Math.max(Math.max(size, 1) * FREE_TEXT_INSET_EM, FREE_TEXT_INSET_MIN_PT);
+}
+
+/**
+ * The four corners of one quad in the order a shape has to be walked: upper-
+ * left, upper-right, lower-right, lower-left.
+ *
+ * `/QuadPoints` stores upper-left, upper-right, lower-left, lower-right (PDF
+ * 32000-1 Table 171), and that order is correct *as data* — it is how Acrobat
+ * and pdf.js write it. Painted as given, though, the path runs along the top
+ * edge, diagonally down to the lower-left, along the bottom edge and diagonally
+ * back up: a bowtie of two triangles meeting at the centre. The appearance
+ * stream and the overlay both fill through this function so the winding cannot
+ * drift apart between the file and the screen.
+ */
+export function quadRing<T extends QuadCorner>(corners: readonly T[]): T[] {
+  const [upperLeft, upperRight, lowerLeft, lowerRight] = corners;
+  return [upperLeft, upperRight, lowerRight, lowerLeft];
+}
+
+/** One rule of a text mark: the two ends of the line to stroke across a quad. */
+export interface MarkupRule {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * The line an Underline, StrikeOut or Squiggly strokes across one quad.
+ *
+ * `corners` are the quad's four points in the order they are *stored* (UL, UR,
+ * LL, LR) and in whatever space the caller works — PDF points when writing the
+ * appearance stream, screen pixels when painting the overlay — and
+ * `strokeWidth` is in that space too. Every step is a proportion between the
+ * stored corners and the stroke, so one call gives one mark in either space and
+ * the picture on screen cannot stop being the picture in the file.
+ *
+ * The height of the quad is one em, which is what turns the em-relative
+ * offsets above into a position: `TEXT_BASELINE_SHARE` of the way down is where
+ * the letters stand, so an underline goes a little further down and a
+ * strike-out a good deal further up.
+ */
+export function markupRule(
+  corners: readonly QuadCorner[],
+  kind: 'Underline' | 'StrikeOut' | 'Squiggly',
+  strokeWidth = 0,
+): MarkupRule {
+  const [upperLeft, upperRight, lowerLeft, lowerRight] = corners;
+  const em = Math.hypot(lowerLeft.x - upperLeft.x, lowerLeft.y - upperLeft.y) || 1;
+  // Measured down from the quad's top edge, which is the text's top edge.
+  const down =
+    kind === 'StrikeOut'
+      ? TEXT_BASELINE_SHARE - STRIKE_ABOVE_BASELINE_EM
+      : TEXT_BASELINE_SHARE + UNDERLINE_BELOW_BASELINE_EM + strokeWidth / 2 / em;
+  const at = (top: QuadCorner, bottom: QuadCorner): QuadCorner => ({
+    x: top.x + (bottom.x - top.x) * down,
+    y: top.y + (bottom.y - top.y) * down,
+  });
+  const left = at(upperLeft, lowerLeft);
+  const right = at(upperRight, lowerRight);
+  return { x1: left.x, y1: left.y, x2: right.x, y2: right.y };
+}
+
 /**
  * A `/QuadPoints` list (8 numbers per quad, UL UR LL LR) turned as one unit
  * about the centre of `about`.
@@ -622,34 +741,24 @@ function chunkQuads(points: number[]): number[][] {
   return quads;
 }
 
-/** Corner points of a quad in ring order (UL → UR → LR → LL). */
-function quadCorners(q: number[]): { x: number; y: number }[] {
+/** The four corners of one flat quad, in the order `/QuadPoints` stores them. */
+function quadStored(q: number[]): QuadCorner[] {
   return [
     { x: q[0], y: q[1] },
     { x: q[2], y: q[3] },
-    { x: q[6], y: q[7] },
     { x: q[4], y: q[5] },
+    { x: q[6], y: q[7] },
   ];
+}
+
+/** Corner points of a quad in ring order (UL → UR → LR → LL). */
+function quadCorners(q: number[]): QuadCorner[] {
+  return quadRing(quadStored(q));
 }
 
 function quadHeight(q: number[]): number {
   const p = quadCorners(q);
   return Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y) || 1;
-}
-
-/** Points at `t` (0 = top edge, 1 = bottom edge) across a quad, left to right. */
-function quadLine(
-  q: number[],
-  t: number,
-): { x1: number; y1: number; x2: number; y2: number } {
-  const [ul, ur, lr, ll] = quadCorners(q);
-  const mix = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t,
-  });
-  const left = mix(ul, ll);
-  const right = mix(ur, lr);
-  return { x1: left.x, y1: left.y, x2: right.x, y2: right.y };
 }
 
 function lineEndsOf(
@@ -1060,13 +1169,12 @@ function markupOps(
       break;
     }
     default: {
-      // Underline sits just above the quad's bottom edge (the baseline area),
-      // strikeout crosses the middle of the glyph box.
-      const t = spec.kind === 'Underline' ? 0.85 : 0.5;
+      // The rule's height comes from the shared markup rule, so the line in the
+      // file is the line the overlay drew.
       const width = round(Math.max(strokeWidth, 0.2));
       parts.push(paint(stroke, false), `${width} w`, '1 J', '1 j');
       for (const q of quads) {
-        const line = quadLine(q, t);
+        const line = markupRule(quadStored(q), spec.kind as 'Underline' | 'StrikeOut' | 'Squiggly', width);
         if (spec.kind === 'Squiggly') {
           parts.push(squigglePath(line, quadHeight(q), width), 'S');
         } else {
@@ -1399,7 +1507,7 @@ function textLayout(
     monospace,
   });
   const size = round(Math.max(style?.fontSize ?? 12, 1));
-  const inset = round(Math.max(size * 0.15, 1));
+  const inset = round(freeTextInset(size));
   const text = style?.text ?? spec.contents ?? '';
   return {
     font,
@@ -1407,7 +1515,7 @@ function textLayout(
     size,
     lines: wrapLines(font, text, size, Math.max(rect.width - inset * 2, 1)),
     ascent: round(font.heightAtSize(size, { descender: false })),
-    lineHeight: round(font.heightAtSize(size) + size * 0.15),
+    lineHeight: round(font.heightAtSize(size) + size * FREE_TEXT_INSET_EM),
     inset,
     textColor,
     align,

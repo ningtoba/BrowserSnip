@@ -410,7 +410,12 @@ export function turnMarks(
   delta: number,
   pivot?: Point,
 ): EditorAnnotation[] {
-  const centre = pivot ?? selectionBounds(annotations, ids) ?? null;
+  // The pivot is a point, and the selection's point is the *middle* of its box.
+  // Passing the box itself leaves `orbitAnnotation` swinging the set about its
+  // lower-left corner, which walks a lone turned mark across the page instead of
+  // turning it in place.
+  const bounds = selectionBounds(annotations, ids);
+  const centre = pivot ?? (bounds ? rectCentre(bounds) : null);
   return annotations.map((a) => {
     if (!ids.includes(a.id)) return a;
     return centre ? orbitAnnotation(a, centre, delta) : turnAnnotation(a, delta);

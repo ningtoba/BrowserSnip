@@ -120,11 +120,10 @@ import {
   TOOLS,
   TOOL_BY_ID,
   TOOL_GROUPS,
-  defaultPinState,
+  AFTER_CREATE_NOTE,
   defaultStyleFor,
-  effectiveAfterCreate,
   isPlacementTool,
-  pinLabel,
+  toolAfterGesture,
   toolGroupById,
   toolsOfGroup,
 } from './tools';
@@ -490,12 +489,6 @@ export function AnnotationEditor(): JSX.Element {
   /* ── tools + styles ──────────────────────────────────────────────── */
 
   const [tool, setTool] = useState<EditorToolId>('select');
-  /**
-   * The pin/lock per tool, seeded from each tool's declared `afterCreate` and
-   * owned by the palette rather than by the create path — so it survives
-   * selecting another object, arming another pen, and the tool stepping aside.
-   */
-  const [pinnedTools, setPinnedTools] = useState<Record<EditorToolId, boolean>>(defaultPinState);
   /** Palette section expand/collapse — controlled so a chip can open what it armed. */
   const [toolsOpen, setToolsOpen] = useState(true);
   /**
@@ -564,35 +557,9 @@ export function AnnotationEditor(): JSX.Element {
     if (next !== 'select') setEditingId(null);
   }, []);
 
-  /** The pin as it stands for a tool, defaulting to its declared behaviour. */
-  const pinnedFor = useCallback(
-    (candidate: EditorToolId): boolean =>
-      typeof pinnedTools[candidate] === 'boolean'
-        ? pinnedTools[candidate]
-        : TOOL_BY_ID[candidate]?.afterCreate === 'stay',
-    [pinnedTools],
-  );
-
-  const togglePin = useCallback(
-    (candidate: EditorToolId) => {
-      if (!isPlacementTool(candidate)) return;
-      setPinnedTools((current) => {
-        const was =
-          typeof current[candidate] === 'boolean'
-            ? current[candidate]
-            : TOOL_BY_ID[candidate]?.afterCreate === 'stay';
-        // Announced even when the tool is not the armed one: a toggle that says
-        // nothing is a toggle the user will click twice to check it worked.
-        setStatus(pinLabel(candidate, !was));
-        return { ...current, [candidate]: !was };
-      });
-    },
-    [],
-  );
-
   const [notice, setNotice] = useState<Notice | null>(null);
   /**
-   * Quiet status for the `aria-live` region: pin changes, steps back through
+   * Quiet status for the `aria-live` region: steps back through
    * `Esc`, undo and redo. Kept apart from `notice` because a notice is a problem
    * with a colour and this is a sentence with no styling change.
    */
@@ -689,9 +656,10 @@ export function AnnotationEditor(): JSX.Element {
 
   /**
    * The single place a new mark enters the document, and therefore the single
-   * place the `afterCreate` policy is applied. Keying the step-aside to a real
-   * create is the whole fix for Bug 1: a gesture that made nothing (a highlight
-   * over no words, a two-pixel rectangle) leaves the tool in the user's hand.
+   * place the step-aside rule is applied. Keying it to a real create is the
+   * whole fix for Bug 1: a gesture that made nothing (a highlight over no words,
+   * a two-pixel rectangle) never reaches this function, so it cannot take the
+   * tool out of the user's hand.
    */
   const commit = useCallback(
     (annotation: EditorAnnotation, options: { edit?: boolean } = {}) => {
@@ -702,14 +670,9 @@ export function AnnotationEditor(): JSX.Element {
       }));
       if (options.edit) setEditingId(annotation.id);
       setNotice(null);
-      const stays = effectiveAfterCreate(annotation.tool, pinnedFor(annotation.tool)) === 'stay';
-      if (stays) {
-        setStatus(`${TOOL_BY_ID[annotation.tool]?.label ?? 'Tool'} is pinned — the next placement is ready.`);
-        return;
-      }
       // Back to the cursor, with the mark the user just made still the selection,
       // so drag handles, arrow-nudge, Cmd/Ctrl-D and Delete work without a click.
-      armTool('select');
+      armTool(toolAfterGesture(annotation.tool, true));
       // …but the option panel stays on the pen that made the mark: pdf.js mirrors
       // the selection into the toolbar, and "Select options" under a text-box
       // slider is a panel that changed the subject on its own.
@@ -717,10 +680,10 @@ export function AnnotationEditor(): JSX.Element {
       setStatus(
         options.edit
           ? `Placed a ${annotation.kind === 'Text' ? 'note' : 'text box'} — keep typing. Select is armed.`
-          : `Placed ${describeAnnotation(annotation)}. Select is armed — pin the tool to place several.`,
+          : `Placed ${describeAnnotation(annotation)}. Select is armed.`,
       );
     },
-    [armTool, pinnedFor, updateWork],
+    [armTool, updateWork],
   );
 
   /** Delete the whole selection as one edit, so one undo brings it all back. */
@@ -1377,7 +1340,6 @@ export function AnnotationEditor(): JSX.Element {
       // first; a marquee that has not been dragged yet is just a pressed cursor.
       editing: editingId !== null || linkDraft !== null || signOpen || gesture !== null,
       selected: ids.length > 0,
-      pinned: pinnedFor(tool),
       armed: tool !== 'select',
     });
     switch (level) {
@@ -1390,9 +1352,6 @@ export function AnnotationEditor(): JSX.Element {
       case 'selection':
         updateWork((current) => ({ ...current, selection: [] }));
         break;
-      case 'unpin':
-        setPinnedTools((current) => ({ ...current, [tool]: false }));
-        break;
       case 'disarm':
         armTool('select');
         break;
@@ -1401,7 +1360,7 @@ export function AnnotationEditor(): JSX.Element {
     }
     if (level !== 'none') setStatus(escapeLevelNotice(level, level === 'selection' ? ids.length : undefined));
     return level;
-  }, [armTool, editingId, gesture, linkDraft, pinnedFor, signOpen, tool, updateWork, work?.selection]);
+  }, [armTool, editingId, gesture, linkDraft, signOpen, tool, updateWork, work?.selection]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1807,13 +1766,11 @@ export function AnnotationEditor(): JSX.Element {
   const marquee = marqueeBand && isMeaningfulDrag(marqueeBand) ? marqueeBand : null;
   const toolMeta = TOOL_BY_ID[tool];
   /**
-   * The footer sentence for the armed tool. It states the pin state out loud, so
-   * "will my next click make another one?" has an answer without hovering the
-   * palette, and assistive tech hears it through the live region.
+   * The footer sentence for the armed tool. A placement tool says what happens
+   * next, so "will my next click make another one?" has an answer without
+   * hovering the palette, and assistive tech hears it through the live region.
    */
-  const armedHint = isPlacementTool(tool)
-    ? `${toolMeta.hint} ${pinLabel(tool, pinnedFor(tool))}.`
-    : toolMeta.hint;
+  const armedHint = isPlacementTool(tool) ? `${toolMeta.hint} ${AFTER_CREATE_NOTE}` : toolMeta.hint;
   const pageCount = numPages || 1;
 
   const verticesPreview =
@@ -1914,56 +1871,29 @@ export function AnnotationEditor(): JSX.Element {
                           {items.map((meta) => {
                             const shortcutKey = keyForTool(meta.id);
                             const armed = tool === meta.id;
-                            const pinned = pinnedFor(meta.id);
-                            const placement = isPlacementTool(meta.id);
                             return (
-                              <span key={meta.id} className="flex min-w-0 items-stretch">
-                                <button
-                                  type="button"
-                                  data-tool={meta.id}
-                                  aria-pressed={armed}
-                                  {...(shortcutKey ? { 'aria-keyshortcuts': shortcutKey } : {})}
-                                  title={meta.hint}
-                                  onClick={() => armTool(meta.id)}
-                                  className={`doodle-chip flex items-center justify-start gap-1.5 rounded-r-none px-2 py-1.5 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                                    armed ? 'doodle-chip-active' : 'doodle-chip-inactive'
-                                  }`}
-                                >
-                                  <span aria-hidden className="text-[12px] leading-none">
-                                    {meta.icon}
-                                  </span>
-                                  <span className="min-w-0 flex-1 truncate text-left">{meta.label}</span>
-                                  {shortcutKey && (
-                                    <kbd className="shrink-0 rounded border border-cream-border bg-cream px-1 text-[8px] uppercase text-ink-soft">
-                                      {shortcutKey}
-                                    </kbd>
-                                  )}
-                                </button>
-                                {/*
-                                   The pin is the user's override of the tool's
-                                   declared `afterCreate`, shown on every
-                                   placement tool so "does it stay armed?" is
-                                   never something they have to remember about
-                                   the implementation.
-                                */}
-                                {placement && (
-                                  <button
-                                    type="button"
-                                    data-tool-pin={meta.id}
-                                    aria-pressed={pinned}
-                                    aria-label={pinLabel(meta.id, pinned)}
-                                    title={pinLabel(meta.id, pinned)}
-                                    onClick={() => togglePin(meta.id)}
-                                    className={`flex-none rounded-l-none border px-1 text-[10px] leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                                      pinned
-                                        ? 'border-accent/40 bg-accent/[0.08] text-accent'
-                                        : 'border-cream-border bg-white text-ink-muted hover:text-ink-soft'
-                                    }`}
-                                  >
-                                    <span aria-hidden>{pinned ? '🔒' : '🔓'}</span>
-                                  </button>
+                              <button
+                                key={meta.id}
+                                type="button"
+                                data-tool={meta.id}
+                                aria-pressed={armed}
+                                {...(shortcutKey ? { 'aria-keyshortcuts': shortcutKey } : {})}
+                                title={meta.hint}
+                                onClick={() => armTool(meta.id)}
+                                className={`doodle-chip flex items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                                  armed ? 'doodle-chip-active' : 'doodle-chip-inactive'
+                                }`}
+                              >
+                                <span aria-hidden className="text-[12px] leading-none">
+                                  {meta.icon}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-left">{meta.label}</span>
+                                {shortcutKey && (
+                                  <kbd className="shrink-0 rounded border border-cream-border bg-cream px-1 text-[8px] uppercase text-ink-soft">
+                                    {shortcutKey}
+                                  </kbd>
                                 )}
-                              </span>
+                              </button>
                             );
                           })}
                         </div>
@@ -1975,9 +1905,9 @@ export function AnnotationEditor(): JSX.Element {
                   {TOOLS.length} tools in {TOOL_GROUPS.length} named groups. {Object.keys(TOOL_SHORTCUT_KEYS).join(' ')}
                   {' '}arm {Object.values(TOOL_SHORTCUT_KEYS).map((id) => TOOL_BY_ID[id].label.toLowerCase()).join(', ')}.
                 </p>
-                <p className="text-[9px] leading-relaxed text-ink-muted/80" data-pin-explained>
-                  🔒 keeps a tool armed after each placement; 🔓 hands control back to Select so the next
-                  click moves or edits what you just made. Esc unwinds one step at a time.
+                <p className="text-[9px] leading-relaxed text-ink-muted/80" data-after-create-explained>
+                  {AFTER_CREATE_NOTE} Esc unwinds one step at a time: the half-drawn mark, then the
+                  selection, then the tool.
                 </p>
               </InspectorSection>
             </motion.div>
@@ -2492,7 +2422,6 @@ export function AnnotationEditor(): JSX.Element {
                   draft={draft}
                   vertices={verticesPreview}
                   tool={tool}
-                  pinned={pinnedFor(tool)}
                   selection={selection}
                   editingId={editingId}
                   marquee={marquee}

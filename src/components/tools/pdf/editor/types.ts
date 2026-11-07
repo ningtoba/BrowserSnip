@@ -45,17 +45,6 @@ export type EditorToolId =
  */
 export type ToolGesture = 'none' | 'markup' | 'box' | 'segment' | 'path' | 'vertices' | 'place';
 
-/**
- * What happens to the armed tool after the tool creates a mark — the vocabulary
- * EmbedPDF uses for the same decision. `stay` keeps the pen in the user's hand,
- * `default` hands control back to the resting tool, which here is Select.
- *
- * This is a *declared* property of the tool, decided by the user's ruling rather
- * than by which pointer handler returns first: a real create always steps aside
- * when the policy says so, and a gesture that created nothing never does.
- */
-export type AfterCreate = 'stay' | 'default';
-
 export interface ToolMeta {
   id: EditorToolId;
   label: string;
@@ -65,11 +54,6 @@ export interface ToolMeta {
   gesture: ToolGesture;
   /** PDF annotation subtype this tool produces. */
   kind: AnnotationKind;
-  /**
-   * Default post-create behaviour. The pin/lock on the tool button overrides it
-   * in either direction, so stickiness is always an explicit user choice.
-   */
-  afterCreate: AfterCreate;
 }
 
 /** Per-tool appearance, kept so switching tools does not reset a user's pen. */

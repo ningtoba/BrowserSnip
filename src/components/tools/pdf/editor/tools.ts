@@ -6,7 +6,7 @@
  * apart from the creating tools but lives in the same table so a tool id always
  * resolves to exactly one description.
  */
-import type { AfterCreate, EditorToolId, ToolMeta, ToolStyle } from './types';
+import type { EditorToolId, ToolMeta, ToolStyle } from './types';
 
 /** Built-in stamp names. Written verbatim to `/S`, so no spaces (PDF names). */
 export const BUILT_IN_STAMPS: { value: string; label: string }[] = [
@@ -97,7 +97,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Click a mark to select it, drag to move it, Delete removes it.',
     gesture: 'none',
     kind: 'Popup',
-    afterCreate: 'stay',
   },
   {
     id: 'highlight',
@@ -106,7 +105,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag across the words — the mark snaps to each text line it crosses.',
     gesture: 'markup',
     kind: 'Highlight',
-    afterCreate: 'stay',
   },
   {
     id: 'underline',
@@ -115,7 +113,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag across text; the underline follows the snapped text line.',
     gesture: 'markup',
     kind: 'Underline',
-    afterCreate: 'stay',
   },
   {
     id: 'strike',
@@ -124,7 +121,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag across text to strike the lines you touch.',
     gesture: 'markup',
     kind: 'StrikeOut',
-    afterCreate: 'stay',
   },
   {
     id: 'note',
@@ -133,7 +129,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Click to drop a sticky note, then type its comment.',
     gesture: 'box',
     kind: 'Text',
-    afterCreate: 'default',
   },
   {
     id: 'freetext',
@@ -142,7 +137,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag a box (or click for a default one) and type into it.',
     gesture: 'box',
     kind: 'FreeText',
-    afterCreate: 'default',
   },
   {
     id: 'ink',
@@ -151,7 +145,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Draw freehand on the page.',
     gesture: 'path',
     kind: 'Ink',
-    afterCreate: 'stay',
   },
   {
     id: 'square',
@@ -160,7 +153,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag a rectangle. Toggle Fill for a solid shape.',
     gesture: 'box',
     kind: 'Square',
-    afterCreate: 'stay',
   },
   {
     id: 'circle',
@@ -169,7 +161,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag an ellipse. Toggle Fill for a solid shape.',
     gesture: 'box',
     kind: 'Circle',
-    afterCreate: 'stay',
   },
   {
     id: 'line',
@@ -178,7 +169,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag from one point to another.',
     gesture: 'segment',
     kind: 'Line',
-    afterCreate: 'stay',
   },
   {
     id: 'arrow',
@@ -187,7 +177,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag in the direction the arrow should point.',
     gesture: 'segment',
     kind: 'Arrow',
-    afterCreate: 'stay',
   },
   {
     id: 'polygon',
@@ -196,7 +185,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Click corners, then press Enter or double-click to close the shape.',
     gesture: 'vertices',
     kind: 'Polygon',
-    afterCreate: 'stay',
   },
   {
     id: 'polyline',
@@ -205,7 +193,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Click points, then press Enter or double-click to finish the line.',
     gesture: 'vertices',
     kind: 'PolyLine',
-    afterCreate: 'stay',
   },
   {
     id: 'stamp',
@@ -214,7 +201,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Pick a stamp below, then click or drag where it should land.',
     gesture: 'place',
     kind: 'Stamp',
-    afterCreate: 'default',
   },
   {
     id: 'image',
@@ -223,7 +209,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Choose a PNG or JPEG, then click or drag to place it.',
     gesture: 'place',
     kind: 'Stamp',
-    afterCreate: 'default',
   },
   {
     id: 'signature',
@@ -232,7 +217,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Draw your signature in the pad, then place it on the page.',
     gesture: 'place',
     kind: 'Stamp',
-    afterCreate: 'default',
   },
   {
     id: 'link',
@@ -241,7 +225,6 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag the clickable area, then choose a page or a URL.',
     gesture: 'box',
     kind: 'Link',
-    afterCreate: 'default',
   },
   {
     id: 'redact',
@@ -250,48 +233,30 @@ export const TOOLS: ToolMeta[] = [
     hint: 'Drag over text to remove it permanently on export.',
     gesture: 'box',
     kind: 'Redact',
-    afterCreate: 'stay',
   },
 ];
 
-/**
- * The pin/lock policy, in one place so the palette button and the create path
- * cannot disagree.
- *
- * `afterCreate` is the tool's declared default; the pin is the user's override,
- * initialised from that default and remembered per tool (so it survives
- * selecting another object, arming another pen, or a step-aside to Select).
- */
+/** Whether this tool puts something on the page, as opposed to editing it. */
 export function isPlacementTool(tool: EditorToolId): boolean {
   return TOOL_BY_ID[tool]?.gesture !== 'none';
 }
 
-/** Whether the pin starts pressed for this tool — its declared stickiness. */
-export function defaultPinState(): Record<EditorToolId, boolean> {
-  return TOOLS.reduce((acc, meta) => {
-    acc[meta.id] = isPlacementTool(meta.id) && meta.afterCreate === 'stay';
-    return acc;
-  }, {} as Record<EditorToolId, boolean>);
-}
-
-/** The policy that actually applies: the pin wins over the declared default. */
-export function effectiveAfterCreate(
-  tool: EditorToolId,
-  pinned: boolean | undefined,
-): AfterCreate {
-  const declared = TOOL_BY_ID[tool]?.afterCreate ?? 'default';
-  if (!isPlacementTool(tool)) return 'stay';
-  return typeof pinned === 'boolean' ? (pinned ? 'stay' : 'default') : declared;
-}
-
 /**
- * One-line explanation for the pin button's accessible name. Pinned means "keep
- * placing", so the label has to say what the next click will do.
+ * The tool the palette holds when a gesture ends. One rule, no pin: a created
+ * mark hands control back to Select, so the next click moves or edits the thing
+ * the user just made; a gesture that created nothing leaves the pen in the
+ * hand, because losing the tool after a failed drag reads as the app ignoring
+ * them.
+ *
+ * The rule is a function rather than a line in a click handler so the palette,
+ * the drag path and the tests cannot each have their own opinion about it.
  */
-export function pinLabel(tool: EditorToolId, pinned: boolean): string {
-  const label = TOOL_BY_ID[tool]?.label ?? 'Tool';
-  return `${label}: ${pinned ? 'stays armed after each placement' : 'returns to Select after one placement'}`;
+export function toolAfterGesture(tool: EditorToolId, created: boolean): EditorToolId {
+  return created ? 'select' : tool;
 }
+
+/** The sentence the footer says about that rule, once, instead of per tool. */
+export const AFTER_CREATE_NOTE = 'After one placement the tool hands control back to Select.';
 
 /**
  * Inspector sections for the palette.
