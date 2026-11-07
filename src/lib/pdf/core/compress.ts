@@ -16,7 +16,7 @@
  * `recompressImage`, and `tests/pdf/optimize-bytes.test.ts` measures the bytes
  * they produce.
  */
-import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray } from './doc';
+import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray, PDFStream } from './doc';
 import type { PDFDocument } from './doc';
 import { openPDF, savePDF, toBytes } from './doc';
 import { pageContentOps } from './content';
@@ -173,7 +173,9 @@ async function runCompression(
   if (raster && !canRasterise) {
     result.skipped = images.length;
     notes.push(
-      `This browser cannot re-encode images, so all ${images.length} image${images.length === 1 ? '' : 's'} are byte-for-byte the originals and only the file structure was rebuilt.`,
+      images.length === 1
+        ? 'This browser cannot re-encode images, so its one image stays byte-for-byte as it is; only the file structure was rebuilt.'
+        : `This browser cannot re-encode images, so all ${images.length} images stay byte-for-byte as they are; only the file structure was rebuilt.`,
     );
   }
   if (raster && canRasterise) {
@@ -307,8 +309,12 @@ async function collectImages(doc: PDFDocument): Promise<ImageRef[]> {
       const ref = value instanceof PDFRef ? value : null;
       if (!ref) continue;
       const object = doc.context.lookup(ref);
-      if (!(object instanceof PDFDict)) continue;
-      const dict = object as PDFDict;
+      // An image is a *stream*, and a stream's dictionary is reached through
+      // `.dict`: `instanceof PDFDict` is false for `PDFRawStream`/`PDFFlateStream`
+      // in this pdf-lib build, so testing for a dictionary here collected no
+      // image at all and every compress run reported "no images" over a scan.
+      const dict = object instanceof PDFStream ? object.dict : object;
+      if (!(dict instanceof PDFDict)) continue;
       if (readName(dict, 'Subtype') !== 'Image') continue;
       const key = `${ref.toString()}`;
       const existing = byRef.get(key);

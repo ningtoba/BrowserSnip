@@ -505,7 +505,7 @@ describe('header-footer fills its six slots per page', () => {
     expect(second).toContain('Page 2 of 2');
     // The hairline rule is a real path operator, drawn once per row per page.
     const stream = streamText(doc.getPages()[0]);
-    expect((stream.match(/ m\n?[\d.-]+ [\d.-]+ l S/g) ?? stream.match(/ l S/g)).length).toBeGreaterThanOrEqual(2);
+    expect((stream.match(/ m\n?[\d.-]+ [\d.-]+ l S/g) ?? stream.match(/ l S/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
   it('reports a header that cannot fit the page instead of overlapping silently', async () => {
@@ -935,17 +935,17 @@ describe('form-creator and form-filler round-trip through a second read', () => 
     });
     const doc = await reopen(created);
     const form = doc.getForm();
-    expect((form.getField('notes') as { getText: () => string }).getText()).toBe('typed in');
-    const multilineFlags = dictOf(doc, (form.getField('notes') as { acroField: { dict: PDFDict } }).acroField.dict)
+    expect((form.getField('notes') as unknown as { getText: () => string }).getText()).toBe('typed in');
+    const multilineFlags = dictOf(doc, (form.getField('notes') as unknown as { acroField: { dict: PDFDict } }).acroField.dict)
       ?.lookupMaybe(PDFName.of('Ff'), PDFNumber)?.asNumber() ?? 0;
     expect(multilineFlags & 4096).toBe(4096);
-    const dropdown = form.getField('country') as { getOptions: () => string[]; getSelected: () => string[] };
+    const dropdown = form.getField('country') as unknown as { getOptions: () => string[]; getSelected: () => string[] };
     expect(dropdown.getOptions()).toEqual(['France', 'Japan']);
     expect(dropdown.getSelected()).toEqual(['Japan']);
-    const required = dictOf(doc, (form.getField('notes') as { acroField: { dict: PDFDict } }).acroField.dict)
+    const required = dictOf(doc, (form.getField('notes') as unknown as { acroField: { dict: PDFDict } }).acroField.dict)
       ?.lookupMaybe(PDFName.of('Ff'), PDFNumber)?.asNumber() ?? 0;
     expect(required & 2).toBe(2);
-    const sent = form.getField('sent') as { isChecked: () => boolean };
+    const sent = form.getField('sent') as unknown as { isChecked: () => boolean };
     expect(sent.isChecked()).toBe(true);
   });
 
@@ -957,10 +957,10 @@ describe('form-creator and form-filler round-trip through a second read', () => 
     }, [pdfFile(await outBytes(created), 'form.pdf')]);
     const doc = await reopen(filled);
     const values = new Map(doc.getForm().getFields().map((field) => [field.getName(), field]));
-    expect((values.get('applicantName') as { getText: () => string }).getText()).toBe('Wang Wei');
-    expect((values.get('agree') as { isChecked: () => boolean }).isChecked()).toBe(true);
-    expect((values.get('country') as { getSelected: () => string[] }).getSelected()).toEqual(['Japan']);
-    expect((values.get('tier') as { getSelected: () => string }).getSelected()).toBe('Silver');
+    expect((values.get('applicantName') as unknown as { getText: () => string }).getText()).toBe('Wang Wei');
+    expect((values.get('agree') as unknown as { isChecked: () => boolean }).isChecked()).toBe(true);
+    expect((values.get('country') as unknown as { getSelected: () => string[] }).getSelected()).toEqual(['Japan']);
+    expect((values.get('tier') as unknown as { getSelected: () => string }).getSelected()).toBe('Silver');
     // Still fillable: nothing was flattened.
     expect(doc.getForm().getFields().length).toBe(specs.length);
   });
@@ -1021,13 +1021,14 @@ describe('pdf-layers edits the default viewing configuration', () => {
     const doc = await reopen(outcome);
     const properties = dictOf(doc, doc.catalog.get(PDFName.of('OCProperties')));
     const groups = arrayOf(doc, properties?.get(PDFName.of('OCGs'))) ?? [];
-    const names = groups.asArray().map((value) => decodeTextString(dictOf(doc, value)?.get(PDFName.of('Name'))) ?? '');
+    const groupList: unknown[] = Array.isArray(groups) ? groups : groups.asArray();
+    const names = groupList.map((value) => decodeTextString(dictOf(doc, value)?.get(PDFName.of('Name'))) ?? '');
     const config = dictOf(doc, properties?.get(PDFName.of('D')));
     const refs = (key: string) =>
       (arrayOf(doc, config?.get(PDFName.of(key)))?.asArray() ?? [])
         .filter((value): value is PDFRef => value instanceof PDFRef)
         .map((value) => value.toString());
-    const groupRefs = groups.asArray().map((value) => (value instanceof PDFRef ? value.toString() : ''));
+    const groupRefs = groupList.map((value) => (value instanceof PDFRef ? value.toString() : ''));
     return {
       names,
       on: refs('ON').map((ref) => names[groupRefs.indexOf(ref)] ?? ref),

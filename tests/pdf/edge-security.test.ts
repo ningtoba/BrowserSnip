@@ -462,8 +462,9 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     await expect(PDFDocument.load(bytes, { password: '' })).resolves.toBeTruthy();
     // Either a reader confirmed it, or the tool says it was only written that way
     // and warns — the copy is never described as verified by a reader it failed.
-    expect(outcome.message).toMatch(/no password|without a password/i);
-    if (/A PDF reader opens it/.test(outcome.message)) {
+    const message = outcome.message ?? '';
+    expect(message).toMatch(/no password|without a password/i);
+    if (/A PDF reader opens it/.test(message)) {
       expect(outcome.warnings.join(' ')).not.toMatch(/will not open the saved copy without a password/i);
     } else {
       expect(outcome.warnings.join(' ')).toMatch(/will not open the saved copy without a password|does not open on the empty password/i);

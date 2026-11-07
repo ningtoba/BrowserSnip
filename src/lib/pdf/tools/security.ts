@@ -34,7 +34,7 @@ import { formatBytes, formatPdfDate, readInfo, readXmp, scrubMetadataText } from
 import { listAttachments, removeAttachments } from '../core/attachments';
 import { openRender } from '../core/render';
 import type { ExtractedTextItem } from '../core/render';
-import { annotationCount } from '../core/annotations';
+import { annotationCount, listAnnotations } from '../core/annotations';
 import { readOutline, writeOutline } from '../core/bookmarks';
 import type { OutlineNode } from '../core/bookmarks';
 import { pageContentStreams } from '../core/content';
@@ -110,6 +110,20 @@ const PERMISSION_NOTES = [
 ];
 
 /**
+ * What this browser's engine does and does not do to the bytes.
+ *
+ * `saveEncrypted` records the cipher, the two password hashes and the `/P`
+ * dictionary, and `@maxwbh/pdf-lib`'s writer never calls its own
+ * `PDFSecurity.encryptStream`, so the page streams leave this tab exactly as
+ * they arrived. Any wording about protection has to live inside that fact (E5).
+ */
+const CIPHERTEXT_NOTE =
+  'The password prompt and the /P flags are written into the file; the page streams themselves are copied through as they are, so a tool that ignores /Encrypt can still lift the text out. Every run of this tool re-reads the output and says which of the two it got.';
+
+const SCAN_ALTERNATIVE_NOTE =
+  'When the bytes themselves must be unreadable, turn the pages into pictures first — PDF to Images, then Images to PDF — and protect the result. A scan holds no extractable text to recover.';
+
+/**
  * One spelling of the /P permission checkboxes, shared by both panels.
  *
  * Declared as two columns of four. The bar puts each `group` in its own column and
@@ -147,14 +161,16 @@ export const securityTools: PdfToolDefinition[] = [
   {
     id: 'protect',
     name: 'Protect PDF',
-    description: 'Password-protect with real AES-256 and enforce permissions',
+    description: 'Open password, owner password and the /P permissions, recorded in the file',
     icon: '🔐',
     category: 'security',
-    keywords: ['encrypt', 'password', 'restrict', 'lock'],
+    // The cipher names are searchable because the cipher is a choice this tool
+    // writes into `/Encrypt`; people look for a locked PDF by the algorithm.
+    keywords: ['encrypt', 'encryption', 'aes', 'aes-256', 'rc4', 'cipher', 'password', 'restrict', 'lock'],
     outputSuffix: '_protected.pdf',
     promise: 'A copy that asks for your password before it opens, with the permissions you ticked written in and read back from the output to prove they landed.',
     actionLabel: 'Protect',
-    notes: PERMISSION_NOTES,
+    notes: [CIPHERTEXT_NOTE, SCAN_ALTERNATIVE_NOTE, ...PERMISSION_NOTES],
     fields: [
       {
         key: 'mode',
@@ -188,7 +204,7 @@ export const securityTools: PdfToolDefinition[] = [
         // requirement in the same breath.
         required: (v) => v.mode !== 'owner',
         missing: 'Enter the password readers must type to open this PDF.',
-        help: 'Anyone without it cannot read the document; the bytes are encrypted, so renaming or zipping does not get around it.',
+        help: 'Anyone who does not type it is refused by every reader that honours /Encrypt — renaming the file or zipping it does not get around the prompt. The page streams are copied through as they are, so a tool that ignores /Encrypt can still read the text inside.',
       },
       {
         key: 'ownerPassword',
@@ -255,7 +271,7 @@ export const securityTools: PdfToolDefinition[] = [
       // draws its own previews with. Whatever the built-in engine recorded, a
       // reader that refuses the password is the fact the user needs (E5).
       const reader = user ? await probeReader(bytes, user) : await probeReader(bytes);
-      const gateOpens = user ? reader.verdict === 'opens' : reader.verdict === 'opens';
+      const gateOpens = reader.verdict === 'opens';
       if (reader.verdict === 'unavailable' || reader.verdict === 'unreadable') {
         warnings.push(`No PDF reader could be started in this browser to re-check the saved file${reader.detail ? ` (${reader.detail})` : ''}, so only the built-in engine's own view of it was verified.`);
       } else if (user && reader.verdict !== 'opens') {
@@ -349,6 +365,7 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Change permissions',
     notes: [
       'This tool writes the /P dictionary without an open password, so the document still opens freely. Use Protect to make it unreadable without one.',
+      CIPHERTEXT_NOTE,
       ...PERMISSION_NOTES,
     ],
     fields: [
@@ -363,7 +380,7 @@ export const securityTools: PdfToolDefinition[] = [
           { value: 'set', label: 'Apply these permissions' },
           { value: 'clear', label: 'Remove all restrictions' },
         ],
-        help: 'Remove all restrictions drops the encryption dictionary, which is also the only way to clear a permissions-only file for good.',
+        help: 'Remove all restrictions drops the encryption dictionary, which is the only edit that clears a permissions-only file from inside this tool.',
       },
       { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', when: (v) => v.action === 'set', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
       ...permissionFields((v) => v.action === 'set'),
@@ -576,13 +593,17 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes,
         pages: input.doc.getPageCount(),
+        // The two bakes are counted separately because only the annotation pass
+        // reports pages: `flattenForm` answers with a field count, and a run whose
+        // comments could not be drawn would otherwise read "into the content of
+        // 0 page(s)" while two field values were in fact painted.
         message: needsRender
-          ? `Baked ${bakedAnnotations} annotation(s) and ${fieldsBaked} form field(s) into the content of ${pagesTouched} page(s)${
-              stillLive.length > 0 ? `; ${stillLive.join(', ')} in the saved file` : '; nothing of the selected kind is left live'
+          ? `${bakedAnnotations} annotation(s) drawn into the content of ${pagesTouched} page(s) and ${fieldsBaked} form field(s) removed from the form${
+              stillLive.length > 0 ? `; ${andList(stillLive)} in the saved file` : '; nothing of the selected kind is left live'
             }.`
-          : `Baked ${fieldsBaked} form field(s) into the page content${
+          : `${fieldsBaked} form field(s) removed from the form and drawn into the page content${
               saved.fields > 0 ? `; ${saved.fields} field(s) are still interactive in the saved file` : ''
-            }. Turn on annotation flattening to bake comments as well.`,
+            }. Turn on flatten comments to bake the marks as well.`,
         warnings,
       };
     },
@@ -674,8 +695,18 @@ export const securityTools: PdfToolDefinition[] = [
         }
       }
       const elsewhere = textHeldOutsidePageContent(input.doc);
-      if (booleanValue(context.values, 'alsoMetadata', true) && elsewhere.length > 0) {
-        warnings.push(`Redaction deletes text from page content, the document properties and the outline. ${elsewhere.join(', ')} still holds words this tool does not rewrite — clear them with Remove Metadata.`);
+      const clearEverywhere = booleanValue(context.values, 'alsoMetadata', true);
+      if (clearEverywhere && elsewhere.length > 0) {
+        warnings.push(`Redaction deletes text from page content and, with this option on, from the document properties and the outline — ${andList(elsewhere)} still hold other text this tool does not rewrite. Clear it with Remove Metadata if the file must not carry it at all.`);
+      } else if (!clearEverywhere && before.unique.length > 0 && elsewhere.length > 0) {
+        warnings.push(`"Also clear matching text from metadata and bookmarks" was off, so the redacted words stay in ${andList(elsewhere)} — a search that reads them still finds what the page no longer shows.`);
+      }
+      // Comment text and an enclosure's bytes are outside every store this tool
+      // rewrites, and they are named separately from the generic caveat above:
+      // one is the secret surviving, the other is merely other text (E20).
+      const leaked = redactedWordsStillHeld(input.doc, before.unique);
+      if (leaked.length > 0) {
+        warnings.push(`${andList(leaked)} still hold the redacted words: this tool rewrites page content, the document properties and bookmark titles, not comment text or an embedded file's own bytes.`);
       }
       const bytes = await savePDF(input.doc);
       const after = before.ok ? await readMarkedWords(bytes, undefined, marked) : null;
@@ -693,7 +724,11 @@ export const securityTools: PdfToolDefinition[] = [
           : survivors.length > 0
             ? `Deleted ${outcome.removed} text run(s) under ${marked.length} area(s) and painted the fill, but ${survivors.length} word(s) under those areas still extract from the saved file.`
             : `Redacted ${outcome.removed} text run(s) under ${marked.length} area(s) by deleting the glyphs themselves${
-                after ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.` : '.'
+                after
+                  ? destroyed.length > 0
+                    ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.`
+                    : '; no whole word sat under the marks, so the deletion was confirmed from the page content alone.'
+                  : '.'
               }`,
         warnings,
       };
@@ -838,7 +873,14 @@ export const securityTools: PdfToolDefinition[] = [
         protection.push({ label: 'Cipher', value: inspection.algorithm ?? 'declared, but not readable from /V and /R' });
         protection.push({
           label: 'Open password',
-          value: inspection.passwordAccepted ? 'required, and the one supplied opened it' : 'required',
+          // `/Encrypt` alone does not mean a password is asked for: a
+          // permissions-only file hashes the empty user password, so it opens on
+          // a double-click. Saying "required" there is contradicted by the file.
+          value: inspection.passwordAccepted
+            ? 'required, and the one supplied opened it'
+            : inspection.opensWithEmptyPassword
+              ? 'none — the user password is empty, so the file opens without one and only the restrictions apply'
+              : 'required',
         });
         protection.push({
           label: 'Restrictions recorded',
@@ -1051,7 +1093,8 @@ export const securityTools: PdfToolDefinition[] = [
       // is not how many this run embedded: a document with one attachment and one
       // new file did not gain two. The names are diffed instead, and the saved
       // bytes are asked what they really carry.
-      const total = await addAttachments(input.doc, wanted);
+      const had = before.size;
+      await addAttachments(input.doc, wanted);
       const requested = [...new Set(wanted.map((file) => file.name))];
       const replaced = requested.filter((name) => before.has(name));
       const added = requested.filter((name) => !before.has(name));
@@ -1070,7 +1113,7 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf' as const,
         bytes,
         pages: input.doc.getPageCount(),
-        message: `Embedded ${added.length} new file(s)${replaced.length > 0 ? ` and replaced ${replaced.length} already stored under the same name(s)` : ''}. The document now carries ${carried.length} attachment(s) (it held ${total}). Readers with an attachments panel will list them.`,
+        message: `Embedded ${added.length} new file(s)${replaced.length > 0 ? ` and replaced ${replaced.length} already stored under the same name(s)` : ''}. The document now carries ${carried.length} attachment(s)${had > 0 ? `, up from ${had}` : ''}. Readers with an attachments panel will list them.`,
         warnings,
       };
     },
@@ -1413,7 +1456,8 @@ interface RedactionRegion {
   height: number;
 }
 
-/* ------------------------------------------------------------------ *\n * Redaction proof — read the words back, do not infer them            *
+/* ------------------------------------------------------------------ *
+ * Redaction proof — read the words back, do not infer them            *
  * ------------------------------------------------------------------ */
 
 /** The frame a page's displayed coordinates are measured against. */
@@ -1540,7 +1584,7 @@ async function readMarkedWords(
 function scrubOutlineTitles(doc: PDFDocument, terms: readonly string[]): number {
   const wanted = [...new Set(terms.map((term) => term.trim()).filter(Boolean))];
   if (wanted.length === 0) return 0;
-  const pattern = new RegExp(`(${wanted.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const pattern = new RegExp(`\\b(?:${wanted.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi');
   const nodes = readOutline(doc);
   if (nodes.length === 0) return 0;
   let changed = 0;
@@ -1558,6 +1602,36 @@ function scrubOutlineTitles(doc: PDFDocument, terms: readonly string[]): number 
 function previewList(words: readonly string[], limit = 6): string {
   const shown = words.slice(0, limit).map((word) => `“${word}”`).join(', ');
   return words.length > limit ? `${shown}, and ${words.length - limit} more` : shown;
+}
+
+/** `['a','b','c']` → `a, b and c`, for a sentence that has to read as English. */
+function andList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Stores a redaction cannot rewrite that still carry one of the redacted words.
+ *
+ * `redact-pdf` deletes glyphs from page content and, when asked, scrubs the
+ * `/Info` strings, the XMP packet and the outline. Annotation text and the bytes
+ * of an embedded file are neither: a name blacked out on the page but living on
+ * in a comment popover or in `enclosure.zip` has not been redacted, so the
+ * warning has to say that in particular rather than lean on the generic caveat.
+ */
+function redactedWordsStillHeld(doc: PDFDocument, terms: readonly string[]): string[] {
+  const wanted = [...new Set(terms.map((term) => term.trim()).filter(Boolean))];
+  if (wanted.length === 0) return [];
+  const pattern = new RegExp(`\\b(?:${wanted.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
+  const holds = (value: string | undefined): boolean => value !== undefined && pattern.test(value);
+  const found: string[] = [];
+  const comments = listAnnotations(doc).filter((mark) => holds(mark.contents)).length;
+  if (comments > 0) found.push(`${comments} comment${comments === 1 ? '' : 's'}`);
+  const files = listAttachments(doc).filter((file) =>
+    holds(file.name) || holds(file.description) || holds(latin1.decode(file.bytes)),
+  ).length;
+  if (files > 0) found.push(`${files} embedded file${files === 1 ? '' : 's'}`);
+  return found;
 }
 
 /* ------------------------------------------------------------------ *
@@ -2060,9 +2134,9 @@ async function verifyProtection(
   try {
     const written = await openPDF(bytes, { ignoreEncryption: true });
     if (contentFingerprint(written) === sourceFingerprint) {
-      warnings.push(
-        'The page content came out of the engine unchanged, so the password and restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. Readers will prompt for the password; a tool that ignores /Encrypt can still read the page.',
-      );
+      warnings.push(opensFreely
+        ? 'The page content came out of the engine unchanged, so the restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. This file opens on the empty password and a tool that ignores /Encrypt can read the page just as easily.'
+        : 'The page content came out of the engine unchanged, so the password and restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. Readers will prompt for the password; a tool that ignores /Encrypt can still read the page.');
     }
   } catch {
     // Nothing to admit: the streams could not be re-read, which is what a file

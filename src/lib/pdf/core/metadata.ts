@@ -500,8 +500,21 @@ export function scrubMetadataText(
   const wanted = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))];
   const result: { properties: string[]; xmp: boolean } = { properties: [], xmp: false };
   if (wanted.length === 0) return result;
-  const pattern = new RegExp(`(${wanted.map(escapeRegExp).join('|')})`, 'gi');
-  const collapse = (value: string): string => value.replace(pattern, '').replace(/\s+/g, ' ').trim();
+  // Whole words only. A redaction candidate is a word a reader lifted off the
+  // page — "on" or "1" among them — and deleting it as a substring would take
+  // the middle out of "Pearson" and leave a file that looks scrubbed and reads
+  // as nonsense.
+  const pattern = new RegExp(`\\b(?:${wanted.map(escapeRegExp).join('|')})\\b`, 'gi');
+  // Deleting a word from a list must not leave the punctuation behind: removing
+  // both keywords from "Alice, Bravo" leaves ",", which `readInfo` then reports
+  // as a property that still holds text.
+  const collapse = (value: string): string =>
+    value
+      .replace(pattern, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*,(?=\s*[,;]|$)/g, '')
+      .replace(/^\s*[,;]+\s*/, '')
+      .trim();
 
   const info = readInfo(doc);
   const patch: DocumentInfo = {};
@@ -772,7 +785,9 @@ export function metadataReport(
           value: [
             font.type,
             font.embedded ? 'embedded' : 'not embedded — substituted on screen',
-            font.subset ? `subset ${font.subset}` : 'full font',
+            // "full font" is a statement about a file that is not in this
+            // document, so it is only made about an embedded one.
+            ...(font.embedded ? [font.subset ? `subset ${font.subset}` : 'full font'] : []),
             font.encoding,
           ].filter(Boolean).join(' · '),
         }))
