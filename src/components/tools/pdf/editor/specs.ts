@@ -312,6 +312,10 @@ export function setAnnotationRotation(
   annotation: EditorAnnotation,
   degrees: number,
 ): EditorAnnotation {
+  // One rule at the one writer of angles: a kind that cannot carry one keeps the
+  // picture the file will actually show (`canRotate`), whether the ask came from
+  // `R`, the handle, a group turn or the inspector's number field.
+  if (!canRotate(annotation)) return annotation;
   const angle = normaliseAngle(degrees);
   if (angle === annotationRotation(annotation)) return annotation;
   return { ...annotation, rotation: angle };
@@ -336,7 +340,7 @@ export function orbitAnnotation(
   pivot: Point,
   delta: number,
 ): EditorAnnotation {
-  const turned = turnAnnotation(annotation, delta);
+  const turned = canRotate(annotation) ? turnAnnotation(annotation, delta) : annotation;
   const centre = rectCentre(annotation.rect);
   const moved = rotatePointAbout(centre, pivot, delta);
   return moveAnnotation(turned, moved.x - centre.x, moved.y - centre.y);
@@ -344,7 +348,19 @@ export function orbitAnnotation(
 
 /** The box a mark really occupies on the page: `rect`, turned. */
 export function markBounds(annotation: EditorAnnotation): QuadRect {
-  return rotatedBounds(annotation.rect, annotationRotation(annotation));
+  return rotatedBounds(annotation.rect, carriedAngle(annotation));
+}
+
+/**
+ * The angle a mark's picture really carries.
+ *
+ * `rotation` is what the user asked for and `canRotate` is what the subtype can
+ * show; for a kind that cannot carry an angle the two must not disagree, so the
+ * chrome, the hit test and the exported `/Rect` all read this instead. A note is
+ * the live case: it travels with a turning group and stays upright.
+ */
+export function carriedAngle(annotation: Pick<EditorAnnotation, 'kind' | 'rotation'>): number {
+  return canRotate(annotation) ? annotationRotation(annotation) : 0;
 }
 
 /**
@@ -352,11 +368,44 @@ export function markBounds(annotation: EditorAnnotation): QuadRect {
  *
  * A link is a clickable rectangle: its dictionary offers nothing but `/Rect`, so a
  * turned link would draw an outline no viewer honours while the click area stayed
- * the axis-aligned box — a difference between the picture and the behaviour. Every
- * other kind paints something the appearance stream can turn, so it can be asked.
+ * the axis-aligned box — a difference between the picture and the behaviour.
+ *
+ * A note is refused for the same *kind* of reason, from the other side: a `/Text`
+ * annotation is not a shape but a fixed-size marker. PDF 32000-1 §12.4.3 gives it
+ * one of the standard icon appearances named by its `/N` entry, which a conforming
+ * reader paints upright at a size of its own choosing, and §12.5.5 carries
+ * `/Rotate` for the annotations whose geometry can actually turn (markup, line,
+ * polygon, ink, and free text). A lean baked into our own stream would be a turn
+ * this editor shows and a viewer drawing its own icon will not repeat, so a note
+ * moves when the selection turns and keeps its picture straight.
+ *
+ * Every other kind paints something the appearance stream can turn, so it can be
+ * asked.
  */
 export function canRotate(annotation: Pick<EditorAnnotation, 'kind'>): boolean {
-  return annotation.kind !== 'Link';
+  return annotation.kind !== 'Link' && annotation.kind !== 'Text';
+}
+
+/**
+ * Where a sticky note's card goes, in screen pixels.
+ *
+ * The card hangs to the right of the icon, which is the side with room most of
+ * the time. A note near the right edge of the page would otherwise park it half
+ * off the paper — readable, but a caret the user cannot reach — so the card flips
+ * to the icon's other side when the right has run out, and its top is pulled
+ * inside the page either way. One function for the read-only card and the type-in
+ * surface, so the popup cannot move out from under its icon when it is edited.
+ */
+export function noteCardBox(
+  icon: CssRect,
+  page: { width: number; height: number },
+  card: { width: number; height: number },
+  gapPx = 6,
+): CssRect {
+  const right = icon.x + icon.width + gapPx;
+  const x = right + card.width > page.width ? Math.max(0, icon.x - card.width - gapPx) : right;
+  const y = Math.min(icon.y, Math.max(0, page.height - card.height));
+  return { x, y, width: card.width, height: card.height };
 }
 
 /* ------------------------------------------------------------------ *
@@ -824,7 +873,7 @@ export function markAtPoint(
 
 /** Bring a page-space point into a mark's unrotated frame. */
 function toMarkFrame(point: Point, mark: EditorAnnotation): Point {
-  const angle = annotationRotation(mark);
+  const angle = carriedAngle(mark);
   if (angle === 0) return point;
   return rotatePointAbout(point, rectCentre(mark.rect), -angle);
 }
@@ -867,7 +916,7 @@ export function marksInMarquee(
 
 /** Whether a mark — turned, quad-shaped or plain — shares a point with a box. */
 export function markIntersectsBox(annotation: EditorAnnotation, box: QuadRect): boolean {
-  const local = boxToMarkFrame(box, annotation.rect, annotationRotation(annotation));
+  const local = boxToMarkFrame(box, annotation.rect, carriedAngle(annotation));
   const quads = annotation.quadPoints ?? [];
   if (MARKUP_KINDS.has(annotation.kind) && quads.length >= 8) {
     for (let at = 0; at + 7 < quads.length; at += 8) {
@@ -952,8 +1001,9 @@ export function annotationToSpec(annotation: EditorAnnotation): AnnotationSpec {
   };
   // The angle travels with the shape rather than being applied here: the writer
   // owns turning `/Rect`, the quads and the appearance stream, and only it can
-  // keep the three in step.
-  const rotation = annotationRotation(annotation);
+  // keep the three in step. A kind that cannot carry one (`canRotate`) is written
+  // straight, which is the same picture the overlay drew.
+  const rotation = carriedAngle(annotation);
   if (rotation !== 0) spec.rotation = rotation;
   if (annotation.fillColor) spec.fillColor = annotation.fillColor;
   if (annotation.borderColor) spec.borderColor = annotation.borderColor;
@@ -1176,7 +1226,9 @@ export function workSignature(annotations: EditorAnnotation[]): string {
         a.contents ?? '',
         a.stampName ?? '',
         a.imageBytes?.byteLength ?? 0,
-        a.rotation ?? 0,
+        // The angle the export really carries, so a mark that cannot turn is
+        // never "unsaved" on account of an angle that changes nothing.
+        carriedAngle(a),
         a.link ? `${a.link.type}:${linkTarget(a.link)}` : '',
       ].join(''),
     )

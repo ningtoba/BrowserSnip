@@ -25,7 +25,10 @@ import {
   HANDLE_HIT_PX,
   HANDLE_SIZE_PX,
   RESIZE_HANDLES,
+  carriedAngle,
   handleScreenPoints,
+  markBounds,
+  noteCardBox,
   rotateHandlePoint,
   rotatedHandleCursor,
   selectionScreenBounds,
@@ -65,6 +68,8 @@ export interface OverlayProps {
 
 /** Where a sticky note's body is shown next to its icon. */
 const NOTE_CARD_PX = 190;
+/** How tall the note card is measured — the type-in surface and the card share it. */
+const NOTE_CARD_H_PX = 74;
 
 /**
  * The CSS/SVG transform that turns one mark's drawing about its own centre.
@@ -73,9 +78,13 @@ const NOTE_CARD_PX = 190;
  * browser then rotates the picture — and, with it, the pointer's idea of what it
  * is over. That is what makes a hit test on a turned mark exact rather than an
  * approximation of its bounding box.
+ *
+ * The angle comes from `carriedAngle` rather than `rotation`: a subtype whose
+ * picture cannot turn — a note's icon, a link's click area — is painted straight
+ * here too, so the overlay never shows a lean the exported file will not carry.
  */
 function turn(annotation: EditorAnnotation, geom: PageGeom): { transform?: string } {
-  const angle = annotation.rotation ?? 0;
+  const angle = carriedAngle(annotation);
   if (!angle) return {};
   const { centre, degrees } = markScreenRotation(annotation.rect, angle, geom);
   return { transform: `rotate(${round(degrees)} ${round(centre.x)} ${round(centre.y)})` };
@@ -91,7 +100,7 @@ function turn(annotation: EditorAnnotation, geom: PageGeom): { transform?: strin
  * its own middle is the pivot every other consumer turns about.
  */
 function turnStyle(annotation: EditorAnnotation, geom: PageGeom): React.CSSProperties {
-  const angle = annotation.rotation ?? 0;
+  const angle = carriedAngle(annotation);
   if (!angle) return {};
   const { degrees } = markScreenRotation(annotation.rect, angle, geom);
   return { transform: `rotate(${degrees}deg)`, transformOrigin: 'center' };
@@ -163,7 +172,7 @@ export function AnnotationOverlay({
         style={{ pointerEvents: 'none' }}
       >
         {annotations.map((annotation) => (
-          <g key={annotation.id} {...turn(annotation, geom)}>
+          <g key={annotation.id} data-mark={annotation.id} {...turn(annotation, geom)}>
             <Mark annotation={annotation} geom={geom} />
           </g>
         ))}
@@ -265,7 +274,7 @@ export function AnnotationOverlay({
 
         {handleMark
           ? RESIZE_HANDLES.map((handle) => {
-              const corner = handleScreenPoints(handleMark.rect, handleMark.rotation ?? 0, geom)[handle];
+              const corner = handleScreenPoints(handleMark.rect, carriedAngle(handleMark), geom)[handle];
               return (
                 <g key={`handle-${handle}`}>
                   <rect
@@ -277,7 +286,7 @@ export function AnnotationOverlay({
                     fill="transparent"
                     style={{
                       pointerEvents: 'all',
-                      cursor: rotatedHandleCursor(handle, handleMark.rotation ?? 0),
+                      cursor: rotatedHandleCursor(handle, carriedAngle(handleMark)),
                     }}
                     onPointerDown={(event) => {
                       if (event.button !== 0) return;
@@ -315,7 +324,7 @@ export function AnnotationOverlay({
           if (!box) return null;
           const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
           const corners = handleMark
-            ? handleScreenPoints(handleMark.rect, handleMark.rotation ?? 0, geom)
+            ? handleScreenPoints(handleMark.rect, carriedAngle(handleMark), geom)
             : null;
           const knob = corners
             ? rotateHandlePoint(corners.nw, corners.ne, centre)
@@ -445,12 +454,19 @@ export function AnnotationOverlay({
       {annotations
         .filter((a) => a.kind === 'Text' && selection.includes(a.id) && a.id !== editingId && a.contents)
         .map((a) => {
-          const box = pdfToScreenRect(a.rect, geom);
+          // Anchored on the box the icon really occupies and kept on the paper,
+          // so a note near the right edge still has a card the user can read.
+          const card = noteCardBox(
+            pdfToScreenRect(markBounds(a), geom),
+            { width: geom.cssWidth, height: geom.cssHeight },
+            { width: NOTE_CARD_PX, height: NOTE_CARD_H_PX },
+          );
           return (
             <div
               key={`note-${a.id}`}
+              data-note-card={a.id}
               className="absolute max-w-[240px] rounded-doodle-md border border-cream-border bg-white p-2 text-[11px] leading-relaxed text-ink shadow-doodle-card"
-              style={{ left: box.x + box.width + 6, top: box.y, width: NOTE_CARD_PX, pointerEvents: 'none' }}
+              style={{ left: card.x, top: card.y, width: card.width, pointerEvents: 'none' }}
             >
               {a.contents}
             </div>
@@ -460,10 +476,17 @@ export function AnnotationOverlay({
       {annotations
         .filter((a) => a.kind === 'Text' && a.id === editingId)
         .map((a) => {
-          const box = pdfToScreenRect(a.rect, geom);
+          // The same box as the read-only card, so the caret cannot appear
+          // somewhere the icon is not.
+          const card = noteCardBox(
+            pdfToScreenRect(markBounds(a), geom),
+            { width: geom.cssWidth, height: geom.cssHeight },
+            { width: NOTE_CARD_PX, height: NOTE_CARD_H_PX },
+          );
           return (
             <textarea
               key={`note-edit-${a.id}`}
+              data-note-editor={a.id}
               autoFocus
               value={a.contents ?? ''}
               placeholder="Note text"
@@ -478,10 +501,10 @@ export function AnnotationOverlay({
               onPointerDown={(event) => event.stopPropagation()}
               className="doodle-input absolute text-[11px] leading-relaxed"
               style={{
-                left: box.x + box.width + 6,
-                top: box.y,
-                width: NOTE_CARD_PX,
-                height: 74,
+                left: card.x,
+                top: card.y,
+                width: card.width,
+                height: card.height,
                 resize: 'none',
                 padding: 6,
               }}

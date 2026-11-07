@@ -33,6 +33,7 @@ import {
   NUDGE_COARSE_PX,
   NUDGE_PX,
   escapeLevelNotice,
+  goesToTheCaret,
   isDuplicateKey,
   isSelectAllKey,
   isTypeToEditKey,
@@ -52,8 +53,10 @@ import { AnnotationOverlay } from '@/components/tools/pdf/editor/AnnotationOverl
 import {
   RESIZE_HANDLES,
   annotationRotation,
+  annotationToSpec,
   buildAnnotation,
   canRotate,
+  carriedAngle,
   duplicateAnnotation,
   duplicateMarks,
   handleCursor,
@@ -61,15 +64,18 @@ import {
   markBounds,
   marksInMarquee,
   moveMarks,
+  noteCardBox,
   pageSelection,
   removeMarks,
   resizeAnnotation,
   selectedMarks,
   selectionBounds,
   selectionSummary,
+  setAnnotationRotation,
   setMarksRotation,
   styleMarks,
   turnMarks,
+  withText,
   workSignature,
   HANDLE_HIT_PX,
 } from '@/components/tools/pdf/editor/specs';
@@ -149,6 +155,17 @@ function threeLines(): ExtractedTextItem[] {
     word('third', 70, 140, 34, 11),
     word('line', 108, 140, 26, 11),
     word('', 70, 160, 40, 11),
+  ];
+}
+
+/**
+ * A row that carries two runs on one baseline with a column of empty paper
+ * between them — the shape of the CV's header row that broke the markup.
+ */
+function nameAndDate(): ExtractedTextItem[] {
+  return [
+    word('Ada Lovelace', 50, 111, 90, 10),
+    word('Submitted 18 May 2026', 400, 111, 130, 10),
   ];
 }
 
@@ -294,11 +311,46 @@ describe('selection keyboard', () => {
     expect(isTypeToEditKey('Enter', {})).toBe(false);
   });
 
+  it('gives `R` to the caret only in the mark the caret is inside', () => {
+    // The collision, resolved out loud: `r` is both a letter and the turn key.
+    // A mark that is merely selected has no caret to feed, so `R` belongs to the
+    // keyboard; the mark being typed into owns every letter the user presses.
+    expect(goesToTheCaret('r', {}, false)).toBe(false);
+    expect(goesToTheCaret('R', { shift: true }, false)).toBe(false);
+    expect(goesToTheCaret('r', {}, true)).toBe(true);
+    expect(goesToTheCaret('R', { shift: true }, true)).toBe(true);
+    // Any other letter still starts the edit, so type-to-edit keeps working.
+    expect(goesToTheCaret('p', {}, false)).toBe(true);
+    // And a key that is neither — a modifier combo, a space — belongs to neither.
+    expect(goesToTheCaret('r', { ctrl: true }, true)).toBe(false);
+    expect(goesToTheCaret(' ', {}, true)).toBe(false);
+    // Both directions, at the model the handler drives.
+    const box = build('freetext', { drag: { x: 80, y: 300, width: 200, height: 40 }, text: 'already' })!;
+    // 1. selected, not editing: `r` is the command, and it turns the mark.
+    const selected = ['r', 'e', 'd'].filter((key) => goesToTheCaret(key, {}, false));
+    expect(selected).toEqual(['e', 'd']);
+    const turned = turnMarks([box], [box.id], rotationStepForKey('r', {})!);
+    expect(annotationRotation(turned[0])).toBe(90);
+    expect(turned[0].text).toBe('already');
+    // 2. typing "red" into the caret: three letters, no turn.
+    let typing = box;
+    for (const key of 'red') {
+      expect(goesToTheCaret(key, {}, true)).toBe(true);
+      typing = withText(typing, (typing.text ?? '') + key);
+    }
+    expect(typing.text).toBe('alreadyred');
+    expect(annotationRotation(typing)).toBe(0);
+  });
+
   it('documents the keyboard route to every pointer-only action on the selection', () => {
     const printed = EDITOR_SHORTCUTS.map((row) => row.keys.join('+'));
     for (const wanted of ['Esc', 'Delete', 'Ctrl+D', '←+→+↑+↓', 'Alt+←', 'Type']) {
       expect(printed, `the shortcut list must document ${wanted}`).toContain(wanted);
     }
+    // And says which side `R` is on, because the list is the only place a user
+    // can read it from inside the surface.
+    const turn = EDITOR_SHORTCUTS.find((row) => row.keys.includes('R'))!;
+    expect(turn.label).toMatch(/typing/i);
   });
 });
 
@@ -644,13 +696,49 @@ describe('the selection is a set', () => {
     expect(rotationRefusedNotice('Link')).toContain('cannot be turned');
     const drawn = [
       build('square', { drag: { x: 70, y: 95, width: 100, height: 14 } })!,
-      build('note', { drag: { x: 70, y: 95, width: 0, height: 0 }, text: 'x' })!,
+      build('freetext', { drag: { x: 70, y: 95, width: 100, height: 30 }, text: 'x' })!,
       build('ink', { points: [{ x: 60, y: 100 }, { x: 90, y: 130 }, { x: 120, y: 100 }] })!,
       build('line', { points: [{ x: 60, y: 100 }, { x: 160, y: 130 }] })!,
       build('redact', { drag: { x: 70, y: 95, width: 100, height: 14 } })!,
     ];
     expect(drawn).toHaveLength(5);
     expect(drawn.every(canRotate)).toBe(true);
+  });
+
+  it('refuses to turn a note, whose icon readers paint upright', () => {
+    // The old expectation here was that a note turns like any other mark. It was
+    // wrong in a way the file shows: a `/Text` annotation is a fixed-size marker
+    // chosen by name (PDF 32000-1 §12.4.3) and `/Rotate` (§12.5.5) belongs to the
+    // annotations whose geometry can turn, so a lean baked into our own stream is
+    // a picture a viewer drawing its own icon will not repeat. The mark that was
+    // tilted in the editor came out straight in Acrobat.
+    const note = build('note', { drag: { x: 70, y: 95, width: 60, height: 20 }, text: 'x' })!;
+    expect(note.kind).toBe('Text');
+    expect(canRotate(note)).toBe(false);
+    expect(rotationRefusedNotice('Note', 'Text')).toContain('cannot be turned');
+    // So no route to an angle leaves one on it: the key, the inspector's field,
+    // and the exported spec all agree with the upright picture.
+    expect(annotationRotation(setAnnotationRotation(note, 90))).toBe(0);
+    expect(annotationRotation(setMarksRotation([note], [note.id], 45)[0])).toBe(0);
+    expect(carriedAngle({ ...note, rotation: 120 })).toBe(0);
+    expect(annotationToSpec({ ...note, rotation: 120 }).rotation).toBeUndefined();
+    // And the box it occupies is the icon's own box, not a bounding box grown
+    // around a turn the file will not carry.
+    expect(markBounds({ ...note, rotation: 120 })).toEqual(note.rect);
+    expect(workSignature([note])).toBe(workSignature([{ ...note, rotation: 120 }]));
+  });
+
+  it('carries a note along a group turn without leaning it', () => {
+    const square = build('square', { drag: { x: 40, y: 100, width: 40, height: 24 } })!;
+    const note = build('note', { drag: { x: 200, y: 100, width: 40, height: 24 }, text: 'x' })!;
+    const ids = [square.id, note.id];
+    const turned = turnMarks([square, note], ids, 90);
+    // The shape takes the angle and the note travels instead of taking one: the
+    // pivot is the middle of the set, so the note's centre swings along the arc.
+    expect(annotationRotation(turned[0])).toBe(90);
+    expect(annotationRotation(turned[1])).toBe(0);
+    expect(turned[1].rect.x).not.toBe(note.rect.x);
+    expect(turned[1].rect.width).toBe(note.rect.width);
   });
 
   it('a turned mark really does occupy a bigger box, and counts as unsaved work', () => {
@@ -863,6 +951,22 @@ describe('the overlay paints a quad as a ring', () => {
     }
   });
 
+  it('paints one quad per run group, so the gap between them stays paper', () => {
+    // One line, two run groups, one annotation. Before the split this was one
+    // polygon 350 pt wide, which read as a strike through thin air.
+    const lines = snapTextLines(nameAndDate(), { x0: 40, y0: 108, x1: 560, y1: 124 });
+    expect(lines).toHaveLength(2);
+    const mark = build('highlight', { drag: { x: 40, y: 108, width: 520, height: 16 }, lines })!;
+    expect(mark.quadPoints).toHaveLength(16);
+    renderOverlay({ annotations: [mark] });
+    const polygons = Array.from(document.querySelectorAll('polygon'));
+    expect(polygons).toHaveLength(2);
+    const spans = polygons.map((p) => polygonCorners(p).map((c) => c.x)).map((xs) => [Math.min(...xs), Math.max(...xs)]);
+    // A hole between them: nothing is painted across the column.
+    expect(spans[0][1]).toBeLessThan(spans[1][0]);
+    expect(spans[1][0] - spans[0][1]).toBeGreaterThan(100);
+  });
+
   it('strokes the rule where the shared function puts it', () => {
     // One line, one quad, so the painted `<line>` can be compared with the
     // number `markupRule` — the very function `core/annotations` strokes the
@@ -980,5 +1084,85 @@ describe('a mark wears one boundary at a time', () => {
     const middle = { x: boxOnScreen.x + boxOnScreen.width / 2, y: boxOnScreen.y + boxOnScreen.height / 2 };
     const radii = centres.map((c) => Math.hypot(c.x - middle.x, c.y - middle.y));
     for (const radius of radii) expect(radius).toBeCloseTo(radii[0], 3);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 12. A sticky note stays upright, and its card stays with it          *
+ * ------------------------------------------------------------------ *
+ *
+ * Two claims, both checked without a canvas: the note's icon is painted straight
+ * (so the editor never shows a lean the exported file will not carry), and the
+ * card hangs off the icon's own box and is kept on the paper, so the popup is
+ * where the mark is and the caret inside it can be reached.
+ */
+
+describe('a sticky note and its card', () => {
+  const noteAt = (x: number, y: number, over: Record<string, unknown> = {}) => ({
+    ...build('note', { drag: { x, y, width: 26, height: 26 }, text: 'a pinned thought' })!,
+    ...over,
+  });
+  const px = (element: Element | null, prop: string): number =>
+    parseFloat(((element as HTMLElement)?.style as CSSStyleDeclaration)[prop as any] ?? 'NaN');
+
+  it('hangs the card beside the icon, and flips it onto the paper', () => {
+    const page = { width: 1000, height: 800 };
+    const card = { width: 190, height: 74 };
+    const room = noteCardBox({ x: 100, y: 200, width: 26, height: 26 }, page, card);
+    expect(room).toMatchObject({ x: 132, y: 200, width: 190, height: 74 });
+    // An icon against the right edge: the card moves to its left rather than
+    // hanging half off the page, and it never leaves the paper at the bottom.
+    const flipped = noteCardBox({ x: 950, y: 200, width: 26, height: 26 }, page, card);
+    expect(flipped.x).toBe(950 - 190 - 6);
+    expect(flipped.x + flipped.width).toBeLessThan(950);
+    const low = noteCardBox({ x: 100, y: 780, width: 26, height: 26 }, page, card);
+    expect(low.y + low.height).toBeLessThanOrEqual(page.height);
+  });
+
+  it('paints the icon upright, whatever angle it carries', () => {
+    // A note loaded from a file that declared one, or work saved before the note
+    // was refused an angle: the marker is the same upright glyph the viewer will
+    // draw, not a tilted picture.
+    const note = noteAt(200, 300, { rotation: 45 });
+    renderOverlay({ annotations: [note], selection: [note.id] });
+    expect(document.querySelector(`[data-mark="${note.id}"]`)?.getAttribute('transform')).toBeNull();
+    // A shape at the same angle is turned, so this is a rule about notes, not a
+    // transform that stopped being applied at all.
+    const square = build('square', { drag: { x: 200, y: 300, width: 80, height: 40 } })!;
+    renderOverlay({ annotations: [{ ...square, rotation: 45 }] });
+    expect(document.querySelector(`[data-mark="${square.id}"]`)?.getAttribute('transform')).toMatch(/rotate\(/);
+  });
+
+  it('anchors the card on the icon it belongs to, and keeps the caret hittable', () => {
+    const note = noteAt(200, 300, { rotation: 45 });
+    renderOverlay({ annotations: [note], selection: [note.id] });
+    const card = document.querySelector(`[data-note-card="${note.id}"]`);
+    const icon = pdfToScreenRect(markBounds(note), overlayGeom);
+    expect(card).toBeTruthy();
+    expect(px(card, 'left')).toBeCloseTo(icon.x + icon.width + 6, 3);
+    expect(px(card, 'top')).toBeCloseTo(icon.y, 3);
+    // The card is a read-out: the pointer goes through it to the page beneath.
+    expect((card as HTMLElement).style.pointerEvents).toBe('none');
+
+    // Typing into the same note: the surface takes the card's box, so the caret
+    // cannot appear somewhere the icon is not, and it keeps its pointer events.
+    renderOverlay({ annotations: [note], selection: [note.id], editingId: note.id });
+    const editor = document.querySelector(`[data-note-editor="${note.id}"]`);
+    expect(editor).toBeTruthy();
+    expect(px(editor, 'left')).toBeCloseTo(px(card, 'left'), 3);
+    expect(px(editor, 'top')).toBeCloseTo(px(card, 'top'), 3);
+    expect((editor as HTMLElement).style.pointerEvents).not.toBe('none');
+  });
+
+  it('keeps a card by the page edge on the paper', () => {
+    // The bug the flip exists for: a note in the right margin used to push its
+    // 190 px card off the page, where the caret could not be clicked at all.
+    const note = noteAt(PAGE_W - 40, 300);
+    renderOverlay({ annotations: [note], selection: [note.id] });
+    const card = document.querySelector(`[data-note-card="${note.id}"]`) as HTMLElement;
+    const left = parseFloat(card.style.left);
+    const width = parseFloat(card.style.width);
+    expect(left + width).toBeLessThanOrEqual(overlayGeom.cssWidth);
+    expect(left).toBeLessThan(pdfToScreenRect(note.rect, overlayGeom).x);
   });
 });

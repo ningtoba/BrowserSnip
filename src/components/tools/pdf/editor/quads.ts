@@ -28,7 +28,21 @@ export interface SnapOptions {
   tolerance?: number;
   /** Runs whose bottoms are this close are the same visual line. */
   baselineTolerance?: number;
+  /** Break the line into another quad when the whitespace between runs passes this many ems. */
+  gapEm?: number;
 }
+
+/**
+ * The whitespace that ends a run group, in ems of the taller of the two runs.
+ *
+ * A text layer starts a new run wherever the content stream moved the pen, so a
+ * gap *is* the layout: one space is 0.278 em in Helvetica and 0.25 em in Times,
+ * and a justified line stretches a space to roughly 1.5× that. Half an em is
+ * therefore wider than any space the fonts of a normal paragraph draw and far
+ * narrower than the tab- or column-wide gaps this rule exists to leave alone —
+ * the header row of the test CV measures its name-to-date whitespace at 18 em.
+ */
+export const RUN_GAP_EM = 0.5;
 
 /** True when the page carries any selectable text at all. */
 export function pageHasText(items: ExtractedTextItem[]): boolean {
@@ -71,6 +85,15 @@ function hits(box: ItemBox, region: ViewportBox, tolerance: number): boolean {
  * measured 14.7pt above the baseline and 3.9pt below it: the re-anchored box
  * spans 16pt, and the original one spanned 20pt ending at the baseline.
  *
+ * Runs that are not contiguous are not one selection. PDF 32000-1 Table 171
+ * allows *n* quadrilaterals, each covering "a word or group of contiguous
+ * words", so a line whose runs are separated by more than `RUN_GAP_EM` of their
+ * own em becomes one quad per run group: a row that carries a name at the left
+ * margin and a date at the right is highlighted, underlined and struck twice,
+ * and the empty space between them is painted by nothing. (Before that split the
+ * strike ran the full width of the page through thin air, which is what a
+ * screenshot of the CV's header row showed and no written report had.)
+ *
  * A drag across several lines is *text*, not a rectangle: the first and last lines
  * stop where the drag stops, but a line in the middle is covered end to end,
  * because the selection continues past the drag's x-range there. Skipping that
@@ -87,6 +110,7 @@ export function snapTextLines(
 ): SnappedLine[] {
   const tolerance = options.tolerance ?? 2;
   const baselineTolerance = options.baselineTolerance ?? 3;
+  const gapEm = options.gapEm ?? RUN_GAP_EM;
 
   const boxes = items.map(toBox).filter((box): box is ItemBox => box !== null);
   if (boxes.length === 0) return [];
@@ -109,28 +133,58 @@ export function snapTextLines(
     .filter((group) => group.hits.length > 0);
 
   return touched
-    .map((group, index) => {
+    .flatMap((group, index) => {
       const isEdge = index === 0 || index === touched.length - 1;
       const words = touched.length > 2 && !isEdge ? group.line : group.hits;
-      const x0 = Math.min(...words.map((b) => b.x0));
-      const x1 = Math.max(...words.map((b) => b.x1));
-      // Every run on the line sits on (within tolerance of) the same baseline,
-      // so the lowest box bottom is the line's baseline and the tallest box is
-      // the line's em.
-      const baseline = Math.max(...words.map((b) => b.bottom));
-      const em = baseline - Math.min(...words.map((b) => b.y0));
-      const y0 = baseline - TEXT_BASELINE_SHARE * em;
-      const y1 = baseline + (1 - TEXT_BASELINE_SHARE) * em;
-      const text = words
-        .slice()
-        .sort((a, b) => a.x0 - b.x0)
-        .map((b) => b.text)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return { x0, y0, x1, y1, text };
+      return runGroups(words, gapEm).map((run) => {
+        const x0 = Math.min(...run.map((b) => b.x0));
+        const x1 = Math.max(...run.map((b) => b.x1));
+        // Every run on the line sits on (within tolerance of) the same baseline,
+        // so the lowest box bottom is the line's baseline and the tallest box is
+        // the line's em.
+        const baseline = Math.max(...run.map((b) => b.bottom));
+        const em = baseline - Math.min(...run.map((b) => b.y0));
+        const y0 = baseline - TEXT_BASELINE_SHARE * em;
+        const y1 = baseline + (1 - TEXT_BASELINE_SHARE) * em;
+        const text = run
+          .slice()
+          .sort((a, b) => a.x0 - b.x0)
+          .map((b) => b.text)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return { x0, y0, x1, y1, text };
+      });
     })
     .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+}
+
+/**
+ * The contiguous run groups of one visual line, left to right.
+ *
+ * A new group opens when the whitespace between two runs passes `gapEm` ems of
+ * the taller run — see `RUN_GAP_EM`. Runs that overlap (a kerned pair, a
+ * bold-and-regular heading) are one group whatever the gap, since nothing
+ * separates them.
+ */
+function runGroups(words: ItemBox[], gapEm: number): ItemBox[][] {
+  const orderedWords = [...words].sort((a, b) => a.x0 - b.x0);
+  const groups: ItemBox[][] = [];
+  let run: ItemBox[] = [];
+  let right = Number.NEGATIVE_INFINITY;
+  for (const box of orderedWords) {
+    if (run.length > 0) {
+      const em = Math.max(box.y1 - box.y0, ...run.map((b) => b.y1 - b.y0));
+      if (box.x0 - right > gapEm * em) {
+        groups.push(run);
+        run = [];
+      }
+    }
+    run.push(box);
+    right = Math.max(right, box.x1);
+  }
+  if (run.length > 0) groups.push(run);
+  return groups;
 }
 
 /** The text a set of snapped lines covers, for the layer list and hints. */

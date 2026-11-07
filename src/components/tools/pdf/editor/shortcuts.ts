@@ -68,11 +68,11 @@ export const EDITOR_SHORTCUTS: Shortcut[] = [
   { keys: ['Drag'], label: 'Draw a band from empty paper to select the marks it touches', group: 'marks' },
   { keys: ['Ctrl', 'A'], label: 'Select every mark on this page', group: 'marks' },
   { keys: ['Ctrl', 'D'], label: 'Duplicate the selected mark', group: 'marks' },
-  { keys: ['R'], label: 'Turn the selection 90° clockwise, or back with Shift', group: 'marks' },
+  { keys: ['R'], label: 'Turn the selected mark 90° clockwise, or back with Shift — a letter once you are typing in it', group: 'marks' },
   { keys: ['Ctrl', 'Z'], label: 'Undo the last change', group: 'marks' },
   { keys: ['Ctrl', 'Shift', 'Z'], label: 'Re-apply the change just undone', group: 'marks' },
   { keys: ['Ctrl', 'Y'], label: 'Redo, the Windows way', group: 'marks' },
-  { keys: ['Type'], label: 'Start writing in a selected text box or note', group: 'marks' },
+  { keys: ['Type'], label: 'Start writing in a selected text box or note, except the key that turns it', group: 'marks' },
   { keys: ['←', '→'], label: 'Previous / next page, when nothing is selected', group: 'pages' },
   { keys: ['↑', '↓'], label: 'Previous / next page, the other axis', group: 'pages' },
 ];
@@ -253,6 +253,25 @@ export function rotationStepForKey(
   if (modifiers.ctrl || modifiers.meta || modifiers.alt) return null;
   if (key.trim().toLowerCase() !== 'r') return null;
   return modifiers.shift ? -90 : 90;
+}
+
+/**
+ * Whether a printable key is a letter or a command.
+ *
+ * `R` is the collision the editor has to break out loud: with the caret inside a
+ * text mark the user is writing and `r` is a letter; with the mark merely on the
+ * selection there is no caret to feed, so `R` is the turn command. `caretInside`
+ * is that one fact, said by the caller that knows it (`editingId`). Every other
+ * printable key still starts the edit, which is the type-to-edit affordance the
+ * shortcut list documents.
+ */
+export function goesToTheCaret(
+  key: string,
+  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean },
+  caretInside: boolean,
+): boolean {
+  if (!isTypeToEditKey(key, modifiers)) return false;
+  return caretInside || rotationStepForKey(key, modifiers) === null;
 }
 
 /**

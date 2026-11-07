@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { render, screen } from '@testing-library/react';
-import { PDFDocument } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef } from '@maxwbh/pdf-lib';
 import {
   addAnnotations,
   annotationCount,
@@ -56,7 +56,7 @@ import {
   unrotateDelta,
   type PageGeom,
 } from '@/components/tools/pdf/editor/geometry';
-import { pageHasText, snapTextLines } from '@/components/tools/pdf/editor/quads';
+import { pageHasText, RUN_GAP_EM, snapTextLines } from '@/components/tools/pdf/editor/quads';
 import {
   MAX_HISTORY,
   canRedo,
@@ -145,6 +145,17 @@ function pageText(): ExtractedTextItem[] {
     word('the', 144, 120, 20, 11),
     word('lazy', 168, 118, 24, 14),
     word('   ', 70, 140, 40, 11),
+  ];
+}
+
+/**
+ * The CV's header row as `pdf.js` reports it: a name at the left margin and a
+ * date at the right, one baseline, 180 pt of empty paper between the two runs.
+ */
+function headerRow(): ExtractedTextItem[] {
+  return [
+    word('Muhammad Luqman Hakim Razlan', 50, 111, 156.7, 10),
+    word('Submitted May 18, 2026 · 04:12 PM', 386.7, 111, 159.5, 10, { hasEOL: true }),
   ];
 }
 
@@ -439,6 +450,57 @@ describe('quad snapping from ExtractedTextItem[]', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0].text).toBe('real');
   });
+
+  it('splits one baseline into one quad per contiguous run group', () => {
+    // The bug a screenshot caught and no user reported: on a row that carries a
+    // name at the left margin and a date at the right, one box meant a mark
+    // painted across 180 pt of empty paper. PDF 32000-1 Table 171 allows n
+    // quadrilaterals each covering "a word or group of contiguous words", so this
+    // is one annotation with one quad per run group.
+    const lines = snapTextLines(headerRow(), { x0: 40, y0: 108, x1: 560, y1: 124 });
+    expect(lines.map((line) => line.text)).toEqual([
+      'Muhammad Luqman Hakim Razlan',
+      'Submitted May 18, 2026 · 04:12 PM',
+    ]);
+    expect(lines[0]).toMatchObject({ x0: 50, x1: 206.7 });
+    expect(lines[1]).toMatchObject({ x0: 386.7, x1: 546.2 });
+    // The whitespace between them belongs to neither quad …
+    expect(lines[0].x1).toBeLessThan(lines[1].x0);
+    // … while both are still the same visual line: one baseline, one vertical box.
+    expect(lines[0].y0).toBeCloseTo(lines[1].y0, 6);
+    expect(lines[0].y1).toBeCloseTo(lines[1].y1, 6);
+    // The threshold is measured against the runs' own em, so ordinary word spacing
+    // (4 pt at an 11 pt em in `pageText`) stays one group — see `RUN_GAP_EM`.
+    expect(RUN_GAP_EM).toBeGreaterThan(4 / 11);
+    expect(snapTextLines(pageText(), { x0: 70, y0: 99, x1: 200, y1: 111 })).toHaveLength(1);
+  });
+
+  it('takes only the run groups a drag reaches', () => {
+    const label = snapTextLines(headerRow(), { x0: 40, y0: 108, x1: 220, y1: 124 });
+    expect(label.map((line) => line.text)).toEqual(['Muhammad Luqman Hakim Razlan']);
+    const date = snapTextLines(headerRow(), { x0: 400, y0: 108, x1: 500, y1: 124 });
+    expect(date.map((line) => line.text)).toEqual(['Submitted May 18, 2026 · 04:12 PM']);
+  });
+
+  it('widens a middle line into its run groups, not across the gap', () => {
+    // A narrow band crossing three lines: the middle line is still covered past the
+    // drag's x-range (the selection continues there) but it is covered as its two
+    // run groups, so the empty column inside the line stays paper.
+    const items = [
+      word('first line', 70, 100, 50, 11, { hasEOL: true }),
+      word('Middle label', 60, 120, 60, 11),
+      word('value', 300, 120, 40, 11, { hasEOL: true }),
+      word('last line', 70, 140, 50, 11),
+    ];
+    const lines = snapTextLines(items, { x0: 95, y0: 98, x1: 105, y1: 150 });
+    expect(lines.map((line) => line.text)).toEqual(['first line', 'Middle label', 'value', 'last line']);
+    expect(lines[1]).toMatchObject({ x0: 60, x1: 120 });
+    expect(lines[2]).toMatchObject({ x0: 300, x1: 340 });
+    // Both runs of the middle line keep that line's baseline.
+    expect(lines[1].y1).toBeCloseTo(lines[2].y1, 6);
+    // Reading order top to bottom, and left to right within one baseline.
+    for (let i = 1; i < lines.length; i += 1) expect(lines[i].y0).toBeGreaterThanOrEqual(lines[i - 1].y0);
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -714,6 +776,47 @@ describe('export compatibility with core/annotations', () => {
     const highlight = listed.find((a) => a.kind === 'Highlight')!;
     expect(highlight.rect.x).toBeCloseTo(70, 0);
     expect(highlight.rect.width).toBeGreaterThanOrEqual(130);
+  });
+
+  it('carries every run group of one line into /QuadPoints', async () => {
+    // The overlay and the file have to be one system: a mark over the CV's
+    // name+date row is ONE annotation carrying TWO quads, so a viewer paints the
+    // words and leaves the 180 pt of paper between them alone.
+    const doc = await PDFDocument.create();
+    doc.addPage([PAGE_W, PAGE_H]);
+    const lines = snapTextLines(headerRow(), { x0: 40, y0: 108, x1: 560, y1: 124 });
+    const mark = build('highlight', { page: 0, drag: { x: 40, y: 108, width: 520, height: 16 }, lines })!;
+    expect(mark.quadPoints).toHaveLength(16);
+    addAnnotations(doc, [annotationToSpec(mark)]);
+    expect(annotationCount(doc)).toBe(1);
+
+    const bytes = await doc.save({ useObjectStreams: false });
+    const reloaded = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const annots = reloaded.getPage(0).node.Annots();
+    expect(annots).toBeTruthy();
+    const dict = reloaded.context.lookupMaybe(annots!.get(0), PDFDict);
+    expect(dict, 'the annotation did not round-trip as a dictionary').toBeTruthy();
+    const flat = (key: string): number[] =>
+      (((dict as PDFDict).get(PDFName.of(key)) ?? undefined) as PDFArray)
+        .asArray()
+        .map((entry) => {
+          const value = entry instanceof PDFRef ? reloaded.context.lookup(entry) : entry;
+          return (value as PDFNumber).asNumber();
+        });
+    const points = flat('QuadPoints');
+    expect(points).toHaveLength(16);
+    // Quad one is the name, quad two the date: the whitespace between them is
+    // inside /Rect (which must contain every quad) and inside neither quad.
+    const left = (at: number) => Math.min(points[at], points[at + 4]);
+    const right = (at: number) => Math.max(points[at + 2], points[at + 6]);
+    expect(left(0)).toBeCloseTo(50, 1);
+    expect(right(0)).toBeCloseTo(206.7, 1);
+    expect(left(8)).toBeCloseTo(386.7, 1);
+    expect(right(8)).toBeCloseTo(546.2, 1);
+    expect(right(0)).toBeLessThan(left(8));
+    const rect = flat('Rect');
+    expect(rect[0]).toBeLessThanOrEqual(left(0) + 0.01);
+    expect(rect[2]).toBeGreaterThanOrEqual(right(8) - 0.01);
   });
 
   it('applies the redaction rects it was handed', async () => {

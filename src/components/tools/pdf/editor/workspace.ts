@@ -174,9 +174,20 @@ export function rotationNotice(count: number, degrees: number, snapped: boolean)
   return snapped ? `${turned} — snapped to 15\u00b0; hold Shift for a free angle.` : `${turned}.`;
 }
 
-/** Why a rotation did nothing to a mark that cannot carry one. */
-export function rotationRefusedNotice(label: string): string {
-  return `${label} marks a region of the page rather than a shape on it, so it cannot be turned.`;
+/**
+ * Why a rotation did nothing to a mark that cannot carry one.
+ *
+ * The reason is per subtype, because so is the refusal: a link is a click area
+ * with nothing painted, a note is a fixed-size icon that every viewer paints
+ * upright (see `canRotate` in `specs.ts`). Both end in the same sentence, so the
+ * panel never claims a turn it did not perform.
+ */
+export function rotationRefusedNotice(label: string, kind: 'Link' | 'Text' = 'Link'): string {
+  const why =
+    kind === 'Text'
+      ? 'is a fixed-size icon, and readers paint it upright'
+      : 'marks a region of the page rather than a shape on it';
+  return `${label} ${why}, so it cannot be turned.`;
 }
 
 /** Identity of a file for the work cache: same bytes → same workspace. */

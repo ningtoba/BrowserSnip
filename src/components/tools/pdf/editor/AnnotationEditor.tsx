@@ -67,10 +67,10 @@ import {
   ROTATE_SNAP_HINT,
   TOOL_SHORTCUT_KEYS,
   escapeLevelNotice,
+  goesToTheCaret,
   historyCommandForKey,
   isDuplicateKey,
   isSelectAllKey,
-  isTypeToEditKey,
   isTypingTarget,
   keyForTool,
   nextEscapeLevel,
@@ -83,6 +83,7 @@ import {
   annotationRotation,
   buildAnnotation,
   canRotate,
+  carriedAngle,
   describeAnnotation,
   dropEmptyMarks,
   duplicateMarks,
@@ -712,19 +713,28 @@ export function AnnotationEditor(): JSX.Element {
       const marks = selectedMarks(work?.history.present ?? [], ids);
       const refused = marks.filter((mark) => !canRotate(mark));
       if (refused.length === marks.length) {
-        setStatus(rotationRefusedNotice(TOOL_BY_ID[refused[0].tool]?.label ?? 'This'));
+        setStatus(
+          rotationRefusedNotice(
+            TOOL_BY_ID[refused[0].tool]?.label ?? 'This',
+            refused[0].kind === 'Text' ? 'Text' : 'Link',
+          ),
+        );
         return false;
       }
       updateWork((current) => ({
         ...current,
         history: pushHistory(current.history, turnMarks(current.history.present, current.selection, delta)),
       }));
-      const angle = normaliseAngle(annotationRotation(marks[0]) + delta);
+      // The angle is read from a mark that can actually hold one, so a mixed
+      // selection cannot report the angle of the mark that refused it.
+      const turnable = marks.filter(canRotate);
+      const angle = normaliseAngle(annotationRotation(turnable[turnable.length - 1]) + delta);
       setStatus(rotationNotice(ids.length, angle, false));
       if (refused.length > 0) {
         setStatus(
           `${rotationNotice(ids.length - refused.length, angle, false)} ${rotationRefusedNotice(
             TOOL_BY_ID[refused[0].tool]?.label ?? 'Those',
+            refused[0].kind === 'Text' ? 'Text' : 'Link',
           )}`,
         );
       }
@@ -1029,7 +1039,12 @@ export function AnnotationEditor(): JSX.Element {
       const marks = selectedMarks(work.history.present, work.selection);
       if (marks.length === 0) return;
       if (!marks.some(canRotate)) {
-        setStatus(rotationRefusedNotice(TOOL_BY_ID[marks[0].tool]?.label ?? 'This'));
+        setStatus(
+          rotationRefusedNotice(
+            TOOL_BY_ID[marks[0].tool]?.label ?? 'This',
+            marks[0].kind === 'Text' ? 'Text' : 'Link',
+          ),
+        );
         return;
       }
       const box = selectionScreenBounds(marks, geom);
@@ -1398,11 +1413,13 @@ export function AnnotationEditor(): JSX.Element {
       const selectedMark = picked.length === 1 ? picked[0] : null;
       // Type-to-edit: a selected text box or note takes the next character, the
       // way pdf.js hands focus to the box it just made. This has to be tested
-      // before the single-key tool arms, or typing "p" would swap the pen.
+      // before the single-key tool arms, or typing "p" would swap the pen — and
+      // the caret decides `r`: the mark being typed into keeps the letter, a mark
+      // that is merely selected has no caret and is turned by it.
       if (
         selectedMark &&
         EDITABLE_TEXT_TOOLS.includes(selectedMark.tool) &&
-        isTypeToEditKey(event.key, modifiers)
+        goesToTheCaret(event.key, modifiers, editingId === selectedMark.id)
       ) {
         event.preventDefault();
         armTool('select');
@@ -1412,7 +1429,8 @@ export function AnnotationEditor(): JSX.Element {
         return;
       }
       // `R` turns the selection a quarter turn, `Shift+R` back. It sits after
-      // type-to-edit on purpose: with a text box selected, `r` is a letter.
+      // type-to-edit on purpose: the mark holding the caret never reaches here,
+      // so typing "red" into a text box cannot swing it.
       const turn = rotationStepForKey(event.key, modifiers);
       if (turn !== null && (work?.selection.length ?? 0) > 0) {
         event.preventDefault();
@@ -1926,19 +1944,20 @@ export function AnnotationEditor(): JSX.Element {
                   title={selectionGroup ? `${selectionGroup.count} marks selected` : 'Selected mark'}
                   meta={selectionGroup ? 'shared properties' : (TOOL_BY_ID[primary.tool]?.label ?? 'mark')}
                 >
-                  <SelectionPanel
-                    summary={selectionView}
-                    angle={annotationRotation(primary)}
-                    turnable={selectionMarks.some(canRotate)}
-                    refusedLabel={
-                      selectionMarks.length > 0 && !canRotate(primary)
-                        ? (TOOL_BY_ID[primary.tool]?.label ?? 'This')
-                        : null
-                    }
-                    onStyle={(shared) => patchStyle(shared)}
-                    onAngle={rotateSelectedTo}
-                    onTurn={(delta) => turnSelected(delta)}
-                  />
+                    <SelectionPanel
+                      summary={selectionView}
+                      angle={carriedAngle(primary)}
+                      turnable={selectionMarks.some(canRotate)}
+                      refusedLabel={
+                        selectionMarks.length > 0 && !canRotate(primary)
+                          ? (TOOL_BY_ID[primary.tool]?.label ?? 'This')
+                          : null
+                      }
+                      refusedKind={primary.kind === 'Text' ? 'Text' : 'Link'}
+                      onStyle={(shared) => patchStyle(shared)}
+                      onAngle={rotateSelectedTo}
+                      onTurn={(delta) => turnSelected(delta)}
+                    />
                 </InspectorSection>
               </motion.div>
             ) : null}
@@ -2710,6 +2729,7 @@ function SelectionPanel({
   angle,
   turnable,
   refusedLabel,
+  refusedKind,
   onStyle,
   onAngle,
   onTurn,
@@ -2718,6 +2738,8 @@ function SelectionPanel({
   angle: number;
   turnable: boolean;
   refusedLabel: string | null;
+  /** The subtype that refused, because the reason differs between the two. */
+  refusedKind: 'Link' | 'Text';
   onStyle: (shared: SharedStyle) => void;
   onAngle: (degrees: number) => void;
   onTurn: (delta: number) => void;
@@ -2824,7 +2846,9 @@ function SelectionPanel({
         </button>
       </div>
       {!turnable && refusedLabel ? (
-        <p className="text-[10px] leading-relaxed text-ink-muted">{rotationRefusedNotice(refusedLabel)}</p>
+        <p className="text-[10px] leading-relaxed text-ink-muted">
+          {rotationRefusedNotice(refusedLabel, refusedKind)}
+        </p>
       ) : (
         <p className="text-[10px] leading-relaxed text-ink-muted">{ROTATE_SNAP_HINT}</p>
       )}

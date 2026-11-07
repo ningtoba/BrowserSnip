@@ -35,21 +35,25 @@ arrow-key nudge and Delete all work on it immediately. Same rule for **Stamp**,
 tool: place once, hand control back.
 **Ruled by the user, so this is settled — implement it exactly:**
 
-- One-shot by default: Text box, Stamp, Image, Signature, Link. Place → Select.
-- Sticky by default, no pin needed: Pen, Highlight, Underline, Strike-out,
-  Rectangle, Ellipse, Line, Arrow, Freeform.
-- **A visible pin/lock on every placement tool** overrides the default. Pinned
-  Text box keeps placing on each click until unpinned or `Esc`. This is the
-  answer to "pdf.js never reverts" versus "Acrobat always reverts": the resting
-  state is a cursor, and stickiness is the user's explicit choice, not a side
-  effect of the implementation order.
-- Pin state must be visible on the tool button (`aria-pressed`, a lock glyph or
-  filled state) and must survive selecting another object; `Esc` unwinds one
-  level at a time — dismiss the in-progress edit, then clear the selection, then
-  unpin, then disarm the tool.
-- Sticky-vs-one-shot is a declared property of each tool (`afterCreate` in the
-  tool spec, following EmbedPDF's vocabulary), never an accident of which handler
-  returns first.
+- **One rule for every tool: after a create, the active tool returns to Select.**
+  Text box, Stamp, Image, Signature, Link, Pen, Highlight, Underline, Strike-out,
+  Rectangle, Ellipse, Line, Arrow, Freeform — all of them. The mark just created
+  is the selection, so the caret, the handles, arrow-key nudge and Delete work on
+  it immediately. A gesture that created nothing (a drag over paper with no words
+  under it, a click too small to be a shape) leaves the tool in the hand, because
+  the user is clearly still trying to make a mark.
+- `Esc` unwinds one level at a time — dismiss the in-progress edit, then clear the
+  selection, then disarm the tool.
+
+> **2026-11-08 — do not reinstate the pin.** An earlier version of this brief made
+> some tools sticky by default and gave every placement tool a visible pin/lock
+> that overrode the default (with `aria-pressed` on the button, pin state that
+> survived selecting another object, and an extra rung on the `Esc` ladder to
+> unpin). It was built, tested and deployed — and then reversed on the user's
+> instruction: *"every tool after use will go back to select tool. no need for the
+> lock icon please make it simple"*. The buttons, the pin state, the `afterCreate`
+> tool-spec property and the unpin rung are all deleted. Anyone tempted to put the
+> lock back should read that sentence again first.
 
 **Bug 2 — highlight is not done properly.**
 Dragging a highlight must select the *text*, not a rectangle. Concretely: snap
