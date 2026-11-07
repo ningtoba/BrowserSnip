@@ -141,7 +141,10 @@ export async function odpToBlocks(bytes: Uint8Array): Promise<Block[]> {
   const document = await openDocumentXml(bytes, 'content.xml');
   const blocks: Block[] = [];
   for (const page of byLocalName(document, 'page')) {
-    blocks.push({ kind: 'pagebreak' });
+    // A break before the FIRST draw page would buy a blank leader: `renderBlocks`
+    // already opens on a fresh page. Tools that trim it themselves are fine, the
+    // ones that do not shipped an empty sheet in front of every deck.
+    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
     for (const shape of byLocalName(page, 'shape')) {
       const isTitle = (shape.getAttribute('draw:presentationclass') ?? '') === 'title';
       for (const text of textsIn(shape)) {
@@ -154,7 +157,10 @@ export async function odpToBlocks(bytes: Uint8Array): Promise<Block[]> {
     }
     if (blocks.length > BLOCK_LIMIT) break;
   }
-  if (blocks.length === 0) throw new Error('That ODP had no readable slides.');
+  // A deck whose draw pages hold no text the reader can see comes back empty
+  // rather than throwing: the calling tool owns that refusal, because it can
+  // name the format and the alternative (“export it to PDF from PowerPoint”)
+  // where a reader-only message can only say the file had nothing.
   return blocks;
 }
 
@@ -172,7 +178,8 @@ export async function pptxToBlocks(
   if (slides.length === 0) throw new Error('That PPTX has no slides.');
   const blocks: Block[] = [];
   for (const slide of slides) {
-    blocks.push({ kind: 'pagebreak' });
+    // See `odpToBlocks`: the first slide starts the document, it does not turn it.
+    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
     const texts = textsOf(parseXml(byName.get(slide)!, 'That slide is not readable XML.'));
     texts.forEach((text, index) => {
       blocks.push(
@@ -261,7 +268,8 @@ export async function xpsToBlocks(bytes: Uint8Array): Promise<Block[]> {
   if (pages.length === 0) throw new Error('That XPS package has no fixed pages. Re-save it as PDF first.');
   const blocks: Block[] = [];
   for (const page of pages) {
-    blocks.push({ kind: 'pagebreak' });
+    // See `odpToBlocks`: a leading break buys a blank first sheet.
+    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
     const document = parseXml(byName.get(page)!, 'That XPS page is not readable XML.');
     for (const glyph of Array.from(document.getElementsByTagName('*'))) {
       // The name is compared as written: `<t:Glyphs>` under a prefix this package
@@ -298,7 +306,7 @@ export function parseEmail(source: string): ParsedEmail {
   const headerBlock = source.slice(0, splitAt);
   const body = source.slice(splitAt);
   const headers = readHeaders(headerBlock);
-  const decoded = decodeMimeBody(body, headers['content-type'] ?? 'text/plain');
+  const decoded = decodeMimeBody(body, headers['content-type'] ?? 'text/plain', headers);
   return {
     subject: decodeHeader(headers.subject ?? '(no subject)'),
     from: decodeHeader(headers.from ?? 'unknown sender'),
@@ -550,7 +558,19 @@ function decodeHeader(value: string): string {
         return text;
       }
     }
-    return String(text).replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (hex) => String.fromCharCode(parseInt(hex.slice(1), 16)));
+    // `=XX` is a byte here too: `=?UTF-8?Q?caf=E9?=` is “café”, not “cafÃ©”.
+    const literal = new TextEncoder().encode(String(text).replace(/_/g, ' '));
+    const bytes: number[] = [];
+    for (let i = 0; i < literal.length; i++) {
+      const hex = literal[i] === 0x3d ? /^[0-9A-Fa-f]{2}$/.exec(String.fromCharCode(literal[i + 1], literal[i + 2])) : null;
+      if (hex) {
+        bytes.push(Number.parseInt(hex[0], 16));
+        i += 2;
+        continue;
+      }
+      bytes.push(literal[i]);
+    }
+    return decodeBytes(new Uint8Array(bytes), String(charset));
   });
 }
 
@@ -577,10 +597,11 @@ interface MimePart {
 function decodeMimeBody(
   body: string,
   contentType: string,
+  headers: Record<string, string> = {},
 ): { text: string; html?: string; attachments: { filename?: string; mimeType: string; size: number }[] } {
   const boundary = /boundary\s*=\s*"?([^";\s]+)"?/i.exec(contentType);
   if (!boundary) {
-    const text = transfer(decodeHeader(body), contentType);
+    const text = transfer(decodeHeader(body), contentType, headers['content-transfer-encoding']);
     return { ...splitTextHtml(text, contentType), attachments: [] };
   }
   const parts = splitMultipart(body, boundary[1]);
@@ -590,12 +611,16 @@ function decodeMimeBody(
   for (const part of parts) {
     const type = part.headers['content-type'] ?? 'text/plain';
     const disposition = part.headers['content-disposition'] ?? '';
-    const filename = /filename\s*=\s*"?([^";\n]+)"?/i.exec(disposition)?.[1];
+    // The value ends at the closing quote or the end of the header line: a
+    // quoted `filename="deck.pdf"` is `deck.pdf`, and the CR that follows it in
+    // a CRLF message must not ride along — a drawn `\r` is not encodable in a
+    // Latin-1 face, so the listing used to fail the whole message.
+    const filename = /filename\s*=\s*("?)([^";\r\n]+)\1/i.exec(disposition)?.[2];
     if (filename) {
       attachments.push({ filename, mimeType: type, size: part.body.length });
       continue;
     }
-    const decoded = transfer(decodeHeader(part.body), type);
+    const decoded = transfer(decodeHeader(part.body), type, part.headers['content-transfer-encoding']);
     if (/^text\/html/i.test(type) && !html) html = decoded;
     else if (/^text\/plain/i.test(type) && !text) text = decoded;
     else attachments.push({ filename: `part (${type})`, mimeType: type, size: part.body.length });
@@ -617,23 +642,63 @@ function splitMultipart(body: string, boundary: string): MimePart[] {
     });
 }
 
-function transfer(value: string, type: string): string {
-  if (!/base64/i.test(value) && /charset\s*=\s*utf-8/i.test(type)) return quotedPrintable(value);
+function transfer(value: string, type: string, encoding?: string): string {
+  const charset = /charset\s*=\s*"?([^";\s]+)"?/i.exec(type)?.[1] ?? 'utf-8';
+  if (/quoted-printable/i.test(encoding ?? '')) return quotedPrintable(value, charset);
+  if (/base64/i.test(encoding ?? '')) {
+    try {
+      return decodeBytes(base64Bytes(value), charset);
+    } catch {
+      /* the part said base64 and was not */
+    }
+  }
+  if (encoding) return newlines(value);
+  // A `Content-Transfer-Encoding` header is not universal; guess for the bodies
+  // that arrive without one, but never let the guess keep a `\r`.
   const collapsed = value.replace(/\r?\n/g, '');
   if (/^[\sA-Za-z0-9+/=]+$/.test(collapsed) && collapsed.length % 4 === 0 && collapsed.length > 32) {
     try {
-      return new TextDecoder('utf-8').decode(base64Bytes(collapsed));
+      return decodeBytes(base64Bytes(collapsed), charset);
     } catch {
       /* not base64 after all */
     }
   }
-  return quotedPrintable(value);
+  return newlines(quotedPrintable(value, charset));
 }
 
-function quotedPrintable(value: string): string {
-  return value
-    .replace(/=\r?\n/g, '')
-    .replace(/=([0-9A-Fa-f]{2})/g, (hex) => String.fromCharCode(parseInt(hex.slice(1), 16)));
+/** CRLF and a lone CR both mean “end of line”; a bare `\r` cannot be drawn. */
+function newlines(value: string): string {
+  return value.replace(/\r\n?/g, '\n');
+}
+
+function decodeBytes(bytes: Uint8Array, charset: string): string {
+  try {
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+}
+
+/**
+ * Quoted-printable: `=XX` names ONE BYTE, not one character.
+ *
+ * Turning each pair straight into a code point decoded `=C3=A9` as the two
+ * letters “Ã©” instead of the one the part’s charset means, so every accented
+ * word in a plain-text message arrived as mojibake.
+ */
+function quotedPrintable(value: string, charset = 'utf-8'): string {
+  const text = newlines(value).replace(/=\n/g, '');
+  const bytes: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const hex = text[i] === '=' ? /^([0-9A-Fa-f]{2})/.exec(text.slice(i + 1, i + 3)) : null;
+    if (hex) {
+      bytes.push(Number.parseInt(hex[1], 16));
+      i += 2;
+      continue;
+    }
+    for (const byte of new TextEncoder().encode(text[i])) bytes.push(byte);
+  }
+  return decodeBytes(new Uint8Array(bytes), charset);
 }
 
 function splitTextHtml(text: string, contentType: string): { text: string; html?: string } {

@@ -419,6 +419,24 @@ function textFormat(label: string, hint?: string) {
   return { kinds: ['text'] as SourceKind[], label, hint };
 }
 
+/**
+ * What each text route really parses, spelled once.
+ *
+ * The intake button reads the `accept` off the definition and the file picker
+ * reads it off the field, so two different strings are two different promises
+ * about what can be dropped. Every extension here is one the reader accepts on
+ * content, not on name.
+ */
+const SOURCE_ACCEPT = {
+  txt: '.txt,.text,.log,.md,.markdown',
+  markdown: '.md,.markdown,.txt',
+  html: '.html,.htm,.xhtml',
+  csv: '.csv,.tsv,.txt',
+  json: '.json,.ndjson,.txt',
+  xml: '.xml,.xsd,.gpx,.kml,.rss,.atom',
+  rtf: '.rtf',
+};
+
 /* ------------------------------------------------------------- tool catalog */
 
 export const convertToTools: PdfToolDefinition[] = [
@@ -437,7 +455,8 @@ export const convertToTools: PdfToolDefinition[] = [
     actionLabel: 'Create PDF',
     promise: 'One page per image, at the size you pick, assembled in this tab. Multi-page TIFFs become multiple pages.',
     notes: [
-      'Images are placed as they decode: the original pixels are kept, and the page either hugs the image or fits it inside a sheet.',
+      'Images are placed as they decode: the pixels are kept at their decoded size and resolution, and the page either hugs the image or fits it inside a sheet.',
+      'Each picture is embedded as PNG, so a PDF built from JPEGs is larger than the JPEGs themselves — the pixels are stored losslessly, not copied byte for byte.',
       RASTER_LOSS,
       'HEIC, AVIF and JXL depend on the browser decoder; when this browser cannot open one, the run says which file failed instead of guessing.',
       'Scanned pages are still pictures. Digitize Document runs OCR and adds a real, selectable text layer on top.',
@@ -583,6 +602,7 @@ export const convertToTools: PdfToolDefinition[] = [
     promise: 'Your SVG artwork on a page you choose, rasterised at up to 4096 px on the long edge.',
     notes: [
       'SVG is painted through the browser canvas, so the result is a high-resolution bitmap: strokes, gradients and text become pixels and cannot be re-coloured or searched afterwards. A server-grade engine keeps them as vector operators.',
+      'The artwork’s own `width`/`height` decide the sheet in “Fit the artwork”; “Square” keeps the long edge and pads the short one.',
       'Text inside the SVG renders in whatever font this browser resolved, not an embedded copy of yours.',
       'Animations, filters and external references (`<image href="…">`) are not reproduced.',
     ],
@@ -598,7 +618,7 @@ export const convertToTools: PdfToolDefinition[] = [
           { value: 'fit', label: 'Fit the artwork' },
           { value: 'a4', label: 'A4' },
           { value: 'letter', label: 'Letter' },
-          { value: 'square', label: 'Square (artwork ratio)' },
+          { value: 'square', label: 'Square (long edge)' },
         ],
       },
       MARGIN_FIELD,
@@ -626,7 +646,7 @@ export const convertToTools: PdfToolDefinition[] = [
       }
       const size = stringValue(context.values, 'pageSize', 'fit');
       const packed = await pdfFromImages(pages, {
-        pageSize: size === 'square' ? 'fit' : size,
+        pageSize: size,
         margin: clampNumber(numberValue(context.values, 'margin', 56), 0, 144),
       });
       const warnings = [
@@ -709,18 +729,18 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['plain text', 'txt', 'monospace', 'manuscript'],
     inputKind: 'text',
-    accept: '.txt,.text,.log,.md,.markdown',
+    accept: SOURCE_ACCEPT.txt,
     surface: 'none',
     outputSuffix: '_from_text.pdf',
     actionLabel: 'Typeset',
     promise: 'A paginated, selectable-text PDF with real margins, page numbers and optional monospace.',
     notes: [
       ...TEXT_NOTES,
-      'Plain text carries no structure, so nothing is inferred beyond paragraphs, blank lines and the first line as a title.',
+      'Plain text carries no structure, so nothing is inferred: paragraphs come from blank lines, line breaks are kept, and no line is promoted to a title.',
       'Long lines are wrapped to the column; hard line breaks in the source are respected.',
     ],
     fields: [
-      ...sourceFields('.txt,.text,.log', 'Paste your text here…', 'Source'),
+      ...sourceFields(SOURCE_ACCEPT.txt, 'Paste your text here…', 'Source'),
       ...TEXT_SIZE_FIELDS,
       { key: 'monospace', label: 'Monospaced', type: 'toggle', default: false, group: 'Typography', help: 'One character wide, so aligned columns and code stay lined up. Proportional text is easier to read in prose.' },
       { key: 'paragraphs', label: 'Blank line starts a new paragraph', type: 'toggle', default: true, group: 'Typography', help: 'Off keeps every line break exactly as typed, which is what you want for verse, tables and code.' },
@@ -748,19 +768,19 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['md', 'readme', 'notes', 'gfm'],
     inputKind: 'text',
-    accept: '.md,.markdown,.txt',
+    accept: SOURCE_ACCEPT.markdown,
     surface: 'none',
     outputSuffix: '_from_markdown.pdf',
     actionLabel: 'Render',
     promise: 'CommonMark and GFM structure — headings, lists, tables, fenced code, task lists — as selectable text.',
     notes: [
       ...TEXT_NOTES,
-      'Only `data:` images can be embedded: no network requests are made, so remote image URLs stay as alt text.',
+      'Only `data:` images can be embedded: no network requests are made, so remote image URLs stay as alt text — and a picture written inside a sentence prints its alt text too, because pictures are placed between paragraphs, not between words.',
       'Maths is written out as its LaTeX source in a code face, not typeset — a server engine would run KaTeX.',
       'Footnotes, definition lists and Mermaid diagrams are not rendered.',
     ],
     fields: [
-      ...sourceFields('.md,.markdown', '# Heading\n\nWrite **Markdown** here…', 'Source'),
+      ...sourceFields(SOURCE_ACCEPT.markdown, '# Heading\n\nWrite **Markdown** here…', 'Source'),
       { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 6, max: 24, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography',
         help: 'Body text size. Headings and code stay proportional to it, so one number scales the document.',
       },
@@ -800,7 +820,7 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['web page', 'markup', 'email', 'convert html'],
     inputKind: 'text',
-    accept: '.html,.htm,.xhtml',
+    accept: SOURCE_ACCEPT.html,
     surface: 'none',
     outputSuffix: '_from_html.pdf',
     actionLabel: 'Lay out',
@@ -809,10 +829,12 @@ export const convertToTools: PdfToolDefinition[] = [
       ...TEXT_NOTES,
       'The markup is parsed in a detached document, so author scripts never run and nothing is injected into this page.',
       'There is no CSS layout engine: floats, grid, flexbox, absolute positioning, ::before content and web fonts are not reproduced. Inline bold/italic/colour/size attributes are.',
+      'Print CSS is not honoured either: an `@page { size: … }` rule cannot resize the sheet, so the Page size and Orientation controls above decide.',
+      'An `<img>` that stands as its own block is embedded when it is a data: URL; one written inline inside a paragraph prints its alt text, because the renderer places pictures between paragraphs, not between words.',
       'Only `data:` images are embedded. `src` values that need the network are dropped and reported.',
     ],
     fields: [
-      ...sourceFields('.html,.htm', '<h1>Title</h1><p>Body text…</p>', 'Source'),
+      ...sourceFields(SOURCE_ACCEPT.html, '<h1>Title</h1><p>Body text…</p>', 'Source'),
       { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 6, max: 24, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography', help: 'Body text size. Headings are scaled from it, so changing this resizes the whole document.' },
       { key: 'lineHeight', label: 'Line height', type: 'slider', default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography', help: 'A multiple of the text size, so it stays readable when you change the size above.' },
       { key: 'embedImages', label: 'Embed images referenced by data: URL', type: 'toggle', default: true, group: 'Typography',
@@ -862,7 +884,7 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['spreadsheet', 'excel', 'table', 'delimiter'],
     inputKind: 'text',
-    accept: '.csv,.tsv,.txt',
+    accept: SOURCE_ACCEPT.csv,
     surface: 'none',
     outputSuffix: '_from_csv.pdf',
     actionLabel: 'Tabulate',
@@ -873,8 +895,8 @@ export const convertToTools: PdfToolDefinition[] = [
       'Quoted fields, embedded newlines and CRLF are handled; a very wide table is scaled down and may drop to a small type size.',
     ],
     fields: [
-      ...sourceFields('.csv,.tsv', 'name,qty,price\nWidget,3,9.99', 'Source'),
-      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', group: 'Table', help: 'Wrong delimiter, wrong table: the file is split on this character and nothing else.', options: [
+      ...sourceFields(SOURCE_ACCEPT.csv, 'name,qty,price\nWidget,3,9.99', 'Source'),
+      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', group: 'Table', help: 'Wrong delimiter, wrong table: rows are split on this character (or, with Detect, on the one the header line uses) and nothing else.', options: [
         { value: ',', label: 'Comma' }, { value: ';', label: 'Semicolon' }, { value: '\t', label: 'Tab' }, { value: 'auto', label: 'Detect' },
       ] },
       { key: 'headerRow', label: 'First row is a header', type: 'toggle', default: true, group: 'Table',
@@ -889,12 +911,17 @@ export const convertToTools: PdfToolDefinition[] = [
       let widest = 0;
       const delimiter = stringValue(context.values, 'delimiter', ',');
       for (const source of sources) {
-        const rows = splitCsvRows(source.text, delimiter === 'auto' ? undefined : delimiter);
-        widest = Math.max(widest, ...rows.map((row) => row.length));
-        blocks.push(...(await csvToBlocks(source.text, {
+        const tableBlocks = await csvToBlocks(source.text, {
           delimiter: delimiter === 'auto' ? undefined : delimiter,
           header: booleanValue(context.values, 'headerRow', true),
-        })));
+        });
+        // Counted from the grid that is about to be drawn, so the warning below
+        // cannot disagree with the table the user sees.
+        for (const block of tableBlocks) {
+          if (block.kind !== 'table') continue;
+          widest = Math.max(widest, block.header?.length ?? 0, ...block.rows.map((row) => row.length));
+        }
+        blocks.push(...tableBlocks);
       }
       if (blocks.length === 0) {
         throw new ToolInputError('UNSUPPORTED', 'Those files had no rows to draw.', {
@@ -916,19 +943,19 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['data', 'api response', 'config', 'structured'],
     inputKind: 'text',
-    accept: '.json,.ndjson,.txt',
+    accept: SOURCE_ACCEPT.json,
     surface: 'none',
     outputSuffix: '_from_json.pdf',
     actionLabel: 'Report',
-    promise: 'A keyed, indented report with every value as selectable text.',
+    promise: 'A keyed report — one table per object, one heading per level — with every value as selectable text.',
     notes: [
       ...TEXT_NOTES,
-      'Structure is preserved as headings, lists and key/value lines — not as a JSON literal, so copying text out will not paste back as valid JSON.',
+      'Structure is preserved as headings, key/value tables and bulleted lists — not as a JSON literal, so copying text out will not paste back as valid JSON.',
       'Anything deeper than the Maximum depth control is replaced by a `(truncated)` marker and reported in the warnings.',
       'NDJSON (one document per line) is read as one report per line.',
     ],
     fields: [
-      ...sourceFields('.json', '{\n  "name": "value"\n}', 'Source'),
+      ...sourceFields(SOURCE_ACCEPT.json, '{\n  "name": "value"\n}', 'Source'),
       { key: 'maxDepth', label: 'Maximum depth', type: 'number', default: 8, min: 1, max: 20, step: 1, integer: true, group: 'Report', help: 'How deep nested objects and arrays are printed before the rest is collapsed to a count. Deeper is more faithful and much longer.' },
     ],
     async run(context) {
@@ -970,7 +997,7 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['markup', 'gpx', 'svg source', 'data interchange'],
     inputKind: 'text',
-    accept: '.xml,.xsd,.gpx,.kml',
+    accept: SOURCE_ACCEPT.xml,
     surface: 'none',
     outputSuffix: '_from_xml.pdf',
     actionLabel: 'Print tree',
@@ -980,7 +1007,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'The tree is printed as text: no stylesheet is applied, so XSLT, namespaces and entity resolution do not change what you see.',
       'A GPX or KML file therefore reads as a structure dump, not as a map.',
     ],
-    fields: sourceFields('.xml', '<?xml version="1.0"?><root/>', 'Source'),
+    fields: sourceFields(SOURCE_ACCEPT.xml, '<?xml version="1.0"?><root/>', 'Source'),
     async run(context) {
       // An SVG *is* XML, so the drawing kind is accepted here as well (E2).
       const { sources, warnings } = await readSources(context, {
@@ -1012,18 +1039,18 @@ export const convertToTools: PdfToolDefinition[] = [
     category: 'convert-to',
     keywords: ['rich text', 'write', 'wordpad'],
     inputKind: 'text',
-    accept: '.rtf',
+    accept: SOURCE_ACCEPT.rtf,
     surface: 'none',
     outputSuffix: '_from_rtf.pdf',
     actionLabel: 'Convert to PDF',
     promise: 'Text, paragraphs, basic runs with bold/italic/underline, colour and bullet lists.',
     notes: [
       ...TEXT_NOTES,
-      'The control words this reader understands are a subset: character tables, embedded OLE objects, footnotes, tables, stylesheets and pictures stored as raw binary are dropped and reported.',
+      'The control words this reader understands are a subset: character tables, colour tables, embedded OLE objects, footnotes and pictures stored as raw binary are dropped and reported.',
       'Non-ASCII characters written as backslash-xx escapes are decoded with the document’s declared code page where it can be determined, otherwise Windows-1252.',
       'Use Word to PDF for .rtf too: it reaches the same output and accepts a DOCX alongside it.',
     ],
-    fields: sourceFields('.rtf', '{\\rtf1 Hello}', 'Source'),
+    fields: sourceFields(SOURCE_ACCEPT.rtf, '{\\rtf1 Hello}', 'Source'),
     async run(context) {
       const { sources, warnings } = await readSources(context, {
         kinds: ['text'],
@@ -1071,7 +1098,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['docx', 'doc', 'odt', 'office', 'document'],
     multiFile: true,
     inputKind: 'office',
-    accept: '.docx,.doc,.odt,.rtf',
+    accept: '.docx,.docm,.doc,.odt,.ott,.rtf',
     surface: 'none',
     outputSuffix: '_from_word.pdf',
     actionLabel: 'Convert to PDF',
@@ -1088,7 +1115,7 @@ export const convertToTools: PdfToolDefinition[] = [
       MARGIN_FIELD,
       ORIENTATION_FIELD,
       { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: false, group: 'Page',
-        help: 'Adds a footer number to the Word file itself, so Word can renumber it when the text re-flows.',
+        help: 'Numbers the sheets this converter produces. The original document’s own page numbering cannot survive a re-flow.',
       },
     ],
     async run(context) {
@@ -1142,7 +1169,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['xlsx', 'xls', 'ods', 'spreadsheet', 'workbook'],
     multiFile: true,
     inputKind: 'office',
-    accept: '.xlsx,.xls,.ods,.csv',
+    accept: '.xlsx,.xlsm,.xls,.ods,.ots,.csv',
     surface: 'none',
     outputSuffix: '_from_excel.pdf',
     actionLabel: 'Tabulate',
@@ -1361,7 +1388,7 @@ export const convertToTools: PdfToolDefinition[] = [
           hint: 'A DRM-protected EPUB decrypts to nothing here; remove the DRM or re-export the book.',
         });
       }
-      return blocksResult(blocks, layoutOptions(context), `Reflowed ${blocks.length} block(s) into`, warnings);
+      return blocksResult(blocks, layoutOptions(context), `Reflowed ${inputs.length} ebook(s) into`, warnings);
     },
   },
 
@@ -1450,7 +1477,7 @@ export const convertToTools: PdfToolDefinition[] = [
     notes: [
       'The recogniser is the bundled ONNX model running in this tab; nothing is uploaded.',
       'OCR output is selectable text, but it is machine-read: expect errors in small print, handwriting, tables and low-contrast scans, and no recovery of fonts, colours or layout.',
-      'The page image itself is unchanged apart from the optional white-point pass, so the file stays as large as the scan.',
+      'The page image is not downscaled or deskewed — only the optional white-point pass touches it — and it is embedded as PNG, so the PDF is at least as large as the scan.',
       'The Language control is a hint for the status line: the bundled model is dictionary-driven and recognises scripts without a language switch.',
       'The first run downloads the recognition models; after that they are cached for the session.',
     ],
@@ -1460,7 +1487,7 @@ export const convertToTools: PdfToolDefinition[] = [
         { value: 'en', label: 'English' }, { value: 'de', label: 'German' }, { value: 'es', label: 'Spanish' },
         { value: 'fr', label: 'French' }, { value: 'zh', label: 'Chinese' }, { value: 'ja', label: 'Japanese' },
       ],
-        help: 'Tells the recogniser which alphabet and word list to expect; the wrong one produces confident nonsense.',
+        help: 'Recorded on the status line and in the report. The bundled model is dictionary-driven and reads the scripts it was trained on without a switch, so this does not change what it finds.',
       },
       { key: 'keepImage', label: 'Keep the page image and add an invisible text layer', type: 'toggle', default: true, group: 'Recognition',
         help: 'On keeps the page looking exactly like the scan, with the words hidden underneath for searching and selecting.',
@@ -1702,16 +1729,6 @@ async function twoUp(
 /** Count the worksheet headings among OpenDocument spreadsheet blocks. */
 function countSheetHeadings(blocks: Block[]): number {
   return blocks.filter((block) => block.kind === 'heading').length;
-}
-
-/** Split CSV/TSV text into rows for the widest-column warning. */
-function splitCsvRows(text: string, delimiter?: string): string[][] {
-  const sep = delimiter ?? ',';
-  return text
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => line.split(sep));
 }
 
 /** `{"a":{"b":1}}` → 3. Used to warn when the depth control truncates. */

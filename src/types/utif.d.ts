@@ -23,8 +23,16 @@ declare module 'utif' {
     decodeImage(buffer: ArrayBuffer, ifd: UtifIFD): void;
     /** Normalise any supported sample layout to 8-bit RGBA. */
     toRGBA8(ifd: UtifIFD): Uint8Array;
-    /** Encode RGBA bytes into a baseline little-endian TIFF string. */
-    encodeImage(data: Uint8Array, width: number, height: number): string;
+    /**
+     * The header and IFD directories for a set of tag maps (`t256`, `t273`, …).
+     *
+     * Big-endian `MM` bytes with NO pixel data: `t273` names an offset the caller
+     * then fills in, which is exactly what `encodeImage` does by appending RGBA
+     * at byte 1000. Verified against utif 3.1.0 (`UTIF.js:65`).
+     */
+    encode(ifds: readonly Record<string, unknown>[]): ArrayBuffer;
+    /** Baseline TIFF for one RGBA frame: `encode` plus its pixels at offset 1000. */
+    encodeImage(rgba: Uint8Array, width: number, height: number): ArrayBuffer;
     /** Convenience: Latin-1 string → `ArrayBuffer`. */
     str2ab(str: string): ArrayBuffer;
   }

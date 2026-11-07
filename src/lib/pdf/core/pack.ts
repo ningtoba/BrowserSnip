@@ -122,6 +122,12 @@ async function placeImage(
     // matches what every scanner application produces.
     width = natural[0] + options.margin * 2;
     height = natural[1] + options.margin * 2;
+  } else if (mode === 'square') {
+    // A square sheet long enough for the artwork's own long edge, so the
+    // picture keeps its ratio inside it instead of being cropped or stretched.
+    const side = Math.max(natural[0], natural[1]) + options.margin * 2;
+    width = side;
+    height = side;
   } else {
     const landscape = options.orientation === 'landscape'
       || (options.orientation !== 'portrait' && natural[0] > natural[1]);
@@ -145,11 +151,15 @@ async function placeImage(
     });
   }
 
-  const usableWidth = width - options.margin * 2;
-  const usableHeight = height - options.margin * 2;
+  const usableWidth = Math.max(1, width - options.margin * 2);
+  const usableHeight = Math.max(1, height - options.margin * 2);
   const scale = fitScale(natural[0], natural[1], usableWidth, usableHeight, options.fit ?? 'contain');
-  const drawWidth = natural[0] * scale;
-  const drawHeight = natural[1] * scale;
+  // “Stretch” promises a picture that fills the sheet by distorting it, which is
+  // two different scales. A single number here made it identical to “Fit inside
+  // the page”, so the control changed nothing except the file's own description.
+  const stretched = (options.fit ?? 'contain') === 'stretch';
+  const drawWidth = stretched ? usableWidth : natural[0] * scale;
+  const drawHeight = stretched ? usableHeight : natural[1] * scale;
   const x = options.align === 'top'
     ? options.margin
     : options.margin + (usableWidth - drawWidth) / 2;
@@ -163,6 +173,12 @@ async function placeImage(
   return page;
 }
 
+/**
+ * The uniform scale that places a source box inside (or over) a target box.
+ *
+ * `stretch` returns the contain scale because one number cannot express it; the
+ * caller that draws the box overrides both axes for that mode.
+ */
 export function fitScale(
   sourceWidth: number,
   sourceHeight: number,

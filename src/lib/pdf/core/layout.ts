@@ -521,7 +521,11 @@ async function renderTable(
   const cellPadding = 4;
   const widths = await columnWidths(doc, block, columns, columnWidth, size, settings);
 
-  const renderRow = async (cells: Inline[][], bold: boolean): Promise<void> => {
+  const renderRow = async (
+    cells: Inline[][],
+    bold: boolean,
+    afterTurn?: () => Promise<void>,
+  ): Promise<void> => {
     const wrapped = await Promise.all(
       cells.map((cell, index) =>
         wrapInlines(doc, normalizeCells(cell), { size, maxWidth: Math.max(16, widths[index] - cellPadding * 2) }),
@@ -531,7 +535,12 @@ async function renderTable(
     const height = lineCount * size * 1.28 + cellPadding * 2;
     if (needs(height)) {
       await turn();
-      if (bold) return;
+      // Moving to a fresh sheet neither cancels this row nor loses the header:
+      // `afterTurn` re-draws it, and the row follows underneath. Every sheet a
+      // table spills onto therefore repeats the header, which is what the CSV
+      // and Excel routes promise.
+      if (afterTurn) await afterTurn();
+      if (needs(height)) await turn();
     }
     const top = surface.y;
     surface.y -= height;
@@ -571,8 +580,11 @@ async function renderTable(
   };
 
   if (settings.header) void settings.header;
-  if (block.header) await renderRow(block.header, true);
-  for (const row of rows) await renderRow(row, false);
+  const drawHeader = async (): Promise<void> => {
+    if (block.header) await renderRow(block.header, true);
+  };
+  await drawHeader();
+  for (const row of rows) await renderRow(row, false, block.header ? drawHeader : undefined);
 
   if (block.caption) {
     surface.y -= 4;
@@ -783,10 +795,12 @@ export async function csvToBlocks(
   options: { delimiter?: string; header?: boolean } = {},
 ): Promise<Block[]> {
   const XLSX = await import('xlsx');
+  // `FS` is what separates fields: pinning it to a comma while the caller asked
+  // for `;` or a tab turned every row into one wide cell. Left unset, SheetJS
+  // detects the separator, which is what the “Detect” option means.
   const sheet = XLSX.read(text, {
     type: 'string',
-    FS: ',',
-    ...(options.delimiter && options.delimiter !== ',' ? { raw: true } : {}),
+    ...(options.delimiter ? { FS: options.delimiter } : {}),
   });
   const first = sheet.SheetNames[0];
   const rows = (XLSX.utils.sheet_to_json(sheet.Sheets[first] ?? {}, {
@@ -937,7 +951,25 @@ export async function markdownToBlocks(
   const inlineOf = (tokens: MdToken[] | undefined): Inline[] => walkInline(tokens ?? []);
   const blocks: Block[] = [];
 
-  const walk = (list: MdToken[]): void => {
+  /** Embed a picture the caller can supply (a data: URL), else keep its alt. */
+  const pushImage = async (token: MdToken): Promise<void> => {
+    const href = String(token.href ?? '');
+    const alt = String(token.alt ?? token.text ?? '');
+    const bytes = await options.images?.(href);
+    if (bytes) {
+      blocks.push({
+        kind: 'image',
+        bytes,
+        mime: mimeOfDataUrl(href),
+        alt,
+        caption: alt || undefined,
+      });
+      return;
+    }
+    blocks.push({ kind: 'paragraph', inlines: [{ text: `[image: ${alt || href}]`, italic: true }] });
+  };
+
+  const walk = async (list: MdToken[]): Promise<void> => {
     for (const token of list) {
       switch (token.type) {
         case 'heading':
@@ -947,9 +979,23 @@ export async function markdownToBlocks(
             inlines: inlineOf(token.tokens),
           });
           break;
-        case 'paragraph':
-          blocks.push({ kind: 'paragraph', inlines: inlineOf(token.tokens) });
+        case 'paragraph': {
+          // A line holding nothing but `![alt](src)` is a picture in its own
+          // right; `walkInline` can only print its alt text, because the
+          // renderer places pictures between paragraphs rather than between
+          // words. Mixed paragraphs keep the alt text, and say so.
+          const inner = token.tokens ?? [];
+          const images = inner.filter((sub) => sub.type === 'image');
+          const onlyImages = images.length > 0
+            && inner.every((sub) => sub.type === 'image'
+              || (sub.type === 'text' && String(sub.text ?? sub.raw ?? '').trim() === ''));
+          if (onlyImages) {
+            for (const image of images) await pushImage(image);
+            break;
+          }
+          blocks.push({ kind: 'paragraph', inlines: inlineOf(inner) });
           break;
+        }
         case 'text': {
           const text = String(token.raw ?? token.text ?? '');
           if (text.trim()) blocks.push({ kind: 'paragraph', inlines: [{ text: text.trim() }] });
@@ -964,7 +1010,7 @@ export async function markdownToBlocks(
           blocks.push({ kind: 'list', ordered: Boolean(token.ordered), items });
           for (const item of token.items ?? []) {
             for (const nested of item.tokens ?? []) {
-              if (nested.type === 'list') walk([nested]);
+              if (nested.type === 'list') await walk([nested]);
             }
           }
           break;
@@ -986,11 +1032,9 @@ export async function markdownToBlocks(
         case 'hr':
           blocks.push({ kind: 'rule' });
           break;
-        case 'image': {
-          blocks.push({ kind: 'paragraph', inlines: [{ text: `[image: ${String(token.alt ?? token.href ?? '')}]`, italic: true }] });
-          void options.images;
+        case 'image':
+          await pushImage(token);
           break;
-        }
         case 'br':
           break;
         case 'html': {
@@ -1008,7 +1052,7 @@ export async function markdownToBlocks(
       }
     }
   };
-  walk(tokens);
+  await walk(tokens);
   return blocks.length > 0 ? blocks : textToBlocks(markdown);
 }
 
@@ -1259,6 +1303,12 @@ function imageFromElement(
   }
 }
 
+/** The MIME a `data:` URL declares, which is the only one a caller can hand over. */
+function mimeOfDataUrl(src: string): string | undefined {
+  const match = /^data:([^;,]+)[;,]/.exec(src);
+  return match?.[1] ?? undefined;
+}
+
 function base64ToBytes(value: string): Uint8Array {
   const binary = atob(value.replace(/\s+/g, ''));
   const bytes = new Uint8Array(binary.length);
@@ -1379,7 +1429,11 @@ export function rtfToBlocks(rtf: string): Block[] {
     }
     if (char === '{') {
       depth += 1;
-      const destination = /^(\{\\\*|\\(stylesheet|colortbl|info|fonttbl|header|footer|pict|nonshppict|shppict|object|listtable|generator|themedata|colorschememapping))/.test(rtf.slice(i, i + 40));
+      // A destination group is `{\name …}`: the brace is part of it, so the name
+      // is matched after the brace rather than instead of it. Written the other
+      // way only `{\* …}` was skipped, and every colour table, font table and
+      // stylesheet printed its own plumbing as document text.
+      const destination = /^\{\\(\*|stylesheet|colortbl|info|fonttbl|header|footer|pict|nonshppict|shppict|object|listtable|generator|themedata|colorschememapping)/.test(rtf.slice(i, i + 40));
       if (destination && !/\\pict\b/.test(rtf.slice(i, i + 60))) skipDepth.push(depth);
       continue;
     }
@@ -1400,6 +1454,15 @@ export function rtfToBlocks(rtf: string): Block[] {
     if (char !== '\\') {
       if (char === '\r' || char === '\n') continue;
       paragraph.push({ text: char, ...current });
+      continue;
+    }
+    // `\'hh` is one byte in the declared code page, not a control word. Left
+    // alone it survives as the literal characters `hh` beside a quote mark.
+    const byteEscape = /^\\'([0-9A-Fa-f]{2})/.exec(rtf.slice(i));
+    if (byteEscape) {
+      const decoded = decoder(new Uint8Array([Number.parseInt(byteEscape[1], 16)]));
+      if (decoded) paragraph.push({ text: decoded, ...current });
+      i += 3;
       continue;
     }
     const control = /^\\([a-zA-Z]{1,32})(-?\d{1,10})? ?/.exec(rtf.slice(i));
