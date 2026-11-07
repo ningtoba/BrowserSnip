@@ -1013,7 +1013,7 @@ export const convertToTools: PdfToolDefinition[] = [
     accept: '.rtf',
     surface: 'none',
     outputSuffix: '_from_rtf.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'Text, paragraphs, basic runs with bold/italic/underline, colour and bullet lists.',
     notes: [
       ...TEXT_NOTES,
@@ -1072,7 +1072,7 @@ export const convertToTools: PdfToolDefinition[] = [
     accept: '.docx,.doc,.odt,.rtf',
     surface: 'none',
     outputSuffix: '_from_word.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'Re-flowed text with headings, lists, tables and embedded images as selectable PDF text.',
     notes: [
       ...TEXT_NOTES,
@@ -1237,7 +1237,7 @@ export const convertToTools: PdfToolDefinition[] = [
     accept: '.pptx,.ppt,.odp',
     surface: 'none',
     outputSuffix: '_from_slides.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'One PDF page per slide, with the slide text as selectable text at the aspect you pick.',
     notes: [
       ...TEXT_NOTES,

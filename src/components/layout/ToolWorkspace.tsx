@@ -239,6 +239,12 @@ export function ToolWorkspace() {
           <FileDropZone multiple={isMultiFile} {...dropZoneProps(definition, isPDF, isImageTool)} />
         </div>
       )}
+      {/* The page header prints no promise, so a bespoke pane is the one place
+          that still says what pressing its action produces. */}
+      <p data-tool-promise="true" className="shrink-0 text-[11px] leading-relaxed text-ink-muted">
+        {definition ? promiseFor(definition) : (tool.description ?? 'Everything happens in this tab.')}
+      </p>
+
       {isVideo && codecNotice()}
       {isPDF && hasFiles && !MainComponent && !isImageTool && definition?.surface !== 'pages' && (
         <div className="shrink-0">

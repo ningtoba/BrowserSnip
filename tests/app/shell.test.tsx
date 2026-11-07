@@ -535,7 +535,7 @@ describe('dark mode', () => {
 });
 
 describe('tool page header', () => {
-  it('shows the breadcrumb and the tool promise', () => {
+  it('shows the breadcrumb and the tool name, and stops there', () => {
     renderShell('/tool/linearize-pdf');
 
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
@@ -548,9 +548,14 @@ describe('tool page header', () => {
     expect(crumbs).toContain('Optimize PDF');
     expect(crumbs).toContain('Linearize PDF');
 
+    // The one-line promise moved to the page it describes — the header printed
+    // `description` while the drop zone printed `promise`, the same sentence
+    // twice in two wordings. The header keeps the breadcrumb, the name, the star.
     const tool = getPdfTool('linearize-pdf');
     const header = breadcrumb.closest('header');
-    expect(header?.textContent).toContain(String(tool?.description));
+    expect(header?.textContent).not.toContain(String(tool?.description));
+    expect(header?.querySelector('p')).toBeNull();
+    expect(within(header as HTMLElement).getByRole('button', { name: /Linearize PDF/ })).toBeTruthy();
   });
 
   it('names a video tool from the shared catalogue, not by its id', () => {

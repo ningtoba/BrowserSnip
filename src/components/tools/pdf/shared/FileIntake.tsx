@@ -191,15 +191,28 @@ export interface FileIntakeProps {
 /**
  * The centred intake block. One `<h1>`, one grey line, one oversized button that
  * is also the drop zone, and one sentence naming the alternative to clicking it.
+ *
+ * This is the only place a generated tool page prints its one-line promise: the
+ * page header stopped saying it, so the sentence exists once, next to the action
+ * it describes.
+ */
+/**
+ * The intake block, anchored high.
+ *
+ * Centring it in the page left a dead band between the title and the button on
+ * every tall window, which reads as a page that has not loaded yet. The block
+ * starts a quarter of the viewport down — the height the header and the breadcrumb
+ * already cost on a laptop — and the region scrolls instead of colliding with the
+ * controls under it when the window is short.
  */
 export function FileIntake({ title, promise, copy, controls, footNote }: FileIntakeProps) {
   return (
     <div
       data-intake="true"
       data-dragging={controls.dragging || undefined}
-      className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 sm:px-6"
+      className="flex min-h-0 flex-1 justify-center overflow-y-auto px-4 py-8 sm:px-6"
     >
-      <div className="w-full max-w-[640px] text-center">
+      <div data-intake-block className="mt-[14vh] w-full max-w-[640px] text-center">
         <h1 className="font-display text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[34px]">
           {title}
         </h1>

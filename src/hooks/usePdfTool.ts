@@ -351,6 +351,9 @@ export function usePdfTool(
           else store.getState().addOutput(output.blob, url, output.name);
         }
         if (outcome.report) store.getState().setReport(outcome.report);
+        // Pages out, from the producer that held the document. `null` is an
+        // honest answer, and the card says "out not counted" with it.
+        store.getState().setPagesOut(outcome.pagesOut);
         // The last progress line is a stage, not a result: "Rewriting images"
         // is what the rail said while it worked, and printing it under a
         // finished card reads as an answer that was never given. A tool with

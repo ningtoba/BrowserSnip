@@ -66,6 +66,8 @@ interface ProcessSlot {
   warnings: string[];
   sizeBefore: number | null;
   sizeAfter: number | null;
+  /** See `ProcessState.pagesOut` — the count travels with the slot it belongs to. */
+  pagesOut: number | null;
 }
 
 interface ProcessState {
@@ -100,6 +102,14 @@ interface ProcessState {
   sizeBefore: number | null;
   /** Output bytes; larger than `sizeBefore` is reported, not hidden (E14). */
   sizeAfter: number | null;
+  /**
+   * Pages the run put into the file it produced, for the primary output only.
+   *
+   * `null` means nobody counted it, and the result card says "out not counted"
+   * rather than reusing the input count. Only a producer holding the document can
+   * answer this exactly, so the number travels from the runner's outcome.
+   */
+  pagesOut: number | null;
 
   setActiveTool: (tool: ToolId | null) => void;
   startProcessing: (label: string, suffix: string) => void;
@@ -113,6 +123,8 @@ interface ProcessState {
   setWarnings: (warnings: string[]) => void;
   setSizeBefore: (bytes: number | null) => void;
   setSizeAfter: (bytes: number | null) => void;
+  /** Pages in the produced PDF, as the run reported them. */
+  setPagesOut: (pages: number | null) => void;
   setReport: (report: ToolReport | null) => void;
   updateProgress: (p: FFmpegProgress, percent: number) => void;
   appendLog: (line: string) => void;
@@ -147,6 +159,7 @@ const emptySlot = (): ProcessSlot => ({
   warnings: [],
   sizeBefore: null,
   sizeAfter: null,
+  pagesOut: null,
 });
 
 /** The live fields a slot owns — the store state plus nothing else. */
@@ -176,6 +189,7 @@ function slotOf(state: SlotFields): ProcessSlot {
     warnings: state.warnings,
     sizeBefore: state.sizeBefore,
     sizeAfter: state.sizeAfter,
+    pagesOut: state.pagesOut,
   };
 }
 
@@ -233,6 +247,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   warnings: [],
   sizeBefore: null,
   sizeAfter: null,
+  pagesOut: null,
 
   setActiveTool: (tool) => {
     const state = get();
@@ -264,6 +279,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       warnings: [],
       sizeBefore: null,
       sizeAfter: null,
+      pagesOut: null,
       // Per-file page counts survive a re-run; progress and errors do not.
       fileStates: Object.fromEntries(
         Object.entries(state.fileStates).map(([id, file]) => [
@@ -325,6 +341,9 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   setSizeBefore: (bytes) => set({ sizeBefore: bytes === null ? null : Math.max(0, bytes) }),
 
   setSizeAfter: (bytes) => set({ sizeAfter: bytes === null ? null : Math.max(0, bytes) }),
+
+  setPagesOut: (pages) =>
+    set({ pagesOut: typeof pages === 'number' && pages > 0 ? Math.trunc(pages) : null }),
 
   setReport: (report) => set({ report }),
 

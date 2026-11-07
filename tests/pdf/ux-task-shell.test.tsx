@@ -9,13 +9,20 @@
  *
  * - the empty page is one centred title, one promise and one oversized button —
  *   no fields, no action, no preview, no rail;
+ * - the promise is said once, beside the action: the page header keeps the
+ *   breadcrumb, the name and the star, and the intake owns the sentence;
+ * - the intake is anchored high instead of floating in the middle of a tall
+ *   window, and scrolls rather than colliding on a short one;
  * - a drop anywhere on the tab is accepted, including outside the button;
  * - the loaded page is horizontal file cards (name, size, page count, remove,
- *   reorder, add more) with the options in a bottom bar and one big verb at its
- *   right edge;
+ *   reorder, add more) with a compact options bar — one field, the rest behind a
+ *   disclosure that counts them and flags what needs attention — and the verb at
+ *   its right edge;
  * - a run is centred progress that names the file and can be cancelled;
  * - the result is a screen of its own — checkmark, output name, size before →
- *   after, warnings, a dominant download, and two quiet ways onward;
+ *   after, pages in → out, warnings, a dominant download, and two quiet ways
+ *   onward; the output count comes from the producer that held the document, and
+ *   a run that produced no PDF says so instead of claiming pages;
  * - a failure prints its reason once, names the file, and offers Retry.
  *
  * jsdom has no canvas and no layout, so sizing is asserted through the classes
@@ -29,7 +36,8 @@ import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { PdfToolPanel } from '@/components/tools/pdf/shared/PdfToolPanel';
 import { ToolWorkspace } from '@/components/layout/ToolWorkspace';
-import { describeOptions, verbFor } from '@/components/tools/pdf/shared/toolForm';
+import { ToolPageHeader } from '@/components/layout/AppLayout';
+import { describeOptions, leadField, verbFor } from '@/components/tools/pdf/shared/toolForm';
 import { intakeCopy } from '@/components/tools/pdf/shared/FileIntake';
 import { surfaceState } from '@/components/tools/pdf/shared/ToolSurface';
 import type { PdfToolDefinition, ToolField } from '@/lib/pdf/tools/types';
@@ -79,12 +87,18 @@ const dpiField: ToolField = {
   default: 150,
   group: 'Quality',
 };
+const stampField: ToolField = { key: 'stamp', label: 'Stamp text', type: 'text', required: true, group: 'Marks' };
 
 /** What the last fake run was given, and the gate that lets it finish. */
 const live: { release: (() => void) | null } = { release: null };
 
 function bytes(size: number): Uint8Array {
   return new TextEncoder().encode('x'.repeat(size));
+}
+
+/** A blob that is not a PDF, for a run whose output has no pages. */
+function pdfBlob(name: string, size: number): { blob: Blob; name: string } {
+  return { blob: new Blob([bytes(size)], { type: 'application/pdf' }), name };
 }
 
 function heldRun(result: { size: number; message: string }) {
@@ -152,14 +166,79 @@ const STANDS: Record<string, PdfToolDefinition> = {
     outputSuffix: '_from_images.pdf',
     run: heldRun({ size: 100, message: 'Pages added.' }),
   },
+  /** Eight pages out of twenty, counted by the producer that held the document. */
+  'shell-eight': {
+    id: 'shell-eight',
+    name: 'Trim Shell',
+    description: 'Keep every other page',
+    icon: '✂',
+    category: 'organize',
+    actionLabel: 'Trim',
+    outputSuffix: '_trimmed.pdf',
+    run: async () => ({ kind: 'pdf', bytes: bytes(300), message: 'Half the file.', pages: 8 }),
+  },
+  /** Three files out; only the first one's count is on the card. */
+  'shell-split': {
+    id: 'shell-split',
+    name: 'Split Shell',
+    description: 'Break the file into parts',
+    icon: '🪓',
+    category: 'organize',
+    actionLabel: 'Split',
+    outputSuffix: '_part.pdf',
+    run: async () => ({
+      kind: 'files',
+      files: [pdfBlob('part-1.pdf', 90), pdfBlob('part-2.pdf', 80), pdfBlob('part-3.pdf', 70)],
+      message: 'Three parts.',
+      pages: 4,
+    }),
+  },
+  /** A zip carries no pages, whatever a careless producer attached to it. */
+  'shell-zip': {
+    id: 'shell-zip',
+    name: 'Archive Shell',
+    description: 'Bundle the parts',
+    icon: '📦',
+    category: 'convert-from',
+    actionLabel: 'Zip',
+    outputSuffix: '.zip',
+    run: async () => ({
+      kind: 'files',
+      files: [{ blob: new Blob(['pk'], { type: 'application/zip' }), name: 'parts.zip' }],
+      message: 'One archive.',
+      pages: 12,
+    }),
+  },
+  /** A PDF out of a producer that never counted it. */
+  'shell-uncounted': {
+    id: 'shell-uncounted',
+    name: 'Stamp Shell',
+    description: 'Put a stamp on every page',
+    icon: '🔖',
+    category: 'edit',
+    actionLabel: 'Stamp',
+    outputSuffix: '_stamped.pdf',
+    run: async () => ({ kind: 'pdf', bytes: bytes(50), message: 'Stamped.' }),
+  },
+  /** Two required options: one is visible, the other hides behind the count. */
+  'shell-two': {
+    id: 'shell-two',
+    name: 'Marks Shell',
+    description: 'Write on the file',
+    icon: '✍',
+    category: 'edit',
+    actionLabel: 'Apply',
+    outputSuffix: '_marked.pdf',
+    fields: [ownerField, stampField, dpiField],
+    run: heldRun({ size: 100, message: 'Marked.' }),
+  },
 };
 
-/** A real 2-page PDF, so the pre-flight can read the page count out of it. */
-async function realPdf(name = 'shell.pdf'): Promise<File> {
+/** A real PDF, so the pre-flight can read the page count out of it. */
+async function realPdf(name = 'shell.pdf', pages = 2): Promise<File> {
   const { PDFDocument } = await import('@maxwbh/pdf-lib');
   const doc = await PDFDocument.create();
-  doc.addPage([300, 200]);
-  doc.addPage([300, 200]);
+  for (let index = 0; index < pages; index += 1) doc.addPage([300, 200]);
   const saved = await doc.save();
   return new File([saved as unknown as BlobPart], name, { type: 'application/pdf' });
 }
@@ -283,6 +362,19 @@ describe('the empty page', () => {
     expect(document.querySelector('[data-options-panel]')).toBeNull();
   });
 
+  it('sits high on the page instead of floating in the middle', async () => {
+    render(<PdfToolPanel toolId="shell-compress" />);
+    const intake = (await screen.findByRole('button', { name: /^Select PDF file/ })).closest('[data-intake]');
+    const block = document.querySelector('[data-intake-block]');
+    // jsdom does no layout, so the geometry is asserted through the classes that
+    // ask for it: the region scrolls rather than centring its child, and the block
+    // is pushed down by a share of the viewport so it starts about a quarter of
+    // the way in. A short window scrolls instead of colliding with what follows.
+    expect(intake!.className).not.toMatch(/items-center/);
+    expect(intake).toHaveClass('overflow-y-auto');
+    expect(block).toHaveClass('mt-[14vh]');
+  });
+
   it('names the format the tool actually takes', () => {
     expect(intakeCopy(undefined, false)).toEqual({
       pick: 'Select PDF file',
@@ -349,12 +441,16 @@ describe('the loaded page', () => {
     // The page count comes from the pre-flight, not from a guess (E6/E7).
     await waitFor(() => expect(list.textContent).toContain('2 pages'));
     expect(list.textContent).toMatch(/\d+(\.\d+)? (B|KB|MB)/);
+    // The stage word says what the card knows: the file is read and the button is
+    // free. "Waiting" here claimed a job that had not been asked for.
+    expect(list.textContent).toContain('Ready');
+    expect(list.textContent).not.toContain('Waiting');
     expect(screen.getByRole('button', { name: 'Remove shell.pdf' })).toBeInTheDocument();
     // One document: nothing to reorder, so no position controls.
     expect(screen.queryByLabelText('Move shell.pdf later')).toBeNull();
   });
 
-  it('brings the options, and only the options, out when a file exists', async () => {
+  it('keeps the bar to one row and folds the rest behind a count', async () => {
     loadFiles([await realPdf()]);
     render(<PdfToolPanel toolId="shell-compress" />);
 
@@ -363,21 +459,90 @@ describe('the loaded page', () => {
       if (!node) throw new Error('the bottom bar never mounted');
       return node as HTMLElement;
     });
+    // Collapsed by default, and the field the run is waiting on is the visible
+    // one — a disabled button whose cause is folded away is a dead end.
+    expect(document.querySelector('[data-options-panel]')).toHaveAttribute('data-options-panel', 'closed');
     expect(screen.getByLabelText('Owner name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Resolution')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Resolution')).toBeNull();
+
+    const disclosure = within(bar).getByRole('button', { name: /1 more option/ });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(disclosure).toHaveAttribute('aria-controls', 'tool-options');
+    // A collapsed panel still names what is set behind it.
+    expect(document.getElementById('tool-options')?.textContent).toContain('Resolution: 150 dpi');
     // The honesty panel is part of the loaded page too.
     expect(within(bar).getByRole('button', { name: /Honest notes/ })).toBeInTheDocument();
-    // A collapsed panel still names what is set.
-    fireEvent.click(within(bar).getByRole('button', { name: /Hide options/ }));
-    expect(screen.queryByLabelText('Owner name')).toBeNull();
-    expect(within(bar).getByRole('status').textContent).not.toMatch(/Owner name/);
+
+    fireEvent.click(disclosure);
+    expect(screen.getByLabelText('Resolution')).toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: /Fewer options/ }));
+    expect(screen.queryByLabelText('Resolution')).toBeNull();
   });
 
-  it('pins one giant verb to the right of the bar', async () => {
+  it('opens the folded options from the keyboard and takes focus back on collapse', async () => {
+    loadFiles([await realPdf()]);
+    render(<PdfToolPanel toolId="shell-compress" />);
+    const closed = await screen.findByRole('button', { name: /1 more option/ });
+    // A native button with no tabindex override, so `Tab` reaches it and
+    // Enter/Space activates it — which is the click `.click()` dispatches.
+    expect(closed.tagName).toBe('BUTTON');
+    expect(closed).not.toHaveAttribute('tabindex');
+
+    closed.focus();
+    act(() => closed.click());
+    expect(screen.getByRole('button', { name: /Fewer options/ })).toHaveAttribute('aria-expanded', 'true');
+
+    // The user walks into the panel, then closes it from inside it.
+    const owner = screen.getByLabelText('Owner name');
+    owner.focus();
+    expect(document.activeElement).toBe(owner);
+    act(() => screen.getByRole('button', { name: /Fewer options/ }).click());
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /1 more option/ }));
+  });
+
+  it('blocks the action for an option it is not showing, and says so on the count', async () => {
+    loadFiles([await realPdf()]);
+    render(<PdfToolPanel toolId="shell-two" />);
+
+    const disclosure = await screen.findByRole('button', { name: /2 more options/ });
+    expect(disclosure.textContent).toContain('1 needs attention');
+    expect(disclosure).toHaveAttribute('data-options-attention', 'true');
+
+    const button = screen.getByRole('button', { name: 'Apply' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-describedby', 'tool-run-reason');
+    expect(document.getElementById('tool-run-reason')?.textContent).toContain('Owner name is required.');
+
+    // Fixing the visible field moves the problem into view rather than hiding it.
+    fireEvent.change(screen.getByLabelText('Owner name'), { target: { value: 'ACME' } });
+    expect(screen.getByLabelText('Stamp text')).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    expect(document.getElementById('tool-run-reason')?.textContent).toContain('Stamp text is required.');
+
+    // Expanded, the hidden field carries its own complaint beside the input as
+    // well: one for the field, one for the button, from the same source.
+    fireEvent.click(screen.getByRole('button', { name: /2 more options/ }));
+    expect(await screen.findAllByText('Stamp text is required.')).toHaveLength(2);
+  });
+
+  it('keeps the file cards as the loud thing in the loaded page', async () => {
+    loadFiles([await realPdf('shell.pdf', 6)]);
+    render(<PdfToolPanel toolId="shell-merge" />);
+    await screen.findByText('shell.pdf');
+    // jsdom lays nothing out, so the density contract is asserted as structure:
+    // one card, one thin re-add strip, and a bar that holds one row of options.
+    expect(document.querySelectorAll('[data-card]')).toHaveLength(1);
+    expect(document.querySelector('[data-card-thumb]')).toHaveClass('h-[104px]');
+    const more = document.querySelector('[data-drop-more]') as HTMLElement;
+    expect(more).toHaveClass('min-h-[96px]');
+    expect(document.querySelector('[data-options-panel]')).toHaveAttribute('data-options-panel', 'closed');
+  });
+
+  it('pins the verb to the right of the bar', async () => {
     loadFiles([await realPdf()]);
     render(<PdfToolPanel toolId="shell-compress" />);
     const button = await screen.findByRole('button', { name: 'Compress' });
-    expect(button).toHaveClass('min-h-[72px]');
+    expect(button).toHaveClass('min-h-[56px]');
     expect(button.closest('[data-run-bar]')).not.toBeNull();
     // The CTA is last in the bar, so it sits at the right edge.
     const actions = button.parentElement?.querySelectorAll('button') ?? [];
@@ -542,6 +707,133 @@ describe('the run', () => {
   });
 });
 
+// ── the one-line promise ─────────────────────────────────────────────────────
+
+describe('the promise', () => {
+  /** The sentence `shell-compress` prints: its own, not its description. */
+  const SENTENCE = /size before and after/;
+
+  function page(toolId: string): void {
+    render(
+      <MemoryRouter initialEntries={[`/tool/${toolId}`]}>
+        <ToolPageHeader toolId={toolId} />
+        <PdfToolPanel toolId={toolId} />
+      </MemoryRouter>,
+    );
+  }
+
+  it('is said once on an empty page, next to the button it describes', async () => {
+    page('shell-compress');
+    await screen.findByRole('button', { name: /^Select PDF file/ });
+    expect(screen.getAllByText(SENTENCE)).toHaveLength(1);
+
+    // The header keeps the breadcrumb, the tool name and the star — and stops
+    // repeating the sentence in its own words.
+    const header = document.querySelector('header') as HTMLElement;
+    expect(within(header).getByText('Compress Shell')).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Star Compress Shell' })).toBeInTheDocument();
+    expect(within(header).queryByText(SENTENCE)).toBeNull();
+    expect(within(header).queryByText('Shrink the file')).toBeNull();
+  });
+
+  it('is still said once once the file is loaded', async () => {
+    loadFiles([await realPdf()]);
+    page('shell-compress');
+    await screen.findByText('shell.pdf');
+    expect(screen.getAllByText(SENTENCE)).toHaveLength(1);
+  });
+
+  function bespokePage(toolId: string): void {
+    render(
+      <MemoryRouter initialEntries={[`/tool/${toolId}`]}>
+        <Routes>
+          <Route
+            path="/tool/:toolId"
+            element={
+              <>
+                <ToolPageHeader toolId={toolId} />
+                <ToolWorkspace />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('leaves a bespoke editor holding its own sentence', async () => {
+    // The header used to be one place a bespoke pane said anything; taking it out
+    // there must not leave the editor mute, before a file or after one.
+    bespokePage('organize');
+    await screen.findByRole('button', { name: /^Select PDF/ });
+    expect(screen.getAllByText(/never modified/)).toHaveLength(1);
+
+    dropFiles([await realPdf('org.pdf')]);
+    await waitFor(() => expect(document.querySelector('[data-organizer]')).not.toBeNull());
+    expect(screen.getAllByText(/never modified/)).toHaveLength(1);
+  });
+});
+
+// ── what the run produced ─────────────────────────────────────────────────────
+
+describe('the produced page count', () => {
+  /** The card's `Pages` row, exactly as the user reads it. */
+  async function pagesRow(toolId: string, input: File, verb: string): Promise<string | null> {
+    loadFiles([input]);
+    render(<PdfToolPanel toolId={toolId} />);
+    fireEvent.click(await screen.findByRole('button', { name: verb }));
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+    const card = await screen.findByRole('region', { name: 'Result' });
+    const row = [...card.querySelectorAll('dt')].find((dt) => dt.textContent === 'Pages');
+    return row?.nextElementSibling?.textContent ?? null;
+  }
+
+  it('counts the pages that came out, not just the ones that went in', async () => {
+    // Twenty pages in, eight out. This line read "20 in · out not counted"
+    // because nothing ever reported the produced file.
+    expect(await pagesRow('shell-eight', await realPdf('shell.pdf', 20), 'Trim')).toBe('20 → 8');
+  });
+
+  it('shows the primary file of a multi-output run', async () => {
+    loadFiles([await realPdf('shell.pdf', 6)]);
+    render(<PdfToolPanel toolId="shell-split" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Split' }));
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+    const card = await screen.findByRole('region', { name: 'Result' });
+    expect(card.textContent).toContain('3 files');
+    // The count belongs to the first produced file; it is not summed or guessed.
+    expect(card.textContent).toMatch(/6 → 4/);
+  });
+
+  it('claims no page count for a result that is not a PDF', async () => {
+    // The archive arrives with `pages: 12` from a careless producer. A zip has no
+    // pages, so the number is dropped rather than printed.
+    const row = await pagesRow('shell-zip', await realPdf('shell.pdf', 5), 'Zip');
+    expect(row).toBe('5 in · out not counted');
+    expect(row).not.toMatch(/→ 12/);
+  });
+
+  it('carries the count out of the real merge tool', async () => {
+    // The production path, not a fixture: merge saves through `helpers.pdfResult`,
+    // which is where the number comes off the document while it is still in hand
+    // — no second parse of the produced bytes.
+    const { runPdfTool } = await import('@/lib/pdf/tools/runner');
+    const outcome = await runPdfTool({
+      toolId: 'merge',
+      files: [await realPdf('a.pdf', 3), await realPdf('b.pdf', 5)],
+    });
+    expect(outcome.outputs).toHaveLength(1);
+    expect(outcome.pagesOut).toBe(8);
+  });
+
+  it('leaves a producer that counted nothing honest', async () => {
+    const { runPdfTool } = await import('@/lib/pdf/tools/runner');
+    const outcome = await runPdfTool({ toolId: 'shell-uncounted', files: [await realPdf('a.pdf', 2)] });
+    expect(outcome.outputs).toHaveLength(1);
+    expect(outcome.pagesOut).toBeNull();
+  });
+});
+
 // ── bespoke surfaces keep their editors ─────────────────────────────────────
 
 describe('ToolWorkspace', () => {
@@ -596,5 +888,21 @@ describe('toolForm', () => {
   it('keeps the verb a giant button wears in the imperative', () => {
     expect(verbFor(STANDS['shell-compress'])).toBe('Compress');
     expect(verbFor(STANDS['shell-merge'])).toBe('Merge');
+  });
+
+  it('picks the option a collapsed bar must show', () => {
+    const fields = [dpiField, ownerField, stampField];
+    // A blocking field wins, in the order the button lists its reasons, so the
+    // visible control and the reason line under the CTA agree.
+    expect(leadField(fields, { stamp: 'Stamp text is required.' }, {})).toBe(stampField);
+    // Then a required field still empty — the classic dead end — ahead of an
+    // optional one the user has already moved.
+    expect(leadField(fields, {}, { dpi: 96 })).toBe(ownerField);
+    // With the required fields filled, the field the user changed, which a
+    // folded panel would otherwise hide.
+    expect(leadField(fields, {}, { owner: 'ACME', stamp: 'DRAFT', dpi: 96 })).toBe(dpiField);
+    // And with nothing wrong and nothing changed, the first field.
+    expect(leadField([dpiField], {}, { dpi: 150 })).toBe(dpiField);
+    expect(leadField([], {}, {})).toBeNull();
   });
 });

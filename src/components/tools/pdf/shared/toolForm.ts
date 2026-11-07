@@ -188,12 +188,55 @@ export function promiseFor(tool: PanelTool): string {
 }
 
 /**
+ * The one option a collapsed options row shows.
+ *
+ * Priority is "what stands between the user and the button", in the order the
+ * button's own reason line lists it, so the visible field and the sentence under
+ * the CTA agree:
+ *
+ * 1. a field with a blocking issue;
+ * 2. a required field still empty;
+ * 3. the field the user moved off its default — the state a collapsed panel
+ *    would otherwise hide;
+ * 4. the first field.
+ */
+export function leadField(
+  fields: readonly ToolField[],
+  issues: Record<string, string>,
+  values: ToolValues,
+): ToolField | null {
+  return (
+    fields.find((field) => issues[field.key]) ??
+    fields.find((field) => field.required && isUnset(values[field.key] ?? field.default ?? null)) ??
+    fields.find((field) => isChanged(field, values)) ??
+    fields[0] ??
+    null
+  );
+}
+
+function isUnset(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true;
+  return Array.isArray(value) && value.length === 0;
+}
+
+/** True when the user set this field to something other than what the tool declared. */
+function isChanged(field: ToolField, values: ToolValues): boolean {
+  const current = values[field.key] ?? field.default ?? null;
+  if (isUnset(current) && isUnset(field.default ?? null)) return false;
+  if (current !== null && typeof current === 'object') {
+    return JSON.stringify(current) !== JSON.stringify(field.default ?? null);
+  }
+  return current !== (field.default ?? null);
+}
+
+/**
  * One line naming what the tool is currently set to do.
  *
- * The options panel is collapsible, and a collapsed panel that says nothing is a
- * hidden state: the user cannot tell "still on the defaults" from "I changed
- * three things". Values come back as the labels the picker offered rather than
- * raw enum strings, and a password field is left out entirely.
+ * The options row shows one field and folds the rest behind a disclosure, and a
+ * collapsed panel that says nothing is a hidden state: the user cannot tell
+ * "still on the defaults" from "I changed three things". Values come back as the
+ * labels the picker offered rather than raw enum strings, and a password field is
+ * left out entirely.
  */
 export function describeOptions(
   fields: readonly ToolField[] = [],

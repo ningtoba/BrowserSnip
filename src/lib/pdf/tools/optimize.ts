@@ -1343,7 +1343,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     keywords: ['archive', 'pdfa', 'iso 19005', 'conformance'],
     outputSuffix: '_pdfa.pdf',
     engines: ['ghostscript'],
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF/A',
     promise: 'A PDF/A-identised file, and a plain statement of whether Ghostscript could verify it.',
     fields: [
       {

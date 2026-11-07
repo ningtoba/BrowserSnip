@@ -34,48 +34,20 @@ const TOOL_ACCENT_OVERRIDE: Partial<Record<string, { hex: string; tint: string }
   'scan-to-pdf': AMBER_ACCENT,
   gif: ROSE_ACCENT,
   redact: ROSE_ACCENT,
+  'redact-pdf': ROSE_ACCENT,
 };
 
-/** Outcome-first one-liners (v3 §4, ≤12 words); falls back to constants copy. */
-const TAGLINE: Partial<Record<string, string>> = {
-  trim: 'Cut any clip in seconds — no re-encode, zero quality loss.',
-  resize: 'Scale to 1080p, 720p or custom sizes with the ratio locked.',
-  crop: 'Reframe for 9:16, 1:1 or 21:9 in one pass.',
-  compress: 'Hit Discord, Slack or email size limits exactly.',
-  gif: 'Turn short clips into crisp, palette-optimized GIFs.',
-  audio: 'Mute it, pull the MP3, or push volume to 300%.',
-  speed: 'Timelapse or slow-mo, from 0.25× to 4×.',
-  metadata: 'Strip GPS, EXIF and device tags before you share.',
-  merge: 'Fuse several PDFs into one, in your order.',
-  split: 'Break a PDF into ranges, odd/even, or single pages.',
-  'remove-pages': 'Drop unwanted pages with a visual picker.',
-  'extract-pages': 'Save selected pages as a brand-new PDF.',
-  organize: 'Reorder, duplicate, insert or delete pages by drag.',
-  rotate: 'Fix page orientation — 90°, 180° or 270°.',
-  'scan-to-pdf': 'Camera to clean scan: edge detection, auto-correct.',
-  'pdf-compress': 'Shrink heavy PDFs without wrecking the quality.',
-  repair: 'Recover data from damaged or corrupted PDFs.',
-  'image-to-pdf': 'JPG, PNG, WEBP or TIFF — batched into one PDF.',
-  'digitize-document': 'OCR a photo into a clean, searchable PDF.',
-  'html-to-pdf': 'Turn HTML into a properly paginated PDF.',
-  'pdf-to-image': 'Export pages as sharp JPG, PNG or WEBP.',
-  'pdf-to-word': 'Pull editable text and structure out of any PDF.',
-  'pdf-to-excel': 'Get PDF tables out and into a spreadsheet.',
-  'pdf-to-pdfa': 'Archive documents to the long-term PDF/A standard.',
-  'page-numbers': 'Stamp page numbers with font, size and position control.',
-  watermark: 'Stamp text or image marks with rotation and opacity.',
-  'pdf-crop': 'Trim margins visually or by exact measurements.',
-  protect: 'Encrypt with a password and lock down permissions.',
-  unlock: 'Remove a password you already own, instantly.',
-  sign: 'Sign with a drawing, an image or a typed name.',
-  redact: 'Permanently burn sensitive data — not just mask it.',
-  compare: 'Spot every difference between two PDFs, side by side.',
-};
-
+/**
+ * One card, one job.
+ *
+ * The line under the title is the registry `description`, which every definition
+ * has to carry and which states what the user ends up holding. It used to be a
+ * hand-written tagline for 35 tools and the description for the other 89, so the
+ * catalogue read as two different products depending on which shelf you were on.
+ */
 export function ToolCard({ tool, onClick, featured = false }: Props) {
   const categoryAccent = (tool.category && CATEGORY_ACCENTS[tool.category]) || DEFAULT_ACCENT;
   const accent = TOOL_ACCENT_OVERRIDE[tool.id] ?? categoryAccent;
-  const tagline = TAGLINE[tool.id] ?? tool.description;
 
   return (
     <motion.article
@@ -88,6 +60,7 @@ export function ToolCard({ tool, onClick, featured = false }: Props) {
         type="button"
         data-tool={tool.id}
         onClick={onClick}
+        aria-label={tool.name}
         className="tool-card flex flex-col text-left w-full h-full"
       >
         <div
@@ -106,7 +79,7 @@ export function ToolCard({ tool, onClick, featured = false }: Props) {
         >
           {tool.name}
         </h3>
-        <p className="text-xs leading-relaxed text-ink-muted">{tagline}</p>
+        <p className="text-xs leading-relaxed text-ink-muted">{tool.description.trim()}</p>
         <div className="mt-auto flex items-center justify-between pt-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted transition-colors duration-200 group-hover:text-ink-soft">
             Open
@@ -124,40 +97,56 @@ export function ToolCard({ tool, onClick, featured = false }: Props) {
   );
 }
 
-/** Category identity row (v3 §2B): accent bar + icon tile + eyebrow + count + rule. */
+/**
+ * Shelf identity row: accent bar, icon, the job in plain words, how many tools
+ * are under it, and one line saying what the shelf is for.
+ *
+ * The blurb is the part that makes a grouped catalogue readable — a heading that
+ * says "Shrink, repair & archive" still leaves the visitor guessing whether the
+ * four cards under it are the ones they meant.
+ */
 export function CategoryHeading({
   icon,
   label,
   accent,
   count,
+  blurb,
+  headingId,
 }: {
   icon: string;
   label: string;
   accent: { hex: string; tint: string };
   count: number;
+  /** One line under the heading, in the visitor's words. */
+  blurb?: string;
+  /** Sets `id` on the heading so the section can be labelled by it. */
+  headingId?: string;
 }) {
   return (
-    <div className="mb-5 flex items-center gap-3">
-      <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: accent.hex }} aria-hidden="true" />
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-base"
-        style={{ background: accent.tint, color: accent.hex }}
-        aria-hidden="true"
-      >
-        {icon}
-      </span>
-      <h2
-        className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em]"
-        style={{ color: accent.hex }}
-      >
-        {label}
-      </h2>
-      <span className="font-mono text-[10px] tabular-nums text-ink-muted">{count}</span>
-      <span
-        className="h-px min-w-6 flex-1"
-        style={{ background: `linear-gradient(90deg, ${accent.tint}, #E3E3DD 60%)` }}
-        aria-hidden="true"
-      />
+    <div className="mb-5">
+      <div className="flex items-center gap-3">
+        <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: accent.hex }} aria-hidden="true" />
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-base"
+          style={{ background: accent.tint, color: accent.hex }}
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+        <h2
+          id={headingId}
+          className="font-display text-[15px] font-semibold tracking-[-0.01em] text-ink sm:text-[16px]"
+        >
+          {label}
+        </h2>
+        <span className="font-mono text-[10px] tabular-nums text-ink-muted">{count}</span>
+        <span
+          className="h-px min-w-6 flex-1"
+          style={{ background: `linear-gradient(90deg, ${accent.tint}, var(--hairline) 60%)` }}
+          aria-hidden="true"
+        />
+      </div>
+      {blurb && <p className="mt-2 pl-5 text-[12px] leading-relaxed text-ink-muted">{blurb}</p>}
     </div>
   );
 }

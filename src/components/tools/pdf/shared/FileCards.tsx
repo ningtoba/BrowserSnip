@@ -15,7 +15,6 @@ import { openRender, type PdfSession } from '@/lib/pdf/core/render';
 import { formatFileSize } from '@/lib/utils/download';
 import type { FileRunState } from '@/stores/process-store';
 import { ErrorPanel } from './ErrorPanel';
-import { rowStage } from './FileQueue';
 import { usePageThumbnail } from './PageThumbs';
 import { FOCUS_RING } from './focusRing';
 
@@ -232,15 +231,7 @@ export function FileCards({
             </p>
             <div className="mt-2 flex items-center justify-between gap-1">
               <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
-                {rowStage({
-                  id: file.name,
-                  name: file.name,
-                  size: file.size,
-                  pages: state?.pages ?? null,
-                  error: state?.error ?? null,
-                  busy: false,
-                  percent: null,
-                })}
+                {cardStage(state)}
               </span>
               <span className="flex items-center gap-1">
                 {reorderable && (
@@ -302,6 +293,19 @@ export function FileCards({
       )}
     </ol>
   );
+}
+
+/**
+ * What this card knows about its file, in one word.
+ *
+ * The queue's `rowStage` answers "where is this file in a running job"; a card on
+ * the ready screen is not in a job yet, and printing its `Waiting` there told the
+ * user something was queued when the button was simply waiting to be pressed. A
+ * card with no file has nothing to say, so it gets no word.
+ */
+function cardStage(state?: FileRunState): string {
+  if (state?.error) return 'Stopped';
+  return state?.pages == null ? 'Reading' : 'Ready';
 }
 
 interface CardThumbProps {

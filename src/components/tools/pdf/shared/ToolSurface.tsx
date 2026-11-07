@@ -233,12 +233,13 @@ function ReadyPane({ api, intake, copy, before, onDone, state }: ReadyPaneProps)
           {multiple && (
             // The space under the cards is the same drop target the page is, and
             // saying so is what makes a short queue look like a queue rather than
-            // an empty room.
+            // an empty room. It stays a strip, not a second drop zone: the cards
+            // are the thing with the visual weight here.
             <button
               type="button"
               data-drop-more="true"
               onClick={intake.open}
-              className={`flex min-h-[170px] w-full flex-col items-center justify-center gap-1 rounded-doodle-lg border border-dashed border-cream-border bg-cream-soft/40 text-center transition-colors hover:border-accent hover:bg-accent/5 ${FOCUS_RING}`}
+              className={`flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-doodle-lg border border-dashed border-cream-border bg-cream-soft/40 text-center transition-colors hover:border-accent hover:bg-accent/5 ${FOCUS_RING}`}
             >
               <span aria-hidden className="text-[20px] text-ink-muted">
                 ⬆
@@ -282,8 +283,11 @@ function errorFile(files: File[], message: string): string | null {
 }
 
 /**
- * The bottom bar: the options the tool owns, and one oversized verb pinned to
- * the right where the thumb already is.
+ * The bottom bar: the options the tool owns, and one verb pinned to the right
+ * where the thumb already is.
+ *
+ * The bar is a strip, not a second page. Its height is the collapsed options row
+ * plus the button, so the file cards above it keep the visual weight.
  */
 function RunBar({
   api,
@@ -301,9 +305,9 @@ function RunBar({
   return (
     <div
       data-run-bar="true"
-      className="z-20 shrink-0 border-t border-cream-border bg-cream-light/95 px-4 py-3 backdrop-blur-subtle sm:px-6"
+      className="z-20 shrink-0 border-t border-cream-border bg-cream-light/95 px-4 py-2.5 backdrop-blur-subtle sm:px-6"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
         <OptionsPanel api={api} before={before} />
 
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
@@ -320,7 +324,7 @@ function RunBar({
               const outcome = await api.run();
               if (outcome) onDone?.();
             }}
-            className={`doodle-btn ml-auto flex min-h-[72px] w-auto min-w-[240px] items-center justify-center gap-2 rounded-doodle-lg px-8 text-[17px] font-semibold ${FOCUS_RING}`}
+            className={`doodle-btn ml-auto flex min-h-[56px] w-auto min-w-[200px] items-center justify-center gap-2 rounded-doodle-lg px-6 text-[15px] font-semibold ${FOCUS_RING}`}
           >
             {busy ? 'Working…' : api.verb}
           </motion.button>
@@ -495,7 +499,8 @@ export interface ResultPaneProps {
  * actions that say what can happen next.
  *
  * It reads the process store directly, so a bespoke editor's own save gets the
- * same screen as a schema-driven run without instantiating the tool hook.
+ * same screen as a schema-driven run without instantiating the tool hook — the
+ * produced page count included, which the runner reports and the store holds.
  */
 export function ResultPane({
   toolName,
@@ -507,6 +512,7 @@ export function ResultPane({
 }: ResultPaneProps) {
   const blobs = useProcessStore((s) => s.outputBlobs);
   const names = useProcessStore((s) => s.outputNames);
+  const pagesOut = useProcessStore((s) => s.pagesOut);
   const sizeBefore = useProcessStore((s) => s.sizeBefore);
   const warnings = useProcessStore((s) => s.warnings);
   const statusMessage = useProcessStore((s) => s.statusMessage);
@@ -549,6 +555,7 @@ export function ResultPane({
           outputs={outputs}
           sizeBefore={sizeBefore}
           pagesIn={pagesIn}
+          pages={pagesOut}
           warnings={warnings}
           message={statusMessage || undefined}
           engine={engines[0] ?? null}

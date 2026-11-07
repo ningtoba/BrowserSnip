@@ -125,7 +125,20 @@ export interface ToolOutputFile {
  * these belong in their own field: the result card renders them as warnings
  * rather than burying an admission in a log pane.
  */
-type ToolResultCommon = { warnings?: string[] };
+type ToolResultCommon = {
+  warnings?: string[];
+  /**
+   * Pages in the primary output — the first entry of `files`, or the whole PDF
+   * for `kind: 'pdf'`.
+   *
+   * Set it where the document is in hand, at the moment it is saved: reading the
+   * number back off the bytes costs a second full parse of a 500-page output,
+   * and this repo's saves keep the page tree inside a compressed object stream,
+   * so there is no cheap number to find there. Left out, the result screen says
+   * the output was not counted instead of guessing.
+   */
+  pages?: number;
+};
 
 export type ToolResult =
   | ({ kind: 'pdf'; bytes: Uint8Array; message?: string } & ToolResultCommon)

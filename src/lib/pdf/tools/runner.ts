@@ -47,6 +47,16 @@ export interface RunOutcome {
   message?: string;
   /** Clamp notices plus anything the tool admitted — shown, never swallowed. */
   warnings: string[];
+  /**
+   * Pages in the first produced file, or `null` when nothing counted them.
+   *
+   * The result screen prints `in → out`, and "out not counted" was appearing on
+   * every run because the number was never carried out of the tool. It comes
+   * from the producer, which holds the document at the moment it saves
+   * (`ToolResult.pages`); the runner does not re-count the bytes, because that
+   * would parse a 500-page output a second time for one integer.
+   */
+  pagesOut: number | null;
 }
 
 export class ToolCancelledError extends Error {
@@ -111,7 +121,7 @@ export function fileProblem(tool: PdfToolDefinition, files: File[]): ToolInputEr
     return new ToolInputError(
       'OUT_OF_RANGE',
       `This tool needs at least ${tool.minFiles} ${tool.minFiles === 1 ? 'file' : 'files'}${paneClause(tool)} — ${files.length} added.`,
-      { hint: 'Add the missing document in the panel on the left.' },
+      { hint: 'Add the missing document — the add-more card sits beside the files.' },
     );
   }
   if (tool.maxFiles && files.length > tool.maxFiles) {
@@ -371,6 +381,7 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
     results.push(...collect(produced, inputs[0].name, tool.outputSuffix));
     return {
       outputs: results,
+      pagesOut: pagesOutFor(produced, results),
       report: produced.kind === 'report' ? { sections: produced.sections, message: produced.message } : undefined,
       message: produced.message,
       // A corrected value is an admission too: the user asked for 0 dpi and got
@@ -385,6 +396,26 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   } finally {
     upstream?.removeEventListener('abort', onUpstreamAbort);
   }
+}
+
+/**
+ * Pages in the file the user is being handed, `null` when nobody counted it.
+ *
+ * Only a report is excluded by shape: its "output" is text on the screen, and a
+ * page count would claim a document that does not exist. A produced file that is
+ * not a PDF (a zip, a CSV) is excluded by its bytes, so a count attached to the
+ * wrong container cannot reach the card either.
+ */
+function pagesOutFor(result: ToolResult, outputs: RunOutput[]): number | null {
+  if (result.kind === 'report') return null;
+  const [primary] = outputs;
+  if (primary && !isPdfOutput(primary)) return null;
+  return typeof result.pages === 'number' && result.pages > 0 ? Math.trunc(result.pages) : null;
+}
+
+/** The container the download will actually open as, by MIME or by name. */
+function isPdfOutput(output: RunOutput): boolean {
+  return /pdf/i.test(output.blob.type) || /\.pdf$/i.test(output.name);
 }
 
 function collect(result: ToolResult, firstName: string, suffix: string): RunOutput[] {

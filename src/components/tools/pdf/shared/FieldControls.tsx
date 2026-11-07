@@ -22,7 +22,7 @@ import { engineReady, enginePurpose } from '@/lib/pdf/core/engine-ops';
 import type { EngineId } from '@/lib/pdf/engines/provider';
 import { useFileStore } from '@/stores/file-store';
 import type { UsePdfTool } from '@/hooks/usePdfTool';
-import { describeOptions } from './toolForm';
+import { describeOptions, leadField } from './toolForm';
 import { EmptyState } from './EmptyState';
 import { ErrorPanel } from './ErrorPanel';
 import { PageThumbs } from './PageThumbs';
@@ -38,60 +38,133 @@ export interface OptionsPanelProps {
 }
 
 /**
- * Everything the user can change, behind one honest disclosure.
+ * Everything the user can change, in one compact row.
  *
- * Open by default: a required field hidden inside a collapsed panel is a
- * disabled button with no visible cause.
+ * The bar used to unfold every field at once — seven inputs, a page strip and
+ * the password gate — which took about 40% of the viewport away from the file
+ * cards, the thing the user is actually looking at. So the bar shows one field:
+ * the one the run is waiting on (see `leadField`), and folds the rest behind a
+ * disclosure that counts them.
+ *
+ * Nothing that blocks is hidden silently. The field the button is waiting for is
+ * the visible one, an invalid field behind the disclosure is named on the
+ * disclosure, the summary line keeps saying what is set, and the reason line
+ * under the button fires whatever is folded away.
  */
 export function OptionsPanel({ api, before }: OptionsPanelProps) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const disclosure = useRef<HTMLButtonElement>(null);
+  const restore = useRef(false);
   const fields = useMemo(
     () => (api.tool?.fields ?? []).filter((field) => !field.when || field.when(api.values)),
     [api.tool, api.values],
   );
-  const summary = describeOptions(api.tool?.fields ?? [], api.values);
-  const hasControls = fields.length > 0 || Boolean(api.tool?.engines?.length) || api.needsPassword;
+  const lead = leadField(fields, api.issues, api.values);
+  const folded = fields.filter((field) => field !== lead);
+  const problems = folded.filter((field) => api.issues[field.key]).length;
+  const engineCount = api.tool?.engines?.length ?? 0;
+  // What the row cannot show: the fields behind the disclosure, plus the engine
+  // note, which only exists in the panel.
+  const hidden = folded.length + engineCount;
+  const summary = describeOptions(folded, api.values);
+  // A tool with no options, no password and no engine note has nothing to fold,
+  // so the row is not rendered at all rather than taking bar height for nothing.
+  const controls = fields.length > 0 || api.needsPassword || engineCount > 0;
+
+  const show = (next: boolean) => {
+    if (!next) restore.current = true;
+    setOpen(next);
+  };
+  useEffect(() => {
+    // Collapsing unmounts the disclosure that was clicked and mounts the closed
+    // one in its place, so the write waits for that node to exist. Without it the
+    // keyboard user lands back at the top of the page after closing the panel.
+    if (open || !restore.current) return;
+    restore.current = false;
+    disclosure.current?.focus();
+  }, [open]);
 
   return (
-    <div className="space-y-2" data-options-panel={open ? 'open' : 'closed'}>
+    <div className="space-y-1.5" data-options-panel={open ? 'open' : 'closed'}>
       {before}
 
-      {(api.needsPassword || hasControls) && (
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={OPTIONS_PANEL_ID}
-          onClick={() => setOpen((value) => !value)}
-          className={`flex items-center gap-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted transition-colors hover:text-ink ${FOCUS_RING}`}
-        >
-          <span aria-hidden>{open ? '▾' : '▸'}</span>
-          {open ? 'Hide options' : 'Options'}
-          {fields.length > 0 && <span className="tabular-nums">({fields.length})</span>}
-        </button>
-      )}
-
-      {!open && summary && (
-        <p
-          id={OPTIONS_PANEL_ID}
-          className="truncate font-mono text-[10px] text-ink-muted"
-          title={summary}
-        >
-          {summary}
-        </p>
-      )}
-
-      {open && (
-        <div id={OPTIONS_PANEL_ID} className="flex flex-wrap items-start gap-x-5 gap-y-3">
+      {controls && (
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           {api.needsPassword && (
-            <section className="w-[260px] space-y-2.5">
+            <div className="w-[240px] space-y-1">
               <PasswordGate api={api} />
               <LockedNotice visible={api.locked} />
-            </section>
+            </div>
           )}
+
+          {lead && !open && (
+            <div className={lead.type === 'toggle' ? '' : 'w-[240px]'}>
+              <FieldControl
+                field={lead}
+                values={api.values}
+                onChange={api.setValue}
+                notice={api.notices[lead.key]}
+                issue={api.issues[lead.key]}
+                effective={api.checked[lead.key]}
+                pageCount={api.pageCount}
+                compact
+              />
+            </div>
+          )}
+
+          {hidden > 0 && !open && (
+            <button
+              ref={disclosure}
+              type="button"
+              aria-expanded={false}
+              aria-controls={OPTIONS_PANEL_ID}
+              data-options-attention={problems > 0 ? 'true' : undefined}
+              onClick={() => show(true)}
+              title={summary}
+              className={`mb-1 flex items-center gap-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted transition-colors hover:text-ink ${FOCUS_RING}`}
+            >
+              <span aria-hidden>▸</span>
+              {hidden} more option{hidden === 1 ? '' : 's'}
+              {problems > 0 && (
+                <span className="text-danger normal-case tracking-normal">
+                  · {problems} need{problems === 1 ? 's' : ''} attention
+                </span>
+              )}
+            </button>
+          )}
+
+          {!open && summary && (
+            <p
+              id={OPTIONS_PANEL_ID}
+              className="mb-1 min-w-0 flex-1 truncate font-mono text-[10px] text-ink-muted"
+              title={summary}
+            >
+              {summary}
+            </p>
+          )}
+
+          {open && (
+            <button
+              ref={disclosure}
+              type="button"
+              aria-expanded
+              aria-controls={OPTIONS_PANEL_ID}
+              onClick={() => show(false)}
+              className={`mb-1 flex items-center gap-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted transition-colors hover:text-ink ${FOCUS_RING}`}
+            >
+              <span aria-hidden>▾</span>
+              Fewer options
+            </button>
+          )}
+        </div>
+      )}
+
+      {open && controls && (
+        <div id={OPTIONS_PANEL_ID} className="flex flex-wrap items-start gap-x-5 gap-y-3">
           {api.groups.map((group) => (
             <section
               key={group.title || 'general'}
-              className="min-w-[220px] flex-1 space-y-2.5"
+              className="min-w-[200px] max-w-[340px] flex-1 space-y-2.5"
             >
               {group.title && <GroupHeading title={group.title} />}
               {group.fields.map((field) => (
@@ -218,6 +291,14 @@ interface FieldControlProps {
   effective?: unknown;
   /** Page count of the loaded document, for range checks (E6). */
   pageCount?: number | null;
+  /**
+   * Bar mode: one line tall, no strip, no help.
+   *
+   * The collapsed options row is the height of one control, so the lead field
+   * gives up the heavy parts of its control (the page thumbnails, the help
+   * sentence) while keeping its value, its clamp notice and its error.
+   */
+  compact?: boolean;
 }
 
 export function FieldControl({
@@ -228,6 +309,7 @@ export function FieldControl({
   issue,
   effective,
   pageCount,
+  compact = false,
 }: FieldControlProps) {
   if (field.when && !field.when(values)) return null;
   const value = values[field.key] ?? field.default ?? null;
@@ -240,10 +322,17 @@ export function FieldControl({
   return (
     <motion.div variants={fadeUp} className="space-y-1">
       <Label field={field} value={effective ?? value} htmlFor={bound} />
-      <Control field={field} value={value} onChange={set} pageCount={pageCount} inputId={bound} />
+      <Control
+        field={field}
+        value={value}
+        onChange={set}
+        pageCount={pageCount}
+        inputId={bound}
+        compact={compact}
+      />
       {notice && <p className="text-[10px] leading-relaxed text-warn">{notice}</p>}
       {issue && <p className="text-[10px] leading-relaxed text-danger">{issue}</p>}
-      {!notice && !issue && field.help && (
+      {!compact && !notice && !issue && field.help && (
         <p className="text-[10px] leading-relaxed text-ink-muted">{field.help}</p>
       )}
     </motion.div>
@@ -318,13 +407,21 @@ interface ControlProps {
   pageCount?: number | null;
   /** Present when the label can be bound to this control. */
   inputId?: string;
+  /** See `FieldControlProps.compact`. */
+  compact?: boolean;
 }
 
-function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
+function Control({ field, value, onChange, pageCount, inputId, compact = false }: ControlProps) {
   switch (field.type) {
     case 'toggle':
       return (
-        <label className="flex cursor-pointer items-center justify-between gap-2 py-0.5">
+        <label
+          className={`flex cursor-pointer items-center gap-2 py-0.5 ${
+            // In the collapsed row the box belongs next to its words; the wide
+            // two-column form keeps its label and box on opposite edges.
+            compact ? '' : 'justify-between'
+          }`}
+        >
           <span className="text-[11px] text-ink-soft">{field.label}</span>
           <input
             type="checkbox"
@@ -435,7 +532,9 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
         <div
           role="group"
           aria-label={field.label}
-          className="grid max-h-40 grid-cols-2 gap-x-2 gap-y-0.5 overflow-y-auto pr-1"
+          className={`grid grid-cols-2 gap-x-2 gap-y-0.5 overflow-y-auto pr-1 ${
+            compact ? 'max-h-24' : 'max-h-40'
+          }`}
         >
           {(field.options ?? []).map((option) => (
             <label
@@ -462,7 +561,13 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
     }
     case 'pages':
       return (
-        <PagePicker value={value} onChange={onChange} pageCount={pageCount} inputId={inputId} />
+        <PagePicker
+          value={value}
+          onChange={onChange}
+          pageCount={pageCount}
+          inputId={inputId}
+          compact={compact}
+        />
       );
     case 'password':
       return (
@@ -527,11 +632,13 @@ function PagePicker({
   onChange,
   pageCount,
   inputId,
+  compact = false,
 }: {
   value: unknown;
   onChange: (next: unknown) => void;
   pageCount?: number | null;
   inputId?: string;
+  compact?: boolean;
 }) {
   const file = useFileStore((s) => s.file);
   const [session, setSession] = useState<PdfSession | null>(null);
@@ -661,17 +768,22 @@ function PagePicker({
           : `${selected.length} of ${total} pages picked`}
       </p>
       {problem && <p className="text-[10px] leading-relaxed text-danger">{problem}</p>}
-      <div className="h-52">
-        <PageThumbs
-          session={session}
-          selected={selected}
-          onSelect={apply}
-          columns={4}
-          rowHeight={120}
-          maxSide={96}
-          label="Pages in this file"
-        />
-      </div>
+      {/* The strip is the reason this control is not bar height: a collapsed row
+          gets the text field, the count and the error, and the picker comes back
+          when the options are expanded. */}
+      {!compact && (
+        <div className="h-52">
+          <PageThumbs
+            session={session}
+            selected={selected}
+            onSelect={apply}
+            columns={4}
+            rowHeight={120}
+            maxSide={96}
+            label="Pages in this file"
+          />
+        </div>
+      )}
     </div>
   );
 }

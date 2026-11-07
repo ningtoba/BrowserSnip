@@ -67,7 +67,7 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.odt,.ott',
     surface: 'none',
     outputSuffix: '_from_odt.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'Your ODT’s headings, paragraphs, lists and tables as a paginated PDF with real selectable text.',
     notes: [
       LAYOUT_LOSS,
@@ -139,7 +139,7 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.odp',
     surface: 'none',
     outputSuffix: '_from_odp.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'One page per slide, with the slide text re-flowed as selectable text at the aspect you pick.',
     notes: [
       LAYOUT_LOSS,
@@ -198,7 +198,7 @@ export const officeTools: PdfToolDefinition[] = [
     accept: '.xps,.oxps',
     surface: 'none',
     outputSuffix: '_from_xps.pdf',
-    actionLabel: 'Convert',
+    actionLabel: 'Convert to PDF',
     promise: 'The text of every fixed page, re-flowed as selectable PDF text.',
     notes: [
       'Text runs are recovered from each page’s `UnicodeString` attributes, so wording and reading order survive.',
@@ -340,7 +340,7 @@ export const legacyOfficeTools: PdfToolDefinition[] = LEGACY_ONLY.map((entry) =>
   surface: 'none' as const,
   outputSuffix: `_${entry.id.replace('-to-pdf', '')}.pdf`,
   promise: `Listed so the capability is findable. ${entry.label} is not converted offline — the notes name a format that is.`,
-  actionLabel: 'Convert',
+  actionLabel: 'Convert to PDF',
   notes: [
     `Needs a full office-suite decoder. ${entry.hint}`,
     'Text and images in the container are not read here, so nothing is quietly substituted: the run is refused before any page is written.',

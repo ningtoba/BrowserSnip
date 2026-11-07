@@ -1,5 +1,6 @@
 import { TOOLS } from '@/lib/constants';
 import { PDF_TOOLS, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
+import { TOOL_JOBS } from '@/components/dashboard/toolJobs';
 
 const TOOL_COUNT = TOOLS.length;
 const PDF_TOOL_COUNT = PDF_TOOLS.length;
@@ -171,6 +172,12 @@ export function Landing() {
             </motion.span>
           </motion.div>
 
+          {/* Where the decision is made, so the answer is in the same breath. */}
+          <motion.p variants={fadeUp} className="mx-auto mt-5 max-w-md text-[13px] leading-relaxed text-ink-muted">
+            Pick a file and it is read by this page — no upload, no queue, no copy of
+            your document on somebody’s server.
+          </motion.p>
+
           {/* Trust pills */}
           <motion.div
             variants={staggerParent}
@@ -274,6 +281,18 @@ export function Landing() {
                 <p className="text-sm leading-relaxed text-ink-muted">
                   Merge, split, sign, encrypt, redact, OCR, convert. A whole document pipeline in one page.
                 </p>
+                {/* The jobs, named the way a visitor names them, so the tile answers
+                    “is the thing I need here?” without a click. */}
+                <ul className="mt-4 flex flex-wrap gap-1.5">
+                  {TOOL_JOBS.map((job) => (
+                    <li
+                      key={job.id}
+                      className="rounded-full border border-cream-border bg-cream-soft px-2.5 py-1 text-[11px] font-medium text-ink-muted"
+                    >
+                      {job.label}
+                    </li>
+                  ))}
+                </ul>
                 <div className="mt-auto pt-6">
                   <TileArrow colorClass="text-acc-violet" />
                 </div>

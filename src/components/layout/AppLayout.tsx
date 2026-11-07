@@ -189,8 +189,13 @@ function ThemeToggle() {
  * Context strip for `/tool/:toolId`: where I am and what I get.
  *
  * The workspace's own bar keeps the actions (Process, Log); this keeps the
- * breadcrumb, the tool's one-line promise from the registry and the star. There
- * is no engine affordance here on purpose: the optional CDN engines are resolved
+ * breadcrumb, the tool name and the star — and nothing else.
+ *
+ * The one-line promise used to be printed here *and* on the page below it, so a
+ * tool page said the same sentence twice in two wordings. It belongs with the
+ * action it describes: the generated surface and the bespoke editors print it
+ * themselves, beside the drop zone and again above the file cards. There is no
+ * engine affordance here either: the optional CDN engines are resolved
  * automatically, and a run that had to do less because an engine was unreachable
  * says so in its own result warnings, not in a badge that asks the user to fix a
  * setting they never chose.
@@ -206,10 +211,6 @@ export function ToolPageHeader({ toolId }: { toolId: string }) {
   const starred = definition ? isStarred(definition.id) : false;
 
   const label = definition?.name ?? video?.name ?? toolId;
-  const promise =
-    definition?.description
-    ?? video?.description
-    ?? 'This tool runs entirely in this tab — nothing is uploaded.';
 
   return (
     <header className="shell-header shrink-0 border-b px-4 py-2 sm:px-5">
@@ -261,8 +262,6 @@ export function ToolPageHeader({ toolId }: { toolId: string }) {
           </button>
         )}
       </div>
-
-      <p className="shell-soft mt-1 max-w-3xl text-[11px] leading-relaxed">{promise}</p>
     </header>
   );
 }

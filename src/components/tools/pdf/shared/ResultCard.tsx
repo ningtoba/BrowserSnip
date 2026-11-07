@@ -15,7 +15,11 @@ export interface ResultCardProps {
   outputs: ResultItem[];
   /** Total input bytes, so the card can show before → after (E14). */
   sizeBefore?: number | null;
-  /** Total output pages, when they differ from the sum of `outputs`. */
+  /**
+   * Pages in the primary output, as the producer reported them
+   * (`RunOutcome.pagesOut`). Wins over the sum of `outputs`, which most tools
+   * leave blank because they hand back bytes rather than a per-file breakdown.
+   */
   pages?: number | null;
   /**
    * Pages the run started with. Reported next to the output count so "Split 12

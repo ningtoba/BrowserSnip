@@ -966,6 +966,9 @@ describe('PdfToolPanel', () => {
     expect(screen.queryByText('Marks')).not.toBeInTheDocument();
 
     act(() => loadFile(pdfFile()));
+    // The compact bar opens on one field; the group headings live in the panel
+    // behind the disclosure. (Every field used to be unfolded at once.)
+    fireEvent.click(await screen.findByRole('button', { name: /more options/ }));
     expect(await screen.findByText('Quality')).toBeInTheDocument();
     expect(screen.getByText('Marks')).toBeInTheDocument();
   });
@@ -999,6 +1002,8 @@ describe('PdfToolPanel', () => {
     loadFile(pdfFile());
     render(<PdfToolPanel toolId="compress-thing" />);
     fireEvent.change(await screen.findByLabelText('Owner name'), { target: { value: 'ACME' } });
+    // Resolution sits behind the disclosure in a compact bar; open it first.
+    fireEvent.click(screen.getByRole('button', { name: /more options/ }));
     const dpi = screen.getByLabelText('Resolution');
     fireEvent.change(dpi, { target: { value: '400' } });
     expect(await screen.findByText(/Resolution must be between 72 and 300 dpi: 400 became 300\./)).toBeInTheDocument();

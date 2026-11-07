@@ -240,7 +240,9 @@ export async function pdfResult(
   const bytes = options.encrypt
     ? await saveEncrypted(doc, options.encrypt)
     : await savePDF(doc, { useObjectStreams: options.compress ?? true });
-  return { kind: 'pdf', bytes, message: options.message };
+  // The document is still in hand here, which is the only moment its page count
+  // is free; the runner carries the number to the result screen.
+  return { kind: 'pdf', bytes, message: options.message, pages: doc.getPageCount() };
 }
 
 /**

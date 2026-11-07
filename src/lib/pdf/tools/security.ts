@@ -103,17 +103,24 @@ const PERMISSION_NOTES = [
   'The owner password is what unlocks the restrictions. Leave it blank and a random one is generated, so the limits hold but nobody can lift them by name later.',
 ];
 
-/** One spelling of the /P permission checkboxes, shared by both panels. */
+/**
+ * One spelling of the /P permission checkboxes, shared by both panels.
+ *
+ * Declared as two columns of four. The bar puts each `group` in its own column and
+ * collapses to one truncated summary line, so eight checkboxes under one heading
+ * is a column nobody finishes reading — and the summary never reaches the second
+ * half of them.
+ */
 function permissionFields(whenSet?: (v: Record<string, unknown>) => boolean) {
   const shown = whenSet ? { when: whenSet } : {};
   return [
-    { key: 'allowPrinting', label: 'Allow printing', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Off still prints from the owner password; a reader without it is refused.', ...shown },
+    { key: 'allowPrinting', label: 'Allow printing', type: 'toggle' as const, default: true, group: 'Reading and printing', help: 'Off still prints from the owner password; a reader without it is refused.', ...shown },
     {
       key: 'printLevel',
       label: 'Print quality',
       type: 'select' as const,
       default: 'high',
-      group: 'Allowed without the password',
+      group: 'Reading and printing',
       options: [
         { value: 'high', label: 'Any resolution' },
         { value: 'low', label: 'Low resolution only (150 dpi)' },
@@ -121,12 +128,12 @@ function permissionFields(whenSet?: (v: Record<string, unknown>) => boolean) {
       when: (v: Record<string, unknown>) => v.allowPrinting === true && (!whenSet || whenSet(v)),
       help: 'Low resolution is a hint most readers honour; it is not a downsample, so the full-quality page is still in the file.',
     },
-    { key: 'allowModifying', label: 'Allow modifying', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Page editing, form-field creation and rotation of the document body. Leave it off for anything already filed or signed.', ...shown },
-    { key: 'allowCopying', label: 'Allow copying text and images', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Text and images a reader may lift out of the file — the permission that stops a contract being pasted elsewhere.', ...shown },
-    { key: 'allowAnnotating', label: 'Allow comments', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Adding or changing annotations, highlights and form-field appearances (the /Annotate flag).', ...shown },
-    { key: 'allowFillingForms', label: 'Allow filling forms', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Typing into the fields that already exist (/QueryForms). Separate from adding comments: a reader may do one and not the other.', ...shown },
-    { key: 'allowAccessibility', label: 'Allow screen readers', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Extract text for assistive technology. Turning this off makes the document unusable to a blind reader and nothing else.', ...shown },
-    { key: 'allowAssembling', label: 'Allow page reorganisation', type: 'toggle' as const, default: false, group: 'Allowed without the password', help: 'Inserting, rotating, deleting or extracting pages and editing bookmarks (/Assemble). Off keeps a filed document in one piece.', ...shown },
+    { key: 'allowCopying', label: 'Allow copying text and images', type: 'toggle' as const, default: true, group: 'Reading and printing', help: 'Text and images a reader may lift out of the file — the permission that stops a contract being pasted elsewhere.', ...shown },
+    { key: 'allowAccessibility', label: 'Allow screen readers', type: 'toggle' as const, default: true, group: 'Reading and printing', help: 'Extract text for assistive technology. Turning this off makes the document unusable to a blind reader and nothing else.', ...shown },
+    { key: 'allowModifying', label: 'Allow modifying', type: 'toggle' as const, default: true, group: 'Editing rights', help: 'Page editing, form-field creation and rotation of the document body. Leave it off for anything already filed or signed.', ...shown },
+    { key: 'allowAnnotating', label: 'Allow comments', type: 'toggle' as const, default: true, group: 'Editing rights', help: 'Adding or changing annotations, highlights and form-field appearances (the /Annotate flag).', ...shown },
+    { key: 'allowFillingForms', label: 'Allow filling forms', type: 'toggle' as const, default: true, group: 'Editing rights', help: 'Typing into the fields that already exist (/QueryForms). Separate from adding comments: a reader may do one and not the other.', ...shown },
+    { key: 'allowAssembling', label: 'Allow page reorganisation', type: 'toggle' as const, default: false, group: 'Editing rights', help: 'Inserting, rotating, deleting or extracting pages and editing bookmarks (/Assemble). Off keeps a filed document in one piece.', ...shown },
   ];
 }
 
@@ -571,7 +578,7 @@ export const securityTools: PdfToolDefinition[] = [
     maxFiles: 2,
     surface: 'custom',
     outputSuffix: '_comparison.pdf',
-    promise: 'A page-by-page report of what differs — with a picture of each changed area when you compare pixels, and the page-count difference called out either way.',
+    promise: 'A page-by-page report of what differs, with a picture of each changed area when you compare pixels.',
     actionLabel: 'Compare',
     notes: [
       'Comparison works page against page by number, so a document with one page inserted reports every later page as different.',
@@ -918,7 +925,7 @@ export const securityTools: PdfToolDefinition[] = [
     description: 'List and delete the files embedded in a PDF',
     icon: '✂️',
     category: 'security',
-    keywords: ['remove attachment', 'manage embedded'],
+    keywords: ['remove attachment', 'manage embedded', 'package', 'enclosed files'],
     outputSuffix: '_attachments.pdf',
     promise: 'The attachments listed with their sizes, and only the ones you name deleted — a name that is not there is reported, not ignored.',
     actionLabel: 'Remove attachments',

@@ -703,6 +703,9 @@ describe('PdfToolPanel as the whole chrome', () => {
     loadFiles([await realPdf()]);
     render(h(PdfToolPanel, { toolId: 'rail-compress' }));
     await screen.findByLabelText('Owner name');
+    // The bar shows one field and folds the rest behind a disclosure, so the
+    // preset needs opening first. (It sat in an always-open grid before.)
+    fireEvent.click(screen.getByRole('button', { name: /more options/ }));
     const light = screen.getByRole('button', { name: 'Light' });
     const strong = screen.getByRole('button', { name: 'Strong' });
     expect(light).toHaveAttribute('aria-pressed', 'true');
