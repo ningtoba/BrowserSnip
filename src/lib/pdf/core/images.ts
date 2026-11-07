@@ -29,7 +29,41 @@ export interface DecodeOptions {
   maxSide?: number;
   /** Composite transparency onto this colour instead of keeping alpha. */
   background?: string;
+  /** File name, used when a caller has one, so the sentence can name it. */
+  name?: string;
+  /**
+   * How long the browser gets to answer before this module admits it will not.
+   * Defaults to `IMAGE_DECODE_TIMEOUT_MS`; 0 removes the bound.
+   */
+  decodeTimeoutMs?: number;
 }
+
+/**
+ * A refusal from the browser's own image decoders, in the user's words.
+ *
+ * Named so a caller can tell "this browser cannot open this picture" apart from
+ * a bug. `stalled` marks the worse case: the browser started, answered neither
+ * yes nor no, and this module stopped waiting for it.
+ */
+export class ImageDecodeError extends Error {
+  override readonly name = 'ImageDecodeError';
+  readonly stalled: boolean;
+
+  constructor(message: string, stalled = false) {
+    super(message);
+    this.stalled = stalled;
+  }
+}
+
+/**
+ * How long a decode may take before the run is told it will not finish.
+ *
+ * `createImageBitmap` and the `<img>` load event are both promises the browser
+ * keeps, and either can go unanswered: a stalled blob URL, a codec the engine
+ * abandons silently, or a build with no bitmap API at all. Untimed, every
+ * image-backed tool inherits a spinner with no message and no way out.
+ */
+export const IMAGE_DECODE_TIMEOUT_MS = 30_000;
 
 const MAGIC_TABLE: { test: (b: Uint8Array) => boolean; mime: string }[] = [
   { test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47, mime: 'image/png' },
@@ -147,7 +181,7 @@ async function decodeNative(
   mime: string,
   options: DecodeOptions,
 ): Promise<DecodedImage> {
-  const source = await loadBitmap(bytes, mime);
+  const source = await loadBitmap(bytes, mime, options);
   try {
     const scale = sizeScale(source.width, source.height, options.maxSide);
     const width = Math.max(1, Math.round(source.width * scale));
@@ -169,32 +203,126 @@ async function decodeNative(
 
 type Bitmap = ImageBitmap | HTMLImageElement;
 
-async function loadBitmap(bytes: Uint8Array, mime: string): Promise<Bitmap> {
+/** Formats whose label reads better in a sentence than the MIME does. */
+function formatName(mime: string): string {
+  if (mime === 'image/heic' || mime === 'image/heif') return 'HEIC/HEIF';
+  if (mime === 'image/vnd.adobe.photoshop') return 'Photoshop (PSD)';
+  return mime.replace('image/', '').toUpperCase() || 'this format';
+}
+
+/** `"scan-01.jpg" ` when a name is known, `This image` when it is not. */
+function subject(name?: string): string {
+  return name ? `"${name}"` : 'This image';
+}
+
+/**
+ * Run `work` with a deadline that always produces an outcome.
+ *
+ * The point is not the number of seconds, it is that the caller is never left
+ * awaiting a promise the browser has stopped intending to settle.
+ */
+function withDeadline<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  onExpire: () => ImageDecodeError,
+): Promise<T> {
+  if (timeoutMs <= 0) return work;
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(onExpire());
+    }, timeoutMs);
+    // A bound must not be the reason a test process waits for it to fire.
+    (timer as { unref?: () => void }).unref?.();
+    void work.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
+/**
+ * The `<img>` route. Both outcomes are handled; neither may be silent.
+ *
+ * An `onerror` that forgets to reject is as bad as no handler at all, so both
+ * callbacks settle this promise and the caller still wraps it in a deadline for
+ * the case where the load event never fires.
+ */
+function loadThroughImageTag(url: string): Promise<Bitmap> {
+  return new Promise<Bitmap>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`the browser refused to load it as a picture`));
+    img.src = url;
+  });
+}
+
+/**
+ * Decode bytes to a bitmap by whichever route this browser offers.
+ *
+ * Feature-detected, fallen back, and bounded: a missing `createImageBitmap` must
+ * not strand the caller on a load event that never fires.
+ */
+async function loadBitmap(
+  bytes: Uint8Array,
+  mime: string,
+  options: DecodeOptions,
+): Promise<Bitmap> {
   const blob = new Blob([bytes as BlobPart], { type: mime || 'application/octet-stream' });
+  const timeoutMs = options.decodeTimeoutMs ?? IMAGE_DECODE_TIMEOUT_MS;
+  const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+  const stall = (route: string): ImageDecodeError =>
+    new ImageDecodeError(
+      `${subject(options.name)} (${formatName(mime)}) did not finish decoding after ${seconds}s on the `
+      + `${route} path: this browser started to open it and never answered. Re-export it as PNG or JPEG, `
+      + 'or try another browser.',
+      true,
+    );
+
+  let bitmapFailure: Error | null = null;
   if (typeof createImageBitmap === 'function') {
     try {
-      return await createImageBitmap(blob);
-    } catch {
-      /* the <img> path supports more formats on some engines */
+      return await withDeadline(createImageBitmap(blob), timeoutMs, () => stall('createImageBitmap'));
+    } catch (err) {
+      // A stall will not be cured by asking the same browser a second way.
+      if (err instanceof ImageDecodeError) throw err;
+      bitmapFailure = err instanceof Error ? err : new Error(String(err));
     }
+  } else if (typeof Image !== 'function') {
+    throw new ImageDecodeError(
+      `${subject(options.name)} cannot be decoded here: this browser has no image decoder for `
+      + `${formatName(mime)}. Convert it to PNG or JPEG, or open it in Safari or Chrome 130+.`,
+    );
   }
+
   const url = URL.createObjectURL(blob);
   try {
-    return await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(unsupported(mime));
-      img.src = url;
-    });
+    return await withDeadline(loadThroughImageTag(url), timeoutMs, () => stall('img'));
+  } catch (err) {
+    if (err instanceof ImageDecodeError) throw err;
+    throw unsupported(mime, options.name, bitmapFailure ?? (err instanceof Error ? err : null));
   } finally {
+    // Revoked on every exit, deadline included, so an abandoned load cannot
+    // keep the bytes alive for the life of the tab.
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
 
-function unsupported(mime: string): Error {
-  const label = mime === 'image/heic' || mime === 'image/heif' ? 'HEIC/HEIF' : mime;
-  return new Error(
-    `This browser cannot decode ${label}. Convert the file to PNG or JPEG, or open it in Safari or Chrome 130+.`,
+function unsupported(mime: string, name?: string, cause?: Error | null): Error {
+  return new ImageDecodeError(
+    `${subject(name)} could not be opened: this browser has no decoder for ${formatName(mime)}`
+    + `${cause ? ` (${cause.message})` : ''}. Convert the file to PNG or JPEG, or open it in Safari or Chrome 130+.`,
   );
 }
 

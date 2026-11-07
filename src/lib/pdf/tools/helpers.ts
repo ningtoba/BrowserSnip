@@ -31,7 +31,7 @@ import {
   type PdfInspection,
 } from '../core/guard';
 import { openRender, type PdfSession, type RenderMetadata } from '../core/render';
-import type { ToolFile, ToolResult, ToolRunContext } from './types';
+import type { ToolField, ToolFile, ToolResult, ToolRunContext, ToolValues } from './types';
 
 export {
   ToolInputError,
@@ -294,18 +294,191 @@ export function reportResult(
   return { kind: 'report', sections, ...options };
 }
 
-/** Strip the extension so output names read `report.pdf` not `report.pdf.pdf`. */
-export function baseName(name: string): string {
-  const withoutPath = name.split(/[\\/]/).pop() ?? name;
-  const dot = withoutPath.lastIndexOf('.');
-  return dot > 0 ? withoutPath.slice(0, dot) : withoutPath;
+// Naming has exactly two entry points here: `downloadStem` for a stem and
+// `downloadName` for a whole file name. `baseName` and `withSuffix` used to be
+// a third and a fourth, and they disagreed with the runner about where the
+// page number went.
+
+/** Longest stem kept for a download or an archive entry. */
+const STEM_LIMIT = 120;
+
+/**
+ * A file stem that survives spaces, unicode and the characters Windows, macOS
+ * and ZIP refuse in a name (E17).
+ *
+ * Every download name in the app is built from the user's own file name, which
+ * may be `Q3 report (final).pdf`, `报告 v2.pdf`, or something dragged off a
+ * camera card containing `:` and control bytes. Unicode is preserved on
+ * purpose — transliterating `报告` to `baogao` would misreport which file the
+ * user picked — while path separators, reserved characters, trailing dots and
+ * spaces are removed because those are what make a download silently renamed
+ * or an archive entry unopenable.
+ */
+export function downloadStem(name: string): string {
+  const cleaned = (name ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, '-')
+    .replace(/[<>:"/\\|?*]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const withoutExtension = cleaned.replace(/\.[^.]*$/, '');
+  const stem = withoutExtension === '' ? cleaned : withoutExtension;
+  const clipped = Array.from(stem)
+    .slice(0, STEM_LIMIT)
+    .join('')
+    .replace(/^[\s.-]+|[\s.-]+$/g, '');
+  return clipped === '' ? 'document' : clipped;
 }
 
-export function withSuffix(name: string, suffix: string): string {
-  if (!suffix) return name;
-  const ext = suffix.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
-  if (!ext) return `${baseName(name)}${suffix}`;
-  return `${baseName(name)}${suffix.replace(/\.[a-z0-9]+$/i, '')}.${ext}`;
+/**
+ * The download name for one output of a run.
+ *
+ * `outputSuffix` is either a fragment appended to the source stem
+ * (`_merged.pdf`) or a whole extension replacing it (`.zip`); a multi-file run
+ * numbers the extras so nothing overwrites itself. Sanitising happens here
+ * rather than per tool, so a name typed into a `file` field and a name dragged
+ * in from a zip both come out usable.
+ */
+export function downloadName(sourceName: string, suffix: string, index = 0, total = 1): string {
+  const base = downloadStem(sourceName);
+  const numbered = total > 1 ? `-${index + 1}` : '';
+  if (suffix.startsWith('.')) return `${base}${numbered}${suffix}`;
+  return `${base}${suffix}${numbered}`;
+}
+
+/* ── shared field shapes ──────────────────────────────────────────────────── */
+
+/**
+ * One spelling of the "which pages" answer.
+ *
+ * The label, the default and the promise that an out-of-range page is refused
+ * rather than skipped are identical in all ~124 tools: `core/guard` validates
+ * every `pages` field against the open document's page count before the run
+ * starts (E6, E15), so a definition must not promise a milder outcome.
+ */
+export const PAGES_FIELD_HELP =
+  'Leave as "all", or use 1,3,5-7, odd, even. A page outside this document is named before the run, never quietly skipped.';
+
+export function pagesField(overrides: Partial<ToolField> = {}): ToolField {
+  return {
+    key: 'pages',
+    label: 'Pages',
+    type: 'pages',
+    default: 'all',
+    group: 'Pages',
+    help: PAGES_FIELD_HELP,
+    ...overrides,
+  };
+}
+
+/**
+ * A quality slider, spelled the same wherever it appears.
+ *
+ * `kind` names the encoder so a definition cannot promise a quality control for
+ * a lossless format: the rail hides the field through `when`, and the run reads
+ * the same value.
+ */
+export function qualityField(
+  kind: 'jpeg' | 'webp',
+  overrides: Partial<ToolField> = {},
+): ToolField {
+  return {
+    key: 'quality',
+    label: kind === 'jpeg' ? 'JPEG quality' : 'WebP quality',
+    type: 'slider',
+    default: 0.85,
+    min: 0.3,
+    max: 1,
+    step: 0.05,
+    group: 'Output',
+    help:
+      kind === 'jpeg'
+        ? 'Lower saves space and adds blockiness around text; 0.85 is the point where most scans still read cleanly.'
+        : 'Lower saves space and softens edges. Only used when the format is WebP or JPEG.',
+    when: (values: ToolValues) => {
+      const format = values.format;
+      return typeof format !== 'string' || format === kind || format === 'auto';
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * The sheet a converter lays its content out on.
+ *
+ * Every "… to PDF" tool asks this same question, and two copies of the const
+ * (one in `convert-to`, one in `office`) had already drifted apart on the help
+ * text, so the wording lives here once.
+ */
+export function pageSizeField(overrides: Partial<ToolField> = {}): ToolField {
+  return {
+    key: 'pageSize',
+    label: 'Page size',
+    type: 'select',
+    default: 'a4',
+    group: 'Page',
+    help: 'The sheet the content is laid out on. Anything wider than this is scaled to fit, not clipped.',
+    options: [
+      { value: 'a4', label: 'A4' },
+      { value: 'letter', label: 'Letter' },
+      { value: 'legal', label: 'Legal' },
+      { value: 'a3', label: 'A3' },
+      { value: 'a5', label: 'A5' },
+      { value: 'tabloid', label: 'Tabloid' },
+    ],
+    ...overrides,
+  };
+}
+
+/** Portrait or landscape — a swap of the sheet, never a rotation of the page. */
+export function orientationField(overrides: Partial<ToolField> = {}): ToolField {
+  return {
+    key: 'orientation',
+    label: 'Orientation',
+    type: 'segmented',
+    default: 'portrait',
+    group: 'Page',
+    help: 'Swaps the width and height of the sheet above; content is re-flowed to suit, not rotated.',
+    options: [
+      { value: 'portrait', label: 'Portrait' },
+      { value: 'landscape', label: 'Landscape' },
+    ],
+    ...overrides,
+  };
+}
+
+/** The white border a converter keeps, in points. */
+export function marginField(overrides: Partial<ToolField> = {}): ToolField {
+  return {
+    key: 'margin',
+    label: 'Margin',
+    type: 'slider',
+    default: 56,
+    min: 0,
+    max: 144,
+    step: 2,
+    unit: 'pt',
+    group: 'Page',
+    help: 'White space on every edge, in points — 72 pt is one inch. Most printers cannot print inside the last ~6 mm.',
+    ...overrides,
+  };
+}
+
+/** One spelling of "how many pixels per point" — never quality, never dpi. */
+export function resolutionField(overrides: Partial<ToolField> = {}): ToolField {
+  return {
+    key: 'dpi',
+    label: 'Resolution',
+    type: 'slider',
+    default: 200,
+    min: 96,
+    max: 400,
+    step: 1,
+    integer: true,
+    unit: 'dpi',
+    group: 'Output',
+    help: 'Higher is sharper and heavier: each page is rendered in this tab, so a big document needs the memory for it.',
+    ...overrides,
+  };
 }
 
 /** Throw a cancellation the harness understands. */

@@ -89,6 +89,8 @@ export function CompareTool() {
 
   const handleProcess = useCallback(() => {
     if (!report.valid) return;
+    // No differences is a result, not a failure: the run still writes the file,
+    // and says in its own words that the copy carries no marks (E13).
     void run({
       highlightColor: st.highlightColor,
       sensitivity: clampSensitivity(st.sensitivity),
@@ -105,18 +107,18 @@ export function CompareTool() {
       >
         <motion.p variants={fadeUp} className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Compare PDFs</motion.p>
         <p className="text-[11px] text-ink-muted leading-relaxed">
-          Add 2 PDF files to compare them. Differences will be highlighted on the preview and in the output.
+          Add two PDFs to compare them. Changes are marked on the preview and painted into the output.
         </p>
         <motion.div variants={scaleIn} className="p-3 rounded-[12px] border border-cream-border bg-cream-soft">
           <p className="text-[10px] text-ink-muted">
-            {files.length === 0 ? 'No files loaded.' : `${files.length} file(s) loaded — need 2.`}
+            {files.length === 0 ? 'No documents added yet.' : `${files.length} added — a comparison needs two.`}
           </p>
           <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">{report.notes[0]}</p>
         </motion.div>
         {files.length > 2 && (
           <p className="text-[10px] leading-relaxed text-warn">
-            {files.length} documents are open; only the first two are ever compared, so close the others to be sure which
-            pair you mean.
+            {files.length} documents are open and only the first two are ever compared — close the others to be sure
+            which pair you mean.
           </p>
         )}
       </motion.div>
@@ -148,14 +150,31 @@ export function CompareTool() {
         )}
       </motion.div>
 
-      {/* Diff stats */}
-      <motion.div variants={scaleIn} className="rounded-[12px] border border-cream-border bg-white p-3 text-center shadow-doodle">
+      {/* Diff stats: the numbers a person can check against the preview */}
+      <motion.div
+        variants={scaleIn}
+        className="rounded-[12px] border border-cream-border bg-white p-3 text-center shadow-doodle"
+        role="status"
+        aria-live="polite"
+      >
         <p className="text-2xl font-bold text-accent tabular-nums" data-compare-diff={st.diffPercent}>
           {st.diffPercent}%
         </p>
-        <p className="text-[10px] text-ink-muted">
-          of pixels differ on {report.comparedPages} compared page{report.comparedPages === 1 ? '' : 's'}
+        <p className="text-[10px] leading-relaxed text-ink-muted">
+          {st.diffPixels > 0
+            ? <>
+                {st.diffRegions} changed area{st.diffRegions === 1 ? '' : 's'} on page {st.page} ·{' '}
+                {st.diffPixels.toLocaleString()} of {st.totalPixels.toLocaleString()} pixels · compared against{' '}
+                {report.comparedPages} page{report.comparedPages === 1 ? '' : 's'} both files have
+              </>
+            : `Page ${st.page} matches at this sensitivity — ${report.comparedPages} page${report.comparedPages === 1 ? '' : 's'} in common are being checked`}
         </p>
+        {st.diffPixels === 0 && (
+          <p className="mt-1 text-[10px] leading-relaxed text-warn" data-compare-identical>
+            Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it —
+            move to another page, or lower the sensitivity to catch smaller changes.
+          </p>
+        )}
       </motion.div>
 
       {/* What will be written, in words (E6, E13) */}
@@ -177,31 +196,35 @@ export function CompareTool() {
 
       {/* Sensitivity */}
       <motion.div variants={fadeUp}>
-        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-sensitivity">
           Sensitivity: <span className="tabular-nums">{clampSensitivity(st.sensitivity)}</span>
         </label>
-        <input type="range" min={5} max={150} value={clampSensitivity(st.sensitivity)}
+        <input id="compare-sensitivity" type="range" min={5} max={150} value={clampSensitivity(st.sensitivity)}
+          aria-label="How different a pixel must be before it counts as a change"
           onChange={(e) => setCompareSensitivity(clampSensitivity(Number(e.target.value)))}
           className="w-full" />
         <div className="flex justify-between text-[8px] text-ink-muted/50">
-          <span>More sensitive</span>
-          <span>Less sensitive</span>
+          <span>Catches smaller changes</span>
+          <span>Only obvious changes</span>
         </div>
         <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">{sensitivityWords(st.sensitivity)}.</p>
       </motion.div>
 
       {/* Highlight color */}
       <motion.div variants={fadeUp}>
-        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Highlight Color</label>
-        <input type="color" value={st.highlightColor}
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-color">
+          Highlight colour
+        </label>
+        <input id="compare-color" type="color" value={st.highlightColor}
+          aria-label="Colour the changed areas are painted in the preview and the export"
           onChange={(e) => setCompareHighlightColor(e.target.value)}
-          className="w-full h-6 rounded-[10px] bg-cream border border-cream-border mt-1 cursor-pointer" />
+          className="mt-1 h-8 w-full cursor-pointer rounded-[10px] border border-cream-border bg-cream" />
       </motion.div>
 
       {/* Info */}
       <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">
-        Differences are computed pixel-by-pixel. Lower sensitivity catches more subtle changes. The output PDF shows
-        document A with differences from B highlighted.
+        Changes are found by rendering both pages and comparing their pixels, not by reading the text. The output is a
+        copy of A with every changed area marked; both files stay in this tab.
       </motion.p>
 
       {/* What the run had to admit: pages only one document has, files it could
@@ -226,7 +249,7 @@ export function CompareTool() {
         disabled={!report.valid || isRunning}
         title={report.valid ? undefined : report.headline}
       >
-        {isRunning ? 'Comparing…' : 'Generate Comparison PDF'}
+        {isRunning ? 'Comparing…' : 'Generate comparison PDF'}
       </button>
     </motion.div>
   );

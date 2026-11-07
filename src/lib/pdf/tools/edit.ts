@@ -28,7 +28,7 @@ import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
 import { canvasToBlob } from '../core/render';
 import { embedImageBytes } from '../core/pack';
 import { newPDF } from '../core/doc';
-import { clampNumber, openInputs, parseHexColor, pdfResult, reportResult, throwIfAborted, withRender, baseName, type OpenedInput } from './helpers';
+import { clampNumber, openInputs, pagesField, parseHexColor, pdfResult, reportResult, throwIfAborted, withRender, downloadStem, type OpenedInput } from './helpers';
 import {
   booleanValue,
   numberValue,
@@ -412,6 +412,7 @@ const ANNOTATION_SURFACE_FIELDS = [
     label: 'Regions',
     type: 'text' as const,
     default: '',
+    group: 'Marking',
     help: 'Fill in from the page editor, or type page:x,y,w,h entries separated by semicolons.',
   },
 ];
@@ -482,6 +483,7 @@ export const editTools: PdfToolDefinition[] = [
   {
     id: 'edit-pdf',
     name: 'PDF Editor',
+    actionLabel: 'Save annotations',
     description: 'Annotate, highlight, redact, comment, and add shapes or images on one canvas',
     icon: '✏️',
     category: 'edit',
@@ -498,6 +500,7 @@ export const editTools: PdfToolDefinition[] = [
   {
     id: 'edit-pdf-text',
     name: 'Edit PDF Text',
+    actionLabel: 'Save text',
     description: 'Click a paragraph and rewrite it in place, with reflow, fonts and styling',
     icon: '🖊️',
     category: 'edit',
@@ -522,24 +525,24 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Add numbers',
     promise: 'A folio drawn into the page itself, in the position and style you choose, on the pages you select.',
     fields: [
-      { key: 'position', label: 'Position', type: 'select', default: 'bottom-center', options: ANCHOR_OPTIONS, group: 'Placement' },
-      { key: 'margin', label: 'Margin', type: 'number', default: 24, min: 0, max: 200, unit: 'pt', half: true, group: 'Placement' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Placement' },
-      { key: 'skip', label: 'Skip first N pages', type: 'number', default: 0, min: 0, integer: true, half: true, group: 'Placement', help: 'Counted from the start of the selection, so cover pages stay blank.' },
-      { key: 'step', label: 'Count every', type: 'number', default: 1, min: 1, max: 10, integer: true, half: true, group: 'Placement', help: '2 numbers every second page from the first numbered one, useful for folded booklets.' },
-      { key: 'startAt', label: 'First number', type: 'number', default: 1, min: 0, max: 100000, integer: true, half: true, group: 'Format' },
+      { key: 'position', label: 'Position', type: 'select', default: 'bottom-center', options: ANCHOR_OPTIONS, group: 'Placement', help: 'Where on each page the folio is drawn, measured from the page as you see it.' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 24, min: 0, max: 200, step: 1, unit: 'pt', half: true, group: 'Placement', help: 'Measured from the visible edge of each page, including its rotation.' },
+      pagesField({ group: 'Placement' }),
+      { key: 'skip', label: 'Skip first N pages', type: 'number', default: 0, min: 0, max: 5000, step: 1, integer: true, half: true, group: 'Placement', help: 'Counted from the start of the selection, so cover pages stay blank. Clamped to the number of pages you selected.' },
+      { key: 'step', label: 'Count every', type: 'number', default: 1, min: 1, max: 10, step: 1, integer: true, half: true, group: 'Placement', help: '2 numbers every second page from the first numbered one, useful for folded booklets.' },
+      { key: 'startAt', label: 'First number', type: 'number', default: 1, min: 0, max: 100000, step: 1, integer: true, half: true, group: 'Format', help: 'The folio on the first numbered page. Start at 3 when the first two sheets are covers.' },
       { key: 'style', label: 'Number style', type: 'select', default: 'decimal', options: [
         { value: 'decimal', label: '1, 2, 3' },
         { value: 'roman-upper', label: 'I, II, III' },
         { value: 'roman-lower', label: 'i, ii, iii' },
         { value: 'letters', label: 'A, B, C' },
         { value: 'padded', label: '01, 02, 03' },
-      ], group: 'Format' },
-      { key: 'prefix', label: 'Before the number', type: 'text', default: 'Page ', half: true, group: 'Format' },
-      { key: 'suffix', label: 'After the number', type: 'text', default: ' of {total}', half: true, group: 'Format', help: '{total} and {page} are replaced.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 5, max: 72, half: true, unit: 'pt', group: 'Style' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#1b1b18', group: 'Style' },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: false, group: 'Style' },
+      ], group: 'Format', help: 'Roman and letter styles restart at the first number you set; padded keeps the width you would type by hand.' },
+      { key: 'prefix', label: 'Prefix', type: 'text', default: 'Page ', half: true, group: 'Format', help: 'Written before the number, so "Page " turns 3 into "Page 3".' },
+      { key: 'suffix', label: 'Suffix', type: 'text', default: ' of {total}', half: true, group: 'Format', help: 'Written after the number. {total} and {page} are replaced.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 5, max: 72, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'The size of the drawn number, in points: 12 pt is ordinary body text.' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#1b1b18', group: 'Style', help: 'Applied to the number and to any prefix or suffix around it.' },
+      { key: 'bold', label: 'Bold', type: 'toggle', default: false, group: 'Style', help: 'Heavier strokes survive a duplex printer better; on a thin folio it can look like a smudge.' },
       { key: 'font', label: 'Typeface', type: 'select', default: 'auto', options: FONT_OPTIONS, group: 'Style', help: 'A Latin-only face is swapped for the embedded Unicode font — and the run says so — when the text needs characters it cannot encode.' },
     ],
     notes: [
@@ -619,24 +622,26 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Add watermark',
     promise: 'A text or image mark drawn into the page, over or behind the existing content, on the pages you select.',
     fields: [
-      { key: 'type', label: 'Watermark', type: 'segmented', default: 'text', options: [
+      { key: 'type', label: 'Watermark', group: 'Mark', type: 'segmented', default: 'text', options: [
         { value: 'text', label: 'Text' }, { value: 'image', label: 'Image' },
-      ] },
-      { key: 'text', label: 'Text', type: 'text', default: 'DRAFT', when: (v) => v.type === 'text', group: 'Mark' },
+      ],
+        help: 'A text mark is drawn as text; an image mark is embedded and scaled. Both are painted into the page itself.',
+      },
+      { key: 'text', label: 'Text', type: 'text', default: 'DRAFT', when: (v) => v.type === 'text', group: 'Mark', help: 'Drawn into the page, not stored as a comment, so it prints and cannot be hidden by a reader.' },
       { key: 'image', label: 'Watermark image', type: 'file', accept: 'image/*', when: (v) => v.type === 'image', group: 'Mark', help: 'PNG, JPEG or WebP — converted in this tab, never uploaded.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 64, min: 6, max: 400, half: true, unit: 'pt', when: (v) => v.type === 'text', group: 'Mark' },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: true, when: (v) => v.type === 'text', group: 'Mark' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#888888', when: (v) => v.type === 'text', group: 'Mark' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 64, min: 6, max: 400, step: 1, unit: 'pt', half: true, when: (v) => v.type === 'text', group: 'Mark', help: 'Points, on a page scaled to its own size — a watermark sized for A4 lands differently on a Letter scan.' },
+      { key: 'bold', label: 'Bold', type: 'toggle', default: true, when: (v) => v.type === 'text', group: 'Mark', help: 'Heavier strokes survive a low-ink printout and read across a room.' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#888888', when: (v) => v.type === 'text', group: 'Mark', help: 'Only used for a text mark; an image keeps its own colours.' },
       { key: 'scale', label: 'Image scale', type: 'slider', default: 0.35, min: 0.02, max: 2, step: 0.01, when: (v) => v.type === 'image', group: 'Mark', help: 'Fraction of each page\'s own width — measured per page, so mixed sizes stay proportional.' },
-      { key: 'opacity', label: 'Opacity', type: 'slider', default: 0.25, min: 0.02, max: 1, step: 0.01, group: 'Look' },
+      { key: 'opacity', label: 'Opacity', type: 'slider', default: 0.25, min: 0.02, max: 1, step: 0.01, group: 'Look', help: 'Low enough that the words underneath stay readable, high enough that the mark survives a printer.' },
       { key: 'rotation', label: 'Angle', type: 'slider', default: 45, min: -180, max: 180, step: 1, unit: '°', group: 'Look', help: 'Measured as the page is displayed, so it is the same angle on a rotated page.' },
       { key: 'layer', label: 'Placement', type: 'segmented', default: 'over', options: [
         { value: 'over', label: 'Over content' }, { value: 'under', label: 'Behind content' },
-      ], group: 'Look' },
-      { key: 'position', label: 'Position', type: 'select', default: 'center', options: ANCHOR_OPTIONS, when: (v) => v.tile !== true, group: 'Repeat' },
-      { key: 'tile', label: 'Repeat as a pattern', type: 'toggle', default: false, group: 'Repeat' },
-      { key: 'tileGap', label: 'Pattern spacing', type: 'slider', default: 1.5, min: 0.2, max: 5, step: 0.1, when: (v) => v.tile === true, group: 'Repeat' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Repeat' },
+      ], group: 'Look', help: 'Behind keeps the text on top of the mark; over hides whatever it covers.' },
+      { key: 'position', label: 'Position', type: 'select', default: 'center', options: ANCHOR_OPTIONS, when: (v) => v.tile !== true, group: 'Repeat', help: 'Where the single mark sits when it is not tiled.' },
+      { key: 'tile', label: 'Repeat as a pattern', type: 'toggle', default: false, group: 'Repeat', help: 'Repeats the mark across the whole page instead of placing one, which is what stops a crop removing the evidence.' },
+      { key: 'tileGap', label: 'Pattern spacing', type: 'slider', default: 1.5, min: 0.2, max: 5, step: 0.1, when: (v) => v.tile === true, group: 'Repeat', help: 'As a multiple of the mark’s own size, so a bigger watermark spaces itself further out.' },
+      pagesField({ group: 'Repeat' }),
     ],
     notes: [
       'Behind content moves the mark in front of the page\u2019s own drawing operators, so text stays readable on top of it.',
@@ -744,17 +749,17 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Add header and footer',
     promise: 'Left, centre and right text at the top and bottom of each selected page, with page numbers and document fields.',
     fields: [
-      { key: 'headerLeft', label: 'Header left', type: 'text', group: 'Header' },
-      { key: 'headerCenter', label: 'Header centre', type: 'text', default: '{title}', group: 'Header' },
-      { key: 'headerRight', label: 'Header right', type: 'text', default: '{date}', group: 'Header' },
-      { key: 'footerLeft', label: 'Footer left', type: 'text', default: '{author}', group: 'Footer' },
-      { key: 'footerCenter', label: 'Footer centre', type: 'text', group: 'Footer' },
-      { key: 'footerRight', label: 'Footer right', type: 'text', default: 'Page {page} of {total}', group: 'Footer' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, half: true, unit: 'pt', group: 'Style' },
-      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, unit: 'pt', half: true, group: 'Style' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#55554e', group: 'Style' },
-      { key: 'rule', label: 'Draw a hairline rule', type: 'toggle', default: true, group: 'Style' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Style' },
+      { key: 'headerLeft', label: 'Header left', type: 'text', group: 'Header', help: 'Tokens such as {page} {total} {title} {author} {date} {file} are filled in per page.' },
+      { key: 'headerCenter', label: 'Header centre', type: 'text', default: '{title}', group: 'Header', help: 'Left, centre and right share the same line, so the widest pair decides whether these collide.' },
+      { key: 'headerRight', label: 'Header right', type: 'text', default: '{date}', group: 'Header', help: 'Left, centre and right share one line: together they must fit inside the page width.' },
+      { key: 'footerLeft', label: 'Footer left', type: 'text', default: '{author}', group: 'Footer', help: 'The bottom-left slot. Anything that must appear on every page belongs here or in the centre.' },
+      { key: 'footerCenter', label: 'Footer centre', type: 'text', group: 'Footer', help: 'The bottom-centre slot, which is where a folio usually goes.' },
+      { key: 'footerRight', label: 'Footer right', type: 'text', default: 'Page {page} of {total}', group: 'Footer', help: 'The bottom-right slot, measured per page so a mixed-size document keeps it inside the edge.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'In points. Header and footer text is usually smaller than the body it labels.' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, step: 1, unit: 'pt', half: true, group: 'Style', help: 'How far inside each page the text and its rule sit.' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#55554e', group: 'Style', help: 'Applied to the text and to the rule together.' },
+      { key: 'rule', label: 'Draw a hairline rule', type: 'toggle', default: true, group: 'Style', help: 'A hairline under the header and above the footer, drawn to the same margins.' },
+      pagesField({ group: 'Style' }),
     ],
     notes: [
       'Tokens: {page} {total} {title} {author} {subject} {date} {file}. They are filled in per page.',
@@ -837,15 +842,15 @@ export const editTools: PdfToolDefinition[] = [
       'One number is consumed per page across the whole batch, which is what a discovery production expects.',
     ],
     fields: [
-      { key: 'format', label: 'Number format', type: 'text', default: '{prefix}-{n}', help: 'Tokens: {n} {page} {total} {prefix} {date} {time}.' },
-      { key: 'prefix', label: 'Prefix', type: 'text', default: 'DOC', half: true },
-      { key: 'digits', label: 'Number width', type: 'number', default: 6, min: 1, max: 12, half: true },
-      { key: 'start', label: 'Start at', type: 'number', default: 1, min: 0, half: true },
-      { key: 'perFile', label: 'Restart numbering for each file', type: 'toggle', default: false },
-      { key: 'position', label: 'Position', type: 'select', default: 'bottom-right', options: ANCHOR_OPTIONS },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, half: true },
-      { key: 'margin', label: 'Margin', type: 'number', default: 18, min: 0, max: 120, half: true },
-      { key: 'color', label: 'Colour', type: 'color', default: '#000000' },
+      { key: 'format', label: 'Number format', type: 'text', default: '{prefix}-{n}', help: 'Tokens: {n} {page} {total} {prefix} {date} {time}.', group: 'Number' },
+      { key: 'prefix', label: 'Prefix', type: 'text', default: 'DOC', half: true, group: 'Number', help: 'Substituted into {prefix} in the format above, so the pattern decides whether it appears.' },
+      { key: 'digits', label: 'Number width', type: 'number', default: 6, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Number', help: 'Shorter than the highest number you will reach and the sequence silently grows a column; longer pads every sheet.' },
+      { key: 'start', label: 'Start at', type: 'number', default: 1, min: 0, max: 1000000, step: 1, integer: true, half: true, group: 'Number', help: 'Where the first page of the first file is numbered from — continue an existing production rather than restart it.' },
+      { key: 'perFile', label: 'Restart numbering for each file', type: 'toggle', default: false, group: 'Number', help: 'Off runs one sequence across the whole batch, which is what a production set expects; on restarts at the start value inside every file.' },
+      { key: 'position', label: 'Position', type: 'select', default: 'bottom-right', options: ANCHOR_OPTIONS, group: 'Marking', help: 'Where on each page the number is drawn. Discovery productions conventionally use bottom-right.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, step: 0.5, unit: 'pt', half: true, group: 'Marking', help: 'Small enough not to cover anything, large enough to read off a photocopy.' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 18, min: 0, max: 120, step: 1, unit: 'pt', half: true, group: 'Marking', help: 'Distance from the chosen corner of each page, measured per page.' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#000000', group: 'Marking', help: 'Black is the convention; anything else risks disappearing on a photocopier.' },
     ],
     async run(context) {
       const notes: string[] = [];
@@ -897,7 +902,7 @@ export const editTools: PdfToolDefinition[] = [
       for (const input of inputs) {
         files.push({
           blob: new Blob([await savePDF(input.doc) as BlobPart], { type: 'application/pdf' }),
-          name: `${baseName(input.name)}_bates.pdf`,
+          name: `${downloadStem(input.name)}_bates.pdf`,
         });
       }
       const result: ToolResult = {
@@ -923,6 +928,7 @@ export const editTools: PdfToolDefinition[] = [
       {
         key: 'ranges',
         label: 'Label ranges',
+        group: 'Labels',
         type: 'textarea',
         default: '1-3 roman 1\n4-99 decimal 1',
         help: 'One per line: start-end style [startNumber] [prefix]. Styles: decimal, roman, Roman, alpha, Alpha, none. A range runs until the next line starts.',
@@ -965,11 +971,12 @@ export const editTools: PdfToolDefinition[] = [
       {
         key: 'outline',
         label: 'Outline',
+        group: 'Outline',
         type: 'textarea',
         default: '',
         help: 'One entry per line, indent with spaces for children: "Chapter 1" or "  Section 1.1", optionally "Title :: 4" for page 4.',
       },
-      { key: 'replace', label: 'Replace the existing outline', type: 'toggle', default: true },
+      { key: 'replace', label: 'Replace the existing outline', type: 'toggle', default: true, group: 'Outline', help: 'Off keeps the outline that exists and appends below it; on replaces the whole outline with what is in the box.' },
     ],
     notes: [
       'Page numbers are 1-based positions in the document as it stands now, before the new outline is written.',
@@ -1020,13 +1027,13 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Insert contents',
     promise: 'A real contents page — drawn text with clickable links to the outline it reads.',
     fields: [
-      { key: 'title', label: 'Heading', type: 'text', default: 'Contents', half: true, group: 'Contents page' },
-      { key: 'insertAt', label: 'Insert at page', type: 'number', default: 1, min: 1, integer: true, half: true, group: 'Contents page', help: 'Clamped into this document, so a page past the end lands at the back.' },
+      { key: 'title', label: 'Heading', type: 'text', default: 'Contents', half: true, group: 'Contents page', help: 'Drawn as the heading above the list on the inserted page.' },
+      { key: 'insertAt', label: 'Insert at page', type: 'number', default: 1, min: 1, max: 5000, step: 1, integer: true, half: true, group: 'Contents page', help: 'Clamped into this document, so a page past the end lands at the back.' },
       { key: 'leader', label: 'Leader', type: 'segmented', default: 'dots', options: [
         { value: 'dots', label: 'Dots' }, { value: 'none', label: 'None' },
-      ], group: 'Contents page' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 24, half: true, unit: 'pt', group: 'Style' },
-      { key: 'showPageNumbers', label: 'Show page numbers', type: 'toggle', default: true, group: 'Style' },
+      ], group: 'Contents page', help: 'Dots connect an entry to its page number when the two are far apart.' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 24, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'Applies to the entries; the heading is drawn a little larger than this.' },
+      { key: 'showPageNumbers', label: 'Show page numbers', type: 'toggle', default: true, group: 'Style', help: 'Off lists the contents without page numbers, which is only useful for a short document.' },
     ],
     notes: [
       'The list comes from the document outline, so a PDF with no bookmarks has nothing to list.',
@@ -1074,21 +1081,21 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Place stamps',
     promise: 'A standard or image stamp as a real PDF annotation, one per page you click or per page you list.',
     fields: [
-      { key: 'stamp', label: 'Stamp', type: 'select', default: 'APPROVED', options: [
+      { key: 'stamp', label: 'Stamp', group: 'Stamp', type: 'select', default: 'APPROVED', options: [
         { value: 'APPROVED', label: 'Approved' }, { value: 'AS IS', label: 'As is' },
         { value: 'CONFIDENTIAL', label: 'Confidential' }, { value: 'DRAFT', label: 'Draft' },
         { value: 'EXPRESS', label: 'Express' }, { value: 'NOT APPROVED', label: 'Not approved' },
         { value: 'PRELIMINARY RESULTS', label: 'Preliminary results' },
         { value: 'SOLD', label: 'Sold' }, { value: 'TOP SECRET', label: 'Top secret' },
         { value: 'custom', label: 'Custom image…' },
-      ] },
-      { key: 'image', label: 'Stamp image', type: 'file', accept: 'image/*', when: (v) => v.stamp === 'custom' },
-      { key: 'position', label: 'Position', type: 'select', default: 'top-right', options: ANCHOR_OPTIONS },
-      { key: 'width', label: 'Width', type: 'number', default: 140, min: 20, max: 600, unit: 'pt', half: true },
-      { key: 'opacity', label: 'Opacity', type: 'slider', default: 1, min: 0.1, max: 1, step: 0.05, half: true },
-      { key: 'color', label: 'Colour', type: 'color', default: '#dc2626', when: (v) => v.stamp !== 'custom' },
-      { key: 'regions', label: 'Placements', type: 'text', default: '', help: 'Filled in by clicking the page. Format page:x,y,w,h.' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: '1' },
+      ], help: 'A standard stamp is a named PDF annotation, so other readers recognise it and let people move or delete it.' },
+      { key: 'image', label: 'Stamp image', type: 'file', accept: 'image/*', when: (v) => v.stamp === 'custom', group: 'Stamp', help: 'Used when the stamp above is set to Custom image. Kept as an annotation, so it can still be moved later.' },
+      { key: 'position', label: 'Position', type: 'select', default: 'top-right', options: ANCHOR_OPTIONS, group: 'Mark', help: 'The corner of each page as it is displayed, so a rotated page stamps where you can see it.' },
+      { key: 'width', label: 'Width', type: 'number', default: 140, min: 20, max: 600, step: 1, unit: 'pt', half: true, group: 'Mark', help: 'The stamp is scaled to this width and keeps its own proportion. On a rotated page it is measured against the page as displayed.' },
+      { key: 'opacity', label: 'Opacity', type: 'slider', default: 1, min: 0.1, max: 1, step: 0.05, half: true, group: 'Mark', help: 'Below 1 the page shows through, which is what you want over a signature.' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#dc2626', when: (v) => v.stamp !== 'custom', group: 'Stamp', help: 'The stamp’s text colour, for the standard stamps. A custom image keeps its own colours.' },
+      { key: 'regions', label: 'Placements', type: 'text', default: '', help: 'Filled in by clicking the page. Format page:x,y,w,h.', group: 'Placement' },
+      pagesField({ default: '1', group: 'Placement' }),
     ],
     notes: [
       'Standard stamps are written as PDF Stamp annotations, so other readers show, move and delete them.',
@@ -1139,7 +1146,7 @@ export const editTools: PdfToolDefinition[] = [
 
   {
     id: 'background-color',
-    name: 'Background Color',
+    name: 'Background Colour',
     description: 'Paint a solid colour behind the content of every page',
     icon: '🎨',
     category: 'edit',
@@ -1148,8 +1155,8 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Paint background',
     promise: 'A flat colour laid under each selected page, tagged as a background artifact so text extraction ignores it.',
     fields: [
-      { key: 'color', label: 'Colour', type: 'color', default: '#f7f7f4' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'color', label: 'Colour', type: 'color', default: '#f7f7f4', group: 'Paint', help: 'A flat fill behind the page content. Text stays selectable and extraction ignores the rectangle.' },
+      pagesField({ group: 'Pages' }),
     ],
     notes: [
       'Solid colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
@@ -1178,7 +1185,7 @@ export const editTools: PdfToolDefinition[] = [
 
   {
     id: 'text-color',
-    name: 'Change Text Color',
+    name: 'Change Text Colour',
     description: 'Recolour the text that is already in the document',
     icon: '🖌️',
     category: 'edit',
@@ -1187,14 +1194,14 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Recolour text',
     promise: 'The colour operators in front of existing text are rewritten — no page is rasterised, so the text stays selectable.',
     fields: [
-      { key: 'to', label: 'New colour', type: 'color', default: '#000000' },
-      { key: 'from', label: 'Replace which colour', type: 'select', default: 'any', options: [
+      { key: 'to', label: 'New colour', type: 'color', default: '#000000', group: 'Recolour', help: 'Every matching run is repainted this colour, including text in headers, footers and annotation labels.' },
+      { key: 'from', label: 'Replace which colour', group: 'Recolour', type: 'select', default: 'any', options: [
         { value: 'any', label: 'Any colour' },
         { value: '#000000', label: 'Black only' },
         { value: '#ff0000', label: 'Red only' },
         { value: '#0000ff', label: 'Blue only' },
       ], help: 'Matches the exact colour a run was painted with; a near-black from a scanner will not count as black.' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      pagesField({ group: 'Pages' }),
     ],
     notes: [
       'Only text drawn by the page itself is recoloured. Text inside an image is part of the picture.',
@@ -1233,20 +1240,21 @@ export const editTools: PdfToolDefinition[] = [
 
   {
     id: 'invert-colors',
-    name: 'Invert Colors',
+    name: 'Invert Colours',
     description: 'Produce a dark-mode version of the document',
     icon: '🌗',
     category: 'edit',
     keywords: ['dark mode', 'negative', 'night reading'],
     outputSuffix: '_inverted.pdf',
     actionLabel: 'Invert',
-    promise: 'A rebuilt document whose pages are photographs of the inverted originals.',
+    promise: 'A dark-mode copy of the pages you choose, each one a photograph of the inverted original.',
     fields: [
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: 'Each page is photographed at this resolution, so the file grows with the square of it.' },
+      pagesField({ group: 'Pages' }),
     ],
     notes: [
       'The output is images, so text stops being selectable and the file usually grows. Links and annotations are not carried over.',
+      'Only the selected pages are in the result: a narrower selection produces a shorter document, not the same document with some pages untouched.',
       'Each page is re-rendered at its own displayed size, including its /Rotate, so mixed and rotated documents keep their shape.',
     ],
     async run(context) {
@@ -1254,7 +1262,7 @@ export const editTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       return rerasterise(context, notes, input, {
         pages: stringValue(context.values, 'pages', 'all'),
-        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 96, max: 400, integer: true, unit: 'dpi' }),
         filter: { invert: true },
       }, 'Inverted');
     },
@@ -1262,23 +1270,23 @@ export const editTools: PdfToolDefinition[] = [
 
   {
     id: 'adjust-colors',
-    name: 'Adjust Colors',
+    name: 'Adjust Colours',
     description: 'Tune brightness, contrast, saturation and hue',
     icon: '🎛️',
     category: 'edit',
     keywords: ['brightness', 'contrast', 'saturation', 'sharpen', 'scan cleanup'],
     outputSuffix: '_adjusted.pdf',
     actionLabel: 'Adjust colors',
-    promise: 'Every page re-rendered with your colour settings applied to the pixels, including a black-and-white cutoff.',
+    promise: 'The pages you select, re-rendered with your colour settings burned into the pixels — including a true black-and-white cutoff.',
     fields: [
-      { key: 'brightness', label: 'Brightness', type: 'slider', default: 1, min: 0.2, max: 2, step: 0.02, group: 'Colour' },
-      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1, min: 0.2, max: 3, step: 0.02, group: 'Colour' },
-      { key: 'saturation', label: 'Saturation', type: 'slider', default: 1, min: 0, max: 3, step: 0.02, group: 'Colour' },
-      { key: 'hue', label: 'Hue rotate', type: 'slider', default: 0, min: -180, max: 180, step: 1, unit: '°', group: 'Colour' },
-      { key: 'grayscale', label: 'Desaturate completely', type: 'toggle', default: false, group: 'Colour' },
+      { key: 'brightness', label: 'Brightness', type: 'slider', default: 1, min: 0.2, max: 2, step: 0.02, group: 'Colour', help: 'Above 1 lightens the whole page image; 2 blows out a scan’s background.' },
+      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1, min: 0.2, max: 3, step: 0.02, group: 'Colour', help: 'Above 1 pushes lights lighter and darks darker. Past 2 a grey scan loses its mid-tones.' },
+      { key: 'saturation', label: 'Saturation', type: 'slider', default: 1, min: 0, max: 3, step: 0.02, group: 'Colour', help: 'How strong the colours are. 0 is already greyscale, so the switch below is the extreme case.' },
+      { key: 'hue', label: 'Hue rotate', type: 'slider', default: 0, min: -180, max: 180, step: 1, unit: '°', group: 'Colour', help: 'Rotates every colour round the wheel by this angle. 180 turns a blue seal orange.' },
+      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: false, group: 'Colour', help: 'Removes colour entirely and overrides the saturation slider.' },
       { key: 'threshold', label: 'Make black and white', type: 'slider', default: 0, min: 0, max: 1, step: 0.02, help: '0 keeps colour. Drag up to binarise a scan — this is a real pixel cutoff, not a contrast boost.', group: 'Output' },
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Output' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: 'The page is rendered at this resolution and re-embedded as an image, so higher means sharper and much bigger.' },
+      pagesField(),
     ],
     notes: [
       'The output is images: text stops being selectable, and pages you did not select are not carried over.',
@@ -1290,12 +1298,12 @@ export const editTools: PdfToolDefinition[] = [
       const threshold = readNumber(context, notes, { key: 'threshold', label: 'Black-and-white cutoff', fallback: 0, min: 0, max: 1 });
       return rerasterise(context, notes, input, {
         pages: stringValue(context.values, 'pages', 'all'),
-        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 200, min: 96, max: 400, integer: true, unit: 'dpi' }),
         threshold: threshold > 0 ? Math.round(threshold * 255) : undefined,
         filter: {
           brightness: readNumber(context, notes, { key: 'brightness', label: 'Brightness', fallback: 1, min: 0.2, max: 2 }),
           contrast: readNumber(context, notes, { key: 'contrast', label: 'Contrast', fallback: 1, min: 0.2, max: 3 }),
-          // "Desaturate completely" wins over saturation; keeping both would
+          // "Greyscale" wins over saturation; keeping both would
           // fight, and the slider would quietly lose.
           saturation: booleanValue(context.values, 'grayscale') ? 1 : readNumber(context, notes, { key: 'saturation', label: 'Saturation', fallback: 1, min: 0, max: 3 }),
           hue: readNumber(context, notes, { key: 'hue', label: 'Hue rotate', fallback: 0, min: -180, max: 180, unit: '°' }),
@@ -1313,26 +1321,26 @@ export const editTools: PdfToolDefinition[] = [
     category: 'edit',
     keywords: ['scan look', 'whitening', 'binarise', 'photocopy'],
     outputSuffix: '_scanned.pdf',
-    actionLabel: 'Make it look scanned',
-    promise: 'Whitened, sharpened greyscale pages — a real pixel pass, not just a colour filter.',
+    actionLabel: 'Apply scan effect',
+    promise: 'The pages you choose, whitened and sharpened into a clean greyscale scan — a real pixel pass, not just a colour filter.',
     fields: [
-      { key: 'whitening', label: 'Whiten the background', type: 'toggle', default: true, group: 'Look' },
-      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true, group: 'Look' },
-      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: true, group: 'Look' },
-      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1.35, min: 1, max: 3, step: 0.05, group: 'Look' },
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 220, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Output' },
+      { key: 'whitening', label: 'Whiten the background', type: 'toggle', default: true, group: 'Look', help: 'Pushes the paper background to white, which is what makes a grey photocopy look clean.' },
+      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true, group: 'Look', help: 'Crisps the edges of the glyphs. Overdone, it leaves a halo around every letter.' },
+      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: true, group: 'Look', help: 'Drops the colour, which is what a real document scan looks like and prints cheaper.' },
+      { key: 'contrast', label: 'Contrast', type: 'slider', default: 1.35, min: 1, max: 3, step: 0.05, group: 'Look', help: 'How hard the pass separates ink from paper.' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 220, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: '300 is the point at which a printed page reads cleanly on screen; above it the effect gets slower and the file gets much bigger.' },
+      pagesField(),
     ],
     notes: [
       'Whitening and sharpening are applied per pixel, so they are the slowest of the colour tools — a 500-page document is a lot of canvases.',
-      'The output is images; selectable text is lost.',
+      'The output is images; selectable text is lost, and only the selected pages are written into it.',
     ],
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
       return rerasterise(context, notes, input, {
         pages: stringValue(context.values, 'pages', 'all'),
-        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 220, min: 72, max: 600, integer: true, unit: 'dpi' }),
+        dpi: readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 220, min: 96, max: 400, integer: true, unit: 'dpi' }),
         filter: {
           contrast: readNumber(context, notes, { key: 'contrast', label: 'Contrast', fallback: 1.35, min: 1, max: 3 }),
           grayscale: booleanValue(context.values, 'grayscale', true),
@@ -1354,21 +1362,21 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Recognise text',
     promise: 'A hidden text layer over the scan, so pages become selectable and searchable without changing how they look.',
     fields: [
-      { key: 'language', label: 'Language', type: 'select', default: 'en', options: [
+      { key: 'language', label: 'Language', group: 'Recognition', type: 'select', default: 'en', options: [
         { value: 'en', label: 'English' }, { value: 'de', label: 'German' },
         { value: 'es', label: 'Spanish' }, { value: 'fr', label: 'French' },
         { value: 'it', label: 'Italian' }, { value: 'pt', label: 'Portuguese' },
         { value: 'ru', label: 'Russian' }, { value: 'zh', label: 'Chinese' },
         { value: 'ja', label: 'Japanese' }, { value: 'ko', label: 'Korean' },
-      ] },
-      { key: 'mode', label: 'Output', type: 'segmented', default: 'searchable', options: [
+      ], help: 'Which alphabet and word list the recogniser expects. A page in another language still comes out, but worse.' },
+      { key: 'mode', label: 'Output', group: 'Output', type: 'segmented', default: 'searchable', options: [
         { value: 'searchable', label: 'Invisible text layer (keeps the scan)' },
         { value: 'replace', label: 'Replace the page with text' },
         { value: 'report', label: 'Just show me the text' },
-      ] },
-      { key: 'dpi', label: 'Recognition resolution', type: 'slider', default: 300, min: 150, max: 600, step: 10, unit: 'dpi' },
-      { key: 'skipSearchable', label: 'Skip pages that already have text', type: 'toggle', default: true },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      ], help: 'Invisible text keeps the scan looking exactly as it did. Replace throws the picture away and gives you a smaller, plainer page. Report shows the text without touching the file.' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 300, min: 150, max: 600, step: 10, integer: true, unit: 'dpi', group: 'Output', help: 'What the page is photographed at before recognition. Under 300 loses small print; over 400 costs memory and rarely gains anything.' },
+      { key: 'skipSearchable', label: 'Skip pages that already have text', type: 'toggle', default: true, group: 'Recognition', help: 'On leaves a page that already has text exactly as it is, which is what a mixed scan-and-export document wants.' },
+      pagesField({ group: 'Pages' }),
     ],
     notes: [
       'The OCR model is downloaded once and cached; the pages themselves are recognised on this device.',
@@ -1379,7 +1387,7 @@ export const editTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const { ocrDocument, addSearchableTextLayer } = await import('../core/ocr');
       const session = await withRender(input, context).then((result) => result.session);
-      const dpi = readNumber(context, notes, { key: 'dpi', label: 'Recognition resolution', fallback: 300, min: 150, max: 600, integer: true, unit: 'dpi' });
+      const dpi = readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 300, min: 150, max: 600, integer: true, unit: 'dpi' });
       let results;
       try {
         results = await ocrDocument(session, {
@@ -1471,7 +1479,8 @@ export const editTools: PdfToolDefinition[] = [
     outputSuffix: '_filled.pdf',
     actionLabel: 'Fill the form',
     promise: 'Your answers written into the form\u2019s own fields, optionally flattened into page content on save.',
-    fields: [{ key: 'flatten', label: 'Flatten when saving', type: 'toggle', default: false }],
+    fields: [{ key: 'flatten', label: 'Flatten when saving', group: 'Save', type: 'toggle', default: false ,
+    help: 'On writes the answers into the page and removes the fields, so nobody can retype them. Off leaves the form fillable.',}],
     notes: [
       'Values are written into the form fields themselves, so the file stays fillable unless you flatten it.',
       'XFA-only forms cannot be rendered in a browser; the tool says so instead of filling an invisible copy.',
@@ -1525,7 +1534,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'A field dropped on a page that no longer exists is moved to the nearest page and the run says how many moved.',
     ],
-    fields: [{ key: 'fields', label: 'Fields', type: 'text', default: '', help: 'Filled in by the field designer.' }],
+    fields: [{ key: 'fields', label: 'Fields', group: 'Design', type: 'text', default: '', help: 'Filled in by the field designer.' }],
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
@@ -1571,10 +1580,10 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Change layers',
     promise: 'The optional-content groups of a CAD or GIS export, switched on or off in the default view.',
     fields: [
-      { key: 'hide', label: 'Hide these layers', type: 'multiselect', default: [], options: [] },
-      { key: 'show', label: 'Show these layers', type: 'multiselect', default: [], options: [] },
-      { key: 'add', label: 'Add a layer named', type: 'text', placeholder: 'Revision B' },
-      { key: 'remove', label: 'Delete layers named', type: 'textarea' },
+      { key: 'hide', label: 'Hide these layers', type: 'multiselect', default: [], options: [], group: 'Default view', help: 'Switched off in the default view. The content stays in the file and any reader can turn it back on.' },
+      { key: 'show', label: 'Show these layers', type: 'multiselect', default: [], options: [], group: 'Default view', help: 'Switched on in the default view, overriding what the file was saved with.' },
+      { key: 'add', label: 'Add a layer named', type: 'text', placeholder: 'Revision B', group: 'Manage', help: 'Creates an empty optional-content group, ready for content to be assigned to it elsewhere.' },
+      { key: 'remove', label: 'Delete layers named', type: 'textarea', group: 'Manage', help: 'Deletes the group definition. Content that belonged to it falls back to always visible in most readers.' },
     ],
     validate: (values) => {
       const asked = stringValues(values, 'hide').length
@@ -1654,7 +1663,7 @@ export const editTools: PdfToolDefinition[] = [
       'Annotations inherited from a shared parent node are removed for every page beneath it.',
     ],
     fields: [
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
+      pagesField({ group: 'Pages' }),
     ],
     async run(context) {
       const notes: string[] = [];
@@ -1703,7 +1712,7 @@ export const editTools: PdfToolDefinition[] = [
       'Draw the boxes on the page, or type page:x,y,w,h entries; a box that hangs off the edge is trimmed and reported.',
     ],
     fields: [
-      { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000' },
+      { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000', group: 'Marking', help: 'Painted on after the text underneath is deleted, so any colour is equally safe — black is convention, not the mechanism.' },
       ...ANNOTATION_SURFACE_FIELDS,
     ],
     async run(context) {

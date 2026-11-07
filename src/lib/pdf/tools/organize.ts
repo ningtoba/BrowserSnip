@@ -43,14 +43,15 @@ import {
   ToolInputError,
   clampNumber,
   describeSize,
+  downloadStem,
   fieldBounds,
   openInputs,
   pageRangeProblem,
+  pagesField,
   pdfResult,
   rebuildDocument,
   throwIfAborted,
   withRender,
-  baseName,
   filesResult,
   type OpenedInput,
 } from './helpers';
@@ -452,23 +453,11 @@ async function savable(input: OpenedInput, notes: Notes): Promise<PDFDocument> {
 /* ── names (E17) ──────────────────────────────────────────────────────────── */
 
 /**
- * A stem that survives a download: no path separators, no control characters,
- * no Windows-hostile punctuation — but spaces and unicode are kept, because a
- * file called `发票 2024.pdf` should still be recognisable.
+ * A stem that survives a download: the shared E17 rule from `helpers`, so the
+ * split files, ZIP entries and per-page outputs of every tool are named the
+ * same way the runner names a single output.
  */
-function safeStem(name: string): string {
-  const leaf = baseName(name.split(/[\\/]/).pop() ?? name);
-  // Hostile characters are dropped one by one rather than with a `\u0000-\u001f`
-  // class, which keeps the rule readable and out of the control-character lint.
-  const blocked = '<>:"/\\|?*';
-  let kept = '';
-  for (const char of leaf) {
-    const code = char.codePointAt(0) ?? 0;
-    kept += code < 0x20 || blocked.includes(char) ? ' ' : char;
-  }
-  const clean = kept.replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
-  return clean === '' ? 'document' : clean.slice(0, 80);
-}
+const safeStem = downloadStem;
 
 /** Make `name` unique within `used` by suffixing `-2`, `-3`, … */
 function uniqueName(used: Set<string>, name: string): string {
@@ -496,19 +485,20 @@ const PAGE_SIZE_OPTIONS = [
 const PDF_MAX_EDGE = 14400;
 const MAX_EDGE_TEXT = '14 400 pt';
 
+/**
+ * What a page-tree copy costs. Every tool that rebuilds the document rather than
+ * editing it in place loses the outline, and the run only says so when the file
+ * happened to have one — so the standing disclosure belongs on the tool.
+ */
+const PAGE_COPY_NOTE =
+  'The pages are copied into a new file, so this document’s own bookmarks are not in the output; page content, links and form fields travel with the pages.';
+
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
 
 /* ── shared fields ────────────────────────────────────────────────────────── */
 
-const ALL_PAGES: ToolField = {
-  key: 'pages',
-  label: 'Pages',
-  type: 'pages',
-  default: 'all',
-  group: 'Pages',
-  help: 'Leave as "all", or use 1,3,5-7, odd, even. A page outside the document is named, not skipped.',
-};
+const ALL_PAGES: ToolField = pagesField();
 
 const CHUNK_SIZE: ToolField = {
   key: 'chunkSize',
@@ -520,6 +510,7 @@ const CHUNK_SIZE: ToolField = {
   step: 1,
   integer: true,
   group: 'Split by',
+  help: 'Used by the fixed-chunks mode only: pages 1-N go in the first file, and a short final file is allowed.',
 };
 
 const ANCHOR: ToolField = {
@@ -547,17 +538,21 @@ const BLANK_COUNT: ToolField = {
   step: 1,
   integer: true,
   group: 'Position',
+  help: 'Inserted as one run at the chosen position, not spread through the document.',
+
 };
 
 const OPACITY: ToolField = {
   key: 'opacity',
-  label: 'Stamp opacity',
+  label: 'Opacity',
   type: 'slider',
   default: 1,
   min: 0.05,
   max: 1,
   step: 0.05,
   group: 'Placement',
+  help: 'Below 1 both layers stay legible; at 1 the overlay hides whatever is under it.',
+
 };
 
 const SCALE: ToolField = {
@@ -569,6 +564,8 @@ const SCALE: ToolField = {
   max: 3,
   step: 0.05,
   group: 'Placement',
+  help: '1 draws the stamp page at its own size. Larger than 1 can push it past the edge of the base page.',
+
 };
 
 const GUTTER: ToolField = {
@@ -581,6 +578,8 @@ const GUTTER: ToolField = {
   step: 1,
   unit: 'pt',
   group: 'Spacing',
+  help: 'Extra space down the middle of the sheet, for a fold or a binder.',
+
 };
 
 const MARGIN: ToolField = {
@@ -593,6 +592,8 @@ const MARGIN: ToolField = {
   step: 1,
   unit: 'pt',
   group: 'Spacing',
+  help: 'Space kept around the whole grid, at the sheet edge.',
+
 };
 
 const ANGLE: ToolField = {
@@ -726,6 +727,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_split',
     actionLabel: 'Split',
     promise: 'Separate PDFs — one per range, page, side or chunk — downloaded together.',
+    notes: [PAGE_COPY_NOTE],
     fields: [
       {
         key: 'mode',
@@ -739,7 +741,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'oddEven', label: 'Odd / even' },
           { value: 'chunks', label: 'Fixed chunks' },
         ],
-      },
+      help: 'Choose how the file is cut. Every mode produces separate PDFs; none of them edits the original file.',
+    },
       {
         key: 'ranges',
         label: 'Page ranges',
@@ -763,6 +766,7 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'even', label: 'Even pages only' },
         ],
         when: (v) => v.mode === 'oddEven',
+        help: 'Two files is what a manual duplex printer needs; one file is for printing only one side first.',
       },
     ],
     validate(values) {
@@ -870,6 +874,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'pages',
     actionLabel: 'Extract',
     promise: 'A new PDF with only the pages you picked, in the order you typed them.',
+    notes: [PAGE_COPY_NOTE],
     fields: [
       ALL_PAGES,
       {
@@ -928,6 +933,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'pages',
     actionLabel: 'Delete pages',
     promise: 'Your PDF with the chosen pages taken out; every other page untouched.',
+    notes: [PAGE_COPY_NOTE],
     fields: [ALL_PAGES],
     validate(values) {
       const spec = stringValue(values, 'pages', '').trim();
@@ -1066,7 +1072,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 180, label: '180°' },
           { value: 270, label: '270° ←' },
         ],
-      },
+      help: 'Added to each page’s existing rotation, so 90° four times returns a page to where it started.',
+    },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1126,7 +1133,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'grow', label: 'Grow the page so nothing is cut' },
           { value: 'keep', label: 'Keep the original page size (may crop corners)' },
         ],
-      },
+      help: 'An angle that is not a right angle turns the corners outside the original sheet.',
+    },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1185,6 +1193,7 @@ export const organizeTools: PdfToolDefinition[] = [
     category: 'organize',
     keywords: ['invert order', 'backwards', 'descending'],
     outputSuffix: '_reversed.pdf',
+    notes: [PAGE_COPY_NOTE],
     actionLabel: 'Reverse',
     promise: 'The same pages in the opposite order, as a new PDF.',
     async run(context) {
@@ -1212,10 +1221,11 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_with_blanks.pdf',
     actionLabel: 'Add blanks',
     promise: 'Your PDF with blank sheets inserted where you choose, sized to the page beside them.',
+    notes: [PAGE_COPY_NOTE],
     fields: [
       {
         key: 'position',
-        label: 'Where',
+        label: 'Position',
         type: 'select',
         default: 'end',
         group: 'Position',
@@ -1225,10 +1235,11 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'after', label: 'After a specific page' },
           { value: 'before', label: 'Before a specific page' },
         ],
-      },
+      help: 'Two blanks after page 3 inserts them between pages 3 and 4, counted in the document you dropped in.',
+    },
       ANCHOR,
       BLANK_COUNT,
-      { key: 'size', label: 'Size', type: 'select', default: 'same', options: PAGE_SIZE_OPTIONS, group: 'Size' },
+      { key: 'size', label: 'Size', type: 'select', default: 'same', options: PAGE_SIZE_OPTIONS, group: 'Size', help: 'Same as source matches the page beside it, which is what keeps a mixed-size document printing squarely.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1281,6 +1292,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_alternated.pdf',
     actionLabel: 'Mix pages',
     promise: 'One PDF that takes pages from each file in turn until they run out.',
+    notes: [PAGE_COPY_NOTE],
     fields: [
       {
         key: 'pattern',
@@ -1359,6 +1371,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_collated.pdf',
     actionLabel: 'Collate',
     promise: 'A re-ordered PDF where each front page is followed by its own back page.',
+    notes: [PAGE_COPY_NOTE],
     fields: [
       {
         key: 'backReversed',
@@ -1455,7 +1468,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'overlay', label: 'On top (overlay)' },
           { value: 'underlay', label: 'Behind (underlay)' },
         ],
-      },
+      help: 'On top covers the page beneath it. Behind puts the stamp under the existing ink, where only transparent areas show it.',
+    },
       {
         key: 'mapping',
         label: 'Which stamp page for each base page',
@@ -1467,7 +1481,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'first', label: 'Always the first stamp page' },
           { value: 'last', label: 'Always the last stamp page' },
         ],
-      },
+      help: 'When the stamp file is shorter than the base, its last page is reused for the rest.',
+    },
       OPACITY,
       SCALE,
     ],
@@ -1558,9 +1573,12 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 6, label: '6' },
           { value: 9, label: '9' },
         ],
+      help: 'Pages are scaled down to fit the cells, so small print on a dense layout gets genuinely smaller.',
+    },
+      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Layout', help: 'Big enough that the reduced pages stay readable: two-up A4 on A4 halves the type size.' },
+      { key: 'landscape', label: 'Landscape sheet', type: 'toggle', default: true, group: 'Layout',
+        help: 'Rotates the sheet, which changes how the cells are arranged rather than how the pages are ordered.',
       },
-      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Layout' },
-      { key: 'landscape', label: 'Landscape sheet', type: 'toggle', default: true, group: 'Layout' },
       {
         key: 'order',
         label: 'Fill order',
@@ -1571,10 +1589,11 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'across', label: 'Across then down' },
           { value: 'down', label: 'Down then across' },
         ],
-      },
+      help: 'Across fills left to right along a row; down fills each column first. Pick whichever matches how you will cut the sheet.',
+    },
       GUTTER,
       MARGIN,
-      { key: 'border', label: 'Hairline around each page', type: 'toggle', default: false, group: 'Spacing' },
+      { key: 'border', label: 'Hairline around each page', type: 'toggle', default: false, group: 'Spacing', help: 'A thin rule at each cell edge, so a trimmed layout still shows where each page ended.' },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1647,11 +1666,11 @@ export const organizeTools: PdfToolDefinition[] = [
       FLATTEN_NOTE,
     ],
     fields: [
-      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Sheet' },
-      { key: 'landscape', label: 'Landscape sheets', type: 'toggle', default: true, group: 'Sheet' },
+      { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Sheet', help: 'The finished sheet, before folding: an A4 booklet is imposed two-up on A3 landscape.' },
+      { key: 'landscape', label: 'Landscape sheet', type: 'toggle', default: true, group: 'Sheet', help: 'Saddle-stitch sheets are landscape by definition; portrait here prints a booklet that folds the wrong way.' },
       {
         key: 'gutter',
-        label: 'Centre fold allowance',
+        label: 'Gutter',
         type: 'slider',
         default: 12,
         min: 0,
@@ -1659,10 +1678,11 @@ export const organizeTools: PdfToolDefinition[] = [
         step: 1,
         unit: 'pt',
         group: 'Sheet',
-      },
+      help: 'Extra space at the fold, so binding does not swallow text. Add half the spine thickness.',
+    },
       {
         key: 'margin',
-        label: 'Outer margin',
+        label: 'Margin',
         type: 'slider',
         default: 12,
         min: 0,
@@ -1670,14 +1690,16 @@ export const organizeTools: PdfToolDefinition[] = [
         step: 1,
         unit: 'pt',
         group: 'Sheet',
-      },
+      help: 'Space at the outer edge of each sheet, which becomes the trim edge when you fold.',
+    },
       {
         key: 'blankFill',
         label: 'Add blank pages to complete the last sheet',
         type: 'toggle',
         default: true,
         group: 'Sheet',
-      },
+      help: 'A booklet must fill a whole number of sheets, so the last one is padded with blanks.',
+    },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1685,8 +1707,8 @@ export const organizeTools: PdfToolDefinition[] = [
       const notes = createNotes();
       const source = selection(context.values, input.pageCount, { fallback: 'all', verb: 'make into a booklet' });
       const sheet = resolvePageSize(stringValue(context.values, 'sheetSize', 'a4'), booleanValue(context.values, 'landscape', true));
-      const gutter = numberOf(context.values, { ...GUTTER, label: 'Centre fold allowance', default: 12 }, notes);
-      const margin = numberOf(context.values, { ...MARGIN, label: 'Outer margin', default: 12 }, notes);
+      const gutter = numberOf(context.values, { ...GUTTER, label: 'Gutter', default: 12 }, notes);
+      const margin = numberOf(context.values, { ...MARGIN, label: 'Margin', default: 12 }, notes);
       const fill = booleanValue(context.values, 'blankFill', true);
       const pages = [...source];
       // A saddle-stitched sheet carries four pages, so a booklet that is short
@@ -1753,7 +1775,7 @@ export const organizeTools: PdfToolDefinition[] = [
     promise: 'One long page (or a few, at the PDF height limit) with every page scaled to the same width.',
     notes: [FLATTEN_NOTE],
     fields: [
-      { key: 'gap', label: 'Gap between pages', type: 'slider', default: 12, min: 0, max: 120, step: 1, unit: 'pt', group: 'Layout' },
+      { key: 'gap', label: 'Gap between pages', type: 'slider', default: 12, min: 0, max: 120, step: 1, unit: 'pt', group: 'Layout', help: 'Space between the joined pages, drawn as blank rather than as a hairline.' },
       {
         key: 'width',
         label: 'Target width',
@@ -1765,7 +1787,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'a4', label: 'A4 width' },
           { value: 'letter', label: 'Letter width' },
         ],
-      },
+      help: 'Everything is scaled to this width, so pages narrower than it gain side margins rather than stretching.',
+    },
       {
         key: 'splitOverflow',
         label: 'Start a new page when the PDF height limit is reached',
@@ -1866,12 +1889,12 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['tiled', 'banner', 'large format', 'split pages'],
     outputSuffix: '_poster.pdf',
     actionLabel: 'Make poster',
-    promise: 'A grid of printable tiles that overlap at the edges, ready to trim and paste.',
+    promise: 'A grid of printable tiles with the overlap you set at their edges, ready to trim and paste.',
     notes: [FLATTEN_NOTE],
     fields: [
-      { key: 'columns', label: 'Tiles across', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid' },
-      { key: 'rows', label: 'Tiles down', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid' },
-      { key: 'bleed', label: 'Overlap for trimming', type: 'slider', default: 10, min: 0, max: 100, step: 1, unit: 'pt', group: 'Grid' },
+      { key: 'columns', label: 'Tiles across', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid', help: 'How many tiles the page is cut into horizontally; with tiles down this sets the size of each piece.' },
+      { key: 'rows', label: 'Tiles down', type: 'number', default: 2, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Grid', help: 'How many tiles the page is cut into vertically; with tiles across this sets the size of each piece.' },
+      { key: 'bleed', label: 'Overlap for trimming', type: 'slider', default: 10, min: 0, max: 100, step: 1, unit: 'pt', group: 'Grid', help: 'How much neighbouring tiles repeat, so a small cutting error still meets up.' },
       ALL_PAGES,
     ],
     async run(context) {
@@ -1948,11 +1971,11 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'horizontal', label: 'Horizontally (top/bottom)' },
           { value: 'grid', label: 'Grid' },
         ],
-        help: 'Direction is as the page is displayed, so a rotated page is cut along the line you see.',
+        help: 'Measured as the page is displayed, so a rotated page is cut along the line you see.',
       },
-      { key: 'parts', label: 'Number of parts', type: 'number', default: 2, min: 2, max: 9, step: 1, integer: true, group: 'Cut', when: (v) => v.axis !== 'grid' },
-      { key: 'columns', label: 'Columns', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid' },
-      { key: 'rows', label: 'Rows', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid' },
+      { key: 'parts', label: 'Number of parts', type: 'number', default: 2, min: 2, max: 9, step: 1, integer: true, group: 'Cut', when: (v) => v.axis !== 'grid', help: 'How many strips the page is cut into along the chosen direction.' },
+      { key: 'columns', label: 'Columns', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid', help: 'Cells across the page in grid mode.' },
+      { key: 'rows', label: 'Rows', type: 'number', default: 2, min: 1, max: 9, step: 1, integer: true, half: true, group: 'Cut', when: (v) => v.axis === 'grid', help: 'Cells down the page in grid mode.' },
       ALL_PAGES,
     ],
     async run(context) {
@@ -2011,7 +2034,7 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['uniform', 'normalise', 'resize', 'same size', 'a4'],
     outputSuffix: '_resized.pdf',
     actionLabel: 'Resize pages',
-    promise: 'A PDF where every sheet is the size you chose, each page scaled to fit it.',
+    promise: 'A PDF where every sheet is the size you chose, with each page scaled and positioned the way you set.',
     notes: [FLATTEN_NOTE],
     fields: [
       {
@@ -2025,7 +2048,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'largest', label: 'Largest page in this file' },
           ...PAGE_SIZE_OPTIONS.slice(1),
         ],
-      },
+      help: 'Most common keeps the file as it already is and fixes the odd pages out; largest avoids shrinking anything.',
+    },
       {
         key: 'orientation',
         label: 'Orientation',
@@ -2037,7 +2061,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'portrait', label: 'Force portrait' },
           { value: 'landscape', label: 'Force landscape' },
         ],
-      },
+      help: 'Force turns every sheet the same way, which re-frames pages that were scanned the other way up.',
+    },
       {
         key: 'fit',
         label: 'Scaling',
@@ -2049,7 +2074,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'cover', label: 'Fill the page (may crop)' },
           { value: 'stretch', label: 'Stretch to exactly fit' },
         ],
-      },
+      help: 'Fit inside leaves margins and keeps everything; fill crops what will not fit; stretch changes the proportions.',
+    },
       ALL_PAGES,
     ],
     async run(context) {
@@ -2205,7 +2231,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'none',
     outputSuffix: '.zip',
     actionLabel: 'Pack ZIP',
-    promise: 'One ZIP archive with every file stored as it came in, plus a text manifest.',
+    promise: 'One ZIP archive holding every file byte-for-byte, with a text manifest of what is inside unless you switch it off.',
     notes: [
       'Files are stored byte-for-byte: this is a container, not a compressor, and a password-protected PDF stays protected inside it.',
     ],
@@ -2216,7 +2242,8 @@ export const organizeTools: PdfToolDefinition[] = [
         type: 'toggle',
         default: true,
         group: 'Archive',
-      },
+      help: 'A short manifest of the files, their sizes and page counts, so an archive can be checked without opening it.',
+    },
     ],
     validate: (_v, { fileCount }) => (fileCount < 1 ? 'Add at least one PDF.' : null),
     async run(context) {
@@ -2283,12 +2310,12 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Make CBZ',
     promise: 'A comic-book archive: every page rendered to an image, numbered in reading order.',
     notes: [
-      'Pages become pictures, so text is no longer selectable or searchable in the CBZ.',
+      'A CBZ is a ZIP archive of page images: comic readers open it directly, and nothing in it is selectable or searchable.',
     ],
     fields: [
       {
         key: 'format',
-        label: 'Image format',
+        label: 'File format',
         type: 'segmented',
         default: 'jpg',
         group: 'Images',
@@ -2296,7 +2323,8 @@ export const organizeTools: PdfToolDefinition[] = [
           { value: 'jpg', label: 'JPG' },
           { value: 'png', label: 'PNG' },
         ],
-      },
+      help: 'PNG keeps line art and speech bubbles crisp at the cost of a much bigger archive; JPG is what most comic readers expect.',
+    },
       DPI,
       ALL_PAGES,
     ],

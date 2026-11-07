@@ -51,6 +51,15 @@ interface ProcessSlot {
   label: string;
   suffix: string;
   statusMessage: string;
+  /**
+   * A short acknowledgement that is neither progress nor an error.
+   *
+   * A deliberate cancel and a discarded late result (E19) both end a run with
+   * nothing produced, which is not a failure — putting them in `error` handed
+   * the user a red panel and a Retry button for something they asked for. They
+   * land here instead, and the rail reads them to its live region.
+   */
+  notice: string | null;
   report: ToolReport | null;
   phase: ToolPhase;
   fileStates: Record<string, FileRunState>;
@@ -78,6 +87,8 @@ interface ProcessState {
   suffix: string;
   /** Current human-readable step, shown under the progress bar. */
   statusMessage: string;
+  /** Acknowledgement of a cancel or a discarded late result; never an error. */
+  notice: string | null;
   /** Structured result for tools that report rather than produce a file. */
   report: ToolReport | null;
   phase: ToolPhase;
@@ -93,6 +104,9 @@ interface ProcessState {
   setActiveTool: (tool: ToolId | null) => void;
   startProcessing: (label: string, suffix: string) => void;
   setPhase: (phase: ToolPhase) => void;
+  setNotice: (message: string | null) => void;
+  /** End a run whose result is thrown away: a cancel, or inputs that moved. */
+  abandonRun: (notice?: string | null) => void;
   setPercent: (percent: number, message?: string) => void;
   setFileState: (id: string, patch: Partial<FileRunState>) => void;
   addWarning: (warning: string) => void;
@@ -126,6 +140,7 @@ const emptySlot = (): ProcessSlot => ({
   label: '',
   suffix: '',
   statusMessage: '',
+  notice: null,
   report: null,
   phase: 'idle',
   fileStates: {},
@@ -154,6 +169,7 @@ function slotOf(state: SlotFields): ProcessSlot {
     label: state.label,
     suffix: state.suffix,
     statusMessage: state.statusMessage,
+    notice: state.notice,
     report: state.report,
     phase: state.phase,
     fileStates: state.fileStates,
@@ -210,6 +226,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   label: '',
   suffix: '',
   statusMessage: '',
+  notice: null,
   report: null,
   phase: 'idle',
   fileStates: {},
@@ -241,6 +258,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       label,
       suffix,
       statusMessage: '',
+      notice: null,
       report: null,
       phase: 'running',
       warnings: [],
@@ -256,6 +274,32 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
     })),
 
   setPhase: (phase) => set({ phase }),
+
+  setNotice: (message) => set({ notice: message || null }),
+
+  /**
+   * Stop a run that will not be published, and say why.
+   *
+   * `reset()` throws away the inspected page counts too, which would leave a
+   * five-file queue reading "pages unknown" after one cancel. Abandoning keeps
+   * what was learned about the files and drops only the work.
+   */
+  abandonRun: (notice?: string | null) =>
+    set((state) => ({
+      isProcessing: false,
+      progress: 0,
+      currentProgress: null,
+      statusMessage: '',
+      report: null,
+      notice: notice || null,
+      phase: 'idle',
+      fileStates: Object.fromEntries(
+        Object.entries(state.fileStates).map(([id, file]) => [
+          id,
+          { ...file, percent: 0, error: null, message: undefined },
+        ]),
+      ),
+    })),
 
   setPercent: (percent, message) =>
     set((state) => ({

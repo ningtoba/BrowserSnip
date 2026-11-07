@@ -34,8 +34,12 @@ export interface PageAdviceInput {
   blocks: BlockFact[];
   /** Images the object detector found on this page. */
   imageCount: number;
-  /** Whether the optional PyMuPDF engine answers. */
-  engineAvailable: boolean;
+  /** The optional repair engine is already in this tab: a rewrite is complete. */
+  engineLoaded: boolean;
+  /** It could still be fetched from the CDN, which is what `open-engine` does. */
+  engineFetchable: boolean;
+  /** Human size of that fetch, quoted so a 54 MB wait is not a hang. */
+  engineSize: string;
 }
 
 export type AdviceAction = 'run-ocr' | 'add-text' | 'open-engine' | 'next-page';
@@ -112,14 +116,21 @@ export function pageAdvice(input: PageAdviceInput): PageAdvice | null {
   }
 
   if (census.visible === 0) {
+    const detail = input.engineLoaded
+      ? 'The text is selectable and searchable, but it sits over a scan. The optional engine is loaded in this tab, so a rewrite here deletes the words underneath as well.'
+      : input.engineFetchable
+        ? `The text is selectable and searchable, but it sits over a scan: the built-in engine can draw new words but cannot delete the ones underneath, so a rewrite here would leave doubled text. The optional PyMuPDF engine (${input.engineSize}, fetched once, files never leave the tab) closes that gap, and it is fetched the first time an export needs it.`
+        : 'The text is selectable and searchable, but it sits over a scan: the built-in engine can draw new words but cannot delete the ones underneath, so a rewrite here would leave doubled text. The optional engine cannot be reached from here right now — re-run OCR instead.';
     return {
       kind: 'ocr-layer',
       tone: 'warn',
       headline: `Page ${input.page}'s words are an invisible OCR layer.`,
-      detail: input.engineAvailable
-        ? 'The text is selectable and searchable, but it sits over a scan. The optional engine is reachable, so rewriting these blocks deletes the words underneath as well.'
-        : 'The text is selectable and searchable, but it sits over a scan: the built-in engine can draw new words but cannot delete the invisible ones, so a rewrite here would leave doubled text. Load the optional PyMuPDF engine, or run OCR again with the “replace the page” output.',
-      actions: input.engineAvailable ? ['add-text'] : ['run-ocr', 'open-engine', 'add-text'],
+      detail,
+      actions: input.engineLoaded
+        ? ['add-text']
+        : input.engineFetchable
+          ? ['run-ocr', 'open-engine', 'add-text']
+          : ['run-ocr', 'add-text'],
     };
   }
 

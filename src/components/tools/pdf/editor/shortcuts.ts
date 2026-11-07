@@ -59,13 +59,17 @@ export const EDITOR_SHORTCUTS: Shortcut[] = [
   { keys: ['H'], label: 'Arm the highlighter', group: 'tools' },
   { keys: ['T'], label: 'Arm the text box', group: 'tools' },
   { keys: ['P'], label: 'Arm the pen', group: 'tools' },
-  { keys: ['Esc'], label: 'Drop the mark being drawn', group: 'marks' },
+  { keys: ['Esc'], label: 'Step back one level: the half-drawn mark, then the selection, then the pin, then the tool', group: 'marks' },
   { keys: ['Enter'], label: 'Close a clicked shape or freeform line', group: 'marks' },
   { keys: ['Delete'], label: 'Remove the selected mark', group: 'marks' },
+  { keys: ['←', '→', '↑', '↓'], label: 'Nudge the selected mark 1 px, or 10 px with Shift', group: 'marks' },
+  { keys: ['Alt', '←'], label: 'Move the selected edge instead of the whole mark', group: 'marks' },
+  { keys: ['Ctrl', 'D'], label: 'Duplicate the selected mark', group: 'marks' },
   { keys: ['Ctrl', 'Z'], label: 'Undo the last change', group: 'marks' },
   { keys: ['Ctrl', 'Shift', 'Z'], label: 'Re-apply the change just undone', group: 'marks' },
   { keys: ['Ctrl', 'Y'], label: 'Redo, the Windows way', group: 'marks' },
-  { keys: ['←', '→'], label: 'Previous / next page', group: 'pages' },
+  { keys: ['Type'], label: 'Start writing in a selected text box or note', group: 'marks' },
+  { keys: ['←', '→'], label: 'Previous / next page, when nothing is selected', group: 'pages' },
   { keys: ['↑', '↓'], label: 'Previous / next page, the other axis', group: 'pages' },
 ];
 
@@ -126,4 +130,108 @@ export function historyCommandForKey(
   if (normalised === 'y') return 'redo';
   if (normalised === 'z') return modifiers.shift ? 'redo' : 'undo';
   return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * The Escape ladder                                                   *
+ * ------------------------------------------------------------------ */
+
+/**
+ * How far one `Esc` press reaches.
+ *
+ * Users accept Esc; what they report as a bug is Esc doing *everything* at once
+ * (pdf.js's two-press complaint in the research notes). So the handler resolves
+ * exactly one level per press, deepest first, and reports which level it took.
+ */
+export type EscapeLevel = 'dismiss' | 'selection' | 'unpin' | 'disarm' | 'none';
+
+/** The four levels, deepest first — the order the ladder unwinds in. */
+export const ESCAPE_LEVELS: Exclude<EscapeLevel, 'none'>[] = ['dismiss', 'selection', 'unpin', 'disarm'];
+
+export interface EscapeInput {
+  /** A gesture, a half-written note, or a dialog is open. */
+  editing: boolean;
+  selected: boolean;
+  /** The armed tool is pinned (kept armed) — unpinning is its own level. */
+  pinned: boolean;
+  /** Something other than Select is armed. */
+  armed: boolean;
+}
+
+/** The one level `Esc` should take from here, or `none` when it is a no-op. */
+export function nextEscapeLevel(input: EscapeInput): EscapeLevel {
+  for (const level of ESCAPE_LEVELS) {
+    if (level === 'dismiss' && input.editing) return 'dismiss';
+    if (level === 'selection' && input.selected) return 'selection';
+    if (level === 'unpin' && input.pinned) return 'unpin';
+    if (level === 'disarm' && input.armed) return 'disarm';
+  }
+  return 'none';
+}
+
+/** What the status line says after a level was taken. */
+export function escapeLevelNotice(level: EscapeLevel): string {
+  switch (level) {
+    case 'dismiss':
+      return 'Dropped the mark that was half-drawn.';
+    case 'selection':
+      return 'Cleared the selection; the tool is still armed.';
+    case 'unpin':
+      return 'Unpinned the tool — it will hand control back after one placement.';
+    case 'disarm':
+      return 'Put the tool down; Select is armed.';
+    default:
+      return '';
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Nudge and duplicate                                                 *
+ * ------------------------------------------------------------------ */
+
+/** Arrow-key step, in CSS pixels on screen (1 px, Shift 10 px). */
+export const NUDGE_PX = 1;
+export const NUDGE_COARSE_PX = 10;
+
+/** Screen-space delta for an arrow key, or `null` for a key that is not one. */
+export function nudgeStep(
+  key: string,
+  shift: boolean,
+): { dx: number; dy: number } | null {
+  const step = shift ? NUDGE_COARSE_PX : NUDGE_PX;
+  switch (key) {
+    case 'ArrowLeft':
+      return { dx: -step, dy: 0 };
+    case 'ArrowRight':
+      return { dx: step, dy: 0 };
+    case 'ArrowUp':
+      return { dx: 0, dy: -step };
+    case 'ArrowDown':
+      return { dx: 0, dy: step };
+    default:
+      return null;
+  }
+}
+
+/** `Ctrl`/`Cmd` + D, the one duplicate combo the editor claims to support. */
+export function isDuplicateKey(
+  key: string,
+  modifiers: { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean },
+): boolean {
+  if (modifiers.shift || modifiers.alt) return false;
+  if (!modifiers.ctrl && !modifiers.meta) return false;
+  return key.trim().toLowerCase() === 'd';
+}
+
+/**
+ * True when a bare printable key should go *into* the selected mark instead of
+ * arming a tool: the caret belongs to the selection the moment a text mark is
+ * selected, which is the part of Bug 1 pdf.js gets right with focus.
+ */
+export function isTypeToEditKey(
+  key: string,
+  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean },
+): boolean {
+  if (modifiers.ctrl || modifiers.meta || modifiers.alt) return false;
+  return typeof key === 'string' && key.length === 1 && !/\s/.test(key);
 }

@@ -4,6 +4,8 @@
  * Errors used to land in the "Log" pane as loose text, which read as a crash.
  * This names the file that broke, says what to do, and offers Retry.
  */
+import { FOCUS_RING } from './focusRing';
+
 export interface ErrorPanelProps {
   message: string;
   /** The input at fault — required for E1/E2/E4 to be actionable. */
@@ -18,6 +20,27 @@ export interface ErrorPanelProps {
 /** Does the message read as an encryption/password problem? */
 export function isPasswordProblem(message: string): boolean {
   return /password|encrypt|protected|locked/i.test(message);
+}
+
+/**
+ * Strip whatever the exception was before it reached a person.
+ *
+ * A throw from deep in a parser arrives as `TypeError: Cannot read properties
+ * of undefined (reading 'get')\n at PDFPageProxy…` — a class name, a word
+ * nobody defines, and a stack. The panel shows one sentence instead, and keeps
+ * the original when it already reads as a sentence (research §5: no codes, no
+ * stack traces, no `undefined`).
+ */
+export function readableMessage(message: string): string {
+  const firstLine = String(message ?? '')
+    .split('\n')[0]
+    .replace(/^(?:[\w$.]*(?:Error|Exception|Warning)):\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const jargon =
+    firstLine === '' ||
+    /\bundefined\b|\bnull\b|\[object Object\]|\bat [\w$.]+ \(|Cannot read propert/i.test(firstLine);
+  return jargon ? 'Something went wrong here, and nothing was saved.' : firstLine;
 }
 
 export function ErrorPanel({
@@ -42,11 +65,15 @@ export function ErrorPanel({
             {fileName}
           </span>
         )}
-        <span className="font-medium">{message}</span>
+        <span className="font-medium">{readableMessage(message)}</span>
       </p>
       <p className="text-[10px] leading-relaxed text-ink-muted">{advice}</p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className="doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px]">
+        <button
+          type="button"
+          onClick={onRetry}
+          className={`doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] ${FOCUS_RING}`}
+        >
           {retryLabel}
         </button>
       )}

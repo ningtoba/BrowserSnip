@@ -468,3 +468,72 @@ function num(value: number): number {
   const scaled = Math.round(value * 1e4) / 1e4;
   return Object.is(scaled, -0) ? 0 : scaled;
 }
+
+/**
+ * What an export actually did, in sentences.
+ *
+ * The brief's rule is that a result reports numbers the user can check and never
+ * says "done" when something was skipped. This surface has no `result.warnings`
+ * channel, so every degraded block the built-in engine reported becomes one line
+ * here, naming its page, and the UI must print all of them — not just the
+ * headline — because "Saved" over a skipped block is a plausible-looking lie.
+ */
+export interface ExportReport {
+  headline: string;
+  warnings: string[];
+}
+
+export function exportReport(
+  outcome: ApplyOutcome,
+  objects: EditObject[],
+  options: { signed?: boolean; repaired?: string[]; engineError?: string } = {},
+): ExportReport {
+  const repaired = new Set(options.repaired ?? []);
+  const blocked = outcome.failed.filter((entry) => !repaired.has(entry.id));
+  const skipped = new Set(blocked.map((entry) => entry.id));
+  const written = objects.filter((object) => !skipped.has(object.id));
+  const pageOf = (id: string) => objects.find((object) => object.id === id)?.page;
+  const blocks = written.filter((object) => object.kind === 'text').length;
+  const placed = written.length - blocks;
+  const pages = new Set(written.map((object) => object.page)).size;
+  const parts = [`${blocks} text block${blocks === 1 ? '' : 's'}`, placed > 0 ? `${placed} placed object${placed === 1 ? '' : 's'}` : '']
+    .filter(Boolean)
+    .join(' and ');
+  const headline =
+    written.length === 0
+      ? 'Nothing was written — every block was skipped.'
+      : `Wrote ${parts}${pages > 0 ? ` on ${pages} page${pages === 1 ? '' : 's'}` : ''}${
+          blocked.length > 0 ? `, skipped ${blocked.length}` : ''
+        }.`;
+
+  const warnings: string[] = [];
+  if (options.engineError) {
+    warnings.push(
+      `The optional engine could not run (${options.engineError}), so the blocks it was meant to clean were left as they are. The rest of the edits are in this file.`,
+    );
+  }
+  if (options.signed) {
+    warnings.push(
+      'Saved as an appended incremental revision: the signed bytes were not rewritten, so the existing signature still verifies. Viewers show the new revision with these edits.',
+    );
+  }
+  if (repaired.size > 0) {
+    warnings.push(
+      `${repaired.size} block${repaired.size === 1 ? '' : 's'} cleaned by the optional PyMuPDF engine rather than the built-in one; that text is set in Helvetica, not the page’s own face.`,
+    );
+  }
+  for (const entry of blocked) {
+    warnings.push(`Page ${pageOf(entry.id) ?? '?'}: skipped, so its original words are still there. ${entry.reason}`);
+  }
+  for (const entry of outcome.partial) {
+    warnings.push(
+      `Page ${pageOf(entry.id) ?? '?'}: ${entry.leftover} text operator${entry.leftover === 1 ? '' : 's'} survived the deletion and may show under the new words.`,
+    );
+  }
+  if (outcome.raster.length > 0) {
+    warnings.push(
+      `${outcome.raster.length} block${outcome.raster.length === 1 ? '' : 's'} sit${outcome.raster.length === 1 ? 's' : ''} on image content the engine cannot repaint — check them in a viewer.`,
+    );
+  }
+  return { headline, warnings };
+}

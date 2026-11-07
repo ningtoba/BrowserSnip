@@ -18,7 +18,8 @@
  * block's metrics are approximate rather than the embedded face the preview used.
  * That is stated to the user rather than hidden.
  */
-import { engineReady, openWithPyMuPDF } from '@/lib/pdf/core/engine-ops';
+import { engineReady, enginePurpose, openWithPyMuPDF } from '@/lib/pdf/core/engine-ops';
+import { ENGINE_DOWNLOAD_SIZE, engineFetchLine, engineLoaded, ensureEngine } from '@/lib/pdf/engines';
 import type { TopLeftBox } from '@/lib/pdf/core/tables';
 import { hexToRgb, type TextObject } from './model';
 
@@ -38,11 +39,59 @@ export interface EngineRepairOutcome {
   bytes: Uint8Array;
   repaired: string[];
   note: string;
+  /**
+   * Set when the engine could not run at all. `bytes` is then the untouched
+   * built-in output, so a failed 54 MB fetch never throws away a good file — but
+   * it has to be said, or the export looks complete.
+   */
+  error?: string;
 }
 
 /** True when the fallback is available without the user opening settings. */
 export function engineRepairAvailable(): boolean {
   return engineReady('pymupdf');
+}
+
+/** True when it is live in this tab already, so a rewrite costs no download. */
+export function repairEngineLoaded(): boolean {
+  return engineLoaded('pymupdf');
+}
+
+/** What the first repair would have to download, for copy that quotes a number. */
+export function repairEngineSize(): string {
+  return ENGINE_DOWNLOAD_SIZE.pymupdf;
+}
+
+/** The sentence printed before waiting on the network, or "already here". */
+export function repairEngineLine(): string {
+  return repairEngineLoaded() ? 'PyMuPDF is already loaded in this tab.' : engineFetchLine('pymupdf');
+}
+
+/**
+ * What to tell the user about the repair engine, in the three states that are
+ * actually different to them: here already, fetchable at a price, or unreachable.
+ * "Available" used to cover all three, which made the offline branch dead code
+ * and the online one a promise the tab could not always keep.
+ */
+export function repairEngineNote(): string {
+  if (repairEngineLoaded()) {
+    return 'PyMuPDF is loaded in this tab: blocks the built-in engine cannot delete are repaired with it on export.';
+  }
+  return engineRepairAvailable()
+    ? `PyMuPDF is not loaded yet (${repairEngineSize()}, once, then cached by your browser). It is fetched the first time an export hits a block the built-in engine cannot delete; until then those blocks are reported rather than doubled.`
+    : `Optional engine unreachable: ${enginePurpose('pymupdf')} Without it, blocks in form XObjects and scans are reported rather than doubled.`;
+}
+
+/**
+ * Fetch the engine now, because the user asked rather than because an export
+ * needed it. Never throws: a failure comes back as the reason, so the caller can
+ * say what was skipped instead of leaving a spinner.
+ */
+export async function loadRepairEngine(
+  onStatus: (line: string) => void = () => {},
+): Promise<{ ok: boolean; reason?: string }> {
+  const provision = await ensureEngine('pymupdf', { onStatus });
+  return provision.ok ? { ok: true } : { ok: false, reason: provision.reason };
 }
 
 /**
@@ -62,7 +111,17 @@ export async function repairWithPyMuPDF(
   if (!engineRepairAvailable()) return null;
   if (deletions.length === 0 && lines.length === 0) return null;
 
-  const opened = await openWithPyMuPDF(bytes, password);
+  let opened: Awaited<ReturnType<typeof openWithPyMuPDF>>;
+  try {
+    opened = await openWithPyMuPDF(bytes, password);
+  } catch (err) {
+    return {
+      bytes,
+      repaired: [],
+      note: '',
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
   const repaired: string[] = [];
   try {
     const byPage = new Map<number, { object: TextObject }[]>();

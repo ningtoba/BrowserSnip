@@ -18,7 +18,7 @@ import { fadeUp, staggerParent, tapDown } from '@/lib/motion';
 import { usePdfTool, type UsePdfTool } from '@/hooks/usePdfTool';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore, type ToolPhase } from '@/stores/process-store';
-import { openRender, thumbnails, type PdfSession } from '@/lib/pdf/core/render';
+import { openRender, type PdfSession } from '@/lib/pdf/core/render';
 import { formatPages, tryResolvePages } from '@/lib/pdf/core/pages';
 import { pageRangeProblem } from '@/lib/pdf/core/guard';
 import { engineReady, enginePurpose } from '@/lib/pdf/core/engine-ops';
@@ -31,6 +31,8 @@ import {
 } from '@/lib/pdf/tools/types';
 import { EmptyState } from './EmptyState';
 import { ErrorPanel } from './ErrorPanel';
+import { runStatusText } from './toolForm';
+import { FOCUS_RING } from './focusRing';
 import { FileQueue } from './FileQueue';
 import { PageThumbs } from './PageThumbs';
 import { ProgressBar } from './ProgressBar';
@@ -49,6 +51,7 @@ export interface PdfToolPanelProps {
 /** The generated sidebar panel for one tool. */
 export function PdfToolPanel({ toolId, before, hidden, onDone }: PdfToolPanelProps) {
   const file = useFileStore((s) => s.file);
+  const files = useFileStore((s) => s.files);
   const metadata = useFileStore((s) => s.metadata);
   // A page count is only usable for validation while it describes this file.
   const pageCount =
@@ -80,7 +83,7 @@ export function PdfToolPanel({ toolId, before, hidden, onDone }: PdfToolPanelPro
       {api.needsPassword && <PasswordGate api={api} />}
       <LockedNotice visible={api.locked} />
 
-      <InputQueue />
+      <InputQueue running={api.isRunning} />
 
       {api.groups.map((group) => (
         <section key={group.title || 'general'} className="space-y-2.5">
@@ -103,9 +106,10 @@ export function PdfToolPanel({ toolId, before, hidden, onDone }: PdfToolPanelPro
       <NotesPanel notes={api.tool?.notes ?? []} defaultOpen={Boolean(api.tool?.unavailable)} />
 
       <RunProgress />
+      <RunStatus />
       <RunError onRetry={() => void api.run()} />
       <RunControls api={api} onDone={onDone} />
-      <ResultSummary engines={api.tool?.engines ?? []} />
+      <ResultSummary engines={api.tool?.engines ?? []} pagesIn={inputPages(files, api.pagesByFile)} />
     </motion.div>
   );
 
@@ -154,17 +158,36 @@ function GroupHeading({ title }: { title: string }) {
   );
 }
 
+/**
+ * Pages across the loaded inputs, or `null` while any of them is unread.
+ *
+ * A result that says "12 in" has to know it started with 12; guessing from the
+ * first file would misreport a merge (E6/E7).
+ */
+function inputPages(files: File[], pages: Record<string, number | null>): number | null {
+  if (files.length === 0) return null;
+  let total = 0;
+  for (const file of files) {
+    const count = pages[`${file.name}:${file.size}`];
+    if (count == null) return null;
+    total += count;
+  }
+  return total > 0 ? total : null;
+}
+
 /** Collapsible honesty panel — the tool's limits, not a wall of small text. */
 function NotesPanel({ notes, defaultOpen }: { notes: string[]; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
+  const listId = 'tool-notes-list';
   if (notes.length === 0) return null;
   return (
     <div className="rounded-doodle-md border border-cream-border bg-cream-soft/70">
       <button
         type="button"
         aria-expanded={open}
+        aria-controls={listId}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left"
+        className={`flex w-full items-center justify-between gap-2 rounded-doodle-md px-2.5 py-1.5 text-left ${FOCUS_RING}`}
       >
         <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-muted">
           Honest notes ({notes.length})
@@ -174,7 +197,7 @@ function NotesPanel({ notes, defaultOpen }: { notes: string[]; defaultOpen?: boo
         </span>
       </button>
       {open && (
-        <ul className="space-y-1 px-2.5 pb-2">
+        <ul id={listId} className="space-y-1 px-2.5 pb-2">
           {notes.map((note) => (
             <li key={note} className="text-[10px] leading-relaxed text-ink-soft">
               {note}
@@ -189,10 +212,44 @@ function NotesPanel({ notes, defaultOpen }: { notes: string[]; defaultOpen?: boo
 function RunProgress() {
   const phase = useProcessStore((s) => s.phase);
   const progress = useProcessStore((s) => s.progress);
-  const statusMessage = useProcessStore((s) => s.statusMessage);
   const isProcessing = useProcessStore((s) => s.isProcessing);
   if (!isProcessing && phase !== 'running') return null;
-  return <ProgressBar percent={progress} message={statusMessage} label="Working" indeterminate={progress === 0} />;
+  // The stage name lives in `RunStatus`, one node, so it is said once.
+  return <ProgressBar percent={progress} label="Working" indeterminate={progress <= 0} />;
+}
+
+/**
+ * The rail's spoken state: stage, share done, and the acknowledgement of a
+ * cancel. One live region for the whole surface, so a screen reader hears the
+ * run rather than the layout.
+ */
+function RunStatus() {
+  const phase = useProcessStore((s) => s.phase);
+  const label = useProcessStore((s) => s.label);
+  const progress = useProcessStore((s) => s.progress);
+  const statusMessage = useProcessStore((s) => s.statusMessage);
+  const notice = useProcessStore((s) => s.notice);
+  const outputs = useProcessStore((s) => s.outputBlobs.length);
+  const text = runStatusText({
+    phase,
+    label,
+    percent: progress,
+    message: statusMessage,
+    notice,
+    outputs,
+  });
+  return (
+    <p
+      role="status"
+      aria-live="polite"
+      data-run-status={phase}
+      className={`font-mono text-[10px] leading-relaxed tracking-[0.04em] ${
+        phase === 'running' ? 'text-accent' : 'text-ink-muted'
+      } ${text === '' ? 'sr-only' : ''}`}
+    >
+      {text}
+    </p>
+  );
 }
 
 function RunError({ onRetry }: { onRetry: () => void }) {
@@ -212,7 +269,7 @@ function RunError({ onRetry }: { onRetry: () => void }) {
 }
 
 /** Multi-file tools show the queue the result depends on, in order. */
-function InputQueue() {
+function InputQueue({ running }: { running: boolean }) {
   const files = useFileStore((s) => s.files);
   const removeFile = useFileStore((s) => s.removeFile);
   const reorderFiles = useFileStore((s) => s.reorderFiles);
@@ -222,15 +279,19 @@ function InputQueue() {
 
   const items = files.map((item) => {
     const state = fileStates[item.name];
+    const busy = phase === 'running' && (state?.percent ?? 0) < 100;
     return {
       id: item.name,
       name: item.name,
       size: item.size,
       pages: state?.pages ?? null,
-      percent: state?.percent ?? null,
+      // A resting queue has nothing to measure: `setFileState` seeds rows with
+      // percent 0 as soon as a file is inspected, and 0% bars on an idle rail
+      // read as five files that have already been worked on.
+      percent: busy || phase === 'done' ? state?.percent ?? 0 : null,
       message: state?.message,
       error: state?.error ?? null,
-      busy: phase === 'running' && (state?.percent ?? 0) < 100,
+      busy,
     };
   });
 
@@ -239,6 +300,11 @@ function InputQueue() {
       <GroupHeading title="Your files" />
       <FileQueue
         items={items}
+        progressNote={
+          running
+            ? 'Progress is estimated across the files in this order — the job reports one sweep, not five.'
+            : null
+        }
         onRemove={(id) => {
           const index = files.findIndex((candidate) => candidate.name === id);
           if (index >= 0) removeFile(index);
@@ -250,7 +316,7 @@ function InputQueue() {
 }
 
 /** The result of the last run, read straight from the process store. */
-function ResultSummary({ engines }: { engines: readonly EngineId[] }) {
+function ResultSummary({ engines, pagesIn }: { engines: readonly EngineId[]; pagesIn: number | null }) {
   const phase = useProcessStore((s) => s.phase);
   const blobs = useProcessStore((s) => s.outputBlobs);
   const names = useProcessStore((s) => s.outputNames);
@@ -270,6 +336,7 @@ function ResultSummary({ engines }: { engines: readonly EngineId[] }) {
     <ResultCard
       outputs={outputs}
       sizeBefore={sizeBefore}
+      pagesIn={pagesIn}
       warnings={warnings}
       message={statusMessage || undefined}
       engine={engines[0] ?? null}
@@ -279,39 +346,58 @@ function ResultSummary({ engines }: { engines: readonly EngineId[] }) {
   );
 }
 
+// id of the one line that explains a disabled primary action, so the button can
+// point at it with `aria-describedby` instead of relying on visual proximity.
+const RUN_REASON_ID = 'tool-run-reason';
+
 function RunControls({ api, onDone }: { api: UsePdfTool; onDone?: () => void }) {
+  const reason = api.blockers[0] ?? null;
+  const remaining = Math.max(0, api.blockers.length - 1);
+  const busy = api.isRunning;
   return (
     <motion.div variants={fadeUp} className="space-y-1.5 pt-1">
       <div className="flex items-center gap-2">
         <motion.button
-          whileTap={api.canRun && !api.isRunning ? tapDown : undefined}
+          whileTap={api.canRun && !busy ? tapDown : undefined}
           id="tool-process-btn"
-          disabled={!api.canRun || api.isRunning}
-          aria-disabled={!api.canRun || api.isRunning}
+          type="button"
+          disabled={!api.canRun || busy}
+          aria-disabled={!api.canRun || busy}
+          aria-describedby={!api.canRun && !busy ? RUN_REASON_ID : undefined}
           onClick={async () => {
             const outcome = await api.run();
             if (outcome) onDone?.();
           }}
-          className="doodle-btn flex-1 disabled:opacity-50"
+          className={`doodle-btn flex-1 disabled:opacity-50 ${FOCUS_RING}`}
         >
-          {api.isRunning ? 'Working…' : api.verb}
+          {busy ? 'Working…' : api.verb}
         </motion.button>
-        {api.isRunning && (
-          <button onClick={api.cancel} className="doodle-btn doodle-btn-danger text-[11px]">
+        {busy && (
+          <button
+            type="button"
+            onClick={api.cancel}
+            title="Stop this run and discard whatever it produces"
+            className={`doodle-btn doodle-btn-danger text-[11px] ${FOCUS_RING}`}
+          >
             Cancel
           </button>
         )}
       </div>
-      {api.canRun && !api.isRunning && api.advisories.length > 0 && (
+      {api.canRun && !busy && api.advisories.length > 0 && (
         <p className="rounded-md border border-warn/25 bg-warn/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-warn">
           {api.advisories[0]}
         </p>
       )}
 
-      {!api.canRun && !api.isRunning && api.blockers.length > 0 && (
-        <p className="text-[10px] leading-relaxed text-ink-muted">
-          {api.blockers[0]}
-          {api.blockers.length > 1 ? ` (+${api.blockers.length - 1} more to fix)` : ''}
+      {/* One reason, in the imperative, directly under the button it explains. */}
+      {!api.canRun && !busy && reason && (
+        <p
+          id={RUN_REASON_ID}
+          className="rounded-doodle border border-cream-border bg-cream-soft px-2.5 py-1.5 text-[10px] leading-relaxed text-ink-soft"
+        >
+          <span className="font-semibold text-ink">Still needed: </span>
+          {reason}
+          {remaining > 0 && <span className="text-ink-muted"> · {remaining} more after that.</span>}
         </p>
       )}
     </motion.div>
@@ -537,11 +623,13 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
         <div className="flex items-center gap-2">
           <input
             type="color"
+            aria-label={`${field.label} colour`}
             value={/^#[0-9a-f]{6}$/i.test(String(value ?? '')) ? String(value) : '#000000'}
             onChange={(event) => onChange(event.target.value)}
-            className="h-7 w-10 cursor-pointer rounded border border-cream-border bg-cream-light"
+            className={`h-7 w-10 cursor-pointer rounded border border-cream-border bg-cream-light ${FOCUS_RING}`}
           />
           <input
+            aria-label={`${field.label} hex value`}
             value={String(value ?? '')}
             onChange={(event) => onChange(event.target.value)}
             className="doodle-input font-mono text-[11px]"
@@ -566,16 +654,17 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
       );
     case 'segmented':
       return (
-        <div className="flex flex-wrap gap-1">
+        <div role="group" aria-label={field.label} className="flex flex-wrap gap-1">
           {(field.options ?? []).map((option) => {
             const active = String(value) === String(option.value);
             return (
               <button
                 key={String(option.value)}
                 type="button"
+                aria-pressed={active}
                 title={option.hint}
                 onClick={() => onChange(coerce(field, String(option.value)))}
-                className={`doodle-chip text-[10px] ${active ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
+                className={`doodle-chip text-[10px] ${active ? 'doodle-chip-active' : 'doodle-chip-inactive'} ${FOCUS_RING}`}
               >
                 {option.label}
               </button>
@@ -586,7 +675,11 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
     case 'multiselect': {
       const chosen = Array.isArray(value) ? (value as string[]) : [];
       return (
-        <div className="grid max-h-40 grid-cols-2 gap-x-2 gap-y-0.5 overflow-y-auto pr-1">
+        <div
+          role="group"
+          aria-label={field.label}
+          className="grid max-h-40 grid-cols-2 gap-x-2 gap-y-0.5 overflow-y-auto pr-1"
+        >
           {(field.options ?? []).map((option) => (
             <label
               key={String(option.value)}
@@ -602,7 +695,7 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
                       : chosen.filter((item) => item !== String(option.value)),
                   )
                 }
-                className="h-3 w-3 accent-accent"
+                className={`h-3 w-3 accent-accent ${FOCUS_RING}`}
               />
               {option.label}
             </label>
@@ -628,7 +721,7 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
       return <FilePicker field={field} value={value} onChange={onChange} />;
     case 'dimensions':
       return (
-        <div className="grid grid-cols-2 gap-2">
+        <div role="group" aria-label={field.label} className="grid grid-cols-2 gap-2">
           {(['width', 'height'] as const).map((axis) => {
             const current = (value ?? {}) as Record<string, number>;
             return (
@@ -636,6 +729,9 @@ function Control({ field, value, onChange, pageCount, inputId }: ControlProps) {
                 key={axis}
                 type="number"
                 id={axis === 'width' ? inputId : undefined}
+                // Only one input can wear the field's label, so the other names
+                // itself with the same words plus its axis.
+                aria-label={axis === 'width' ? undefined : `${field.label} ${axis}`}
                 min={1}
                 value={current[axis] ?? 0}
                 onChange={(event) => onChange({ ...current, [axis]: event.target.valueAsNumber })}
@@ -771,22 +867,43 @@ function PagePicker({
         />
         <button
           type="button"
+          aria-pressed={spec === 'all'}
+          title="Every page of this file"
           onClick={() => onChange('all')}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 text-[9px]"
+          className={`doodle-chip w-auto px-2 text-[9px] ${
+            spec === 'all' ? 'doodle-chip-active' : 'doodle-chip-inactive'
+          } ${FOCUS_RING}`}
         >
           all
         </button>
         <button
           type="button"
+          aria-pressed={spec === ''}
+          title="Clear the selection"
           onClick={() => onChange('')}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 text-[9px]"
+          className={`doodle-chip w-auto px-2 text-[9px] ${
+            spec === '' ? 'doodle-chip-active' : 'doodle-chip-inactive'
+          } ${FOCUS_RING}`}
         >
           none
         </button>
       </div>
+      <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
+        {selected.length === total
+          ? `all ${total} ${total === 1 ? 'page' : 'pages'} picked`
+          : `${selected.length} of ${total} pages picked`}
+      </p>
       {problem && <p className="text-[10px] leading-relaxed text-danger">{problem}</p>}
       <div className="h-52">
-        <PageThumbs session={session} selected={selected} onSelect={apply} columns={4} rowHeight={120} maxSide={96} />
+        <PageThumbs
+          session={session}
+          selected={selected}
+          onSelect={apply}
+          columns={4}
+          rowHeight={120}
+          maxSide={96}
+          label="Pages in this file"
+        />
       </div>
     </div>
   );
@@ -820,13 +937,13 @@ function FilePicker({
   };
 
   return (
-    <div className="space-y-1">
+    <div role="group" aria-label={field.label} className="space-y-1">
       <button
         type="button"
         onClick={() => input.current?.click()}
-        className="doodle-btn doodle-btn-secondary w-full text-[11px]"
+        className={`doodle-btn doodle-btn-secondary w-full text-[11px] ${FOCUS_RING}`}
       >
-        {chosen.length > 0 ? `${chosen.length} file(s) chosen` : 'Choose file…'}
+        {chosen.length > 0 ? `${chosen.length} file${chosen.length === 1 ? '' : 's'} chosen` : 'Choose file…'}
       </button>
       <input
         ref={input}
@@ -837,7 +954,11 @@ function FilePicker({
         onChange={(event) => void pick(event.target.files)}
       />
       {chosen.length === 0 && (
-        <EmptyState title="No attachment yet" body="This step needs an extra file." icon="📎" />
+        <EmptyState
+          title="No attachment yet"
+          body="Add the extra file this step needs — it is read in this tab and never uploaded."
+          icon="📎"
+        />
       )}
       {chosen.map((item, index) => (
         <div
@@ -847,8 +968,10 @@ function FilePicker({
           <span className="truncate">{item.name}</span>
           <button
             type="button"
+            aria-label={`Remove ${item.name}`}
+            title="Remove this attachment"
             onClick={() => onChange(chosen.filter((_, i) => i !== index))}
-            className="text-ink-muted hover:text-danger"
+            className={`text-ink-muted hover:text-danger ${FOCUS_RING}`}
           >
             ✕
           </button>

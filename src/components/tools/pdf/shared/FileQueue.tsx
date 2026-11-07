@@ -2,6 +2,7 @@ import { formatFileSize } from '@/lib/utils/download';
 import { EmptyState } from './EmptyState';
 import { ErrorPanel } from './ErrorPanel';
 import { ProgressBar } from './ProgressBar';
+import { FOCUS_RING } from './focusRing';
 
 /** One row in the queue. Everything except `id`/`name` is optional so a tool
  * can start showing rows before it has inspected the file. */
@@ -31,9 +32,29 @@ export interface FileQueueProps {
   /** Move the item at `from` to `to` (order matters for merge-like tools). */
   onReorder?: (from: number, to: number) => void;
   onRetry?: (id: string) => void;
+  /**
+   * One line above the rows, for the case where per-file percentages are
+   * inferred rather than measured (the runner reports one sweep for the whole
+   * job). Saying "estimated" beats a bar that looks exact and is not.
+   */
+  progressNote?: string | null;
   emptyTitle?: string;
   emptyBody?: string;
   className?: string;
+}
+
+/**
+ * Which of the five states a row is in, in one word.
+ *
+ * A queue of four files used to be four identical tiles; the word is what tells
+ * "waiting for its turn" apart from "working" and "stopped with an error".
+ */
+export function rowStage(item: FileQueueItem): 'Waiting' | 'Starting' | 'Working' | 'Done' | 'Stopped' {
+  if (item.error) return 'Stopped';
+  const percent = item.percent ?? 0;
+  if (item.busy) return percent > 0 ? 'Working' : 'Starting';
+  if (percent >= 100) return 'Done';
+  return 'Waiting';
 }
 
 /**
@@ -47,6 +68,7 @@ export function FileQueue({
   onRemove,
   onReorder,
   onRetry,
+  progressNote,
   emptyTitle = 'No files yet',
   emptyBody = 'Drop a PDF here — it never leaves this device.',
   className = '',
@@ -56,15 +78,24 @@ export function FileQueue({
   }
 
   return (
-    <ol className={`space-y-1.5 ${className}`}>
+    <div className={className}>
+      {progressNote && (
+        <p className="pb-1.5 font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
+          {progressNote}
+        </p>
+      )}
+      <ol className="space-y-1.5">
       {items.map((item, index) => {
         const active = selectedId === item.id;
+        const failed = Boolean(item.error);
+        const stage = rowStage(item);
         return (
           <li
             key={item.id}
+            aria-current={active ? 'true' : undefined}
             className={`rounded-doodle border bg-cream-light p-2 ${
               active ? 'border-accent ring-1 ring-accent/35' : 'border-cream-border'
-            }`}
+            } ${failed ? 'border-danger/40' : ''}`}
           >
             <div className="flex items-start gap-2">
               <span className="w-4 shrink-0 pt-0.5 text-center font-mono text-[10px] tabular-nums text-ink-muted">
@@ -79,9 +110,9 @@ export function FileQueue({
               ) : (
                 <span
                   aria-hidden
-                  className="flex h-12 w-9 shrink-0 items-center justify-center rounded border border-cream-border bg-cream-soft text-[9px] text-ink-muted"
+                  className="flex h-12 w-9 shrink-0 items-center justify-center rounded border border-dashed border-cream-border bg-cream-soft font-mono text-[9px] text-ink-muted"
                 >
-                  {item.busy ? '…' : 'PDF'}
+                  {item.busy ? '◌' : 'PDF'}
                 </span>
               )}
 
@@ -89,7 +120,7 @@ export function FileQueue({
                 type="button"
                 onClick={() => onSelect?.(item.id)}
                 disabled={!onSelect}
-                className="min-w-0 flex-1 text-left disabled:cursor-default"
+                className={`min-w-0 flex-1 text-left disabled:cursor-default ${FOCUS_RING}`}
               >
                 <span className="block truncate text-[11px] font-semibold text-ink" title={item.name}>
                   {item.name}
@@ -102,6 +133,8 @@ export function FileQueue({
                     : item.busy
                       ? 'counting pages…'
                       : 'pages unknown'}
+                  {' · '}
+                  {stage}
                 </span>
               </button>
 
@@ -111,20 +144,20 @@ export function FileQueue({
                     <button
                       type="button"
                       aria-label={`Move ${item.name} earlier`}
-                      title="Move earlier"
+                      title={index === 0 ? 'This file is already first' : 'Move earlier'}
                       disabled={index === 0}
                       onClick={() => onReorder(index, index - 1)}
-                      className="rounded border border-cream-border px-1 text-[10px] text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-35"
+                      className={`flex h-7 w-7 items-center justify-center rounded border border-cream-border text-[11px] text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-35 ${FOCUS_RING}`}
                     >
                       ↑
                     </button>
                     <button
                       type="button"
                       aria-label={`Move ${item.name} later`}
-                      title="Move later"
+                      title={index === items.length - 1 ? 'This file is already last' : 'Move later'}
                       disabled={index === items.length - 1}
                       onClick={() => onReorder(index, index + 1)}
-                      className="rounded border border-cream-border px-1 text-[10px] text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-35"
+                      className={`flex h-7 w-7 items-center justify-center rounded border border-cream-border text-[11px] text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-35 ${FOCUS_RING}`}
                     >
                       ↓
                     </button>
@@ -134,9 +167,9 @@ export function FileQueue({
                   <button
                     type="button"
                     aria-label={`Remove ${item.name}`}
-                    title="Remove"
+                    title="Remove from the list"
                     onClick={() => onRemove(item.id)}
-                    className="rounded border border-cream-border px-1 text-[10px] text-ink-muted hover:border-danger/40 hover:text-danger"
+                    className={`flex h-7 w-7 items-center justify-center rounded border border-cream-border text-[11px] text-ink-muted hover:border-danger/40 hover:text-danger ${FOCUS_RING}`}
                   >
                     ✕
                   </button>
@@ -144,7 +177,12 @@ export function FileQueue({
               </span>
             </div>
 
-            {item.percent != null && !item.error && (
+            {item.busy && item.percent == null && !failed && (
+              // Working with nothing measured yet: say so with a track that
+              // moves, never a determinate bar at a made-up number.
+              <ProgressBar className="mt-2" percent={0} indeterminate label={`Processing ${item.name}`} />
+            )}
+            {item.percent != null && !failed && (
               <ProgressBar
                 className="mt-2"
                 percent={item.percent}
@@ -166,6 +204,7 @@ export function FileQueue({
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </div>
   );
 }

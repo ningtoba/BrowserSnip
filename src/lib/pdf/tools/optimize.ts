@@ -52,7 +52,9 @@ import {
   looksLikePdf,
   notAPdfError,
   openInputs,
+  pagesField,
   parsePageRanges,
+  qualityField,
 } from './helpers';
 import {
   booleanValue,
@@ -735,14 +737,16 @@ export const optimizeTools: PdfToolDefinition[] = [
         default: 'balanced',
         options: PRESET_OPTIONS,
         group: 'How hard to squeeze',
-      },
+      help: 'Each step decodes and re-encodes more of the file. Lossless changes nothing you can see; extreme can make a scan look smeared.',
+    },
       {
         key: 'targetEnabled',
         label: 'Aim for a specific file size',
         type: 'toggle',
         default: false,
         group: 'How hard to squeeze',
-      },
+      help: 'Off squeezes at the strength above. On walks the strengths until the file fits, and stops with the closest attempt when it cannot.',
+    },
       {
         key: 'targetMB',
         label: 'Target size',
@@ -790,10 +794,10 @@ export const optimizeTools: PdfToolDefinition[] = [
         group: 'Images',
         help: 'Turning this off saves more space but can turn a transparent logo into a black box.',
       },
-      { key: 'grayscale', label: 'Convert colour images to greyscale', type: 'toggle', default: false, group: 'Images' },
+      { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: false, group: 'Images', help: 'Colour images become grey, which usually saves more space than lowering quality. Text and vector colour are left alone.' },
       {
         key: 'stripMetadata',
-        label: 'Remove document metadata too',
+        label: 'Remove metadata',
         type: 'toggle',
         default: false,
         group: 'Everything else',
@@ -889,16 +893,17 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Optimize',
     promise: 'A lossless rebuild that reports the size it actually saved, or admits there was nothing to save.',
     fields: [
-      { key: 'compressStreams', label: 'Flate-compress uncompressed streams', type: 'toggle', default: true, group: 'What to tidy' },
-      { key: 'objectStreams', label: 'Pack objects into object streams', type: 'toggle', default: true, group: 'What to tidy' },
-      { key: 'dropOrphans', label: 'Remove unreferenced objects', type: 'toggle', default: true, group: 'What to tidy' },
+      { key: 'compressStreams', label: 'Flate-compress uncompressed streams', type: 'toggle', default: true, group: 'What to tidy', help: 'Re-compresses stream data that was stored raw. Nothing drawn changes.' },
+      { key: 'objectStreams', label: 'Pack objects into object streams', type: 'toggle', default: true, group: 'What to tidy', help: 'Packs the object table into streams. A reader older than PDF 1.5 cannot open the result.' },
+      { key: 'dropOrphans', label: 'Remove unreferenced objects', type: 'toggle', default: true, group: 'What to tidy', help: 'Removes objects nothing refers to any more. They cost space but cannot be lost in a way the page can show.' },
       {
         key: 'stripMetadata',
-        label: 'Remove metadata (info dictionary and XMP)',
+        label: 'Remove metadata',
         type: 'toggle',
         default: false,
         group: 'What to tidy',
-      },
+      help: 'Off is the safe default: title, author and XMP are usually wanted. This is a tidy-up tool, not a privacy tool.',
+    },
     ],
     notes: [
       'Lossless: no image is re-encoded and no text is rasterised.',
@@ -995,10 +1000,10 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Rasterize',
     promise: 'Each page becomes one image, at the resolution you asked for, with the page count and size you expect.',
     fields: [
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 72, max: 600, step: 1, integer: true, unit: 'dpi', group: 'Quality' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 72, max: 600, step: 1, integer: true, unit: 'dpi', group: 'Quality', help: 'Every page becomes a picture at this resolution, so the file grows by roughly the square of it.' },
       {
         key: 'format',
-        label: 'Image format',
+        label: 'File format',
         type: 'segmented',
         default: 'jpeg',
         options: [
@@ -1006,8 +1011,9 @@ export const optimizeTools: PdfToolDefinition[] = [
           { value: 'png', label: 'PNG (lossless)' },
         ],
         group: 'Quality',
-      },
-      { key: 'quality', label: 'JPEG quality', type: 'slider', default: 0.85, min: 0.3, max: 1, step: 0.05, group: 'Quality', when: (v) => v.format === 'jpeg' },
+      help: 'JPEG is smaller for photographs; PNG keeps flat colour and text edges exactly, at a much larger size.',
+    },
+      qualityField('jpeg', { default: 0.85, min: 0.3, max: 1, step: 0.05, group: 'Quality', when: (v) => v.format === 'jpeg' }),
       {
         key: 'keepPageSize',
         label: 'Keep the original page size',
@@ -1176,11 +1182,11 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Sanitize',
     promise: 'Scripts, attachments and optional metadata removed, with a count of everything actually taken out.',
     fields: [
-      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove' },
-      { key: 'attachments', label: 'Remove embedded files', type: 'toggle', default: true, group: 'What to remove' },
-      { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove' },
-      { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove' },
-      { key: 'annotations', label: 'Remove annotations and form fields', type: 'toggle', default: false, group: 'What to remove' },
+      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes the /OpenAction and /JS entries a document runs when it opens. Some forms stop calculating.' },
+      { key: 'attachments', label: 'Remove embedded files', type: 'toggle', default: true, group: 'What to remove', help: 'Deletion is final in the output copy; extract them first if the file is the payload.' },
+      { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove', help: 'XMP is what desktop search indexes. Without it the document stops describing itself to those tools.' },
+      { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove', help: 'The info dictionary holds title, author and dates — most readers show it as blank afterwards.' },
+      { key: 'annotations', label: 'Remove annotations and form fields', type: 'toggle', default: false, group: 'What to remove', help: 'Comments, highlights, form fields and links all go. Anything you filled in goes with them.' },
     ],
     notes: [
       'Everything runs on the document structure in this tab; no engine download is needed.',
@@ -1351,7 +1357,8 @@ export const optimizeTools: PdfToolDefinition[] = [
           { value: '3b', label: 'PDF/A-3b (ISO 19005-3, allows attachments)' },
         ],
         group: 'Conformance level',
-      },
+      help: 'Level B only asks that the file render the same in ten years. A and U additionally demand tagged, readable content, which needs a font-embedding pass this tool cannot promise offline.',
+    },
     ],
     notes: [
       'A conforming conversion runs on Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser). If it cannot be reached, BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag, which most validators read as a starting point but not as proof of conformance.',
@@ -1496,9 +1503,9 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Deskew',
     promise: 'Pages turned straight, with the angle it found for each one and the page size it had to grow.',
     fields: [
-      { key: 'maxAngle', label: 'Largest angle to correct', type: 'slider', default: 10, min: 1, max: 30, step: 1, integer: true, unit: '°', group: 'How much to turn' },
+      { key: 'maxAngle', label: 'Largest angle to correct', type: 'slider', default: 10, min: 1, max: 30, step: 1, integer: true, unit: '°', group: 'How much to turn', help: 'A page tilted further than this is left alone rather than turned by the wrong amount.' },
       { key: 'threshold', label: 'Confidence needed before turning a page', type: 'slider', default: 0.35, min: 0.05, max: 0.9, step: 0.05, group: 'How much to turn', help: 'A low confidence turns pages that were never tilted.' },
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all', group: 'Which pages', help: 'For example 1-3,5. Out-of-range pages are refused with a reason.' },
+      pagesField({ group: 'Which pages' }),
     ],
     notes: [
       'The tilt is measured by rendering each page with pdf.js, in this tab.',

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { downloadBlob, formatFileSize } from '@/lib/utils/download';
 import { EmptyState } from './EmptyState';
+import { FOCUS_RING } from './focusRing';
 
 /** One produced file. */
 export interface ResultItem {
@@ -16,6 +17,11 @@ export interface ResultCardProps {
   sizeBefore?: number | null;
   /** Total output pages, when they differ from the sum of `outputs`. */
   pages?: number | null;
+  /**
+   * Pages the run started with. Reported next to the output count so "Split 12
+   * pages" is a number the user can check rather than a claim (research §4).
+   */
+  pagesIn?: number | null;
   /** Engine the run actually used, e.g. `"ghostscript"`; `null` = core only. */
   engine?: string | null;
   /** The optional engine was unreachable, so a degraded path produced this. */
@@ -51,6 +57,45 @@ export function describeDelta(before: number | null | undefined, after: number |
 }
 
 /**
+ * `12 → 4`, or the one side that was actually counted.
+ *
+ * A tool that hands back images has no page count, and inventing one would be
+ * the same lie as "Done" for a run that did nothing (E13).
+ */
+export function describePages(
+  pagesIn: number | null | undefined,
+  pagesOut: number | null | undefined,
+): string | null {
+  const hasIn = typeof pagesIn === 'number' && pagesIn > 0;
+  const hasOut = typeof pagesOut === 'number' && pagesOut > 0;
+  if (hasIn && hasOut) return `${pagesIn} → ${pagesOut}`;
+  if (hasOut) return String(pagesOut);
+  if (hasIn) return `${pagesIn} in · out not counted`;
+  return null;
+}
+
+/** Words a summary uses to promise the file got smaller. */
+const SHRINK_CLAIM = /smaller|compress|shrink|reduc|slim|optimi[sz]|saved|lighter/i;
+
+/**
+ * Never repeat a promise the numbers contradict (E14).
+ *
+ * The optimize tools return a line like "Compressed to 1.2 MB" built from their
+ * own intent, not from the result. When the file came out bigger, that sentence
+ * is false the moment it is printed, and the card already says the truth in the
+ * size row and the growth note — so the claim is dropped, not rephrased.
+ */
+export function honestSummary(
+  message: string | null | undefined,
+  grew: boolean,
+): string | null {
+  const text = message?.trim();
+  if (!text) return message ?? null;
+  if (grew && SHRINK_CLAIM.test(text)) return null;
+  return text;
+}
+
+/**
  * The result summary every tool surface shares: what it is called, what it
  * weighs now, how many pages, which engine made it, what went sideways, and
  * the download affordances.
@@ -59,6 +104,7 @@ export function ResultCard({
   outputs,
   sizeBefore,
   pages,
+  pagesIn,
   engine,
   degraded = false,
   warnings = [],
@@ -80,6 +126,8 @@ export function ResultCard({
   const delta = describeDelta(sizeBefore, sizeAfter);
   const grew = sizeBefore != null && sizeBefore > 0 && sizeAfter > sizeBefore;
   const pageTotal = pages ?? outputs.reduce((sum, item) => sum + (item.pages ?? 0), 0);
+  const pageCount = describePages(pagesIn, pageTotal);
+  const summary = honestSummary(message, grew);
   const multi = outputs.length > 1;
 
   const grab = (item: ResultItem) => (onDownload ? onDownload(item) : downloadBlob(item.blob, item.name));
@@ -128,10 +176,10 @@ export function ResultCard({
             <dd className={`tabular-nums ${grew ? 'text-warn' : 'text-ink-soft'}`}>{delta}</dd>
           </div>
         )}
-        {pageTotal > 0 && (
+        {pageCount && (
           <div className="flex items-baseline justify-between gap-2">
             <dt className="uppercase tracking-[0.08em] text-ink-muted">Pages</dt>
-            <dd className="tabular-nums">{pageTotal}</dd>
+            <dd className="tabular-nums">{pageCount}</dd>
           </div>
         )}
         {(engine || degraded) && (
@@ -145,26 +193,31 @@ export function ResultCard({
         )}
       </dl>
 
-      {message && <p className="text-[11px] leading-relaxed text-ink">{message}</p>}
+      {summary && <p className="text-[11px] leading-relaxed text-ink">{summary}</p>}
 
       {grew && (
         <p className="rounded-doodle border border-warn/25 bg-warn/5 px-2 py-1 text-[10px] leading-relaxed text-warn">
-          The result is bigger than the input. Keep the original unless you need this
-          variant — nothing was overwritten.
+          The file came out bigger than the one you started with. Nothing was
+          overwritten — download the original unless you need this variant.
         </p>
       )}
 
       {warnings.length > 0 && (
-        <ul className="space-y-1">
-          {warnings.map((warning) => (
-            <li
-              key={warning}
-              className="rounded-doodle border border-warn/25 bg-cream-light/70 px-2 py-1 text-[10px] leading-relaxed text-warn"
-            >
-              {warning}
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
+            What you should know ({warnings.length})
+          </p>
+          <ul className="space-y-1">
+            {warnings.map((warning) => (
+              <li
+                key={warning}
+                className="rounded-doodle border border-warn/25 bg-cream-light/70 px-2 py-1 text-[10px] leading-relaxed text-warn"
+              >
+                {warning}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {multi && (
@@ -188,7 +241,8 @@ export function ResultCard({
                   type="button"
                   onClick={() => grab(item)}
                   aria-label={`Download ${item.name}`}
-                  className="rounded border border-cream-border px-1 text-[10px] text-ink-muted hover:border-accent hover:text-accent"
+                  title={`Download ${item.name}`}
+                  className={`flex h-7 w-7 items-center justify-center rounded border border-cream-border text-[11px] text-ink-muted hover:border-accent hover:text-accent ${FOCUS_RING}`}
                 >
                   ↓
                 </button>
@@ -200,12 +254,12 @@ export function ResultCard({
 
       <div className="flex flex-wrap items-center gap-1.5">
         {!multi && (
-          <button type="button" onClick={() => grab(outputs[0])} className="doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px]">
+          <button type="button" onClick={() => grab(outputs[0])} className={`doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px] ${FOCUS_RING}`}>
             Download
           </button>
         )}
         {multi && (
-          <button type="button" onClick={grabAll} className="doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px]">
+          <button type="button" onClick={grabAll} className={`doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px] ${FOCUS_RING}`}>
             Download all
           </button>
         )}
@@ -214,7 +268,7 @@ export function ResultCard({
             type="button"
             onClick={() => void zip()}
             disabled={zipping}
-            className="doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] disabled:opacity-50"
+            className={`doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] disabled:opacity-50 ${FOCUS_RING}`}
           >
             {zipping ? 'Zipping…' : 'Download as zip'}
           </button>
@@ -223,7 +277,7 @@ export function ResultCard({
           <button
             type="button"
             onClick={() => grab(original)}
-            className="doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px]"
+            className={`doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] ${FOCUS_RING}`}
           >
             Keep original
           </button>

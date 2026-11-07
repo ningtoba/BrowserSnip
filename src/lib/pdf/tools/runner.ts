@@ -9,16 +9,19 @@
 import { PDFDocument } from '@maxwbh/pdf-lib';
 import { saveEncrypted } from '../core/doc';
 import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolValues } from './types';
-import { getPdfTool } from './registry';
+import { downloadName } from './helpers';
+import { getPdfTool, hasCustomMainView } from './registry';
 import { defaultValues } from './types';
 import {
   ToolInputError,
   clampFields,
   inspectPdf,
+  looksLikePdf,
   preflightPdf,
   validateFields,
   type PdfInspection,
 } from '../core/guard';
+import { sniffImageMime } from '../core/images';
 
 export interface RunRequest {
   toolId: string;
@@ -53,12 +56,14 @@ export class ToolCancelledError extends Error {
   }
 }
 
-/** Extension used when a tool produces a single PDF. */
+/**
+ * The download name for one output.
+ *
+ * Delegates to `helpers.downloadName` so the sanitising (E17) happens once for
+ * the runner and for every tool that builds its own file names.
+ */
 function outputNameFor(name: string, suffix: string, index: number, total: number): string {
-  const base = name.replace(/\.[^.]+$/, '') || 'document';
-  const numbered = total > 1 ? `-${index + 1}` : '';
-  if (suffix.startsWith('.')) return `${base}${numbered}${suffix}`;
-  return `${base}${suffix}${numbered}`;
+  return downloadName(name, suffix, index, total);
 }
 
 function toToolFile(file: File): ToolFile {
@@ -105,16 +110,27 @@ export function fileProblem(tool: PdfToolDefinition, files: File[]): ToolInputEr
   if (tool.minFiles && files.length < tool.minFiles) {
     return new ToolInputError(
       'OUT_OF_RANGE',
-      `This tool needs at least ${tool.minFiles} files — ${files.length} added.`,
+      `This tool needs at least ${tool.minFiles} ${tool.minFiles === 1 ? 'file' : 'files'}${paneClause(tool)} — ${files.length} added.`,
+      { hint: 'Add the missing document in the panel on the left.' },
     );
   }
   if (tool.maxFiles && files.length > tool.maxFiles) {
     return new ToolInputError(
       'OUT_OF_RANGE',
-      `This tool takes at most ${tool.maxFiles} files — ${files.length} added.`,
+      `This tool takes at most ${tool.maxFiles} ${tool.maxFiles === 1 ? 'file' : 'files'}${paneClause(tool)} — ${files.length} added.`,
+      { hint: 'Remove the extras so the pair being compared is the pair you mean.' },
     );
   }
   return null;
+}
+
+/**
+ * For a tool whose queue lives in a bespoke pane, say where the files go.
+ * `hasCustomMainView` is the truth of it: the pane is the only place that holds
+ * more than one document for these tools.
+ */
+function paneClause(tool: PdfToolDefinition): string {
+  return hasCustomMainView(tool.id) ? ' from its own editor pane' : '';
 }
 
 /**
@@ -136,6 +152,66 @@ export async function inspectFiles(
 /** Does this tool read PDFs? `inputKind` is only declared by the exceptions. */
 function takesPdfInput(tool: PdfToolDefinition): boolean {
   return !tool.inputKind || tool.inputKind === 'pdf';
+}
+
+/** Bytes enough to name a container: magic numbers live at offset 0. */
+const SNIFF_BYTES = 64;
+
+/**
+ * What these bytes *are*, when they are provably not a picture.
+ *
+ * Deliberately conservative: an unknown binary file (JPEG XL, a RAW format, a
+ * camera thumbnail) answers `null` and reaches the browser's own decoder, which
+ * may well open it. Only a container this repo can name — a PDF, a ZIP package,
+ * an MP3, plain text — is refused on sight.
+ */
+function notAPictureLabel(bytes: Uint8Array): string | null {
+  if (bytes.length === 0) return null;
+  if (looksLikePdf(bytes)) return 'a PDF';
+  if (sniffImageMime(bytes)) return null;
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return 'a ZIP package (the container used by DOCX, XLSX and EPUB)';
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'an audio file';
+  const printable = Array.from(bytes.slice(0, 32)).every(
+    (byte) => byte === 0x09 || byte === 0x0a || byte === 0x0d || (byte >= 0x20 && byte < 0x7f),
+  );
+  return printable ? 'a text file' : null;
+}
+
+/**
+ * Refuse the wrong kind of input before the tool spends anything on it.
+ *
+ * Two different failures get two different sentences. A PDF dropped on an image
+ * tool is a *format* problem, so the message names the file, says what it really
+ * is, and points at the tool that reads it. Where the input genuinely comes from
+ * a bespoke pane — the scan's captures — the pane is named as the remedy, because
+ * that is the place the user can fix it. Either way this happens before any
+ * decoding, engine fetch or page parse, so a wrong file costs a header read.
+ */
+async function inputKindProblem(
+  tool: PdfToolDefinition,
+  files: readonly File[],
+): Promise<ToolInputError | null> {
+  if (tool.inputKind !== 'image') return null;
+  const pane = hasCustomMainView(tool.id);
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+    const label = notAPictureLabel(bytes);
+    if (!label) continue;
+    const finding = `"${file.name}" is ${label}, not a picture`;
+    return new ToolInputError(
+      'UNSUPPORTED',
+      pane
+        ? `${finding} — ${tool.name} builds its pages from the captures in its own editor pane.`
+        : `${finding}.`,
+      {
+        fileName: file.name,
+        hint: pane
+          ? 'Capture a page with the camera, or add photos that are already on this device.'
+          : 'Add the image you meant, or use a tool that reads PDFs.',
+      },
+    );
+  }
+  return null;
 }
 
 const PROTECTION_VERSION: Record<string, 1 | 2 | 4 | 5> = {
@@ -244,6 +320,11 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   const effectivePassword = request.password || declared;
 
   const inputs = request.files.map(toToolFile);
+  // The wrong *kind* of file is refused here, before the tool opens anything:
+  // a PDF dropped on the scan pane used to reach the image decoder, which could
+  // wait on the browser forever (E2, E20).
+  const kindProblem = await inputKindProblem(tool, request.files);
+  if (kindProblem) throw kindProblem;
   // One cheap header/trailer pass per file, before any tool allocates work: an
   // empty or mislabelled file, and a document the gate has no password for, are
   // settled here rather than halfway through a 500-page parse (E1, E2, E4, E7).

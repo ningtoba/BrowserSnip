@@ -243,6 +243,70 @@ export function boxContains(outer: TopLeftBox, p: Point): boolean {
   return p.x >= outer.x && p.x <= outer.x + outer.width && p.y >= outer.y && p.y <= outer.y + outer.height;
 }
 
+/**
+ * Selection handles.
+ *
+ * Eight, in reading order (top-left, top-middle, … clockwise) so the tab order
+ * follows the visual order the way pdf.js orders its resizers. `left`/`top` are
+ * fractions of the box, which is what the DOM layer needs to anchor a handle;
+ * `cursor` is the direction-correct CSS resize cursor the checklist asks for.
+ */
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+export interface HandleSpec {
+  id: ResizeHandle;
+  label: string;
+  cursor: string;
+  left: number;
+  top: number;
+}
+
+/** A block never shrinks below this, in points — smaller and the text is gone. */
+export const MIN_BLOCK_SIZE = 8;
+
+export const RESIZE_HANDLES: HandleSpec[] = [
+  { id: 'nw', label: 'Top left corner', cursor: 'nwse-resize', left: 0, top: 0 },
+  { id: 'n', label: 'Top edge', cursor: 'ns-resize', left: 0.5, top: 0 },
+  { id: 'ne', label: 'Top right corner', cursor: 'nesw-resize', left: 1, top: 0 },
+  { id: 'e', label: 'Right edge', cursor: 'ew-resize', left: 1, top: 0.5 },
+  { id: 'se', label: 'Bottom right corner', cursor: 'nwse-resize', left: 1, top: 1 },
+  { id: 's', label: 'Bottom edge', cursor: 'ns-resize', left: 0.5, top: 1 },
+  { id: 'sw', label: 'Bottom left corner', cursor: 'nesw-resize', left: 0, top: 1 },
+  { id: 'w', label: 'Left edge', cursor: 'ew-resize', left: 0, top: 0.5 },
+];
+
+/**
+ * Drag a handle. The opposite edge (or the top-left corner for an edge handle)
+ * stays where it was, and a squeeze past `MIN_BLOCK_SIZE` stops there instead of
+ * flipping the box inside out.
+ */
+export function resizeBox(
+  box: TopLeftBox,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  min = MIN_BLOCK_SIZE,
+): TopLeftBox {
+  const west = handle === 'w' || handle === 'nw' || handle === 'sw';
+  const east = handle === 'e' || handle === 'ne' || handle === 'se';
+  const north = handle === 'n' || handle === 'nw' || handle === 'ne';
+  const south = handle === 's' || handle === 'sw' || handle === 'se';
+  let { x, y, width, height } = box;
+  if (east) width = Math.max(min, box.width + dx);
+  if (west) {
+    const growth = Math.min(dx, box.width - min);
+    x = box.x + growth;
+    width = box.width - growth;
+  }
+  if (south) height = Math.max(min, box.height + dy);
+  if (north) {
+    const growth = Math.min(dy, box.height - min);
+    y = box.y + growth;
+    height = box.height - growth;
+  }
+  return { x, y, width, height };
+}
+
 /* ------------------------------------------------------------------ *
  * Paragraph clustering from extracted text runs                       *
  * ------------------------------------------------------------------ */
@@ -1565,6 +1629,35 @@ export function redoHistory<T>(history: HistoryState<T>): HistoryState<T> {
 export const canUndo = (history: HistoryState<unknown>): boolean => history.past.length > 0;
 export const canRedo = (history: HistoryState<unknown>): boolean => history.future.length > 0;
 
+/**
+ * What assistive tech hears after an undo or redo, computed from the history
+ * *before* the step runs. A silent undo is indistinguishable from a dead key,
+ * so the sentence names the remaining depth in both directions.
+ */
+export function historyReport(history: HistoryState<unknown>, action: 'undo' | 'redo'): string {
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  if (action === 'undo') {
+    if (history.past.length === 0) return 'Nothing to undo.';
+    const left = history.past.length - 1;
+    const redoable = history.future.length + 1;
+    return left === 0
+      ? `Undid the last change. Nothing left to undo, ${plural(redoable, 'redo')} available.`
+      : `Undid the last change. ${plural(left, 'undo')} left, ${plural(redoable, 'redo')} available.`;
+  }
+  if (history.future.length === 0) return 'Nothing to redo.';
+  const left = history.future.length - 1;
+  const undoable = history.past.length + 1;
+  return left === 0
+    ? `Redid the change. Nothing left to redo, ${plural(undoable, 'undo')} available.`
+    : `Redid the change. ${plural(left, 'redo')} left, ${plural(undoable, 'undo')} available.`;
+}
+
+/** Ids that still name a live object — after an undo, selections can dangle. */
+export function pruneSelection(objects: EditObject[], selection: string[]): string[] {
+  const alive = new Set(objects.map((object) => object.id));
+  return selection.filter((id) => alive.has(id));
+}
+
 /* ------------------------------------------------------------------ *
  * Find & replace                                                      *
  * ------------------------------------------------------------------ */
@@ -1720,6 +1813,40 @@ function contextOf(text: string, range: TextRange, radius = 24): string {
   const start = Math.max(0, range.start - radius);
   const end = Math.min(text.length, range.end + radius);
   return `${start > 0 ? '…' : ''}${text.slice(start, end).replace(/\s+/g, ' ')}${end < text.length ? '…' : ''}`;
+}
+
+/**
+ * The subset of `ranges` that still lands on `query` in `text`.
+ *
+ * A hit list is a snapshot; the block underneath it is not. Replacing a stale
+ * offset would edit whatever characters now sit there, which is the definition
+ * of a silent wrong answer, so the caller refuses those ranges instead.
+ */
+export function liveRanges(
+  text: string,
+  query: string,
+  options: FindOptions,
+  ranges: TextRange[],
+): TextRange[] {
+  const fresh = findRanges(text, query, options);
+  return ranges.filter((range) => fresh.some((entry) => entry.start === range.start && entry.end === range.end));
+}
+
+/**
+ * Re-point a search block at text the user has already retyped.
+ *
+ * Find and replace must run over what is on the page *now*, or a replacement
+ * quietly throws away the edit made a moment ago. Line offsets cannot survive a
+ * rewrite, so the block keeps one line spanning its whole box.
+ */
+export function retextBlock(block: SearchableBlock, text: string): SearchableBlock {
+  if (block.text === text) return block;
+  if (text.length === 0 || block.lines.length === 0) return { ...block, text, lines: [] };
+  return {
+    ...block,
+    text,
+    lines: [{ box: unionBoxes(block.lines.map((line) => line.box)), start: 0, end: text.length }],
+  };
 }
 
 /* ------------------------------------------------------------------ *

@@ -33,6 +33,7 @@ import {
   type QuadRect,
 } from '@/lib/pdf/core/forms';
 import { openRender, type PdfSession } from '@/lib/pdf/core/render';
+import { navigateToTool } from '@/components/tools/pdf/editor/quickModes';
 
 export type FormValue = string | boolean;
 
@@ -79,6 +80,131 @@ export function initialValuesFor(fields: FormFieldInfo[]): Record<string, FormVa
 /** Fields that hold a value this pane can write. */
 export function isFillable(field: FormFieldInfo): boolean {
   return field.type !== 'button' && field.type !== 'signature';
+}
+
+/* ── autosave ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Where one document's unfinished answers are kept.
+ *
+ * A form is the one tool where losing the work really hurts: a refresh used to
+ * erase every box the user typed into. The draft holds only the answers that
+ * differ from what the file already carries, under a key built from the file's
+ * name and size, and it never leaves the device — same promise as everywhere
+ * else in this app, so the pane says so next to the indicator and offers the
+ * button that throws it away.
+ */
+export const FORM_DRAFT_PREFIX = 'browsersnip:form-draft:v1:';
+
+/** Beyond this the draft is skipped rather than filling `localStorage`. */
+export const FORM_DRAFT_BYTE_LIMIT = 64 * 1024;
+
+export function draftKeyFor(file: { name: string; size: number }): string {
+  return `${FORM_DRAFT_PREFIX}${encodeURIComponent(file.name)}:${file.size}`;
+}
+
+/** The answers the file does not already have — all that is worth storing. */
+export function draftEntries(
+  values: Record<string, FormValue>,
+  original: Record<string, FormValue>,
+): Record<string, FormValue> {
+  const out: Record<string, FormValue> = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (value === original[name]) continue;
+    if (value === undefined) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
+/** Restore a draft over the file's own values; unknown names are kept, they may be fields this read skipped. */
+export function mergeDraft(
+  original: Record<string, FormValue>,
+  draft: Record<string, FormValue> | null,
+): Record<string, FormValue> {
+  return { ...original, ...(draft ?? {}) };
+}
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    // A blocked partitioned storage throws on access, not on read.
+    return null;
+  }
+}
+
+export function readDraft(key: string): Record<string, FormValue> | null {
+  const store = storage();
+  if (!store) return null;
+  try {
+    const raw = store.getItem(key);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const out: Record<string, FormValue> = {};
+    for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'string') out[name] = value;
+      else if (typeof value === 'boolean') out[name] = value;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the draft was written; a full or blocked store is a no-op, not an error. */
+export function writeDraft(key: string, entries: Record<string, FormValue>): boolean {
+  const store = storage();
+  if (!store) return false;
+  const names = Object.keys(entries);
+  if (names.length === 0) {
+    try {
+      store.removeItem(key);
+    } catch {
+      /* nothing to discard */
+    }
+    return false;
+  }
+  const payload = JSON.stringify(entries);
+  if (payload.length > FORM_DRAFT_BYTE_LIMIT) return false;
+  try {
+    store.setItem(key, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeDraft(key: string): void {
+  try {
+    storage()?.removeItem(key);
+  } catch {
+    /* already gone */
+  }
+}
+
+/** The sentence next to the autosave indicator. */
+export function draftSummary(count: number, stored: boolean): string {
+  if (count === 0) return 'No changes to keep yet.';
+  if (!stored) return `${count} answer${count === 1 ? '' : 's'} changed — this browser will not keep a draft.`;
+  return `${count} answer${count === 1 ? '' : 's'} autosaved in this browser`;
+}
+
+/**
+ * Whether this field should be reporting itself as required-and-empty.
+ *
+ * Only after the user left it, or pressed save: a red ring that appears on the
+ * first keystroke grades the form before it has been filled.
+ */
+export function showRequired(
+  field: FormFieldInfo,
+  values: Record<string, FormValue>,
+  touched: ReadonlySet<string>,
+): boolean {
+  if (!field.required || !touched.has(field.name)) return false;
+  const value = values[field.name];
+  return field.type === 'checkbox' ? value !== true : !String(value ?? '').trim();
 }
 
 /**
@@ -142,6 +268,16 @@ export default function FormFillMain(): JSX.Element {
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** The values as the file holds them, so autosave stores only the changes. */
+  const [original, setOriginal] = useState<Record<string, FormValue>>({});
+  const [draftKey, setDraftKey] = useState<string | null>(null);
+  const [draftStored, setDraftStored] = useState(false);
+  /**
+   * Fields the user has left once, or tried to save past. Required feedback that
+   * appears on the first keystroke grades the form before it is filled, so a
+   * field only reports itself after blur or after the save press.
+   */
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
 
   const sessionRef = useRef<PdfSession | null>(null);
   const canvasHost = useRef<HTMLDivElement | null>(null);
@@ -166,6 +302,12 @@ export default function FormFillMain(): JSX.Element {
         }),
     [fillable, values],
   );
+
+  const markTouched = useCallback((name: string) => {
+    setTouched((current) => (current.has(name) ? current : new Set(current).add(name)));
+  }, []);
+
+  const draftCount = useMemo(() => Object.keys(draftEntries(values, original)).length, [original, values]);
 
   // ── open the document: one pdf.js session + one pdf-lib field read ────────
   useEffect(() => {
@@ -197,7 +339,15 @@ export default function FormFillMain(): JSX.Element {
         if (!token.alive) return;
         setFields(read);
         setXfa(hasXfa(doc));
-        setValues(initialValuesFor(read));
+        const base = initialValuesFor(read);
+        // The answers this browser kept for *this* file (name and size), put back
+        // over whatever the form already carries, and said out loud.
+        const key = draftKeyFor(file);
+        const draft = readDraft(key);
+        setOriginal(base);
+        setDraftKey(key);
+        setTouched(new Set());
+        setValues(mergeDraft(base, draft));
         setGeometry({
           page: 1,
           numPages: opened.numPages,
@@ -206,10 +356,14 @@ export default function FormFillMain(): JSX.Element {
           rotation: 0,
         });
         setPhase('ready');
+        const restored = draft ? Object.keys(draft).length : 0;
         setStatus(
           read.length === 0
             ? null
-            : `${read.length} form field${read.length === 1 ? '' : 's'} found, in tab order.`,
+            : `${read.length} form field${read.length === 1 ? '' : 's'} found, in tab order.` +
+              (restored > 0
+                ? ` Restored ${restored} saved answer${restored === 1 ? '' : 's'} this browser kept.`
+                : ''),
         );
       } catch (err) {
         if (!token.alive) return;
@@ -279,6 +433,21 @@ export default function FormFillMain(): JSX.Element {
     setValues((current) => ({ ...current, [name]: value }));
   }, []);
 
+  // Autosave: every change is written back within the same tick it lands, so a
+  // refresh, a crash or an accidental navigation cannot erase a half-filled form.
+  useEffect(() => {
+    if (phase !== 'ready' || !draftKey) return;
+    setDraftStored(writeDraft(draftKey, draftEntries(values, original)));
+  }, [draftKey, original, phase, values]);
+
+  const discardDraft = useCallback(() => {
+    if (draftKey) removeDraft(draftKey);
+    setValues({ ...original });
+    setTouched(new Set());
+    setDraftStored(false);
+    setStatus('Saved answers discarded — the form shows what the file itself carries.');
+  }, [draftKey, original]);
+
   const goToField = useCallback(
     (field: FormFieldInfo) => {
       if (field.page >= 0) {
@@ -310,7 +479,9 @@ export default function FormFillMain(): JSX.Element {
 
   // ── save ──────────────────────────────────────────────────────────────────
   const save = useCallback(async () => {
-    if (!file) return;
+    // A file with no fields has nothing to write: saving would hand back a
+    // byte-for-byte copy of the input and say "Filled 0 fields" (E13).
+    if (!file || fillable.length === 0) return;
     setSaving(true);
     setSaveError(null);
     const store = useProcessStore.getState();
@@ -328,6 +499,12 @@ export default function FormFillMain(): JSX.Element {
         })`;
       }
       report += '.';
+      if (requiredMissing.length > 0) {
+        const shown = requiredMissing.slice(0, 3).map((field) => field.alternateName || field.name);
+        report += ` ${requiredMissing.length} required field${
+          requiredMissing.length === 1 ? '' : 's'
+        } still empty (${shown.join(', ')}${requiredMissing.length > 3 ? ', …' : ''}).`;
+      }
 
       if (flatten) {
         store.setPercent(55, 'Flattening the form…');
@@ -356,7 +533,7 @@ export default function FormFillMain(): JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [file, fields, flatten, password, values]);
+  }, [file, fields, fillable.length, flatten, password, requiredMissing, values]);
 
   // ── render ────────────────────────────────────────────────────────────────
   if (phase === 'empty') {
@@ -431,6 +608,27 @@ export default function FormFillMain(): JSX.Element {
             {fields.length} field{fields.length === 1 ? '' : 's'} · {fillable.length} fillable
             {requiredMissing.length > 0 ? ` · ${requiredMissing.length} required still empty` : ''}
           </span>
+          {/* Autosave is a promise, so it is stated with its scope and its exit. */}
+          {fillable.length > 0 && (
+            <span
+              className="flex items-center gap-1.5 text-[10px] text-ink-muted"
+              data-form-draft={draftCount}
+              aria-live="polite"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${draftStored ? 'bg-success' : 'bg-ink-muted/40'}`} aria-hidden />
+              {draftSummary(draftCount, draftStored)}
+              {draftCount > 0 && (
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="doodle-chip text-[9px] doodle-chip-inactive"
+                  title="Forget the answers this browser kept and show the file's own values"
+                >
+                  Discard
+                </button>
+              )}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-[10px] text-ink-soft">
@@ -444,8 +642,19 @@ export default function FormFillMain(): JSX.Element {
           </label>
           <button
             type="button"
-            onClick={() => void save()}
-            disabled={saving}
+            onClick={() => {
+              // Pressing save is a statement that the form is finished, which is
+              // the moment required-but-empty fields earn their message.
+              setTouched(new Set(fillable.map((field) => field.name)));
+              void save();
+            }}
+            disabled={saving || fillable.length === 0}
+            title={
+              fillable.length === 0
+                ? 'This PDF has no fillable field to write — use Create PDF Form to add some'
+                : undefined
+            }
+            data-form-save-disabled={fillable.length === 0}
             className="doodle-btn text-[11px] disabled:opacity-50"
           >
             {saving ? 'Saving…' : flatten ? 'Fill, flatten and save' : 'Fill and save'}
@@ -463,6 +672,24 @@ export default function FormFillMain(): JSX.Element {
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* the page, with the widgets over it */}
         <div className="min-h-0 flex-1 overflow-auto bg-cream p-3">
+          {fillable.length === 0 && (
+            /* Empty state with the verb that fills it (NN/g): say what is missing
+               and put the button that adds it right there. */
+            <div className="mx-auto mb-3 flex max-w-md items-center gap-3 rounded-[12px] border border-cream-border bg-white px-3 py-2.5 shadow-doodle">
+              <span className="text-[11px] leading-relaxed text-ink-soft">
+                {fields.length === 0
+                  ? 'This PDF has no form fields, so there is nothing to fill and nothing to save.'
+                  : 'None of this PDF\u2019s fields take a typed value.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => navigateToTool('form-creator')}
+                className="doodle-chip shrink-0 text-[10px] doodle-chip-active"
+              >
+                Add fields
+              </button>
+            </div>
+          )}
           <div className="relative mx-auto w-fit" style={{ lineHeight: 0 }}>
             <div ref={canvasHost} />
             {onThisPage.map((field) => {
@@ -482,6 +709,8 @@ export default function FormFillMain(): JSX.Element {
                     scale={scale}
                     focused={focused === field.name}
                     onFocus={() => setFocused(field.name)}
+                    onBlur={() => markTouched(field.name)}
+                    invalid={showRequired(field, values, touched)}
                     inputId={`ov-${safeId(field.name)}`}
                   />
                 </div>
@@ -509,6 +738,13 @@ export default function FormFillMain(): JSX.Element {
               <p className="px-1 py-3 text-[11px] leading-relaxed text-ink-muted">
                 This document has no AcroForm fields. {xfa ? 'Its form is XFA-only.' : ''} Use Create PDF
                 Form to add fields you can fill here.
+              </p>
+            )}
+            {fields.length > 0 && fillable.length === 0 && (
+              <p className="px-1 py-3 text-[11px] leading-relaxed text-ink-muted">
+                {fields.length} field{fields.length === 1 ? ' is' : 's are'} in this PDF and every one is a
+                signature or a button — nothing here takes a typed answer, so Save is off until there is
+                something to write.
               </p>
             )}
             <ul className="list-none space-y-2 p-0">
@@ -553,8 +789,15 @@ export default function FormFillMain(): JSX.Element {
                       scale={1}
                       focused={focused === field.name}
                       onFocus={() => setFocused(field.name)}
+                      onBlur={() => markTouched(field.name)}
+                      invalid={showRequired(field, values, touched)}
                       inputId={`list-${safeId(field.name)}`}
                     />
+                    {showRequired(field, values, touched) && (
+                      <p className="mt-1 text-[10px] leading-relaxed text-danger" data-form-required={field.name}>
+                        {field.alternateName || field.name} is marked required in this PDF and is still empty.
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}
@@ -687,17 +930,21 @@ interface FieldControlProps {
   scale: number;
   focused: boolean;
   onFocus: () => void;
+  /** The control lost the caret: this field may now report itself. */
+  onBlur?: () => void;
+  /** Required and empty and already touched — `aria-invalid` and the red ring. */
+  invalid?: boolean;
   inputId: string;
 }
 
 function FieldControl(props: FieldControlProps): JSX.Element {
-  const { field, inputId, onChange, onFocus, variant } = props;
+  const { field, inputId, invalid, onBlur, onChange, onFocus, variant } = props;
   const overlay = variant === 'overlay';
   const name = field.alternateName || field.name;
   const base = overlay
     ? 'block h-full w-full rounded-none border bg-white/85 px-0.5 font-body text-ink outline-none focus:bg-white focus:ring-1 focus:ring-accent'
     : 'doodle-input w-full text-[11px]';
-  const border = field.required ? 'border-danger/50' : 'border-ink-muted/40';
+  const border = invalid ? 'border-danger' : field.required ? 'border-danger/50' : 'border-ink-muted/40';
   const text = String(props.value ?? '');
   const fontSize = overlay
     ? `${Math.max(8, Math.min(16, (field.rect.height || 12) * 0.66 * Math.max(0.5, Math.min(2, props.scale))))}px`
@@ -725,8 +972,10 @@ function FieldControl(props: FieldControlProps): JSX.Element {
           <textarea
             id={inputId}
             aria-label={name}
+            aria-invalid={invalid || undefined}
             value={text}
             onFocus={onFocus}
+            onBlur={onBlur}
             onChange={(event) => onChange(event.target.value)}
             maxLength={field.maxLen}
             className={`${base} ${border} resize-none leading-tight`}
@@ -739,8 +988,10 @@ function FieldControl(props: FieldControlProps): JSX.Element {
           id={inputId}
           type="text"
           aria-label={name}
+          aria-invalid={invalid || undefined}
           value={text}
           onFocus={onFocus}
+          onBlur={onBlur}
           onChange={(event) => onChange(event.target.value)}
           maxLength={field.maxLen}
           className={`${base} ${border}`}
@@ -754,8 +1005,10 @@ function FieldControl(props: FieldControlProps): JSX.Element {
             id={inputId}
             type="checkbox"
             aria-label={name}
+            aria-invalid={invalid || undefined}
             checked={props.value === true || props.value === 'true'}
             onFocus={onFocus}
+            onBlur={onBlur}
             onChange={(event) => onChange(event.target.checked)}
             className="h-3.5 w-3.5 accent-[#2563EB]"
           />
@@ -770,8 +1023,10 @@ function FieldControl(props: FieldControlProps): JSX.Element {
             id={inputId}
             type="text"
             aria-label={`${name} (export value)`}
+            aria-invalid={invalid || undefined}
             value={text}
             onFocus={onFocus}
+            onBlur={onBlur}
             onChange={(event) => onChange(event.target.value)}
             className={`${base} ${border}`}
             placeholder={overlay ? '' : 'export value'}
@@ -797,6 +1052,7 @@ function FieldControl(props: FieldControlProps): JSX.Element {
                 value={option}
                 checked={text === option}
                 onFocus={onFocus}
+                onBlur={onBlur}
                 onChange={() => onChange(option)}
                 className="h-3 w-3 shrink-0 accent-[#2563EB]"
               />
@@ -814,8 +1070,10 @@ function FieldControl(props: FieldControlProps): JSX.Element {
         <select
           id={inputId}
           aria-label={name}
+          aria-invalid={invalid || undefined}
           value={text}
           onFocus={onFocus}
+          onBlur={onBlur}
           onChange={(event) => onChange(event.target.value)}
           className={`${base} ${border}`}
           style={fontSize ? { fontSize } : undefined}

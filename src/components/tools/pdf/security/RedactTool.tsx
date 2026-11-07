@@ -16,6 +16,7 @@ import { reportMarks } from '@/components/tools/pdf/editor/placement';
 import {
   getRedactState, setRedactColor,
   removeRedaction, selectRedaction, getRedactPageSize, subscribeRedact,
+  redactionRegions,
 } from './RedactMain';
 
 export function RedactTool() {
@@ -46,19 +47,14 @@ export function RedactTool() {
   const handleProcess = useCallback(() => {
     if (!report.valid) return;
     const pageSize = getRedactPageSize();
-    void run({
-      // The registry's region list: 0-based page, points in PDF user space with
-      // `y` measured from the bottom — the frame the pane already stores.
-      regions: report.usable.map((r) => ({
-        page: r.page - 1,
-        x: Math.round(r.x * pageSize.width),
-        y: Math.round(r.y * pageSize.height),
-        width: Math.round(r.w * pageSize.width),
-        height: Math.round(r.h * pageSize.height),
-      })),
-      fill: st.color,
-    });
+    // One region per snapped line, so the engine deletes the words and leaves the
+    // leading between them alone. An area mark (Shift-drag) is its own one region.
+    const regions = report.usable.flatMap((r) => redactionRegions(r, pageSize));
+    void run({ regions, fill: st.color });
   }, [report.usable, run, st.color]);
+
+  /** How many separate areas the marks below actually cover. */
+  const regionCount = st.redactions.reduce((total, r) => total + (r.lines?.length ?? 1), 0);
 
   const pageCounts = new Map<number, number>();
   for (const r of st.redactions) {
@@ -76,15 +72,16 @@ export function RedactTool() {
 
       {/* Warning */}
       <motion.div variants={scaleIn} className="rounded-[12px] border border-danger/25 bg-danger/[0.07] p-2.5 space-y-1">
-        <p className="text-[10px] font-semibold text-danger">⚠ Permanent Redaction</p>
+        <p className="text-[10px] font-semibold text-danger">Permanent redaction</p>
         <p className="text-[10px] text-ink-soft leading-relaxed">
-          This draws opaque rectangles over sensitive content and flattens the PDF. Redacted data cannot be recovered.
+          Each marked area is deleted from the page and filled over. Redacted data cannot be recovered afterwards,
+          even by selecting the text in the result.
         </p>
       </motion.div>
 
       {/* Color */}
       <motion.div variants={fadeUp}>
-        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Redaction Color</label>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">Redaction colour</label>
         <input type="color" value={st.color}
           onChange={(e) => setRedactColor(e.target.value)}
           className="w-full h-6 rounded-[10px] bg-cream border border-cream-border mt-1 cursor-pointer" />
@@ -92,7 +89,16 @@ export function RedactTool() {
 
       {/* Instructions */}
       <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">
-        <strong>Drag</strong> on the PDF preview to draw redaction rectangles. Click a rectangle to select it, then press <strong>Delete</strong> or use the list below to remove it.
+        <strong>Drag across words</strong> on the preview: the box snaps to each text line and one mark is created
+        covering them. A drag over empty paper marks nothing. Hold <strong>Shift</strong> to cover an area with no
+        text, click a mark to select it, then <strong>Delete</strong> removes it, the arrows nudge it and{' '}
+        <strong>Ctrl/Cmd-D</strong> duplicates it.
+      </motion.p>
+
+      {/* Destroy, not cover: the claim the run has to be able to keep. */}
+      <motion.p variants={scaleIn} className="text-[10px] leading-relaxed text-ink-muted" data-redact-proof>
+        {regionCount} area{regionCount === 1 ? '' : 's'} will be deleted from the page content and painted over —
+        the text underneath is gone from the file, not hidden. Select text in the result to check.
       </motion.p>
 
       {/* Selected info */}
@@ -165,9 +171,15 @@ export function RedactTool() {
                   ${r.id === st.selectedId ? 'bg-accent/[0.06] border border-accent/60 shadow-glow' : 'bg-white border border-cream-border hover:border-[#D5D5CD]'}`}
               >
                 <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: st.color }} />
-                <span className="flex-1">p.{r.page} · {(r.w * 100).toFixed(0)}%×{(r.h * 100).toFixed(0)}%</span>
-                <button onClick={(e) => { e.stopPropagation(); removeRedaction(r.id); }}
-                  className="text-danger hover:text-danger/80 text-xs shrink-0 transition-colors duration-150">✕</button>
+                <span className="flex-1">
+                  p.{r.page} · {r.free ? 'area' : r.lines ? `${r.lines.length} line${r.lines.length === 1 ? '' : 's'}` : 'box'}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeRedaction(r.id); }}
+                  aria-label={`Remove the redaction on page ${r.page}`}
+                  title={`Remove the redaction on page ${r.page}`}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-danger transition-colors duration-150 hover:bg-danger/10 hover:text-danger/80"
+                >✕</button>
               </motion.div>
             ))}
           </div>

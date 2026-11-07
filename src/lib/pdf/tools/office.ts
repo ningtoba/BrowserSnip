@@ -13,7 +13,7 @@
  * converter-side guard in `tools/convert-to`, which refuses a 0-byte upload and
  * a mislabelled file by naming the format the bytes really are.
  */
-import { ToolInputError } from './helpers';
+import { marginField, orientationField, pageSizeField, ToolInputError } from './helpers';
 import {
   blocksResult,
   layoutOptionsFor,
@@ -29,45 +29,11 @@ import {
 
 type Block = import('../core/layout').Block;
 
-const PAGE_FIELD = {
-  key: 'pageSize',
-  label: 'Page size',
-  type: 'select' as const,
-  default: 'a4',
-  group: 'Page',
-  options: [
-    { value: 'a4', label: 'A4' },
-    { value: 'letter', label: 'Letter' },
-    { value: 'legal', label: 'Legal' },
-    { value: 'a3', label: 'A3' },
-    { value: 'a5', label: 'A5' },
-    { value: 'tabloid', label: 'Tabloid' },
-  ],
-};
+const PAGE_FIELD = pageSizeField();
 
-const MARGIN_FIELD = {
-  key: 'margin',
-  label: 'Margin',
-  type: 'slider' as const,
-  default: 56,
-  min: 0,
-  max: 144,
-  step: 2,
-  unit: 'pt',
-  group: 'Page',
-};
+const MARGIN_FIELD = marginField();
 
-const ORIENTATION_FIELD = {
-  key: 'orientation',
-  label: 'Orientation',
-  type: 'segmented' as const,
-  default: 'portrait',
-  group: 'Page',
-  options: [
-    { value: 'portrait', label: 'Portrait' },
-    { value: 'landscape', label: 'Landscape' },
-  ],
-};
+const ORIENTATION_FIELD = orientationField();
 
 /** What a document must sniff as before the reader is allowed to parse it. */
 const OPC: { kinds: SourceKind[]; label: string; hint?: string } = {
@@ -186,12 +152,14 @@ export const officeTools: PdfToolDefinition[] = [
         label: 'Slide aspect',
         type: 'select',
         default: '16:9',
+        group: 'Slide',
+        help: 'The output page shape, not the deck’s own: the slide text is re-flowed into whatever aspect you choose.',
         options: [
           { value: '16:9', label: '16:9 (960 × 540)' },
           { value: '4:3', label: '4:3 (720 × 540)' },
         ],
       },
-      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, integer: true, unit: 'pt' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, step: 1, integer: true, unit: 'pt', group: 'Slide', help: 'White border kept around the re-flowed slide text so a printed copy is not edge-to-edge ink.' },
     ],
     async run(context) {
       const input = await readPrimarySource(context, OPC);
@@ -278,7 +246,9 @@ export const officeTools: PdfToolDefinition[] = [
       'Cover images, epigraphs, verse indentation, footnotes, annotations and binary inclusions are not reproduced.',
       LAYOUT_LOSS,
     ],
-    fields: [PAGE_FIELD, MARGIN_FIELD, { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page' }],
+    fields: [PAGE_FIELD, MARGIN_FIELD, { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page',
+        help: 'Numbers the sheets this converter produces, which will not match the original book’s pagination.',
+      }],
     async run(context) {
       const input = await readPrimarySource(context, {
         kinds: ['text'],
@@ -312,7 +282,7 @@ const LEGACY_ONLY: {
     name: 'MOBI to PDF',
     label: 'MOBI',
     accept: '.mobi,.azw,.azw3',
-    hint: 'Re-save the book as EPUB (Calibre does this in one click), which BrowserSnip converts entirely in the tab.',
+    hint: 'Re-save the book as EPUB — Calibre exports it directly — which BrowserSnip converts entirely in the tab.',
   },
   {
     id: 'pages-to-pdf',
@@ -370,6 +340,7 @@ export const legacyOfficeTools: PdfToolDefinition[] = LEGACY_ONLY.map((entry) =>
   surface: 'none' as const,
   outputSuffix: `_${entry.id.replace('-to-pdf', '')}.pdf`,
   promise: `Listed so the capability is findable. ${entry.label} is not converted offline — the notes name a format that is.`,
+  actionLabel: 'Convert',
   notes: [
     `Needs a full office-suite decoder. ${entry.hint}`,
     'Text and images in the container are not read here, so nothing is quietly substituted: the run is refused before any page is written.',

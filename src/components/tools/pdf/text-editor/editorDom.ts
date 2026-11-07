@@ -79,6 +79,71 @@ export function readParagraphs(root: HTMLElement): DocParagraph[] {
   return paragraphsFromDom(Array.from(root.childNodes).map(toDomNode).filter((node): node is DomNode => node !== null));
 }
 
+/**
+ * Put the caret in the editing box, optionally typing one character first.
+ *
+ * Opening a block has to land the user *in* the text: a contenteditable that is
+ * rendered but never focused means the first keystroke goes to the page and hits
+ * a shortcut instead. `insert` is what carries the key that started the edit
+ * (typing over a selected block) into the box rather than losing it. When the
+ * host has no usable caret — a headless DOM, or a selection outside this box —
+ * the character is appended to the last block so it still reaches the model.
+ */
+export function focusEditor(root: HTMLElement, insert?: string): void {
+  root.focus({ preventScroll: true });
+  placeCaretAtEnd(root);
+  if (insert) insertText(root, insert);
+}
+
+/** The last piece of text in the box: where typing continues from. */
+function lastTextNode(root: Node): Text | null {
+  if (typeof document.createTreeWalker !== 'function') return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let found: Text | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) found = node as Text;
+  return found;
+}
+
+function placeCaretAtEnd(root: HTMLElement): void {
+  if (typeof document.createRange !== 'function') return;
+  const selection = typeof window === 'undefined' ? null : window.getSelection?.() ?? null;
+  if (!selection) return;
+  const range = document.createRange();
+  const tail = lastTextNode(root);
+  if (tail) {
+    range.setStart(tail, tail.data.length);
+    range.collapse(true);
+  } else {
+    range.selectNodeContents(root);
+    range.collapse(false);
+  }
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/**
+ * Put one character at the caret, or at the end of the box when the host has no
+ * usable selection. Either way the keystroke that opened the block is kept —
+ * losing it is what makes "type over a selection" feel broken.
+ */
+function insertText(root: HTMLElement, text: string): void {
+  const selection = typeof window === 'undefined' ? null : window.getSelection?.() ?? null;
+  const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  if (range && root.contains(range.startContainer)) {
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStartAfter(node);
+    after.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(after);
+    return;
+  }
+  const tail = lastTextNode(root);
+  if (tail) tail.data = `${tail.data}${text}`;
+  else root.append(document.createTextNode(text));
+}
+
 function toDomNode(node: Node): DomNode | null {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent ?? '';

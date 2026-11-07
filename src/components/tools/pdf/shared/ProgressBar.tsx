@@ -34,8 +34,14 @@ export function ProgressBar({
   className = '',
 }: ProgressBarProps) {
   const value = Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+  // Assistive tech reads `aria-valuetext`, not the styled numbers next to the
+  // track, so the stage name has to be in here too — otherwise a screen-reader
+  // user hears "40%" with no idea 40 of what.
+  const valueText = indeterminate
+    ? message ?? 'Working, no time estimate yet'
+    : `${Math.round(value)}%${message ? ` — ${message}` : ''}`;
   return (
-    <div className={`space-y-1 ${className}`} data-progress={Math.round(value)}>
+    <div className={`space-y-1 ${className}`} data-progress={indeterminate ? 'unknown' : Math.round(value)}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
           {label ?? (indeterminate ? 'Working' : `${Math.round(value)}%`)}
@@ -47,9 +53,12 @@ export function ProgressBar({
       <div
         role="progressbar"
         aria-valuenow={indeterminate ? undefined : Math.round(value)}
-        aria-valuemin={0}
-        aria-valuemax={100}
+        aria-valuemin={indeterminate ? undefined : 0}
+        aria-valuemax={indeterminate ? undefined : 100}
+        aria-valuetext={valueText}
+        aria-busy={indeterminate || undefined}
         aria-label={label ?? 'Progress'}
+        data-indeterminate={indeterminate || undefined}
         className="h-1.5 w-full overflow-hidden rounded-full bg-cream-border"
       >
         <div

@@ -19,6 +19,7 @@ import {
   pdfQuadFromViewportBox,
   pdfRectFromViewportBox,
   pointsToPairList,
+  quadsToPoints,
   screenToPdfPoint,
   screenToPdfRect,
   translateLineEnds,
@@ -283,6 +284,154 @@ export function withText(
   return annotation.kind === 'Text'
     ? { ...annotation, contents: text }
     : { ...annotation, text };
+}
+
+/* ------------------------------------------------------------------ *
+ * Nudge, duplicate, resize                                            *
+ * ------------------------------------------------------------------ */
+
+/** Corner handles, named by the screen edge they sit on (`nw` = top-left). */
+export type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
+
+export const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'ne', 'sw', 'se'];
+
+/** Direction-correct cursor, so the pointer says which way the corner pulls. */
+export function handleCursor(handle: ResizeHandle): string {
+  return handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize';
+}
+
+/** Drawn size and grabbable size, in screen px: small to see, easy to catch. */
+export const HANDLE_SIZE_PX = 10;
+export const HANDLE_HIT_PX = 22;
+
+/** Screen-space position of one handle for a mark at the current geometry. */
+export function handlePoint(rect: QuadRect, handle: ResizeHandle): { x: number; y: number } {
+  const west = rect.x;
+  const east = rect.x + rect.width;
+  // PDF space grows upward, so `n` is the larger y.
+  const south = rect.y;
+  const north = rect.y + rect.height;
+  const x = handle.includes('w') ? west : east;
+  const y = handle.includes('n') ? north : south;
+  return { x, y };
+}
+
+/**
+ * Pull one corner of a mark, in PDF user space.
+ *
+ * Every point list travels with the box: a resized highlight keeps one quad per
+ * line (each quad is mapped from the old box onto the new one), so a mark that
+ * hugged two text lines still hugs two text lines after a resize instead of
+ * collapsing to a rectangle. A corner can never cross its opposite: the box
+ * keeps at least `MIN_SIZE_PT` of both extents.
+ */
+export const MIN_SIZE_PT = 1;
+
+export function resizeAnnotation(
+  annotation: EditorAnnotation,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+): EditorAnnotation {
+  const old = annotation.rect;
+  let west = old.x;
+  let south = old.y;
+  let east = old.x + old.width;
+  let north = old.y + old.height;
+  if (handle.includes('w')) west = Math.min(west + dx, east - MIN_SIZE_PT);
+  if (handle.includes('e')) east = Math.max(east + dx, west + MIN_SIZE_PT);
+  if (handle.includes('n')) north = Math.max(north + dy, south + MIN_SIZE_PT);
+  if (handle.includes('s')) south = Math.min(south + dy, north - MIN_SIZE_PT);
+  const next: QuadRect = { x: west, y: south, width: east - west, height: north - south };
+  const sx = old.width > 0 ? next.width / old.width : 1;
+  const sy = old.height > 0 ? next.height / old.height : 1;
+  const mapX = (value: number) => round(next.x + (value - old.x) * sx);
+  const mapY = (value: number) => round(next.y + (value - old.y) * sy);
+  return {
+    ...annotation,
+    rect: {
+      x: round(next.x),
+      y: round(next.y),
+      width: round(next.width),
+      height: round(next.height),
+    },
+    ...(annotation.quadPoints
+      ? { quadPoints: annotation.quadPoints.map((value, index) => (index % 2 === 0 ? mapX(value) : mapY(value))) }
+      : {}),
+    ...(annotation.inkPath
+      ? { inkPath: annotation.inkPath.map((stroke) => stroke.map(([x, y]) => [mapX(x), mapY(y)])) }
+      : {}),
+    ...(annotation.lineEnds
+      ? {
+          lineEnds: [
+            mapX(annotation.lineEnds[0]),
+            mapY(annotation.lineEnds[1]),
+            mapX(annotation.lineEnds[2]),
+            mapY(annotation.lineEnds[3]),
+          ] as [number, number, number, number],
+        }
+      : {}),
+  };
+}
+
+const MARKUP_KINDS = new Set<AnnotationKind>(['Highlight', 'Underline', 'StrikeOut', 'Squiggly']);
+
+/**
+ * The topmost text-markup mark covering a PDF-space point, or `null`.
+ *
+ * A click with a markup tool has two honest readings, and the difference is what
+ * the user is complaining about when they say a highlight "starts another box".
+ * If the gesture is a click and an existing mark covers that point, the click
+ * *selects that mark*; only a click on bare paper starts a new one. Quads are
+ * consulted before the bounding rect, so a multi-line highlight is picked up by a
+ * line it actually covers rather than by the empty leading between them.
+ */
+export function markAtPoint(
+  annotations: readonly EditorAnnotation[],
+  page: number,
+  point: Point,
+): EditorAnnotation | null {
+  const marks = annotations.filter((a) => a.page === page && MARKUP_KINDS.has(a.kind));
+  for (let index = marks.length - 1; index >= 0; index -= 1) {
+    const mark = marks[index];
+    const quads = mark.quadPoints ?? [];
+    if (quads.length >= 8) {
+      const boxes: QuadRect[] = [];
+      for (let at = 0; at + 7 < quads.length; at += 8) {
+        boxes.push(boundsOfPoints(quadsToPoints(quads.slice(at, at + 8))));
+      }
+      if (boxes.some((box) => containsPoint(box, point))) return mark;
+      continue;
+    }
+    if (containsPoint(mark.rect, point)) return mark;
+  }
+  return null;
+}
+
+function containsPoint(rect: QuadRect, point: Point): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/** How far a duplicate sits from its original, in PDF points. */
+export const DUPLICATE_OFFSET_PT = 10;
+
+/**
+ * A copy of a mark, offset so both are visible, carrying a fresh id so undo,
+ * the layer list and React keys treat them as the two objects they are.
+ */
+export function duplicateAnnotation(
+  annotation: EditorAnnotation,
+  offset: { dx?: number; dy?: number } = {},
+): EditorAnnotation {
+  const dx = offset.dx ?? DUPLICATE_OFFSET_PT;
+  const dy = offset.dy ?? -DUPLICATE_OFFSET_PT;
+  const moved = moveAnnotation(annotation, dx, dy);
+  return { ...moved, id: nextAnnotationId(), createdAt: Date.now() };
 }
 
 /**

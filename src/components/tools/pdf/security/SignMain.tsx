@@ -66,11 +66,18 @@ export function removeSigItem(id: string) {
   if (_state.selectedId === id) _state.selectedId = _state.items[_state.items.length - 1]?.id ?? null; notify();
 }
 export function selectSigItem(id: string | null) { _state.selectedId = id; notify(); }
+let _sigSeq = 1;
+export function nextSigId(): string { return `sig-${_sigSeq++}`; }
 export function subscribeSign(fn: () => void) { _listeners.add(fn); return () => { _listeners.delete(fn); }; }
 
 // ═══════════════════ Constants ═══════════════════
 
+/** Keyboard step for the selected mark, in points. */
+const NUDGE_PT = 1;
+const NUDGE_BIG_PT = 10;
 const HANDLE_SIZE = 10;
+/** Invisible grab room around each handle, so the target is 22 px. */
+const HANDLE_SLOP = 6;
 const MIN_ITEM_W = 30;
 const MIN_ITEM_H = 14;
 
@@ -163,6 +170,13 @@ export function SignMain() {
 
   // ── Keyboard ────────────────────────────────────────────
 
+  /**
+   * Arrow nudge, duplicate, delete and deselect for the selected mark.
+   *
+   * Dragging is the obvious gesture, but it is the only one a keyboard user gets
+   * unless these exist: 1 pt with an arrow, 10 pt with Shift, Ctrl/Cmd-D to place
+   * another copy of the same signature, Escape to let go of it.
+   */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -170,6 +184,35 @@ export function SignMain() {
         if (_state.selectedId) removeSigItem(_state.selectedId);
       }
       if (e.key === 'Escape') selectSigItem(null);
+      const item = _state.items.find((s) => s.id === _state.selectedId);
+      if (!item) return;
+      if ((e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        addSigItem({
+          id: nextSigId(),
+          type: item.type,
+          text: item.text,
+          imageDataUrl: item.imageDataUrl,
+          imageBytes: item.imageBytes,
+          w: item.w,
+          h: item.h,
+          color: item.color,
+          fontFamily: item.fontFamily,
+          x: Math.min(1 - item.w / _pageW, item.x + NUDGE_BIG_PT / Math.max(1, _pageW)),
+          y: Math.min(1 - item.h / _pageH, item.y + NUDGE_BIG_PT / Math.max(1, _pageH)),
+        });
+        return;
+      }
+      if (!e.key.startsWith('Arrow')) return;
+      e.preventDefault();
+      const step = e.shiftKey ? NUDGE_BIG_PT : NUDGE_PT;
+      const dx = (e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0) / Math.max(1, _pageW);
+      // Screen up is PDF up: `y` is the mark's bottom edge in PDF space.
+      const dy = (e.key === 'ArrowDown' ? -step : e.key === 'ArrowUp' ? step : 0) / Math.max(1, _pageH);
+      updateSigItem(item.id, {
+        x: Math.max(0, Math.min(1 - item.w / _pageW, item.x + dx)),
+        y: Math.max(0, Math.min(1 - item.h / _pageH, item.y + dy)),
+      });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -249,11 +292,19 @@ export function SignMain() {
   // ═══════════════════ Helpers ═══════════════════
 
   const handleStyle = (x: number, y: number, cursor: string): React.CSSProperties => ({
-    position: 'absolute', left: x - HANDLE_SIZE / 2, top: y - HANDLE_SIZE / 2,
+    position: 'absolute',
+    left: x - (HANDLE_SIZE + HANDLE_SLOP * 2) / 2,
+    top: y - (HANDLE_SIZE + HANDLE_SLOP * 2) / 2,
+    width: HANDLE_SIZE + HANDLE_SLOP * 2, height: HANDLE_SIZE + HANDLE_SLOP * 2,
+    display: 'grid', placeItems: 'center',
+    cursor, zIndex: 20, background: 'transparent',
+  });
+
+  const handleFace: React.CSSProperties = {
     width: HANDLE_SIZE, height: HANDLE_SIZE,
     background: '#2563EB', border: '2px solid white', borderRadius: 2,
-    cursor, zIndex: 20, boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
-  });
+    boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
+  };
 
   // ═══════════════════ Render ═══════════════════
 
@@ -319,6 +370,8 @@ export function SignMain() {
                   return (
                     <div key={item.id}
                       onMouseDown={(e) => onItemDragStart(e, item.id)}
+                      data-sign-placement
+                      aria-label={`${item.type === 'text' ? 'Typed signature' : item.type === 'image' ? 'Signature image' : 'Drawn signature'} on page ${item.page}`}
                       className={`absolute border-2 rounded select-none cursor-move ${borderColor} ${isSelected ? selBg : 'bg-transparent'}`}
                       style={{ left: vpX, top: vpY - vpH, width: vpW, height: vpH, zIndex: isSelected ? 15 : 12 }}
                     >
@@ -358,14 +411,14 @@ export function SignMain() {
                       {/* Resize handles */}
                       {isSelected && (
                         <>
-                          <div style={handleStyle(0, 0, 'nw-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'nw')} />
-                          <div style={handleStyle(vpW, 0, 'ne-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'ne')} />
-                          <div style={handleStyle(0, vpH, 'sw-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'sw')} />
-                          <div style={handleStyle(vpW, vpH, 'se-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'se')} />
-                          <div style={handleStyle(vpW / 2, 0, 'n-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'n')} />
-                          <div style={handleStyle(vpW / 2, vpH, 's-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 's')} />
-                          <div style={handleStyle(0, vpH / 2, 'w-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'w')} />
-                          <div style={handleStyle(vpW, vpH / 2, 'e-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'e')} />
+                          <div data-sig-handle="nw" style={handleStyle(0, 0, 'nwse-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'nw')}><div style={handleFace} /></div>
+                          <div data-sig-handle="ne" style={handleStyle(vpW, 0, 'nesw-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'ne')}><div style={handleFace} /></div>
+                          <div data-sig-handle="sw" style={handleStyle(0, vpH, 'nesw-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'sw')}><div style={handleFace} /></div>
+                          <div data-sig-handle="se" style={handleStyle(vpW, vpH, 'nwse-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'se')}><div style={handleFace} /></div>
+                          <div data-sig-handle="n" style={handleStyle(vpW / 2, 0, 'ns-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'n')}><div style={handleFace} /></div>
+                          <div data-sig-handle="s" style={handleStyle(vpW / 2, vpH, 'ns-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 's')}><div style={handleFace} /></div>
+                          <div data-sig-handle="w" style={handleStyle(0, vpH / 2, 'ew-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'w')}><div style={handleFace} /></div>
+                          <div data-sig-handle="e" style={handleStyle(vpW, vpH / 2, 'ew-resize')} onMouseDown={(e) => onHandleStart(e, item.id, 'e')}><div style={handleFace} /></div>
                         </>
                       )}
                     </div>

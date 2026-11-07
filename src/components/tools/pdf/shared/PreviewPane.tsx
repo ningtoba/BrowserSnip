@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PdfSession } from '@/lib/pdf/core/render';
 import { EmptyState } from './EmptyState';
+import { FOCUS_RING } from './focusRing';
 
 export interface PreviewPaneProps {
   /** Document to show. `null` renders the empty state. */
@@ -28,6 +29,20 @@ interface PageSize {
   rotation: number;
 }
 
+/** How the page is scaled when the user is not asking for a number. */
+type FitMode = 'width' | 'page' | 'custom';
+
+/**
+ * Where the bar should sit after a zoom that keeps a point still.
+ *
+ * `(scroll + offset) * ratio - offset` holds the content pixel under the cursor
+ * at the same viewport offset, which is what "zoom to the cursor" means. With a
+ * factor of 1 it returns the offset it was given.
+ */
+export function zoomAnchorScroll(scroll: number, cursorOffset: number, ratio: number): number {
+  return Math.round((scroll + cursorOffset) * ratio - cursorOffset);
+}
+
 /**
  * The workspace's job: a real page preview with zoom/fit, a stepper, rotation,
  * and a split comparison for transform tools.
@@ -46,13 +61,15 @@ export function PreviewPane({
   const total = session?.numPages ?? 0;
   const [inner, setInner] = useState(1);
   const [zoomPct, setZoomPct] = useState(100);
-  const [fit, setFit] = useState(true);
+  const [mode, setMode] = useState<FitMode>('width');
   const [spin, setSpin] = useState(0);
   const [split, setSplit] = useState(50);
   const [size, setSize] = useState<PageSize | null>(null);
-  const [stageWidth, setStageWidth] = useState(0);
+  const [stageBox, setStageBox] = useState({ width: 0, height: 0 });
   const [notice, setNotice] = useState<string | null>(null);
   const stage = useRef<HTMLDivElement | null>(null);
+  /** Set by a cursor-anchored zoom, applied once the new size is in the DOM. */
+  const keepPoint = useRef<{ x: number; y: number; ratio: number } | null>(null);
 
   const current = Math.max(1, Math.min(page ?? inner, Math.max(total, 1)));
 
@@ -75,9 +92,13 @@ export function PreviewPane({
     [onPageChange, page, total],
   );
 
-  // Measure the stage so "fit width" is a real number, not a guess.
+  // Measure the stage so "fit width" and "fit page" are real numbers, not guesses.
   useEffect(() => {
-    const measure = () => setStageWidth(stage.current?.clientWidth ?? 0);
+    const measure = () =>
+      setStageBox({
+        width: stage.current?.clientWidth ?? 0,
+        height: stage.current?.clientHeight ?? 0,
+      });
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
@@ -105,14 +126,115 @@ export function PreviewPane({
   }, [current, session, total]);
 
   const fitScale = useMemo(() => {
-    if (!size || stageWidth <= 0) return 1;
-    return Math.max(0.1, Math.min(4, stageWidth / size.width));
-  }, [size, stageWidth]);
+    if (!size || stageBox.width <= 0) return 1;
+    const across = stageBox.width / size.width;
+    // Fit page also divides by the height, which is what stops a tall page from
+    // running off the pane and hiding the stepper's answer.
+    const down = mode === 'page' && stageBox.height > 0 ? stageBox.height / size.height : Infinity;
+    return Math.max(0.1, Math.min(4, Math.min(across, down)));
+  }, [mode, size, stageBox]);
 
-  const scale = fit ? fitScale : zoomPct / 100;
+  const scale = mode === 'custom' ? zoomPct / 100 : fitScale;
   const shownPct = Math.max(minZoom, Math.min(maxZoom, Math.round(scale * 100)));
 
-  const step = (delta: number) => setZoomPct(Math.max(minZoom, Math.min(maxZoom, Math.round((fit ? fitScale : zoomPct / 100) * 100 + delta))));
+  const step = (delta: number) => zoomAt((mode === 'custom' ? zoomPct : Math.round(scale * 100)) + delta, null);
+
+  /**
+   * Zoom by a step, keeping the content point at `offset` of the pane still.
+   *
+   * `offset` is `null` for a keyboard or button zoom, which keeps the centre of
+   * the view instead. The scroll is corrected in the layout effect below,
+   * because the new page size does not exist until the DOM has it.
+   */
+  const zoomAt = useCallback(
+    (to: number, offset: { x: number; y: number } | null) => {
+      const from = mode === 'custom' ? zoomPct : Math.round(scale * 100);
+      const next = Math.max(minZoom, Math.min(maxZoom, to));
+      if (next === from) return;
+      const el = stage.current;
+      const point = offset ?? {
+        x: (el?.clientWidth ?? 0) / 2,
+        y: (el?.scrollTop ?? 0) + 1,
+      };
+      keepPoint.current = { x: point.x, y: point.y, ratio: next / from };
+      setMode('custom');
+      setZoomPct(next);
+    },
+    [maxZoom, minZoom, mode, scale, zoomPct],
+  );
+
+  // Put the scroll back where the cursor was, after the new page size is real.
+  useLayoutEffect(() => {
+    const plan = keepPoint.current;
+    const el = stage.current;
+    if (!plan || !el) return;
+    keepPoint.current = null;
+    el.scrollLeft = zoomAnchorScroll(el.scrollLeft, plan.x, plan.ratio);
+    el.scrollTop = zoomAnchorScroll(el.scrollTop, plan.y, plan.ratio);
+  }, [scale]);
+
+  // Ctrl/Cmd + wheel is zoom-to-cursor everywhere else in this app's family
+  // (pdf.js viewer, Figma); a plain wheel stays a scroll. Registered natively
+  // rather than through `onWheel` because React's wheel listeners are passive,
+  // and a gesture that cannot call `preventDefault` also zooms the whole tab.
+  const zoomFromWheel = useCallback(
+    (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || total === 0) return;
+      const el = stage.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const from = mode === 'custom' ? zoomPct : Math.round(scale * 100);
+      event.preventDefault();
+      zoomAt(from + (event.deltaY < 0 ? 25 : -25), {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    },
+    [mode, scale, total, zoomAt, zoomPct],
+  );
+
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    el.addEventListener('wheel', zoomFromWheel, { passive: false });
+    return () => el.removeEventListener('wheel', zoomFromWheel);
+  }, [zoomFromWheel]);
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Page turning is suppressed while a field has the caret: arrows inside the
+    // page box or the split slider belong to that control.
+    const target = event.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+    const keys: Record<string, () => void> = {
+      ArrowRight: () => goTo(current + 1),
+      PageDown: () => goTo(current + 1),
+      ArrowLeft: () => goTo(current - 1),
+      PageUp: () => goTo(current - 1),
+      Home: () => goTo(1),
+      End: () => goTo(total),
+      '+': () => step(25),
+      '=': () => step(25),
+      '-': () => step(-25),
+      _: () => step(-25),
+      '0': () => setMode('width'),
+      '1': () => {
+        setMode('custom');
+        setZoomPct(100);
+      },
+    };
+    const move = keys[event.key];
+    if (!move || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    move();
+  };
 
   if (!session || total === 0) {
     return (
@@ -135,7 +257,7 @@ export function PreviewPane({
             title="Previous page"
             disabled={current <= 1}
             onClick={() => goTo(current - 1)}
-            className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] disabled:opacity-40"
+            className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] disabled:opacity-40 ${FOCUS_RING}`}
           >
             ‹
           </button>
@@ -155,7 +277,7 @@ export function PreviewPane({
             title="Next page"
             disabled={current >= total}
             onClick={() => goTo(current + 1)}
-            className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] disabled:opacity-40"
+            className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] disabled:opacity-40 ${FOCUS_RING}`}
           >
             ›
           </button>
@@ -167,11 +289,8 @@ export function PreviewPane({
           type="button"
           aria-label="Zoom out"
           title="Zoom out"
-          onClick={() => {
-            setFit(false);
-            step(-25);
-          }}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px]"
+          onClick={() => step(-25)}
+          className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] ${FOCUS_RING}`}
         >
           −
         </button>
@@ -182,28 +301,44 @@ export function PreviewPane({
           type="button"
           aria-label="Zoom in"
           title="Zoom in"
-          onClick={() => {
-            setFit(false);
-            step(25);
-          }}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px]"
+          onClick={() => step(25)}
+          className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] ${FOCUS_RING}`}
         >
           +
         </button>
         <button
           type="button"
-          onClick={() => setFit(true)}
-          className={`doodle-chip w-auto px-2 py-1 text-[10px] ${fit ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
+          aria-pressed={mode === 'width'}
+          title="Fit the page width to the pane (0)"
+          onClick={() => setMode('width')}
+          className={`doodle-chip w-auto px-2 py-1 text-[10px] ${
+            mode === 'width' ? 'doodle-chip-active' : 'doodle-chip-inactive'
+          } ${FOCUS_RING}`}
         >
           Fit width
         </button>
         <button
           type="button"
+          aria-pressed={mode === 'page'}
+          title="Fit the whole page in the pane"
+          onClick={() => setMode('page')}
+          className={`doodle-chip w-auto px-2 py-1 text-[10px] ${
+            mode === 'page' ? 'doodle-chip-active' : 'doodle-chip-inactive'
+          } ${FOCUS_RING}`}
+        >
+          Fit page
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'custom' && zoomPct === 100}
+          title="Show the page at 1:1 (1)"
           onClick={() => {
-            setFit(false);
+            setMode('custom');
             setZoomPct(100);
           }}
-          className={`doodle-chip w-auto px-2 py-1 text-[10px] ${!fit && zoomPct === 100 ? 'doodle-chip-active' : 'doodle-chip-inactive'}`}
+          className={`doodle-chip w-auto px-2 py-1 text-[10px] ${
+            mode === 'custom' && zoomPct === 100 ? 'doodle-chip-active' : 'doodle-chip-inactive'
+          } ${FOCUS_RING}`}
         >
           Actual size
         </button>
@@ -215,7 +350,7 @@ export function PreviewPane({
           aria-label="Rotate preview left"
           title="Rotate preview left"
           onClick={() => setSpin((s) => (s + 270) % 360)}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px]"
+          className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] ${FOCUS_RING}`}
         >
           ⟲
         </button>
@@ -224,19 +359,32 @@ export function PreviewPane({
           aria-label="Rotate preview right"
           title="Rotate preview right"
           onClick={() => setSpin((s) => (s + 90) % 360)}
-          className="doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px]"
+          className={`doodle-chip doodle-chip-inactive w-auto px-2 py-1 text-[11px] ${FOCUS_RING}`}
         >
           ⟳
         </button>
       </div>
 
       {notice && (
-        <p className="rounded-doodle-md border border-warn/25 bg-warn/5 px-2 py-1 text-[10px] leading-relaxed text-warn">
+        <p
+          role="status"
+          className="rounded-doodle-md border border-warn/25 bg-warn/5 px-2 py-1 text-[10px] leading-relaxed text-warn"
+        >
           {notice}
         </p>
       )}
 
-      <div ref={stage} className="relative min-h-0 flex-1 overflow-auto rounded-doodle-md border border-cream-border bg-cream-soft p-3">
+      <div
+        ref={stage}
+        tabIndex={0}
+        role="group"
+        aria-label="Page preview"
+        aria-describedby="preview-keys"
+        data-fit={mode}
+        data-zoom={shownPct}
+        onKeyDown={onKeyDown}
+        className={`relative min-h-0 flex-1 overflow-auto rounded-doodle-md border border-cream-border bg-cream-soft p-3 ${FOCUS_RING}`}
+      >
         {after ? (
           <div className="relative mx-auto" style={{ maxWidth: size ? size.width * scale : undefined }}>
             <PageCanvas session={after} page={current} scale={scale} spin={spin} label="After" fileName={fileName} />
@@ -263,12 +411,19 @@ export function PreviewPane({
         )}
       </div>
 
-      <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
+      <p id="preview-keys" className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
         {size
           ? `${Math.round(size.width)} × ${Math.round(size.height)} pt${size.rotation ? ` · page /Rotate ${size.rotation}` : ''}`
           : 'Page size unknown'}
         {' · '}
         {after ? 'before / after' : 'rendered on this device'}
+        {' · '}
+        ← → turn pages, + − zoom, Ctrl + scroll zooms to the cursor
+      </p>
+
+      {/* The page and its scale, said out loud for whoever cannot see the pane. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {`Page ${current} of ${total}${mode === 'custom' ? `, ${shownPct} per cent` : `, ${mode === 'page' ? 'fit to page' : 'fit to width'}`}`}
       </p>
     </div>
   );
@@ -287,16 +442,25 @@ interface PageCanvasProps {
 function PageCanvas({ session, page, scale, spin, label, fileName }: PageCanvasProps) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A page that has not been painted yet is a dashed tile with a number in it,
+  // never a white rectangle: on a 500-page document the pane sat blank while
+  // pdf.js worked, which read as a crash (E7).
+  const [drawing, setDrawing] = useState(true);
 
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
     let alive = true;
     setError(null);
+    setDrawing(true);
     session
       .renderToCanvas(page, element, Math.max(0.1, scale))
+      .then(() => {
+        if (alive) setDrawing(false);
+      })
       .catch((err: unknown) => {
         if (!alive) return;
+        setDrawing(false);
         setError(err instanceof Error ? err.message : 'Could not draw this page.');
       });
     return () => {
@@ -305,13 +469,26 @@ function PageCanvas({ session, page, scale, spin, label, fileName }: PageCanvasP
   }, [page, scale, session]);
 
   return (
-    <div className="relative flex justify-center">
+    <div
+      className="relative flex justify-center"
+      data-canvas-state={error ? 'error' : drawing ? 'rendering' : 'ready'}
+    >
       <canvas
         ref={canvas}
         aria-label={label ? `${label} preview, page ${page}` : `Page ${page} preview`}
         className="max-w-full rounded border border-cream-border bg-cream-light shadow-doodle"
         style={{ transform: spin ? `rotate(${spin}deg)` : undefined }}
       />
+      {drawing && !error && (
+        <div
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-center rounded border border-dashed border-cream-border bg-cream-soft"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
+            Drawing page {page}
+          </span>
+        </div>
+      )}
       {label && (
         <span className="absolute left-1 top-1 rounded bg-cream-light/85 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
           {label}

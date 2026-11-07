@@ -42,8 +42,9 @@ import {
   type PdfToolDefinition,
 } from './types';
 import {
-  baseName,
+  downloadStem,
   inspectPdf,
+  resolutionField,
   openInputs,
   pdfResult,
   filesResult,
@@ -97,6 +98,38 @@ const CIPHER_OPTIONS = [
   { value: '1', label: 'RC4-40', hint: 'PDF 1.1. Export-restricted-era compatibility.' },
 ];
 
+const PERMISSION_NOTES = [
+  'Permissions are a request, not encryption of what you can see: the PDF standard lets a reader ignore the /P flags, and a tool that ignores the format (or a print-to-PDF pass) removes them entirely.',
+  'The owner password is what unlocks the restrictions. Leave it blank and a random one is generated, so the limits hold but nobody can lift them by name later.',
+];
+
+/** One spelling of the /P permission checkboxes, shared by both panels. */
+function permissionFields(whenSet?: (v: Record<string, unknown>) => boolean) {
+  const shown = whenSet ? { when: whenSet } : {};
+  return [
+    { key: 'allowPrinting', label: 'Allow printing', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Off still prints from the owner password; a reader without it is refused.', ...shown },
+    {
+      key: 'printLevel',
+      label: 'Print quality',
+      type: 'select' as const,
+      default: 'high',
+      group: 'Allowed without the password',
+      options: [
+        { value: 'high', label: 'Any resolution' },
+        { value: 'low', label: 'Low resolution only (150 dpi)' },
+      ],
+      when: (v: Record<string, unknown>) => v.allowPrinting === true && (!whenSet || whenSet(v)),
+      help: 'Low resolution is a hint most readers honour; it is not a downsample, so the full-quality page is still in the file.',
+    },
+    { key: 'allowModifying', label: 'Allow modifying', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Page editing, form-field creation and rotation of the document body. Leave it off for anything already filed or signed.', ...shown },
+    { key: 'allowCopying', label: 'Allow copying text and images', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Text and images a reader may lift out of the file — the permission that stops a contract being pasted elsewhere.', ...shown },
+    { key: 'allowAnnotating', label: 'Allow comments', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Adding or changing annotations, highlights and form-field appearances (the /Annotate flag).', ...shown },
+    { key: 'allowFillingForms', label: 'Allow filling forms', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Typing into the fields that already exist (/QueryForms). Separate from adding comments: a reader may do one and not the other.', ...shown },
+    { key: 'allowAccessibility', label: 'Allow screen readers', type: 'toggle' as const, default: true, group: 'Allowed without the password', help: 'Extract text for assistive technology. Turning this off makes the document unusable to a blind reader and nothing else.', ...shown },
+    { key: 'allowAssembling', label: 'Allow page reorganisation', type: 'toggle' as const, default: false, group: 'Allowed without the password', help: 'Inserting, rotating, deleting or extracting pages and editing bookmarks (/Assemble). Off keeps a filed document in one piece.', ...shown },
+  ];
+}
+
 export const securityTools: PdfToolDefinition[] = [
   {
     id: 'protect',
@@ -106,12 +139,16 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['encrypt', 'password', 'restrict', 'lock'],
     outputSuffix: '_protected.pdf',
+    promise: 'A copy that asks for your password before it opens, with the permissions you ticked written in and read back from the output to prove they landed.',
+    actionLabel: 'Protect',
+    notes: PERMISSION_NOTES,
     fields: [
       {
         key: 'mode',
         label: 'Protection type',
         type: 'segmented',
         default: 'both',
+        group: 'Password',
         options: [
           { value: 'user', label: 'Open password' },
           { value: 'owner', label: 'Permissions only' },
@@ -119,32 +156,17 @@ export const securityTools: PdfToolDefinition[] = [
         ],
         help: 'An open password blocks reading. A permissions-only password lets anyone open the file but restricts printing, copying and editing in readers that honour it.',
       },
-      { key: 'userPassword', label: 'Document open password', type: 'password', when: (v) => v.mode !== 'owner' },
+      { key: 'userPassword', label: 'Open password', type: 'password', group: 'Password', placeholder: 'What a reader types to see the pages', when: (v) => v.mode !== 'owner', help: 'Anyone without it cannot read the document; the bytes are encrypted, so renaming or zipping does not get around it.' },
       {
         key: 'ownerPassword',
-        label: 'Owner / permissions password',
+        label: 'Owner password',
         type: 'password',
+        group: 'Password',
+        placeholder: 'Blank reuses the open password',
         help: 'Leave empty to reuse the open password. A random one is generated if both are blank.',
       },
-      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS },
-      { key: 'allowPrinting', label: 'Allow printing', type: 'toggle', default: true },
-      {
-        key: 'printLevel',
-        label: 'Print quality',
-        type: 'select',
-        default: 'high',
-        options: [
-          { value: 'high', label: 'Any resolution' },
-          { value: 'low', label: 'Low resolution only (150 dpi)' },
-        ],
-        when: (v) => v.allowPrinting === true,
-      },
-      { key: 'allowModifying', label: 'Allow modifying', type: 'toggle', default: true },
-      { key: 'allowCopying', label: 'Allow copying text and images', type: 'toggle', default: true },
-      { key: 'allowAnnotating', label: 'Allow comments and form filling', type: 'toggle', default: true },
-      { key: 'allowFillingForms', label: 'Allow filling existing forms', type: 'toggle', default: true },
-      { key: 'allowAccessibility', label: 'Allow screen readers', type: 'toggle', default: true },
-      { key: 'allowAssembling', label: 'Allow rotating and inserting pages', type: 'toggle', default: false },
+      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
+      ...permissionFields(),
     ],
     validate(values) {
       const mode = stringValue(values, 'mode', 'both');
@@ -212,7 +234,13 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['decrypt', 'remove password', 'open'],
     outputSuffix: '_unlocked.pdf',
-    fields: [{ key: 'password', label: 'Current password', type: 'password', help: 'Either the user or the owner password works.' }],
+    promise: 'The same pages, opening with no password asked — and a refusal to hand back a file that still carries one.',
+    actionLabel: 'Unlock',
+    notes: [
+      'The pages are copied into a fresh document, which is the only reliable way to drop the /Encrypt entry. A file that needs the password just to be read cannot lose it here: unlock it with the open password first.',
+      'Comment drafts, form field values and bookmarks are reported as lost when the rebuild cannot carry them, rather than silently dropped.',
+    ],
+    fields: [{ key: 'password', label: 'Current password', type: 'password', group: 'Password', placeholder: 'The password this file opens with', help: 'Either the user or the owner password works. Leave blank if the file is restricted but readable.' }],
     async run(context) {
       const [input] = await openInputs(context);
       const password = stringValue(context.values, 'password') || context.password || '';
@@ -270,25 +298,28 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['restrict', 'owner password', 'flags'],
     outputSuffix: '_permissions.pdf',
+    promise: 'The printing, copying and editing limits on this file, rewritten — and the result reports what the saved file actually recorded.',
+    actionLabel: 'Change permissions',
+    notes: [
+      'This tool writes the /P dictionary without an open password, so the document still opens freely. Use Protect to make it unreadable without one.',
+      ...PERMISSION_NOTES,
+    ],
     fields: [
-      { key: 'ownerPassword', label: 'Owner password', type: 'password', help: 'Needed when the file is already protected.' },
+      { key: 'ownerPassword', label: 'Owner password', type: 'password', group: 'Password', placeholder: 'Only needed when the file is already protected', help: 'Needed when the file is already protected. Blank on an unprotected file means a random one is generated.' },
       {
         key: 'action',
         label: 'Action',
         type: 'segmented',
         default: 'set',
+        group: 'Password',
         options: [
           { value: 'set', label: 'Apply these permissions' },
           { value: 'clear', label: 'Remove all restrictions' },
         ],
+        help: 'Remove all restrictions rebuilds the document, which is also the only way to clear a permissions-only file for good.',
       },
-      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, when: (v) => v.action === 'set' },
-      { key: 'allowPrinting', label: 'Allow printing', type: 'toggle', default: true, when: (v) => v.action === 'set' },
-      { key: 'allowModifying', label: 'Allow modifying', type: 'toggle', default: true, when: (v) => v.action === 'set' },
-      { key: 'allowCopying', label: 'Allow copying', type: 'toggle', default: true, when: (v) => v.action === 'set' },
-      { key: 'allowAnnotating', label: 'Allow comments', type: 'toggle', default: true, when: (v) => v.action === 'set' },
-      { key: 'allowFillingForms', label: 'Allow form filling', type: 'toggle', default: true, when: (v) => v.action === 'set' },
-      { key: 'allowAssembling', label: 'Allow page reorganisation', type: 'toggle', default: false, when: (v) => v.action === 'set' },
+      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', when: (v) => v.action === 'set', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
+      ...permissionFields((v) => v.action === 'set'),
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -327,7 +358,7 @@ export const securityTools: PdfToolDefinition[] = [
         copying: booleanValue(context.values, 'allowCopying', true),
         annotating: booleanValue(context.values, 'allowAnnotating', true),
         fillingForms: booleanValue(context.values, 'allowFillingForms', true),
-        contentAccessibility: true,
+        contentAccessibility: booleanValue(context.values, 'allowAccessibility', true),
         assembling: booleanValue(context.values, 'allowAssembling'),
       });
       const version = Number(stringValue(context.values, 'version', '5')) as 1 | 2 | 4 | 5;
@@ -366,6 +397,12 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['unlock features', 'owner password', 'signed'],
     outputSuffix: '_unrestricted.pdf',
+    promise: 'Every restriction lifted — the copy opens, prints, copies and edits without a password or an owner key.',
+    actionLabel: 'Remove restrictions',
+    notes: [
+      'The pages are rebuilt into a fresh document to clear the encryption dictionary, so a signature in the source is broken by this: verify it first if the file is signed.',
+      'A file with no /Encrypt entry is returned unchanged, and the result says so rather than claiming a removal.',
+    ],
     async run(context) {
       const [input] = await openInputs(context);
       const password = context.password ?? '';
@@ -404,11 +441,17 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['merge layers', 'non-editable', 'print ready'],
     outputSuffix: '_flattened.pdf',
+    promise: 'Answers and comments baked into the page, so what a reader sees is what was signed — nobody can move or re-edit a mark afterwards.',
+    actionLabel: 'Flatten',
+    notes: [
+      'A flattened mark is page content: it can no longer be selected, moved, deleted or read as a comment by another reader.',
+      'Annotations with no stored appearance have nothing to bake, and the result names how many were left live instead of pretending they were flattened.',
+    ],
     fields: [
-      { key: 'forms', label: 'Flatten form fields', type: 'toggle', default: true },
-      { key: 'annotations', label: 'Flatten annotations and comments', type: 'toggle', default: true },
-      { key: 'keepLinks', label: 'Keep clickable links', type: 'toggle', default: true },
-      { key: 'dpi', label: 'Annotation quality', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi' },
+      { key: 'forms', label: 'Flatten form fields', type: 'toggle', default: true, group: 'What to bake in', help: 'Field values are drawn into the page and the interactive field is removed, so the answers cannot be retyped.' },
+      { key: 'annotations', label: 'Flatten comments', type: 'toggle', default: true, group: 'What to bake in', help: 'Highlights, ink, stamps and text notes become page content. Turn this off to bake only the form fields.' },
+      { key: 'keepLinks', label: 'Keep clickable links', type: 'toggle', default: true, group: 'What to bake in', help: 'Off draws the underline but removes the target, which is what a print-ready or archived copy wants.' },
+      resolutionField({ group: 'What to bake in', max: 400, help: 'How sharply an annotation is re-drawn when it has no usable appearance of its own. Higher is crisper and bigger.' }),
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -466,9 +509,15 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['blackout', 'remove sensitive', 'censor', 'gdpr'],
     outputSuffix: '_redacted.pdf',
     surface: 'custom',
+    promise: 'The words under each box deleted from the page, then painted over — select the black bar and there is nothing left to copy.',
+    actionLabel: 'Redact',
+    notes: [
+      'Redaction deletes glyphs from page content. Text held in bookmarks, the document properties or an image underneath is not deleted by it, and the result names what still holds the words.',
+      'An area that lands inside an image is painted over rather than cut out: the pixels of a scanned page still contain the shape of what was there.',
+    ],
     fields: [
-      { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000' },
-      { key: 'alsoMetadata', label: 'Also clear matching text from metadata and bookmarks', type: 'toggle', default: true },
+      { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000', group: 'Marking', help: 'Painted on after the text is deleted, so a pale colour is fine as long as the words are gone from the content.' },
+      { key: 'alsoMetadata', label: 'Also clear matching text from metadata and bookmarks', type: 'toggle', default: true, group: 'Marking', help: 'Off leaves the word in the outline and the document properties, where a search still finds it.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -522,20 +571,28 @@ export const securityTools: PdfToolDefinition[] = [
     maxFiles: 2,
     surface: 'custom',
     outputSuffix: '_comparison.pdf',
+    promise: 'A page-by-page report of what differs — with a picture of each changed area when you compare pixels, and the page-count difference called out either way.',
+    actionLabel: 'Compare',
+    notes: [
+      'Comparison works page against page by number, so a document with one page inserted reports every later page as different.',
+      'A difference in rendering is not a difference in content: two files can hold the same text and still differ in pixels because of a font substitute.',
+    ],
     fields: [
       {
         key: 'mode',
         label: 'Compare',
         type: 'segmented',
         default: 'visual',
+        group: 'What to look for',
         options: [
           { value: 'visual', label: 'Pixels' },
           { value: 'text', label: 'Text content' },
           { value: 'both', label: 'Both' },
         ],
+        help: 'Pixels catch a moved logo or a colour change; text content catches a reworded sentence a rendering hides.',
       },
-      { key: 'sensitivity', label: 'Pixel sensitivity', type: 'slider', default: 24, min: 1, max: 120, step: 1, when: (v) => v.mode !== 'text' },
-      { key: 'dpi', label: 'Render resolution', type: 'slider', default: 150, min: 72, max: 300, step: 1, unit: 'dpi' },
+      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 24, min: 1, max: 120, step: 1, integer: true, group: 'What to look for', when: (v) => v.mode !== 'text', help: 'How far a pixel has to move before it counts as different. Raise it when antialiasing makes every page look changed.' },
+      resolutionField({ default: 150, min: 72, max: 300, group: 'What to look for', help: 'Both pages are rendered at this resolution before they are compared. Higher finds finer differences and costs more memory per page.' }),
     ],
     validate: (_v, { fileCount }) =>
       fileCount === 2 ? null : 'Add exactly two PDFs to compare.',
@@ -608,6 +665,11 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['properties', 'info', 'xmp', 'audit'],
     surface: 'none',
     outputSuffix: '_metadata.txt',
+    promise: 'Everything the file says about itself — properties, XMP, fonts, images, protection and attachments — read back, not guessed.',
+    actionLabel: 'Read metadata',
+    notes: [
+      'The /P permission flags are reported as what the file records, not as a guarantee: a reader is free to ignore them.',
+    ],
     async run(context) {
       const [input] = await openInputs(context);
       const { metadataReport } = await import('../core/metadata');
@@ -659,16 +721,22 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['properties', 'document title', 'author', 'xmp'],
     outputSuffix: '_metadata.pdf',
+    promise: 'The document properties you can see in a reader’s file panel, rewritten; the pages are left exactly as they were.',
+    actionLabel: 'Save properties',
+    notes: [
+      'Only the info dictionary and the XMP packet change — the page content is not re-written, so this cannot alter what the document says.',
+      'Anything you leave blank keeps its current value. To erase a field rather than replace it, use Remove Metadata.',
+    ],
     fields: [
-      { key: 'title', label: 'Title', type: 'text' },
-      { key: 'author', label: 'Author', type: 'text' },
-      { key: 'subject', label: 'Subject', type: 'text' },
-      { key: 'keywords', label: 'Keywords', type: 'text', placeholder: 'comma, separated' },
-      { key: 'creator', label: 'Creator application', type: 'text' },
-      { key: 'producer', label: 'Producer', type: 'text' },
-      { key: 'language', label: 'Document language', type: 'text', placeholder: 'en, de-DE, ja' },
-      { key: 'syncXmp', label: 'Write the same values into the XMP packet', type: 'toggle', default: true },
-      { key: 'touchDates', label: 'Set the modification date to now', type: 'toggle', default: true },
+      { key: 'title', label: 'Title', type: 'text', group: 'Identity', placeholder: 'The name a reader shows in its tab', help: 'This is what most readers title the window with — more visible to the person reading than the filename is.' },
+      { key: 'author', label: 'Author', type: 'text', group: 'Identity', help: 'Shown as the document’s creator and copied into the XMP dc:creator field.' },
+      { key: 'subject', label: 'Subject', type: 'text', group: 'Identity', placeholder: 'One line about what the document is about', help: 'A one-line description; also written to the XMP description field when the packet is synced.' },
+      { key: 'keywords', label: 'Keywords', type: 'text', group: 'Identity', placeholder: 'comma, separated', help: 'A comma-separated list. Desktop search indexes these; a reader usually just displays them.' },
+      { key: 'docLanguage', label: 'Document language', type: 'text', group: 'Identity', placeholder: 'en, de-DE, ja', help: 'A language tag, not a translation. Screen readers and spell-checkers pick their voice from it.' },
+      { key: 'creator', label: 'Creator application', type: 'text', group: 'Provenance', placeholder: 'What produced the original content', help: 'The application that produced the original content, which is different from the one that wrote this PDF.' },
+      { key: 'producer', label: 'Producer', type: 'text', group: 'Provenance', placeholder: 'What wrote this PDF' , help: 'Named because auditors look for it: overwriting it hides which tool produced the file.' },
+      { key: 'syncXmp', label: 'Write the same values into the XMP packet', type: 'toggle', default: true, group: 'Provenance', help: 'Off leaves the two stores disagreeing, and a different reader then shows the value you did not change.' },
+      { key: 'touchDates', label: 'Set the modification date to now', type: 'toggle', default: true, group: 'Provenance', help: 'Off keeps the original ModDate, which is what you want when the file has been signed or filed against that date.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -684,7 +752,7 @@ export const securityTools: PdfToolDefinition[] = [
           keywords: keywords ? keywords.split(',').map((k) => k.trim()).filter(Boolean).join(', ') : current.keywords,
           creator: stringValue(context.values, 'creator') || current.creator,
           producer: stringValue(context.values, 'producer') || current.producer,
-          lang: stringValue(context.values, 'language') || current.lang,
+          lang: stringValue(context.values, 'docLanguage') || current.lang,
         },
         { freshDates: booleanValue(context.values, 'touchDates', true) },
       );
@@ -713,11 +781,17 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['privacy', 'clear properties', 'anonymise'],
     outputSuffix: '_stripped.pdf',
+    promise: 'The hidden properties, XMP packet and reader settings taken out, with a list of what was actually found and removed.',
+    actionLabel: 'Remove metadata',
+    notes: [
+      'Metadata is not the page. Words still sit in the content streams, bookmarks and annotations of a document, and text hidden under a redaction bar is removed by Redact PDF, not here.',
+      'A store that was already empty is reported as untouched rather than counted as removed.',
+    ],
     fields: [
-      { key: 'info', label: 'Document info dictionary', type: 'toggle', default: true },
-      { key: 'xmp', label: 'XMP metadata stream', type: 'toggle', default: true },
-      { key: 'attachments', label: 'Embedded files', type: 'toggle', default: false },
-      { key: 'readerSettings', label: 'Last-opened page and zoom memory', type: 'toggle', default: true },
+      { key: 'info', label: 'Document info dictionary', type: 'toggle', default: true, group: 'What to remove', help: 'Title, author, subject, keywords, producer and the dates. This is the panel a reader shows under Properties.' },
+      { key: 'xmp', label: 'XMP metadata stream', type: 'toggle', default: true, group: 'What to remove', help: 'The XML copy of the same facts, plus history some applications embed. Removing one store and leaving the other is how a "cleaned" file still carries your name.' },
+      { key: 'attachments', label: 'Embedded files', type: 'toggle', default: false, group: 'What to remove', help: 'Off by default because these are payload, not furniture: an attachment can be the contract itself.' },
+      { key: 'readerSettings', label: 'Last-opened page and zoom memory', type: 'toggle', default: true, group: 'What to remove', help: 'Which page and zoom the document opens at, and whether the title or the filename is shown. They reveal how the file was used.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -773,9 +847,15 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['attach file', 'embed', 'package'],
     outputSuffix: '_attached.pdf',
+    promise: 'The files carried inside the PDF itself, so the document and its enclosures travel as one attachment.',
+    actionLabel: 'Attach files',
+    notes: [
+      'Nothing is uploaded: the bytes are stored inside the PDF, which grows by roughly the size of every file you add.',
+      'An attachment is only as useful as the reader showing it. A viewer without an attachments panel — including a printout — gives no sign the files are there.',
+    ],
     fields: [
-      { key: 'files', label: 'Files to attach', type: 'file', accept: '*/*', multiple: true, maxFiles: 20 },
-      { key: 'description', label: 'Note stored with each file', type: 'text' },
+      { key: 'files', label: 'Files to attach', type: 'file', accept: '*/*', multiple: true, maxFiles: 20, group: 'Files', help: 'Up to 20 files of any type. They are embedded whole, not referenced, so the PDF is the only file you need to send.' },
+      { key: 'description', label: 'Note stored with each file', type: 'text', group: 'Files', placeholder: 'What this enclosure is', help: 'Stored with every file in this run, so one note cannot describe three different enclosures.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -804,6 +884,12 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['unpack', 'embedded files', 'unbundle'],
     surface: 'none',
     outputSuffix: '_attachments.zip',
+    promise: 'Every embedded file out of the PDF, each under its own name — one file when there is one, a ZIP when there are several.',
+    actionLabel: 'Extract attachments',
+    notes: [
+      'A PDF with no embedded files returns a report saying so rather than an empty archive.',
+      'The files are written out byte for byte, so a protected document still opens and a corrupted enclosure stays corrupted.',
+    ],
     async run(context) {
       const [input] = await openInputs(context);
       const found = listAttachments(input.doc);
@@ -820,7 +906,7 @@ export const securityTools: PdfToolDefinition[] = [
           { comment: `Extracted from ${input.name}` },
         );
       return filesResult(
-        [{ blob: single, name: found.length === 1 ? (found[0].filename ?? found[0].name) : `${baseName(input.name)}-attachments.zip` }],
+        [{ blob: single, name: found.length === 1 ? (found[0].filename ?? found[0].name) : `${downloadStem(input.name)}-attachments.zip` }],
         `Found ${found.length} embedded file(s): ${found.map((a) => `${a.name} (${formatBytes(a.size)})`).join(', ')}.`,
       );
     },
@@ -834,8 +920,13 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['remove attachment', 'manage embedded'],
     outputSuffix: '_attachments.pdf',
+    promise: 'The attachments listed with their sizes, and only the ones you name deleted — a name that is not there is reported, not ignored.',
+    actionLabel: 'Remove attachments',
+    notes: [
+      'Deleting an attachment is permanent in the output copy: an enclosure that was the only version of that file is gone.',
+    ],
     fields: [
-      { key: 'remove', label: 'Names to remove', type: 'textarea', placeholder: 'One attachment name per line' },
+      { key: 'remove', label: 'Names to remove', type: 'textarea', group: 'Attachments', placeholder: 'One attachment name per line', help: 'Copy the names from the list this tool shows first. Leaving the box empty is a request to look, not to delete.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -880,18 +971,22 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['pkcs7', 'certificate', 'signature', 'pades'],
     outputSuffix: '_signed.pdf',
-    fields: [
-      { key: 'certificate', label: 'Certificate (PEM or P12)', type: 'file', accept: '.pem,.crt,.cer,.p12,.pfx' },
-      { key: 'privateKey', label: 'Private key (PEM)', type: 'file', accept: '.pem,.key', when: (v) => v.certKind !== 'p12' },
-      { key: 'passphrase', label: 'Key / PKCS#12 passphrase', type: 'password' },
-      { key: 'reason', label: 'Reason', type: 'text', default: 'I approve this document', half: true },
-      { key: 'location', label: 'Location', type: 'text', half: true },
-      { key: 'contact', label: 'Contact', type: 'text' },
-      { key: 'visible', label: 'Show a visible signature block', type: 'toggle', default: true },
-      { key: 'page', label: 'Signature page', type: 'number', default: 1, min: 1, when: (v) => v.visible === true },
-    ],
+    promise: 'A signature that covers the bytes: change anything afterwards and validation says so. The private key never leaves this tab.',
+    actionLabel: 'Sign',
     notes: [
+      'Signing proves the document has not changed since. It does not prove the signer is who they claim: that needs a certificate issued by an authority the other side already trusts.',
+      'A signature seals the document. Any later edit — flattening, timestamping, even opening and re-saving in some tools — invalidates it, so sign last.',
       'The signature is created in your browser from your own certificate. Certificate revocation checking needs a network connection; everything else is local.',
+    ],
+    fields: [
+      { key: 'certificate', label: 'Certificate (PEM or P12)', type: 'file', accept: '.pem,.crt,.cer,.p12,.pfx', group: 'Your certificate', required: true, help: 'The public half, plus the private key when it is a .p12/.pfx bundle. Nothing is uploaded and nothing is stored afterwards.' },
+      { key: 'privateKey', label: 'Private key (PEM)', type: 'file', accept: '.pem,.key', group: 'Your certificate', when: (v) => v.certKind !== 'p12', help: 'Needed when the certificate is a bare .pem. The key is read once, to sign, and then dropped.' },
+      { key: 'passphrase', label: 'Key / PKCS#12 passphrase', type: 'password', group: 'Your certificate', placeholder: 'Only if the key or bundle is encrypted', help: 'Only needed when the key or bundle is encrypted. It is used once to sign and then dropped.' },
+      { key: 'reason', label: 'Reason', type: 'text', default: 'I approve this document', half: true, group: 'What the signature says', help: 'Stored inside the signature, so it is part of what a validator reports and cannot be quietly reworded later.' },
+      { key: 'location', label: 'Location', type: 'text', half: true, group: 'What the signature says', placeholder: 'Where you signed', help: 'Stored inside the signature, so it is part of what a validator reports.' },
+      { key: 'contact', label: 'Contact', type: 'text', group: 'What the signature says', placeholder: 'How to reach you about this', help: 'How a recipient reaches you about this signature. Readers show it in the signature panel.' },
+      { key: 'visible', label: 'Show a visible signature block', type: 'toggle', default: true, group: 'Mark on the page', help: 'Off signs the document invisibly: it still validates, but nobody can see that it was signed.' },
+      { key: 'page', label: 'Signature page', type: 'number', default: 1, min: 1, max: 5000, step: 1, integer: true, group: 'Mark on the page', when: (v) => v.visible === true, help: 'Counted in the document you dropped in; a page past the end is refused before the key is used.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -951,6 +1046,12 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['verify', 'integrity', 'certificate details'],
     surface: 'none',
     outputSuffix: '_signature-report.txt',
+    promise: 'Whether each signature still matches these bytes, who signed, and what an empty signature field really means.',
+    actionLabel: 'Validate signatures',
+    notes: [
+      'Intact means the signed bytes are unchanged. The certificate chain is not validated and revocation cannot be checked offline, so this does not tell you the signer is trusted.',
+      'An empty signature field proves nothing: it is a box somebody prepared and never signed.',
+    ],
     async run(context) {
       const [input] = await openInputs(context);
       const { readSignatures } = await import('../core/signature');
@@ -1039,15 +1140,24 @@ export const securityTools: PdfToolDefinition[] = [
     category: 'security',
     keywords: ['tsa', 'rfc3161', 'proof of existence'],
     outputSuffix: '_timestamped.pdf',
+    promise: 'A third-party stamp proving the signature existed at a stated moment, so it outlives the certificate that made it.',
+    actionLabel: 'Add timestamp',
+    notes: [
+      'The timestamp covers the signature, not the whole document, and the authority address is the only thing sent over the network: a digest of the signature, never the pages.',
+      'This tool refuses an unsigned file rather than producing a timestamp on nothing.',
+    ],
     fields: [
       {
         key: 'tsa',
         label: 'Timestamp authority URL',
         type: 'text',
         default: 'http://timestamp.digicert.com',
-        help: 'The only step that needs the network: the timestamp token comes from a trusted third party.',
+        group: 'Authority',
+        required: true,
+        pattern: '^https?://',
+        help: 'The only step that needs the network: the timestamp token comes from a trusted third party. Prefer an https address, since the digest travels.',
       },
-      { key: 'fieldName', label: 'Signature field to stamp', type: 'text' },
+      { key: 'fieldName', label: 'Signature field to stamp', type: 'text', group: 'Authority', placeholder: 'The only signature, if left blank', help: 'Needed when a document carries more than one signature and only one of them should be stamped.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);

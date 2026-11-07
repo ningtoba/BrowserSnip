@@ -10,6 +10,7 @@ import { scaleIn } from '@/lib/motion';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useFileStore } from '@/stores/file-store';
 import type { PdfCropParams } from '@/types';
+import { NUDGE_BIG_FRACTION, NUDGE_FRACTION, nudgeEdge, slideRect, type CropEdge } from './cropModel';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs', import.meta.url,
@@ -178,19 +179,63 @@ export function CropMain() {
   }, [canvasDims]);
 
   const handleSize = 10;
+  /** Grab room around each handle: the target is 22 px, the mark stays 10 px. */
+  const handleSlop = 6;
+
+  /**
+   * Handles are buttons, not painted divs: they take focus, they announce which
+   * edge they move, and the arrow keys move that edge — the pointer gesture and
+   * the keyboard gesture change exactly the same number.
+   */
   const handleStyle = (x: number, y: number, cursor: string): React.CSSProperties => ({
     position: 'absolute',
-    left: x - handleSize / 2,
-    top: y - handleSize / 2,
+    left: x - (handleSize + handleSlop * 2) / 2,
+    top: y - (handleSize + handleSlop * 2) / 2,
+    width: handleSize + handleSlop * 2,
+    height: handleSize + handleSlop * 2,
+    display: 'grid',
+    placeItems: 'center',
+    cursor,
+    zIndex: 20,
+    background: 'transparent',
+    border: 0,
+    padding: 0,
+  });
+
+  const handleFace: React.CSSProperties = {
     width: handleSize,
     height: handleSize,
     background: '#2563EB',
     border: '2px solid white',
     borderRadius: 2,
-    cursor,
-    zIndex: 20,
     boxShadow: '0 0 0 1px rgba(27,27,24,0.18)',
-  });
+  };
+
+  const nudgeWithKeys = useCallback((event: React.KeyboardEvent, edges: CropEdge[]) => {
+    const step = event.shiftKey ? NUDGE_BIG_FRACTION : NUDGE_FRACTION;
+    let dx = 0;
+    let dy = 0;
+    if (event.key === 'ArrowLeft') dx = -step;
+    else if (event.key === 'ArrowRight') dx = step;
+    else if (event.key === 'ArrowUp') dy = -step;
+    else if (event.key === 'ArrowDown') dy = step;
+    else if (event.key === 'Enter' || event.key === ' ') dy = step;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = { ..._cropRect };
+    // Each handle owns the edge(s) it sits on; a horizontal handle takes the
+    // opposite sign on the right edge so "right arrow" always means "widen".
+    if (edges.length === 2) {
+      setCropRect(slideRect(rect, dx, dy));
+      return;
+    }
+    const edge = edges[0];
+    if (edge === 'left') setCropRect(nudgeEdge(rect, 'left', dx));
+    else if (edge === 'right') setCropRect(nudgeEdge(rect, 'right', -dx));
+    else if (edge === 'top') setCropRect(nudgeEdge(rect, 'top', dy));
+    else setCropRect(nudgeEdge(rect, 'bottom', -dy));
+  }, []);
 
   if (!file && !loading) {
     return (
@@ -236,21 +281,41 @@ export function CropMain() {
 
             {hasCrop ? (
               <>
-                {/* Crop border */}
-                <div
-                  className="absolute border-2 border-accent pointer-events-auto"
+                {/* Crop border — the whole kept rectangle, movable from the keyboard */}
+                <button
+                  type="button"
+                  data-crop-move
+                  aria-label="Kept rectangle — arrow keys slide it, Shift for larger steps"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['left', 'top'])}
+                  className="absolute border-2 border-accent pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   style={{ top: cTop, left: cLeft, width: cW, height: cH, cursor: 'move', zIndex: 15 }}
                   onMouseDown={(e) => handleMouseDown('move', e)}
                 />
-                {/* Handles */}
-                <div style={handleStyle(cLeft, cTop, 'nw-resize')} onMouseDown={(e) => handleMouseDown('tl', e)} className="pointer-events-auto" />
-                <div style={handleStyle(cRight, cTop, 'ne-resize')} onMouseDown={(e) => handleMouseDown('tr', e)} className="pointer-events-auto" />
-                <div style={handleStyle(cLeft, cBottom, 'sw-resize')} onMouseDown={(e) => handleMouseDown('bl', e)} className="pointer-events-auto" />
-                <div style={handleStyle(cRight, cBottom, 'se-resize')} onMouseDown={(e) => handleMouseDown('br', e)} className="pointer-events-auto" />
-                <div style={handleStyle((cLeft + cRight) / 2, cTop, 'n-resize')} onMouseDown={(e) => handleMouseDown('top', e)} className="pointer-events-auto" />
-                <div style={handleStyle((cLeft + cRight) / 2, cBottom, 's-resize')} onMouseDown={(e) => handleMouseDown('bottom', e)} className="pointer-events-auto" />
-                <div style={handleStyle(cLeft, (cTop + cBottom) / 2, 'w-resize')} onMouseDown={(e) => handleMouseDown('left', e)} className="pointer-events-auto" />
-                <div style={handleStyle(cRight, (cTop + cBottom) / 2, 'e-resize')} onMouseDown={(e) => handleMouseDown('right', e)} className="pointer-events-auto" />
+                {/* Handles: 22 px targets around a 10 px face, cursor matches direction */}
+                <button type="button" data-crop-handle="nw" aria-label="Top left corner — arrow keys resize the crop"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['left', 'top'])}
+                  style={handleStyle(cLeft, cTop, 'nwse-resize')} onMouseDown={(e) => handleMouseDown('tl', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="ne" aria-label="Top right corner — arrow keys resize the crop"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['right', 'top'])}
+                  style={handleStyle(cRight, cTop, 'nesw-resize')} onMouseDown={(e) => handleMouseDown('tr', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="sw" aria-label="Bottom left corner — arrow keys resize the crop"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['left', 'bottom'])}
+                  style={handleStyle(cLeft, cBottom, 'nesw-resize')} onMouseDown={(e) => handleMouseDown('bl', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="se" aria-label="Bottom right corner — arrow keys resize the crop"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['right', 'bottom'])}
+                  style={handleStyle(cRight, cBottom, 'nwse-resize')} onMouseDown={(e) => handleMouseDown('br', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="n" aria-label="Top edge — arrow keys take more or less off the top"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['top'])}
+                  style={handleStyle((cLeft + cRight) / 2, cTop, 'ns-resize')} onMouseDown={(e) => handleMouseDown('top', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="s" aria-label="Bottom edge — arrow keys take more or less off the bottom"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['bottom'])}
+                  style={handleStyle((cLeft + cRight) / 2, cBottom, 'ns-resize')} onMouseDown={(e) => handleMouseDown('bottom', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="w" aria-label="Left edge — arrow keys take more or less off the left"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['left'])}
+                  style={handleStyle(cLeft, (cTop + cBottom) / 2, 'ew-resize')} onMouseDown={(e) => handleMouseDown('left', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
+                <button type="button" data-crop-handle="e" aria-label="Right edge — arrow keys take more or less off the right"
+                  onKeyDown={(event) => nudgeWithKeys(event, ['right'])}
+                  style={handleStyle(cRight, (cTop + cBottom) / 2, 'ew-resize')} onMouseDown={(e) => handleMouseDown('right', e)} className="pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"><span style={handleFace} /></button>
               </>
             ) : (
               <div

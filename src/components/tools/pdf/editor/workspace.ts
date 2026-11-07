@@ -15,7 +15,7 @@
  */
 import type { EditorAnnotation } from './types';
 import { workSignature } from './specs';
-import { createHistory, type HistoryState } from './history';
+import { canRedo, canUndo, createHistory, redoHistory, undoHistory, type HistoryState } from './history';
 import { normaliseRotation } from '@/lib/pdf/core/pages';
 
 export interface DocWork {
@@ -145,6 +145,51 @@ export function pageContextNotes(input: PageContextInput): ContextNote[] {
     });
   }
   return notes;
+}
+
+/**
+ * Sentence for the live region after an undo or redo attempt.
+ *
+ * Undo and redo are the two commands whose whole effect is invisible-adjacent —
+ * something stopped being there, or started being there again — so the editor
+ * says which happened, and says so honestly when history had nothing to give.
+ */
+export function historyNotice(input: {
+  action: 'undo' | 'redo';
+  changed: boolean;
+  marks?: number;
+}): string {
+  if (!input.changed) {
+    return input.action === 'undo'
+      ? 'Nothing left to undo — this is the oldest state of this document.'
+      : 'Nothing to redo — you are already at the newest state.';
+  }
+  const count =
+    typeof input.marks === 'number'
+      ? ` · ${input.marks} mark${input.marks === 1 ? '' : 's'} in this document`
+      : '';
+  return `${input.action === 'undo' ? 'Undid' : 'Redid'} the last change${count}.`;
+}
+
+/**
+ * Take one step through the history of a document, and report it.
+ *
+ * The step and its announcement come from the same place so the live region
+ * cannot claim an undo that the stack refused. A missing workspace (no document
+ * open yet) is a no-op that says nothing rather than a confident lie.
+ */
+export function applyWorkStep(
+  work: DocWork | null | undefined,
+  action: 'undo' | 'redo',
+): { work: DocWork | null; notice: string | null } {
+  if (!work) return { work: null, notice: null };
+  const changed = action === 'undo' ? canUndo(work.history) : canRedo(work.history);
+  if (!changed) return { work, notice: historyNotice({ action, changed: false }) };
+  const history = action === 'undo' ? undoHistory(work.history) : redoHistory(work.history);
+  return {
+    work: { ...work, history },
+    notice: historyNotice({ action, changed: true, marks: history.present.length }),
+  };
 }
 
 /**

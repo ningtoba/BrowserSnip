@@ -15,7 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore, type ToolPhase } from '@/stores/process-store';
 import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
-import { enginePurpose, engineReady } from '@/lib/pdf/core/engine-ops';
+import { engineReady } from '@/lib/pdf/core/engine-ops';
+import { ENGINE_LABELS } from '@/lib/pdf/engines/provider';
 import { inspectPdf, isPasswordRequired, isToolInputError } from '@/lib/pdf/core/guard';
 import {
   defaultValues,
@@ -114,7 +115,12 @@ export function usePdfTool(
         } catch {
           pages = null;
         }
-        if (alive) setPagesByFile((prev) => (key in prev ? prev : { ...prev, [key]: pages }));
+        if (!alive) return;
+        // The queue row is the only place a user reads "how big is this job"
+        // for the second, third and fourth file, so the count has to reach the
+        // store as well as the range validator.
+        useProcessStore.getState().setFileState(file.name, { pages, size: file.size });
+        setPagesByFile((prev) => (key in prev ? prev : { ...prev, [key]: pages }));
       })();
     }
     return () => {
@@ -131,6 +137,10 @@ export function usePdfTool(
   const [isRunning, setIsRunning] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const ranSignature = useRef<string | null>(null);
+  // Which inputs the in-flight run is actually working on. When the selection
+  // changes under a run its result describes files the user no longer has, so
+  // it must not be published (E19).
+  const inputsRef = useRef<string>('');
 
   // Re-seed the form when the user navigates to a different tool.
   const seededFor = useRef<string | undefined>(undefined);
@@ -159,10 +169,10 @@ export function usePdfTool(
   /** Why the primary action cannot fire, in the order the user can act on. */
   const blockers = useMemo(() => {
     const out: string[] = [];
-    if (!tool) return ['This tool is still loading.'];
+    if (!tool) return ['Wait for this tool to finish loading.'];
     if (tool.unavailable) return [tool.unavailable];
     if (!tool.run && !tool.mainComponent) {
-      out.push('This tool has no runnable action yet.');
+      out.push('Pick another tool — this one has no action yet.');
     }
     if (files.length === 0) {
       out.push(
@@ -179,8 +189,12 @@ export function usePdfTool(
     }
     const missing = (tool.engines ?? []).filter((id) => !engineReady(id));
     if (missing.length > 0) {
+      // Imperative, and it names the thing: "needs the optional X module" read
+      // as a state the user could not act on once the engines UI went away.
       out.push(
-        `Needs the optional ${missing.join(' and ')} module. ${missing.map((id) => enginePurpose(id)).join(' ')}`,
+        missing.length === 1
+          ? `Connect to the internet to load ${ENGINE_LABELS[missing[0]]} — this tool cannot run without it.`
+          : `Connect to the internet to load ${missing.map((id) => ENGINE_LABELS[id]).join(' and ')} — this tool cannot run without them.`,
       );
     }
     for (const field of tool.fields ?? []) {
@@ -215,6 +229,15 @@ export function usePdfTool(
     () => JSON.stringify({ id: tool?.id ?? null, files: files.map((f) => `${f.name}:${f.size}`), values: checked, password }),
     [checked, files, password, tool],
   );
+  // Inputs only — no option values. Editing a slider mid-run does not change
+  // what the running job is holding.
+  const inputs = useMemo(
+    () => JSON.stringify({ id: tool?.id ?? null, files: files.map((f) => `${f.name}:${f.size}`) }),
+    [files, tool],
+  );
+  useEffect(() => {
+    inputsRef.current = inputs;
+  }, [inputs]);
 
   // Mirror the lifecycle into the store. A finished run keeps its `done` phase
   // until the inputs change, at which point the result is stale by definition.
@@ -247,6 +270,7 @@ export function usePdfTool(
       controller.current?.abort();
       const local = new AbortController();
       controller.current = local;
+      const startedInputs = inputs;
 
       const state = store.getState();
       state.startProcessing(tool.name, tool.outputSuffix);
@@ -263,6 +287,9 @@ export function usePdfTool(
           values: { ...checked, ...values, ...overrides },
           password: password || undefined,
           onProgress: (fraction, message) => {
+            // A cancelled run keeps reporting until its loop notices; those
+            // writes would refill a bar the user just threw away.
+            if (local.signal.aborted) return;
             const live = store.getState();
             const percent = Math.round(fraction * 100);
             live.setPercent(percent, message);
@@ -283,6 +310,7 @@ export function usePdfTool(
             });
           },
           onLog: (line) => {
+            if (local.signal.aborted) return;
             lines.push(line);
             store.getState().appendLog(line);
           },
@@ -291,6 +319,15 @@ export function usePdfTool(
         // Cancelled while the tool was still working: a late result is stale
         // output, and the user would download a file they asked to abandon (E19).
         if (local.signal.aborted) return null;
+        // The selection moved under this run. Same rule, said out loud.
+        if (inputsRef.current !== startedInputs) {
+          if (controller.current === local) {
+            store.getState().abandonRun(
+              'You changed the files while this was running, so the result was discarded.',
+            );
+          }
+          return null;
+        }
         for (let index = 0; index < outcome.outputs.length; index++) {
           const output = outcome.outputs[index];
           const url = URL.createObjectURL(output.blob);
@@ -298,9 +335,13 @@ export function usePdfTool(
           else store.getState().addOutput(output.blob, url, output.name);
         }
         if (outcome.report) store.getState().setReport(outcome.report);
-        if (outcome.outputs.length === 0 && !outcome.report) {
-          store.getState().complete(outcome.message ?? 'Done.');
-        }
+        // The last progress line is a stage, not a result: "Rewriting images"
+        // is what the rail said while it worked, and printing it under a
+        // finished card reads as an answer that was never given. A tool with
+        // nothing to say gets nothing said for it (E13).
+        store.getState().complete(
+          outcome.message ?? (outcome.outputs.length === 0 && !outcome.report ? 'Done.' : ''),
+        );
         const finished = store.getState();
         finished.setWarnings(outcome.warnings);
         for (const file of activeFiles) finished.setFileState(file.name, { percent: 100, error: null });
@@ -308,29 +349,38 @@ export function usePdfTool(
         ranSignature.current = signature;
         return outcome;
       } catch (error) {
+        // A cancel is the user's own action: `cancel()` already cleared the slot
+        // and said so, so it must not come back as a red panel with a Retry.
+        if (local.signal.aborted) return null;
         const message = error instanceof Error ? error.message : 'Processing failed.';
         if (isPasswordRequired(error)) setLocked(true);
-        const cancelled = local.signal.aborted;
         const failed = store.getState();
-        failed.setError(cancelled ? 'Cancelled.' : message, isToolInputError(error) ? error.hint : null);
+        failed.setError(message, isToolInputError(error) ? error.hint : null);
         // Name the file that broke (E1/E2/E4): the message when it quotes one,
         // otherwise the only input, otherwise the first of them.
         const atFault = activeFiles.find((file) => message.includes(file.name))
           ?? (activeFiles.length === 1 ? activeFiles[0] : undefined);
-        if (atFault && !cancelled) failed.setFileState(atFault.name, { error: message, percent: 0 });
+        if (atFault) failed.setFileState(atFault.name, { error: message, percent: 0 });
         return null;
       } finally {
-        setIsRunning(false);
-        if (controller.current === local) controller.current = null;
+        // Only the newest run owns the rail's idea of "working"; a superseded
+        // one must not flip the button back while the current job is running.
+        if (controller.current === local) {
+          controller.current = null;
+          setIsRunning(false);
+        }
       }
     },
-    [blockers, checked, files, password, signature, store, tool, values],
+    [blockers, checked, files, inputs, password, signature, store, tool, values],
   );
 
   const cancel = useCallback(() => {
     controller.current?.abort();
     setIsRunning(false);
-    store.getState().reset();
+    // The abort reaches the store before the tool notices, so the rail stops
+    // moving immediately; the acknowledgement is what tells the user the bar
+    // went away because they asked, not because the run finished.
+    store.getState().abandonRun('Cancelled — nothing was saved.');
     ranSignature.current = null;
   }, [store]);
 

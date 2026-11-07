@@ -54,10 +54,15 @@ function hits(box: ItemBox, region: ViewportBox, tolerance: number): boolean {
 /**
  * Turn a drag band into the text lines it touches.
  *
- * Words are the unit of selection (a run is only taken when it overlaps the
- * band), and the words that share a baseline are merged into one quad that
- * spans them and uses the tallest glyph box in the line — that is what makes a
- * click anywhere on a line highlight the whole line.
+ * Words are the unit of selection, and the words that share a baseline are merged
+ * into one quad that spans them and uses the tallest glyph box in the line — that
+ * is what makes a mark cover the words instead of the leading above them.
+ *
+ * A drag across several lines is *text*, not a rectangle: the first and last lines
+ * stop where the drag stops, but a line in the middle is covered end to end,
+ * because the selection continues past the drag's x-range there. Skipping that
+ * step is how a 3-line highlight loses its middle line (the trap recorded in
+ * `docs/research/ux-references-commercial.md` §2.4).
  *
  * Invisible runs (`isInvisible`, i.e. an OCR text layer) are kept, because a
  * searchable scan is exactly the case where snapping should work.
@@ -70,14 +75,11 @@ export function snapTextLines(
   const tolerance = options.tolerance ?? 2;
   const baselineTolerance = options.baselineTolerance ?? 3;
 
-  const boxes = items
-    .map(toBox)
-    .filter((box): box is ItemBox => box !== null && hits(box, region, tolerance));
-
+  const boxes = items.map(toBox).filter((box): box is ItemBox => box !== null);
   if (boxes.length === 0) return [];
 
-  // Group by visual line: sort by bottom edge, then extend the current line
-  // while the next run's baseline is close enough to belong to it.
+  // Group every run into visual lines first, so a middle line can be widened to
+  // words the drag band itself never reached.
   const ordered = [...boxes].sort((a, b) => a.bottom - b.bottom || a.x0 - b.x0);
   const lines: ItemBox[][] = [];
   for (const box of ordered) {
@@ -89,13 +91,19 @@ export function snapTextLines(
     }
   }
 
-  return lines
-    .map((line) => {
-      const x0 = Math.min(...line.map((b) => b.x0));
-      const y0 = Math.min(...line.map((b) => b.y0));
-      const x1 = Math.max(...line.map((b) => b.x1));
-      const y1 = Math.max(...line.map((b) => b.y1));
-      const text = line
+  const touched = lines
+    .map((line) => ({ line, hits: line.filter((box) => hits(box, region, tolerance)) }))
+    .filter((group) => group.hits.length > 0);
+
+  return touched
+    .map((group, index) => {
+      const isEdge = index === 0 || index === touched.length - 1;
+      const words = touched.length > 2 && !isEdge ? group.line : group.hits;
+      const x0 = Math.min(...words.map((b) => b.x0));
+      const y0 = Math.min(...words.map((b) => b.y0));
+      const x1 = Math.max(...words.map((b) => b.x1));
+      const y1 = Math.max(...words.map((b) => b.y1));
+      const text = words
         .slice()
         .sort((a, b) => a.x0 - b.x0)
         .map((b) => b.text)

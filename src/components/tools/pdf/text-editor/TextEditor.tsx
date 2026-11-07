@@ -54,11 +54,19 @@ import { looksEncrypted, openPDF, saveIncremental, savePDF, snapshot, PasswordRe
 import { readSignatures } from '@/lib/pdf/core/signature';
 import { readXmp } from '@/lib/pdf/core/metadata';
 import { decodeImage } from '@/lib/pdf/core/images';
-import { enginePurpose } from '@/lib/pdf/core/engine-ops';
-import { displayedSize } from '@/lib/pdf/core/pages';
 import type { TopLeftBox } from '@/lib/pdf/core/tables';
-import { applyEdits, frameOfPage, prepareTextObject } from './draw';
-import { engineRepairAvailable, repairWithPyMuPDF, type EngineLine } from './engine';
+import { applyEdits, exportReport, prepareTextObject, type ExportReport } from './draw';
+import {
+  engineRepairAvailable,
+  loadRepairEngine,
+  repairEngineLine,
+  repairEngineLoaded,
+  repairEngineNote,
+  repairEngineSize,
+  repairWithPyMuPDF,
+  type EngineLine,
+} from './engine';
+import { planHandoff } from './handoff';
 import {
   BUILT_IN_FAMILIES,
   familyPreview,
@@ -74,13 +82,17 @@ import {
   ObjectPanel,
   PanelHeading,
   Ruler,
+  SizeBadge,
   ToastStack,
   TopToolbar,
   ToolButton,
+  WarningList,
   type Toast,
 } from './panels';
 import {
   DEFAULT_STYLE,
+  MIN_BLOCK_SIZE,
+  RESIZE_HANDLES,
   amendHistory,
   canRedo,
   canUndo,
@@ -90,16 +102,19 @@ import {
   detectPageObjects,
   editObjects,
   fitScale,
-  layoutBlock,
-  monospaceMeasure,
+  historyReport,
+  liveRanges,
   nextObjectId,
   objectAtPoint,
   objectsForPage,
   objectsSummary,
   paragraphsFromText,
+  pruneSelection,
   pushHistory,
   redoHistory,
   replaceInText,
+  retextBlock,
+  resizeBox,
   samplePalette,
   searchableBlocks,
   searchBlocks,
@@ -109,7 +124,7 @@ import {
   type EditObject,
   type EditScope,
   type EditorAction,
-  type DomNode,
+  type CommitState,
   type EditorStyle,
   type ExtractedParagraph,
   type FindOptions,
@@ -120,12 +135,14 @@ import {
   type OperatorCodes,
   type PatchObject,
   type Point,
+  type ResizeHandle,
   type SearchHit,
   type SearchableBlock,
   type TextObject,
   type ToolMode,
 } from './model';
-import { mountParagraphs, readParagraphs } from './editorDom';
+import { focusEditor, mountParagraphs, readParagraphs } from './editorDom';
+import { FOCUS_RING } from '@/components/tools/pdf/shared/focusRing';
 import { InspectorSection, ShortcutList } from '@/components/tools/pdf/editor/inspector';
 import { DropReassurance, QuickModeChips } from '@/components/tools/pdf/editor/QuickModeChips';
 import {
@@ -136,13 +153,33 @@ import {
   toolIdFromLocation,
 } from '@/components/tools/pdf/editor/quickModes';
 import { historyCommandForKey, isTypingTarget } from '@/components/tools/pdf/editor/shortcuts';
-import { TEXT_EDITOR_SHORTCUTS, textModeForKey } from './keys';
+import {
+  ESCAPE_STEP_REPORT,
+  TEXT_EDITOR_SHORTCUTS,
+  nextEscapeStep,
+  stepsAside,
+  textModeForKey,
+  typingStartsEdit,
+} from './keys';
 import { adviceActionLabel, pageAdvice, type AdviceAction } from './pageAdvice';
 
 /** Extra padding around a block when it is converted into an editable box. */
 const BLOCK_PADDING = 2;
+/**
+ * Selection handle sizes, in CSS px: a 12 px dot inside a 20 px transparent hit
+ * area. The checklist's floor is 8 px for the visible handle, and the hit slop is
+ * what makes a 12 px target usable at 50 % zoom.
+ */
+const HANDLE_HIT = 20;
+const HANDLE_DOT = 12;
 /** How much of the page a freshly placed image may cover. */
 const IMAGE_PLACE_FRACTION = 0.35;
+
+/** Every text block in the document, plus the paragraph each one came from. */
+interface SearchIndex {
+  blocks: SearchableBlock[];
+  paragraphs: Map<string, ExtractedParagraph>;
+}
 
 export function TextEditor() {
   const file = useFileStore((s) => s.file);
@@ -172,6 +209,15 @@ export function TextEditor() {
   const [history, setHistory] = useState<HistoryState<EditObject[]>>(() => createHistory<EditObject[]>([]));
   const [selection, setSelection] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Pinned placement tools stay armed after each drop (the brief's pin ruling). */
+  const [pinned, setPinned] = useState(false);
+  /** What assistive tech hears: undo depth, Esc steps, commits. */
+  const [liveText, setLiveText] = useState('');
+  /** The last export's honest result, kept on screen until the next one. */
+  const [exportResult, setExportResult] = useState<{ headline: string; lines: string[] } | null>(null);
+  const [searching, setSearching] = useState(false);
+  /** Box whose dimensions are being read out while it is drawn or dragged. */
+  const [liveSize, setLiveSize] = useState<TopLeftBox | null>(null);
 
   const [blocks, setBlocks] = useState<ExtractedParagraph[]>([]);
   const [pageObjects, setPageObjects] = useState<{ kind: 'image' | 'shape'; box: TopLeftBox; id: string }[]>([]);
@@ -194,13 +240,23 @@ export function TextEditor() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  const searchIndexRef = useRef<{ blocks: SearchableBlock[]; paragraphs: Map<string, ExtractedParagraph> } | null>(null);
+  const searchIndexRef = useRef<SearchIndex | null>(null);
   const pendingImageRef = useRef<{ bytes: Uint8Array; mime: string; width: number; height: number } | null>(null);
   const [pendingImage, setPendingImage] = useState(false);
+  /** Bumped when the optional engine finishes loading, so advice recomputes. */
+  const [engineTick, setEngineTick] = useState(0);
   const dragRef = useRef<{ start: Point; origin: Map<string, TopLeftBox>; moved: boolean } | null>(null);
+  const resizeRef = useRef<{ id: string; handle: ResizeHandle; start: Point; origin: TopLeftBox } | null>(null);
   const drawRef = useRef<{ from: Point; to: Point } | null>(null);
   const [draftRect, setDraftRect] = useState<TopLeftBox | null>(null);
   const toastSeq = useRef(0);
+  /** The open block's id, readable synchronously from key/blur/export handlers. */
+  const editingRef = useRef<string | null>(null);
+  /** A character typed over a selected block, waiting to land inside it. */
+  const pendingKeyRef = useRef<string | null>(null);
+  /** True while a coalesced burst (drag, nudge run) is open. */
+  const burstRef = useRef(false);
+  const sealTimer = useRef<number | null>(null);
 
   const objects = history.present;
   const activeSession = editedSession ?? session;
@@ -212,24 +268,53 @@ export function TextEditor() {
     const id = toastSeq.current;
     setToasts((current) => [...current.slice(-3), { id, kind, text }]);
     window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 8000);
+    // One sentence, said twice: visibly, and to assistive tech.
+    setLiveText(text);
   }, []);
 
-  const apply = useCallback((action: EditorAction, coalesce = false) => {
+  /** Say something to assistive tech only — for keys that need no banner. */
+  const announce = useCallback((text: string) => setLiveText(text), []);
+
+  /**
+   * One undo step per interaction, not per event.
+   *
+   * `coalesce: true` opens a burst: the first call records the before-state, the
+   * rest rewrite the tip, and `sealHistory` closes it. The previous version pushed
+   * the tip onto the stack when sealing, so a single drag needed two undos and the
+   * first one visibly did nothing.
+   */
+  const applyAll = useCallback((actions: EditorAction[], coalesce = false) => {
+    // Decided outside the updater: `main.tsx` runs in StrictMode, which calls the
+    // updater twice, and a burst flag flipped inside it would lose its own step.
+    const startsBurst = !coalesce || !burstRef.current;
+    // A discrete edit ends any open burst, so the next drag starts its own step.
+    burstRef.current = coalesce;
     setHistory((state) => {
-      const next = editObjects(state.present, action);
+      let next = state.present;
+      for (const action of actions) next = editObjects(next, action);
       if (next === state.present) return state;
-      return coalesce ? amendHistory(state, next) : pushHistory(state, next);
+      return startsBurst ? pushHistory(state, next) : amendHistory(state, next);
     });
   }, []);
 
-  /** Finish an interaction that was coalesced: one undo step for the whole drag. */
+  const apply = useCallback((action: EditorAction, coalesce = false) => {
+    applyAll([action], coalesce);
+  }, [applyAll]);
+
+  /** Finish a coalesced interaction: one undo step for the whole drag. */
   const sealHistory = useCallback(() => {
-    setHistory((state) => ({
-      past: [...state.past, state.present].slice(-60),
-      present: state.present,
-      future: [],
-    }));
+    burstRef.current = false;
   }, []);
+
+  /** Arrow-key / button nudges: a run of them is one undo step, self-sealing. */
+  const nudge = useCallback(
+    (actions: EditorAction[]) => {
+      applyAll(actions, true);
+      if (sealTimer.current) window.clearTimeout(sealTimer.current);
+      sealTimer.current = window.setTimeout(sealHistory, 700);
+    },
+    [applyAll, sealHistory],
+  );
 
   // ── open a document ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -250,7 +335,12 @@ export function TextEditor() {
     setHits([]);
     setEditedSession(null);
     setPage(1);
+    setExportResult(null);
+    setLiveSize(null);
     searchIndexRef.current = null;
+    editingRef.current = null;
+    pendingKeyRef.current = null;
+    burstRef.current = false;
     let disposed = false;
     let madeSession: PdfSession | null = null;
     (async () => {
@@ -373,30 +463,68 @@ export function TextEditor() {
     const onKey = (event: KeyboardEvent) => {
       const meta = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
+      const selectedText = objects
+        .filter((object) => selection.includes(object.id) && object.kind === 'text')
+        .map((object) => object.id);
+      // Ctrl/Cmd+S used to run *above* the typing guard, so saving while editing
+      // wrote the previous text into the file and said "Saved". Both history and
+      // save now commit the open block first, which is what pdf.js does too.
       if (meta && key === 's') {
         event.preventDefault();
-        void exportPdf();
+        void exportPdf(commitEdit());
         return;
       }
       if (meta && key === 'f') {
         event.preventDefault();
+        commitEdit();
         setFindOpen(true);
         return;
       }
       // One guard for every binding below: while a field or the in-place
       // paragraph owns the caret, keys belong to the text, not to the editor.
       const inText = isTypingTarget(event.target);
-      const history = historyCommandForKey(event.key, {
+      const command = historyCommandForKey(event.key, {
         ctrl: event.ctrlKey,
         meta: event.metaKey,
         shift: event.shiftKey,
       });
-      if (history && !inText) {
+      if (command && !inText) {
         event.preventDefault();
-        setHistory((state) => (history === 'undo' ? undoHistory(state) : redoHistory(state)));
+        stepHistory(command);
         return;
       }
-      if (!inText && !meta && !event.altKey) {
+      // `Esc` is the one key that still reaches the editor while typing: it
+      // unwinds exactly one level (edit → Find → selection → pin → tool).
+      if (key === 'escape') {
+        event.preventDefault();
+        unwind();
+        return;
+      }
+      if (inText) return;
+      if (meta && key === 'd' && selection.length > 0) {
+        event.preventDefault();
+        duplicateSelection();
+        return;
+      }
+      // Typing over a selected block edits it. Without this, pressing `t` while a
+      // block is selected changes the tool instead of typing the letter.
+      if (
+        typingStartsEdit(event.key, {
+          ctrl: event.ctrlKey,
+          meta: event.metaKey,
+          alt: event.altKey,
+        }, { textSelected: selectedText.length === 1 })
+      ) {
+        event.preventDefault();
+        startEditing(selectedText[0], event.key);
+        return;
+      }
+      if (key === 'enter' && selectedText.length > 0) {
+        event.preventDefault();
+        startEditing(selectedText[0]);
+        return;
+      }
+      if (!meta && !event.altKey) {
         const armed = textModeForKey(event.key);
         if (armed) {
           event.preventDefault();
@@ -404,23 +532,20 @@ export function TextEditor() {
           return;
         }
       }
-      if ((key === 'delete' || key === 'backspace') && !inText && !meta && selection.length > 0) {
+      if ((key === 'delete' || key === 'backspace') && !meta && selection.length > 0) {
         event.preventDefault();
+        const count = selection.length;
         apply({ type: 'remove', ids: selection });
         setSelection([]);
+        announce(`Removed ${count} object${count === 1 ? '' : 's'}. Ctrl+Z brings them back.`);
         return;
       }
-      if (key === 'escape') {
-        if (editingId) stopEditing();
-        else if (findOpen) setFindOpen(false);
-        else setSelection([]);
-      }
-      if (!inText && ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key) && selection.length > 0) {
+      if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key) && selection.length > 0) {
         event.preventDefault();
         const stepPx = event.shiftKey ? 10 : 1;
         const dx = key === 'arrowleft' ? -stepPx : key === 'arrowright' ? stepPx : 0;
         const dy = key === 'arrowup' ? -stepPx : key === 'arrowdown' ? stepPx : 0;
-        apply({ type: 'move', ids: selection, dx, dy });
+        nudge([{ type: 'move', ids: selection, dx, dy }]);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -432,6 +557,26 @@ export function TextEditor() {
   const editing = objects.find((object) => object.id === editingId);
   const styleTarget = selected.find((object) => object.kind === 'text') as TextObject | undefined;
   const currentStyle: EditorStyle = styleTarget?.style ?? DEFAULT_STYLE;
+
+  /** Undo can delete the object a selection pointed at; never keep a dangling id. */
+  useEffect(() => {
+    if (selection.length === 0) return;
+    const alive = pruneSelection(objects, selection);
+    if (alive.length !== selection.length) setSelection(alive);
+  }, [objects, selection]);
+
+  /**
+   * Open a block for typing, optionally with the key that opened it.
+   *
+   * A click that only *rendered* a contenteditable left the user staring at a
+   * caret-less box: the first keystroke still went to the page and fired a
+   * shortcut. `typed` is how "select a block, start typing" keeps its word.
+   */
+  const startEditing = useCallback((id: string | null, typed?: string) => {
+    editingRef.current = id;
+    pendingKeyRef.current = id ? (typed ?? null) : null;
+    setEditingId(id);
+  }, []);
 
   const openBlock = useCallback(
     (paragraph: ExtractedParagraph) => {
@@ -445,7 +590,7 @@ export function TextEditor() {
       const existing = objects.find((object) => object.kind === 'text' && object.sourceId === paragraph.id);
       if (existing) {
         setSelection([existing.id]);
-        setEditingId(existing.id);
+        startEditing(existing.id);
         return;
       }
       const palette = readPalette(canvasRef.current, paragraph.box, zoom);
@@ -475,33 +620,100 @@ export function TextEditor() {
       };
       apply({ type: 'add', object });
       setSelection([object.id]);
-      setEditingId(object.id);
+      startEditing(object.id);
     },
-    [apply, objects, toast, zoom, pageSize.width],
+    [apply, objects, startEditing, toast, zoom, pageSize.width],
   );
 
-  const stopEditing = useCallback(() => {
+  /**
+   * Finish the open block — one undo step, and the objects as they now are.
+   *
+   * Two `apply` calls (text, then the grown box) used to mean two undos for one
+   * edit, and the export path could not see the text just typed because React had
+   * not re-rendered yet. Returning the next object list is what lets Ctrl+S write
+   * what the user actually sees.
+   */
+  const commitEdit = useCallback((): EditObject[] => {
+    const id = editingRef.current;
     const node = editorRef.current;
-    if (!node || !editing || editing.kind !== 'text') {
-      setEditingId(null);
-      return;
-    }
+    editingRef.current = null;
+    pendingKeyRef.current = null;
+    setEditingId(null);
+    if (!id || !node) return objects;
+    const current = objects.find((object) => object.id === id);
+    if (!current || current.kind !== 'text') return objects;
     const paragraphs = readParagraphs(node);
     const text = textOfParagraphs(paragraphs).trim();
+    // An emptied block is a deletion: the object stays, so the commit still removes
+    // the original words and draws nothing back.
+    const actions: EditorAction[] =
+      text.length === 0
+        ? [{ type: 'text', id, paragraphs: paragraphsFromText('') }]
+        : [
+            { type: 'text', id, paragraphs },
+            { type: 'set-box', id, box: growBox(current, node, zoom) },
+          ];
+    applyAll(actions);
+    // Find & replace indexes the page as it was read. After a rewrite its offsets
+    // point at text that no longer exists, so the index goes with it.
+    searchIndexRef.current = null;
     if (text.length === 0) {
-      // An emptied block is a deletion: keep the object so the commit still
-      // removes the original words, with nothing drawn back.
-      apply({ type: 'text', id: editing.id, paragraphs: paragraphsFromText('') });
-      setEditingId(null);
       toast('info', 'Block cleared: the original words will be removed and nothing drawn back.');
+    } else {
+      toast(
+        'success',
+        `Block rewritten — ${text.length} characters, one undo step. Export to write it into the file.`,
+      );
+    }
+    return actions.reduce<EditObject[]>((list, action) => editObjects(list, action), objects);
+  }, [applyAll, objects, toast, zoom]);
+
+  const stopEditing = useCallback(() => {
+    commitEdit();
+  }, [commitEdit]);
+
+  /** `Esc`, one level at a time: edit → Find → selection → pin → tool. */
+  const unwind = useCallback(() => {
+    const step = nextEscapeStep({
+      editing: Boolean(editingRef.current),
+      findOpen,
+      selected: selection.length,
+      pinned,
+      mode,
+    });
+    if (step === 'commit-edit') {
+      commitEdit();
       return;
     }
-    const grown = growBox(editing, node, zoom);
-    apply({ type: 'text', id: editing.id, paragraphs });
-    apply({ type: 'set-box', id: editing.id, box: grown });
-    setEditingId(null);
-    toast('success', 'Block rewritten. Export to write it into the file.');
-  }, [apply, editing, toast, zoom]);
+    if (step === 'close-find') setFindOpen(false);
+    if (step === 'clear-selection') setSelection([]);
+    if (step === 'unpin') setPinned(false);
+    if (step === 'disarm') setMode('edit');
+    announce(ESCAPE_STEP_REPORT[step]);
+  }, [announce, commitEdit, findOpen, mode, pinned, selection.length]);
+
+  /** Undo / redo, through one door, announced either way. */
+  const stepHistory = useCallback(
+    (direction: 'undo' | 'redo') => {
+      announce(historyReport(history, direction));
+      if (direction === 'undo' ? !canUndo(history) : !canRedo(history)) return;
+      // pdf.js commits whatever is in progress before an undo-affected operation.
+      commitEdit();
+      sealHistory();
+      setHistory(direction === 'undo' ? undoHistory : redoHistory);
+    },
+    [announce, commitEdit, history, sealHistory],
+  );
+
+  /** Ctrl/Cmd+D: the copy lands selected, offset from the original. */
+  const duplicateSelection = useCallback(() => {
+    if (selected.length === 0) return;
+    commitEdit();
+    const copies = selected.map((object, index) => cloneObject(object, objects.length + index));
+    apply({ type: 'add-many', objects: copies });
+    setSelection(copies.map((object) => object.id));
+    announce(`Duplicated ${copies.length} object${copies.length === 1 ? '' : 's'}.`);
+  }, [announce, apply, commitEdit, objects.length, selected]);
 
   /**
    * Arm a mode. The panel, the V/T/I keys and a quick-mode chip all come through
@@ -510,11 +722,11 @@ export function TextEditor() {
    */
   const armMode = useCallback(
     (next: ToolMode) => {
-      if (editingId) stopEditing();
+      if (editingRef.current) stopEditing();
       setMode(next);
       if (next === 'add-image' && !pendingImageRef.current) imageInputRef.current?.click();
     },
-    [editingId, stopEditing],
+    [stopEditing],
   );
 
   /* ── arriving from a quick-mode chip (the editor chooser's "Edit text") ── */
@@ -555,28 +767,53 @@ export function TextEditor() {
           text: block.text,
         })),
         imageCount: pageObjects.filter((entry) => entry.kind === 'image').length,
-        engineAvailable: engineRepairAvailable(),
+        // Three states, because "the engine is available" meant nothing while it
+        // could also mean "a 54 MB download is about to start".
+        engineLoaded: repairEngineLoaded(),
+        engineFetchable: engineRepairAvailable(),
+        engineSize: repairEngineSize(),
       }),
-    [blocks, numPages, opening, page, pageObjects, source],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [blocks, engineTick, numPages, opening, page, pageObjects, source],
   );
 
   const runAdviceAction = useCallback(
     (action: AdviceAction) => {
       if (action === 'run-ocr') {
-        toast('info', 'Opening OCR PDF with this document still loaded — the recognised page comes back editable.');
+        // The claim has to be true: the file store keeps a slot per tool, so the
+        // document only follows the user across if it is seeded first.
+        const handoff = planHandoff('ocr-pdf', 'the OCR tool', file ?? null);
         navigateToTool('ocr-pdf');
+        toast('info', handoff.line);
+        return;
+      }
+      if (action === 'open-engine') {
+        setBusy(true);
+        void (async () => {
+          const outcome = await loadRepairEngine((line) => toast('info', line));
+          setBusy(false);
+          setEngineTick((tick) => tick + 1);
+          if (outcome.ok) {
+            toast('success', 'PyMuPDF is loaded in this tab. Blocks the built-in engine cannot delete will be repaired on export.');
+          } else {
+            toast(
+              'warn',
+              `The optional engine could not be fetched${outcome.reason ? `: ${outcome.reason}` : ''}. Rewriting an OCR layer would leave doubled text, so those blocks stay queued.`,
+            );
+          }
+        })();
         return;
       }
       if (action === 'add-text') armMode('add-text');
       if (action === 'next-page') setPage((current) => Math.min(numPages, current + 1));
     },
-    [armMode, numPages, toast],
+    [armMode, file, numPages, toast],
   );
 
   /** The on-screen box grows with the typed text, so the overlay never clips. */
   function growBox(object: TextObject, node: HTMLElement, scale: number): TopLeftBox {
     const height = node.scrollHeight / Math.max(0.05, scale);
-    return { ...object.box, height: Math.max(8, height + BLOCK_PADDING * 2) };
+    return { ...object.box, height: Math.max(MIN_BLOCK_SIZE, height + BLOCK_PADDING * 2) };
   }
 
   // ── pointer handling on the page ──────────────────────────────────────────
@@ -596,6 +833,7 @@ export function TextEditor() {
     if (mode === 'add-text') {
       drawRef.current = { from: point, to: point };
       setDraftRect({ x: point.x, y: point.y, width: 0, height: 0 });
+      setLiveSize({ x: point.x, y: point.y, width: 0, height: 0 });
       return;
     }
     const hitObject = objectAtPoint(objects, page, point, scope);
@@ -606,7 +844,8 @@ export function TextEditor() {
           ? selection
           : [hitObject.id];
       setSelection(next);
-      if (editingId && editingId !== hitObject.id) stopEditing();
+      // One click selects; the caret arrives on double-click, Enter, or typing.
+      if (editingRef.current && editingRef.current !== hitObject.id) stopEditing();
       if (next.length > 0) {
         dragRef.current = {
           start: point,
@@ -627,11 +866,60 @@ export function TextEditor() {
       selectPageObject(detected.id, detected.kind, detected.box);
       return;
     }
-    if (editingId) stopEditing();
+    if (editingRef.current) stopEditing();
     setSelection([]);
   }
 
+  /** Double-click goes one level deeper: into the words, not another selection. */
+  function onPageDoubleClick(event: React.MouseEvent) {
+    if (!source || mode !== 'edit') return;
+    const point = toViewerPoint(event);
+    const hitObject = objectAtPoint(objects, page, point, 'text');
+    if (hitObject && hitObject.kind === 'text') {
+      setSelection([hitObject.id]);
+      startEditing(hitObject.id);
+      return;
+    }
+    const paragraph = blocks.find((block) => boxHit(block.box, point, BLOCK_PADDING));
+    if (paragraph) openBlock(paragraph);
+  }
+
+  /** A handle drag resizes the box and re-wraps the text inside it live. */
+  function onHandleMouseDown(event: React.MouseEvent, object: EditObject, handle: ResizeHandle) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    const point = toViewerPoint(event);
+    resizeRef.current = { id: object.id, handle, start: point, origin: object.box };
+    setSelection([object.id]);
+    if (editingRef.current && editingRef.current !== object.id) stopEditing();
+    announce(`Resizing from the ${RESIZE_HANDLES.find((entry) => entry.id === handle)?.label ?? 'edge'}.`);
+  }
+
+  /** Keyboard route to the same resize, so dragging is never the only way. */
+  function onHandleKeyDown(event: React.KeyboardEvent, object: EditObject, handle: ResizeHandle) {
+    const keys: Record<string, [number, number]> = {
+      arrowleft: [-1, 0],
+      arrowright: [1, 0],
+      arrowup: [0, -1],
+      arrowdown: [0, 1],
+    };
+    const delta = keys[event.key.toLowerCase()];
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const factor = event.shiftKey ? 10 : 1;
+    nudge([{ type: 'set-box', id: object.id, box: resizeBox(object.box, handle, delta[0] * factor, delta[1] * factor) }]);
+  }
+
   function onPageMouseMove(event: React.MouseEvent) {
+    const resize = resizeRef.current;
+    if (resize) {
+      const point = toViewerPoint(event);
+      const box = resizeBox(resize.origin, resize.handle, point.x - resize.start.x, point.y - resize.start.y);
+      apply({ type: 'set-box', id: resize.id, box }, true);
+      setLiveSize(box);
+      return;
+    }
     const drag = dragRef.current;
     if (drag) {
       const point = toViewerPoint(event);
@@ -657,10 +945,18 @@ export function TextEditor() {
   }
 
   function onPageMouseUp() {
+    if (resizeRef.current) {
+      // One undo step for the whole drag: the burst opened on the first move.
+      sealHistory();
+      resizeRef.current = null;
+      setLiveSize(null);
+      return;
+    }
     if (dragRef.current?.moved) sealHistory();
     dragRef.current = null;
     const draft = drawRef.current;
     drawRef.current = null;
+    setLiveSize(null);
     if (draft && mode === 'add-text') {
       const box = normalizeDraft(draft);
       setDraftRect(null);
@@ -691,8 +987,11 @@ export function TextEditor() {
     };
     apply({ type: 'add', object });
     setSelection([object.id]);
-    setMode('edit');
-    setEditingId(object.id);
+    // One-shot unless pinned: the resting tool is Edit, so the next click on the
+    // page moves or edits this box instead of dropping a fourth one under it.
+    if (stepsAside('add-text', pinned)) setMode('edit');
+    else announce('Pinned: another text box is ready to place.');
+    startEditing(object.id);
   }
 
   function placeImage(point: Point) {
@@ -726,6 +1025,12 @@ export function TextEditor() {
     };
     apply({ type: 'add', object });
     setSelection([object.id]);
+    if (!stepsAside('add-image', pinned)) {
+      // Pinned: the same picture stays loaded so the next click drops another one.
+      announce(`Placed on page ${page}. Pinned, so the next click places another.`);
+      toast('info', 'Click where the next copy should go — the tool stays armed until Esc.');
+      return;
+    }
     pendingImageRef.current = null;
     setPendingImage(false);
     setMode('edit');
@@ -831,12 +1136,13 @@ export function TextEditor() {
   }
 
   // ── find & replace ────────────────────────────────────────────────────────
-  async function ensureSearchIndex(): Promise<{ blocks: SearchableBlock[]; paragraphs: Map<string, ExtractedParagraph> }> {
+  async function ensureSearchIndex(): Promise<SearchIndex> {
     if (searchIndexRef.current) return searchIndexRef.current;
     if (!activeSession) return { blocks: [], paragraphs: new Map() };
     const paragraphs = new Map<string, ExtractedParagraph>();
     const all: SearchableBlock[] = [];
     process.startProcessing('Indexing text', '_edited.pdf');
+    setSearching(true);
     for (let n = 1; n <= activeSession.numPages; n += 1) {
       const pageItems = await activeSession.textItems(n);
       const clustered = clusterParagraphs(pageItems);
@@ -845,8 +1151,23 @@ export function TextEditor() {
       process.setPercent(Math.round((n / activeSession.numPages) * 100), `Reading page ${n} of ${activeSession.numPages}`);
     }
     process.reset();
-    searchIndexRef.current = { blocks: all, paragraphs };
-    return searchIndexRef.current;
+    setSearching(false);
+    // What the page says *now* is what a search must match: a block the user has
+    // retyped is re-pointed at its edited text, or Replace would rewrite the
+    // original words and quietly undo the edit made a moment ago.
+    const retyped = new Map<string, string>();
+    for (const object of objects) {
+      if (object.kind === 'text' && object.sourceId) retyped.set(object.sourceId, textOfParagraphs(object.paragraphs));
+    }
+    const index: SearchIndex = {
+      blocks: all.map((block) => {
+        const text = retyped.get(block.id);
+        return text === undefined ? block : retextBlock(block, text);
+      }),
+      paragraphs,
+    };
+    searchIndexRef.current = index;
+    return index;
   }
 
   const runSearch = useCallback(
@@ -862,9 +1183,11 @@ export function TextEditor() {
       setHitIndex(0);
       const pages = new Set(found.map((hit) => hit.page)).size;
       setFindStatus(
-        found.length === 0
-          ? `No match for “${query}” in this document.`
-          : `${found.length} match${found.length === 1 ? '' : 'es'} on ${pages} page${pages === 1 ? '' : 's'} · 1/${found.length}`,
+        index.blocks.length === 0
+          ? 'This document has no text layer to search — its pages are pictures. Run OCR, then search the recognised text.'
+          : found.length === 0
+            ? `No match for “${query}” in ${index.blocks.length} text block${index.blocks.length === 1 ? '' : 's'}.`
+            : `${found.length} match${found.length === 1 ? '' : 'es'} on ${pages} page${pages === 1 ? '' : 's'} · 1/${found.length}`,
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -878,7 +1201,11 @@ export function TextEditor() {
 
   function showHit(index: number) {
     if (hits.length === 0) {
-      setFindStatus('Nothing to jump to yet.');
+      setFindStatus(
+        findQuery
+          ? `Nothing to jump to — “${findQuery}” matched 0 blocks so far.`
+          : 'Type something to search every page.',
+      );
       return;
     }
     const next = (index + hits.length) % hits.length;
@@ -888,21 +1215,44 @@ export function TextEditor() {
     setFindStatus(`${next + 1}/${hits.length} on page ${hit.page} · ${hit.preview}`);
   }
 
-  /** Write one replacement into the block that holds the hit. */
-  function applyHit(hit: SearchHit, all: boolean) {
+  /**
+   * Write one replacement into the block that holds the hit.
+   *
+   * Returns what it did, so Replace All can report one aggregate sentence instead
+   * of the count of whichever block happened to be processed last.
+   */
+  function applyHit(hit: SearchHit, all: boolean): { replaced: number; stale: number } | null {
     const index = searchIndexRef.current;
     const paragraph = index?.paragraphs.get(hit.sourceId);
     if (!paragraph) {
-      toast('error', 'That match could not be located any more. Search again.');
-      return;
+      toast('error', 'That match is not in this document any more — search again before replacing.');
+      return null;
     }
+    if (findReplacement.trim().length === 0) {
+      toast('warn', `Nothing to replace “${findQuery}” with — type the new text first. Nothing was changed.`);
+      return null;
+    }
+    const existing = objects.find(
+      (object): object is TextObject => object.kind === 'text' && object.sourceId === paragraph.id,
+    );
+    // Replace over the text that is on the page *now*, and only at offsets that
+    // still read as the query: a stale hit would edit whatever characters moved
+    // into its place, which is a wrong answer that looks right.
+    const current = existing ? textOfParagraphs(existing.paragraphs) : paragraph.text;
     const scoped: SearchHit[] = all
       ? hits.filter((entry) => entry.sourceId === hit.sourceId)
       : [hit];
-    const ranges = scoped.map((entry) => entry.range);
-    const replaced = replaceInText(paragraph.text, findQuery, findReplacement, findOptions, ranges);
-    const existing = objects.find((object) => object.kind === 'text' && object.sourceId === paragraph.id);
-    const style = existing && existing.kind === 'text' ? existing.style : styleFromExtraction(paragraph, { pageWidth: pageSize.width });
+    const ranges = liveRanges(current, findQuery, findOptions, scoped.map((entry) => entry.range));
+    const stale = scoped.length - ranges.length;
+    if (ranges.length === 0) {
+      toast(
+        'warn',
+        `“${findQuery}” is not in that block on page ${hit.page} any more — it was edited after the search. Nothing was changed.`,
+      );
+      return null;
+    }
+    const replaced = replaceInText(current, findQuery, findReplacement, findOptions, ranges);
+    const style = existing?.style ?? styleFromExtraction(paragraph, { pageWidth: pageSize.width });
     const updated: TextObject = {
       id: existing?.id ?? nextObjectId('text'),
       page: paragraph.page,
@@ -922,24 +1272,88 @@ export function TextEditor() {
       paragraphs: paragraphsFromText(replaced.text),
       style,
       deletion: deletionBoxes(paragraph),
-      paperColor: existing && existing.kind === 'text' ? existing.paperColor : readPalette(canvasRef.current, paragraph.box, zoom).background,
+      paperColor: existing?.paperColor ?? readPalette(canvasRef.current, paragraph.box, zoom).background,
       sourceId: paragraph.id,
       fromInvisibleLayer: paragraph.invisible,
     };
     if (paragraph.invisible) {
-      toast('warn', 'That block is an invisible OCR layer, so the replacement is queued for the optional PyMuPDF engine.');
+      toast('warn', 'That block is an invisible OCR layer: the replacement is queued for the optional PyMuPDF engine, which rewrites the page underneath it.');
     }
     if (existing) apply({ type: 'replace', id: existing.id, object: updated });
     else apply({ type: 'add', object: updated });
-    const count = replaced.count;
-    setHits((current) => current.filter((entry) => !scoped.includes(entry)));
+    // The block's text moved, so re-point the live index at it: its old offsets
+    // are dead ends now, and `liveRanges` is what refuses them next time.
+    if (index) {
+      index.blocks = index.blocks.map((block) => (block.id === paragraph.id ? retextBlock(block, replaced.text) : block));
+    }
+    setHits((remaining) => remaining.filter((entry) => !scoped.includes(entry)));
     setFindStatus(
-      `${count} replacement${count === 1 ? '' : 's'} queued on page ${paragraph.page}. Export to write them in.`,
+      `${replaced.count} replacement${replaced.count === 1 ? '' : 's'} queued on page ${paragraph.page}${
+        stale > 0 ? `, ${stale} stale match${stale === 1 ? '' : 'es'} skipped` : ''
+      }. Export to write them in.`,
+    );
+    return { replaced: replaced.count, stale };
+  }
+
+  /** Replace the match on screen (`false`) or every match in the document. */
+  function replaceText(all: boolean) {
+    if (hits.length === 0) {
+      const line = findQuery
+        ? `Nothing to replace: “${findQuery}” matched 0 blocks. Run the search again after any edit.`
+        : 'Nothing to replace — type what to find first.';
+      setFindStatus(line);
+      toast('warn', line);
+      return;
+    }
+    if (!all) {
+      applyHit(hits[Math.min(hitIndex, hits.length - 1)], false);
+      return;
+    }
+    const byBlock = new Map<string, SearchHit[]>();
+    for (const hit of hits) {
+      const list = byBlock.get(hit.sourceId) ?? [];
+      list.push(hit);
+      byBlock.set(hit.sourceId, list);
+    }
+    let count = 0;
+    let stale = 0;
+    let blocks = 0;
+    const pages = new Set<number>();
+    for (const list of byBlock.values()) {
+      const outcome = applyHit(list[0], true);
+      if (!outcome) continue;
+      count += outcome.replaced;
+      stale += outcome.stale;
+      blocks += 1;
+      pages.add(list[0].page);
+    }
+    if (count === 0) {
+      toast('warn', 'Nothing was replaced — every match had gone stale. Search again.');
+      return;
+    }
+    setFindStatus(
+      `${count} replacement${count === 1 ? '' : 's'} in ${blocks} block${blocks === 1 ? '' : 's'} on ${pages.size} page${
+        pages.size === 1 ? '' : 's'
+      } queued. Export to write them in.${stale > 0 ? ` ${stale} stale match${stale === 1 ? '' : 'es'} skipped.` : ''}`,
     );
   }
 
   // ── export ────────────────────────────────────────────────────────────────
-  async function buildOutput(): Promise<Uint8Array> {
+  /**
+   * Mark objects as written without creating an undo step.
+   *
+   * Exporting is not an edit: it used to push several history entries, so Ctrl+Z
+   * after a save appeared to do nothing a few times before anything changed.
+   */
+  function stampState(ids: string[], state: CommitState, note?: string) {
+    if (ids.length === 0) return;
+    setHistory((current) => {
+      const next = editObjects(current.present, { type: 'commit-state', ids, state, note });
+      return next === current.present ? current : amendHistory(current, next);
+    });
+  }
+
+  async function buildOutput(list: EditObject[]): Promise<{ bytes: Uint8Array; report: ExportReport }> {
     if (!source) throw new Error('Open a PDF first.');
     process.startProcessing('Rewriting text', '_edited.pdf');
     process.setPercent(10, 'Opening the document');
@@ -948,52 +1362,56 @@ export function TextEditor() {
       // Append-only revision keeps the signed byte range verifiable.
       await snapshot(doc);
     }
-    process.setPercent(35, objects.length > 0 ? 'Deleting the original runs and drawing the edits' : 'Saving');
-    const outcome = await applyEdits(doc, objects);
+    process.setPercent(35, list.length > 0 ? 'Deleting the original runs and drawing the edits' : 'Saving');
+    const outcome = await applyEdits(doc, list);
     process.setPercent(70, signed ? 'Appending the revision' : 'Saving');
     let bytes = signed ? await saveIncremental(doc) : await savePDF(doc);
 
-    if (outcome.failed.length > 0 && engineRepairAvailable()) {
+    const failedIds = outcome.failed.map((entry) => entry.id);
+    const repaired: string[] = [];
+    let engineError: string | undefined;
+    if (failedIds.length > 0 && engineRepairAvailable()) {
+      // 54 MB, fetched once — and it says so before the wait rather than after.
+      if (!repairEngineLoaded()) toast('info', repairEngineLine());
       process.setPercent(80, 'Repairing blocked pages with PyMuPDF');
-      const failedIds = outcome.failed.map((entry) => entry.id);
-      const blocked = objects.filter(
+      const blocked = list.filter(
         (object): object is TextObject => failedIds.includes(object.id) && object.kind === 'text',
       );
-      const lines = await engineLines(doc, failedIds);
-      const repaired = await repairWithPyMuPDF(
+      const lines = await engineLines(doc, failedIds, list);
+      const repair = await repairWithPyMuPDF(
         bytes,
         blocked.map((object) => ({ object })),
         lines,
         password || undefined,
       );
-      if (repaired) {
-        bytes = repaired.bytes;
-        toast('info', repaired.note);
-        apply({ type: 'commit-state', ids: repaired.repaired, state: 'written' });
+      // A failed fetch must not throw the built-in file away, and must not be
+      // quiet about it either: the blocks it was meant to clean are still there.
+      if (repair?.error) engineError = repair.error;
+      else if (repair) {
+        bytes = repair.bytes;
+        repaired.push(...repair.repaired);
+        stampState(repair.repaired, 'written');
       }
     }
-    if (outcome.partial.length > 0) {
-      toast(
-        'warn',
-        `${outcome.partial.length} block(s) still have leftover glyphs under the new text; the optional PyMuPDF engine can clean those.`,
-      );
-    }
-    if (outcome.raster.length > 0) {
-      toast('warn', `${outcome.raster.length} block(s) needed raster fallback reporting; check them in a viewer.`);
-    }
-    const failedIds = outcome.failed.map((entry) => entry.id);
-    if (failedIds.length > 0) {
-      apply({ type: 'commit-state', ids: failedIds, state: 'needs-engine', note: outcome.failed[0]?.reason });
-    }
-    const written = objects.filter((object) => !failedIds.includes(object.id)).map((object) => object.id);
-    if (written.length > 0) apply({ type: 'commit-state', ids: written, state: 'written' });
-    return bytes;
+    const stillBlocked = failedIds.filter((id) => !repaired.includes(id));
+    stampState(stillBlocked, 'needs-engine', stillBlocked.length > 0 ? outcome.failed[0]?.reason : undefined);
+    stampState(
+      list.filter((object) => !stillBlocked.includes(object.id)).map((object) => object.id),
+      'written',
+    );
+    // One structured result instead of three transient toasts that expire: the
+    // equivalent of a registry tool's `result.warnings`.
+    return { bytes, report: exportReport(outcome, list, { signed, repaired, engineError }) };
   }
 
   /** Lines the PyMuPDF fallback has to insert, in its top-left coordinate space. */
-  async function engineLines(doc: Parameters<typeof prepareTextObject>[0], ids: string[]): Promise<EngineLine[]> {
+  async function engineLines(
+    doc: Parameters<typeof prepareTextObject>[0],
+    ids: string[],
+    list: EditObject[],
+  ): Promise<EngineLine[]> {
     const lines: EngineLine[] = [];
-    for (const object of objects) {
+    for (const object of list) {
       if (object.kind !== 'text' || !ids.includes(object.id)) continue;
       const prepared = await prepareTextObject(doc, object);
       for (const line of prepared.layout.lines) {
@@ -1013,25 +1431,26 @@ export function TextEditor() {
     return lines;
   }
 
-  async function exportPdf() {
+  async function exportPdf(list: EditObject[] = commitEdit()) {
     if (!source || busy) return;
+    if (list.length === 0) {
+      toast('warn', 'Nothing to export yet — click a paragraph and retype it first.');
+      return;
+    }
     setBusy(true);
     try {
-      const bytes = await buildOutput();
+      const { bytes, report } = await buildOutput(list);
       const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       process.setOutput(blob, url);
-      process.appendLog(`Text editor exported ${objects.length} object(s) as ${baseName(source.name)}_edited.pdf`);
+      process.appendLog(`${report.headline} Saved as ${baseName(source.name)}_edited.pdf`);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `${baseName(source.name)}_edited.pdf`;
       anchor.click();
-      toast(
-        'success',
-        signed
-          ? 'Saved as an appended revision, so the existing signature stays verifiable.'
-          : `Saved ${objects.length} edited object${objects.length === 1 ? '' : 's'}.`,
-      );
+      setExportResult({ headline: report.headline, lines: report.warnings });
+      toast(report.warnings.length > 0 ? 'warn' : 'success', report.headline);
+      for (const line of report.warnings) process.appendLog(line);
       if (pdfa) toast('warn', `${pdfa} conformance may break: the rewrite embeds new fonts and an added content stream.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'The edited PDF could not be written.';
@@ -1042,16 +1461,21 @@ export function TextEditor() {
     }
   }
 
-  async function reloadPreview() {
+  async function reloadPreview(list: EditObject[] = commitEdit()) {
     if (!source || busy) return;
+    if (list.length === 0) {
+      toast('warn', 'Nothing to preview yet — the page still holds its original words.');
+      return;
+    }
     setBusy(true);
     try {
-      const bytes = await buildOutput();
+      const { bytes, report } = await buildOutput(list);
       const opened = await openRender(bytes, { password: password || undefined });
       await editedSession?.destroy();
       setEditedSession(opened);
       setSource({ bytes, name: source.name });
       searchIndexRef.current = null;
+      setExportResult({ headline: report.headline, lines: report.warnings });
       setPage(1);
       toast('success', 'Preview now shows the edited bytes.');
     } catch (err) {
@@ -1124,14 +1548,22 @@ export function TextEditor() {
           barsHidden={barsHidden}
           canUndo={canUndo(history)}
           canRedo={canRedo(history)}
+          canExport={objects.length > 0}
+          exportNote={
+            objects.length > 0
+              ? 'Save the edited PDF (Ctrl+S). The open block is committed first.'
+              : 'Nothing to export yet — click a paragraph on the page and retype it.'
+          }
+          undoNote={canUndo(history) ? 'Undo the last committed edit (Ctrl+Z)' : 'Nothing has been edited yet'}
+          redoNote={canRedo(history) ? 'Re-apply the change just undone (Ctrl+Shift+Z)' : 'Nothing has been undone'}
           onBack={() => {
             if (dirty > 0 && !window.confirm(`${dirty} edited block(s) have not been exported yet. Close them anyway?`)) return;
             setFile(null);
           }}
           onOpenAnother={openAnother}
-          onExport={exportPdf}
-          onUndo={() => setHistory(undoHistory)}
-          onRedo={() => setHistory(redoHistory)}
+          onExport={() => exportPdf()}
+          onUndo={() => stepHistory('undo')}
+          onRedo={() => stepHistory('redo')}
           onPrevPage={() => setPage((current) => Math.max(1, current - 1))}
           onNextPage={() => setPage((current) => Math.min(numPages, current + 1))}
           onJumpPage={(value) => setPage(Math.min(Math.max(1, Math.round(value) || 1), Math.max(1, numPages)))}
@@ -1140,7 +1572,7 @@ export function TextEditor() {
           onToggleRulers={() => setShowRulers((current) => !current)}
           onToggleBars={() => setBarsHidden((current) => !current)}
           onCopyPageText={copyPageText}
-          onReloadPreview={reloadPreview}
+          onReloadPreview={() => reloadPreview()}
         />
 
         {!source && (
@@ -1181,9 +1613,13 @@ export function TextEditor() {
         )}
 
         {source && signed && (
-          <p className="border-b border-cream-border bg-accent/5 px-3 py-1.5 text-[11px] leading-relaxed text-ink-soft">
-            This document is signed. Editing invalidates the visual appearance of a signature, so the export is written
-            as an appended revision — the original signed bytes stay verifiable. PDF/A conformance may still break.
+          <p
+            data-signed-notice
+            className="border-b border-cream-border bg-accent/5 px-3 py-1.5 text-[11px] leading-relaxed text-ink-soft"
+          >
+            This document is signed. Edits are not written back over the signed bytes: Export produces an appended
+            incremental revision that carries the rewritten text, so the existing signature stays verifiable and the new
+            words are what a viewer shows. PDF/A conformance may still break.
           </p>
         )}
         {source && pdfa && (
@@ -1236,8 +1672,10 @@ export function TextEditor() {
                       />
                       <div
                         className="absolute inset-0"
+                        data-page-overlay
                         style={{ zIndex: 10, cursor: mode === 'edit' ? 'default' : 'crosshair' }}
                         onMouseDown={onPageMouseDown}
+                        onDoubleClick={onPageDoubleClick}
                         onMouseMove={onPageMouseMove}
                         onMouseUp={onPageMouseUp}
                         onMouseLeave={onPageMouseUp}
@@ -1247,31 +1685,68 @@ export function TextEditor() {
                             Opening…
                           </div>
                         )}
-                        {blocks.map((block) =>
-                          visibleObjects.some((object) => object.kind === 'text' && object.sourceId === block.id) ? null : (
+                        {blocks.map((block) => {
+                          if (visibleObjects.some((object) => object.kind === 'text' && object.sourceId === block.id)) {
+                            return null;
+                          }
+                          const editable = !block.invisible && (scope === 'text' || scope === 'all') && mode === 'edit';
+                          // The hover target is the padded box, i.e. exactly the box
+                          // a click turns into an editable block — "where you land".
+                          const landing = {
+                            x: block.box.x - BLOCK_PADDING,
+                            y: block.box.y - BLOCK_PADDING,
+                            width: block.box.width + BLOCK_PADDING * 2,
+                            height: block.box.height + BLOCK_PADDING * 2,
+                          };
+                          return (
                             <div
                               key={block.id}
-                              title={block.invisible ? 'Invisible OCR text — selectable, not editable' : 'Click to rewrite this paragraph'}
-                              className="absolute rounded-[2px] transition-colors"
+                              data-editable-block={editable ? 'yes' : 'no'}
+                              data-block-page={block.page}
+                              role="button"
+                              tabIndex={mode === 'edit' ? 0 : -1}
+                              aria-disabled={!editable}
+                              aria-label={
+                                editable
+                                  ? `Rewrite this paragraph on page ${block.page}: ${block.text.slice(0, 60) || 'empty'}`
+                                  : block.invisible
+                                    ? `Page ${block.page}: invisible OCR text — searchable, not editable here`
+                                    : `Page ${block.page}: paragraph text`
+                              }
+                              title={
+                                block.invisible
+                                  ? 'Invisible OCR text — selectable, not editable'
+                                  : 'Click to rewrite this paragraph'
+                              }
+                              className={`group absolute rounded-[2px] outline-offset-0 transition-colors ${FOCUS_RING} ${
+                                editable
+                                  ? 'cursor-pointer hover:bg-accent/10 hover:outline hover:outline-1 hover:outline-accent'
+                                  : block.invisible
+                                    ? 'cursor-not-allowed outline outline-1 outline-dashed outline-warn'
+                                    : ''
+                              }`}
                               style={{
-                                left: block.box.x * zoom,
-                                top: block.box.y * zoom,
-                                width: block.box.width * zoom,
-                                height: block.box.height * zoom,
-                                outline: selectionOutlineFor(mode, scope, block.invisible),
-                                outlineOffset: 0,
-                                background: 'transparent',
+                                left: landing.x * zoom,
+                                top: landing.y * zoom,
+                                width: landing.width * zoom,
+                                height: landing.height * zoom,
                               }}
-                              onMouseEnter={(event) => {
-                                if (block.invisible || (scope !== 'text' && scope !== 'all')) return;
-                                event.currentTarget.style.background = 'rgba(37,99,235,0.08)';
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openBlock(block);
                               }}
-                              onMouseLeave={(event) => {
-                                event.currentTarget.style.background = 'transparent';
-                              }}
-                            />
-                          ),
-                        )}
+                            >
+                              {editable && (
+                                <span className="pointer-events-none absolute left-0 top-full hidden whitespace-nowrap rounded bg-accent px-1 py-0.5 font-mono text-[9px] leading-none text-white group-hover:block group-focus:block">
+                                  {Math.round(block.size)} pt · {block.lines.length} line
+                                  {block.lines.length === 1 ? '' : 's'} · click to rewrite
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
 
                         {pageObjects.map((entry) => (
                           <div
@@ -1295,10 +1770,17 @@ export function TextEditor() {
                             selected={selection.includes(object.id)}
                             editing={editingId === object.id}
                             editorRef={editorRef}
+                            pendingKey={pendingKeyRef.current}
                             onCommit={stopEditing}
+                            onEditStart={startEditing}
+                            onHandleMouseDown={onHandleMouseDown}
+                            onHandleKeyDown={onHandleKeyDown}
                           />
                         ))}
 
+                        {(draftRect ?? liveSize) && (
+                          <SizeBadge box={(draftRect ?? liveSize) as TopLeftBox} scale={zoom} />
+                        )}
                         {draftRect && (
                           <div
                             className="absolute border-2 border-dashed border-accent bg-accent/10"
@@ -1329,6 +1811,10 @@ export function TextEditor() {
                 <span>{summaryText(objects)}</span>
                 <span className="ml-auto">{busy ? 'writing…' : editedSession ? 'preview: edited bytes' : 'preview: original bytes'}</span>
               </div>
+              {/* Announced, not shown: undo depth, Esc steps, duplicates. */}
+              <p className="sr-only" role="status" aria-live="polite" data-text-live>
+                {liveText}
+              </p>
             </div>
 
             {!barsHidden && (
@@ -1336,14 +1822,24 @@ export function TextEditor() {
                 <ModePanel
                   mode={mode}
                   scope={scope}
+                  pinned={pinned}
                   onMode={armMode}
                   onScope={setScope}
+                  onPin={(next) => {
+                    setPinned(next);
+                    announce(
+                      next
+                        ? 'Pinned: the placement tool stays armed after each drop.'
+                        : 'One-shot again: the tool steps back to Edit after one placement.',
+                    );
+                  }}
                   onPickImage={() => imageInputRef.current?.click()}
                 />
                 {editingId && (
                   <div className="flex items-center gap-2 rounded-doodle-md border border-accent/30 bg-accent/5 p-2">
                     <span className="flex-1 text-[10px] leading-relaxed text-ink-soft">
-                      Editing in place. Enter inserts a line break; the block re-wraps live.
+                      Editing page {editing?.page ?? page} in place. Enter inserts a line break; Esc or Done keeps what
+                      you typed as one undo step.
                     </span>
                     <ToolButton label="Done" kind="primary" onClick={stopEditing} />
                   </div>
@@ -1362,6 +1858,10 @@ export function TextEditor() {
                 />
                 <ObjectPanel
                   selection={selected}
+                  onSetBox={(box) => {
+                    const id = selected[0]?.id;
+                    if (id) apply({ type: 'set-box', id, box });
+                  }}
                   onTransform={(patch) => apply({ type: 'transform', ids: selection, ...patch })}
                   onRotate={(delta) => {
                     const start = selected[0]?.rotation ?? 0;
@@ -1383,8 +1883,15 @@ export function TextEditor() {
                   onDistribute={(axis) => apply({ type: 'distribute', ids: selection, axis })}
                   onAlt={(alt) => apply({ type: 'alt', ids: selection, alt })}
                   onReplaceImage={onReplaceImage}
-                  onMove={(dx, dy) => apply({ type: 'move', ids: selection, dx, dy })}
+                  onMove={(dx, dy) => nudge([{ type: 'move', ids: selection, dx, dy }])}
                 />
+                {exportResult && (
+                  <WarningList
+                    headline={exportResult.headline}
+                    lines={exportResult.lines}
+                    onDismiss={() => setExportResult(null)}
+                  />
+                )}
                 <FindReplacePanel
                   open={findOpen}
                   query={findQuery}
@@ -1393,21 +1900,22 @@ export function TextEditor() {
                   wholeWord={Boolean(findOptions.wholeWord)}
                   ignoreAccents={Boolean(findOptions.ignoreAccents)}
                   status={findStatus}
+                  canReplace={hits.length > 0}
+                  replaceNote={
+                    hits.length > 0
+                      ? `Replace the match on screen, or every match in the document.`
+                      : findQuery
+                        ? `Nothing to replace — “${findQuery}” matched 0 blocks.`
+                        : 'Nothing to replace yet — type what to find first.'
+                  }
+                  searching={searching}
                   onQuery={setFindQuery}
                   onReplacement={setFindReplacement}
                   onToggle={(key, value) => setFindOptions((current) => ({ ...current, [key]: value }))}
                   onNext={() => showHit(hitIndex + 1)}
                   onPrev={() => showHit(hitIndex - 1)}
-                  onReplace={() => hits[0] && applyHit(hits[0], false)}
-                  onReplaceAll={() => {
-                    const byBlock = new Map<string, SearchHit[]>();
-                    for (const hit of hits) {
-                      const list = byBlock.get(hit.sourceId) ?? [];
-                      list.push(hit);
-                      byBlock.set(hit.sourceId, list);
-                    }
-                    for (const list of byBlock.values()) applyHit(list[0], true);
-                  }}
+                  onReplace={() => replaceText(false)}
+                  onReplaceAll={() => replaceText(true)}
                   onClose={() => setFindOpen(false)}
                 />
                 <div className="space-y-1.5">
@@ -1423,7 +1931,13 @@ export function TextEditor() {
                       if (!object) return;
                       setPage(object.page);
                       setSelection([id]);
-                      if (object.kind === 'text') setEditingId(id);
+                    }}
+                    onEdit={(id) => {
+                      const object = objects.find((entry) => entry.id === id);
+                      if (!object) return;
+                      setPage(object.page);
+                      setSelection([id]);
+                      if (object.kind === 'text') startEditing(id);
                     }}
                   />
                 </div>
@@ -1435,10 +1949,8 @@ export function TextEditor() {
                 >
                   <ShortcutList compact rows={TEXT_EDITOR_SHORTCUTS} />
                 </InspectorSection>
-                <p className="text-[10px] leading-relaxed text-ink-muted">
-                  {engineRepairAvailable()
-                    ? 'PyMuPDF engine is reachable: blocks the built-in engine cannot delete are repaired with it on export.'
-                    : `Optional engine offline: ${enginePurpose('pymupdf')} Without it, blocks in form XObjects and scans are reported rather than doubled.`}
+                <p className="text-[10px] leading-relaxed text-ink-muted" data-engine-note>
+                  {repairEngineNote()}
                 </p>
               </aside>
             )}
@@ -1458,14 +1970,23 @@ function ObjectView({
   selected,
   editing,
   editorRef,
+  pendingKey,
   onCommit,
+  onEditStart,
+  onHandleMouseDown,
+  onHandleKeyDown,
 }: {
   object: EditObject;
   zoom: number;
   selected: boolean;
   editing: boolean;
   editorRef: React.RefObject<HTMLDivElement>;
+  /** Character typed over the selection, which must land inside the box. */
+  pendingKey: string | null;
   onCommit: () => void;
+  onEditStart: (id: string | null, typed?: string) => void;
+  onHandleMouseDown: (event: React.MouseEvent, object: EditObject, handle: ResizeHandle) => void;
+  onHandleKeyDown: (event: React.KeyboardEvent, object: EditObject, handle: ResizeHandle) => void;
 }) {
   const style: React.CSSProperties = {
     left: object.box.x * zoom,
@@ -1479,12 +2000,19 @@ function ObjectView({
     return (
       <div style={{ ...style, position: 'absolute', overflow: 'hidden' }}>
         <img src={imageDataUrl(object.bytes, object.mime)} alt={object.alt} style={{ width: '100%', height: '100%', objectFit: 'fill' }} />
-        {selected && <SelectionFrame />}
+        {selected && <SelectionFrame object={object} onEdit={() => onEditStart(object.id)} onMouseDown={onHandleMouseDown} onKeyDown={onHandleKeyDown} />}
       </div>
     );
   }
   if (object.kind === 'shape') {
-    return <div style={{ ...style, position: 'absolute', background: object.color }} title="Cover patch" />;
+    return (
+      <div
+        style={{ ...style, position: 'absolute', background: object.color }}
+        title="Cover patch"
+      >
+        {selected && <SelectionFrame object={object} onEdit={() => onEditStart(object.id)} onMouseDown={onHandleMouseDown} onKeyDown={onHandleKeyDown} />}
+      </div>
+    );
   }
   const textStyle: React.CSSProperties = {
     fontFamily: familyPreview(object.style.fontFamily),
@@ -1503,15 +2031,95 @@ function ObjectView({
     overflowWrap: 'break-word',
   };
   return (
-    <div style={{ ...style, position: 'absolute' }}>
+    <div style={{ ...style, position: 'absolute' }} onDoubleClick={() => onEditStart(object.id)}>
       <div style={textStyle}>
         {editing ? (
-          <EditorBox boxRef={editorRef} object={object} onCommit={onCommit} />
+          <EditorBox boxRef={editorRef} object={object} pendingKey={pendingKey} onCommit={onCommit} />
         ) : (
           <BlockPreview object={object} />
         )}
       </div>
-      {selected && <SelectionFrame />}
+      {selected && (
+        <SelectionFrame
+          object={object}
+          editing={editing}
+          onEdit={() => onEditStart(object.id)}
+          onMouseDown={onHandleMouseDown}
+          onKeyDown={onHandleKeyDown}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The active block's bounds and handles.
+ *
+ * Selection without a frame is guesswork: the user cannot tell which object a
+ * click took, nor that its edge can be dragged. Handles are 10 px (the 8 px the
+ * checklist asks for, plus a transparent 5 px hit slop), carry the direction-correct
+ * resize cursor, and are focusable with their own arrow-key resize so dragging is
+ * never the only route (WCAG 2.5.7).
+ */
+function SelectionFrame({
+  object,
+  editing = false,
+  onEdit,
+  onMouseDown,
+  onKeyDown,
+}: {
+  object: EditObject;
+  editing?: boolean;
+  onEdit: () => void;
+  onMouseDown: (event: React.MouseEvent, object: EditObject, handle: ResizeHandle) => void;
+  onKeyDown: (event: React.KeyboardEvent, object: EditObject, handle: ResizeHandle) => void;
+}) {
+  return (
+    <div
+      data-selection-frame={object.id}
+      className="pointer-events-none absolute inset-0 border-2 border-accent"
+      style={{ boxShadow: '0 0 0 1px rgba(37,99,235,0.35)' }}
+    >
+      {!editing &&
+        RESIZE_HANDLES.map((handle) => (
+          <div
+            key={handle.id}
+            data-resize-handle={handle.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`${handle.label} — resize this block. Arrow keys resize 1 pt, Shift 10 pt.`}
+            title={`${handle.label} — drag to resize`}
+            className={`pointer-events-auto absolute flex items-center justify-center rounded-full ${FOCUS_RING}`}
+            style={{
+              left: `calc(${handle.left * 100}% - ${HANDLE_HIT / 2}px)`,
+              top: `calc(${handle.top * 100}% - ${HANDLE_HIT / 2}px)`,
+              width: `${HANDLE_HIT}px`,
+              height: `${HANDLE_HIT}px`,
+              cursor: handle.cursor,
+              padding: 0,
+            }}
+            onMouseDown={(event) => onMouseDown(event, object, handle.id)}
+            onKeyDown={(event) => onKeyDown(event, object, handle.id)}
+          >
+            <span
+              data-resize-dot
+              aria-hidden
+              className="block rounded-full border border-white bg-accent"
+              style={{ width: `${HANDLE_DOT}px`, height: `${HANDLE_DOT}px` }}
+            />
+          </div>
+        ))}
+      {object.kind === 'text' && !editing && (
+        <button
+          type="button"
+          data-edit-block
+          onClick={onEdit}
+          className="pointer-events-auto absolute left-0 top-[-18px] rounded bg-accent px-1.5 py-0.5 font-mono text-[9px] leading-none text-white"
+          title="Edit these words"
+        >
+          Edit
+        </button>
+      )}
     </div>
   );
 }
@@ -1525,16 +2133,23 @@ function EditorBox({
   object,
   onCommit,
   boxRef,
+  pendingKey,
 }: {
   object: TextObject;
   onCommit: () => void;
   boxRef: React.RefObject<HTMLDivElement>;
+  pendingKey: string | null;
 }) {
   // Typing changes the DOM without changing the model, so the content is only
   // rebuilt when a different block opens or a toolbar action rewrote this one.
   const signature = JSON.stringify(object.paragraphs);
   useEffect(() => {
-    if (boxRef.current) mountParagraphs(boxRef.current, object.paragraphs, object.style);
+    const node = boxRef.current;
+    if (!node) return;
+    mountParagraphs(node, object.paragraphs, object.style);
+    // An opened block takes the caret: otherwise the first keystroke falls
+    // through to the page and fires a shortcut instead of typing.
+    focusEditor(node, pendingKey ?? undefined);
     // `signature` is the dependency that matters; the object identity changes on
     // every style tick and must not reset the caret.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1549,8 +2164,8 @@ function EditorBox({
       aria-multiline="true"
       aria-label="Edit this paragraph"
       tabIndex={0}
-      className="min-h-full outline-none ring-1 ring-accent/60"
-      style={{ padding: 0 }}
+      className="min-h-full outline-none ring-2 ring-accent"
+      style={{ padding: 0, cursor: 'text' }}
       onBlur={onCommit}
     />
   );
@@ -1564,15 +2179,6 @@ function BlockPreview({ object }: { object: TextObject }) {
   }, [object]);
   return <div ref={ref} />;
 }
-function SelectionFrame() {
-  return (
-    <div
-      className="pointer-events-none absolute inset-0 border border-accent"
-      style={{ boxShadow: '0 0 0 1px rgba(37,99,235,0.35)' }}
-    />
-  );
-}
-
 const imageUrlCache = new Map<string, string>();
 
 function imageDataUrl(bytes: Uint8Array, mime: string): string {
@@ -1582,11 +2188,6 @@ function imageDataUrl(bytes: Uint8Array, mime: string): string {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime || 'image/png' }));
   imageUrlCache.set(key, url);
   return url;
-}
-
-function selectionOutlineFor(mode: ToolMode, scope: EditScope, invisible: boolean): string {
-  if (mode !== 'edit' || (scope !== 'text' && scope !== 'all')) return 'none';
-  return invisible ? '1px dotted #D97706' : '1px dotted rgba(37,99,235,0.35)';
 }
 
 function boxHit(box: TopLeftBox, point: Point, pad: number): boolean {

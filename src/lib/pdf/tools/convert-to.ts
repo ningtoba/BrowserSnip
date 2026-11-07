@@ -28,6 +28,9 @@ import { pageSize } from '../core/pages';
 import {
   ToolInputError,
   clampNumber,
+  marginField,
+  orientationField,
+  pageSizeField,
   describeSize,
   emptyFileError,
   looksLikePdf,
@@ -48,45 +51,11 @@ import {
 type Block = import('../core/layout').Block;
 type LayoutOptions = import('../core/layout').LayoutOptions;
 
-const PAGE_FIELD = {
-  key: 'pageSize',
-  label: 'Page size',
-  type: 'select' as const,
-  default: 'a4',
-  group: 'Page',
-  options: [
-    { value: 'a4', label: 'A4' },
-    { value: 'letter', label: 'Letter' },
-    { value: 'legal', label: 'Legal' },
-    { value: 'a3', label: 'A3' },
-    { value: 'a5', label: 'A5' },
-    { value: 'tabloid', label: 'Tabloid' },
-  ],
-};
+const PAGE_FIELD = pageSizeField();
 
-const MARGIN_FIELD = {
-  key: 'margin',
-  label: 'Margin',
-  type: 'slider' as const,
-  default: 56,
-  min: 0,
-  max: 144,
-  step: 2,
-  unit: 'pt',
-  group: 'Page',
-};
+const MARGIN_FIELD = marginField();
 
-const ORIENTATION_FIELD = {
-  key: 'orientation',
-  label: 'Orientation',
-  type: 'segmented' as const,
-  default: 'portrait',
-  group: 'Page',
-  options: [
-    { value: 'portrait', label: 'Portrait' },
-    { value: 'landscape', label: 'Landscape' },
-  ],
-};
+const ORIENTATION_FIELD = orientationField();
 
 /**
  * Layout settings for the shared renderer.
@@ -428,9 +397,10 @@ function sourceFields(accept: string, pastePlaceholder: string, label: string) {
         { value: 'file', label: 'Uploaded file' },
         { value: 'paste', label: 'Pasted text' },
       ],
+      help: 'Pasted text is read from the box below instead of from disk; nothing is uploaded either way.',
     },
-    { key: 'paste', label: 'Content', type: 'textarea' as const, placeholder: pastePlaceholder, group: label, when: (v: Record<string, unknown>) => v.source === 'paste' },
-    { key: 'files', label: 'Files', type: 'file' as const, accept, multiple: true, maxFiles: 10, group: label },
+    { key: 'paste', label: 'Content', type: 'textarea' as const, placeholder: pastePlaceholder, group: label, help: 'Read from the box instead of from disk, which is the only way to convert a fragment you have not saved yet.', when: (v: Record<string, unknown>) => v.source === 'paste' },
+    { key: 'files', label: 'Files', type: 'file' as const, accept, multiple: true, maxFiles: 10, group: label, help: 'Several files are laid out in the order you added them, one after another in a single PDF.' },
     PAGE_FIELD,
     ORIENTATION_FIELD,
     MARGIN_FIELD,
@@ -438,8 +408,8 @@ function sourceFields(accept: string, pastePlaceholder: string, label: string) {
 }
 
 const TEXT_SIZE_FIELDS = [
-  { key: 'fontSize', label: 'Font size', type: 'number' as const, default: 11, min: 6, max: 24, integer: true, half: true, group: 'Typography' },
-  { key: 'lineHeight', label: 'Line height', type: 'slider' as const, default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography' },
+  { key: 'fontSize', label: 'Font size', type: 'number' as const, default: 11, min: 6, max: 24, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography', help: 'Body text size. Headings stay proportional to it, so one number scales the whole document.' },
+  { key: 'lineHeight', label: 'Line height', type: 'slider' as const, default: 1.45, min: 1, step: 0.05, max: 3, group: 'Typography', help: 'A multiple of the text size. Below about 1.2 the lines touch and long passages get hard to follow.' },
 ];
 
 /** The expectation object for a text converter, built once per tool. */
@@ -486,17 +456,24 @@ export const convertToTools: PdfToolDefinition[] = [
           { value: 'a5', label: 'A5' },
           { value: 'tabloid', label: 'Tabloid' },
         ],
+        help: 'The sheet each picture is placed on. Fit to image sizes the page to the picture instead.',
       },
       { key: 'fit', label: 'Fit', type: 'select', default: 'contain', group: 'Page', options: [
         { value: 'contain', label: 'Fit inside the page' },
         { value: 'cover', label: 'Fill the page (crop)' },
         { value: 'stretch', label: 'Stretch' },
-      ] },
-      { key: 'orientation', label: 'Orientation', type: 'select', default: 'auto', group: 'Page', options: [
+      ],
+        help: 'Nothing is cropped unless you ask for it: the picture is scaled down to the page here, cropped by fill, and distorted by stretch.',
+      },
+      { key: 'orientation', label: 'Orientation', type: 'select', default: 'auto', group: 'Page', help: 'Auto follows each picture’s own shape, so a rotated phone photo lands the way it was taken.', options: [
         { value: 'auto', label: 'Match each image' }, { value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' },
       ] },
-      { key: 'margin', label: 'Margin', type: 'slider', default: 0, min: 0, max: 72, step: 1, unit: 'pt', group: 'Page' },
-      { key: 'onePerSheet', label: 'Two images per sheet', type: 'toggle', default: false, group: 'Layout' },
+      { key: 'margin', label: 'Margin', type: 'slider', default: 0, min: 0, max: 72, step: 1, unit: 'pt', group: 'Page',
+        help: 'Space between the picture and the edge of the sheet. Zero runs to the trim, which most printers cannot do.',
+      },
+      { key: 'onePerSheet', label: 'Two images per sheet', type: 'toggle', default: false, group: 'Layout',
+        help: 'Halves the page count for a contact sheet or a folded booklet; each picture is scaled down to fit.',
+      },
     ],
     async run(context) {
       const warnings = [RASTER_LOSS];
@@ -613,6 +590,8 @@ export const convertToTools: PdfToolDefinition[] = [
         label: 'Page size',
         type: 'select',
         default: 'fit',
+        group: 'Page',
+        help: 'Fit to image keeps the artwork’s own proportions on a page sized to it.',
         options: [
           { value: 'fit', label: 'Fit the artwork' },
           { value: 'a4', label: 'A4' },
@@ -741,9 +720,9 @@ export const convertToTools: PdfToolDefinition[] = [
     fields: [
       ...sourceFields('.txt,.text,.log', 'Paste your text here…', 'Source'),
       ...TEXT_SIZE_FIELDS,
-      { key: 'monospace', label: 'Monospaced', type: 'toggle', default: false, group: 'Typography' },
-      { key: 'paragraphs', label: 'Blank line starts a new paragraph', type: 'toggle', default: true, group: 'Typography' },
-      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Typography' },
+      { key: 'monospace', label: 'Monospaced', type: 'toggle', default: false, group: 'Typography', help: 'One character wide, so aligned columns and code stay lined up. Proportional text is easier to read in prose.' },
+      { key: 'paragraphs', label: 'Blank line starts a new paragraph', type: 'toggle', default: true, group: 'Typography', help: 'Off keeps every line break exactly as typed, which is what you want for verse, tables and code.' },
+      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Footer', help: 'Draws the page number in the footer, next to any footer text you wrote.' },
     ],
     async run(context) {
       const { sources, warnings } = await readSources(context, textFormat('a plain text file'));
@@ -780,14 +759,18 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     fields: [
       ...sourceFields('.md,.markdown', '# Heading\n\nWrite **Markdown** here…', 'Source'),
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 6, max: 24, integer: true, half: true, group: 'Typography' },
-      { key: 'lineHeight', label: 'Line height', type: 'slider', default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography' },
-      { key: 'columns', label: 'Columns', type: 'segmented', default: 1, group: 'Typography', options: [
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 6, max: 24, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography',
+        help: 'Body text size. Headings and code stay proportional to it, so one number scales the document.',
+      },
+      { key: 'lineHeight', label: 'Line height', type: 'slider', default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography', help: 'A multiple of the text size, so it stays readable when you change the size above.' },
+      { key: 'columns', label: 'Columns', type: 'segmented', default: 1, group: 'Typography', help: 'Two columns re-flow the text; they do not reproduce a table or a magazine’s exact line breaks.', options: [
         { value: 1, label: 'One' }, { value: 2, label: 'Two' },
       ] },
-      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page' },
-      { key: 'header', label: 'Header text', type: 'text', placeholder: 'Shown at the top of every page', group: 'Page' },
-      { key: 'footer', label: 'Footer text', type: 'text', placeholder: 'Shown at the bottom of every page', group: 'Page' },
+      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page',
+        help: 'Draws the page number in the footer, alongside any footer text you wrote.',
+      },
+      { key: 'header', label: 'Header text', type: 'text', placeholder: 'Shown at the top of every page', group: 'Footer', help: 'Repeated at the top of every page, inside the margin above.' },
+      { key: 'footer', label: 'Footer text', type: 'text', placeholder: 'Shown at the bottom of every page', group: 'Footer', help: 'Repeated at the bottom of every page; page numbers are drawn on the same line.' },
     ],
     async run(context) {
       const { sources, warnings } = await readSources(context, textFormat('a Markdown file'));
@@ -828,10 +811,14 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     fields: [
       ...sourceFields('.html,.htm', '<h1>Title</h1><p>Body text…</p>', 'Source'),
-      { key: 'fontSize', label: 'Base font size', type: 'number', default: 11, min: 6, max: 24, integer: true, half: true, group: 'Typography' },
-      { key: 'lineHeight', label: 'Line height', type: 'slider', default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography' },
-      { key: 'embedImages', label: 'Embed images referenced by data: URL', type: 'toggle', default: true, group: 'Typography' },
-      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: false, group: 'Page' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 6, max: 24, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography', help: 'Body text size. Headings are scaled from it, so changing this resizes the whole document.' },
+      { key: 'lineHeight', label: 'Line height', type: 'slider', default: 1.45, min: 1, max: 3, step: 0.05, group: 'Typography', help: 'A multiple of the text size, so it stays readable when you change the size above.' },
+      { key: 'embedImages', label: 'Embed images referenced by data: URL', type: 'toggle', default: true, group: 'Typography',
+        help: 'Only images already inlined as data: URLs can be embedded; remote ones are reported as skipped, never fetched.',
+      },
+      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: false, group: 'Page',
+        help: 'Draws the page number in the footer, alongside any footer text you wrote.',
+      },
     ],
     async run(context) {
       const { sources, warnings } = await readSources(context, textFormat('an HTML document'));
@@ -885,11 +872,13 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     fields: [
       ...sourceFields('.csv,.tsv', 'name,qty,price\nWidget,3,9.99', 'Source'),
-      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', group: 'Table', options: [
+      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', group: 'Table', help: 'Wrong delimiter, wrong table: the file is split on this character and nothing else.', options: [
         { value: ',', label: 'Comma' }, { value: ';', label: 'Semicolon' }, { value: '\t', label: 'Tab' }, { value: 'auto', label: 'Detect' },
       ] },
-      { key: 'headerRow', label: 'First row is a header', type: 'toggle', default: true, group: 'Table' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 18, integer: true, half: true, group: 'Table' },
+      { key: 'headerRow', label: 'First row is a header', type: 'toggle', default: true, group: 'Table',
+        help: 'Drawn in bold and repeated at the top of each new page the table spills onto.',
+      },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 18, step: 1, integer: true, unit: 'pt', half: true, group: 'Table', help: 'Small enough that a wide sheet fits one page without the columns being squeezed.' },
     ],
     async run(context) {
       const { sources, warnings } = await readSources(context, textFormat('a CSV or TSV file'));
@@ -938,7 +927,7 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     fields: [
       ...sourceFields('.json', '{\n  "name": "value"\n}', 'Source'),
-      { key: 'maxDepth', label: 'Maximum depth', type: 'number', default: 8, min: 1, max: 20, integer: true, group: 'Report' },
+      { key: 'maxDepth', label: 'Maximum depth', type: 'number', default: 8, min: 1, max: 20, step: 1, integer: true, group: 'Report', help: 'How deep nested objects and arrays are printed before the rest is collapsed to a count. Deeper is more faithful and much longer.' },
     ],
     async run(context) {
       const { sources, warnings } = await readSources(context, textFormat('a JSON document'));
@@ -1096,7 +1085,9 @@ export const convertToTools: PdfToolDefinition[] = [
       PAGE_FIELD,
       MARGIN_FIELD,
       ORIENTATION_FIELD,
-      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: false, group: 'Page' },
+      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: false, group: 'Page',
+        help: 'Adds a footer number to the Word file itself, so Word can renumber it when the text re-flows.',
+      },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -1164,8 +1155,10 @@ export const convertToTools: PdfToolDefinition[] = [
     fields: [
       PAGE_FIELD,
       ORIENTATION_FIELD,
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 8, min: 5, max: 16, integer: true, half: true, group: 'Typography' },
-      { key: 'allSheets', label: 'Every worksheet', type: 'toggle', default: true, group: 'Sheets' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 8, min: 5, max: 16, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography', help: 'Spreadsheets are wide: 8 pt is the largest size that usually keeps a sheet on one page.' },
+      { key: 'allSheets', label: 'Every worksheet', type: 'toggle', default: true, group: 'Sheets',
+        help: 'Off converts only the workbook’s active sheet, which is not necessarily the one you were looking at.',
+      },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -1258,13 +1251,15 @@ export const convertToTools: PdfToolDefinition[] = [
         label: 'Slide aspect',
         type: 'select',
         default: '16:9',
+        group: 'Slide',
+        help: 'The output page shape, not the deck’s own: pick the aspect the slides were authored in or the re-flow shifts everything.',
         options: [
           { value: '16:9', label: '16:9 (960 × 540)' },
           { value: '4:3', label: '4:3 (720 × 540)' },
         ],
       },
-      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, integer: true, unit: 'pt' },
-      { key: 'notes', label: 'Include speaker notes', type: 'toggle', default: false },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, step: 1, integer: true, unit: 'pt', group: 'Slide', help: 'White space kept around each slide so a printed copy is not edge-to-edge ink.' },
+      { key: 'notes', label: 'Include speaker notes', type: 'toggle', default: false, group: 'Output', help: 'Off prints the slides only. On adds a page of speaker notes under each slide that has them.' },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -1334,9 +1329,13 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     fields: [
       PAGE_FIELD,
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 20, integer: true, half: true, group: 'Typography' },
-      { key: 'margin', label: 'Margin', type: 'number', default: 64, min: 0, max: 144, integer: true, half: true, unit: 'pt', group: 'Page' },
-      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page' },
+      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 7, max: 20, step: 1, integer: true, unit: 'pt', half: true, group: 'Typography',
+        help: 'Body text size for the re-flowed book. The chapter text is laid out again, not copied at its original size.',
+      },
+      { key: 'margin', label: 'Margin', type: 'number', default: 64, min: 0, max: 144, step: 1, integer: true, unit: 'pt', half: true, group: 'Page', help: 'Generous by default: a re-flowed book needs a thumb margin more than it needs the space.' },
+      { key: 'pageNumbers', label: 'Page numbers', type: 'toggle', default: true, group: 'Page',
+        help: 'Numbers the sheets this converter produces, which will not match the page numbers of a printed book.',
+      },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -1388,7 +1387,9 @@ export const convertToTools: PdfToolDefinition[] = [
     fields: [
       PAGE_FIELD,
       MARGIN_FIELD,
-      { key: 'includeAttachments', label: 'List attachments', type: 'toggle', default: true, group: 'Page' },
+      { key: 'includeAttachments', label: 'List attachments', type: 'toggle', default: true, group: 'Page',
+        help: 'Names and sizes of the enclosed files are printed at the end; their contents are never read or uploaded.',
+      },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -1456,11 +1457,15 @@ export const convertToTools: PdfToolDefinition[] = [
       { key: 'language', label: 'Language', type: 'select', default: 'en', group: 'Recognition', options: [
         { value: 'en', label: 'English' }, { value: 'de', label: 'German' }, { value: 'es', label: 'Spanish' },
         { value: 'fr', label: 'French' }, { value: 'zh', label: 'Chinese' }, { value: 'ja', label: 'Japanese' },
-      ] },
-      { key: 'keepImage', label: 'Keep the page image and add an invisible text layer', type: 'toggle', default: true, group: 'Recognition' },
+      ],
+        help: 'Tells the recogniser which alphabet and word list to expect; the wrong one produces confident nonsense.',
+      },
+      { key: 'keepImage', label: 'Keep the page image and add an invisible text layer', type: 'toggle', default: true, group: 'Recognition',
+        help: 'On keeps the page looking exactly like the scan, with the words hidden underneath for searching and selecting.',
+      },
       { key: 'enhance', label: 'Composite onto white before recognising', type: 'toggle', default: true, group: 'Recognition',
         help: 'Whitens the page background. Skew is not corrected.' },
-      { key: 'margin', label: 'Margin', type: 'slider', default: 20, min: 0, max: 72, step: 1, unit: 'pt', group: 'Page' },
+      { key: 'margin', label: 'Margin', type: 'slider', default: 20, min: 0, max: 72, step: 1, unit: 'pt', group: 'Page', help: 'Space kept around the text so a recognised page does not run into the trim.' },
     ],
     async run(context) {
       const warnings: string[] = [];

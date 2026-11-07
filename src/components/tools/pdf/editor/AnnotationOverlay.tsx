@@ -14,6 +14,8 @@ import { useRef } from 'react';
 import type { EditorAnnotation, EditorToolId } from './types';
 import type { PageGeom, Point } from './geometry';
 import { pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
+import { TOOL_BY_ID } from './tools';
+import { HANDLE_HIT_PX, HANDLE_SIZE_PX, RESIZE_HANDLES, handleCursor, type ResizeHandle } from './specs';
 
 export interface OverlayProps {
   geom: PageGeom;
@@ -24,11 +26,15 @@ export interface OverlayProps {
   /** Rubber-band for the vertex tools: committed points plus the cursor. */
   vertices: { points: Point[]; cursor: Point | null } | null;
   tool: EditorToolId;
+  /** Whether the armed tool is pinned; it only changes the hint text. */
+  pinned: boolean;
   selectedId: string | null;
   editingId: string | null;
   onSurfacePointerDown: (point: Point) => void;
   onAnnotationPointerDown: (id: string, point: Point) => void;
   onAnnotationDoubleClick: (id: string) => void;
+  /** Grabbing a resize handle, whatever tool is armed. */
+  onHandlePointerDown: (id: string, handle: ResizeHandle, point: Point) => void;
   /** Double-click on the page while a vertex tool is armed. */
   onFinishVertices: () => void;
   onTextDraft: (id: string, text: string) => void;
@@ -44,11 +50,13 @@ export function AnnotationOverlay({
   draft,
   vertices,
   tool,
+  pinned,
   selectedId,
   editingId,
   onSurfacePointerDown,
   onAnnotationPointerDown,
   onAnnotationDoubleClick,
+  onHandlePointerDown,
   onFinishVertices,
   onTextDraft,
   onTextCommit,
@@ -61,6 +69,7 @@ export function AnnotationOverlay({
     return { x: event.clientX - box.left, y: event.clientY - box.top };
   };
 
+  const toolMeta = TOOL_BY_ID[tool];
   const selectable = tool === 'select';
   const selectedMark = annotations.find((a) => a.id === selectedId) ?? null;
   const selectedBox = selectedMark ? pdfToScreenRect(selectedMark.rect, geom) : null;
@@ -71,6 +80,8 @@ export function AnnotationOverlay({
       ref={host}
       className="absolute inset-0"
       style={{ touchAction: 'none', cursor: selectable ? 'default' : 'crosshair' }}
+      data-tool-gesture={toolMeta.gesture}
+      data-armed-pinned={pinned ? 'true' : 'false'}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         onSurfacePointerDown(localPoint(event));
@@ -136,17 +147,58 @@ export function AnnotationOverlay({
 
         {/* The selected mark keeps its outline whatever tool is armed. */}
         {selectedMark && selectedBox ? (
-          <rect
-            x={selectedBox.x - 1}
-            y={selectedBox.y - 1}
-            width={selectedBox.width + 2}
-            height={selectedBox.height + 2}
-            fill="none"
-            stroke="#2563EB"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            style={{ pointerEvents: 'none' }}
-          />
+          <>
+            <rect
+              x={selectedBox.x - 1}
+              y={selectedBox.y - 1}
+              width={selectedBox.width + 2}
+              height={selectedBox.height + 2}
+              fill="none"
+              stroke="#2563EB"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              style={{ pointerEvents: 'none' }}
+            />
+            {/*
+               Corner handles: 10 px to see, 22 px to grab, at a fixed screen
+               size so they stay catchable when the page is zoomed out. The
+               selection's handles belong to the selection, so they answer the
+               pointer under any armed tool.
+            */}
+            {RESIZE_HANDLES.map((handle) => {
+              const corner = handleCorner(selectedBox, handle);
+              return (
+                <g key={`handle-${handle}`}>
+                  <rect
+                    data-resize-hit={handle}
+                    x={corner.x - HANDLE_HIT_PX / 2}
+                    y={corner.y - HANDLE_HIT_PX / 2}
+                    width={HANDLE_HIT_PX}
+                    height={HANDLE_HIT_PX}
+                    fill="transparent"
+                    style={{ pointerEvents: 'all', cursor: handleCursor(handle) }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.stopPropagation();
+                      onHandlePointerDown(selectedMark.id, handle, localPoint(event));
+                    }}
+                  />
+                  <rect
+                    data-resize-handle={handle}
+                    x={corner.x - HANDLE_SIZE_PX / 2}
+                    y={corner.y - HANDLE_SIZE_PX / 2}
+                    width={HANDLE_SIZE_PX}
+                    height={HANDLE_SIZE_PX}
+                    fill="#FFFFFF"
+                    stroke="#2563EB"
+                    strokeWidth={1.5}
+                    pointerEvents="none"
+                    aria-label={`Resize ${selectedMark.tool} ${handle}`}
+                  />
+                </g>
+              );
+            })}
+          </>
         ) : null}
       </svg>
 
@@ -520,6 +572,14 @@ function Mark({
 /* ------------------------------------------------------------------ *
  * Geometry helpers used only by the overlay                           *
  * ------------------------------------------------------------------ */
+
+/** Screen-space centre of one corner handle of a selected box. */
+function handleCorner(box: { x: number; y: number; width: number; height: number }, handle: ResizeHandle): Point {
+  return {
+    x: handle.includes('w') ? box.x : box.x + box.width,
+    y: handle.includes('n') ? box.y : box.y + box.height,
+  };
+}
 
 /** The quad order written by `geometry.pdfQuadFromViewportBox`: UL, UR, LL, LR. */
 function chunkQuads(points: number[], geom: PageGeom): Point[][] {

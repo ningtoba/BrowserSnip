@@ -7,6 +7,7 @@
  * app's existing vocabulary (`doodle-*`, `cream`, `ink`, category accents).
  */
 import {
+  MIN_BLOCK_SIZE,
   SWATCH_COLORS,
   ZOOM_PRESETS,
   rulerTicks,
@@ -21,8 +22,9 @@ import {
   type NumberMarker,
   type TextDirection,
 } from './model';
+import type { TopLeftBox } from '@/lib/pdf/core/tables';
 import type { FontFamilyOption } from './faces';
-import { keyForMode } from './keys';
+import { MODE_AFTER_CREATE, keyForMode } from './keys';
 
 // ── primitives ──────────────────────────────────────────────────────────────
 
@@ -289,6 +291,11 @@ export interface ToolbarProps {
   barsHidden: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** False until something has actually been edited — with the reason. */
+  canExport: boolean;
+  exportNote: string;
+  undoNote: string;
+  redoNote: string;
   onBack: () => void;
   onOpenAnother: () => void;
   onExport: () => void;
@@ -308,13 +315,19 @@ export interface ToolbarProps {
 export function TopToolbar(props: ToolbarProps) {
   const percent = Math.round(props.zoom * 100);
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-cream-border bg-cream-light px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-cream-border bg-cream-light px-2 py-1.5" role="toolbar" aria-label="Text editor">
       <ToolButton label="‹ Back to upload" onClick={props.onBack} title="Close this PDF and return to the file drop" />
       <ToolButton label="Open another PDF" onClick={props.onOpenAnother} />
-      <ToolButton label="Export" kind="primary" onClick={props.onExport} disabled={!props.hasDocument} title="Save the edited PDF (Ctrl+S)" />
+      <ToolButton
+        label="Export"
+        kind="primary"
+        onClick={props.onExport}
+        disabled={!props.canExport}
+        title={props.exportNote}
+      />
       <span className="mx-1 h-4 w-px bg-cream-border" />
-      <ToolButton label="Undo" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (Ctrl+Z)" />
-      <ToolButton label="Redo" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (Ctrl+Shift+Z)" />
+      <ToolButton label="Undo" onClick={props.onUndo} disabled={!props.canUndo} title={props.undoNote} />
+      <ToolButton label="Redo" onClick={props.onRedo} disabled={!props.canRedo} title={props.redoNote} />
       <span className="mx-1 h-4 w-px bg-cream-border" />
       <ToolButton label="◂" onClick={props.onPrevPage} disabled={props.page <= 1} title="Previous page" />
       <span className="min-w-[4.5rem] text-center font-mono text-[10px] tabular-nums text-ink-muted">
@@ -351,8 +364,8 @@ export function TopToolbar(props: ToolbarProps) {
       <ToolButton label={props.barsHidden ? 'Show bars' : 'Hide bars'} onClick={props.onToggleBars} />
       <ToolButton label="Copy page text" onClick={props.onCopyPageText} disabled={!props.hasDocument} title="Copy this page's text in reading order" />
       <ToolButton label="Reload preview" onClick={props.onReloadPreview} disabled={!props.hasDocument} title="Re-render the page from the edited bytes" />
-      <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
-        {props.dirty > 0 ? `${props.dirty} block(s) waiting for export` : 'nothing to export'}
+      <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" data-export-state={props.canExport ? 'ready' : 'waiting'}>
+        {props.canExport ? `${props.dirty} block(s) waiting for export` : props.exportNote}
       </span>
     </div>
   );
@@ -363,18 +376,29 @@ export function TopToolbar(props: ToolbarProps) {
 export interface ModePanelProps {
   mode: 'edit' | 'add-text' | 'add-image';
   scope: EditScope;
+  /** Pinned placement tools stay armed after each drop (brief's pin ruling). */
+  pinned: boolean;
   onMode: (mode: 'edit' | 'add-text' | 'add-image') => void;
   onScope: (scope: EditScope) => void;
+  onPin: (pinned: boolean) => void;
   onPickImage: () => void;
 }
 
-export function ModePanel({ mode, scope, onMode, onScope, onPickImage }: ModePanelProps) {
+export function ModePanel({ mode, scope, pinned, onMode, onScope, onPin, onPickImage }: ModePanelProps) {
   // The tooltip carries the bound key, so the panel, the keyboard handler and the
   // shortcut list all read the same table (`keyForMode` is the reverse of it).
   const keyOf = (value: ModePanelProps['mode']): string => {
     const key = keyForMode(value);
     return key ? ` (${key})` : '';
   };
+  // One source for "does this mode keep placing?": the declared table in `keys`,
+  // not a comparison against the mode name in three components.
+  const placement = MODE_AFTER_CREATE[mode] === 'default';
+  const pinNote = !placement
+    ? 'Edit is the resting tool. Pin before placing a run of boxes or images.'
+    : pinned
+      ? 'Pinned: keeps placing until you press Esc.'
+      : 'One-shot: steps back to Edit as soon as this is placed.';
   return (
     <div className="space-y-2">
       <SegmentedField
@@ -395,6 +419,19 @@ export function ModePanel({ mode, scope, onMode, onScope, onPickImage }: ModePan
           },
         ]}
       />
+      <div className="flex items-start gap-2" data-tool-pin={pinned ? 'pinned' : 'one-shot'}>
+        <ToolButton
+          label={pinned ? '🔒 Pinned' : '🔓 One-shot'}
+          active={pinned}
+          onClick={() => onPin(!pinned)}
+          title={
+            pinned
+              ? 'The placement tool stays armed after each drop. Esc unpins it.'
+              : 'The tool steps back to Edit after each placement. Pin it to place several.'
+          }
+        />
+        <p className="min-w-0 flex-1 text-[10px] leading-relaxed text-ink-muted">{pinNote}</p>
+      </div>
       {mode === 'edit' && (
         <SelectField
           label="Edit scope"
@@ -443,8 +480,13 @@ export function FormatPanel({
 }: FormatPanelProps) {
   const disabled = !hasSelection;
   return (
-    <div className={`space-y-3 ${disabled ? 'opacity-50' : ''}`}>
+    <div className={`space-y-3 ${disabled ? 'opacity-50' : ''}`} data-format-panel={disabled ? 'empty' : 'ready'}>
       <PanelHeading>Format</PanelHeading>
+      {disabled && (
+        <p className="text-[10px] leading-relaxed text-ink-muted">
+          Nothing selected — these controls need a text block. Click a paragraph on the page, or press Enter on one that is already selected.
+        </p>
+      )}
       <Labeled
         label="Font"
         hint={
@@ -613,6 +655,7 @@ export function FormatPanel({
 
 export interface ObjectPanelProps {
   selection: EditObject[];
+  onSetBox: (box: TopLeftBox) => void;
   onTransform: (patch: { rotation?: number; flipH?: boolean; flipV?: boolean }) => void;
   onRotate: (delta: number) => void;
   onZOrder: (order: 'front' | 'back' | 'forward' | 'backward') => void;
@@ -683,12 +726,35 @@ export function ObjectPanel(props: ObjectPanelProps) {
           className="doodle-input !px-2 !py-1 !text-[11px]"
         />
       </Labeled>
-      <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-[10px] text-ink-muted">
-        <div>x {Math.round(first.box.x)} pt</div>
-        <div>y {Math.round(first.box.y)} pt</div>
-        <div>w {Math.round(first.box.width)} pt</div>
-        <div>h {Math.round(first.box.height)} pt</div>
-      </dl>
+      {/* Keyboard route to the same geometry the handles drag (WCAG 2.5.7). */}
+      <div className="grid grid-cols-2 gap-2" data-object-box>
+        <Labeled label="X">
+          <NumberField value={first.box.x} min={-2000} max={4000} step={0.5} suffix="pt" onChange={(x) => props.onSetBox({ ...first.box, x })} />
+        </Labeled>
+        <Labeled label="Y">
+          <NumberField value={first.box.y} min={-2000} max={4000} step={0.5} suffix="pt" onChange={(y) => props.onSetBox({ ...first.box, y })} />
+        </Labeled>
+        <Labeled label="Width">
+          <NumberField
+            value={first.box.width}
+            min={MIN_BLOCK_SIZE}
+            max={4000}
+            step={0.5}
+            suffix="pt"
+            onChange={(width) => props.onSetBox({ ...first.box, width: Math.max(MIN_BLOCK_SIZE, width || 0) })}
+          />
+        </Labeled>
+        <Labeled label="Height">
+          <NumberField
+            value={first.box.height}
+            min={MIN_BLOCK_SIZE}
+            max={4000}
+            step={0.5}
+            suffix="pt"
+            onChange={(height) => props.onSetBox({ ...first.box, height: Math.max(MIN_BLOCK_SIZE, height || 0) })}
+          />
+        </Labeled>
+      </div>
     </div>
   );
 }
@@ -703,6 +769,10 @@ export interface FindPanelProps {
   wholeWord: boolean;
   ignoreAccents: boolean;
   status: string;
+  /** False when there is nothing to act on — with the reason next to it. */
+  canReplace: boolean;
+  replaceNote: string;
+  searching: boolean;
   onQuery: (value: string) => void;
   onReplacement: (value: string) => void;
   onToggle: (key: 'caseSensitive' | 'wholeWord' | 'ignoreAccents', value: boolean) => void;
@@ -760,14 +830,15 @@ export function FindReplacePanel(props: FindPanelProps) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1">
-        <ToolButton label="Prev" onClick={props.onPrev} />
-        <ToolButton label="Next" onClick={props.onNext} />
-        <ToolButton label="Replace" onClick={props.onReplace} />
-        <ToolButton label="Replace all" kind="primary" onClick={props.onReplaceAll} />
+        <ToolButton label="Prev" onClick={props.onPrev} title="Jump to the previous match" />
+        <ToolButton label="Next" onClick={props.onNext} title="Jump to the next match" />
+        <ToolButton label="Replace" onClick={props.onReplace} disabled={!props.canReplace} title={props.replaceNote} />
+        <ToolButton label="Replace all" kind="primary" onClick={props.onReplaceAll} disabled={!props.canReplace} title={props.replaceNote} />
       </div>
-      <p className="font-mono text-[10px] text-ink-muted" role="status">
-        {props.status}
+      <p className="font-mono text-[10px] text-ink-muted" role="status" aria-live="polite" data-find-status>
+        {props.searching ? 'Searching every page…' : props.status}
       </p>
+      {!props.canReplace && <p className="text-[10px] leading-relaxed text-ink-muted">{props.replaceNote}</p>}
     </div>
   );
 }
@@ -786,10 +857,13 @@ export function ObjectList({
   objects,
   selectedIds,
   onSelect,
+  onEdit,
 }: {
   objects: EditObject[];
   selectedIds: string[];
   onSelect: (id: string) => void;
+  /** Enter / double-click: go one level deeper, i.e. start retyping. */
+  onEdit: (id: string) => void;
 }) {
   if (objects.length === 0) {
     return (
@@ -799,13 +873,22 @@ export function ObjectList({
     );
   }
   return (
-    <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
+    <ul className="max-h-40 space-y-1 overflow-y-auto pr-1" data-edit-list>
       {objects.map((object) => (
         <li key={object.id}>
           <button
             type="button"
             onClick={() => onSelect(object.id)}
-            className={`flex w-full items-center gap-2 rounded border px-2 py-1 text-left text-[10px] ${
+            onDoubleClick={() => onEdit(object.id)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              onEdit(object.id);
+            }}
+            aria-current={selectedIds.includes(object.id) ? 'true' : undefined}
+            aria-label={`${object.kind === 'text' ? 'Text block' : 'Image'}, page ${object.page}, ${STATE_LABEL[object.state]}. Press Enter to edit.`}
+            title="Click to select, double-click or Enter to edit"
+            className={`flex w-full items-center gap-2 rounded border px-2 py-1 text-left text-[10px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
               selectedIds.includes(object.id)
                 ? 'border-accent bg-accent/10 text-ink'
                 : 'border-cream-border bg-white text-ink-soft hover:border-ink-muted'
@@ -839,6 +922,67 @@ function objectLabel(object: EditObject): string {
     return text.length > 0 ? text.slice(0, 40) : '(empty block)';
   }
   return 'Placed image';
+}
+
+// ── export warnings + live size ─────────────────────────────────────────────
+
+/**
+ * What an export could not do, kept on screen until the next one.
+ *
+ * A toast disappears in eight seconds; a degraded block has to stay readable
+ * while the user decides whether to accept the file. This is this surface's
+ * equivalent of a registry tool's `result.warnings`.
+ */
+export function WarningList({
+  headline,
+  lines,
+  onDismiss,
+}: {
+  headline: string;
+  lines: string[];
+  onDismiss: () => void;
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div
+      data-export-warnings
+      role="status"
+      className="space-y-1.5 rounded-doodle-md border border-warn/30 bg-warn/10 p-2"
+    >
+      <div className="flex items-start gap-2">
+        <PanelHeading>Export result</PanelHeading>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="ml-auto text-[10px] text-ink-muted hover:text-ink"
+          aria-label="Dismiss the export result"
+        >
+          ✕
+        </button>
+      </div>
+      <p className="text-[10px] leading-relaxed text-ink">{headline}</p>
+      <ul className="space-y-1">
+        {lines.map((line, index) => (
+          <li key={`${index}:${line.slice(0, 24)}`} className="text-[10px] leading-relaxed text-warn">
+            {line}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Dimensions that follow the box while it is drawn or resized. */
+export function SizeBadge({ box, scale }: { box: TopLeftBox; scale: number }) {
+  return (
+    <div
+      data-size-badge
+      className="pointer-events-none absolute rounded bg-accent px-1.5 py-0.5 font-mono text-[9px] leading-none text-white"
+      style={{ left: box.x * scale, top: (box.y + box.height) * scale + 2 }}
+    >
+      {Math.round(box.width)} × {Math.round(box.height)} pt
+    </div>
+  );
 }
 
 // ── toasts ──────────────────────────────────────────────────────────────────

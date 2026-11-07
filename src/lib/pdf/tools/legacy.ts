@@ -23,7 +23,7 @@
 // `cropModel` is the crop pane's pure geometry module (no React), so the run and
 // the rail agree on what "too little left to be a page" means.
 import { MIN_KEPT_PT } from '@/components/tools/pdf/edit/cropModel';
-import { clampNumber, ToolInputError, openInputs, openPrimary, pdfResult } from './helpers';
+import { clampNumber, ToolInputError, openInputs, openPrimary, pagesField, pdfResult } from './helpers';
 import { mediaBox, resolvePageSet, setMediaAndCrop, toPoints, type LengthUnit } from '../core/pages';
 import {
   arrayValue,
@@ -90,16 +90,24 @@ export const legacyTools: PdfToolDefinition[] = [
       'Margins are applied per page in the page’s own units, so mixed page sizes each keep their own geometry.',
     ],
     fields: [
-      { key: 'pages', label: 'Pages', type: 'pages', default: 'all' },
-      { key: 'top', label: 'Top margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
-      { key: 'right', label: 'Right margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
-      { key: 'bottom', label: 'Bottom margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
-      { key: 'left', label: 'Left margin', type: 'number', default: 0, min: 0, max: 2000, unit: 'pt', half: true },
+      pagesField({ group: 'Pages' }),
+      { key: 'top', label: 'Top margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins', help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.' },
+      { key: 'right', label: 'Right margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
+        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
+      },
+      { key: 'bottom', label: 'Bottom margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
+        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
+      },
+      { key: 'left', label: 'Left margin', type: 'number', default: 0, min: 0, max: 2000, step: 1, unit: 'pt', half: true, group: 'Margins',
+        help: 'Cut from that edge of the visible box, in points: 72 pt is one inch.',
+      },
       {
         key: 'unit',
         label: 'Margins are in',
         type: 'select',
         default: 'pt',
+        group: 'Margins',
+        help: 'A display unit only — the margins above are converted to the page’s own points when the crop is written.',
         options: [
           { value: 'pt', label: 'Points' },
           { value: 'mm', label: 'Millimetres' },
@@ -107,7 +115,9 @@ export const legacyTools: PdfToolDefinition[] = [
           { value: 'in', label: 'Inches' },
         ],
       },
-      { key: 'allPages', label: 'Every page', type: 'toggle', default: true },
+      { key: 'allPages', label: 'Every page', type: 'toggle', default: true, group: 'Pages',
+        help: 'Off crops only the pages listed below, which is how a stray scan border is removed from one sheet.',
+      },
     ],
     async run(context: ToolRunContext) {
       const input = await openPrimary(context);
@@ -178,6 +188,8 @@ export const legacyTools: PdfToolDefinition[] = [
         label: 'Page size',
         type: 'select',
         default: 'a4',
+        group: 'Page',
+        help: 'Fit to image keeps the paper’s own proportions and gives you a page with no border to trim.',
         options: [
           { value: 'a4', label: 'A4' },
           { value: 'letter', label: 'US Letter' },
@@ -190,18 +202,22 @@ export const legacyTools: PdfToolDefinition[] = [
         label: 'Orientation',
         type: 'select',
         default: 'portrait',
+        group: 'Page',
+        help: 'Only used when the sheet above is a fixed size.',
         when: (values) => values['pageSize'] !== 'fit' && values['pageSize'] !== 'original',
         options: [
           { value: 'portrait', label: 'Portrait' },
           { value: 'landscape', label: 'Landscape' },
         ],
       },
-      { key: 'margin', label: 'Margin', type: 'slider', default: 10, min: 0, max: 40, step: 1, unit: 'pt' },
+      { key: 'margin', label: 'Margin', type: 'slider', default: 10, min: 0, max: 40, step: 1, unit: 'pt', group: 'Page', help: 'White border kept around the captured page so a printer with no borderless mode does not cut the text.' },
       {
         key: 'fit',
         label: 'Fit',
         type: 'select',
         default: 'contain',
+        group: 'Page',
+        help: 'Fill crops part of the paper away; stretch distorts it. Fit inside is the one that never loses what you scanned.',
         options: [
           { value: 'contain', label: 'Fit inside the page' },
           { value: 'cover', label: 'Fill the page (crop)' },
@@ -270,8 +286,8 @@ export const legacyTools: PdfToolDefinition[] = [
       'Both PDFs are opened in this tab; nothing is uploaded.',
     ],
     fields: [
-      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 30, min: 5, max: 150, step: 1 },
-      { key: 'highlightColor', label: 'Highlight colour', type: 'color', default: '#ff0000' },
+      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 30, min: 5, max: 150, step: 1, group: 'Marking', help: 'How far a pixel has to change before it is marked. Raise it when antialiasing makes every page look different.' },
+      { key: 'highlightColor', label: 'Highlight colour', type: 'color', default: '#ff0000', group: 'Marking', help: 'Drawn over the changed area, so choose a colour that still lets the text underneath be read.' },
     ],
     async run(context: ToolRunContext) {
       const [first, second] = await openInputs(context);

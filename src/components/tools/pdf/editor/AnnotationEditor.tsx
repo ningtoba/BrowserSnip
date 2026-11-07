@@ -41,6 +41,7 @@ import {
   MIN_ZOOM,
   clampZoom,
   fitWidthZoom,
+  isMeaningfulDrag,
   normaliseDrag,
   screenToPdfPoint,
   screenToViewportBox,
@@ -54,15 +55,18 @@ import {
   canUndo,
   liveHistory,
   pushHistory,
-  redoHistory,
   settleHistory,
-  undoHistory,
 } from './history';
 import {
   TOOL_SHORTCUT_KEYS,
+  escapeLevelNotice,
   historyCommandForKey,
+  isDuplicateKey,
+  isTypeToEditKey,
   isTypingTarget,
   keyForTool,
+  nextEscapeLevel,
+  nudgeStep,
   toolForKey,
 } from './shortcuts';
 import { pageHasText, snapTextLines } from './quads';
@@ -70,13 +74,17 @@ import {
   buildAnnotation,
   describeAnnotation,
   dropEmptyMarks,
+  duplicateAnnotation,
   emptyMarks,
   exportPlan,
   marksSummary,
+  markAtPoint,
   moveAnnotation,
   nextAnnotationId,
+  resizeAnnotation,
   workSignature,
   withText,
+  type ResizeHandle,
 } from './specs';
 import {
   BUILT_IN_STAMPS,
@@ -90,7 +98,11 @@ import {
   TOOLS,
   TOOL_BY_ID,
   TOOL_GROUPS,
+  defaultPinState,
   defaultStyleFor,
+  effectiveAfterCreate,
+  isPlacementTool,
+  pinLabel,
   toolGroupById,
   toolsOfGroup,
 } from './tools';
@@ -105,6 +117,7 @@ import {
 } from './quickModes';
 import { DropReassurance, QuickModeChips } from './QuickModeChips';
 import {
+  applyWorkStep,
   clampPageIndex,
   createWork,
   docWork,
@@ -134,6 +147,9 @@ interface MoveState {
   beforeList: EditorAnnotation[];
 }
 
+/** A corner-drag is the same three-part shape as a move: what, from where, undo how. */
+type ResizeState = MoveState & { handle: ResizeHandle };
+
 interface Notice {
   tone: 'info' | 'success' | 'warn' | 'danger';
   text: string;
@@ -150,10 +166,11 @@ const NOTICE_CLASS: Record<Notice['tone'], string> = {
  * `.doodle-chip` carries `flex-1`, which is right inside a segmented row but
  * makes toolbar buttons stretch; opt back out with `flex-none`.
  */
-const CHIP = 'doodle-chip flex-none whitespace-nowrap px-2 py-1 text-[10px]';
+const CHIP = 'doodle-chip flex-none whitespace-nowrap px-2 py-1 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 /** Small secondary action inside the option panel (`doodle-btn` is full-width). */
-const MINI_BTN = 'doodle-btn doodle-btn-secondary w-auto flex-none px-2 py-1 text-[10px]';
+const MINI_BTN =
+  'doodle-btn doodle-btn-secondary w-auto flex-none px-2 py-1 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 /** What the active place tool is still waiting for. */
 function rasterHint(tool: EditorToolId, ready: boolean): string {
@@ -415,7 +432,13 @@ export function AnnotationEditor(): JSX.Element {
 
   /* ── tools + styles ──────────────────────────────────────────────── */
 
-  const [tool, setTool] = useState<EditorToolId>('highlight');
+  const [tool, setTool] = useState<EditorToolId>('select');
+  /**
+   * The pin/lock per tool, seeded from each tool's declared `afterCreate` and
+   * owned by the palette rather than by the create path — so it survives
+   * selecting another object, arming another pen, and the tool stepping aside.
+   */
+  const [pinnedTools, setPinnedTools] = useState<Record<EditorToolId, boolean>>(defaultPinState);
   /** Palette section expand/collapse — controlled so a chip can open what it armed. */
   const [toolsOpen, setToolsOpen] = useState(true);
   /**
@@ -452,12 +475,45 @@ export function AnnotationEditor(): JSX.Element {
     setFocusedGroup(GROUP_FOR_TOOL[next] ?? 'markup');
     setToolsOpen(true);
     setGesture(null);
+    setStatus(null);
     // The arrow is how you get at the text of a box you are still writing, so it
     // must not close the editor the way arming another pen does.
     if (next !== 'select') setEditingId(null);
   }, []);
 
+  /** The pin as it stands for a tool, defaulting to its declared behaviour. */
+  const pinnedFor = useCallback(
+    (candidate: EditorToolId): boolean =>
+      typeof pinnedTools[candidate] === 'boolean'
+        ? pinnedTools[candidate]
+        : TOOL_BY_ID[candidate]?.afterCreate === 'stay',
+    [pinnedTools],
+  );
+
+  const togglePin = useCallback(
+    (candidate: EditorToolId) => {
+      if (!isPlacementTool(candidate)) return;
+      setPinnedTools((current) => {
+        const was =
+          typeof current[candidate] === 'boolean'
+            ? current[candidate]
+            : TOOL_BY_ID[candidate]?.afterCreate === 'stay';
+        // Announced even when the tool is not the armed one: a toggle that says
+        // nothing is a toggle the user will click twice to check it worked.
+        setStatus(pinLabel(candidate, !was));
+        return { ...current, [candidate]: !was };
+      });
+    },
+    [],
+  );
+
   const [notice, setNotice] = useState<Notice | null>(null);
+  /**
+   * Quiet status for the `aria-live` region: pin changes, steps back through
+   * `Esc`, undo and redo. Kept apart from `notice` because a notice is a problem
+   * with a colour and this is a sentence with no styling change.
+   */
+  const [status, setStatus] = useState<string | null>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [raster, setRaster] = useState<PlacedRaster | null>(null);
   const [rasterTool, setRasterTool] = useState<EditorToolId | null>(null);
@@ -466,6 +522,7 @@ export function AnnotationEditor(): JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const moveRef = useRef<MoveState | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
 
   const imageInput = useRef<HTMLInputElement>(null);
   const documentInput = useRef<HTMLInputElement>(null);
@@ -546,6 +603,12 @@ export function AnnotationEditor(): JSX.Element {
 
   /* ── annotation edits ────────────────────────────────────────────── */
 
+  /**
+   * The single place a new mark enters the document, and therefore the single
+   * place the `afterCreate` policy is applied. Keying the step-aside to a real
+   * create is the whole fix for Bug 1: a gesture that made nothing (a highlight
+   * over no words, a two-pixel rectangle) leaves the tool in the user's hand.
+   */
   const commit = useCallback(
     (annotation: EditorAnnotation, options: { edit?: boolean } = {}) => {
       updateWork((current) => ({
@@ -555,8 +618,25 @@ export function AnnotationEditor(): JSX.Element {
       }));
       if (options.edit) setEditingId(annotation.id);
       setNotice(null);
+      const stays = effectiveAfterCreate(annotation.tool, pinnedFor(annotation.tool)) === 'stay';
+      if (stays) {
+        setStatus(`${TOOL_BY_ID[annotation.tool]?.label ?? 'Tool'} is pinned — the next placement is ready.`);
+        return;
+      }
+      // Back to the cursor, with the mark the user just made still the selection,
+      // so drag handles, arrow-nudge, Cmd/Ctrl-D and Delete work without a click.
+      armTool('select');
+      // …but the option panel stays on the pen that made the mark: pdf.js mirrors
+      // the selection into the toolbar, and "Select options" under a text-box
+      // slider is a panel that changed the subject on its own.
+      setFocusedGroup(GROUP_FOR_TOOL[annotation.tool] ?? 'markup');
+      setStatus(
+        options.edit
+          ? `Placed a ${annotation.kind === 'Text' ? 'note' : 'text box'} — keep typing. Select is armed.`
+          : `Placed ${describeAnnotation(annotation)}. Select is armed — pin the tool to place several.`,
+      );
     },
-    [updateWork],
+    [armTool, pinnedFor, updateWork],
   );
 
   const removeSelected = useCallback(() => {
@@ -571,14 +651,18 @@ export function AnnotationEditor(): JSX.Element {
   }, [updateWork, work?.selectedId]);
 
   const undo = useCallback(() => {
-    updateWork((current) => ({ ...current, history: undoHistory(current.history) }));
+    const stepped = applyWorkStep(work, 'undo');
+    if (stepped.work && stepped.work !== work) updateWork(() => stepped.work as DocWork);
     setEditingId(null);
-  }, [updateWork]);
+    if (stepped.notice) setStatus(stepped.notice);
+  }, [updateWork, work]);
 
   const redo = useCallback(() => {
-    updateWork((current) => ({ ...current, history: redoHistory(current.history) }));
+    const stepped = applyWorkStep(work, 'redo');
+    if (stepped.work && stepped.work !== work) updateWork(() => stepped.work as DocWork);
     setEditingId(null);
-  }, [updateWork]);
+    if (stepped.notice) setStatus(stepped.notice);
+  }, [updateWork, work]);
 
   const draftText = useCallback(
     (id: string, text: string) => {
@@ -650,6 +734,24 @@ export function AnnotationEditor(): JSX.Element {
 
       let lines: ReturnType<typeof linesUnder> = [];
       if (MARKUP_TOOLS.includes(tool)) {
+        // A click on a mark that is already there is the user pointing at that
+        // mark, not asking for a second one on top of it. Checked before the
+        // text snap, because the words under an existing highlight always snap.
+        if (!isMeaningfulDrag(drag)) {
+          const tapped = markAtPoint(
+            work.history.present,
+            page,
+            screenToPdfPoint({ x: drag.x + drag.width / 2, y: drag.y + drag.height / 2 }, geom),
+          );
+          if (tapped) {
+            // The tool stays in the hand (Highlight is sticky by ruling); only the
+            // selection moves, which is what makes Delete and arrow-nudge work on
+            // the mark that was clicked.
+            updateWork((current) => ({ ...current, selectedId: tapped.id }));
+            setStatus(`Selected ${describeAnnotation(tapped)} instead of drawing a second mark.`);
+            return;
+          }
+        }
         lines = linesUnder(drag);
         if (lines.length === 0) {
           hint(
@@ -680,7 +782,7 @@ export function AnnotationEditor(): JSX.Element {
         clearRaster();
       }
     },
-    [clearRaster, commit, geom, hint, linesUnder, numPages, page, raster, rasterReady, style, textItems, tool, work],
+    [armTool, clearRaster, commit, geom, hint, linesUnder, numPages, page, raster, rasterReady, style, textItems, tool, updateWork, work],
   );
 
   const finishPath = useCallback(
@@ -759,6 +861,28 @@ export function AnnotationEditor(): JSX.Element {
     [geom, updateWork, work],
   );
 
+  /**
+   * A corner handle is grabbed whatever tool is armed: the mark the user just
+   * placed is the selection, so resizing has to be reachable without first
+   * clicking through the palette.
+   */
+  const onHandlePointerDown = useCallback(
+    (id: string, handle: ResizeHandle, point: Point) => {
+      if (!geom || !work) return;
+      const target = work.history.present.find((a) => a.id === id);
+      if (!target) return;
+      updateWork((current) => ({ ...current, selectedId: id }));
+      resizeRef.current = {
+        id,
+        handle,
+        origin: screenToPdfPoint(point, geom),
+        before: target,
+        beforeList: work.history.present,
+      };
+    },
+    [geom, updateWork, work],
+  );
+
   const onAnnotationDoubleClick = useCallback(
     (id: string) => {
       const target = annotations.find((a) => a.id === id);
@@ -792,6 +916,22 @@ export function AnnotationEditor(): JSX.Element {
       }));
       return;
     }
+    const resize = resizeRef.current;
+    if (resize && geom) {
+      const now = screenToPdfPoint(pointFrom(event), geom);
+      const dx = now.x - resize.origin.x;
+      const dy = now.y - resize.origin.y;
+      updateWork((current) => ({
+        ...current,
+        history: liveHistory(
+          current.history,
+          current.history.present.map((a) =>
+            a.id === resize.id ? resizeAnnotation(resize.before, resize.handle, dx, dy) : a,
+          ),
+        ),
+      }));
+      return;
+    }
     const point = pointFrom(event);
     setGesture((current) => {
       if (!current) return current;
@@ -810,6 +950,12 @@ export function AnnotationEditor(): JSX.Element {
     if (move) {
       moveRef.current = null;
       updateWork((current) => ({ ...current, history: settleHistory(current.history, move.beforeList) }));
+      return;
+    }
+    const resize = resizeRef.current;
+    if (resize) {
+      resizeRef.current = null;
+      updateWork((current) => ({ ...current, history: settleHistory(current.history, resize.beforeList) }));
       return;
     }
     const current = gesture;
@@ -847,18 +993,153 @@ export function AnnotationEditor(): JSX.Element {
     [numPages, updateWork],
   );
 
+  /**
+   * Move the selection by an arrow step. The step is a screen distance (1 px, or
+   * 10 px with Shift) and is mapped through the page geometry, so it looks the
+   * same size at every zoom and on a rotated page.
+   */
+  const nudgeSelected = useCallback(
+    (step: { dx: number; dy: number }) => {
+      if (!geom || !work?.selectedId) return false;
+      const before = work.history.present.find((a) => a.id === work.selectedId);
+      if (!before) return false;
+      const origin = screenToPdfPoint({ x: 0, y: 0 }, geom);
+      const moved = screenToPdfPoint({ x: step.dx, y: step.dy }, geom);
+      const dx = moved.x - origin.x;
+      const dy = moved.y - origin.y;
+      updateWork((current) => ({
+        ...current,
+        history: pushHistory(
+          current.history,
+          current.history.present.map((a) => (a.id === before.id ? moveAnnotation(before, dx, dy) : a)),
+        ),
+      }));
+      const across = step.dx < 0 ? 'left' : step.dx > 0 ? 'right' : step.dy < 0 ? 'up' : 'down';
+      setStatus(`Nudged ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} ${Math.abs(step.dx) + Math.abs(step.dy)} px ${across}.`);
+      return true;
+    },
+    [geom, updateWork, work],
+  );
+
+  /** `Cmd/Ctrl-D`: a copy of the selection, offset, and immediately the selection. */
+  const duplicateSelected = useCallback(() => {
+    if (!work?.selectedId) return false;
+    const before = work.history.present.find((a) => a.id === work.selectedId);
+    if (!before) return false;
+    const copy = duplicateAnnotation(before);
+    updateWork((current) => ({
+      ...current,
+      history: pushHistory(current.history, [...current.history.present, copy]),
+      selectedId: copy.id,
+    }));
+    setStatus(`Duplicated ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} — the copy is selected.`);
+    return true;
+  }, [updateWork, work]);
+
+  /**
+   * `Alt` + arrow: the keyboard equivalent of dragging a resize handle. A handle
+   * is 10 px on screen with a 22 px grab, but it is still a pointer-only target,
+   * and the brief asks for a key route to every pointer action.
+   */
+  const resizeSelected = useCallback(
+    (key: string, shift: boolean) => {
+      if (!geom || !work?.selectedId) return false;
+      const before = work.history.present.find((a) => a.id === work.selectedId);
+      if (!before) return false;
+      const step = nudgeStep(key, shift);
+      if (!step) return false;
+      const origin = screenToPdfPoint({ x: 0, y: 0 }, geom);
+      const moved = screenToPdfPoint({ x: step.dx, y: step.dy }, geom);
+      const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
+      const dx = horizontal ? moved.x - origin.x : 0;
+      const dy = horizontal ? 0 : moved.y - origin.y;
+      const handle: ResizeHandle =
+        key === 'ArrowLeft' ? 'sw' : key === 'ArrowRight' ? 'se' : key === 'ArrowUp' ? 'nw' : 'sw';
+      const next = resizeAnnotation(before, handle, dx, dy);
+      updateWork((current) => ({
+        ...current,
+        history: pushHistory(
+          current.history,
+          current.history.present.map((a) => (a.id === before.id ? next : a)),
+        ),
+      }));
+      setStatus(
+        `Resized ${TOOL_BY_ID[before.tool]?.label ?? 'mark'} from the ${key.replace('Arrow', '').toLowerCase()} edge.`,
+      );
+      return true;
+    },
+    [geom, updateWork, work],
+  );
+
+  /**
+   * One `Esc`, one level. The ladder is `nextEscapeLevel`, so the order is a
+   * documented rule rather than the order of a switch statement.
+   */
+  const stepBack = useCallback(() => {
+    const level = nextEscapeLevel({
+      editing: editingId !== null || gesture !== null || linkDraft !== null || signOpen,
+      selected: Boolean(work?.selectedId),
+      pinned: pinnedFor(tool),
+      armed: tool !== 'select',
+    });
+    switch (level) {
+      case 'dismiss':
+        setGesture(null);
+        setEditingId(null);
+        setLinkDraft(null);
+        setSignOpen(false);
+        break;
+      case 'selection':
+        updateWork((current) => ({ ...current, selectedId: null }));
+        break;
+      case 'unpin':
+        setPinnedTools((current) => ({ ...current, [tool]: false }));
+        break;
+      case 'disarm':
+        armTool('select');
+        break;
+      default:
+        break;
+    }
+    if (level !== 'none') setStatus(escapeLevelNotice(level));
+    return level;
+  }, [armTool, editingId, gesture, linkDraft, pinnedFor, signOpen, tool, updateWork, work?.selectedId]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
-      const history = historyCommandForKey(event.key, {
+      const modifiers = {
         ctrl: event.ctrlKey,
         meta: event.metaKey,
         shift: event.shiftKey,
-      });
+        alt: event.altKey,
+      };
+      const history = historyCommandForKey(event.key, modifiers);
       if (history) {
         event.preventDefault();
         if (history === 'undo') undo();
         else redo();
+        return;
+      }
+      if (isDuplicateKey(event.key, modifiers)) {
+        event.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      const selectedMark = annotations.find((a) => a.id === work?.selectedId) ?? null;
+      // Type-to-edit: a selected text box or note takes the next character, the
+      // way pdf.js hands focus to the box it just made. This has to be tested
+      // before the single-key tool arms, or typing "p" would swap the pen.
+      if (
+        selectedMark &&
+        EDITABLE_TEXT_TOOLS.includes(selectedMark.tool) &&
+        isTypeToEditKey(event.key, modifiers)
+      ) {
+        event.preventDefault();
+        armTool('select');
+        setEditingId(selectedMark.id);
+        const current = selectedMark.kind === 'Text' ? selectedMark.contents ?? '' : selectedMark.text ?? '';
+        draftText(selectedMark.id, current + event.key);
         return;
       }
       // Single-key tool arms (V H T P) — only bare keys, so Ctrl+P still prints.
@@ -873,32 +1154,39 @@ export function AnnotationEditor(): JSX.Element {
       switch (event.key) {
         case 'ArrowLeft':
         case 'ArrowUp':
-          event.preventDefault();
-          goToPage(page - 1);
-          break;
         case 'ArrowRight':
-        case 'ArrowDown':
+        case 'ArrowDown': {
           event.preventDefault();
-          goToPage(page + 1);
+          const step = nudgeStep(event.key, event.shiftKey);
+          if (!step) break;
+          // Alt takes the edge, plain arrows take the whole mark, and arrows
+          // with nothing selected still turn the page.
+          if (event.altKey && resizeSelected(event.key, event.shiftKey)) break;
+          if (!event.altKey && nudgeSelected(step)) break;
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') goToPage(page - 1);
+          else goToPage(page + 1);
           break;
+        }
         case 'Delete':
         case 'Backspace':
           if (work?.selectedId) {
             event.preventDefault();
             removeSelected();
+            setStatus('Removed the selected mark.');
           }
           break;
         case 'Escape':
-          setGesture(null);
-          setEditingId(null);
-          setLinkDraft(null);
-          setSignOpen(false);
-          updateWork((current) => ({ ...current, selectedId: null }));
+          event.preventDefault();
+          stepBack();
           break;
         case 'Enter':
           if (tool === 'polygon' || tool === 'polyline') {
             event.preventDefault();
             finishVertices();
+          } else if (selectedMark && EDITABLE_TEXT_TOOLS.includes(selectedMark.tool)) {
+            // Enter is the keyboard equivalent of double-clicking the mark.
+            event.preventDefault();
+            setEditingId(selectedMark.id);
           }
           break;
         default:
@@ -907,7 +1195,23 @@ export function AnnotationEditor(): JSX.Element {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [armTool, finishVertices, goToPage, page, redo, removeSelected, tool, undo, updateWork, work?.selectedId]);
+  }, [
+    annotations,
+    armTool,
+    duplicateSelected,
+    draftText,
+    finishVertices,
+    goToPage,
+    nudgeSelected,
+    page,
+    redo,
+    removeSelected,
+    resizeSelected,
+    stepBack,
+    tool,
+    undo,
+    work?.selectedId,
+  ]);
 
   /* ── unsaved changes ─────────────────────────────────────────────── */
 
@@ -1134,6 +1438,14 @@ export function AnnotationEditor(): JSX.Element {
   const pageAnnotations = annotations.filter((a) => a.page === page);
   const selected = annotations.find((a) => a.id === work?.selectedId) ?? null;
   const toolMeta = TOOL_BY_ID[tool];
+  /**
+   * The footer sentence for the armed tool. It states the pin state out loud, so
+   * "will my next click make another one?" has an answer without hovering the
+   * palette, and assistive tech hears it through the live region.
+   */
+  const armedHint = isPlacementTool(tool)
+    ? `${toolMeta.hint} ${pinLabel(tool, pinnedFor(tool))}.`
+    : toolMeta.hint;
   const pageCount = numPages || 1;
 
   const verticesPreview =
@@ -1225,32 +1537,65 @@ export function AnnotationEditor(): JSX.Element {
                         >
                           {group.label}
                         </p>
-                        <div className="mt-1 grid grid-cols-2 gap-1">
+                        <div
+                          className="mt-1 grid grid-cols-2 gap-1"
+                          role="toolbar"
+                          aria-label={`${group.label} tools`}
+                          aria-orientation="horizontal"
+                        >
                           {items.map((meta) => {
                             const shortcutKey = keyForTool(meta.id);
+                            const armed = tool === meta.id;
+                            const pinned = pinnedFor(meta.id);
+                            const placement = isPlacementTool(meta.id);
                             return (
-                              <button
-                                key={meta.id}
-                                type="button"
-                                data-tool={meta.id}
-                                aria-pressed={tool === meta.id}
-                                {...(shortcutKey ? { 'aria-keyshortcuts': shortcutKey } : {})}
-                                title={meta.hint}
-                                onClick={() => armTool(meta.id)}
-                                className={`doodle-chip flex items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] ${
-                                  tool === meta.id ? 'doodle-chip-active' : 'doodle-chip-inactive'
-                                }`}
-                              >
-                                <span aria-hidden className="text-[12px] leading-none">
-                                  {meta.icon}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate text-left">{meta.label}</span>
-                                {shortcutKey && (
-                                  <kbd className="shrink-0 rounded border border-cream-border bg-cream px-1 text-[8px] uppercase text-ink-soft">
-                                    {shortcutKey}
-                                  </kbd>
+                              <span key={meta.id} className="flex min-w-0 items-stretch">
+                                <button
+                                  type="button"
+                                  data-tool={meta.id}
+                                  aria-pressed={armed}
+                                  {...(shortcutKey ? { 'aria-keyshortcuts': shortcutKey } : {})}
+                                  title={meta.hint}
+                                  onClick={() => armTool(meta.id)}
+                                  className={`doodle-chip flex items-center justify-start gap-1.5 rounded-r-none px-2 py-1.5 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                                    armed ? 'doodle-chip-active' : 'doodle-chip-inactive'
+                                  }`}
+                                >
+                                  <span aria-hidden className="text-[12px] leading-none">
+                                    {meta.icon}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-left">{meta.label}</span>
+                                  {shortcutKey && (
+                                    <kbd className="shrink-0 rounded border border-cream-border bg-cream px-1 text-[8px] uppercase text-ink-soft">
+                                      {shortcutKey}
+                                    </kbd>
+                                  )}
+                                </button>
+                                {/*
+                                   The pin is the user's override of the tool's
+                                   declared `afterCreate`, shown on every
+                                   placement tool so "does it stay armed?" is
+                                   never something they have to remember about
+                                   the implementation.
+                                */}
+                                {placement && (
+                                  <button
+                                    type="button"
+                                    data-tool-pin={meta.id}
+                                    aria-pressed={pinned}
+                                    aria-label={pinLabel(meta.id, pinned)}
+                                    title={pinLabel(meta.id, pinned)}
+                                    onClick={() => togglePin(meta.id)}
+                                    className={`flex-none rounded-l-none border px-1 text-[10px] leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                                      pinned
+                                        ? 'border-accent/40 bg-accent/[0.08] text-accent'
+                                        : 'border-cream-border bg-white text-ink-muted hover:text-ink-soft'
+                                    }`}
+                                  >
+                                    <span aria-hidden>{pinned ? '🔒' : '🔓'}</span>
+                                  </button>
                                 )}
-                              </button>
+                              </span>
                             );
                           })}
                         </div>
@@ -1261,6 +1606,10 @@ export function AnnotationEditor(): JSX.Element {
                 <p className="text-[9px] leading-relaxed text-ink-muted/80">
                   {TOOLS.length} tools in {TOOL_GROUPS.length} named groups. {Object.keys(TOOL_SHORTCUT_KEYS).join(' ')}
                   {' '}arm {Object.values(TOOL_SHORTCUT_KEYS).map((id) => TOOL_BY_ID[id].label.toLowerCase()).join(', ')}.
+                </p>
+                <p className="text-[9px] leading-relaxed text-ink-muted/80" data-pin-explained>
+                  🔒 keeps a tool armed after each placement; 🔓 hands control back to Select so the next
+                  click moves or edits what you just made. Esc unwinds one step at a time.
                 </p>
               </InspectorSection>
             </motion.div>
@@ -1575,7 +1924,11 @@ export function AnnotationEditor(): JSX.Element {
 
         {/* ── page ── */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-cream-border bg-cream-light px-3 py-1.5">
+          <div
+            className="flex shrink-0 flex-wrap items-center gap-2 border-b border-cream-border bg-cream-light px-3 py-1.5"
+            role="toolbar"
+            aria-label="Page and zoom controls"
+          >
             <button
               type="button"
               onClick={() => goToPage(page - 1)}
@@ -1735,11 +2088,13 @@ export function AnnotationEditor(): JSX.Element {
                   draft={draft}
                   vertices={verticesPreview}
                   tool={tool}
+                  pinned={pinnedFor(tool)}
                   selectedId={work?.selectedId ?? null}
                   editingId={editingId}
                   onSurfacePointerDown={onSurfacePointerDown}
                   onAnnotationPointerDown={onAnnotationPointerDown}
                   onAnnotationDoubleClick={onAnnotationDoubleClick}
+                  onHandlePointerDown={onHandlePointerDown}
                   onFinishVertices={finishVertices}
                   onTextDraft={draftText}
                   onTextCommit={() => setEditingId(null)}
@@ -1790,15 +2145,22 @@ export function AnnotationEditor(): JSX.Element {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-cream-border bg-cream-light px-3 py-1.5">
-            {notice ? (
-              <p
-                className={`min-w-0 flex-1 truncate rounded border px-2 py-1 text-[10px] leading-relaxed ${NOTICE_CLASS[notice.tone]}`}
-              >
-                {notice.text}
-              </p>
-            ) : (
-              <p className="min-w-0 flex-1 truncate text-[10px] text-ink-muted">{toolMeta.hint}</p>
-            )}
+            {/*
+               One permanent live region: the footer swaps styling with the news,
+               but the element itself never unmounts, so assistive tech hears the
+               undo, the step-back and the pin flip instead of a silent canvas.
+            */}
+            <p
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-editor-status={notice ? notice.tone : 'idle'}
+              className={`min-w-0 flex-1 truncate rounded border px-2 py-1 text-[10px] leading-relaxed ${
+                notice ? NOTICE_CLASS[notice.tone] : 'border-transparent text-ink-muted'
+              }`}
+            >
+              {notice?.text ?? status ?? armedHint}
+            </p>
             <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
               In memory only — nothing is saved automatically
             </p>

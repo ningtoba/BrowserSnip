@@ -23,9 +23,13 @@ import { canvasToBlob, concatTiffs } from '../core/raster';
 import type { ExtractedImage } from '../core/images-out';
 import {
   ToolInputError,
+  downloadStem,
   filesResult,
   openInputs,
+  pagesField,
+  qualityField,
   reportResult,
+  resolutionField,
   throwIfAborted,
   withRender,
   type OpenedInput,
@@ -43,40 +47,13 @@ import {
 
 /* ── naming (E17) ─────────────────────────────────────────────────────────── */
 
-/** Longest stem kept for a download or an archive entry. */
-const STEM_LIMIT = 120;
-
 /**
- * A file stem that survives spaces, unicode and the characters Windows, macOS
- * and ZIP refuse in a name (E17).
+ * A safe stem for downloads and archive entries.
  *
- * Extraction output is usually several files at once — one image per page, one
- * entry per table — all named from the source document, so a stray `/`, a NUL
- * or a trailing dot yields an entry some unzippers reject and a download the
- * browser silently renames. Unicode (CJK, RTL marks, accents) is preserved on
- * purpose: transliterating `报告` to `baogao` would misreport which file the
- * user actually picked.
- *
- * The order matters, and the old version had it backwards: stripping the
- * extension first meant `a/b:c*e?.pdf` was read as a *path* and lost `a/b:` —
- * every exported image came back named after the last directory component. A
- * separator is therefore replaced like any other hostile character, and only
- * the final `.pdf` is dropped.
+ * The rules live in `helpers.downloadStem` so the runner, the archive exporters
+ * and every per-tool name in this module sanitise the same way (E17).
  */
-function outputStem(name: string): string {
-  const cleaned = (name ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, '-')
-    .replace(/[<>:"/\\|?*]+/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const withoutExtension = cleaned.replace(/\.[^.]*$/, '');
-  const stem = withoutExtension === '' ? cleaned : withoutExtension;
-  const clipped = Array.from(stem)
-    .slice(0, STEM_LIMIT)
-    .join('')
-    .replace(/^[\s.-]+|[\s.-]+$/g, '');
-  return clipped === '' ? 'document' : clipped;
-}
+const outputStem = downloadStem;
 
 /** `007`, `0007` — wide enough for the page numbers the document really has. */
 function pageNumber(value: number, total: number): string {
@@ -448,19 +425,28 @@ async function exportPages(
   }
 }
 
-const RESOLUTION_FIELD = {
-  key: 'dpi',
-  label: 'Resolution',
-  type: 'slider' as const,
-  default: 200,
+const RESOLUTION_FIELD = resolutionField({
   min: 72,
   max: 600,
-  step: 1,
-  unit: 'dpi',
-  help: 'Higher means sharper and bigger. 200 dpi is fine for screen, 300 for print.',
-};
+  group: 'Output',
+  help: '200 dpi is fine for screen, 300 for print. Higher is sharper and heavier, and every page is rendered in this tab.',
+});
 
-const PAGES_FIELD = { key: 'pages', label: 'Pages', type: 'pages' as const, default: 'all' };
+const PAGES_FIELD = pagesField();
+
+/** The disclosure every page-to-picture exporter owes the user (E10, E13). */
+const RASTER_OUT_NOTES = [
+  'A rendered page is a picture: the text layer does not travel with it, so the images cannot be searched or copied.',
+  'More than one page is packaged as a single ZIP; a one-page selection downloads on its own.',
+];
+
+/** Shared by the text exporters: what a page with nothing to read costs. */
+function textOutNotes(what: string): string[] {
+  return [
+    `Pages with no text layer contribute nothing to the ${what}, and the result names them instead of reporting a silent success.`,
+    'A scan needs a text layer before it can be extracted: run OCR first if the output comes back empty.',
+  ];
+}
 
 /**
  * Read the selected pages once, for every text-shaped exporter.
@@ -534,10 +520,13 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['extract text', 'copy text', 'plain text', 'readability'],
     surface: 'none',
     outputSuffix: '.txt',
+    promise: 'A .txt file holding the words from the pages you picked, with a word count you can check against the original.',
+    actionLabel: 'Extract text',
+    notes: textOutNotes('text file'),
     fields: [
       PAGES_FIELD,
-      { key: 'layout', label: 'Keep line layout', type: 'toggle', default: true, help: 'Off joins wrapped lines into flowing paragraphs.' },
-      { key: 'pageMarkers', label: 'Insert page break markers', type: 'toggle', default: false },
+      { key: 'layout', label: 'Keep line layout', type: 'toggle', default: true, group: 'Output', help: 'Off joins wrapped lines into flowing paragraphs, which reads better and rewraps in any editor.' },
+      { key: 'pageMarkers', label: 'Insert page break markers', type: 'toggle', default: false, group: 'Output', help: 'Writes a form feed between pages so a text editor or `cat` can find the page boundaries again.' },
     ],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
@@ -567,11 +556,14 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['md', 'readme', 'llm', 'notes'],
     surface: 'none',
     outputSuffix: '.md',
+    promise: 'A Markdown file with real headings, lists and tables — not a flat dump of every line.',
+    actionLabel: 'Convert to Markdown',
+    notes: textOutNotes('Markdown'),
     fields: [
       PAGES_FIELD,
-      { key: 'tables', label: 'Rebuild tables as Markdown tables', type: 'toggle', default: true },
-      { key: 'headings', label: 'Detect headings from font sizes', type: 'toggle', default: true },
-      { key: 'pageBreaks', label: 'Separate pages with a rule', type: 'toggle', default: false },
+      { key: 'tables', label: 'Rebuild tables as Markdown tables', type: 'toggle', default: true, group: 'Structure', help: 'Off keeps a table as plain lines, because a wide table becomes unreadable in a pipe grid.' },
+      { key: 'headings', label: 'Detect headings from font sizes', type: 'toggle', default: true, group: 'Structure', help: 'A large run of text becomes `##`. Turn it off when the document uses size for emphasis rather than structure.' },
+      { key: 'pageBreaks', label: 'Separate pages with a rule', type: 'toggle', default: false, group: 'Structure', help: 'Adds a horizontal rule where each page ended, so slide decks keep their shape.' },
     ],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
@@ -603,7 +595,13 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['data', 'api', 'structured', 'parsing'],
     surface: 'none',
     outputSuffix: '.json',
-    fields: [PAGES_FIELD, { key: 'tables', label: 'Detect tables', type: 'toggle', default: true }],
+    promise: 'A JSON file with every block, its text, bounding box and fonts, plus the tables the grid implies.',
+    actionLabel: 'Export JSON',
+    notes: textOutNotes('JSON'),
+    fields: [
+      PAGES_FIELD,
+      { key: 'tables', label: 'Detect tables', type: 'toggle', default: true, group: 'Content', help: 'Off returns the raw text runs only, which is faster and never guesses a grid that is not there.' },
+    ],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
       // A page of pictures only is still worth describing, so the empty-result
@@ -634,10 +632,13 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['rag', 'llm', 'embedding', 'chunks', ' llamaindex'],
     surface: 'none',
     outputSuffix: '-llamaindex.json',
+    promise: 'One chunked, referenced JSON file an embedding pipeline can index without another pass.',
+    actionLabel: 'Chunk for AI',
+    notes: textOutNotes('chunks'),
     fields: [
       PAGES_FIELD,
-      { key: 'title', label: 'Document id', type: 'text', help: 'Defaults to the file name.' },
-      { key: 'extra', label: 'Extra metadata (JSON)', type: 'textarea', default: '' },
+      { key: 'title', label: 'Document id', type: 'text', group: 'Index', placeholder: 'The file name, if left blank', help: 'Every chunk points back at this id, so changing it later orphans the rows already in your index.' },
+      { key: 'extra', label: 'Extra metadata (JSON)', type: 'textarea', default: '', group: 'Index', placeholder: '{ "source": "contracts" }', help: 'One flat object of strings and numbers, copied onto every chunk. Anything nested is rejected before the run.' },
     ],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
@@ -680,12 +681,18 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['spreadsheet', 'rows', 'extract table'],
     surface: 'none',
     outputSuffix: '.csv',
+    promise: 'A CSV file with one row per detected table row — or an honest report when the pages hold no table at all.',
+    actionLabel: 'Export CSV',
+    notes: [
+      'The file is written as UTF-8 with a byte-order mark, because Excel and Sheets both assume a legacy codepage without it and turn accented cells into mojibake.',
+      'A block of prose is not a table: when nothing is detected you get a report naming the pages it looked at, not an empty download.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'minRows', label: 'Minimum rows to count as a table', type: 'number', default: 3, min: 2, max: 20, half: true },
-      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', options: [
+      { key: 'minRows', label: 'Minimum rows', type: 'number', default: 3, min: 2, max: 20, step: 1, integer: true, half: true, group: 'Tables', help: 'A block of text needs this many aligned rows before it counts as a table. Raise it when column headings keep being read as tables.' },
+      { key: 'delimiter', label: 'Delimiter', type: 'select', default: ',', group: 'CSV file', options: [
         { value: ',', label: 'Comma' }, { value: ';', label: 'Semicolon' }, { value: '\t', label: 'Tab' },
-      ] },
+      ], help: 'Semicolon or tab survives being opened in a European-locale spreadsheet, where a comma is a decimal point.' },
     ],
     async run(context) {
       const { input, tables, facts } = await collectTables(context);
@@ -710,12 +717,17 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['table detection', 'rows', 'columns', 'data'],
     surface: 'none',
     outputSuffix: '-tables.json',
+    promise: 'Every table on the selected pages, as one file in the format you choose, with the page it came from.',
+    actionLabel: 'Extract tables',
+    notes: [
+      'Tables are found from ruled lines and aligned columns, so a table drawn as free text with no gaps can be missed — the report says which pages were checked.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'format', label: 'Format', type: 'segmented', default: 'json', options: [
+      { key: 'format', label: 'File format', type: 'segmented', default: 'json', group: 'Output', options: [
         { value: 'json', label: 'JSON' }, { value: 'csv', label: 'CSV' }, { value: 'md', label: 'Markdown' },
-      ] },
-      { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20 },
+      ], help: 'JSON keeps the page and cell coordinates; CSV and Markdown are for reading, so they flatten them away.' },
+      { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20, step: 1, integer: true, group: 'Tables', help: 'A block of text needs this many aligned rows before it counts as a table.' },
     ],
     async run(context) {
       const { input, tables, facts } = await collectTables(context);
@@ -761,10 +773,15 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['xlsx', 'workbook', 'spreadsheet', 'sheets'],
     surface: 'none',
     outputSuffix: '.xlsx',
+    promise: 'A real .xlsx workbook with one worksheet per detected table, columns already widened.',
+    actionLabel: 'Export spreadsheet',
+    notes: [
+      'Cells arrive as text plus whatever number the text clearly was; a table drawn without a text layer cannot become a workbook, and the result says so.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'oneSheet', label: 'Put everything on one sheet', type: 'toggle', default: false },
-      { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20 },
+      { key: 'oneSheet', label: 'Put everything on one sheet', type: 'toggle', default: false, group: 'Workbook', help: 'Off keeps one worksheet per detected table, which is what you want before pivoting; on stacks them with a blank row between.' },
+      { key: 'minRows', label: 'Minimum rows', type: 'number', default: 2, min: 2, max: 20, step: 1, integer: true, group: 'Workbook', help: 'A block of text needs this many aligned rows before it counts as a table.' },
     ],
     async run(context) {
       const { input, tables, facts } = await collectTables(context);
@@ -812,11 +829,16 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['docx', 'editable', 'office', 'rewrite'],
     surface: 'none',
     outputSuffix: '.docx',
+    promise: 'An editable .docx rebuilt from the text, headings and tables — content you can rewrite, not a picture of the page.',
+    actionLabel: 'Convert to Word',
+    notes: [
+      'Word re-flows the page, so line breaks, column positions and the original font are not preserved; anything that must land exactly where it was should stay a PDF.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'headings', label: 'Map font sizes to Word heading styles', type: 'toggle', default: true },
-      { key: 'tables', label: 'Rebuild tables as Word tables', type: 'toggle', default: true },
-      { key: 'pageBreaks', label: 'Start a new page for each PDF page', type: 'toggle', default: false },
+      { key: 'headings', label: 'Map font sizes to Word heading styles', type: 'toggle', default: true, group: 'Structure', help: 'Heading styles make a navigable document; positions and the original typeface do not survive the mapping.' },
+      { key: 'tables', label: 'Rebuild tables as Word tables', type: 'toggle', default: true, group: 'Structure', help: 'Off pastes the rows as plain paragraphs, which is safer for a table with merged or empty cells.' },
+      { key: 'pageBreaks', label: 'Start a new page for each PDF page', type: 'toggle', default: false, group: 'Structure', help: 'On keeps the pagination you printed with; off lets Word re-flow, so page numbers will not match the original.' },
     ],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
@@ -847,10 +869,15 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['vector', 'illustrator', 'scale', 'svg'],
     surface: 'none',
     outputSuffix: '.svg',
+    promise: 'Vector pages that stay sharp at any zoom, with the text left as text wherever the page allows it.',
+    actionLabel: 'Export SVG',
+    notes: [
+      'Fonts are referenced, not embedded, so an SVG opened without the original font installed is redrawn with a substitute.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'embedImages', label: 'Embed raster images as data URIs', type: 'toggle', default: true },
-      { key: 'asOne', label: 'One SVG per document instead of per page', type: 'toggle', default: false },
+      { key: 'embedImages', label: 'Embed raster images as data URIs', type: 'toggle', default: true, group: 'Output', help: 'Off leaves the photos out of the file, which keeps it small but means opening it somewhere else shows blank frames.' },
+      { key: 'asOne', label: 'One SVG per document instead of per page', type: 'toggle', default: false, group: 'Output', help: 'Off gives you one SVG per page. On packs them into a ZIP, since a single SVG can only carry one page.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -892,9 +919,15 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['photos', 'unembed', 'gallery', 'assets'],
     surface: 'none',
     outputSuffix: '-images.zip',
+    promise: 'The original image bytes, page by page — no re-encoding, so what you get is what the file held.',
+    actionLabel: 'Extract images',
+    notes: [
+      'Only images actually stored in the file can be pulled out: a page drawn from text and vector shapes has none, and a scanned page has one image of the whole sheet (use PDF to Image for that).',
+      'More than one image arrives as a single ZIP; a lone image downloads on its own.',
+    ],
     fields: [
       PAGES_FIELD,
-      { key: 'smallest', label: 'Ignore images smaller than', type: 'number', default: 64, min: 0, max: 2000, step: 8, unit: 'px' },
+      { key: 'smallest', label: 'Ignore images smaller than', type: 'number', default: 64, min: 0, max: 2000, step: 8, integer: true, unit: 'px', group: 'Filter', help: 'Icons, bullet glyphs and 1 px masks are usually not the artwork. Set 0 to take every image the page carries.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -955,22 +988,36 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['jpg', 'png', 'webp', 'bmp', 'tiff', 'screenshot'],
     surface: 'none',
     outputSuffix: '_images',
+    promise: 'One image per selected page in the format you choose, zipped when the selection runs to more than one page.',
+    actionLabel: 'Export images',
+    notes: [
+      'A rendered page is a picture: the text layer does not travel with it, so the images cannot be searched or copied.',
+      'More than one page is packaged as a single ZIP; a one-page selection downloads on its own. TIFF ignores this and carries every page in one file.',
+    ],
     multiFile: false,
     fields: [
       {
         key: 'format',
-        label: 'Format',
+        label: 'File format',
         type: 'segmented',
         default: 'png',
+        group: 'Output',
         options: [
           { value: 'png', label: 'PNG' }, { value: 'jpeg', label: 'JPG' },
           { value: 'webp', label: 'WEBP' }, { value: 'bmp', label: 'BMP' }, { value: 'tiff', label: 'TIFF' },
         ],
+        help: 'BMP and TIFF are uncompressed, so a whole document in either is many times the size of the PDF.',
       },
       RESOLUTION_FIELD,
-      { key: 'quality', label: 'Quality', type: 'slider', default: 0.92, min: 0.3, max: 1, step: 0.02, when: (v) => v.format === 'jpeg' || v.format === 'webp' },
+      qualityField('jpeg', {
+        default: 0.92,
+        step: 0.02,
+        group: 'Output',
+        help: 'Applies to JPG and WebP, the two lossy formats above. Lower saves space and adds blockiness around small text.',
+        when: (v) => v.format === 'jpeg' || v.format === 'webp',
+      }),
       PAGES_FIELD,
-      { key: 'zip', label: 'Zip when there is more than one page', type: 'toggle', default: true },
+      { key: 'zip', label: 'Zip when there is more than one page', type: 'toggle', default: true, group: 'Output', help: 'Several pages are otherwise many separate downloads. TIFF ignores this: it carries every page in one file.' },
     ],
     async run(context) {
       const format = stringValue(context.values, 'format', 'png') as 'png' | 'jpeg' | 'webp' | 'bmp' | 'tiff';
@@ -995,8 +1042,18 @@ export const convertFromTools: PdfToolDefinition[] = [
       icon: '🖼️',
       category: 'convert-from',
       keywords: ['image', label.toLowerCase(), 'raster', 'export'],
+      group: 'Convert from PDF',
       surface: 'none',
       outputSuffix: `_${format}s`,
+      promise:
+        format === 'tiff'
+          ? 'Every selected page as a TIFF, several pages written into one multi-page file.'
+          : `Every selected page as its own ${label} image, packaged as one ZIP when there is more than one.`,
+      actionLabel: `Export ${label}`,
+      notes:
+        format === 'tiff'
+          ? ['A rendered page is a picture: the text layer does not travel with it.', 'Several pages are written into one multi-page TIFF rather than a ZIP.']
+          : RASTER_OUT_NOTES,
       fields: [RESOLUTION_FIELD, PAGES_FIELD],
       async run(context) {
         return exportPages(context, {
@@ -1019,12 +1076,24 @@ export const convertFromTools: PdfToolDefinition[] = [
     category: 'convert-from',
     keywords: ['black and white', 'monochrome', 'print cheaper', 'desaturate'],
     outputSuffix: '_greyscale.pdf',
+    promise: 'A black-and-white copy of the pages you choose, recoloured so the text stays selectable unless you ask for a re-render.',
+    actionLabel: 'Convert to greyscale',
+    notes: [
+      'Recolouring changes the colour operators only; a page whose grey already equals black, or whose colour lives inside an image, comes out unchanged and the result says how much was converted.',
+      'Re-render mode photographs the selected pages and writes only those into the result: their text becomes pixels and the pages you left out are not carried over.',
+    ],
     fields: [
-      { key: 'mode', label: 'Method', type: 'segmented', default: 'vectors', options: [
+      { key: 'mode', label: 'Method', type: 'segmented', default: 'vectors', group: 'Method', options: [
         { value: 'vectors', label: 'Recolour (keeps text selectable)' },
         { value: 'raster', label: 'Re-render (guaranteed, larger)' },
-      ] },
-      { key: 'dpi', label: 'Re-render resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', when: (v) => v.mode === 'raster' },
+      ], help: 'Recolour rewrites the colour operators and loses nothing you can select. Re-render photographs the page, which catches colour that recolouring cannot reach — and throws away the text layer.' },
+      resolutionField({
+        key: 'dpi',
+        group: 'Method',
+        max: 400,
+        when: (v) => v.mode === 'raster',
+        help: 'Only used by re-render. Higher is sharper and heavier, and the text is already gone either way.',
+      }),
       PAGES_FIELD,
     ],
     async run(context) {
@@ -1089,6 +1158,11 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['measure', 'a4', 'letter', 'audit', 'size'],
     surface: 'none',
     outputSuffix: '_dimensions.txt',
+    promise: 'A report of every page’s size in points and millimetres, its orientation, named format and rotation.',
+    actionLabel: 'Measure pages',
+    notes: [
+      'Sizes are read from each page’s own crop box as a viewer displays it, so a page carrying /Rotate is reported the way it prints.',
+    ],
     async run(context) {
       const [input] = await openInputs(context);
       const rows = pageSizeReport(input.doc);

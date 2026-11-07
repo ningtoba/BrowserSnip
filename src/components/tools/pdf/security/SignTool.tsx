@@ -13,6 +13,7 @@ import { useProcessStore } from '@/stores/process-store';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { clampPageNumber, fitMarkToPage } from '@/components/tools/pdf/editor/placement';
 import { adoptedFile, takeEditorIntent } from '@/components/tools/pdf/editor/quickModes';
+import { decodeImage } from '@/lib/pdf/core/images';
 import {
   getSignState, addSigItem, updateSigItem, removeSigItem,
   selectSigItem, getSignPageSize, subscribeSign,
@@ -147,28 +148,41 @@ export function SignTool() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawBytes, drawH, drawUrl, drawW, fitToPage]);
 
+  /**
+   * Read a signature picture off disk.
+   *
+   * This goes through `core/images`, whose decode is bounded and always settles:
+   * awaiting the `<img>` load directly meant a browser without `createImageBitmap`
+   * hung on the file picker with no message at all.
+   */
   const handleImagePicked = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const img = new Image();
-    img.src = URL.createObjectURL(f);
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('Failed'));
-    });
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    c.getContext('2d')!.drawImage(img, 0, 0);
-    URL.revokeObjectURL(img.src);
-    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
-    if (!blob) return;
-    const bytes = await blob.arrayBuffer();
-    setImageUrl(URL.createObjectURL(blob));
-    setImageBytes(bytes);
-    const maxW = 150;
-    const aspect = img.naturalWidth / img.naturalHeight;
-    setImageW(Math.min(maxW, img.naturalWidth));
-    setImageH(Math.min(maxW, img.naturalWidth) / aspect);
+    try {
+      const decoded = await decodeImage(new Uint8Array(await f.arrayBuffer()), {
+        mime: f.type || undefined,
+        name: f.name,
+      });
+      const blob = await new Promise<Blob | null>((r) => decoded.canvas.toBlob(r, 'image/png'));
+      if (!blob) {
+        setNotice(`"${f.name}" could not be turned into a picture this browser can embed. Draw your signature instead.`);
+        return;
+      }
+      const bytes = await blob.arrayBuffer();
+      setImageUrl(URL.createObjectURL(blob));
+      setImageBytes(bytes);
+      // Preview width is points on the page, so a 2000 px photo is scaled down
+      // to a signature-sized mark rather than a banner.
+      const maxW = 150;
+      const aspect = decoded.width / Math.max(1, decoded.height);
+      setImageW(Math.min(maxW, decoded.width));
+      setImageH(Math.min(maxW, decoded.width) / aspect);
+      setNotice(`"${f.name}" is ready to place — it stays in this tab.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : `"${f.name}" could not be opened as a picture.`);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   }, []);
 
   const clearDrawCanvas = useCallback(() => {
@@ -217,6 +231,30 @@ export function SignTool() {
     setDrawUrl(canvas.toDataURL('image/png'));
     setDrawBytes(bytes);
   }, []);
+
+  /**
+   * Re-use a signature already prepared.
+   *
+   * The list under the tabs is the saved set: the picture and the text survive on
+   * the item, so "place again" copies the mark onto the page being viewed instead
+   * of making the user draw it again for page 2 and page 3.
+   */
+  const placeAgain = useCallback((item: SigItem) => {
+    addSigItem({
+      id: nextId(),
+      type: item.type,
+      text: item.text,
+      imageDataUrl: item.imageDataUrl,
+      imageBytes: item.imageBytes,
+      w: item.w,
+      h: item.h,
+      color: item.color,
+      fontFamily: item.fontFamily,
+    });
+    setNotice(
+      `Placed another copy of the ${item.type === 'text' ? 'typed' : item.type === 'image' ? 'image' : 'drawn'} signature on page ${st.page}. Drag it where you want it.`,
+    );
+  }, [st.page]);
 
   const update = useCallback((patch: Partial<SigItem>) => {
     if (!selected) return;
@@ -319,7 +357,7 @@ export function SignTool() {
       )}
 
       {/* Tab bar */}
-      <motion.div variants={fadeUp} className="flex gap-0.5">
+      <motion.div variants={fadeUp} role="tablist" aria-label="Signature type" className="flex gap-0.5">
         {([
           ['text', 'Text'],
           ['image', 'Image'],
@@ -327,7 +365,23 @@ export function SignTool() {
         ] as const).map(([key, label]) => (
           <button
             key={key}
+            role="tab"
+            id={`sig-tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls={`sig-panel-${key}`}
+            tabIndex={tab === key ? 0 : -1}
             onClick={() => setTab(key)}
+            onKeyDown={(event) => {
+              // Arrow keys walk the three tabs; the panel itself stays reachable
+              // by Tab from the selected one.
+              const order = ['text', 'image', 'draw'] as const;
+              const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = order[(order.indexOf(key) + step + order.length) % order.length];
+              setTab(next);
+              document.getElementById(`sig-tab-${next}`)?.focus();
+            }}
             className={`relative flex-1 text-[10px] font-medium py-1.5 rounded-[10px] px-3 transition-colors ${
               tab === key ? 'text-accent' : 'text-ink-soft hover:text-ink'
             }`}
@@ -346,7 +400,7 @@ export function SignTool() {
 
       {/* Tab content */}
       {tab === 'text' && (
-        <motion.div variants={fadeUp} className="space-y-2">
+        <motion.div variants={fadeUp} role="tabpanel" aria-labelledby="sig-tab-text" id="sig-panel-text" className="space-y-2">
           <input type="text" value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
             placeholder="Your name or initials…"
@@ -363,14 +417,15 @@ export function SignTool() {
               className="doodle-input text-center text-[10px]" placeholder="W" />
           </div>
           <button onClick={addTextToPDF} disabled={!textValue.trim()}
+            title={textValue.trim() ? undefined : 'Type the name or initials to add'}
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
-            + Add Text to PDF
+            Add text to PDF
           </button>
         </motion.div>
       )}
 
       {tab === 'image' && (
-        <motion.div variants={fadeUp} className="space-y-2">
+        <motion.div variants={fadeUp} role="tabpanel" aria-labelledby="sig-tab-image" id="sig-panel-image" className="space-y-2">
           <input ref={fileInputRef} type="file" accept="image/*"
             onChange={handleImagePicked} className="doodle-input text-[10px]" />
           {imageUrl && (
@@ -387,14 +442,15 @@ export function SignTool() {
             </>
           )}
           <button onClick={addImageToPDF} disabled={!imageBytes}
+            title={imageBytes ? undefined : 'Choose a picture of your signature first'}
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
-            + Add Image to PDF
+            Add image to PDF
           </button>
         </motion.div>
       )}
 
       {tab === 'draw' && (
-        <motion.div variants={fadeUp} className="space-y-2">
+        <motion.div variants={fadeUp} role="tabpanel" aria-labelledby="sig-tab-draw" id="sig-panel-draw" className="space-y-2">
           <div className="border border-cream-border rounded-[10px] overflow-hidden bg-white shadow-doodle">
             <canvas ref={drawCanvasRef}
               onMouseDown={drawStart} onMouseMove={drawMove} onMouseUp={drawEnd} onMouseLeave={drawEnd}
@@ -411,8 +467,9 @@ export function SignTool() {
               className="doodle-input text-center text-[10px] w-16" placeholder="H" />
           </div>
           <button onClick={addDrawToPDF} disabled={!drawBytes}
+            title={drawBytes ? undefined : 'Sign in the box above first — an empty pad adds nothing'}
             className="doodle-chip doodle-chip-active text-[10px] w-full disabled:opacity-30">
-            + Add Drawing to PDF
+            Add drawing to PDF
           </button>
         </motion.div>
       )}
@@ -460,19 +517,31 @@ export function SignTool() {
         </motion.div>
       )}
 
-      {/* Signature list */}
+      {/* Saved signatures: prepare once, place on every page that needs it */}
       {st.items.length > 0 && (
         <motion.div variants={fadeUp} className="border-t border-cream-border pt-2">
           <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">
-            Placed ({st.items.length})
+            Saved signatures ({st.items.length})
           </p>
-          <div className="space-y-0.5 max-h-24 overflow-y-auto">
+          <div role="listbox" aria-label="Saved signatures" className="space-y-0.5 max-h-24 overflow-y-auto">
             {st.items.map((item) => (
-              <motion.div key={item.id}
+              <div key={item.id}
+                role="option"
+                aria-selected={item.id === st.selectedId}
+                tabIndex={0}
                 onClick={() => selectSigItem(item.id)}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.2 }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    selectSigItem(item.id);
+                  } else if ((event.key === 'd' || event.key === 'D') && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    placeAgain(item);
+                  } else if (event.key === 'Delete' || event.key === 'Backspace') {
+                    event.preventDefault();
+                    removeSigItem(item.id);
+                  }
+                }}
                 className={`flex items-center gap-1.5 p-1 rounded-[10px] cursor-pointer text-[10px] transition-colors duration-150
                   ${item.id === st.selectedId ? 'bg-accent/[0.06] border border-accent/60 shadow-glow' : 'bg-white border border-cream-border hover:border-[#D5D5CD]'}`}
               >
@@ -481,14 +550,44 @@ export function SignTool() {
                 </span>
                 <span className="flex-1 truncate">
                   {item.type === 'text' ? (item.text || '(empty)') : item.type === 'image' ? 'Image' : 'Drawing'}
+                  {' · p.'}{item.page}
                 </span>
                 <button
+                  onClick={(e) => { e.stopPropagation(); placeAgain(item); }}
+                  aria-label={`Place the ${item.type} signature again on page ${st.page}`}
+                  title={`Place a copy on page ${st.page}`}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-ink-muted transition-colors duration-150 hover:bg-accent/10 hover:text-accent"
+                >＋</button>
+                <button
                   onClick={(e) => { e.stopPropagation(); removeSigItem(item.id); }}
-                  className="text-danger hover:text-danger/80 text-xs shrink-0 transition-colors duration-150">✕</button>
-              </motion.div>
+                  aria-label={`Remove the ${item.type} signature on page ${item.page}`}
+                  title={`Remove the ${item.type} signature on page ${item.page}`}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-danger transition-colors duration-150 hover:bg-danger/10"
+                >✕</button>
+              </div>
             ))}
           </div>
+          <p className="mt-1 text-[9px] leading-relaxed text-ink-muted">
+            Select one and press Ctrl/Cmd-D, or use the plus button, to place another copy on page {st.page}.
+          </p>
         </motion.div>
+      )}
+
+      {/* Why the button is off, in words next to it rather than only in a tooltip. */}
+      {!allReady && (
+        <p className="text-[10px] leading-relaxed text-ink-muted" data-sign-blocked>
+          {usable.length === 0
+            ? !file
+              ? 'Open a PDF, then add a signature above — there is nothing to write yet.'
+              : 'Add a signature above: type one, upload a picture, or draw it.'
+            : 'Every placed signature needs text, a picture or a stroke inside it.'}
+        </p>
+      )}
+      {unusable.length > 0 && (
+        <p className="text-[10px] leading-relaxed text-warn" data-sign-offpage={unusable.length}>
+          {unusable.length} signature{unusable.length === 1 ? '' : 's'} sit on a page this document does not have and
+          will be left out — move them to a page that exists.
+        </p>
       )}
 
       <button
@@ -506,7 +605,7 @@ export function SignTool() {
               : undefined
         }
       >
-        {isRunning ? 'Placing…' : `Apply ${usable.length > 0 ? `${usable.length} ` : ''}Signature${usable.length === 1 ? '' : 's'}`}
+        {isRunning ? 'Placing…' : `Place ${usable.length > 0 ? `${usable.length} ` : ''}signature${usable.length === 1 ? '' : 's'}`}
       </button>
     </motion.div>
   );

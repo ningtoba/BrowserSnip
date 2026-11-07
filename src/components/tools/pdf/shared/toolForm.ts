@@ -9,6 +9,7 @@
  * beside the input that caused them.
  */
 import { clampFields, validateFields } from '@/lib/pdf/core/guard';
+import type { ToolPhase } from '@/stores/process-store';
 import type {
   PdfToolCategory,
   PdfToolDefinition,
@@ -184,4 +185,48 @@ export function promiseFor(tool: PanelTool): string {
   const own = tool.promise;
   if (typeof own === 'string' && own.trim() !== '') return own.trim();
   return PROMISE_BY_CATEGORY[tool.category] ?? 'Runs on this device; the result is ready to download.';
+}
+
+export interface RunStatusInput {
+  phase: ToolPhase;
+  /** What the tool calls this job, e.g. `"Merge PDFs"`. */
+  label: string;
+  /** 0..100 for the whole job. */
+  percent: number;
+  /** The stage the runner named, if it named one. */
+  message?: string | null;
+  /** A cancel or a discarded late result; it outranks everything else. */
+  notice?: string | null;
+  /** Files the finished run produced. */
+  outputs?: number;
+}
+
+/**
+ * The one sentence the rail reads to its live region.
+ *
+ * Kept out of the component so the wording is testable, and so a screen-reader
+ * user and a sighted user are told the same thing from the same source: a stage
+ * name while there is one, "no time estimate yet" when there is no denominator,
+ * and a number of files rather than a bare "Done" when the work is over.
+ */
+export function runStatusText(input: RunStatusInput): string {
+  if (input.notice) return input.notice;
+  const stage = input.message?.trim();
+  switch (input.phase) {
+    case 'running':
+      // Percent 0 while running means the tool has not reported a denominator
+      // yet; claiming "0%" would be a determinate bar built on nothing.
+      if (!(input.percent > 0)) return `${stage || 'Working'} — no time estimate yet`;
+      return `${stage || 'Working'} — ${Math.round(input.percent)}% of ${input.label || 'this run'}`;
+    case 'done': {
+      const count = input.outputs ?? 0;
+      if (count > 1) return `Finished — ${count} files ready to download`;
+      if (count === 1) return 'Finished — one file ready to download';
+      return 'Finished — nothing to download, the answer is in the report';
+    }
+    default:
+      // `error` already speaks through a `role="alert"` panel; repeating it here
+      // would make assistive tech say the same failure twice.
+      return '';
+  }
 }

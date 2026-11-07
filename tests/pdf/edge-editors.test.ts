@@ -602,13 +602,18 @@ describe('crop model', () => {
  * ------------------------------------------------------------------ */
 
 describe('page advice', () => {
+  // Stale-assertion update (M2): `engineAvailable: boolean` became three fields,
+  // because "available" conflated *already loaded here* with *a 54 MB download is
+  // about to start* — and the one button that offered to fix it did nothing at all.
   const base = {
     hasDocument: true,
     opening: false,
     numPages: 4,
     page: 2,
     imageCount: 0,
-    engineAvailable: false,
+    engineLoaded: false,
+    engineFetchable: true,
+    engineSize: 'about 54 MB',
   };
 
   it('calls a scan a scan and offers OCR', () => {
@@ -624,15 +629,20 @@ describe('page advice', () => {
     expect(pageAdvice({ ...base, blocks: [], imageCount: 0 })!.kind).toBe('blank-page');
   });
 
-  it('is honest about an invisible OCR layer, with and without the engine', () => {
+  it('is honest about an invisible OCR layer: loaded, downloadable, or unreachable', () => {
     const blocks = [{ invisible: true, direction: 'rtl' as const, text: 'שלום' }];
-    const offline = pageAdvice({ ...base, blocks })!;
-    expect(offline.kind).toBe('ocr-layer');
-    expect(offline.actions).toEqual(expect.arrayContaining(['run-ocr', 'open-engine']));
-    expect(offline.detail).toMatch(/doubled text/);
-    const online = pageAdvice({ ...base, blocks, engineAvailable: true })!;
-    expect(online.detail).toMatch(/optional engine is reachable/);
-    expect(online.actions).not.toContain('open-engine');
+    const downloadable = pageAdvice({ ...base, blocks })!;
+    expect(downloadable.kind).toBe('ocr-layer');
+    expect(downloadable.actions).toEqual(expect.arrayContaining(['run-ocr', 'open-engine']));
+    expect(downloadable.detail).toMatch(/doubled text/);
+    // The offer quotes the cost, so a long fetch is not mistaken for a hang.
+    expect(downloadable.detail).toMatch(/about 54 MB/);
+    const loaded = pageAdvice({ ...base, blocks, engineLoaded: true })!;
+    expect(loaded.detail).toMatch(/engine is loaded/);
+    expect(loaded.actions).not.toContain('open-engine');
+    const unreachable = pageAdvice({ ...base, blocks, engineFetchable: false })!;
+    expect(unreachable.actions).not.toContain('open-engine');
+    expect(unreachable.detail).toMatch(/cannot be reached/);
   });
 
   it('warns about CJK and right-to-left re-wrap before the commit', () => {
