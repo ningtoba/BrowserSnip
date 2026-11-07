@@ -430,9 +430,18 @@ async function decodeTiff(blob: Blob): Promise<DecodedImage[]> {
   return ifds.map((ifd) => {
     UTIF.decodeImage(buffer, ifd);
     const rgba = UTIF.toRGBA8(ifd);
-    // `decodeImage` publishes the dimensions as `width`/`height` (it reads them
-    // out of `t256`/`t257`); there is no `w`/`h` on a UTIF IFD.
-    return { width: ifd.width, height: ifd.height, data: new Uint8ClampedArray(rgba) };
+    // The size comes from the raw `ImageWidth`/`ImageLength` tags rather than
+    // `ifd.width`: `decodeImage` derives those fields from the same two tags, and
+    // the ambient `UtifIFD` type keeps the derived ones off the handle on purpose
+    // (see `src/types/utif.d.ts`) — reading a field UTIF happens not to set, like
+    // `ifd.w`, is what used to decode every imported TIFF to a 0 × 0 canvas (E12).
+    // This is the independent oracle, so it goes to the file itself.
+    const tags = ifd as unknown as { t256?: number[]; t257?: number[] };
+    const width = tags.t256?.[0] ?? 0;
+    const height = tags.t257?.[0] ?? 0;
+    expect(width, 'the TIFF states its page width').toBeGreaterThan(0);
+    expect(height, 'the TIFF states its page height').toBeGreaterThan(0);
+    return { width, height, data: new Uint8ClampedArray(rgba) };
   });
 }
 

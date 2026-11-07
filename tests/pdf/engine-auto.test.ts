@@ -117,16 +117,21 @@ describe('ensureEngine', () => {
   });
 
   it('shares one download between tools started together, and says so once', async () => {
-    let release: (() => void) | null = null;
+    // The release handle lives on an object, not in a `let`: the loader assigns
+    // it from inside a promise executor, which control-flow analysis cannot see,
+    // so `release?.()` used to compile as a call on `never` — and would have been
+    // a silent no-op had the loader not been reached yet.
+    const gate: { release: (() => void) | null } = { release: null };
     loaders.ghostscript.mockImplementation(
       () => new Promise((resolve) => {
-        release = () => resolve({});
+        gate.release = () => resolve({});
       }),
     );
     const status = vi.fn();
 
     const both = Promise.all([ensureEngine('ghostscript', { onStatus: status }), ensureEngine('ghostscript', { onStatus: status })]);
-    release?.();
+    expect(gate.release, 'the download was not in flight to be shared').toBeTypeOf('function');
+    gate.release?.();
 
     await expect(both).resolves.toMatchObject([
       { ok: true, loaded: true },

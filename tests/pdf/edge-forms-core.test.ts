@@ -294,25 +294,29 @@ describe('core/layers — layer names the user can read (E11, E13)', () => {
 function attachOcg(doc: PDFDocument, ocg: PDFDict): void {
   const context = doc.context;
   const ref = context.register(ocg);
-  const existing = context.lookup(doc.catalog.get(PDFName.of('OCProperties')));
-  let properties = existing instanceof PDFDict ? existing : undefined;
+  // Each entry is looked up through `lookupMaybe`, which resolves the reference
+  // when a producer wrote it indirectly and hands back the exact class asked for
+  // — `context.lookup` can only promise `PDFObject`, which is why this fixture
+  // used to re-widen every branch below with an `instanceof` that told the
+  // compiler nothing.
+  let properties = context.lookupMaybe(doc.catalog.get(PDFName.of('OCProperties')), PDFDict);
   if (!properties) {
     properties = context.obj({}) as PDFDict;
     doc.catalog.set(PDFName.of('OCProperties'), context.register(properties));
   }
-  let groups = context.lookup(properties.get(PDFName.of('OCGs')));
-  if (!(groups instanceof PDFArray)) {
+  let groups = properties.lookupMaybe(PDFName.of('OCGs'), PDFArray);
+  if (!groups) {
     groups = context.obj([]) as PDFArray;
     properties.set(PDFName.of('OCGs'), groups);
   }
   groups.push(ref);
-  let config = context.lookup(properties.get(PDFName.of('D')));
-  if (!(config instanceof PDFDict)) {
+  let config = properties.lookupMaybe(PDFName.of('D'), PDFDict);
+  if (!config) {
     config = context.obj({}) as PDFDict;
     properties.set(PDFName.of('D'), config);
   }
-  let on = context.lookup(config.get(PDFName.of('ON')));
-  if (!(on instanceof PDFArray)) {
+  let on = config.lookupMaybe(PDFName.of('ON'), PDFArray);
+  if (!on) {
     on = context.obj([]) as PDFArray;
     config.set(PDFName.of('ON'), on);
   }
@@ -326,7 +330,8 @@ describe('core/images — the size a decoded TIFF really has (E12, E15)', () => 
     const bytes = buildTiff([{ width: 4, height: 2, pixel: [10, 200, 30] }]);
     const [ifd] = UTIF.decode(toArrayBuffer(bytes));
 
-    // The ambient `UtifIFD` type claims `w` / `h`; the library has never set them.
+    // The dimensions UTIF never fills in are the ones the ambient type used to
+    // name; the fields it really sets are read through `tiffPageDimensions`.
     expect((ifd as { w?: unknown }).w).toBeUndefined();
     expect((ifd as { h?: unknown }).h).toBeUndefined();
     // Raw tags are enough before the pixels are touched, so a size can be

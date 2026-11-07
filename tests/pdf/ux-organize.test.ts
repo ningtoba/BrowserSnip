@@ -120,17 +120,17 @@ describe('selection model', () => {
     expect(selection.indexes).toEqual([1, 3]);
 
     selection = selectIndex(selection, 1, 'toggle', 6);
-    expect(selection.indexes).toEqual([3], 'Cmd-click again removes a single page');
-    expect(selection.anchor).toBe(1, 'the last card touched is the anchor, selected or not');
+    expect(selection.indexes, 'Cmd-click again removes a single page').toEqual([3]);
+    expect(selection.anchor, 'the last card touched is the anchor, selected or not').toBe(1);
 
     selection = selectIndex(selection, 4, 'range', 6);
     expect(selection.indexes).toEqual([1, 2, 3, 4]);
 
     selection = selectIndex(selection, 2, 'range', 6);
-    expect(selection.indexes).toEqual([1, 2], 'and the range can be walked back the other way');
+    expect(selection.indexes, 'and the range can be walked back the other way').toEqual([1, 2]);
 
     selection = selectIndex(selection, 9, 'range', 6);
-    expect(selection.indexes).toEqual([1, 2], 'out-of-range targets are ignored');
+    expect(selection.indexes, 'out-of-range targets are ignored').toEqual([1, 2]);
   });
 
   it('keeps a selection inside the plan when the plan shrinks', () => {
@@ -158,14 +158,14 @@ describe('every action applies to the whole selection', () => {
   it('duplicates all of them as one block and selects the copies', () => {
     const state = run(selected(), { type: 'duplicate' });
     expect(order(state.plan)).toEqual([0, 1, 2, 0, 2, 3]);
-    expect(state.selection.indexes).toEqual([3, 4], 'the new copies are what stays selected');
+    expect(state.selection.indexes, 'the new copies are what stays selected').toEqual([3, 4]);
   });
 
   it('removes all of them in one undo step', () => {
     const state = run(selected(), { type: 'remove' });
     expect(order(state.plan)).toEqual([1, 3]);
     const undone = run(state, { type: 'undo' });
-    expect(order(undone.plan)).toEqual([0, 1, 2, 3], 'one undo restores the whole batch');
+    expect(order(undone.plan), 'one undo restores the whole batch').toEqual([0, 1, 2, 3]);
   });
 
   it('skips blank sheets when rotating, and says so', () => {
@@ -195,7 +195,7 @@ describe('every action applies to the whole selection', () => {
       { type: 'rotate', index: 3, delta: 90 },
     );
     expect(state.plan.map((i) => (i.kind === 'page' ? i.rotate : null))).toEqual([0, 0, 0, 90]);
-    expect(state.selection.indexes).toEqual([3], 'and the selection follows what was clicked');
+    expect(state.selection.indexes, 'and the selection follows what was clicked').toEqual([3]);
   });
 
   it('refuses to act on nothing, with a reason instead of silence', () => {
@@ -213,8 +213,8 @@ describe('drag model', () => {
     const rect = { left: 0, top: 0, width: 100, height: 200 };
     expect(gapForCardPoint(rect, 2, { x: 60, y: 100 })).toBe(3);
     expect(gapForCardPoint(rect, 2, { x: 40, y: 100 })).toBe(2);
-    expect(gapForCardPoint(rect, 2, { x: 50, y: 20 })).toBe(2, 'above the centre means before the card');
-    expect(gapForCardPoint(rect, 2, { x: 50, y: 190 })).toBe(3, 'and below it means after');
+    expect(gapForCardPoint(rect, 2, { x: 50, y: 20 }), 'above the centre means before the card').toBe(2);
+    expect(gapForCardPoint(rect, 2, { x: 50, y: 190 }), 'and below it means after').toBe(3);
   });
 
   it('treats the empty space after the last row as the end-of-list gap', () => {
@@ -235,7 +235,7 @@ describe('drag model', () => {
     const models = modelsOf(state);
     expect(models.filter((m) => m.gapBefore || m.gapAfter)).toHaveLength(1);
     expect(models[3].gapBefore).toBe(true);
-    expect(models[3].gapTarget).toBe(3, 'the badge reports where the page actually lands');
+    expect(models[3].gapTarget, 'the badge reports where the page actually lands').toBe(3);
     expect(models.filter((m) => m.gapTarget !== null)).toHaveLength(1);
     expect(models.filter((m) => m.lifted)).toHaveLength(1);
   });
@@ -260,7 +260,7 @@ describe('drag model', () => {
       { type: 'drop', gap: 5 },
     );
     expect(order(state.plan)).toEqual([3, 4, 0, 1, 2, 5]);
-    expect(state.selection.indexes).toEqual([2, 3, 4], 'the dragged cards stay selected after the drop');
+    expect(state.selection.indexes, 'the dragged cards stay selected after the drop').toEqual([2, 3, 4]);
     expect(state.status).toMatch(/position 3/);
   });
 
@@ -294,14 +294,14 @@ describe('drag model', () => {
     expect(liftedIndexes(hovered)).toEqual([0, 1]);
 
     const released = run(hovered, { type: 'dragEnd' });
-    expect(released.plan).toBe(before.plan, 'the plan object is untouched, not merely equal');
+    expect(released.plan, 'the plan object is untouched, not merely equal').toBe(before.plan);
     expect(released.gap).toBeNull();
     expect(liftedIndexes(released)).toEqual([]);
     expect(historyAvailability(released).canUndo).toBe(false);
     expect(released.status).toMatch(/unchanged/);
 
     const models = modelsOf(released);
-    expect(models.some((m) => m.gapBefore || m.gapAfter)).toBe(false, 'the indicator never haunts the grid');
+    expect(models.some((m) => m.gapBefore || m.gapAfter), 'the indicator never haunts the grid').toBe(false);
   });
 
   it('inserts a dragged-in page from another document at the gap', () => {
@@ -347,8 +347,8 @@ describe('keyboard model', () => {
     expect(picked.status).toMatch(/Picked up report.pdf page 2/);
 
     const right = run(picked, cardActionForKey({ key: 'ArrowRight' }, { index: 1, carrying: true })!);
-    expect(order(right.plan)).toEqual([0, 1, 2, 3], 'the plan itself waits for the drop');
-    expect(right.gap).toBe(3, 'gap 2 would land the card back where it started');
+    expect(order(right.plan), 'the plan itself waits for the drop').toEqual([0, 1, 2, 3]);
+    expect(right.gap, 'gap 2 would land the card back where it started').toBe(3);
     expect(modelsOf(right)[right.gap!].gapBefore).toBe(true);
 
     const dropped = run(right, cardActionForKey({ key: ' ' }, { index: 1, carrying: true })!);
@@ -363,7 +363,7 @@ describe('keyboard model', () => {
       state = run(state, { type: 'carryMove', delta: 1 });
       seen.push(landingIndex(state.plan, state.carrying!, state.gap!));
     }
-    expect(seen).toEqual([1, 2, 3, 3, 3, 3], 'stops at the last position and says why');
+    expect(seen, 'stops at the last position and says why').toEqual([1, 2, 3, 3, 3, 3]);
     expect(state.status).toMatch(/cannot move later/);
 
     for (let i = 0; i < 6; i += 1) state = run(state, { type: 'carryMove', delta: -1 });
@@ -378,10 +378,10 @@ describe('keyboard model', () => {
     for (let landing = 0; landing <= plan.length - run3.length; landing += 1) {
       const gap = gapForLanding(plan, run3, landing);
       expect(landingIndex(plan, run3, gap)).toBe(landing);
-      expect(gap === 2 || gap === 3).toBe(false, 'a gap between two carried pages means nothing');
+      expect(gap === 2 || gap === 3, 'a gap between two carried pages means nothing').toBe(false);
       gaps.push(gap);
     }
-    expect(gaps).toEqual([...gaps].sort((a, b) => a - b), 'moving down the plan moves the gap down too');
+    expect(gaps, 'moving down the plan moves the gap down too').toEqual([...gaps].sort((a, b) => a - b));
   });
 
   it('cancels a carry on Escape with the order untouched, and a second Escape clears the selection', () => {
@@ -389,7 +389,7 @@ describe('keyboard model', () => {
     const cancelled = run(state, cardActionForKey({ key: 'Escape' }, { index: 2, carrying: true })!);
     expect(order(cancelled.plan)).toEqual([0, 1, 2, 3]);
     expect(cancelled.carrying).toBeNull();
-    expect(selectionSize(cancelled.selection)).toBe(1, 'Escape only unwinds one level');
+    expect(selectionSize(cancelled.selection), 'Escape only unwinds one level').toBe(1);
 
     const cleared = run(cancelled, cardActionForKey({ key: 'Escape' }, { index: 2, carrying: false })!);
     expect(selectionSize(cleared.selection)).toBe(0);
@@ -416,7 +416,8 @@ describe('keyboard model', () => {
     ).toEqual([0, 1, 2, -1, 3]);
     expect(
       order(run(selected, cardActionForKey({ key: 'B' }, { index: 2, carrying: false })!).plan),
-    ).toEqual([0, 1, 2, -1, 3], 'uppercase letters still mean the same action');
+      'uppercase letters still mean the same action',
+    ).toEqual([0, 1, 2, -1, 3]);
   });
 
   it('runs Ctrl/Cmd+D and Ctrl/Cmd+A, and leaves other chords alone', () => {
@@ -449,7 +450,7 @@ describe('keyboard model', () => {
 
     const undoneAgain = run(redo, { type: 'undo' });
     const winRedo = run(undoneAgain, cardActionForKey({ key: 'y', ctrlKey: true }, { index: 0, carrying: false })!);
-    expect(order(winRedo.plan)).toEqual([1, 2, 3], 'Ctrl+Y is the same redo, spelled for Windows');
+    expect(order(winRedo.plan), 'Ctrl+Y is the same redo, spelled for Windows').toEqual([1, 2, 3]);
   });
 
   it('walks the grid with arrows and Home/End without dropping keys on the floor', () => {
@@ -506,7 +507,7 @@ describe('keyboard model', () => {
     }
     for (const shortcut of ORGANIZE_SHORTCUTS) {
       expect(shortcut.label.length).toBeGreaterThan(8);
-      expect(shortcut.label.endsWith('.')).toBe(false, 'shortcut labels are phrases, not sentences');
+      expect(shortcut.label.endsWith('.'), 'shortcut labels are phrases, not sentences').toBe(false);
     }
   });
 });
@@ -696,14 +697,14 @@ describe('undo and redo survive switching between loaded documents (E19)', () =>
     expect(order(state.plan)).toEqual([1, 2]);
 
     state = run(state, { type: 'sync', docKey: documentKey([B]), sources: [B], statuses: ['ready'] });
-    expect(order(state.plan)).toEqual([0, 1], 'B opens on its own order, not A’s');
+    expect(order(state.plan), 'B opens on its own order, not A’s').toEqual([0, 1]);
     expect(historyAvailability(state)).toEqual({ canUndo: false, canRedo: false });
     expect(run(state, { type: 'undo' }).status).toMatch(/Nothing to undo yet for these documents/);
 
     state = step(state, { type: 'select', index: 1, mode: 'single' }, { type: 'rotate', index: 1, delta: 90 });
 
     state = run(state, { type: 'sync', docKey: documentKey([A]), sources: [A], statuses: ['ready'] });
-    expect(order(state.plan)).toEqual([1, 2], 'A’s plan comes back as the user left it');
+    expect(order(state.plan), 'A’s plan comes back as the user left it').toEqual([1, 2]);
     expect(historyAvailability(state).canUndo).toBe(true);
 
     const undone = run(state, { type: 'undo' });
@@ -744,7 +745,7 @@ describe('undo and redo survive switching between loaded documents (E19)', () =>
     const token = saveToken(state);
     expect(saveIsStale(token, state)).toBe(false);
     expect(saveIsStale(token, run(state, { type: 'undo' }))).toBe(true);
-    expect(saveIsStale(token, run(state, { type: 'announce', message: 'x' }))).toBe(false, 'announcements are not edits');
+    expect(saveIsStale(token, run(state, { type: 'announce', message: 'x' })), 'announcements are not edits').toBe(false);
     const reopened = run(state, { type: 'sync', docKey: documentKey([B]), sources: [B], statuses: ['ready'] });
     expect(saveIsStale(token, reopened)).toBe(true);
   });
@@ -761,7 +762,7 @@ describe('undo and redo survive switching between loaded documents (E19)', () =>
     );
     expect(order(state.plan)).toEqual([3, 0, 1, 2]);
     state = run(state, { type: 'undo' });
-    expect(order(state.plan)).toEqual([0, 1, 2, 3], 'the whole drag was one step');
+    expect(order(state.plan), 'the whole drag was one step').toEqual([0, 1, 2, 3]);
     expect(historyAvailability(state).canUndo).toBe(false);
   });
 
@@ -869,10 +870,8 @@ describe('a 500-page plan does not re-render every thumbnail (E7)', () => {
     const dragging = run(state, { type: 'dragStart', payload: { kind: 'plan', indexes: [250] } });
     const whileDragging = modelsOf(dragging);
     const hovered = run(dragging, { type: 'dragOver', gap: 100 });
-    expect(changedCardCount(whileDragging, modelsOf(hovered))).toBe(
-      2,
-      'moving the gap relights one card and clears the previous one, nothing else',
-    );
+    expect(changedCardCount(whileDragging, modelsOf(hovered)), 'moving the gap relights one card and clears the previous one, nothing else').toBe(
+      2);
   });
 
   it('dirties only the span a moved run crosses, not the whole 500-page grid', () => {
@@ -894,7 +893,7 @@ describe('a 500-page plan does not re-render every thumbnail (E7)', () => {
     const after = modelsOf(dropped);
     let changed = 0;
     for (let i = 0; i < before.length; i += 1) if (!sameContent(before[i], after[i])) changed += 1;
-    expect(changed).toBe(10, 'the crossed span, not 500 cards');
+    expect(changed, 'the crossed span, not 500 cards').toBe(10);
   });
 
   it('keeps untouched cards identical objects when only one page rotates', () => {
@@ -928,7 +927,7 @@ describe('plan text', () => {
     expect(state.inputError).toBeNull();
 
     const broken = run(state, { type: 'applyPlanText', spec: '9' });
-    expect(broken.plan).toEqual(state.plan, 'the grid keeps what it had');
+    expect(broken.plan, 'the grid keeps what it had').toEqual(state.plan);
     expect(broken.inputError).toMatch(/page 9 of file 1, which has 4/);
     expect(broken.status).toMatch(/not applied/);
   });

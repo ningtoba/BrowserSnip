@@ -9,6 +9,9 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
+// Type only: the value `PDFDict` is loaded lazily below with the rest of
+// `core/doc`, and a type predicate needs the type meaning of that name.
+import type { PDFDict } from '@/lib/pdf/core/doc';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 

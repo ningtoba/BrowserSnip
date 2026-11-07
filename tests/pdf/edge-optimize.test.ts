@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import type { PageRender, PdfSession } from '@/lib/pdf/core/render';
 import { describeSize, inspectPdf, isToolInputError } from '@/lib/pdf/core/guard';
-import { openPDF, PDFName, PDFDict, PDFRef, PDFRawStream } from '@/lib/pdf/core/doc';
+import { openPDF, PDFName, PDFDict, PDFRef, PDFStream } from '@/lib/pdf/core/doc';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fileProblem, runPdfTool } from '@/lib/pdf/tools/runner';
 import { defaultValues, type ToolFile, type ToolResult, type ToolValues } from '@/lib/pdf/tools/types';
@@ -40,6 +40,8 @@ const engine = vi.hoisted(() => ({
   linearize: null as ((bytes: Uint8Array) => Uint8Array) | null,
   pdfa: null as ((bytes: Uint8Array, part: string) => Uint8Array) | null,
   pdfaLog: [] as string[],
+  /** Every PDF/A level the tools asked Ghostscript for, in call order. */
+  pdfaParts: [] as string[],
   outline: null as ((bytes: Uint8Array) => Uint8Array) | null,
   rebuild: null as ((bytes: Uint8Array) => Uint8Array) | null,
 }));
@@ -60,7 +62,10 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
     convertToPdfA: async (bytes: Uint8Array, part: string) => {
       guard('could not load Ghostscript');
       if (!engine.pdfa) throw new Error('test double: Ghostscript result not configured');
-      return { bytes: engine.pdfa(bytes), log: engine.pdfaLog };
+      // The part is forwarded: a double that dropped it could not tell the test
+      // which PDF/A level the tool actually asked Ghostscript for.
+      engine.pdfaParts.push(part);
+      return { bytes: engine.pdfa(bytes, part), log: engine.pdfaLog };
     },
     textToOutlines: async (bytes: Uint8Array) => {
       guard('could not load Ghostscript');
@@ -156,6 +161,7 @@ beforeEach(() => {
   engine.linearize = null;
   engine.pdfa = null;
   engine.pdfaLog = [];
+  engine.pdfaParts = [];
   engine.outline = null;
   engine.rebuild = null;
   skew.angles = [];
@@ -371,7 +377,9 @@ describe('optimize-pdf does only what it can prove it did', () => {
     const doc = await openPDF(outcome.bytes, { ignoreEncryption: true });
     expect(doc.getPageCount()).toBe(3);
     const streams = doc.getPage(0).node.get(PDFName.of('Contents'));
-    const stream = doc.context.lookup(streams as PDFRef, PDFRawStream);
+    // `PDFStream`, not the `PDFRawStream` subclass: pdf-lib's typed lookups only
+    // name the base class, and a compressed stream is a `PDFFlateStream`.
+    const stream = doc.context.lookup(streams as PDFRef, PDFStream);
     expect(String(stream.dict.get(PDFName.of('Filter')))).toBe('/FlateDecode');
   });
 
@@ -719,10 +727,10 @@ describe('pdf-to-pdfa states what it actually did', () => {
 
     const doc = await openPDF(outcome.bytes, { ignoreEncryption: true });
     const metadata = doc.catalog.get(PDFName.of('Metadata'));
-    const stream = doc.context.lookup(metadata as PDFRef, PDFRawStream);
+    const stream = doc.context.lookup(metadata as PDFRef, PDFStream);
     // The /Length must match the stored bytes, or every reader disagrees with it.
     const declaredLength = Number(String(stream.dict.get(PDFName.of('Length'))));
-    expect(declaredLength).toBe(stream.contents.byteLength);
+    expect(declaredLength).toBe(stream.getContents().byteLength);
     const xml = Buffer.from(
       (await import('@/lib/pdf/core/content')).streamBytes(stream),
     ).toString('latin1');
@@ -735,7 +743,7 @@ describe('pdf-to-pdfa states what it actually did', () => {
     const intent = doc.context.lookup(intentRef, PDFDict);
     expect(String(intent.get(PDFName.of('S')))).toBe('/GTS_PDFA1');
     const profileRef = intent.get(PDFName.of('DestOutputProfile')) as PDFRef;
-    const profile = doc.context.lookup(profileRef, PDFRawStream);
+    const profile = doc.context.lookup(profileRef, PDFStream);
     const icc = Buffer.from((await import('@/lib/pdf/core/content')).streamBytes(profile));
     expect(icc.readUInt32BE(0)).toBe(icc.byteLength);
     expect(icc.toString('latin1', 12, 16)).toBe('mntr');
@@ -769,6 +777,9 @@ describe('pdf-to-pdfa states what it actually did', () => {
     const outcome = await run('pdf-to-pdfa', { part: '3b' }, [pdfFile(source, 'gs.pdf')]);
     engine.pdfaLog = [];
     engine.pdfa = null;
+    // The level the user picked has to be the level Ghostscript was asked for;
+    // a warning sentence alone would also print when the tool asked for 2b.
+    expect(engine.pdfaParts, 'the selected PDF/A level reached the engine').toEqual(['3b']);
     expect(outcome.warnings).toContain('Ghostscript: cannot convert colour space');
     expect(outcome.warnings).toContain('Ghostscript: font subsystem degraded');
     expect(outcome.message).toMatch(/2 conformance warning\(s\) reported/);

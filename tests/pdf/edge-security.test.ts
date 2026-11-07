@@ -31,7 +31,7 @@ import {
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { securityTools } from '@/lib/pdf/tools/security';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
-import { inspectPdf } from '@/lib/pdf/core/guard';
+import { inspectPdf, validateFields } from '@/lib/pdf/core/guard';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { createSelfSignedCertificate, readSignatures } from '@/lib/pdf/core/signature';
@@ -40,18 +40,35 @@ import type { PdfToolDefinition, ToolValues } from '@/lib/pdf/tools/types';
 const latin1 = new TextDecoder('latin1');
 
 /**
- * A page with three kinds of text, so redaction has to reach all of them:
- * one run drawn straight into the page content, one in a Form XObject, and one
- * inside a *nested* Form XObject (a form invoked by a form, as producers emit
- * shared headers). Strings are written as literals so the assertions can look
- * for the words themselves.
+ * The sub-dictionary under `key` in `parent`, created and attached when absent.
+ *
+ * A page fresh from `addPage` carries an **empty** `/Resources`, so asking it for
+ * `/Font` or `/XObject` answers `undefined`; writing the entry is the only way
+ * the fixture's `Tf` / `Do` names mean anything to a viewer.
+ */
+function subDict(parent: PDFDict, key: string): PDFDict {
+  const name = PDFName.of(key);
+  const found = parent.lookupMaybe(name, PDFDict);
+  if (found) return found;
+  const created = parent.context.obj({}) as PDFDict;
+  parent.set(name, created);
+  return created;
+}
+
+/**
+ * A page with three kinds of text, so redaction has to reach all of them: one run
+ * drawn straight into the page content, one in a Form XObject, and one inside a
+ * *nested* Form XObject (a form invoked by a form, as producers emit shared
+ * headers). Strings are written as literals so the assertions can look for the
+ * words themselves.
  */
 async function redactionFixture(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const page = doc.addPage([595, 842]);
-  const fonts = page.node.Resources().lookup(PDFName.of('Font'));
-  if (fonts instanceof PDFDict) fonts.set(PDFName.of('F9'), font.ref);
+  const resources = page.node.Resources();
+  expect(resources, 'the fixture page has no /Resources dict').toBeInstanceOf(PDFDict);
+  subDict(resources as PDFDict, 'Font').set(PDFName.of('F9'), font.ref);
   page.node.addContentStream(
     doc.context.register(doc.context.flateStream('BT /F9 18 Tf 60 600 Td (Zephyr Bravo Content) Tj ET\n', {})),
   );
@@ -72,8 +89,8 @@ async function redactionFixture(): Promise<Uint8Array> {
   outer.dict.set(PDFName.of('Resources'), doc.context.obj({ XObject: { In: innerRef } }));
   const outerRef = doc.context.register(outer);
 
-  const xobjects = page.node.Resources().lookup(PDFName.of('XObject'));
-  if (xobjects instanceof PDFDict) xobjects.set(PDFName.of('Out'), outerRef);
+  const xobjects = subDict(resources as PDFDict, 'XObject');
+  xobjects.set(PDFName.of('Out'), outerRef);
   page.node.addContentStream(
     doc.context.register(doc.context.flateStream('q /Out Do Q\n', {})),
   );
@@ -98,7 +115,9 @@ async function loadedFixture(): Promise<Uint8Array> {
   form.createTextField('applicant.name');
   form.createCheckBox('agree');
   const { addAnnotation } = await import('@/lib/pdf/core/annotations');
-  addAnnotation(doc, { kind: 'Text', page: 0, rect: { x: 100, y: 500, width: 24, height: 24 }, text: 'review me' });
+  // `contents` is the field the writer knows; a `text` key here was dropped on
+  // the floor, so the "comment" this fixture claims to carry had no body.
+  addAnnotation(doc, { kind: 'Text', page: 0, rect: { x: 100, y: 500, width: 24, height: 24 }, contents: 'review me' });
   const { writeOutline } = await import('@/lib/pdf/core/bookmarks');
   writeOutline(doc, [{ title: 'Chapter one', page: 0 }]);
   const { addAttachments } = await import('@/lib/pdf/core/attachments');
@@ -279,9 +298,17 @@ describe('protect and unlock round trip (E4, E5)', () => {
   it('refuses to protect with no password at all (E18)', () => {
     const tool = getPdfTool('protect')!;
     const values = { ...PROTECTION_DEFAULTS, userPassword: '', ownerPassword: '' };
-    expect(tool.validate!(values, { fileCount: 1 })).toMatch(/password readers must type/i);
+    // The two single-field rules live on the fields now — a tool-level
+    // `validate` sentence has no box to point at — so `validateFields` is the
+    // seam the run itself refuses through.
+    const issues = validateFields(tool.fields, { ...values, mode: 'user' });
+    expect(issues.find((issue) => issue.key === 'userPassword')?.message)
+      .toMatch(/password readers must type/i);
     // A permissions-only run needs the owner password, not the open one.
-    expect(tool.validate!({ ...values, mode: 'owner' }, { fileCount: 1 })).toMatch(/owner password/i);
+    expect(validateFields(tool.fields, { ...values, mode: 'owner' }).map((issue) => issue.key))
+      .toContain('ownerPassword');
+    expect(validateFields(tool.fields, { ...values, mode: 'both' }).map((issue) => issue.key))
+      .toEqual(['userPassword']);
     // …and one password for both jobs is refused, because it undoes the point.
     expect(tool.validate!({ ...values, mode: 'both', userPassword: 'same', ownerPassword: 'same' }, { fileCount: 1 }))
       .toMatch(/different owner password/i);

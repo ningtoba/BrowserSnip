@@ -25,6 +25,19 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # `tsconfig.json` only covers `src`, so a test that stopped
+      # compiling — an assertion against a signature the source never
+      # had, a message vitest drops — was invisible to `npm run build`.
+      # This step keeps that from regressing silently.
+      - name: Type-check the tests
+        run: npm run typecheck:tests
+
+      # The suite is the only thing that knows a tool stopped
+      # producing the right bytes; a green build only says the code
+      # compiles, and this project has already shipped a white screen
+      # that compiled beautifully.
+      - name: Run the test suite
+        run: npm test
       - run: npm run build
 
       # Forcefully inject the domain configuration into Vite's production bundle

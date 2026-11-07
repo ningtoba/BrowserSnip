@@ -29,7 +29,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PDF_TOOLS, hasCustomMainView, searchTools } from '@/lib/pdf/tools/registry';
 import { describeOptions, promiseFor, quietSummary, verbFor } from '@/components/tools/pdf/shared/toolForm';
-import { defaultValues, type PdfToolDefinition } from '@/lib/pdf/tools/types';
+import { defaultValues, type PdfToolDefinition, type ToolField, type ToolValues } from '@/lib/pdf/tools/types';
 
 /** Words that name a button but not an action. "Run" told the user nothing. */
 const GENERIC_VERBS = new Set([
@@ -78,6 +78,90 @@ function visibleFields(tool: PdfToolDefinition) {
 }
 
 const generated = PDF_TOOLS.filter((tool) => !isBespoke(tool));
+
+/**
+ * Can this control ever be handed to the runner empty?
+ *
+ * Mirrors the two functions that decide it: `defaultValues` seeds every field
+ * with `field.default ?? null`, and `core/guard`'s `isEmpty` calls `null`, a
+ * blank string and `[]` empty. So a control that carries a real default — a mode
+ * picker, a toggle, a numeric bound — cannot hold a run up, and is not a
+ * question a gate could be hiding behind.
+ */
+function canBeLeftEmpty(field: ToolField): boolean {
+  const value = field.default ?? null;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.length === 0;
+  return value === null;
+}
+
+/** Whether this field demands a value in `state`, restating `guard.demandsValue`. */
+function demandsValue(field: ToolField, state: ToolValues): boolean {
+  if (field.optional === true || field.required === false) return false;
+  if (typeof field.required === 'function') {
+    try {
+      return field.required(state) === true;
+    } catch {
+      // A predicate that throws on a half-filled panel demands nothing, which is
+      // what `guard` decided so an unknown state cannot block a run.
+      return false;
+    }
+  }
+  return field.required === true;
+}
+
+/**
+ * The panel states worth probing for a buried gate.
+ *
+ * The state the rail opens with, plus that state with each option-bearing
+ * control moved to each of its options — one control at a time, because that is
+ * how a `when` or `required` predicate is written against a mode picker. The
+ * cartesian product of a twelve-field panel is not worth enumerating, and a
+ * disagreement that only shows when two controls move together is out of scope
+ * here; it is reachable by widening this loop, not by changing the rule.
+ */
+function probeStates(tool: PdfToolDefinition): ToolValues[] {
+  const base = defaultValues(tool.fields);
+  const states: ToolValues[] = [base];
+  for (const field of tool.fields ?? []) {
+    for (const option of field.options ?? []) states.push({ ...base, [field.key]: option.value });
+  }
+  return states;
+}
+
+/** Every way these tools bury a required control, as sentences. */
+function buriedGates(tools: PdfToolDefinition[]): string[] {
+  const problems: string[] = [];
+  for (const tool of tools) {
+    const states = probeStates(tool);
+    let leftOpen = false;
+    for (const field of tool.fields ?? []) {
+      const gates = field.required === true || typeof field.required === 'function';
+      if (!gates) {
+        if (canBeLeftEmpty(field)) leftOpen = true;
+      } else if (leftOpen) {
+        problems.push(`${tool.id}: "${field.key}" is required but declared after controls that can be left empty`);
+      }
+      // One clause for both shapes of the defect: hidden in a state where an
+      // empty value still blocks. `required: true` beside a `when` always trips
+      // it — required in every state, absent from the panel in some. A predicate
+      // that restates the `when` never does, which is the mode-dependent case
+      // that is coherent: the control stops being a requirement in the same
+      // breath it disappears.
+      const buried = field.when
+        ? states.some((state) => {
+            try {
+              return !field.when!(state) && demandsValue(field, state);
+            } catch {
+              return false;
+            }
+          })
+        : false;
+      if (buried) problems.push(`${tool.id}: "${field.key}" can be hidden by when() while it still blocks the run`);
+    }
+  }
+  return problems;
+}
 
 describe('the intake promise', () => {
   it('is written on the definition, never inherited from a category fallback', () => {
@@ -217,17 +301,35 @@ describe('the collapsing options bar', () => {
     expect(buried).toEqual([]);
   });
 
-  it('does not bury a gate: required fields come first and stay visible', () => {
-    const problems: string[] = [];
-    for (const tool of generated) {
-      let sawOptional = false;
-      for (const field of tool.fields ?? []) {
-        if (!field.required) sawOptional = true;
-        else if (sawOptional) problems.push(`${tool.id}: "${field.key}" is required but declared after optional fields`);
-        if (field.required && field.when) problems.push(`${tool.id}: "${field.key}" is required but can be hidden by when()`);
-      }
-    }
-    expect(problems).toEqual([]);
+  it('buries no gate: a required control is not hidden while it blocks, and not behind an open question', () => {
+    expect(buriedGates(generated)).toEqual([]);
+  });
+
+  it('the buried-gate rule is armed: it passes a predicate that agrees with `when` and fails one that does not', () => {
+    // A rule that stops matching anything looks exactly like a clean catalogue,
+    // so it is checked against the shapes it exists to catch.
+    const tool = (fields: ToolField[]): PdfToolDefinition =>
+      ({ id: 'probe', fields } as unknown as PdfToolDefinition);
+    const mode: ToolField = {
+      key: 'mode', label: 'Mode', type: 'segmented', default: 'both',
+      options: [{ value: 'user', label: 'User' }, { value: 'owner', label: 'Owner' }],
+    };
+    const hiddenInOwner = (v: ToolValues) => v.mode !== 'owner';
+
+    // Statically required, conditionally hidden: the gate with nothing behind it.
+    expect(buriedGates([tool([mode, { key: 'word', label: 'Word', type: 'password', when: hiddenInOwner, required: true }])]))
+      .toEqual(['probe: "word" can be hidden by when() while it still blocks the run']);
+    // The same rule declared as a predicate that restates the visibility.
+    expect(buriedGates([tool([mode, { key: 'word', label: 'Word', type: 'password', when: hiddenInOwner, required: hiddenInOwner }])]))
+      .toEqual([]);
+    // And a predicate that demands the value in exactly the state that hides it.
+    expect(buriedGates([tool([mode, { key: 'word', label: 'Word', type: 'password', when: hiddenInOwner, required: (v: ToolValues) => v.mode === 'owner' }])]))
+      .toEqual(['probe: "word" can be hidden by when() while it still blocks the run']);
+    // Ordering: a gate after a blank-able control is buried, after a defaulted
+    // one it is not — the mode picker above cannot hold a run up by itself.
+    expect(buriedGates([tool([mode, { key: 'word', label: 'Word', type: 'password', required: true }])])).toEqual([]);
+    expect(buriedGates([tool([{ ...mode, default: undefined }, { key: 'word', label: 'Word', type: 'password', required: true }])]))
+      .toEqual(['probe: "word" is required but declared after controls that can be left empty']);
   });
 
   /**

@@ -8,10 +8,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   PDFArray,
+  PDFBool,
   PDFDict,
   PDFDocument,
   PDFName,
   PDFNumber,
+  PDFObject,
   PDFRawStream,
   PDFRef,
   PDFStream,
@@ -89,6 +91,16 @@ function appearanceResources(doc: PDFDocument, dict: PDFDict): PDFDict {
 function decode(doc: PDFDocument, stream: PDFRawStream): string {
   void doc;
   return new TextDecoder().decode(decodePDFRawStream(stream).decode());
+}
+
+/**
+ * The `PDFRawStream` behind a dictionary/array entry, resolved through the
+ * document's context. `lookupMaybe`'s overloads name the `PDFStream` base class
+ * only, so the raw-stream check happens on the result, not in the lookup.
+ */
+function rawStream(doc: PDFDocument, entry: PDFObject | PDFRef | undefined): PDFRawStream | undefined {
+  const stream = doc.context.lookupMaybe(entry, PDFStream);
+  return stream instanceof PDFRawStream ? stream : undefined;
 }
 
 function numbers(value: unknown, doc: PDFDocument): number[] {
@@ -169,7 +181,7 @@ function shownText(content: string): string {
 /** The Form XObject a page draws under `key`, as decoded operators. */
 function formOps(doc: PDFDocument, pageIndex: number, key: string): string {
   const xobjects = doc.getPage(pageIndex).node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict);
-  const stream = doc.context.lookupMaybe(xobjects?.get(PDFName.of(key)) ?? undefined, PDFRawStream);
+  const stream = rawStream(doc, xobjects?.get(PDFName.of(key)));
   expect(stream, `page ${pageIndex} has no form /${key}`).toBeInstanceOf(PDFRawStream);
   return decode(doc, stream as PDFRawStream);
 }
@@ -217,7 +229,9 @@ function pageContent(doc: PDFDocument, pageIndex = 0): string {
   const entries = contents instanceof PDFArray ? contents.asArray() : [contents];
   return entries
     .map((entry) => {
-      const resolved = entry instanceof PDFRef ? doc.context.lookupMaybe(entry, PDFRawStream) : doc.context.lookupMaybe(entry, PDFRawStream);
+      // A content entry may be the stream itself or a reference to one; either
+      // way the context resolves it, and a non-raw stream decodes to nothing.
+      const resolved = rawStream(doc, entry);
       return resolved ? decode(doc, resolved) : '';
     })
     .join('\n');
@@ -389,7 +403,7 @@ describe('addAnnotation — dictionary keys', () => {
     addAnnotation(doc, baseSpec('Redact', { fillColor: '#123456' }));
     const reloaded = await roundTrip(doc);
     const [markup, redact] = annotationDicts(reloaded);
-    expect((markup.get(PDFName.of('Redact')) as { asBoolean(): boolean }).asBoolean()).toBe(true);
+    expect((markup.get(PDFName.of('Redact')) as PDFBool).asBoolean()).toBe(true);
     expect(nameValue(redact, 'Subtype', reloaded)).toBe('Redact');
     expect(numbers(redact.get(PDFName.of('IC')), reloaded)).toEqual(hexToRgb01('#123456'));
     expect(appearanceOps(reloaded, redact)).toMatch(/0\.071 0\.204 0\.337 rg/);
@@ -478,14 +492,16 @@ describe('appearance streams', () => {
     expect(stampResources.lookupMaybe(PDFName.of('XObject'), PDFDict)?.get(PDFName.of('Im0'))).toBeInstanceOf(PDFRef);
     expect(appearanceOps(reloaded, stamp)).toContain('/Im0 Do');
 
-    const image = reloaded.context.lookupMaybe(
-      stampResources.lookupMaybe(PDFName.of('XObject'), PDFDict)?.get(PDFName.of('Im0')) ?? undefined,
-      PDFRawStream,
-    ) as PDFRawStream;
-    expect((image.dict.get(PDFName.of('Width')) as PDFNumber).asNumber()).toBe(40);
-    expect((image.dict.get(PDFName.of('Height')) as PDFNumber).asNumber()).toBe(20);
-    expect(nameValue(image.dict, 'Filter', reloaded)).toBe('DCTDecode');
-    expect(image.contents.length).toBe(fakeJpeg().length);
+    const image = rawStream(
+      reloaded,
+      stampResources.lookupMaybe(PDFName.of('XObject'), PDFDict)?.get(PDFName.of('Im0')),
+    );
+    expect(image, 'the stamp appearance embeds no image stream').toBeInstanceOf(PDFRawStream);
+    const imageStream = image as PDFRawStream;
+    expect((imageStream.dict.get(PDFName.of('Width')) as PDFNumber).asNumber()).toBe(40);
+    expect((imageStream.dict.get(PDFName.of('Height')) as PDFNumber).asNumber()).toBe(20);
+    expect(nameValue(imageStream.dict, 'Filter', reloaded)).toBe('DCTDecode');
+    expect(imageStream.contents.length).toBe(fakeJpeg().length);
   });
 
   it('decompresses to the operators each kind needs', async () => {

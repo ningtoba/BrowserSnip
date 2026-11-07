@@ -208,7 +208,7 @@ function routePage(toolId: string) {
 
 beforeAll(async () => {
   URL.createObjectURL = vi.fn(() => 'blob:parity') as unknown as typeof URL.createObjectURL;
-  URL.revokeObjectURL = vi.fn() as unknown as typeof URL.createObjectURL;
+  URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
   // A header and nothing else. The pre-flight cannot read a page count out of it,
   // which is the state a real file passes through anyway, and the whole-catalogue
   // sweeps do not each pay for a document parse.

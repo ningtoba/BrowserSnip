@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { PDF_CATEGORIES, PDF_TOOLS } from '@/lib/pdf/tools/registry';
 import { PAGES_FIELD_HELP, downloadName, resolutionField } from '@/lib/pdf/tools/helpers';
 import { validateFields } from '@/lib/pdf/core/guard';
-import { defaultValues, type PdfToolDefinition, type ToolField } from '@/lib/pdf/tools/types';
+import { defaultValues, type PdfToolDefinition } from '@/lib/pdf/tools/types';
 
 const tools = PDF_TOOLS;
 const allFields = (list: PdfToolDefinition[] = tools) =>

@@ -790,7 +790,11 @@ describe('usePdfTool', () => {
     loadFile(pdfFile());
     const { result, rerender } = renderHook(
       ({ pageCount }: { pageCount: number | null }) => usePdfTool('compress-thing', { pageCount }),
-      { initialProps: { pageCount: null } },
+      // The cast is what lets `rerender({ pageCount: 3 })` follow: inferred from
+      // `null` alone, the props type would be `{ pageCount: null }` and the
+      // re-render to a known count — the half of the test that matters — would
+      // not typecheck.
+      { initialProps: { pageCount: null as number | null } },
     );
     await waitFor(() => expect(result.current.tool).toBeTruthy());
     expect(result.current.phase).toBe('inspecting');

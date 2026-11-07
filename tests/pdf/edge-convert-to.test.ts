@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef } from '@maxwbh/pdf-lib';
+import type { PDFPage } from '@maxwbh/pdf-lib';
 import { pageContentOps, pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import type { ArrayOperand, NameOperand, StringOperand } from '@/lib/pdf/core/content';
 import { ToolInputError } from '@/lib/pdf/core/guard';
@@ -245,7 +246,7 @@ function parseToUnicode(bytes: Uint8Array): Map<number, number> {
   return map;
 }
 
-function pageFonts(doc: PDFDocument, page: PDFDocument['getPages'][number]) {
+function pageFonts(doc: PDFDocument, page: PDFPage) {
   const resources = page.node.Resources();
   const fonts = resources instanceof PDFDict ? resources.get(PDFName.of('Font')) : undefined;
   const fontDict = fonts instanceof PDFRef ? doc.context.lookup(fonts, PDFDict) : fonts;

@@ -258,13 +258,30 @@ describe('E1 — a 0-byte file', () => {
       expect(isToolInputError(error) && error.code).toBe('EMPTY_FILE');
     }
 
-    const refusal = await preflightPdf(asFile(new Uint8Array(0), 'empty.pdf'));
+    // The pre-flight is handed the runner's `ToolFile` shape (`toToolFile` builds
+    // it from a `File`), not a DOM `File`: this environment's `File` has no
+    // `blob()` method, so passing one straight in only survived because a 0-byte
+    // input is refused before a single byte is read.
+    const refusal = await preflightPdf(toolFile(new Uint8Array(0), 'empty.pdf'));
     expect(refusal?.code).toBe('EMPTY_FILE');
     expect(refusal?.fileName).toBe('empty.pdf');
 
     const harness = context([toolFile(new Uint8Array(0), 'empty.pdf')]);
     await expect(openInputs(harness.context)).rejects.toThrow(/"empty\.pdf" is empty/);
     await expect(openInputs(harness.context)).rejects.toMatchObject({ code: 'EMPTY_FILE' });
+  });
+
+  it('reads the edges of a file too big to settle by size alone (E7)', async () => {
+    // The empty case above short-circuits before anything is sliced, so this is
+    // the only path that proves the pre-flight can open a real file at all.
+    expect(await preflightPdf(toolFile(await sample(), 'clean.pdf'))).toBeNull();
+
+    const mislabelled = await preflightPdf(toolFile(bytes('a text file with a .pdf name'), 'report.pdf'));
+    expect(mislabelled?.code).toBe('NOT_A_PDF');
+    expect(mislabelled?.fileName).toBe('report.pdf');
+
+    const gate = await preflightPdf(toolFile(await locked(), 'locked.pdf'));
+    expect(gate?.code).toBe('PASSWORD_REQUIRED');
   });
 
   it('rejects an empty input list, which is E18 before the click', async () => {
