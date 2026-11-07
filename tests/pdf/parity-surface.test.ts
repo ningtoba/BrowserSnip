@@ -1,7 +1,7 @@
 /**
  * Parity sweep: does the reshaped tool page actually cover every tool?
  *
- * The claim under test is not "merge looks nice" but "all ~124 tools got the new
+ * The claim under test is not "merge looks nice" but "every tool got the new
  * shape". That is easy to assert and easy to fake: a test that drives one tool and
  * a comment saying "the rest are generated" proves nothing about the tool whose
  * definition landed on a shelf nobody clicked. So everything here is driven from
@@ -16,6 +16,13 @@
  * Plus the two classes that would open on an unstyled fallback: a tool with neither
  * a `run` nor a bespoke pane, and a bespoke id whose module does not resolve.
  *
+ * Before all three, one question about the list itself: does the catalogue describe
+ * jobs, or ids? A tool that exists twice (under a secondary id) is counted twice,
+ * searched twice and offered twice, which is how one job ended up as two cards on
+ * the dashboard and two rows in the palette. The answers are the registry's —
+ * `TOOL_CATALOGUE` and the alias map behind it — and the routing tables must agree
+ * with them, so a pane key that answers no tool is a failure, not a footnote.
+ *
  * jsdom has no canvas, so page rasters are pumped as empty strings and nothing here
  * asserts a pixel — only DOM and state invariants.
  */
@@ -24,12 +31,13 @@ import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { PDF_TOOLS, getPdfTool, mainViewFor } from '@/lib/pdf/tools/registry';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { PDF_TOOLS, TOOL_CATALOGUE, canonicalToolId, getPdfTool, hasCustomMainView, isToolAlias, mainViewFor } from '@/lib/pdf/tools/registry';
+import { TOOLS } from '@/lib/constants';
 import { PdfToolPanel } from '@/components/tools/pdf/shared/PdfToolPanel';
 import { ToolWorkspace } from '@/components/layout/ToolWorkspace';
 import { promiseFor, verbFor } from '@/components/tools/pdf/shared/toolForm';
-import { CARD_ALIASES, TOOL_JOBS, cardEntries } from '@/components/dashboard/toolJobs';
+import { TOOL_JOBS, cardEntries } from '@/components/dashboard/toolJobs';
 import { PdfDashboard } from '@/components/dashboard/PdfDashboard';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
@@ -81,6 +89,12 @@ function paneMapFrom(file: string, mapName: string, adapter: string): PaneRoute[
 const MAIN_VIEWS = paneMapFrom('src/lib/pdf/tools/registry.ts', 'MAIN_VIEWS', 'asDefault');
 const PANELS = paneMapFrom('src/components/layout/ToolWorkspace.tsx', 'PDF_PANELS', 'named');
 
+/** Ids the catalogue folds into another tool, so they are never listed or counted. */
+const aliasIds = PDF_TOOLS.filter((tool: PdfToolDefinition) => isToolAlias(tool.id)).map((tool: PdfToolDefinition) => tool.id);
+
+/** The ids a card, a palette row or a bookmark can open, one per job. */
+const catalogueIds = TOOL_CATALOGUE.map((tool: PdfToolDefinition) => tool.id);
+
 const bespokeIds = new Set<string>([
   ...PDF_TOOLS.filter((tool: PdfToolDefinition) => Boolean(tool.mainComponent)).map((tool: PdfToolDefinition) => tool.id),
   ...MAIN_VIEWS.map((route: PaneRoute) => route.id),
@@ -93,14 +107,14 @@ const generated = PDF_TOOLS.filter((tool: PdfToolDefinition) => !bespokeIds.has(
 /**
  * The tools the generated page does not own, by id.
  *
- * `crop` is in the shell's panel map but is not a PDF tool id — the video tools use
- * it, which is why it is excluded from the registry-side expectations.
+ * `redact` and `compare` are folded ids: their routes answer at the canonical
+ * address, but the pane maps still resolve them, because a definition looked up
+ * directly by id has to keep working.
  */
 const EXPECTED_BESPOKE = [
   'add-stamps',
   'compare',
   'compare-pdfs',
-  'crop',
   'edit-pdf',
   'edit-pdf-text',
   'form-creator',
@@ -116,14 +130,15 @@ const EXPECTED_BESPOKE = [
 /**
  * Keys in the shell's pane maps that no registered tool answers.
  *
- * `crop` is the one that costs a user something: the video tools use that id, and
- * `ToolWorkspace` renders the panel map in the same sidebar as the video component,
- * so the video Crop page grows a second, PDF-shaped control set. `annotate` and
- * `pdf-compare` are aliases left behind when those ids were settled. Requested out
- * in `docs/tasks/parity-request.md`; the assertion pins the exact three so a fourth
- * cannot appear quietly, and the list shrinks when they are deleted.
+ * The list is empty and that is the finding: an entry here is a live defect, not a
+ * backlog item. `crop` was the one that cost a user something — the video tools use
+ * that id, and the shell renders the panel map in the same sidebar as the video
+ * component, so the video Crop page grew a second, PDF-shaped control set.
+ * `annotate` and `pdf-compare` were keys left behind when those ids were settled:
+ * dead code that reads like a live surface. Closing an entry meant deleting the
+ * key, and a fourth key cannot appear quietly.
  */
-const STRANDED_PANE_KEYS = ['annotate', 'crop', 'pdf-compare'];
+const STRANDED_PANE_KEYS: string[] = [];
 
 /** One sample document, reused for every tool. */
 let sample: File;
@@ -135,8 +150,8 @@ function surface(): Element | null {
 function loadFile(): void {
   act(() => {
     // Deliberately not a parseable PDF: the pre-flight then reports "unknown page
-    // count" instead of spending 124 document parses on a fact this file does not
-    // assert. The shape under test is the page, not the engine.
+    // count" instead of spending one document parse per tool on a fact this file
+    // does not assert. The shape under test is the page, not the engine.
     useFileStore.setState({ file: sample, files: [sample], metadata: null });
   });
 }
@@ -162,11 +177,26 @@ function toolPage(toolId: string) {
   return render(createElement(PdfToolPanel, { toolId }));
 }
 
+/**
+ * Where the router actually ended up.
+ *
+ * A folded id is allowed to move the page, so "the alias still routes" needs the
+ * resolved address, not just the address that was asked for.
+ */
+let routedPath = '';
+
+function RouteProbe() {
+  routedPath = useLocation().pathname;
+  return null;
+}
+
 function routePage(toolId: string) {
+  routedPath = `/tool/${toolId}`;
   return render(
     createElement(
       MemoryRouter,
       { initialEntries: [`/tool/${toolId}`] },
+      createElement(RouteProbe, null),
       createElement(
         Routes,
         null,
@@ -180,8 +210,8 @@ beforeAll(async () => {
   URL.createObjectURL = vi.fn(() => 'blob:parity') as unknown as typeof URL.createObjectURL;
   URL.revokeObjectURL = vi.fn() as unknown as typeof URL.createObjectURL;
   // A header and nothing else. The pre-flight cannot read a page count out of it,
-  // which is the state a real file passes through anyway, and 124 mounts do not
-  // each pay for a document parse.
+  // which is the state a real file passes through anyway, and the whole-catalogue
+  // sweeps do not each pay for a document parse.
   sample = new File(['%PDF-1.4\n'], 'quarterly-report.pdf', { type: 'application/pdf' });
 });
 
@@ -191,6 +221,93 @@ afterEach(() => {
   useProcessStore.getState().reset();
   useProcessStore.setState({ activeTool: null, sessions: {}, notice: null });
   useFileStore.setState({ file: null, files: [], metadata: null, activeTool: null, sessions: {} });
+});
+
+describe('the catalogue lists jobs, not ids', () => {
+  it('names each tool exactly once', () => {
+    // Two definitions with one display name is how the same tool ended up as two
+    // cards and two palette rows: the visitor cannot tell which one to trust,
+    // and every count built on the list is a lie by one.
+    const seen = new Map<string, string[]>();
+    for (const tool of TOOL_CATALOGUE) {
+      const key = tool.name.trim().toLowerCase();
+      seen.set(key, [...(seen.get(key) ?? []), tool.id]);
+    }
+    const clashes = [...seen]
+      .filter((entry: [string, string[]]) => entry[1].length > 1)
+      .map(([name, ids]: [string, string[]]) => `${name}: ${ids.join(', ')}`);
+    expect(clashes).toEqual([]);
+  });
+
+  it('folds the secondary ids out of the list and the count', () => {
+    // The fold is registry metadata, not a dashboard patch: whatever asks, it
+    // gets the same answer, and the count follows the list rather than the file.
+    expect(aliasIds.length).toBeGreaterThan(0);
+    expect(catalogueIds.some((id: string) => aliasIds.includes(id))).toBe(false);
+    expect(TOOL_CATALOGUE.length).toBe(PDF_TOOLS.length - aliasIds.length);
+    for (const alias of aliasIds) {
+      const canonical = canonicalToolId(alias);
+      expect(canonical, `${alias} folds to itself`).not.toBe(alias);
+      expect(getPdfTool(canonical), `${alias} → ${canonical} is not a registered tool`).toBeTruthy();
+      expect(isToolAlias(canonical), `${canonical} is itself an alias`).toBe(false);
+      // The old spelling is still a tool the registry can answer for.
+      expect(getPdfTool(alias), `${alias} is no longer resolvable`).toBeTruthy();
+    }
+  });
+
+  it('resolves every catalogue entry to a surface a visitor can use', () => {
+    const unreachable = TOOL_CATALOGUE.filter(
+      (tool: PdfToolDefinition) =>
+        !tool.run
+        && !tool.mainComponent
+        && !tool.unavailable
+        && !hasCustomMainView(tool.id)
+        && !PANELS.some((route: PaneRoute) => route.id === tool.id),
+    ).map((tool: PdfToolDefinition) => tool.id);
+    expect(unreachable).toEqual([]);
+  });
+
+  it('routes a folded id to the tool that owns the job', async () => {
+    const problems: string[] = [];
+    for (const alias of aliasIds) {
+      const canonical = canonicalToolId(alias);
+      routePage(alias);
+      try {
+        // The URL the visitor shared stays valid, the page it lands on is the
+        // canonical one, and the session key — which the star and the recents
+        // hang off — is the canonical tool too, not a second memory for one job.
+        await waitFor(() => {
+          expect(routedPath).toBe(`/tool/${canonical}`);
+          if (!document.querySelector('[data-intake]')) throw new Error('the canonical page never opened its intake');
+        });
+        expect(useFileStore.getState().activeTool).toBe(canonical);
+      } catch (error) {
+        problems.push(`${alias}: ${(error as Error).message}`);
+      }
+      cleanup();
+      resetStores();
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('keeps the PDF panes out of the video pages', async () => {
+    // The shell renders the panel map into the same sidebar as the video
+    // component, so a PDF panel keyed by a video id mounts two control sets at
+    // once. Read the map out of the source rather than trusting this file's copy.
+    const videoIds = new Set(TOOLS.filter((entry) => entry.category === 'video').map((entry) => entry.id));
+    const collisions = [...new Set(PANELS.map((route: PaneRoute) => route.id))]
+      .filter((id: string) => videoIds.has(id));
+    expect(collisions).toEqual([]);
+
+    routePage('crop');
+    await screen.findByRole('button', { name: '9:16 (TikTok / Reels)' });
+    // A PDF panel would have said "Loading controls…" and then its own run
+    // button, whose id the shared rail also uses for `#tool-process-btn`.
+    expect(screen.queryByText(/Loading controls/)).toBeNull();
+    expect(document.querySelector('#tool-process-btn, [data-crop-kept], [data-crop-doc-pages]')).toBeNull();
+    expect(screen.queryByText(/No PDF is loaded/)).toBeNull();
+    cleanup();
+  });
 });
 
 describe('the catalogue divides cleanly', () => {
@@ -472,16 +589,19 @@ describe('the dashboard covers the catalogue it claims to', () => {
     const shelves = TOOL_JOBS.flatMap((job) => job.toolIds);
     const duplicated = shelves.filter((id: string, index: number) => shelves.indexOf(id) !== index);
     expect(duplicated).toEqual([]);
-    const missing = PDF_TOOLS.map((tool: PdfToolDefinition) => tool.id).filter((id: string) => !shelves.includes(id));
+    const missing = catalogueIds.filter((id: string) => !shelves.includes(id));
     expect(missing).toEqual([]);
     const ghost = shelves.filter((id: string) => !getPdfTool(id));
     expect(ghost).toEqual([]);
+    // A folded id has no card to open, so it is not a shelf item either; the
+    // registry decides that, and the shelves follow.
+    expect(shelves.filter((id: string) => isToolAlias(id))).toEqual([]);
   });
 
   it('shows one card per job, and no job is named after a module', () => {
     const cards = cardEntries();
-    expect(cards.length).toBe(PDF_TOOLS.length - Object.keys(CARD_ALIASES).length);
-    for (const alias of Object.keys(CARD_ALIASES)) {
+    expect(cards.length).toBe(TOOL_CATALOGUE.length);
+    for (const alias of aliasIds) {
       expect(cards.some((entry) => entry.tool.id === alias), `${alias} should not have its own card`).toBe(false);
     }
     render(createElement(MemoryRouter, null, createElement(PdfDashboard)));
@@ -494,6 +614,19 @@ describe('the dashboard covers the catalogue it claims to', () => {
     for (const heading of TOOL_JOBS.map((job) => job.label)) {
       expect(heading).not.toMatch(/^(Organize|Optimize|Convert to|Convert from|Edit|PDF Security) PDF$/);
     }
+    cleanup();
+  });
+
+  it('advertises the count of jobs it shows, not the count of ids it stores', () => {
+    // The headline is the one number the page claims out loud. Deriving it from
+    // the folded catalogue is what keeps it from drifting when a tool gains a
+    // second id, or an id is folded away.
+    render(createElement(MemoryRouter, null, createElement(PdfDashboard)));
+    const line = [...document.querySelectorAll('p')].find((node: Element) =>
+      /tools that run on your own computer/i.test(node.textContent ?? ''),
+    );
+    expect(line?.textContent).toContain(`${TOOL_CATALOGUE.length} tools`);
+    expect(line?.textContent).not.toContain(`${PDF_TOOLS.length} tools`);
     cleanup();
   });
 

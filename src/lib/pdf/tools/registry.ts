@@ -4,6 +4,11 @@
  * The dashboard cards, the sidebar form, the workspace routing, the output
  * filename and the `ToolId` union are all derived from this list. Adding a
  * tool means adding one definition — nothing else in the app has to change.
+ *
+ * `PDF_TOOLS` is every id that answers a lookup; `TOOL_CATALOGUE` is the subset
+ * the app shows and counts, with the secondary spellings in `TOOL_ALIASES`
+ * folded into the tool that owns each job. A tool that is the same job as
+ * another one is declared there rather than given a second card.
  */
 import { lazy } from 'react';
 import type { ComponentType } from 'react';
@@ -71,6 +76,58 @@ export function getPdfTool(id: string | undefined | null): PdfToolDefinition | u
   return BY_ID.get(id);
 }
 
+/**
+ * Secondary spellings of a tool that is already in the catalogue.
+ *
+ * `redact` and `compare` were registered before `redact-pdf` and `compare-pdfs`,
+ * and the older ids have to keep answering their URLs — bookmarks and shared
+ * links point at them, so deleting a definition would 404 someone's saved page.
+ * But they are the same job under the same display name, and a list that shows
+ * both shows a visitor two identical cards. The fold therefore lives here, once:
+ * the definitions stay addressable by id (the runner and the tool tests drive
+ * them directly), while everything that *counts or lists* reads `TOOL_CATALOGUE`
+ * and everything that *routes* resolves through `canonicalToolId` first.
+ */
+const TOOL_ALIASES: Record<string, string> = {
+  redact: 'redact-pdf',
+  compare: 'compare-pdfs',
+};
+
+/** The id that owns this job: an alias answers with its canonical tool, all others with themselves. */
+export function canonicalToolId(id: string): string {
+  // `hasOwnProperty`, not `in`: an id like `constructor` would otherwise read the
+  // object's own prototype and be folded into a function.
+  const target = Object.prototype.hasOwnProperty.call(TOOL_ALIASES, id) ? TOOL_ALIASES[id] : undefined;
+  return target && BY_ID.has(target) ? target : id;
+}
+
+/** Whether `id` is a secondary spelling that the catalogue must not list twice. */
+export function isToolAlias(id: string): boolean {
+  return Object.prototype.hasOwnProperty.call(TOOL_ALIASES, id);
+}
+
+/**
+ * The public catalogue: one entry per job, aliases folded away.
+ *
+ * The dashboard cards, the ⌘K palette and every "N tools" sentence derive from
+ * this list, so the number the app advertises is the number of things a visitor
+ * can actually do.
+ */
+export const TOOL_CATALOGUE: PdfToolDefinition[] = PDF_TOOLS.filter(
+  (tool) => !isToolAlias(tool.id),
+);
+
+if (import.meta.env.DEV) {
+  for (const [alias, target] of Object.entries(TOOL_ALIASES)) {
+    if (!BY_ID.has(target)) {
+      console.warn(`[BrowserSnip] the alias "${alias}" points at "${target}", which is not a registered tool id.`);
+    }
+    if (Object.prototype.hasOwnProperty.call(TOOL_ALIASES, target)) {
+      console.warn(`[BrowserSnip] the alias "${alias}" chains to "${target}", which is itself an alias; name the canonical tool.`);
+    }
+  }
+}
+
 export function isPdfToolId(id: string): id is PdfToolId {
   return BY_ID.has(id);
 }
@@ -120,7 +177,13 @@ export function toolsByCategory(category: PdfToolCategory): PdfToolDefinition[] 
   return PDF_TOOLS.filter((tool) => tool.category === category);
 }
 
-/** Search across name, description, keywords and category for the dashboard. */
+/**
+ * Search across name, description, keywords and category.
+ *
+ * Answers with every id, aliases included, because a caller looking up one
+ * legacy id by name should still find it. The lists a visitor reads — the
+ * dashboard and the palette — search `TOOL_CATALOGUE` instead.
+ */
 export function searchTools(query: string): PdfToolDefinition[] {
   const q = query.trim().toLowerCase();
   if (!q) return PDF_TOOLS;
@@ -166,10 +229,9 @@ const MAIN_VIEWS: Record<string, LazyExoticType> = {
   redact: lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
   'redact-pdf': lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
   compare: lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
-  'pdf-compare': lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
+  'compare-pdfs': lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'scan-to-pdf': lazy(() => import('@/components/tools/pdf/scan/ScanMain').then(asDefault('ScanMain'))),
   'edit-pdf': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
-  annotate: lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
   'add-stamps': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
   'edit-pdf-text': lazy(() => import('@/components/tools/pdf/text-editor/TextEditor').then(asDefault('TextEditor'))),
   'form-filler': lazy(() => import('@/components/tools/pdf/edit/FormFillMain')),

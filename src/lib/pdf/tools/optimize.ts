@@ -834,7 +834,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         warnings,
       );
 
-      const { bytes, report } = await compressPDF(
+      const { bytes, report, pages } = await compressPDF(
         { bytes: input.bytes, password: context.password },
         {
           preset,
@@ -878,7 +878,9 @@ export const optimizeTools: PdfToolDefinition[] = [
       const target = targetBytes === undefined
         ? ''
         : ` Target ${targetMB} MB ${bytes.byteLength <= targetBytes ? 'met' : 'not met'}.`;
-      return { kind: 'pdf', bytes, message: `${headline} ${detail}${target}`, warnings };
+      // `compressPDF` reports the page count of the document it rebuilt, so the
+      // result screen can state the output size in pages and not only in bytes.
+      return { kind: 'pdf', bytes, pages, message: `${headline} ${detail}${target}`, warnings };
     },
   },
 
@@ -923,6 +925,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes: input.bytes,
+          pages: input.doc.getPageCount(),
           message: `No tidy-up option was selected, so the file is returned exactly as it came in (${describeSize(input.bytes.byteLength)}).`,
           warnings: ['Nothing was changed: every option on this tool was turned off.'],
         };
@@ -983,6 +986,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes: out,
+        pages: doc.getPageCount(),
         message: did.length > 0 ? `${headline} ${did.join('; ')}.` : `${headline}`,
         warnings,
       };
@@ -1079,6 +1083,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes,
+          pages: target.getPageCount(),
           message: `Rasterised ${source.length} page(s) to ${format.toUpperCase()} at ${dpi} dpi. ${sizeSentence(change)}.`,
           warnings,
         };
@@ -1165,6 +1170,11 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes: repaired,
+        // The message below already states this number: `inspectPdf` fully parses
+        // the repaired file to prove it opens (E3), so the count is read, not
+        // guessed, and printing "out not counted" beside "7 page(s) readable" was
+        // the same screen contradicting itself.
+        pages: after.pages,
         message: `Repaired ${file.name}: ${after.pages} page(s) readable${declared > after.pages ? ` of ${declared} listed` : ''}. ${sizeSentence(change)}.`,
         warnings,
       };
@@ -1257,7 +1267,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       const message = removed.length > 0
         ? `Sanitized: ${actions.join(', ')}. ${sizeSentence(change)}.`
         : `Nothing to remove: ${actions.join(', ')}. ${sizeSentence(change)}.`;
-      return { kind: 'pdf', bytes, message, warnings };
+      return { kind: 'pdf', bytes, pages: doc.getPageCount(), message, warnings };
     },
   },
 
@@ -1296,6 +1306,8 @@ export const optimizeTools: PdfToolDefinition[] = [
           return {
             kind: 'pdf',
             bytes: out,
+            // CoherentPDF gave back a finished file and no document: the honest
+            // answer is "out not counted", not a re-derived guess.
             message: linear
               ? `Linearized with CoherentPDF: ${sizeSentence(change)}, page 1 first.`
               : `Rewritten by CoherentPDF: ${sizeSentence(change)}, but not linearized.`,
@@ -1328,6 +1340,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: `Rebuilt with object streams and ${deflated.converted} newly compressed stream(s): ${sizeSentence(change)}. This is not a conforming linearized PDF.`,
         warnings,
       };
@@ -1387,6 +1400,9 @@ export const optimizeTools: PdfToolDefinition[] = [
           return {
             kind: 'pdf',
             bytes,
+            // `declared` is the Ghostscript output re-opened for the font audit,
+            // so the count comes off the document itself, not off a guess.
+            pages: declared.getPageCount(),
             message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
             warnings,
           };
@@ -1424,6 +1440,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: `Wrote PDF/A-${written.number}${written.conformance} identification (pdfaid:part=${written.number}, conformance=${written.conformance}), an sRGB output intent and the tagging flag. ${sizeSentence(change)}.`,
         warnings,
       };
@@ -1486,6 +1503,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: produced.getPageCount(),
         message: `Every glyph that Ghostscript could reach is now a vector path (${fonts.total} font reference(s) left). ${sizeSentence(change)}.`,
         warnings,
       };
@@ -1592,6 +1610,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: corrected.length
           ? `Straightened ${corrected.length} page(s): ${corrected.map((c) => `${c.page} (${c.angle.toFixed(2)}°)`).join(', ')}. ${sizeSentence(change)}.`
           : `Nothing to do: no page was tilted past ${maxAngle}° at a confidence of ${confidence}. ${sizeSentence(change)}.`,

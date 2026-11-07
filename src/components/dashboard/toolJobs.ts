@@ -6,15 +6,18 @@
  * split, not how a visitor thinks. Nobody walks in thinking "I need a
  * convert-from operation"; they think "I need this as a Word file". The sidebar
  * that used to print the internal categories is gone, so this module is what
- * stands between 124 tools and the one the visitor came for.
+ * stands between the whole catalogue and the one tool the visitor came for.
  *
  * Two rules keep it honest, and `tests/pdf/parity-surface.test.ts` enforces both
  * against the live registry:
- *   - every tool belongs to exactly one job, so nothing silently vanishes from
- *     the page when a definition is added;
- *   - one card per job, so the same job never appears twice under two ids.
+ *   - every catalogue entry belongs to exactly one job, so nothing silently
+ *     vanishes from the page when a definition is added;
+ *   - one card per job, so the same job never appears twice under two ids. The
+ *     folding is not done here any more — the registry declares which ids are
+ *     aliases (`TOOL_CATALOGUE` is the list this module reads), so the palette,
+ *     the counts and the cards all agree without a second list to keep in step.
  */
-import { PDF_TOOLS, getPdfTool } from '@/lib/pdf/tools/registry';
+import { TOOL_CATALOGUE } from '@/lib/pdf/tools/registry';
 import type { PdfToolDefinition } from '@/lib/pdf/tools/types';
 
 export interface ToolJob {
@@ -196,9 +199,7 @@ export const TOOL_JOBS: ToolJob[] = [
       'remove-restrictions',
       'flatten-pdf',
       'redact-pdf',
-      'redact',
       'compare-pdfs',
-      'compare',
       'view-metadata',
       'edit-metadata',
       'remove-metadata',
@@ -207,20 +208,6 @@ export const TOOL_JOBS: ToolJob[] = [
     ],
   },
 ];
-
-/**
- * Two ids, one job, kept out of the grid.
- *
- * The registry carries `redact`/`redact-pdf` and `compare`/`compare-pdfs` as
- * separate definitions — the older ids still answer their URLs and other tests
- * drive them — but a shopper looking for "the redact tool" should not have to
- * work out which of two identical cards to trust. The canonical id owns the
- * card; the alias redirects to it.
- */
-export const CARD_ALIASES: Record<string, string> = {
-  redact: 'redact-pdf',
-  compare: 'compare-pdfs',
-};
 
 /** The shelf a first visitor sees before they read anything. */
 export const POPULAR_TOOL_IDS: string[] = [
@@ -244,7 +231,7 @@ export const POPULAR_TOOL_IDS: string[] = [
  * The dashboard search is the only navigation now, so "make this smaller" has to
  * reach Compress. Kept here rather than in each definition's `keywords` because
  * these are phrases, not formats: a keyword list per tool would spread one
- * concern across 124 files.
+ * concern across every definition file.
  */
 export const JOB_SYNONYMS: Record<string, string[]> = {
   smaller: ['pdf-compress', 'optimize-pdf'],
@@ -282,11 +269,10 @@ export interface DashboardEntry {
   job: ToolJob;
 }
 
-/** Every tool that owns a card, with its job, in registry order. */
+/** Every catalogue entry that owns a card, with its job, in registry order. */
 export function cardEntries(): DashboardEntry[] {
   const entries: DashboardEntry[] = [];
-  for (const tool of PDF_TOOLS) {
-    if (CARD_ALIASES[tool.id]) continue;
+  for (const tool of TOOL_CATALOGUE) {
     const job = TOOL_JOBS.find((candidate) => candidate.toolIds.includes(tool.id));
     if (!job) continue;
     entries.push({ tool, job });
@@ -362,9 +348,4 @@ export function popularEntries(): DashboardEntry[] {
   return POPULAR_TOOL_IDS.map((id: string) => entries.find((entry: DashboardEntry) => entry.tool.id === id)).filter(
     (entry: DashboardEntry | undefined): entry is DashboardEntry => Boolean(entry),
   );
-}
-
-/** The tool a card opens, alias folded. */
-export function cardIdFor(toolId: string): string {
-  return getPdfTool(CARD_ALIASES[toolId] ?? toolId) ? CARD_ALIASES[toolId] ?? toolId : toolId;
 }

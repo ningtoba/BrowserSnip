@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { downloadBlob, formatFileSize } from '@/lib/utils/download';
+import { splitFileName } from './toolForm';
 import { EmptyState } from './EmptyState';
 import { FOCUS_RING } from './focusRing';
 
@@ -142,6 +143,9 @@ export function ResultCard({
 
   const grab = (item: ResultItem) => (onDownload ? onDownload(item) : downloadBlob(item.blob, item.name));
 
+  /** The produced name, with its extension and trailing digits kept reachable. */
+  const primaryName = splitFileName(multi ? `${outputs.length} files` : outputs[0].name);
+
   /** Compact in a rail, dominant on the success screen. */
   const primary = hero
     ? 'doodle-btn w-auto flex-1 min-h-[56px] min-w-[220px] px-6 text-[15px]'
@@ -182,10 +186,19 @@ export function ResultCard({
     >
       <div className="flex items-baseline justify-between gap-2">
         <p
-          className={`truncate font-display font-semibold text-ink ${hero ? 'text-[16px]' : 'text-[12px]'}`}
+          className={`min-w-0 font-display font-semibold text-ink ${hero ? 'text-[16px]' : 'text-[12px]'}`}
           title={outputs[0].name}
+          data-output-name={primaryName.tail ? 'split' : 'whole'}
         >
-          {multi ? `${outputs.length} files` : outputs[0].name}
+          <span className="line-clamp-2 break-words">{primaryName.head}</span>
+          {primaryName.tail && (
+            <span
+              data-output-tail
+              className={`block break-all font-mono font-normal text-ink-muted ${hero ? 'text-[12px]' : 'text-[10px]'}`}
+            >
+              {primaryName.tail}
+            </span>
+          )}
         </p>
         <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-success">
           Ready
@@ -252,7 +265,7 @@ export function ResultCard({
               key={`${item.name}-${index}`}
               className="flex items-center justify-between gap-2 rounded-doodle border border-cream-border bg-cream-light px-2 py-1"
             >
-              <span className="min-w-0 truncate text-[10px] text-ink" title={item.name}>
+              <span className="min-w-0 break-words text-[10px] text-ink line-clamp-2" title={item.name}>
                 {item.name}
               </span>
               <span className="flex shrink-0 items-center gap-1.5">

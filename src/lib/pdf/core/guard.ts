@@ -12,7 +12,8 @@
  * - `inspectPdf(bytes, name)` *never throws*. It reads the header and trailer,
  *   then tries a parse, and reports what it found (pages, encryption,
  *   permissions, whether the file only parsed in lenient mode). This is what a
- *   file queue or a result card renders.
+ *   file queue or a result card renders. The page count comes from the parse, so
+ *   `inspectPdf(bytes, name, { cheap: true })` has none — see `InspectOptions`.
  * - `openPdfInput(bytes, name, { password })` is the gate. It raises a
  *   `ToolInputError` with a stable code, the offending file name in the message,
  *   and `passwordRequired` set when the UI should re-prompt instead of showing a
@@ -221,7 +222,14 @@ export interface PdfInspection {
   size: number;
   /** Header present. `false` means the file is not a PDF whatever its name says. */
   isPdf: boolean;
-  /** Pages readable without a password; 0 when nothing could be parsed. */
+  /**
+   * Pages readable without a password.
+   *
+   * A parse produced this number or nothing did: `0` means "not readable", and
+   * a cheap inspection always reports `0` because it never parses. Neither is a
+   * claim that the document is empty — `declaredPages` says what the page tree
+   * itself claims (E3).
+   */
   pages: number;
   /** `/Count` claimed by the page tree, when it differs from `pages` (E3). */
   declaredPages: number | null;
@@ -259,8 +267,18 @@ export interface InspectOptions {
   /** Candidate password, verified against the encryption dictionary (E5). */
   password?: string;
   /**
-   * Skip the parse and report header/trailer facts only. Used by the runner's
-   * pre-flight so a 500-page document is not read twice (E7).
+   * Skip the parse and report header/trailer facts only: whether the bytes are a
+   * PDF, its header version, whether the `%%EOF` marker is there, whether an
+   * `/Encrypt` entry is present.
+   *
+   * **A page count is not one of those facts.** Cheap mode returns no page count
+   * at all — `pages` stays `0`, and `0` here means "not read", never "an empty
+   * document"; `declaredPages` stays `null`. Counting pages needs the very parse
+   * this option exists to skip, and this app's own saves hide the page tree in a
+   * compressed object stream, so a string scan could not find it either. Ask the
+   * document instead: `doc.getPageCount()` while the document is in hand.
+   *
+   * Used by the runner's pre-flight so a 500-page document is not read twice (E7).
    */
   cheap?: boolean;
 }
@@ -439,7 +457,9 @@ async function probePdf(
   if (options.cheap) {
     const encrypted = looksEncrypted(bytes);
     // Without a parse the user-password hash is unreadable, so "encrypted" is
-    // all a cheap check can claim; `preflightPdf` re-asks before refusing.
+    // all a cheap check can claim; `preflightPdf` re-asks before refusing. The
+    // `pages: 0` in `base` rides along unfilled: nothing was counted on this
+    // branch, so no caller may read it as "the document has no pages".
     const locked = encrypted && !options.password;
     return {
       ...base,

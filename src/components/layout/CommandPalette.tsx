@@ -3,12 +3,15 @@
  *
  * This is the shell's only tool list: the left sidebar is gone, so everything
  * the rail used to carry — the category browse, the starred tools and the recent
- * files — arrives here instead, at zero chrome cost. An empty query opens on
- * **Starred**, then **Recent** (the last picked files), then a browse slice of
- * **All tools**. Typing replaces all three with ranked hits, matched fuzzily
- * against **name, keywords and category** — the three things the registry stores
- * for discovery — so `mrg` finds *Merge PDF*, `sign` also finds the editor tools
- * that carry it as a keyword, and `security` finds the whole category.
+ * files — arrives here instead, at zero chrome cost. It lists **the catalogue**
+ * (`TOOL_CATALOGUE`), one row per job, so a tool that has a second id is not
+ * offered twice; a star or a recent file recorded under either spelling resolves
+ * to the tool that owns the job. An empty query opens on **Starred**, then
+ * **Recent** (the last picked files), then a browse slice of **All tools**.
+ * Typing replaces all three with ranked hits, matched fuzzily against **name,
+ * keywords and category** — the three things the registry stores for discovery —
+ * so `mrg` finds *Merge PDF*, `sign` also finds the editor tools that carry it as
+ * a keyword, and `security` finds the whole category.
  *
  * Recents are metadata only (see `lib/recents.ts`): a row names a file and the
  * tool it was opened with, and selecting it re-opens the **tool**, not the
@@ -26,7 +29,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { easeOut, fadeUp, scaleIn } from '@/lib/motion';
-import { PDF_CATEGORIES, PDF_TOOLS } from '@/lib/pdf/tools/registry';
+import { PDF_CATEGORIES, TOOL_CATALOGUE, canonicalToolId } from '@/lib/pdf/tools/registry';
 import type { PdfToolDefinition } from '@/lib/pdf/tools/types';
 import { formatFileSize } from '@/lib/utils/download';
 import {
@@ -125,7 +128,7 @@ function categoryLabel(tool: PdfToolDefinition): string {
 /** Rank the registry for one query. Empty query means "no search yet". */
 export function searchPalette(
   query: string,
-  tools: readonly PdfToolDefinition[] = PDF_TOOLS,
+  tools: readonly PdfToolDefinition[] = TOOL_CATALOGUE,
   limit: number = PALETTE_LIMIT,
 ): PaletteHit[] {
   const q = clean(query);
@@ -160,13 +163,25 @@ function fileRow(entry: RecentFileEntry, tool: PdfToolDefinition): PaletteRow {
   return { key: `file:${entry.toolId}:${entry.name}:${entry.size}`, tool, entry };
 }
 
+/**
+ * Look up a row's tool by the id something else remembered.
+ *
+ * Stars and recents were written by whichever URL the visitor used, aliases
+ * included, so a remembered `redact` has to surface the tool that owns redaction
+ * rather than be dropped as unknown.
+ */
+function toolById(tools: readonly PdfToolDefinition[]): (id: string) => PdfToolDefinition | undefined {
+  const byId = new Map(tools.map((tool) => [tool.id, tool]));
+  return (id: string) => byId.get(canonicalToolId(id));
+}
+
 /** The last picked files, newest first, one row per file, unknown tools dropped. */
 function recentRows(entries: readonly RecentFileEntry[], tools: readonly PdfToolDefinition[]): PaletteRow[] {
-  const byId = new Map(tools.map((tool) => [tool.id, tool]));
+  const find = toolById(tools);
   const rows: PaletteRow[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
-    const tool = byId.get(entry.toolId);
+    const tool = find(entry.toolId);
     if (!tool) continue;
     const row = fileRow(entry, tool);
     if (seen.has(row.key)) continue;
@@ -187,9 +202,9 @@ function defaultGroups(
   entries: readonly RecentFileEntry[],
   limit: number = PALETTE_LIMIT,
 ): PaletteGroup[] {
-  const byId = new Map(tools.map((tool) => [tool.id, tool]));
+  const find = toolById(tools);
   const starred = starredIds
-    .map((id) => byId.get(id))
+    .map((id) => find(id))
     .filter((tool): tool is PdfToolDefinition => Boolean(tool))
     .map(toolRow);
   const recent = recentRows(entries, tools);
@@ -218,12 +233,12 @@ function defaultGroups(
 export interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
-  /** Inject the registry slice in tests; the app always searches everything. */
+  /** Inject the catalogue slice in tests; the app always searches everything it shows. */
   tools?: readonly PdfToolDefinition[];
 }
 
 /** The palette dialog. Mounted by the layout so ⌘K works on every route. */
-export function CommandPalette({ open, onClose, tools = PDF_TOOLS }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, tools = TOOL_CATALOGUE }: CommandPaletteProps) {
   const navigate = useNavigate();
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);

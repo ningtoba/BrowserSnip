@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { openRender, type PdfSession } from '@/lib/pdf/core/render';
 import { formatFileSize } from '@/lib/utils/download';
 import type { FileRunState } from '@/stores/process-store';
+import { splitFileName } from './toolForm';
 import { ErrorPanel } from './ErrorPanel';
 import { usePageThumbnail } from './PageThumbs';
 import { FOCUS_RING } from './focusRing';
@@ -219,9 +220,7 @@ export function FileCards({
               imageInput={imageInput}
               page={thumbnailPage}
             />
-            <p className="mt-2 truncate text-[11px] font-semibold text-ink" title={file.name}>
-              {file.name}
-            </p>
+            <FileName name={file.name} />
             <p className="mt-0.5 font-mono text-[10px] tabular-nums text-ink-muted">
               {formatFileSize(file.size)}
               {' · '}
@@ -306,6 +305,33 @@ export function FileCards({
 function cardStage(state?: FileRunState): string {
   if (state?.error) return 'Stopped';
   return state?.pages == null ? 'Reading' : 'Ready';
+}
+
+/**
+ * The card's file name: two lines, and the end of the string kept reachable.
+ *
+ * One truncated line turned "quarterly-report-2024-q3-final-draft-signed.pdf"
+ * into a fragment that identified nothing, because the part that separates files
+ * from each other — the version digits and the extension — is at the end. The
+ * head gets two lines with an ellipsis at the cut, the tail keeps its own line
+ * once the name is too long for two, and the whole name is in `title`.
+ */
+export function FileName({ name, className = 'mt-2' }: { name: string; className?: string }) {
+  const { head, tail } = splitFileName(name);
+  return (
+    <p
+      className={`${className} text-[11px] font-semibold leading-snug text-ink`}
+      title={name}
+      data-file-name={tail ? 'split' : 'whole'}
+    >
+      <span className="line-clamp-2 break-words">{head}</span>
+      {tail && (
+        <span data-file-tail className="block break-all font-mono text-[10px] font-normal text-ink-muted">
+          {tail}
+        </span>
+      )}
+    </p>
+  );
 }
 
 interface CardThumbProps {

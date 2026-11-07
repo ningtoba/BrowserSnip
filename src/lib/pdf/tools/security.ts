@@ -224,6 +224,9 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        // The bytes were saved from `input.doc` a moment ago, so its page count
+        // is the output's — the only moment this number is free.
+        pages: input.doc.getPageCount(),
         message: `Protected with ${how}. As written to the file: ${permissionSentence(inspection.permissions ?? flags)}.`,
         warnings,
       };
@@ -257,6 +260,7 @@ export const securityTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes: input.bytes,
+          pages: input.doc.getPageCount(),
           message: `"${input.name}" is not password protected — it already opens without one, so the file is returned unchanged.`,
           warnings: ['No /Encrypt entry was found, so there was no password to remove.'],
         };
@@ -287,6 +291,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: cleared.getPageCount(),
         message: `Removed protection — the file opens without a password now: ${after.pages} page(s), ${contentKept ? 'page content verified' : 'page content re-read with differences'}.`,
         warnings,
       };
@@ -338,6 +343,7 @@ export const securityTools: PdfToolDefinition[] = [
           return {
             kind: 'pdf',
             bytes: input.bytes,
+            pages: input.doc.getPageCount(),
             message: `"${input.name}" carries no encryption dictionary, so there were no restrictions to remove — the file is returned unchanged.`,
             warnings: ['Nothing to clear: this PDF is not protected.'],
           };
@@ -352,6 +358,7 @@ export const securityTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes,
+          pages: cleared.getPageCount(),
           message: `All restrictions and the password were removed — ${after.pages} page(s) verified, opens freely.`,
           warnings: losses.length
             ? [`Removing the restrictions copies the pages into a fresh document, so ${losses.join(', ')} did not carry over.`]
@@ -387,6 +394,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: doc.getPageCount(),
         message: `Restrictions as recorded in the file (${cipherName}): ${permissionSentence(inspection.permissions ?? flags)}. The document opens without a password.`,
         warnings,
       };
@@ -417,6 +425,7 @@ export const securityTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes: input.bytes,
+          pages: input.doc.getPageCount(),
           message: `"${input.name}" has no encryption dictionary, so nothing was restricting it — the file is returned unchanged.`,
           warnings: ['Nothing to clear: this PDF carries no /Encrypt entry, so a reader cannot be told to hold it back.'],
         };
@@ -432,6 +441,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: rebuilt.getPageCount(),
         message: `Restrictions cleared — ${after.pages} page(s) verified readable with no /Encrypt entry and no password needed.`,
         warnings: losses.length
           ? [`Clearing the restrictions copies the pages into a fresh document, so ${losses.join(', ')} did not carry over.`]
@@ -496,6 +506,7 @@ export const securityTools: PdfToolDefinition[] = [
         return {
           kind: 'pdf',
           bytes,
+          pages: input.doc.getPageCount(),
           message: needsRender
             ? `Baked ${outcome.flattened} annotation(s) and ${fields.flattened} form field(s) into the content of ${outcome.pagesTouched} page(s).`
             : `Baked ${fields.flattened} form field(s) into the page content. Turn on annotation flattening to bake comments as well.`,
@@ -558,6 +569,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: outcome.removed === 0
           ? `Marked ${marked.length} area(s); none of them held text, so nothing was deleted — the fill was painted over the page only.`
           : `Redacted ${outcome.removed} text run(s) by deleting the glyphs themselves — selecting the area now returns nothing.`,
@@ -836,6 +848,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: done.length
           ? `Removed ${done.join(', ')}.`
           : 'Nothing was removed: the selected stores were already empty in this PDF.',
@@ -964,6 +977,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: `Removed ${removed} of ${wanted.length} requested attachment(s). Remaining: ${existing.length - removed}.`,
         warnings,
       };
@@ -1038,6 +1052,9 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes: result.bytes,
+        // `signDocument` saves this same document and fills the `/ByteRange`
+        // placeholder in place: the signature adds a field, never a page.
+        pages: input.doc.getPageCount(),
         message: `Signed as ${result.signer}${result.hash ? ` using ${result.hash}` : ''}. The signature covers ${formatBytes(result.contentsLength)} of the file${readBack.length > 0 && mine?.digestMatches ? ' and verifies against it' : ''}.`,
         warnings,
       };
@@ -1189,6 +1206,7 @@ export const securityTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes: result.bytes,
+        pages: input.doc.getPageCount(),
         message: `Timestamped at ${result.attestedAt.toISOString()} by ${result.authority}.`,
         warnings: [`The timestamp covers the signature, not the document: it proves the signature existed at ${result.attestedAt.toISOString()}, and ${tsaUrl} is the one address this app sends a digest to.`],
       };

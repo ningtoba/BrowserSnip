@@ -908,6 +908,9 @@ export const editTools: PdfToolDefinition[] = [
       const result: ToolResult = {
         kind: 'files',
         files,
+        // One output per input, in the same order, so the first document's page
+        // count describes the file the card calls primary.
+        pages: inputs[0].doc.getPageCount(),
         message: `Applied ${countLabel(stamped, 'Bates number')} across ${countLabel(inputs.length, 'file')}${perFile ? ', restarting at each file' : ''}.`,
       };
       return admit(result, notes);
@@ -1840,6 +1843,7 @@ async function rerasterise(
     const outcome: ToolResult = {
       kind: 'pdf',
       bytes: await savePDF(doc),
+      pages: doc.getPageCount(),
       message: `${verb} ${countLabel(selected.length, 'page')} at ${job.dpi} dpi. Text is now part of the image, so it is no longer selectable or searchable.`,
     };
     return admit(outcome, notes);

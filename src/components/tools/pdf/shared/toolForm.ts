@@ -196,31 +196,37 @@ export function promiseFor(tool: PanelTool): string {
  *
  * 1. a field with a blocking issue;
  * 2. a required field still empty;
- * 3. the field the user moved off its default — the state a collapsed panel
- *    would otherwise hide;
+ * 3. the field the user moved — the state a collapsed panel would otherwise hide;
  * 4. the first field.
+ *
+ * `touched` names the keys the user has actually operated, which is not the same
+ * set as "differs from its default": a preset deliberately re-chosen is a
+ * decision, and it must not fall behind the fold.
  */
 export function leadField(
   fields: readonly ToolField[],
   issues: Record<string, string>,
   values: ToolValues,
+  touched?: ReadonlySet<string>,
 ): ToolField | null {
   return (
     fields.find((field) => issues[field.key]) ??
     fields.find((field) => field.required && isUnset(values[field.key] ?? field.default ?? null)) ??
-    fields.find((field) => isChanged(field, values)) ??
+    fields.find((field) => isChanged(field, values, touched)) ??
     fields[0] ??
     null
   );
 }
 
-function isUnset(value: unknown): boolean {
-  if (value === null || value === undefined || value === '') return true;
-  return Array.isArray(value) && value.length === 0;
-}
-
-/** True when the user set this field to something other than what the tool declared. */
-function isChanged(field: ToolField, values: ToolValues): boolean {
+/**
+ * True when this field carries a decision the user made.
+ *
+ * Either they moved it — to any value, including the one it started on — or what
+ * it holds now is not what the tool declared, which is how a value set from
+ * outside the panel (a bespoke editor, a restored slot) still gets echoed.
+ */
+export function isChanged(field: ToolField, values: ToolValues, touched?: ReadonlySet<string>): boolean {
+  if (touched?.has(field.key)) return true;
   const current = values[field.key] ?? field.default ?? null;
   if (isUnset(current) && isUnset(field.default ?? null)) return false;
   if (current !== null && typeof current === 'object') {
@@ -229,28 +235,99 @@ function isChanged(field: ToolField, values: ToolValues): boolean {
   return current !== (field.default ?? null);
 }
 
+function isUnset(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true;
+  return Array.isArray(value) && value.length === 0;
+}
+
 /**
- * One line naming what the tool is currently set to do.
+ * `isChanged` for a field the row might echo: a password never comes back.
+ */
+export function isSetByUser(field: ToolField, values: ToolValues, touched?: ReadonlySet<string>): boolean {
+  return field.type !== 'password' && isChanged(field, values, touched);
+}
+
+/** How many changed options one collapsed line can carry. */
+const SUMMARY_LIMIT = 3;
+
+export interface SummaryContext {
+  /** Keys the user operated, even where they landed back on the default. */
+  touched?: ReadonlySet<string>;
+  /** Keys the row already shows as a control, so echoing them twice is noise. */
+  shown?: readonly string[];
+  /** What the row says when the user has changed nothing anywhere: the outcome. */
+  whenQuiet?: string;
+}
+
+/**
+ * One line naming what the user has set, and nothing else.
  *
- * The options row shows one field and folds the rest behind a disclosure, and a
- * collapsed panel that says nothing is a hidden state: the user cannot tell
- * "still on the defaults" from "I changed three things". Values come back as the
- * labels the picker offered rather than raw enum strings, and a password field is
- * left out entirely.
+ * The options row shows one field and folds the rest behind a disclosure. The
+ * first version of that line printed every visible field, changed or not, so a
+ * twelve-control panel summarised to 250 characters, `truncate` cut it mid-word,
+ * and the control that decides the output was the part that got lost. It now
+ * echoes the fields the user moved, caps at three, counts the rest, and when
+ * they have moved nothing says what the run will do instead of reciting defaults.
  */
 export function describeOptions(
   fields: readonly ToolField[] = [],
-  values: ToolValues,
+  values: ToolValues = {},
+  context: SummaryContext = {},
 ): string {
-  const parts: string[] = [];
-  for (const field of fields) {
-    if (field.when && !field.when(values)) continue;
-    if (field.type === 'password') continue;
-    const text = describeValue(field, values[field.key] ?? field.default ?? null);
-    if (text) parts.push(`${field.label}: ${text}`);
-  }
-  return parts.join(' · ');
+  const shown = new Set(context.shown ?? []);
+  const moved = fields.filter(
+    (field) =>
+      !shown.has(field.key) && !(field.when && !field.when(values)) && isSetByUser(field, values, context.touched),
+  );
+  if (moved.length === 0) return (context.whenQuiet ?? '').trim();
+  const parts = moved
+    .slice(0, SUMMARY_LIMIT)
+    .map((field) => `${field.label}: ${describeValue(field, values[field.key] ?? field.default ?? null)}`);
+  const rest = moved.length - parts.length;
+  return rest > 0 ? `${parts.join(' · ')} · +${rest} more` : parts.join(' · ');
 }
+
+/**
+ * The quiet-state line for a collapsed panel: what the run will do.
+ *
+ * Saying "no field is yours yet" is only half of it; the row is beside the
+ * button, so the other half is what pressing that button produces, in the
+ * definition's own words.
+ */
+export function quietSummary(tool: PanelTool | undefined): string {
+  const outcome = tool?.description?.trim();
+  return outcome ? `Nothing changed yet · ${outcome}` : 'Nothing changed yet · every option is on its default.';
+}
+
+/**
+ * A file name split into what may wrap and what may not.
+ *
+ * A 212 px card fits about 24 characters at the size the name is set in, so a
+ * single truncated line hid everything after "quarterly-report-2024-" — which is
+ * where the version digits and the extension live. Long names hand their tail to
+ * its own line so the end of the string stays reachable; short names come back
+ * whole with an empty tail, so the common case keeps one line.
+ */
+export function splitFileName(name: string): { head: string; tail: string } {
+  if (name.length <= NAME_HEAD_BUDGET) return { head: name, tail: '' };
+  const dot = name.lastIndexOf('.');
+  const extension = dot > 0 ? name.slice(dot) : '';
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  // Split on separators, keeping them attached to the word before them, so the
+  // tail is a whole run of the name rather than an arbitrary slice.
+  const chunks = stem.split(/(?<=[\s._-])/);
+  let tail = extension;
+  for (let index = chunks.length - 1; index >= 0 && tail.length - extension.length < NAME_TAIL_BUDGET; index -= 1) {
+    tail = `${chunks[index]}${tail}`;
+  }
+  const head = name.slice(0, name.length - tail.length);
+  return head ? { head, tail } : { head: name, tail: '' };
+}
+
+/** Characters two clamped lines of card text can carry before the tail takes over. */
+const NAME_HEAD_BUDGET = 40;
+/** Characters of stem, beyond the extension, kept reachable on the tail line. */
+const NAME_TAIL_BUDGET = 16;
 
 function describeValue(field: ToolField, value: unknown): string {
   if (value === null || value === undefined || value === '') return 'none';

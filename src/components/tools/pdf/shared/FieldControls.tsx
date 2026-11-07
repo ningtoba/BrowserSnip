@@ -22,7 +22,7 @@ import { engineReady, enginePurpose } from '@/lib/pdf/core/engine-ops';
 import type { EngineId } from '@/lib/pdf/engines/provider';
 import { useFileStore } from '@/stores/file-store';
 import type { UsePdfTool } from '@/hooks/usePdfTool';
-import { describeOptions, leadField } from './toolForm';
+import { describeOptions, isSetByUser, leadField, quietSummary } from './toolForm';
 import { EmptyState } from './EmptyState';
 import { ErrorPanel } from './ErrorPanel';
 import { PageThumbs } from './PageThumbs';
@@ -35,6 +35,49 @@ export interface OptionsPanelProps {
   api: UsePdfTool;
   /** Extra controls above the generated fields (editor state, etc.). */
   before?: React.ReactNode;
+  /**
+   * Fields the user has operated, from `useTouchedFields`.
+   *
+   * The surface owns it because the panel unmounts whenever the page changes
+   * state, and a deliberate choice must survive a trip back to the drop zone.
+   */
+  touched?: ReadonlySet<string>;
+}
+
+/**
+ * Which fields the user has moved, by key.
+ *
+ * "Differs from the default" is a different question and the wrong one: a slider
+ * dragged to the middle and back to 150, or a preset re-chosen deliberately, is
+ * still a decision the collapsed row must keep showing. The set is read off the
+ * value bag as it changes, so it catches every writer — the generated controls,
+ * the page picker, and a bespoke editor calling `setValues`.
+ */
+export function useTouchedFields(
+  toolId: string | undefined,
+  values: ToolValues,
+): ReadonlySet<string> {
+  const state = useRef<{ toolId: string | undefined; previous: ToolValues; touched: Set<string> }>({
+    toolId,
+    previous: values,
+    touched: new Set(),
+  });
+  const live = state.current;
+  if (live.toolId !== toolId) {
+    // A different tool means a re-seeded form; nothing in it has been touched.
+    live.toolId = toolId;
+    live.previous = values;
+    live.touched = new Set();
+  } else if (live.previous !== values) {
+    for (const [key, value] of Object.entries(values)) {
+      // A key the bag did not carry yet arrived from the definition's defaults,
+      // not from a hand: the form seeding itself must not read as three changes.
+      if (!(key in live.previous) || value === live.previous[key]) continue;
+      live.touched.add(key);
+    }
+    live.previous = values;
+  }
+  return live.touched;
 }
 
 /**
@@ -48,10 +91,11 @@ export interface OptionsPanelProps {
  *
  * Nothing that blocks is hidden silently. The field the button is waiting for is
  * the visible one, an invalid field behind the disclosure is named on the
- * disclosure, the summary line keeps saying what is set, and the reason line
- * under the button fires whatever is folded away.
+ * disclosure, the summary line echoes only what the user changed — or, when they
+ * changed nothing, says what the run will do — and the reason line under the
+ * button fires whatever is folded away.
  */
-export function OptionsPanel({ api, before }: OptionsPanelProps) {
+export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
   const [open, setOpen] = useState(false);
   const disclosure = useRef<HTMLButtonElement>(null);
   const restore = useRef(false);
@@ -59,14 +103,23 @@ export function OptionsPanel({ api, before }: OptionsPanelProps) {
     () => (api.tool?.fields ?? []).filter((field) => !field.when || field.when(api.values)),
     [api.tool, api.values],
   );
-  const lead = leadField(fields, api.issues, api.values);
+  const lead = leadField(fields, api.issues, api.values, touched);
   const folded = fields.filter((field) => field !== lead);
   const problems = folded.filter((field) => api.issues[field.key]).length;
   const engineCount = api.tool?.engines?.length ?? 0;
   // What the row cannot show: the fields behind the disclosure, plus the engine
   // note, which only exists in the panel.
   const hidden = folded.length + engineCount;
-  const summary = describeOptions(folded, api.values);
+  // The lead field is on screen as a control, so the line beside it carries only
+  // what the user moved *behind* the fold. When they moved nothing anywhere the
+  // row would be silent, and a silent collapsed panel cannot be told from one
+  // that has been set up — so it says what the run will do instead.
+  const quiet = fields.some((field) => isSetByUser(field, api.values, touched)) ? '' : quietSummary(api.tool);
+  const summary = describeOptions(folded, api.values, {
+    touched,
+    shown: lead ? [lead.key] : [],
+    whenQuiet: quiet,
+  });
   // A tool with no options, no password and no engine note has nothing to fold,
   // so the row is not rendered at all rather than taking bar height for nothing.
   const controls = fields.length > 0 || api.needsPassword || engineCount > 0;

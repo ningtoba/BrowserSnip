@@ -381,7 +381,9 @@ export async function blocksResult(
     });
   }
   const bytes = await savePDF(doc);
-  return { kind: 'pdf', bytes, message: `${message} ${pages.length} page(s).`, warnings };
+  // Every “… to PDF” converter finishes here with the laid-out document in
+  // hand, which is the one cheap moment its page count can be reported.
+  return { kind: 'pdf', bytes, pages: doc.getPageCount(), message: `${message} ${pages.length} page(s).`, warnings };
 }
 
 /** Text-ish inputs share one panel: paste or upload, then lay out. */

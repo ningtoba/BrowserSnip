@@ -261,6 +261,9 @@ export const legacyTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf' as const,
         bytes: packed.bytes,
+        // The packer counts its own pages as it lays them out; undecodable
+        // captures are excluded there, so this is the output's real length.
+        pages: packed.pages,
         message: `Built a ${count(packed.pages, 'page')} PDF from ${count(images.length, 'capture')}; each page is a photograph, so it is not searchable until you run OCR.`,
         warnings,
       };
@@ -311,6 +314,9 @@ export const legacyTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf' as const,
         bytes: outcome.bytes,
+        // One output page is written per compared page, so `compared` is the
+        // produced document's length — not the length of either input.
+        pages: outcome.compared,
         message: `Compared ${count(outcome.compared, 'page')} of "${first.name}" against "${second.name}" and painted the differences onto the copy.`,
         warnings,
       };

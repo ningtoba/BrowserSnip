@@ -27,8 +27,8 @@ import type { EngineId } from '@/lib/pdf/engines/provider';
 import type { UsePdfTool } from '@/hooks/usePdfTool';
 import { ErrorPanel } from './ErrorPanel';
 import { FileCards } from './FileCards';
-import { FileIntake, intakeCopy, useIntake, type IntakeControls, type IntakeCopy } from './FileIntake';
-import { GroupHeading, OptionsPanel } from './FieldControls';
+import { FileIntake, intakeCopy, intakeFootNote, useIntake, type IntakeControls, type IntakeCopy } from './FileIntake';
+import { GroupHeading, OptionsPanel, useTouchedFields } from './FieldControls';
 import { ProgressBar } from './ProgressBar';
 import { ResultCard, type ResultItem } from './ResultCard';
 import { runStatusText } from './toolForm';
@@ -85,6 +85,10 @@ export function ToolSurface({ api, before, report, onDone }: ToolSurfaceProps) {
 
   const multiple = Boolean(api.tool?.multiFile);
   const copy = intakeCopy(api.tool?.accept, multiple);
+  // Which fields the user has actually moved. Owned here, not in the bar, because
+  // the bar unmounts every time the page changes state and a deliberate choice
+  // has to survive a trip back to the drop zone.
+  const touched = useTouchedFields(api.tool?.id, api.values);
   const state = surfaceState({
     hasFiles: files.length > 0,
     phase: api.phase,
@@ -111,6 +115,7 @@ export function ToolSurface({ api, before, report, onDone }: ToolSurfaceProps) {
         promise={api.promise || 'Pick a file and the options appear.'}
         copy={copy}
         controls={intake}
+        footNote={intakeFootNote(api.tool?.accept, multiple, api.tool?.notes)}
       />
     ) : state === 'running' ? (
       <RunningPane files={files.map((file) => file.name)} onCancel={api.cancel} />
@@ -123,7 +128,15 @@ export function ToolSurface({ api, before, report, onDone }: ToolSurfaceProps) {
         report={report}
       />
     ) : (
-      <ReadyPane api={api} before={before} copy={copy} onDone={onDone} intake={intake} state={state} />
+      <ReadyPane
+        api={api}
+        before={before}
+        copy={copy}
+        onDone={onDone}
+        intake={intake}
+        state={state}
+        touched={touched}
+      />
     );
 
   return (
@@ -186,11 +199,12 @@ interface ReadyPaneProps {
   intake: IntakeControls;
   copy: IntakeCopy;
   state: SurfaceState;
+  touched: ReadonlySet<string>;
   before?: React.ReactNode;
   onDone?: () => void;
 }
 
-function ReadyPane({ api, intake, copy, before, onDone, state }: ReadyPaneProps) {
+function ReadyPane({ api, intake, copy, before, onDone, state, touched }: ReadyPaneProps) {
   const files = useFileStore((s) => s.files);
   const states = useProcessStore((s) => s.fileStates);
   const removeFile = useFileStore((s) => s.removeFile);
@@ -201,77 +215,82 @@ function ReadyPane({ api, intake, copy, before, onDone, state }: ReadyPaneProps)
   const multiple = Boolean(api.tool?.multiFile);
 
   return (
-    <>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-5xl space-y-5">
-          <SurfaceHeading title={api.tool?.name ?? ''} promise={api.promise} />
+    // The bar is the last thing in the scroller and sticks to its bottom edge.
+    // Pinned to the page instead, it sat 314-401 px below a queue that never
+    // scrolls (measured at 1440x1000), which split the page into a list at the
+    // top and a verb at the bottom with a band of bare background between them.
+    // In flow, the CTA lands under the files it acts on and the empty space
+    // collects once, below it; sticky keeps it in reach when the page is tall
+    // enough to scroll.
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-5 sm:px-6 lg:px-8">
+        <SurfaceHeading title={api.tool?.name ?? ''} promise={api.promise} />
 
-          {isLargeFile && <MemoryWarning />}
+        {isLargeFile && <MemoryWarning />}
 
-          <section className="space-y-2">
-            <div className="flex items-baseline justify-between gap-3">
-              <GroupHeading title={files.length > 1 ? 'Your files' : 'Your file'} />
-              {multiple && files.length > 1 && (
-                <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
-                  {api.phase === 'inspecting' ? 'reading pages…' : `${files.length} in this job`}
-                </span>
-              )}
-            </div>
-            <FileCards
-              files={files}
-              states={states}
-              reorderable={multiple && files.length > 1}
-              imageInput={api.tool?.inputKind === 'image'}
-              errorShown={state === 'error' && Boolean(error)}
-              onRemove={(index) => removeFile(index)}
-              onReorder={(from, to) => reorderFiles(from, to)}
-              onAddMore={intake.open}
-              addMoreLabel={multiple ? 'Add more' : 'Use another file'}
-            />
-          </section>
-
-          {multiple && (
-            // The space under the cards is the same drop target the page is, and
-            // saying so is what makes a short queue look like a queue rather than
-            // an empty room. It stays a strip, not a second drop zone: the cards
-            // are the thing with the visual weight here.
-            <button
-              type="button"
-              data-drop-more="true"
-              onClick={intake.open}
-              className={`flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-doodle-lg border border-dashed border-cream-border bg-cream-soft/40 text-center transition-colors hover:border-accent hover:bg-accent/5 ${FOCUS_RING}`}
-            >
-              <span aria-hidden className="text-[20px] text-ink-muted">
-                ⬆
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <GroupHeading title={files.length > 1 ? 'Your files' : 'Your file'} />
+            {multiple && files.length > 1 && (
+              <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
+                {api.phase === 'inspecting' ? 'reading pages…' : `${files.length} in this job`}
               </span>
-              <span className="text-[13px] font-semibold text-ink-soft">
-                Drop more {copy.many} here
-              </span>
-              <span className="text-[11px] text-ink-muted">
-                or click to browse — they join this job in order
-              </span>
-            </button>
-          )}
+            )}
+          </div>
+          <FileCards
+            files={files}
+            states={states}
+            reorderable={multiple && files.length > 1}
+            imageInput={api.tool?.inputKind === 'image'}
+            errorShown={state === 'error' && Boolean(error)}
+            onRemove={(index) => removeFile(index)}
+            onReorder={(from, to) => reorderFiles(from, to)}
+            onAddMore={intake.open}
+            addMoreLabel={multiple ? 'Add more' : 'Use another file'}
+          />
+        </section>
 
-          {api.advisories.length > 0 && (
-            <p className="rounded-doodle-md border border-warn/25 bg-warn/5 px-3 py-2 text-[11px] leading-relaxed text-warn">
-              {api.advisories[0]}
-            </p>
-          )}
+        {multiple && (
+          // The space under the cards is the same drop target the page is, and
+          // saying so is what makes a short queue look like a queue rather than
+          // an empty room. It stays a strip, not a second drop zone: the cards
+          // are the thing with the visual weight here.
+          <button
+            type="button"
+            data-drop-more="true"
+            onClick={intake.open}
+            className={`flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-doodle-lg border border-dashed border-cream-border bg-cream-soft/40 text-center transition-colors hover:border-accent hover:bg-accent/5 ${FOCUS_RING}`}
+          >
+            <span aria-hidden className="text-[20px] text-ink-muted">
+              ⬆
+            </span>
+            <span className="text-[13px] font-semibold text-ink-soft">
+              Drop more {copy.many} here
+            </span>
+            <span className="text-[11px] text-ink-muted">
+              or click to browse — they join this job in order
+            </span>
+          </button>
+        )}
 
-          {state === 'error' && error && (
-            <ErrorPanel
-              message={error}
-              hint={hint ?? undefined}
-              fileName={errorFile(files, error)}
-              onRetry={() => void api.run()}
-            />
-          )}
-        </div>
+        {api.advisories.length > 0 && (
+          <p className="rounded-doodle-md border border-warn/25 bg-warn/5 px-3 py-2 text-[11px] leading-relaxed text-warn">
+            {api.advisories[0]}
+          </p>
+        )}
+
+        {state === 'error' && error && (
+          <ErrorPanel
+            message={error}
+            hint={hint ?? undefined}
+            fileName={errorFile(files, error)}
+            onRetry={() => void api.run()}
+          />
+        )}
       </div>
 
-      <RunBar api={api} before={before} onDone={onDone} />
-    </>
+      <RunBar api={api} before={before} onDone={onDone} touched={touched} />
+    </div>
   );
 }
 
@@ -283,8 +302,7 @@ function errorFile(files: File[], message: string): string | null {
 }
 
 /**
- * The bottom bar: the options the tool owns, and one verb pinned to the right
- * where the thumb already is.
+ * The run bar: the options the tool owns, and one verb at its right edge.
  *
  * The bar is a strip, not a second page. Its height is the collapsed options row
  * plus the button, so the file cards above it keep the visual weight.
@@ -293,10 +311,12 @@ function RunBar({
   api,
   before,
   onDone,
+  touched,
 }: {
   api: UsePdfTool;
   before?: React.ReactNode;
   onDone?: () => void;
+  touched: ReadonlySet<string>;
 }) {
   const busy = api.isRunning;
   const reason = api.blockers[0] ?? null;
@@ -305,10 +325,10 @@ function RunBar({
   return (
     <div
       data-run-bar="true"
-      className="z-20 shrink-0 border-t border-cream-border bg-cream-light/95 px-4 py-2.5 backdrop-blur-subtle sm:px-6"
+      className="sticky bottom-0 z-20 shrink-0 border-t border-cream-border bg-cream-light/95 px-4 py-2.5 backdrop-blur-subtle sm:px-6"
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
-        <OptionsPanel api={api} before={before} />
+        <OptionsPanel api={api} before={before} touched={touched} />
 
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <StatusLine />

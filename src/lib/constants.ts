@@ -1,4 +1,4 @@
-import { PDF_TOOLS, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
+import { PDF_TOOLS, TOOL_CATALOGUE, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
 import type { ToolCategoryDefinition, ToolDefinition } from '@/types';
 
 /**
@@ -88,7 +88,15 @@ export const TOOLS: ToolDefinition[] = [
 ];
 
 export const VIDEO_TOOL_COUNT = VIDEO_TOOLS.length;
-export const PDF_TOOL_COUNT = PDF_TOOLS.length;
+/**
+ * What the app advertises: one PDF tool per job. The registry keeps answering
+ * the secondary ids (`redact`, `compare`) so old bookmarks and shared links
+ * still open, but they are not two more tools — every "N tools" sentence in the
+ * product reads this number or `TOOL_CATALOGUE.length`, never a literal.
+ */
+export const PDF_TOOL_COUNT = TOOL_CATALOGUE.length;
+/** Everything the landing page counts: the video tools plus the PDF catalogue. */
+export const TOOL_COUNT = VIDEO_TOOL_COUNT + PDF_TOOL_COUNT;
 
 export function categoryBlurb(id: ToolCategoryDefinition['id']): string {
   return PDF_CATEGORIES.find((category) => category.id === id)?.blurb ?? 'Everything runs in this tab.';

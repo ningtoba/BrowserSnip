@@ -17,7 +17,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PALETTE_LIMIT, fuzzyScore, searchPalette } from '@/components/layout/CommandPalette';
-import { PDF_CATEGORIES, PDF_TOOLS, getPdfTool } from '@/lib/pdf/tools/registry';
+import { PDF_CATEGORIES, PDF_TOOLS, TOOL_CATALOGUE, canonicalToolId, getPdfTool, isToolAlias } from '@/lib/pdf/tools/registry';
 import { ResultCard } from '@/components/tools/pdf/shared/ResultCard';
 import {
   RECENT_FILES_CAP,
@@ -166,7 +166,8 @@ describe('command palette', () => {
     await screen.findByRole('dialog', { name: 'Search tools' });
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
-    // Every one of the ~124 registry tools is reachable from here.
+    // Every tool the catalogue lists is reachable from here — see
+    // "palette catalogue integrity" for the count it therefore prints.
     fireEvent.change(await searchField(), { target: { value: 'linearize' } });
     await waitFor(() => expect(rowByText('Linearize PDF')).toBeTruthy());
   });
@@ -264,6 +265,54 @@ describe('command palette', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByTestId('tool-page')).toBeTruthy();
     // The header survives the navigation, so focus is not stranded on `body`.
+    expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe('palette catalogue integrity', () => {
+  /** Every id the registry folds into another tool (`TOOL_CATALOGUE` drops them). */
+  const aliasIds = PDF_TOOLS.filter((tool) => isToolAlias(tool.id)).map((tool) => tool.id);
+
+  it('offers one row per job, under the id that owns it', () => {
+    expect(aliasIds.length).toBeGreaterThan(0);
+    // The duplication the palette used to show: the same tool, twice, because the
+    // registry carries a second spelling of it.
+    for (const alias of aliasIds) {
+      const ids = searchPalette(alias, TOOL_CATALOGUE).map((hit) => hit.tool.id);
+      expect(ids, `${alias} is still offered as its own row`).not.toContain(alias);
+      expect(ids, `${alias} has no row that opens its tool`).toContain(canonicalToolId(alias));
+    }
+    const names = TOOL_CATALOGUE.map((tool) => tool.name.trim().toLowerCase());
+    expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual([]);
+    // And the search still answers the folded word.
+    expect(searchPalette('redact').map((hit) => hit.tool.id)).toContain('redact-pdf');
+  });
+
+  it('counts the tools it can actually list', async () => {
+    renderShell();
+    await openPalette();
+    const footer = screen.getByText(`${TOOL_CATALOGUE.length} tools`);
+    expect(footer).toBeTruthy();
+    expect(screen.queryByText(`${PDF_TOOLS.length} tools`)).toBeNull();
+  });
+
+  it('still resolves a memory written under a folded id, and gives focus back', async () => {
+    // Stars and recents were stored against whichever URL the visitor used, so a
+    // remembered `redact` has to surface the redaction tool instead of vanishing —
+    // without disturbing the focus handover the dialog is responsible for.
+    toggleStarredTool('redact');
+    recordRecentFiles([{ name: 'contract.pdf', size: 2048 }], 'compare', Date.now());
+    renderShell();
+
+    const trigger = screen.getByRole('button', { name: /Search tools/ });
+    trigger.focus();
+    await openPalette();
+    await waitFor(() => expect(groupLabels()[0]).toBe('Starred'));
+    expect(rowByText('Redact PDF')).toBeTruthy();
+    expect(rowByText('contract.pdf')).toBeTruthy();
+
+    fireEvent.keyDown(await searchField(), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
 });

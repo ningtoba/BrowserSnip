@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { PDF_TOOLS } from '@/lib/pdf/tools/registry';
+import { PDF_TOOL_COUNT } from '@/lib/constants';
 import { ToolCard, CategoryHeading } from './ToolCard';
 import { TOOL_JOBS, popularEntries, searchJobs, type DashboardEntry, type ToolJob } from './toolJobs';
 import { fadeUp, staggerParent, viewportOnce } from '@/lib/motion';
@@ -89,7 +89,7 @@ export function PdfDashboard() {
               What do you want to do with this PDF?
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-soft">
-              {PDF_TOOLS.length} tools that run on your own computer. Pick a file, get the
+              {PDF_TOOL_COUNT} tools that run on your own computer. Pick a file, get the
               result back — the document is never sent anywhere.
             </p>
 

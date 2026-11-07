@@ -22,7 +22,7 @@
 ---
 
 > **✂ Snip, process, and secure your media — all inside your browser tab.**  
-> BrowserSnip is a collection of **132 focused micro-tools** (8 video + 124 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
+> BrowserSnip is a collection of **130 focused micro-tools** (8 video + 122 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
 
 ---
 
@@ -35,7 +35,7 @@ BrowserSnip is **not** a timeline-based video editor like CapCut or Premiere. It
 | | | |
 |---|---|---|
 | 🎬 **Video Tools** | 8 FFmpeg-powered micro-tools | Trim, resize, crop, compress, GIF, audio, speed, metadata |
-| 📄 **PDF Tools** | 124 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
+| 📄 **PDF Tools** | 122 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
 | 🔒 **Privacy-first** | Runs entirely in your browser | WebAssembly + SharedArrayBuffer. Zero server footprint |
 | ⚡ **Instant results** | Stream-copy where possible | Lossless operations finish in seconds, not minutes |
 | 🌑 **Dark mode** | Developer-grade aesthetic | Indigo accent on zinc/slate, designed for long sessions |
@@ -64,8 +64,13 @@ Eight focused tools powered by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpe
 
 ## 📄 PDF Tools
 
-124 tools across six categories — 116 of BentoPDF's 123 tool routes — all driven from one declarative registry
+122 tools across six categories — 116 of BentoPDF's 123 tool routes — all driven from one declarative registry
 (`src/lib/pdf/tools/`) — adding a tool means adding one module, not editing five files.
+
+The count is the catalogue (`TOOL_CATALOGUE`, exported as `PDF_TOOL_COUNT`), which lists one
+entry per job. The registry answers 124 ids: `redact` and `compare` are older spellings of
+`redact-pdf` and `compare-pdfs`, kept routable for bookmarks and shared links but folded out
+of the list, the dashboard, the ⌘K palette and every count.
 
 | Category | Tools |
 | --- | --- |
@@ -336,7 +341,7 @@ npm run build
 ```
 /                    Landing page (hero, category cards, Blur promo)
 /video               Video Tools dashboard (8 tools)
-/pdf                 PDF Tools dashboard (124 tools in 6 categories)
+/pdf                 PDF Tools dashboard (122 tools in 6 categories)
 /tool/:toolId        Unified ToolWorkspace — dispatches video vs PDF by category
 ```
 

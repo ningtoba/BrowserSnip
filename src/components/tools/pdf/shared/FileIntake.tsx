@@ -50,6 +50,106 @@ export function intakeCopy(accept?: string, multiple = false): IntakeCopy {
   };
 }
 
+/** Formats the button's noun does not name: an unlisted MIME is an alias the definition already spells out. */
+const MIME_FORMATS: Record<string, string> = {
+  'application/pdf': 'PDF',
+  'application/epub+zip': '.epub',
+  'application/json': '.json',
+  'application/manifest+json': '.json',
+  'application/rtf': '.rtf',
+  'application/xml': '.xml',
+  'application/zip': '.zip',
+  'image/svg+xml': '.svg',
+  'text/comma-separated-values': '.csv',
+  'text/csv': '.csv',
+  'text/html': '.html',
+  'text/markdown': '.md',
+  'text/plain': '.txt',
+  'text/tab-separated-values': '.tsv',
+  'text/xml': '.xml',
+};
+
+/** What a wildcard stands for, used only when the definition lists no extension. */
+const MIME_FAMILIES: Record<string, string> = {
+  '*/*': 'any file type',
+  'application/*': 'any application file',
+  'image/*': 'images',
+  'text/*': 'text files',
+};
+
+/** Spellings that name the same thing twice in one list. */
+const FORMAT_ALIASES: Record<string, string> = {
+  '.htm': '.html',
+  '.jpeg': '.jpg',
+  '.mdown': '.md',
+  '.pdf': 'PDF',
+  '.text': '.txt',
+  '.tif': '.tiff',
+};
+
+/**
+ * Every format this intake will take, as a person would read it.
+ *
+ * `accept` is what the browser's picker greys out, so it is also the honest
+ * answer to "what belongs here" — but it mixes extensions with MIME types and
+ * repeats itself (`.pdf,application/pdf`). This is the de-duplicated, readable
+ * form of it.
+ */
+export function intakeFormats(accept?: string): string[] {
+  const labels: string[] = [];
+  const families: string[] = [];
+  const add = (label: string) => {
+    if (label && !labels.includes(label)) labels.push(label);
+  };
+  for (const token of (accept ?? PDF_ACCEPT).split(',')) {
+    const item = token.trim().toLowerCase();
+    if (!item) continue;
+    if (item.startsWith('.')) add(FORMAT_ALIASES[item] ?? item);
+    else if (item.endsWith('/*') || item === '*/*') {
+      const family = MIME_FAMILIES[item];
+      if (family && !families.includes(family)) families.push(family);
+    } else if (MIME_FORMATS[item]) add(MIME_FORMATS[item]);
+  }
+  if (labels.length > 0) return labels;
+  if (families.length > 0) return families;
+  return ['PDF'];
+}
+
+/** How many formats the line can name before it counts the rest. */
+const FOOT_NOTE_FORMATS = 3;
+/** Characters the footnote has to live in — one line under the button, not a paragraph. */
+const FOOT_NOTE_BUDGET = 112;
+
+/**
+ * The one line that tells you what to pick before the picker opens.
+ *
+ * An intake with no options to show — which is every tool before a file exists,
+ * by design — otherwise says only its title, its promise and its button. A tool
+ * taking `.docx`, `.odt` and `.rtf` hid that behind a generic "Select file",
+ * and a tool with no fields at all had nothing else on the page. So the footnote
+ * names the accepted formats, says how many the tool takes, and adds the
+ * definition's first note while there is room for it.
+ */
+export function intakeFootNote(accept?: string, multiple = false, notes: string[] = []): string {
+  const formats = intakeFormats(accept);
+  if (formats.length === 0) return '';
+  const overflow = formats.length - FOOT_NOTE_FORMATS;
+  const list = `${formats.slice(0, FOOT_NOTE_FORMATS).join(', ')}${overflow > 0 ? ` +${overflow} more` : ''}`;
+  const head = multiple ? `Accepts ${list} files` : `Accepts ${list} — one file at a time`;
+  const note = notes.find((line) => line.trim() !== '')?.trim() ?? '';
+  const room = FOOT_NOTE_BUDGET - head.length - 3;
+  if (note.length < 24 || room < 24) return head;
+  return `${head} · ${clipTo(note, room)}`;
+}
+
+/** Cut a sentence at the last whole word that fits, so the line never breaks mid-word. */
+function clipTo(text: string, budget: number): string {
+  if (text.length <= budget) return text;
+  const window = text.slice(0, budget);
+  const cut = Math.max(window.lastIndexOf(' '), window.lastIndexOf(','), window.lastIndexOf(';'));
+  return `${cut > 24 ? window.slice(0, cut).replace(/[,;]$/, '') : window.trimEnd()}…`;
+}
+
 export interface IntakeControls {
   /** A file drag is over the tab right now. */
   dragging: boolean;
@@ -223,7 +323,7 @@ export function FileIntake({ title, promise, copy, controls, footNote }: FileInt
           onClick={controls.open}
           data-drop-target="true"
           aria-describedby="intake-drop-line"
-          className={`doodle-btn mt-8 flex min-h-[88px] w-full items-center justify-center gap-2 rounded-doodle-lg px-6 text-[17px] font-semibold transition-transform hover:-translate-y-0.5 sm:text-[19px] ${
+          className={`doodle-btn mx-auto mt-8 flex min-h-[88px] w-full max-w-[400px] items-center justify-center gap-2 rounded-doodle-lg px-6 text-[17px] font-semibold transition-transform hover:-translate-y-0.5 sm:text-[19px] ${
             controls.dragging ? 'ring-2 ring-accent/40' : ''
           } ${FOCUS_RING}`}
         >

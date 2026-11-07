@@ -19,10 +19,10 @@
  */
 import { Suspense, lazy, startTransition, useEffect } from 'react';
 import type { ComponentType } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { TOOLS } from '@/lib/constants';
-import { getPdfTool, mainViewFor, hasCustomMainView } from '@/lib/pdf/tools/registry';
+import { canonicalToolId, getPdfTool, mainViewFor, hasCustomMainView } from '@/lib/pdf/tools/registry';
 import { fadeUp, floatLoop, staggerParent } from '@/lib/motion';
 import { FileDropZone } from '@/components/ui/FileDropZone';
 import { VideoPreview } from '@/components/player/VideoPreview';
@@ -63,11 +63,16 @@ const VIDEO_COMPONENTS: Record<string, React.ComponentType> = {
 
 type PanelMap = Record<string, ComponentType>;
 
-/** PDF tools whose panel is bespoke rather than generated from a field list. */
+/**
+ * PDF tools whose panel is bespoke rather than generated from a field list.
+ *
+ * Keyed by PDF tool id and nothing else: the video tools have their own ids and
+ * their own components, and a key that happens to collide with one (there used to
+ * be a `crop` entry here) mounts a PDF control set inside the video page's sidebar.
+ */
 const PDF_PANELS: PanelMap = {
   'scan-to-pdf': lazyPanel(() => import('@/components/tools/pdf/scan/ScanTool').then(named('ScanTool'))),
   'pdf-crop': lazyPanel(() => import('@/components/tools/pdf/edit/CropTool').then(named('CropTool'))),
-  crop: lazyPanel(() => import('@/components/tools/pdf/edit/CropTool').then(named('CropTool'))),
   sign: lazyPanel(() => import('@/components/tools/pdf/security/SignTool').then(named('SignTool'))),
   redact: lazyPanel(() => import('@/components/tools/pdf/security/RedactTool').then(named('RedactTool'))),
   compare: lazyPanel(() => import('@/components/tools/pdf/security/CompareTool').then(named('CompareTool'))),
@@ -98,6 +103,15 @@ function named(name: string) {
 
 export function ToolWorkspace() {
   const { toolId } = useParams<{ toolId: string }>();
+  /**
+   * The tool this page is really about.
+   *
+   * An alias id (`#/tool/redact`) is a spelling, not a tool: it answers the URL of
+   * every bookmark and shared link that was written before the ids were settled,
+   * and then hands the page to the tool that owns the job. Resolving here rather
+   * than at each lookup keeps the pane, the session and the star on one id.
+   */
+  const routeId = toolId ? canonicalToolId(toolId) : undefined;
   const compact = useIsCompact();
   const file = useFileStore((s) => s.file);
   const files = useFileStore((s) => s.files);
@@ -116,27 +130,28 @@ export function ToolWorkspace() {
   const persistProcess = useProcessStore((s) => s.persistCurrent);
 
   useEffect(() => {
-    const id = (toolId as ToolId) ?? null;
+    const id = (routeId as ToolId) ?? null;
     setFileSession(id);
     setProcessSession(id);
     return () => {
       persistFile();
       persistProcess();
     };
-  }, [toolId, setFileSession, setProcessSession, persistFile, persistProcess]);
+  }, [routeId, setFileSession, setProcessSession, persistFile, persistProcess]);
 
-  const tool = TOOLS.find((t) => t.id === toolId);
-  const definition = getPdfTool(toolId);
+  const tool = TOOLS.find((t) => t.id === routeId);
+  const definition = getPdfTool(routeId);
   const isVideo = tool?.category === 'video';
   const isPDF = tool?.category !== undefined && tool?.category !== 'video';
   const isMultiFile = tool?.multiFile ?? false;
   const hasFiles = isMultiFile ? files.length > 0 : !!file;
   const isImageTool = definition?.inputKind === 'image';
   /** Tools whose pane takes typed input rather than a file at all. */
-  const isNoFileTool = toolId === 'html-to-pdf' && definition?.accept?.includes('html') === false;
-  const VideoComponent = toolId ? VIDEO_COMPONENTS[toolId] : null;
-  const PanelComponent = toolId ? PDF_PANELS[toolId] : null;
-  const MainComponent = toolId && hasCustomMainView(toolId) ? mainViewFor(toolId) : null;
+  const isNoFileTool = routeId === 'html-to-pdf' && definition?.accept?.includes('html') === false;
+  const VideoComponent = routeId ? VIDEO_COMPONENTS[routeId] : null;
+  /** PDF panels only, so a video page can never grow a second set of controls. */
+  const PanelComponent = routeId && !isVideo ? PDF_PANELS[routeId] : null;
+  const MainComponent = routeId && hasCustomMainView(routeId) ? mainViewFor(routeId) : null;
   /** The generated page owns its own states; nothing is laid around it. */
   const isSchemaTool = isPDF && Boolean(definition) && !MainComponent && !PanelComponent;
 
@@ -165,6 +180,12 @@ export function ToolWorkspace() {
       });
     },
   });
+
+  // An alias URL is valid; it just is not the page. `replace` so the canonical
+  // address is what lands in history, then the same render continues there.
+  if (routeId !== toolId) {
+    return <Navigate to={`/tool/${routeId}`} replace />;
+  }
 
   if (!tool) {
     return (

@@ -1,11 +1,8 @@
-import { TOOLS } from '@/lib/constants';
-import { PDF_TOOLS, PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
+import { PDF_TOOL_COUNT, TOOL_COUNT, VIDEO_TOOL_COUNT } from '@/lib/constants';
+import { PDF_CATEGORIES } from '@/lib/pdf/tools/registry';
 import { TOOL_JOBS } from '@/components/dashboard/toolJobs';
 
-const TOOL_COUNT = TOOLS.length;
-const PDF_TOOL_COUNT = PDF_TOOLS.length;
 const PDF_CATEGORY_COUNT = PDF_CATEGORIES.length;
-const VIDEO_TOOL_COUNT = TOOLS.filter((t) => t.category === 'video').length;
 
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';

@@ -115,7 +115,7 @@ export interface CompressInput {
 export async function compressPDF(
   input: CompressInput,
   options: CompressOptions = {},
-): Promise<{ bytes: Uint8Array; report: CompressReport }> {
+): Promise<{ bytes: Uint8Array; report: CompressReport; pages: number }> {
   const requested = options.preset ?? 'balanced';
   if (options.targetBytes) {
     return compressToTarget(input, options);
@@ -133,9 +133,16 @@ async function runCompression(
   options: CompressOptions,
   preset: CompressionPreset,
   settings: { quality: number; dpi: number; resample: boolean },
-): Promise<{ bytes: Uint8Array; report: CompressReport }> {
+): Promise<{ bytes: Uint8Array; report: CompressReport; pages: number }> {
   const source = toBytes(input.bytes);
   const doc = await openPDF(source, { password: input.password, ignoreEncryption: true });
+  /**
+   * Read here, while the document is open, because the caller only ever gets
+   * bytes back and the result screen asks how many pages came out (E20). It is
+   * the source's page count even when the rebuild is discarded below — the
+   * untouched original and the rebuild describe the same document.
+   */
+  const pages = doc.getPageCount();
   const notes: string[] = [];
 
   const images = await collectImages(doc);
@@ -202,17 +209,17 @@ async function runCompression(
       `The rebuild measured ${formatBytes(bytes.byteLength)} against the original ${formatBytes(source.byteLength)}, so ${grew ? 'it was larger' : 'it saved nothing'} and the original was returned unchanged.`,
     );
     report.after = source.byteLength;
-    return { bytes: source, report };
+    return { bytes: source, report, pages };
   }
-  return { bytes, report };
+  return { bytes, report, pages };
 }
 
 async function compressToTarget(
   input: CompressInput,
   options: CompressOptions,
-): Promise<{ bytes: Uint8Array; report: CompressReport }> {
+): Promise<{ bytes: Uint8Array; report: CompressReport; pages: number }> {
   const target = options.targetBytes ?? 0;
-  let best: { bytes: Uint8Array; report: CompressReport } | null = null;
+  let best: { bytes: Uint8Array; report: CompressReport; pages: number } | null = null;
   for (let i = 0; i < TARGET_LADDER.length; i++) {
     const preset = TARGET_LADDER[i];
     const attempt = await runCompression(input, options, preset, {

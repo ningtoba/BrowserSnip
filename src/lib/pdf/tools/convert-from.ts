@@ -1119,10 +1119,15 @@ export const convertFromTools: PdfToolDefinition[] = [
             progress: context.progress,
             signal: context.signal,
           });
+          // The raster path rebuilds the file page by page inside
+          // `core/measure`, so the count comes from the selection it was told to
+          // render: `wanted` is resolved here and re-resolved there from the same
+          // spec, which `pages-out.test.ts` pins by counting the produced file.
           return withWarnings(
             {
               kind: 'pdf',
               bytes,
+              pages: wanted.length,
               message: `Re-rendered ${wanted.length} page(s) at ${dpi} dpi. Text is now part of the image and can no longer be selected or searched.`,
             },
             inputNotices(input),
@@ -1142,6 +1147,7 @@ export const convertFromTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        pages: input.doc.getPageCount(),
         message: changed > 0
           ? `Converted ${changed} colour operation(s) to grey across ${indices.length} page(s). Text stays selectable.`
           : 'This document already had no colour operations to convert.',
