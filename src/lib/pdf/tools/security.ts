@@ -170,10 +170,17 @@ export const securityTools: PdfToolDefinition[] = [
         group: 'Password',
         placeholder: 'What a reader types to see the pages',
         when: (v) => v.mode !== 'owner',
-        // A required field the user can actually find: the message lands on the
-        // box it belongs to, which is the whole difference between three adjacent
+        // A required field the user can actually find: the message lands on the box
+        // it belongs to, which is the whole difference between three adjacent
         // password fields and one of them being clearly the one still needed.
-        required: true,
+        //
+        // The predicate restates the `when` above rather than saying `true`, and
+        // that is not decoration. A field that is required unconditionally can be
+        // hidden by `when` while still blocking the run - a gate with nothing
+        // behind it. Declaring the requirement with the same condition makes that
+        // state unreachable: whenever this field disappears, it stops being a
+        // requirement in the same breath.
+        required: (v) => v.mode !== 'owner',
         missing: 'Enter the password readers must type to open this PDF.',
         help: 'Anyone without it cannot read the document; the bytes are encrypted, so renaming or zipping does not get around it.',
       },
