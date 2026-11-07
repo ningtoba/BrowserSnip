@@ -794,17 +794,29 @@ async function paneRun(id: string, values: ToolValues, files: File[]): Promise<T
   } as never);
 }
 
-const asPdf = (result: ToolResult): {
+/**
+ * Narrow a pane's result to the PDF arm of `ToolResult`.
+ *
+ * Only `kind: 'pdf'` carries `bytes`, so this checks rather than casts: a pane
+ * that answered with a report or a file list is a wrong answer for these tests,
+ * and a cast would have hidden it behind `undefined`.
+ */
+function asPdf(result: ToolResult): {
   bytes: Uint8Array;
   message: string;
   warnings: string[];
   pages: number | undefined;
-} => result as unknown as {
-  bytes: Uint8Array;
-  message: string;
-  warnings: string[];
-  pages: number | undefined;
-};
+} {
+  if (result.kind !== 'pdf') {
+    throw new Error(`the pane returned kind "${result.kind}", not a PDF`);
+  }
+  return {
+    bytes: result.bytes,
+    message: result.message ?? '',
+    warnings: result.warnings ?? [],
+    pages: result.pages,
+  };
+}
 
 /* ── core/compress.ts ─────────────────────────────────────────────────────── */
 

@@ -8,13 +8,16 @@
  * than they need to be, and guarantees it never returns a file bigger than the
  * input — the property BentoPDF advertises for its own engine.
  *
- * Two paths that looked like this and were not: re-encoding wrote PNG bytes
+ * Three paths that looked like this and were not: re-encoding wrote PNG bytes
  * under a `/FlateDecode` filter (a PNG container is not a deflate stream of
- * samples, and PDF images have no alpha channel to put it in), and downsampling
- * used `putImageData`, which copies pixels without resampling — so a scan asked
- * for at 150 dpi came back as the top-left quarter of itself. Both live in
- * `recompressImage`, and `tests/pdf/optimize-bytes.test.ts` measures the bytes
- * they produce.
+ * samples, and PDF images have no alpha channel to put it in); downsampling used
+ * `putImageData`, which copies pixels without resampling — so a scan asked for at
+ * 150 dpi came back as the top-left quarter of itself; and `collectImages` asked
+ * whether an XObject `instanceof PDFDict`, which an image *stream* is not, so it
+ * found no image in any file and every "N image(s) re-encoded" claim this module
+ * prints was vacuous. The first two live in `recompressImage`; all three are
+ * measured in `tests/pdf/optimize-bytes.test.ts`, where the numbers come out of
+ * the bytes rather than out of the report.
  */
 import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray, PDFStream } from './doc';
 import type { PDFDocument } from './doc';
