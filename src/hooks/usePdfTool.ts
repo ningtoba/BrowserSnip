@@ -59,6 +59,13 @@ export interface UsePdfTool {
   /** Everything standing between the user and the primary action. */
   /** Page count per loaded file, once the pre-flight has read it. */
   pagesByFile: Record<string, number | null>;
+  /**
+   * Pages across every loaded file, or `null` while any of them is unread.
+   *
+   * A result that says "12 in" has to know it started with 12; guessing from the
+   * first file would misreport a merge (E6/E7).
+   */
+  pagesIn: number | null;
   blockers: string[];
   /**
    * Things worth saying that must not gate the button. A repeat of the same file
@@ -206,8 +213,7 @@ export function usePdfTool(
     return out;
   }, [checked, files, issues, tool]);
 
-  const advisories = useMemo(() => {
-    const out: string[] = [];
+  const advisories = useMemo(() => {    const out: string[] = [];
     if (!tool?.multiFile || files.length < 2) return out;
     const seen = new Map<string, { name: string; count: number }>();
     for (const candidate of files) {
@@ -225,6 +231,16 @@ export function usePdfTool(
   }, [files, tool]);
 
   const canRun = blockers.length === 0;
+  const pagesIn = useMemo(() => {
+    if (files.length === 0) return null;
+    let total = 0;
+    for (const file of files) {
+      const count = pagesByFile[`${file.name}:${file.size}`];
+      if (count == null) return null;
+      total += count;
+    }
+    return total > 0 ? total : null;
+  }, [files, pagesByFile]);
   const signature = useMemo(
     () => JSON.stringify({ id: tool?.id ?? null, files: files.map((f) => `${f.name}:${f.size}`), values: checked, password }),
     [checked, files, password, tool],
@@ -404,6 +420,7 @@ export function usePdfTool(
     phase,
     pageCount,
     pagesByFile,
+    pagesIn,
     notices,
     issues,
     blockers,

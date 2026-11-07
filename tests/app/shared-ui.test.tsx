@@ -956,18 +956,33 @@ describe('usePdfTool', () => {
 // ── the rail itself ─────────────────────────────────────────────────────────
 
 describe('PdfToolPanel', () => {
-  it('puts a one-line promise under the title and groups the fields', async () => {
+  it('promises the outcome first and groups the fields once a file exists', async () => {
+    // The page shape is drop-first: the intake carries the title and the one-line
+    // promise, and the option groups are held back until there is a file to set
+    // options for. (They were both in the rail at once, before.)
     render(<PdfToolPanel toolId="compress-thing" />);
     expect(await screen.findByText(/size before and after/)).toBeInTheDocument();
-    expect(screen.getByText('Quality')).toBeInTheDocument();
+    expect(screen.queryByText('Quality')).not.toBeInTheDocument();
+    expect(screen.queryByText('Marks')).not.toBeInTheDocument();
+
+    act(() => loadFile(pdfFile()));
+    expect(await screen.findByText('Quality')).toBeInTheDocument();
     expect(screen.getByText('Marks')).toBeInTheDocument();
   });
 
   it('labels the action with the tool verb and keeps it off until valid (E18)', async () => {
     render(<PdfToolPanel toolId="compress-thing" />);
+    // With nothing chosen there is no action to disable — only the drop zone.
+    expect(await screen.findByRole('button', { name: /^Select PDF file/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Compress' })).not.toBeInTheDocument();
+
+    act(() => loadFile(pdfFile()));
     const button = await screen.findByRole('button', { name: 'Compress' });
     expect(button).toBeDisabled();
-    expect(screen.getByText(/Add a PDF first/)).toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-describedby', 'tool-run-reason');
+    // The field says it beside the input and the button says it once, in the
+    // imperative; the reason line is the one the button points at.
+    expect(document.getElementById('tool-run-reason')?.textContent).toContain('Owner name is required.');
     expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument();
   });
 
@@ -994,6 +1009,8 @@ describe('PdfToolPanel', () => {
   });
 
   it('collapses the honesty notes until asked', async () => {
+    // Notes are part of the loaded page: an empty tool page is a drop zone.
+    act(() => loadFile(pdfFile()));
     render(<PdfToolPanel toolId="compress-thing" />);
     const toggle = await screen.findByRole('button', { name: /Honest notes/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

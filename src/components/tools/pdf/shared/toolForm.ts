@@ -187,6 +187,54 @@ export function promiseFor(tool: PanelTool): string {
   return PROMISE_BY_CATEGORY[tool.category] ?? 'Runs on this device; the result is ready to download.';
 }
 
+/**
+ * One line naming what the tool is currently set to do.
+ *
+ * The options panel is collapsible, and a collapsed panel that says nothing is a
+ * hidden state: the user cannot tell "still on the defaults" from "I changed
+ * three things". Values come back as the labels the picker offered rather than
+ * raw enum strings, and a password field is left out entirely.
+ */
+export function describeOptions(
+  fields: readonly ToolField[] = [],
+  values: ToolValues,
+): string {
+  const parts: string[] = [];
+  for (const field of fields) {
+    if (field.when && !field.when(values)) continue;
+    if (field.type === 'password') continue;
+    const text = describeValue(field, values[field.key] ?? field.default ?? null);
+    if (text) parts.push(`${field.label}: ${text}`);
+  }
+  return parts.join(' · ');
+}
+
+function describeValue(field: ToolField, value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'none';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (typeof value === 'number') return `${value}${field.unit ? ` ${field.unit}` : ''}`;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'none';
+    const first = value[0];
+    if (typeof first === 'string') {
+      const labels = value
+        .slice(0, 2)
+        .map((item) => field.options?.find((option) => String(option.value) === item)?.label ?? item);
+      return `${labels.join(', ')}${value.length > 2 ? ` +${value.length - 2}` : ''}`;
+    }
+    if (first && typeof first === 'object' && 'name' in first) return `${value.length} files`;
+    return String(value.length);
+  }
+  if (typeof value === 'object') {
+    const bag = value as Record<string, unknown>;
+    if ('name' in bag) return String(bag.name);
+    if ('width' in bag || 'height' in bag) return `${bag.width ?? 0}×${bag.height ?? 0}`;
+  }
+  const option = field.options?.find((candidate) => String(candidate.value) === String(value));
+  const text = String(option?.label ?? value);
+  return text.length > 40 ? `${text.slice(0, 39)}…` : text;
+}
+
 export interface RunStatusInput {
   phase: ToolPhase;
   /** What the tool calls this job, e.g. `"Merge PDFs"`. */

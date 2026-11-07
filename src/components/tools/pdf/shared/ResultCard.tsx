@@ -36,6 +36,11 @@ export interface ResultCardProps {
   onZip?: (items: ResultItem[]) => void;
   emptyTitle?: string;
   emptyBody?: string;
+  /**
+   * Full-page treatment: the success screen makes the download the biggest
+   * thing on the page, while a card inside an editor's rail stays compact.
+   */
+  hero?: boolean;
   className?: string;
 }
 
@@ -115,6 +120,7 @@ export function ResultCard({
   onZip,
   emptyTitle = 'Nothing produced yet',
   emptyBody = 'Set the options and run the tool — the result lands here.',
+  hero = false,
   className = '',
 }: ResultCardProps) {
   const [zipping, setZipping] = useState(false);
@@ -131,6 +137,14 @@ export function ResultCard({
   const multi = outputs.length > 1;
 
   const grab = (item: ResultItem) => (onDownload ? onDownload(item) : downloadBlob(item.blob, item.name));
+
+  /** Compact in a rail, dominant on the success screen. */
+  const primary = hero
+    ? 'doodle-btn w-auto flex-1 min-h-[56px] min-w-[220px] px-6 text-[15px]'
+    : 'doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px]';
+  const secondary = hero
+    ? 'doodle-btn doodle-btn-secondary w-auto min-h-[48px] px-5 text-[13px]'
+    : 'doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px]';
 
   const grabAll = () => {
     if (onDownloadAll) return onDownloadAll(outputs);
@@ -157,11 +171,16 @@ export function ResultCard({
 
   return (
     <section
-      className={`space-y-2 rounded-doodle-md border border-success/25 bg-success/5 p-3 ${className}`}
+      className={`space-y-2 rounded-doodle-md border border-success/25 bg-success/5 ${
+        hero ? 'p-5' : 'p-3'
+      } ${className}`}
       aria-label="Result"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate font-display text-[12px] font-semibold text-ink" title={outputs[0].name}>
+        <p
+          className={`truncate font-display font-semibold text-ink ${hero ? 'text-[16px]' : 'text-[12px]'}`}
+          title={outputs[0].name}
+        >
           {multi ? `${outputs.length} files` : outputs[0].name}
         </p>
         <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-success">
@@ -169,7 +188,7 @@ export function ResultCard({
         </span>
       </div>
 
-      <dl className="space-y-0.5 font-mono text-[10px] text-ink-soft">
+      <dl className={`space-y-0.5 font-mono text-ink-soft ${hero ? 'text-[12px]' : 'text-[10px]'}`}>
         {delta && (
           <div className="flex items-baseline justify-between gap-2">
             <dt className="uppercase tracking-[0.08em] text-ink-muted">Size</dt>
@@ -193,7 +212,9 @@ export function ResultCard({
         )}
       </dl>
 
-      {summary && <p className="text-[11px] leading-relaxed text-ink">{summary}</p>}
+      {summary && (
+        <p className={`leading-relaxed text-ink ${hero ? 'text-[13px]' : 'text-[11px]'}`}>{summary}</p>
+      )}
 
       {grew && (
         <p className="rounded-doodle border border-warn/25 bg-warn/5 px-2 py-1 text-[10px] leading-relaxed text-warn">
@@ -252,14 +273,14 @@ export function ResultCard({
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={`flex flex-wrap items-center gap-1.5 ${hero ? 'gap-2.5 pt-1' : ''}`}>
         {!multi && (
-          <button type="button" onClick={() => grab(outputs[0])} className={`doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px] ${FOCUS_RING}`}>
+          <button type="button" onClick={() => grab(outputs[0])} className={`${primary} ${FOCUS_RING}`}>
             Download
           </button>
         )}
         {multi && (
-          <button type="button" onClick={grabAll} className={`doodle-btn w-auto flex-1 px-3 py-1.5 text-[11px] ${FOCUS_RING}`}>
+          <button type="button" onClick={grabAll} className={`${primary} ${FOCUS_RING}`}>
             Download all
           </button>
         )}
@@ -268,17 +289,13 @@ export function ResultCard({
             type="button"
             onClick={() => void zip()}
             disabled={zipping}
-            className={`doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] disabled:opacity-50 ${FOCUS_RING}`}
+            className={`${secondary} disabled:opacity-50 ${FOCUS_RING}`}
           >
             {zipping ? 'Zipping…' : 'Download as zip'}
           </button>
         )}
         {grew && original && (
-          <button
-            type="button"
-            onClick={() => grab(original)}
-            className={`doodle-btn doodle-btn-secondary w-auto px-3 py-1.5 text-[11px] ${FOCUS_RING}`}
-          >
+          <button type="button" onClick={() => grab(original)} className={`${secondary} ${FOCUS_RING}`}>
             Keep original
           </button>
         )}

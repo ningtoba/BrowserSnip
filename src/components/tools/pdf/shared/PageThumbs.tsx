@@ -37,6 +37,72 @@ function cachePut(key: string, url: string): void {
   thumbCache.set(key, url);
 }
 
+export interface PageThumbnail {
+  /** Data URL once drawn; `null` while pending or unavailable. */
+  url: string | null;
+  /** The raster came back with nothing to show (no 2-D context, dead page). */
+  unavailable: boolean;
+}
+
+/**
+ * One page's raster, through the shared bounded cache.
+ *
+ * The page grid and the loaded-state file cards both need a single page image,
+ * and a second implementation would be a second cache holding a second 500
+ * JPEGs. `unavailable` is a state of its own: jsdom has no 2-D context, so a
+ * test (and a canvas-blocked browser) must be told the image is not coming
+ * rather than watch a spinner forever.
+ */
+export function usePageThumbnail(
+  session: PdfSession | null,
+  page: number,
+  maxSide: number,
+  /** Lets a virtualised strip count the tiles still in flight. */
+  onStatus?: (page: number, busy: boolean) => void,
+): PageThumbnail {
+  const key = session ? `${session.fingerprint || 'doc'}:${page}:${maxSide}` : null;
+  const [url, setUrl] = useState<string | null>(() => (key ? thumbCache.get(key) ?? null : null));
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    setUrl(key ? thumbCache.get(key) ?? null : null);
+    setUnavailable(false);
+  }, [key]);
+
+  useEffect(() => {
+    if (!session || !key || url) return;
+    let alive = true;
+    onStatus?.(page, true);
+    thumbnails(session, { pages: [page], maxSide })
+      .then((list) => {
+        if (!alive) return;
+        const next = list[0] ?? '';
+        if (next) {
+          cachePut(key, next);
+          setUrl(next);
+        } else {
+          setUnavailable(true);
+        }
+      })
+      .catch(() => {
+        if (alive) setUnavailable(true);
+      })
+      .finally(() => {
+        if (alive) onStatus?.(page, false);
+      });
+    return () => {
+      alive = false;
+      onStatus?.(page, false);
+    };
+    // `onStatus` is a stable callback in every caller and `key` already encodes
+    // the session, page and size, so listing them would restart the raster on
+    // every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, key, url, page, maxSide]);
+
+  return { url, unavailable };
+}
+
 export function PageThumbs({
   session,
   selected = [],
@@ -216,41 +282,10 @@ interface ThumbCellProps {
 }
 
 function ThumbCell({ session, page, maxSide, selected, onPick, onStatus }: ThumbCellProps) {
-  const key = `${session.fingerprint || 'doc'}:${page}:${maxSide}`;
-  const [url, setUrl] = useState<string | null>(() => thumbCache.get(key) ?? null);
-  // `noImage` is the state where the render came back with nothing to show — a
-  // headless test, or a browser that refused the 2-D context. The tile then says
-  // the image is unavailable instead of pretending it is still arriving.
-  const [noImage, setNoImage] = useState(false);
-
-  useEffect(() => {
-    if (url) return;
-    let alive = true;
-    onStatus(page, true);
-    thumbnails(session, { pages: [page], maxSide })
-      .then((list) => {
-        if (!alive) return;
-        const next = list[0] ?? '';
-        // An empty string means no 2-D context (headless test, canvas-blocked
-        // browser); the numbered placeholder is the honest fallback.
-        if (next) {
-          cachePut(key, next);
-          setUrl(next);
-        } else {
-          setNoImage(true);
-        }
-      })
-      .catch(() => {
-        if (alive) setNoImage(true);
-      })
-      .finally(() => {
-        if (alive) onStatus(page, false);
-      });
-    return () => {
-      alive = false;
-      onStatus(page, false);
-    };
-  }, [key, maxSide, onStatus, page, session, url]);
+  // `unavailable` is the state where the render came back with nothing to show
+  // — a headless test, or a browser that refused the 2-D context. The tile then
+  // says the image is unavailable instead of pretending it is still arriving.
+  const { url, unavailable: noImage } = usePageThumbnail(session, page, maxSide, onStatus);
 
   return (
     <button

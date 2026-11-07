@@ -662,13 +662,30 @@ describe('usePdfTool as the rail’s state machine', () => {
 // ── the rail itself ─────────────────────────────────────────────────────────
 
 describe('PdfToolPanel as the whole chrome', () => {
+  it('shows a drop zone and no action at all before a file exists', async () => {
+    // The rail used to print a disabled primary action plus a reason for a file
+    // the user had not chosen yet. The drop-first page offers one oversized button
+    // and keeps the fields, the action and the reason back until there is input.
+    render(h(PdfToolPanel, { toolId: 'rail-compress' }));
+    const pick = await screen.findByRole('button', { name: /^Select PDF file/ });
+    expect(pick).toHaveAttribute('data-drop-target', 'true');
+    expect(document.getElementById('tool-process-btn')).toBeNull();
+    expect(document.getElementById('tool-run-reason')).toBeNull();
+    expect(screen.queryByLabelText('Owner name')).toBeNull();
+    expect(screen.queryByLabelText('Resolution')).toBeNull();
+  });
+
   it('pairs the disabled action with exactly one reason and points at it', async () => {
+    // Two documents for a one-at-a-time tool, so more than one thing is left to
+    // fix: exactly one is printed, in the imperative, and the rest are counted.
+    loadFiles([await realPdf('one.pdf'), await realPdf('two.pdf')]);
     render(h(PdfToolPanel, { toolId: 'rail-compress' }));
     const button = await screen.findByRole('button', { name: 'Compress' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('aria-describedby', 'tool-run-reason');
     const reason = document.getElementById('tool-run-reason');
-    expect(reason?.textContent).toContain('Still needed: Add a PDF first.');
+    expect(reason?.textContent).toContain('Still needed: ');
+    expect(reason?.textContent).toMatch(/works on one file at a time/);
     // The rest are counted, not dumped: a wall of reasons is a wall of text.
     expect(reason?.textContent).toMatch(/more after that/);
     expect(reason?.textContent).not.toMatch(/Owner name is required/);
@@ -745,6 +762,10 @@ describe('PdfToolPanel as the whole chrome', () => {
   });
 
   it('keeps a tool that has not arrived honest without a wall of prose', async () => {
+    // An unknown id opens on the drop zone like every other page (see the intake
+    // test above); the honesty arrives with the reason line, once there is
+    // something to run on.
+    loadFiles([await realPdf()]);
     render(h(PdfToolPanel, { toolId: 'not-on-the-rack' }));
     const button = await screen.findByRole('button', { name: 'Run' });
     expect(button).toBeDisabled();
