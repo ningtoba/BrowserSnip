@@ -28,7 +28,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PDF_TOOLS, hasCustomMainView, searchTools } from '@/lib/pdf/tools/registry';
-import { describeOptions, promiseFor, verbFor } from '@/components/tools/pdf/shared/toolForm';
+import { describeOptions, promiseFor, quietSummary, verbFor } from '@/components/tools/pdf/shared/toolForm';
 import { defaultValues, type PdfToolDefinition } from '@/lib/pdf/tools/types';
 
 /** Words that name a button but not an action. "Run" told the user nothing. */
@@ -233,18 +233,14 @@ describe('the collapsing options bar', () => {
   /**
    * Tools whose collapsed summary is longer than the bar can show.
    *
-   * `describeOptions` prints every field, changed or not, so a 12-control panel
-   * summarises to 250 characters and the `truncate` class cuts it mid-word. The
-   * fix belongs to the bar (echo only what the user changed, cap at three entries
-   * with "+N more") and is requested in `docs/tasks/parity-request.md`; this list
-   * is the debt by id so a new long panel cannot join it unnoticed. It empties
-   * when that fix lands.
+   * `describeOptions` used to print every field, changed or not, so a 12-control
+   * panel summarised to 250 characters and the `truncate` class cut it mid-word —
+   * with the control that decides the output on the wrong side of the cut. The
+   * bar now echoes only what the user moved, caps at three entries and counts the
+   * rest, so this list is empty and the assertion below runs at full strength:
+   * a tool that puts an id in here has re-opened the defect, not inherited it.
    */
-  const LONG_SUMMARIES = [
-    'bates-numbering', 'change-permissions', 'digital-sign-pdf', 'edit-metadata',
-    'header-footer', 'html-to-pdf', 'markdown-to-pdf', 'n-up', 'page-numbers', 'pdf-compress',
-    'protect', 'sanitize-pdf', 'txt-to-pdf', 'watermark',
-  ];
+  const LONG_SUMMARIES: string[] = [];
 
   it('collapses to a summary the bar can actually show', () => {
     const loud = generated
@@ -254,15 +250,37 @@ describe('the collapsing options bar', () => {
     expect(loud).toEqual([]);
   });
 
-  it('does not leave a tool off the summary debt list that has earned a place', () => {
-    // The other half of the ratchet: when the bar is fixed, this list must be
-    // emptied rather than left to fossilise.
-    const stale = LONG_SUMMARIES.filter((id) => {
-      const tool = PDF_TOOLS.find((candidate) => candidate.id === id);
-      if (!tool) return true;
-      return describeOptions(tool.fields ?? [], defaultValues(tool.fields)).length <= 170;
-    });
-    expect(stale).toEqual([]);
+  it('stays inside the bar whatever the user sets', () => {
+    // The other half of the ratchet. The line is capped by how much it echoes,
+    // not by how short the defaults happen to be, so the worst case is a panel
+    // with every visible field moved — and that still has to fit.
+    const loud: string[] = [];
+    for (const tool of generated) {
+      const fields = visibleFields(tool);
+      if (fields.length === 0) continue;
+      const values = Object.fromEntries(fields.map((field) => [field.key, 'a moved value']));
+      const summary = describeOptions(fields, values, { whenQuiet: quietSummary(tool) });
+      const segments = summary.split(' · ');
+      if (segments.length > 4) loud.push(`${tool.id}: ${segments.length} things on one line`);
+      if (summary.length > 170) loud.push(`${tool.id} summarizes to ${summary.length} characters`);
+    }
+    expect(loud).toEqual([]);
+  });
+
+  it('says what the run will do instead of reciting the defaults', () => {
+    // Nothing moved is the state every page opens in, and the one the collapsed
+    // bar used to fill with values nobody chose. It must not name a single
+    // field's label there — the quiet line is about the outcome.
+    const reciting: string[] = [];
+    for (const tool of generated) {
+      const fields = visibleFields(tool);
+      if (fields.length < 2) continue;
+      const values = defaultValues(tool.fields);
+      const summary = describeOptions(fields, values, { whenQuiet: quietSummary(tool) });
+      const named = fields.filter((field) => field.type !== 'password' && summary.includes(field.label));
+      if (named.length === fields.length) reciting.push(`${tool.id}: "${summary}" recites all ${named.length}`);
+    }
+    expect(reciting).toEqual([]);
   });
 });
 

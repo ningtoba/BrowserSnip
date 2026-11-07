@@ -700,6 +700,19 @@ describe('ResultCard', () => {
     expect(screen.getByText('12')).toBeInTheDocument();
   });
 
+  it('keeps the end of a long output name reachable', () => {
+    const name = 'quarterly-report-2024-q3-final-draft-signed_repaired.pdf';
+    render(<ResultCard outputs={[item(name, 400)]} hero />);
+    // The name is the thing the user types into an email, and the part that
+    // identifies it is the end. `truncate` gave "…-…ding.pdf" on one line.
+    const line = document.querySelector('[data-output-name]') as HTMLElement;
+    expect(line).toHaveAttribute('title', name);
+    expect(line).toHaveAttribute('data-output-name', 'split');
+    expect(line.querySelector('span')).toHaveClass('line-clamp-2');
+    expect(line.querySelector('[data-output-tail]')?.textContent).toMatch(/_repaired\.pdf$/);
+    expect(line.textContent).toBe(name);
+  });
+
   it('names the engine, or admits it degraded', () => {
     const { rerender } = render(<ResultCard outputs={[item('a.pdf', 10)]} engine="ghostscript" />);
     expect(screen.getByText('Ghostscript')).toBeInTheDocument();

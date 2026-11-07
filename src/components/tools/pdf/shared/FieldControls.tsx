@@ -189,7 +189,7 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
           {!open && summary && (
             <p
               id={OPTIONS_PANEL_ID}
-              className="mb-1 min-w-0 flex-1 truncate font-mono text-[10px] text-ink-muted"
+              className="mb-1 min-w-0 flex-1 font-mono text-[10px] leading-relaxed text-ink-muted line-clamp-2"
               title={summary}
             >
               {summary}

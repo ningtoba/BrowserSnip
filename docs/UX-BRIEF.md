@@ -76,6 +76,11 @@ same code path and must inherit all of it.
 - `npx tsc -p tsconfig.json --noEmit` must stay **0 errors**.
 - Never run the full test suite (other workers are writing). Run only your own
   test files plus the ones named in your task.
+- **Screenshots are judged on `BASE=http://localhost:5223`** — start it with
+  `npx vite --port 5223 --strictPort`. References to `5199` in the earlier
+  passes' notes are stale; that port is held by another worker. Harness:
+  `node /tmp/shot2.mjs <toolId> <out.png> <light|dark> [file.pdf]` at 1440×1150,
+  light **and** dark, always with a real PDF loaded.
 - Filter typecheck noise to your paths; errors from files you do not own belong
   to someone else mid-edit.
 - Every behaviour you add gets a test. jsdom has **no canvas**: assert on model,

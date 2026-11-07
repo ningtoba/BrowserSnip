@@ -8,16 +8,21 @@
  * tests pin that order, because it is the part a first impression judges:
  *
  * - the empty page is one centred title, one promise and one oversized button —
- *   no fields, no action, no preview, no rail;
+ *   no fields, no action, no preview, no rail — plus one line naming the formats
+ *   the picker will take, so a tool that wants a `.docx` never just says "Select
+ *   file";
  * - the promise is said once, beside the action: the page header keeps the
  *   breadcrumb, the name and the star, and the intake owns the sentence;
  * - the intake is anchored high instead of floating in the middle of a tall
- *   window, and scrolls rather than colliding on a short one;
+ *   window, its button is capped rather than edge-to-edge, and it scrolls rather
+ *   than colliding on a short one;
  * - a drop anywhere on the tab is accepted, including outside the button;
- * - the loaded page is horizontal file cards (name, size, page count, remove,
- *   reorder, add more) with a compact options bar — one field, the rest behind a
- *   disclosure that counts them and flags what needs attention — and the verb at
- *   its right edge;
+ * - the loaded page is horizontal file cards (name over two lines with the
+ *   extension kept reachable, size, page count, remove, reorder, add more) with a
+ *   compact options bar — one field, only what the user moved echoed beside it,
+ *   the rest behind a disclosure that counts them and flags what needs attention
+ *   — and the verb at its right edge, sitting under the queue rather than
+ *   floating at the bottom of a page that does not scroll;
  * - a run is centred progress that names the file and can be cancelled;
  * - the result is a screen of its own — checkmark, output name, size before →
  *   after, pages in → out, warnings, a dominant download, and two quiet ways
@@ -26,8 +31,8 @@
  * - a failure prints its reason once, names the file, and offers Retry.
  *
  * jsdom has no canvas and no layout, so sizing is asserted through the classes
- * that ask for it (`min-h-[88px]`) and images through the `data-*` state markers,
- * never through pixels.
+ * that ask for it (`min-h-[88px]`, `max-w-[400px]`, `line-clamp-2`) and images
+ * through the `data-*` state markers, never through pixels.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -37,8 +42,8 @@ import { useProcessStore } from '@/stores/process-store';
 import { PdfToolPanel } from '@/components/tools/pdf/shared/PdfToolPanel';
 import { ToolWorkspace } from '@/components/layout/ToolWorkspace';
 import { ToolPageHeader } from '@/components/layout/AppLayout';
-import { describeOptions, leadField, verbFor } from '@/components/tools/pdf/shared/toolForm';
-import { intakeCopy } from '@/components/tools/pdf/shared/FileIntake';
+import { describeOptions, leadField, quietSummary, splitFileName, verbFor } from '@/components/tools/pdf/shared/toolForm';
+import { intakeCopy, intakeFootNote, intakeFormats } from '@/components/tools/pdf/shared/FileIntake';
 import { surfaceState } from '@/components/tools/pdf/shared/ToolSurface';
 import type { PdfToolDefinition, ToolField } from '@/lib/pdf/tools/types';
 
@@ -345,10 +350,16 @@ describe('the empty page', () => {
     expect(surface()).toHaveAttribute('data-surface', 'intake');
 
     const pick = await screen.findByRole('button', { name: /^Select PDF file/ });
-    // The button is the drop zone, and it is the size of a primary action.
+    // The button is the drop zone, and it is the size of a primary action — but a
+    // capped one: at 640 px the solid accent block read heavier than the page
+    // around it, and the width was never the point of the affordance.
     expect(pick).toHaveAttribute('data-drop-target', 'true');
     expect(pick).toHaveClass('min-h-[88px]');
+    expect(pick).toHaveClass('max-w-[400px]');
     expect(screen.getByText('or drop a PDF here')).toBeInTheDocument();
+    // One short line says what belongs in the picker before it opens.
+    expect(footNote()).toHaveTextContent('Accepts PDF · one file at a time');
+    expect(footNote()).toHaveTextContent('Recompression is lossy');
     expect(screen.getByRole('heading', { level: 1, name: 'Compress Shell' })).toBeInTheDocument();
     expect(screen.getByText(/size before and after/)).toBeInTheDocument();
 
@@ -361,6 +372,11 @@ describe('the empty page', () => {
     expect(document.querySelector('[role="progressbar"]')).toBeNull();
     expect(document.querySelector('[data-options-panel]')).toBeNull();
   });
+
+  /** The intake's one format line: the paragraph after "or drop … here". */
+  function footNote(): HTMLElement {
+    return screen.getByText('or drop a PDF here').nextElementSibling as HTMLElement;
+  }
 
   it('sits high on the page instead of floating in the middle', async () => {
     render(<PdfToolPanel toolId="shell-compress" />);
@@ -390,6 +406,41 @@ describe('the empty page', () => {
       many: 'images',
     });
     expect(intakeCopy('.docx', false).pick).toBe('Select file');
+  });
+
+  it('says which formats belong in the picker, and how many files', () => {
+    // `accept` is what the browser greys out, so it is the only honest answer to
+    // "what goes here" — and a convert-from tool whose button says "Select file"
+    // while the page never names `.docx` sends people to the wrong file type.
+    expect(intakeFormats(undefined)).toEqual(['PDF']);
+    expect(intakeFormats('.pdf,application/pdf')).toEqual(['PDF']);
+    expect(intakeFormats('.docx,.doc,.odt,.rtf')).toEqual(['.docx', '.doc', '.odt', '.rtf']);
+    // Aliases of one format are named once.
+    expect(intakeFormats('.jpg,.jpeg,image/jpeg')).toEqual(['.jpg']);
+    // A wildcard is only printed when nothing more specific is on the list.
+    expect(intakeFormats('.jpg,.png,image/*')).toEqual(['.jpg', '.png']);
+    expect(intakeFormats('image/*')).toEqual(['images']);
+
+    expect(intakeFootNote(undefined, false)).toBe('Accepts PDF · one file at a time');
+    expect(intakeFootNote(undefined, true)).toBe('Accepts PDF · any number of files');
+    expect(intakeFootNote('.docx,.doc,.odt,.rtf', false)).toBe(
+      'Accepts .docx, .doc, .odt, .rtf · one file at a time',
+    );
+    // Past four formats the line counts the rest rather than running over.
+    expect(intakeFootNote('.jpg,.jpeg,.png,.webp,.heic,.heif,image/*', true)).toBe(
+      'Accepts .jpg, .png, .webp, .heic +1 more · any number of files',
+    );
+    // The definition's first note joins the line while it fits, and is cut at a
+    // word rather than left to wrap the intake into a paragraph.
+    expect(intakeFootNote(undefined, false, ['Text stays selectable in the output.'])).toBe(
+      'Accepts PDF · one file at a time · Text stays selectable in the output.',
+    );
+    const long = intakeFootNote('.docx,.doc,.odt,.rtf', false, [
+      'Text is drawn as real, selectable PDF text through the font layer, so the result opens in Word and in a viewer alike.',
+    ]);
+    expect(long.length).toBeLessThanOrEqual(112);
+    expect(long).toMatch(/…$/);
+    expect(long).not.toMatch(/through$/);
   });
 
   it('accepts a drop released anywhere on the tab', async () => {
@@ -448,6 +499,30 @@ describe('the loaded page', () => {
     expect(screen.getByRole('button', { name: 'Remove shell.pdf' })).toBeInTheDocument();
     // One document: nothing to reorder, so no position controls.
     expect(screen.queryByLabelText('Move shell.pdf later')).toBeNull();
+    // A name short enough for one line is printed whole, and the full string is
+    // still on the element for the hover.
+    const name = card.closest('p') as HTMLElement;
+    expect(name).toHaveAttribute('title', 'shell.pdf');
+    expect(name).toHaveAttribute('data-file-name', 'whole');
+    expect(name.querySelector('span')).toHaveClass('line-clamp-2');
+    expect(name.querySelector('[data-file-tail]')).toBeNull();
+  });
+
+  it('keeps the end of a long file name reachable', async () => {
+    const long = 'quarterly-report-2024-q3-final-draft-signed.pdf';
+    loadFiles([await realPdf(long)]);
+    render(<PdfToolPanel toolId="shell-compress" />);
+
+    const head = await screen.findByText(/^quarterly-report-2024/);
+    const line = head.closest('p') as HTMLElement;
+    // One truncated line hid the half of the name that tells files apart. The
+    // head may now take two lines and the tail — extension and trailing digits —
+    // gets a line of its own, so nothing is cut out of the middle.
+    expect(head).toHaveClass('line-clamp-2', 'break-words');
+    expect(line).toHaveAttribute('data-file-name', 'split');
+    expect(line).toHaveAttribute('title', long);
+    expect(line.querySelector('[data-file-tail]')?.textContent).toMatch(/\.pdf$/);
+    expect(`${head.textContent}${line.querySelector('[data-file-tail]')?.textContent}`).toBe(long);
   });
 
   it('keeps the bar to one row and folds the rest behind a count', async () => {
@@ -468,8 +543,21 @@ describe('the loaded page', () => {
     const disclosure = within(bar).getByRole('button', { name: /1 more option/ });
     expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     expect(disclosure).toHaveAttribute('aria-controls', 'tool-options');
-    // A collapsed panel still names what is set behind it.
-    expect(document.getElementById('tool-options')?.textContent).toContain('Resolution: 150 dpi');
+    // A collapsed panel with nothing of the user's to report says what the run
+    // will do. Printing every default instead hid the one control that decides
+    // the output behind a truncation point, and read as a list nobody chose.
+    expect(summaryText()).toBe('Nothing changed yet · Shrink the file');
+    expect(summaryText()).not.toContain('Resolution: 150 dpi');
+    // Two lines of echo rather than one clipped mid-word: what the row says has
+    // to be readable at the bar's width, not only in the hover title.
+    const line = document.getElementById('tool-options');
+    expect(line).toHaveClass('line-clamp-2');
+    expect(line).not.toHaveClass('truncate');
+    // Typing into the field the row already shows as a control is a change, so
+    // the line may not keep claiming the panel is on its defaults — and it does
+    // not echo what is on screen beside it either, so it goes quiet.
+    fireEvent.change(screen.getByLabelText('Owner name'), { target: { value: 'ACME' } });
+    expect(summaryText()).toBe('');
     // The honesty panel is part of the loaded page too.
     expect(within(bar).getByRole('button', { name: /Honest notes/ })).toBeInTheDocument();
 
@@ -478,6 +566,29 @@ describe('the loaded page', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /Fewer options/ }));
     expect(screen.queryByLabelText('Resolution')).toBeNull();
   });
+
+  it('echoes the option the user moved behind the fold', async () => {
+    loadFiles([await realPdf()]);
+    render(<PdfToolPanel toolId="shell-compress" />);
+    await screen.findByLabelText('Owner name');
+
+    fireEvent.click(screen.getByRole('button', { name: /1 more option/ }));
+    fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: '96' } });
+    fireEvent.click(screen.getByRole('button', { name: /Fewer options/ }));
+    expect(summaryText()).toBe('Resolution: 96 dpi');
+
+    // Moving it back to where it started is still the user's decision: the row
+    // tracks what a hand touched, not only what differs from a default.
+    fireEvent.click(screen.getByRole('button', { name: /1 more option/ }));
+    fireEvent.change(screen.getByLabelText('Resolution'), { target: { value: '150' } });
+    fireEvent.click(screen.getByRole('button', { name: /Fewer options/ }));
+    expect(summaryText()).toBe('Resolution: 150 dpi');
+  });
+
+  /** The collapsed row's echo line, or nothing when the row has no news. */
+  function summaryText(): string {
+    return document.getElementById('tool-options')?.textContent ?? '';
+  }
 
   it('opens the folded options from the keyboard and takes focus back on collapse', async () => {
     loadFiles([await realPdf()]);
@@ -538,7 +649,7 @@ describe('the loaded page', () => {
     expect(document.querySelector('[data-options-panel]')).toHaveAttribute('data-options-panel', 'closed');
   });
 
-  it('pins the verb to the right of the bar', async () => {
+  it('puts the verb under the queue, at the right edge of the bar', async () => {
     loadFiles([await realPdf()]);
     render(<PdfToolPanel toolId="shell-compress" />);
     const button = await screen.findByRole('button', { name: 'Compress' });
@@ -547,6 +658,16 @@ describe('the loaded page', () => {
     // The CTA is last in the bar, so it sits at the right edge.
     const actions = button.parentElement?.querySelectorAll('button') ?? [];
     expect(actions[actions.length - 1]).toBe(button);
+
+    // And the bar is the last thing inside the scroll region, not a second child
+    // of the page: pinned to the viewport it sat 401 px below one card at
+    // 1440x1000, on a page with nothing to scroll. In flow it lands under the
+    // files it acts on and the leftover space collects once, below it; `sticky`
+    // is what keeps the verb in reach when a tall page does scroll.
+    const bar = button.closest('[data-run-bar]') as HTMLElement;
+    expect(bar).toHaveClass('sticky', 'bottom-0');
+    expect(bar.parentElement).toHaveClass('overflow-y-auto');
+    expect(bar.parentElement?.parentElement).toHaveAttribute('data-surface', 'ready');
   });
 
   it('reorders by drag and by key for a multi-file tool', async () => {
@@ -659,6 +780,26 @@ describe('the run', () => {
     // Two quiet ways onward, and the drop zone is gone: nobody wonders if it worked.
     expect(within(pane).getByRole('button', { name: 'Do another' })).toBeInTheDocument();
     expect(within(pane).getByRole('link', { name: 'Back to all tools' })).toHaveAttribute('href', '#/pdf');
+  });
+
+  it('prints the whole output name on the success screen', async () => {
+    const input = await realPdf('quarterly-report-2024-q3-final-draft-signed.pdf');
+    loadFiles([input]);
+    render(<PdfToolPanel toolId="shell-repair" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Repair' }));
+    await release();
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+
+    const card = await screen.findByRole('region', { name: 'Result' });
+    const line = card.querySelector('[data-output-name]') as HTMLElement;
+    const full = 'quarterly-report-2024-q3-final-draft-signed_repaired.pdf';
+    // The name the user is about to hand to someone else gets the same treatment
+    // as the card: two lines of head, the tail kept, the whole string on hover.
+    expect(line).toHaveAttribute('title', full);
+    expect(line).toHaveAttribute('data-output-name', 'split');
+    expect(line.textContent).toBe(full);
+    expect(line.querySelector('span')).toHaveClass('line-clamp-2');
+    expect(line.querySelector('[data-output-tail]')?.textContent).toMatch(/_repaired\.pdf$/);
   });
 
   it('prints what the run could not do beside the download', async () => {
@@ -871,18 +1012,66 @@ describe('ToolWorkspace', () => {
 // ── the vocabulary the page is built from ───────────────────────────────────
 
 describe('toolForm', () => {
-  it('names what is set when the options are collapsed', () => {
+  it('names what the user changed, and only that', () => {
+    const grey: ToolField = { key: 'on', label: 'Greyscale', type: 'toggle', default: false };
+    const untouched = { dpi: 150, owner: '', on: false };
+    // Nothing moved: no echo at all, because a list of defaults is not news.
+    expect(describeOptions([dpiField, ownerField, grey], untouched)).toBe('');
+    // What the row prints in its place is what the run will do.
     expect(
-      describeOptions([dpiField, ownerField, { key: 'on', label: 'Greyscale', type: 'toggle', default: false }], {
-        dpi: 150,
-        owner: '',
-        on: false,
+      describeOptions([dpiField, ownerField, grey], untouched, {
+        whenQuiet: quietSummary(STANDS['shell-compress']),
       }),
-    ).toBe('Resolution: 150 dpi · Owner name: none · Greyscale: off');
+    ).toBe('Nothing changed yet · Shrink the file');
+    // A value the tool actually holds comes back as the words the control used,
+    // with its unit, and a blank text field is still named.
+    expect(describeOptions([dpiField, ownerField, grey], { dpi: 96, owner: 'ACME', on: true })).toBe(
+      'Resolution: 96 dpi · Owner name: ACME · Greyscale: on',
+    );
+    // Three entries is the cap, and the rest are counted — the deciding control
+    // used to be the part that fell past the truncation point.
+    const ladder: ToolField[] = Array.from({ length: 6 }, (_, index) => ({
+      key: `n${index}`,
+      label: `Number ${index}`,
+      type: 'number',
+      default: 0,
+    }));
+    expect(describeOptions(ladder, Object.fromEntries(ladder.map((field, index) => [field.key, index + 1])))).toBe(
+      'Number 0: 1 · Number 1: 2 · Number 2: 3 · +3 more',
+    );
     // A password never echoes back.
     expect(
       describeOptions([{ key: 'password', label: 'Current password', type: 'password' }], { password: 'hunter2' }),
     ).toBe('');
+  });
+
+  it('keeps a choice made back to the default in the summary', () => {
+    // "Differs from the default" and "a hand moved it" are different questions,
+    // and the row answers the second: a preset deliberately re-chosen must not
+    // drop out of the line and leave the panel looking untouched.
+    expect(describeOptions([dpiField], { dpi: 150 })).toBe('');
+    expect(describeOptions([dpiField], { dpi: 150 }, { touched: new Set(['dpi']) })).toBe('Resolution: 150 dpi');
+    // The field the row already shows as a control is not echoed beside itself.
+    expect(
+      describeOptions([dpiField, ownerField], { dpi: 96, owner: 'ACME' }, { shown: ['dpi'] }),
+    ).toBe('Owner name: ACME');
+    // `leadField` reads the same set, so the visible control follows the choice.
+    expect(leadField([dpiField, ownerField], {}, { dpi: 150, owner: 'ACME' }, new Set(['dpi']))).toBe(dpiField);
+  });
+
+  it('splits a long file name so its end survives', () => {
+    // A card is 212 px wide, and the part that tells two files apart is the end
+    // of the name: the version digits and the extension.
+    expect(splitFileName('shell.pdf')).toEqual({ head: 'shell.pdf', tail: '' });
+    const parts = splitFileName('quarterly-report-2024-q3-final-draft-signed.pdf');
+    expect(`${parts.head}${parts.tail}`).toBe('quarterly-report-2024-q3-final-draft-signed.pdf');
+    expect(parts.head.length).toBeLessThanOrEqual(40);
+    // The cut lands after a separator, never inside a word.
+    expect(parts.tail).toBe('draft-signed.pdf');
+    // A stem with no separator to cut on keeps just its extension.
+    const flat = splitFileName('unbrokenverylongdocumentnamewithoutanybreaksatall.pdf');
+    expect(flat.tail).toBe('.pdf');
+    expect(flat.head).toBe('unbrokenverylongdocumentnamewithoutanybreaksatall');
   });
 
   it('keeps the verb a giant button wears in the imperative', () => {

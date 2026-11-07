@@ -313,21 +313,23 @@ export function splitFileName(name: string): { head: string; tail: string } {
   const dot = name.lastIndexOf('.');
   const extension = dot > 0 ? name.slice(dot) : '';
   const stem = dot > 0 ? name.slice(0, dot) : name;
-  // Split on separators, keeping them attached to the word before them, so the
-  // tail is a whole run of the name rather than an arbitrary slice.
-  const chunks = stem.split(/(?<=[\s._-])/);
-  let tail = extension;
-  for (let index = chunks.length - 1; index >= 0 && tail.length - extension.length < NAME_TAIL_BUDGET; index -= 1) {
-    tail = `${chunks[index]}${tail}`;
-  }
+  // Cut just before the last `NAME_TAIL_BUDGET` characters of the stem, then
+  // step forward to the next separator so neither line starts mid-word. A stem
+  // with no separator at all gets the extension alone — the head is clamped to
+  // two lines rather than being eaten from the front.
+  let cut = Math.max(0, stem.length - NAME_TAIL_BUDGET);
+  while (cut < stem.length && !NAME_SEPARATOR.test(stem[cut])) cut += 1;
+  const tail = cut < stem.length ? `${stem.slice(cut + 1)}${extension}` : extension;
   const head = name.slice(0, name.length - tail.length);
   return head ? { head, tail } : { head: name, tail: '' };
 }
 
-/** Characters two clamped lines of card text can carry before the tail takes over. */
+/** Characters of a name two clamped card lines can carry before the tail takes over. */
 const NAME_HEAD_BUDGET = 40;
 /** Characters of stem, beyond the extension, kept reachable on the tail line. */
 const NAME_TAIL_BUDGET = 16;
+/** Where a file name may be broken without cutting a word. */
+const NAME_SEPARATOR = /[\s._-]/;
 
 function describeValue(field: ToolField, value: unknown): string {
   if (value === null || value === undefined || value === '') return 'none';

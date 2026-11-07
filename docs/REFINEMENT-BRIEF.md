@@ -45,6 +45,11 @@ preview and thumbnails.
   Never edit another worker's test file.
 - Tests run with `npx vitest run <your file>`; do not run the whole suite (slow,
   and other workers are writing).
+- **Screenshots are judged on `BASE=http://localhost:5223`** — start it with
+  `npx vite --port 5223 --strictPort`. The `5199` in the older passes' notes is
+  stale: another worker holds it. Harness:
+  `node /tmp/shot2.mjs <toolId> <out.png> <light|dark> [file.pdf]` at 1440×1150,
+  light **and** dark, with a real PDF loaded — an empty page proves nothing.
 - pdf-lib is the `@maxwbh/pdf-lib` fork. `embedFont`/`save`/`decodePDFRawStream`
   are **async**; `registerFontkit` before custom fonts; no
   `insertOutlineEntry`/`getOutline`/`insertBlankPage` — use

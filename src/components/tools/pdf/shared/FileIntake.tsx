@@ -335,7 +335,9 @@ export function FileIntake({ title, promise, copy, controls, footNote }: FileInt
         <p id="intake-drop-line" className="mt-3 text-[12px] text-ink-muted">
           {copy.drop}
         </p>
-        {footNote && <p className="mt-1 text-[11px] text-ink-muted/80">{footNote}</p>}
+        {footNote && (
+          <p className="mx-auto mt-1 max-w-[640px] text-[11px] leading-relaxed text-ink-muted">{footNote}</p>
+        )}
       </div>
     </div>
   );
