@@ -499,6 +499,55 @@ describe('compare reports differences as areas', () => {
     );
     expect(text).toMatch(/will still be written, with no marks on it/);
   });
+
+  it('names a changed area by its own edges, not by the grid that grouped it', async () => {
+    const { diffAreasOf } = await import('@/components/tools/pdf/security/CompareMain');
+    // A 30×10 block starting at 5,7: joined on a 16 px grid, but bounded exactly.
+    const block = new Uint8Array(400 * 400);
+    for (let y = 7; y < 17; y++) for (let x = 5; x < 35; x++) block[y * 400 + x] = 1;
+    expect(diffAreasOf(block, 400, 400)).toEqual([{ x0: 5, y0: 7, x1: 35, y1: 17 }]);
+    // Two blocks sharing a row are two areas: the per-row `break` this function
+    // replaced saw only the left one, and reported one.
+    const pair = new Uint8Array(400 * 400);
+    for (let y = 40; y < 50; y++) {
+      for (let x = 10; x < 30; x++) pair[y * 400 + x] = 1;
+      for (let x = 200; x < 220; x++) pair[y * 400 + x] = 1;
+    }
+    expect(diffAreasOf(pair, 400, 400).map((a) => [a.x0, a.x1])).toEqual([[10, 30], [200, 220]]);
+  });
+
+  it('keeps both sheets mounted while the pair loads, so a verdict needs pixels', async () => {
+    const main = await import('node:fs').then((fs) =>
+      fs.readFileSync('src/components/tools/pdf/security/CompareMain.tsx', 'utf8'),
+    );
+    // The loading state is an overlay inside the scroller. When it *replaced* the
+    // sheets, the first comparison reached for a canvas that was not in the DOM,
+    // threw inside a `catch {}`, and published 0 changed pixels as an all-clear.
+    expect(main).toMatch(/data-compare-loading/);
+    expect(main).not.toMatch(/^\s*if \(loading\) \{$/m);
+    // And "nothing has been compared" is now a third answer, not a synonym for
+    // "the two pages are equal".
+    expect(main).toMatch(/Neither page has been read yet/);
+    expect(main).toMatch(/data-compare-read=\{st\.compared\}/);
+  });
+
+  it('promises only what the shipped compare page demonstrably does', () => {
+    const entry = getPdfTool('compare-pdfs');
+    const legacy = getPdfTool('compare');
+    // The old promise sold "a page-by-page report … with a picture of each changed
+    // area when you compare pixels". The route mounts the pane and this entry's own
+    // panel — no rail form, so no Pixels / Text segment to set — and the `run` that
+    // would write that report collects each overlay into `images` and returns
+    // without them. Both halves are pinned in `tests/pdf/compare-diff.test.ts`.
+    expect(`${entry?.promise} ${entry?.description}`).not.toMatch(/picture of each changed area/i);
+    expect(entry?.promise).toMatch(/side by side/i);
+    expect(entry?.promise).toMatch(/points/i);
+    expect((entry?.notes ?? []).join(' ')).toMatch(/the page in view/i);
+    expect((entry?.notes ?? []).join(' ')).toMatch(/every page both files have/i);
+    // "Highlight every difference" is contradicted by the tool's own threshold.
+    expect(legacy?.description).not.toMatch(/every difference/i);
+    expect(legacy?.description).toMatch(/sensitivity/i);
+  });
 });
 
 /* ══ 6. crop: keyboard parity, clamps, and a refusal to keep nothing ═══════ */
