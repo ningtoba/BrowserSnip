@@ -1141,7 +1141,7 @@ export const convertFromTools: PdfToolDefinition[] = [
   {
     id: 'pdf-to-greyscale',
     name: 'PDF to Greyscale',
-    description: 'Convert every colour space in the document to black and white',
+    description: 'Convert the colour on the pages you choose to black and white',
     icon: '⚪',
     category: 'convert-from',
     keywords: ['black and white', 'monochrome', 'print cheaper', 'desaturate'],
@@ -1149,8 +1149,8 @@ export const convertFromTools: PdfToolDefinition[] = [
     promise: 'A black-and-white copy of the pages you choose, recoloured so the text stays selectable unless you ask for a re-render.',
     actionLabel: 'Convert to greyscale',
     notes: [
-      'Recolouring changes the colour operators only; a page whose grey already equals black, or whose colour lives inside an image, comes out unchanged and the result says how much was converted.',
-      'Re-render mode photographs the selected pages and writes only those into the result: their text becomes pixels and the pages you left out are not carried over.',
+      'Recolouring changes the colour operators only, and only on the pages you select: a page you left out keeps its colour. A page whose grey already equals black, or whose colour lives inside an image, comes out unchanged, and the result says how much was converted.',
+      'Re-render mode photographs the selected pages and writes only those into the result: their text becomes pixels, the pages you left out are not carried over, and a page kept as a picture at the resolution you chose costs far more than the page did as operators.',
     ],
     fields: [
       { key: 'mode', label: 'Method', type: 'segmented', default: 'vectors', group: 'Method', options: [
