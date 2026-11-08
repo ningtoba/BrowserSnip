@@ -137,6 +137,7 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
             height,
             unitsPerPixel: 1 / scale,
             pageNumber: n,
+            finished: Promise.resolve(),
             cancel: () => {},
           };
         },

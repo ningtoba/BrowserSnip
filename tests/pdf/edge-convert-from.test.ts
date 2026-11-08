@@ -79,6 +79,8 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           height: canvas.height,
           unitsPerPixel: 1 / scale,
           pageNumber: n,
+          // `paintPage` above is synchronous, so the fake is already painted.
+          finished: Promise.resolve(),
           cancel: () => proxy.cleanup(),
         };
       };

@@ -67,6 +67,12 @@ export interface PdfSession {
   page(n: number): Promise<PDFPageProxy>;
   /** Render `n` (1-based) into `canvas` at `scale`, honouring page /Rotate. */
   renderToCanvas(n: number, canvas: OffscreenCanvas | HTMLCanvasElement, scale?: number): Promise<{ width: number; height: number }>;
+  /**
+   * Start painting page `n` into a detached canvas. The returned `canvas` is
+   * empty until `PageRender.finished` resolves — pdf.js renders asynchronously
+   * and this call returns while it works, which is what makes `cancel()` able to
+   * abort a superseded page.
+   */
   renderPage(n: number, scale: number, opts?: RenderOptions): Promise<PageRender>;
   textContent(n: number): Promise<TextContent>;
   textItems(n: number): Promise<ExtractedTextItem[]>;
@@ -92,6 +98,24 @@ export interface PageRender {
   /** Points per device pixel — converts viewer coordinates into PDF user space. */
   unitsPerPixel: number;
   pageNumber: number;
+  /**
+   * Resolves when pdf.js has actually painted `canvas`.
+   *
+   * `renderPage` settles as soon as the task is *scheduled*, so a caller can
+   * still `cancel()` a render the user superseded; the pixels arrive after that.
+   * Reading `canvas` / `ctx` — or copying them anywhere — therefore has to await
+   * this promise first, or the copy takes an empty bitmap. It rejects when the
+   * task was cancelled, which is how a caller tells "nothing painted yet" from
+   * "nothing will ever paint".
+   */
+  finished: Promise<void>;
+  /**
+   * Aborts an in-flight paint — after it, nothing more is drawn into `canvas`,
+   * and `finished` rejects — and releases the page proxy. It is *not* an undo:
+   * pixels already copied into a caller's own canvas stay there, so a render
+   * superseded mid-flight can still be cancelled without blanking a page that
+   * was already shown.
+   */
   cancel(): void;
 }
 
@@ -193,9 +217,21 @@ export async function openRender(
       target.width = render.width;
       target.height = render.height;
       const ctx = target.getContext('2d');
-      if (!ctx) throw new Error('Could not get a 2D drawing context.');
-      ctx.drawImage(render.canvas, 0, 0);
-      render.cancel();
+      if (!ctx) {
+        render.cancel();
+        throw new Error('Could not get a 2D drawing context.');
+      }
+      try {
+        // The copy used to run straight after `page.render()` was scheduled, so
+        // it moved an empty bitmap and `cancel()` then killed the task that was
+        // about to fill it: a page that loaded blank while its text still
+        // extracted. Await the paint, and only then copy; a cancelled task
+        // rejects here, so a superseded render never paints late.
+        await render.finished;
+        ctx.drawImage(render.canvas, 0, 0);
+      } finally {
+        render.cancel();
+      }
       return { width: render.width, height: render.height };
     },
     async renderPage(n, scale = 1.5, renderOptions = {}) {
@@ -221,6 +257,12 @@ export async function openRender(
         ctx.filter = renderOptions.filter;
       }
       const task: RenderTask = page.render({ canvasContext: ctx, viewport });
+      // pdf.js paints asynchronously; this promise is the only evidence the
+      // bitmap holds anything. The extra `catch` marks the rejection as observed
+      // so a caller that never awaits `finished` does not log an unhandled
+      // rejection when its render is cancelled — awaiting still sees the error.
+      const finished = task.promise.then(() => undefined);
+      finished.catch(() => undefined);
       return {
         canvas,
         ctx,
@@ -228,6 +270,7 @@ export async function openRender(
         height: canvas.height,
         unitsPerPixel: 1 / scale,
         pageNumber: n,
+        finished,
         cancel() {
           try {
             task.cancel();
