@@ -1254,6 +1254,41 @@ describe('a mark wears one boundary at a time', () => {
     expect(document.querySelector('textarea')).toBeNull();
   });
 
+  /**
+   * The grips belong to Select, not to whoever is holding a pen.
+   *
+   * `[data-resize-hit]` and the rotate knob are 22 px targets sitting on the
+   * selection, and they took the press before the page did. So the second Line —
+   * started near the corner of the first, which is where a user who has just
+   * drawn a line puts the pointer — resized the first mark and painted nothing,
+   * with the tool still armed: the measurement that reads as “Line creates no
+   * mark”. The outline stays under a pen because it reports the selection; a grip
+   * that will not answer must not be painted, and must not be grabbable.
+   */
+  it('leaves the page to the tool in the hand', () => {
+    const mark = box();
+    for (const tool of ['line', 'arrow', 'highlight', 'ink', 'square', 'redact'] as EditorToolId[]) {
+      const view = renderOverlay({ annotations: [mark], selection: [mark.id], tool });
+      expect(document.querySelectorAll('[data-resize-hit]'), tool).toHaveLength(0);
+      expect(document.querySelectorAll('[data-resize-handle]'), tool).toHaveLength(0);
+      expect(document.querySelector('[data-rotate-handle]'), tool).toBeNull();
+      // Still visible as the selection, so Delete and the inspector are not a lie.
+      expect(document.querySelector('[data-selection-outline]'), tool).toBeTruthy();
+      view.unmount();
+    }
+    // A group under a pen loses the knob the same way and keeps its outlines.
+    const pair = [box(), box()];
+    const grouped = renderOverlay({ annotations: pair, selection: pair.map((m) => m.id), tool: 'line' });
+    expect(document.querySelector('[data-rotate-handle]')).toBeNull();
+    expect(document.querySelectorAll('[data-selection-outline]')).toHaveLength(2);
+    grouped.unmount();
+    // The arrow gets every grip back.
+    renderOverlay({ annotations: [mark], selection: [mark.id], tool: 'select' });
+    expect(document.querySelectorAll('[data-resize-hit]')).toHaveLength(RESIZE_HANDLES.length);
+    expect(document.querySelectorAll('[data-resize-handle]')).toHaveLength(RESIZE_HANDLES.length);
+    expect(document.querySelector('[data-rotate-handle]')).toBeTruthy();
+  });
+
   it('shows edit chrome only, on the mark the caret is inside', () => {
     const mark = box();
     renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });

@@ -272,7 +272,7 @@ export function AnnotationOverlay({
           />
         ) : null}
 
-        {handleMark
+        {handleMark && selectable
           ? RESIZE_HANDLES.map((handle) => {
               const corner = handleScreenPoints(handleMark.rect, carriedAngle(handleMark), geom)[handle];
               return (
@@ -315,9 +315,19 @@ export function AnnotationOverlay({
            The rotate handle hangs above whatever is selected — one mark above its
            own top edge, a group above the group's box — and drags freely; the
            editor snaps it to 15° unless Shift is held.
+
+           Handles and knob are Select's chrome, and only Select renders them. Both
+           hit targets are 22 px wide and sit on the selection, so while another
+           tool was in the hand they ate the press: a second Line starting near the
+           corner of the last one resized that mark instead of drawing, and what
+           the user saw was a tool that had just been armed making no mark at all.
+           A grabbed pen that paints nothing is worse than a handle that is not
+           there, and a handle that is not reachable must not look reachable — so
+           the outline stays (it says which mark is the selection) and the grips
+           come back with the arrow.
         */}
         {(() => {
-          if (chromeMarks.length === 0) return null;
+          if (chromeMarks.length === 0 || !selectable) return null;
           // A single mark turns with its own top edge, so its handle rides that
           // edge; a group's handle sits over the box that holds them all.
           const box = handleMark ? pdfToScreenRect(handleMark.rect, geom) : group;
