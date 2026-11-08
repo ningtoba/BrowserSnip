@@ -127,7 +127,12 @@ const held = vi.hoisted(() => {
 
 type ChannelFn = (r: number, g: number, b: number) => [number, number, number];
 
-const clamp255 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+/** Round and clamp one channel, the way a canvas writes it back. */
+function clamp255(v: number): number {
+  if (v < 0) return 0;
+  if (v > 255) return 255;
+  return Math.round(v);
+}
 const recLuma = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 /**
@@ -229,8 +234,8 @@ class StubContext {
   fillStyle = '#000000';
   globalAlpha = 1;
   globalCompositeOperation = 'source-over';
-  transform: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
-  private stack: { filter: string; fillStyle: string; globalAlpha: number; globalCompositeOperation: string; transform: StubContext['transform'] }[] = [];
+  ctm: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
+  private stack: { filter: string; fillStyle: string; globalAlpha: number; globalCompositeOperation: string; ctm: StubContext['ctm'] }[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {}
 
@@ -240,7 +245,7 @@ class StubContext {
       fillStyle: this.fillStyle,
       globalAlpha: this.globalAlpha,
       globalCompositeOperation: this.globalCompositeOperation,
-      transform: [...this.transform] as StubContext['transform'],
+      ctm: [...this.ctm] as StubContext['ctm'],
     });
   }
 
@@ -251,11 +256,17 @@ class StubContext {
     this.fillStyle = state.fillStyle;
     this.globalAlpha = state.globalAlpha;
     this.globalCompositeOperation = state.globalCompositeOperation;
-    this.transform = state.transform;
+    this.ctm = state.ctm;
   }
 
   setTransform(a: number, _b: number, _c: number, d: number, e: number, f: number): void {
-    this.transform = [a, 0, 0, d, e, f];
+    this.ctm = [a, 0, 0, d, e, f];
+  }
+
+  /** Only the scale-and-translate case, which is all pdf.js's viewport matrix is. */
+  transform(a: number, _b: number, _c: number, d: number, e: number, f: number): void {
+    const [ca, , , cd, ce, cf] = this.ctm;
+    this.ctm = [ca * a, 0, 0, cd * d, ca * e + ce, cd * f + cf];
   }
 
   getImageData(x: number, y: number, width: number, height: number): ImageData {
@@ -290,7 +301,7 @@ class StubContext {
   }
 
   fillRect(x: number, y: number, width: number, height: number): void {
-    const [a, , , d, tx, ty] = this.transform;
+    const [a, , , d, tx, ty] = this.ctm;
     const [r, g, b] = parseColour(this.fillStyle);
     const surface: Bitmap = { width: Math.round(width * a), height: Math.round(height * d), data: new Uint8ClampedArray(Math.round(width * a) * Math.round(height * d) * 4) };
     for (let i = 0; i + 3 < surface.data.length; i += 4) {
@@ -307,7 +318,7 @@ class StubContext {
   /** Copy 1:1, through this context's transform, filter, alpha and composite mode. */
   drawImage(source: HTMLCanvasElement, dx = 0, dy = 0): void {
     reading(source);
-    const [a, , , d, tx, ty] = this.transform;
+    const [a, , , d, tx, ty] = this.ctm;
     const src = surfaceOf(source);
     let bitmap: Bitmap = src;
     if (this.filter !== 'none') {
@@ -452,6 +463,11 @@ vi.mock('pdfjs-dist', () => {
           canvasContext.fillRect(0, 0, canvas.width, canvas.height);
           canvasContext.save();
           canvasContext.filter = 'none';
+          // …and `beginDrawing` then puts the viewport matrix on the context — pdf.js
+          // 4.10.38, build/pdf.mjs:7705 — where it stays. A caller that draws back into
+          // this canvas after the paint has to say what space it means, so the double has
+          // to leave the same thing behind or that part of the fix goes untested.
+          canvasContext.transform(1, 0, 0, -1, 0, canvas.height);
           let settle: () => void = () => {};
           let fail: (error: Error) => void = () => {};
           const promise = new Promise<void>((resolve, reject) => {
