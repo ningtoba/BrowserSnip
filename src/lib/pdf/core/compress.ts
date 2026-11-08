@@ -18,11 +18,21 @@
  * prints was vacuous. The first two live in `recompressImage`; all three are
  * measured in `tests/pdf/optimize-bytes.test.ts`, where the numbers come out of
  * the bytes rather than out of the report.
+ *
+ * Artwork inside a Form XObject is collected too: `collectImages` descends into
+ * `/Subtype /Form` entries (de-duplicated by reference, bounded by
+ * `MAX_FORM_DEPTH`) and `measurePlacements` carries each form's `/BBox` and
+ * `/Matrix` into the effective-size calculation, because that is the shape of an
+ * InDesign or Illustrator export and of every page the merge path borrows. An
+ * image under artwork whose placement could not be measured is re-encoded but
+ * never downsampled, and the report names it instead of claiming a resolution cap
+ * it did not apply.
  */
-import { PDFDict, PDFName, PDFRawStream, PDFRef, PDFArray, PDFStream } from './doc';
+import { PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFArray, PDFStream } from './doc';
 import type { PDFDocument } from './doc';
 import { openPDF, savePDF, toBytes } from './doc';
-import { pageContentOps } from './content';
+import { pageContentOps, parseContentStream, streamBytes } from './content';
+import type { ContentOp } from './content';
 import { canvasContext2d } from './raster';
 import { formatBytes } from '@/lib/utils/format';
 
@@ -54,6 +64,12 @@ export interface ImageCompressResult {
   savedBytes: number;
   /** Images that could not be decoded by this browser. */
   undecodable: number;
+  /**
+   * Images whose placement on the page could not be measured — artwork inside a
+   * Form XObject the walk could not follow, mostly. They are still re-encoded,
+   * but never downsampled, so the dpi cap in this report does not describe them.
+   */
+  unmeasured: number;
 }
 
 export interface CompressReport {
@@ -157,7 +173,12 @@ async function runCompression(
   const pages = doc.getPageCount();
   const notes: string[] = [];
 
-  const images = await collectImages(doc);
+  const found = await collectImages(doc);
+  const images = found.images;
+  // An image under artwork the placement walk could not follow has no honest
+  // box to measure against, so it is re-encoded but never downsampled: see
+  // `ImageRef.unmeasuredReason`.
+  const unmeasured = images.filter((image) => image.unmeasuredReason !== null);
   options.onProgress?.(0.05, `Found ${images.length} image${images.length === 1 ? '' : 's'}`);
   const result: ImageCompressResult = {
     total: images.length,
@@ -165,6 +186,7 @@ async function runCompression(
     skipped: 0,
     savedBytes: 0,
     undecodable: 0,
+    unmeasured: unmeasured.length,
   };
 
   // A browser with no 2D canvas cannot decode or re-encode a picture at all.
@@ -214,6 +236,15 @@ async function runCompression(
     notes.push(
       `${result.undecodable} image${result.undecodable === 1 ? '' : 's'} use a format this browser cannot decode, so they were left untouched.`,
     );
+  }
+  // Only say this when a dpi cap was actually in play: lossless mode downsamples
+  // nothing, so a "it kept its resolution" note there would report a decision
+  // that was never made.
+  if (settings.resample && unmeasured.length > 0) {
+    notes.push(unmeasuredNote(unmeasured));
+  }
+  if (found.unvisited.size > 0) {
+    notes.push(unvisitedNote(found.unvisited));
   }
   if (!settings.resample) {
     notes.push('Lossless mode: no image was resampled or re-encoded.');
@@ -282,56 +313,153 @@ async function compressToTarget(
 
 // ── image discovery ─────────────────────────────────────────────────────────
 
+/**
+ * How many levels of Form XObject the two walks below descend.
+ *
+ * The per-path `visiting` set is what stops a reference cycle spinning: a form
+ * can never appear twice on one path, so termination does not depend on this
+ * number. What the bound caps is *work* — a form drawn five times is walked five
+ * times, because each placement has to be measured to find the widest one — and
+ * it fixes "how deep do we look" at the same value `core/redact.ts` walks to, so
+ * a picture that redaction can reach is a picture compression can reach too.
+ */
+const MAX_FORM_DEPTH = 6;
+
 interface ImageRef {
   ref: PDFRef;
   dict: PDFDict;
+  /** Name its resource dictionary knows it by, so a note can name it back. */
+  name: string;
   /** Widest the image is ever displayed, in points — used for effective DPI. */
   displayWidth: number;
   displayHeight: number;
+  /**
+   * Why the placement could not be measured, or `null` when every placement of
+   * it was. An image under artwork the walk could not follow is re-encoded —
+   * replacing the stream cannot change how the page is laid out — but never
+   * downsampled: a box nobody measured is a box that could have been guessed too
+   * small, and resizing on that guess would change the page's appearance while
+   * the report claimed a resolution cap it had not applied.
+   */
+  unmeasuredReason: string | null;
+}
+
+interface Discovered {
+  images: ImageRef[];
+  /** Forms whose contents were never opened: resource name → what stopped it. */
+  unvisited: Map<string, string>;
 }
 
 /**
- * Walk every page's `/Resources /XObject` map. Images are de-duplicated by
- * reference so a logo used on 200 pages is re-encoded once.
+ * Every image in the document, page-level and nested, de-duplicated by reference
+ * so a logo used on 200 pages — or a form drawn five times — is re-encoded once.
  *
- * The display box comes from `displayedImageBoxes`, not from `/Width`: effective
- * resolution is pixels over the size on the page, and reading the pixel width
- * back out again made every image exactly 72 dpi — so "maximum image
- * resolution" never downsampled anything, and a 300 dpi scan stayed a 300 dpi
- * scan while the report said the dpi cap had been applied.
+ * Images are found by walking `/Resources /XObject` recursively: a picture inside
+ * a Form XObject is the normal shape of an InDesign or Illustrator export, and of
+ * every page brought in through the merge path. Their display boxes come from
+ * `measurePlacements`, not from `/Width`: effective resolution is pixels over the
+ * size on the page, and reading the pixel width back out again made every image
+ * exactly 72 dpi — so "maximum image resolution" never downsampled anything, and
+ * a 300 dpi scan stayed a 300 dpi scan while the report said the cap had run.
  */
-async function collectImages(doc: PDFDocument): Promise<ImageRef[]> {
-  const boxes = displayedImageBoxes(doc);
+async function collectImages(doc: PDFDocument): Promise<Discovered> {
+  const placements = measurePlacements(doc);
   const byRef = new Map<string, ImageRef>();
-  for (const page of doc.getPages()) {
-    const resources = readDict(page.node.Resources?.(), doc);
-    if (!resources) continue;
-    const xobjects = readDict(resources.get(PDFName.of('XObject')), doc);
-    if (!xobjects) continue;
-    for (const [, value] of xobjects.entries()) {
-      const ref = value instanceof PDFRef ? value : null;
-      if (!ref) continue;
-      const object = doc.context.lookup(ref);
-      // An image is a *stream*, and a stream's dictionary is reached through
-      // `.dict`: `instanceof PDFDict` is false for `PDFRawStream`/`PDFFlateStream`
-      // in this pdf-lib build, so testing for a dictionary here collected no
-      // image at all and every compress run reported "no images" over a scan.
-      const dict = object instanceof PDFStream ? object.dict : object;
-      if (!(dict instanceof PDFDict)) continue;
-      if (readName(dict, 'Subtype') !== 'Image') continue;
-      const key = `${ref.toString()}`;
-      const existing = byRef.get(key);
-      if (existing) continue;
-      const box = boxes.get(key);
-      byRef.set(key, {
+  const unvisited = new Map<string, string>();
+  doc.getPages().forEach((page, index) => {
+    const xobjects = xObjectsOf(doc, readDict(page.node.Resources?.(), doc));
+    if (!xobjects) return;
+    discoverImages(
+      doc,
+      xobjects,
+      placements,
+      byRef,
+      unvisited,
+      0,
+      new Set<string>(),
+      placements.unreadablePages.get(index) ?? null,
+    );
+  });
+  return { images: [...byRef.values()], unvisited };
+}
+
+function discoverImages(
+  doc: PDFDocument,
+  xobjects: PDFDict,
+  placements: Placements,
+  into: Map<string, ImageRef>,
+  unvisited: Map<string, string>,
+  depth: number,
+  visiting: Set<string>,
+  reason: string | null,
+): void {
+  for (const [key, value] of xobjects.entries()) {
+    const ref = value instanceof PDFRef ? value : null;
+    if (!ref) continue;
+    const name = String(key).replace(/^\//, '');
+    const object = doc.context.lookup(ref);
+    // An image is a *stream*, and a stream's dictionary is reached through
+    // `.dict`: `instanceof PDFDict` is false for `PDFRawStream`/`PDFFlateStream`
+    // in this pdf-lib build, so testing for a dictionary here collected no
+    // image at all and every compress run reported "no images" over a scan.
+    const dict = object instanceof PDFStream ? object.dict : object;
+    if (!(dict instanceof PDFDict)) continue;
+    const subtype = readName(dict, 'Subtype');
+    const refKey = ref.toString();
+    if (subtype === 'Image') {
+      if (into.has(refKey)) continue;
+      // A tainted path outranks a measured box: the measurement only covers the
+      // placements the walk could see, and the widest placement is the one that
+      // has to keep its pixels.
+      const box = reason === null ? placements.boxes.get(refKey) : undefined;
+      into.set(refKey, {
         ref,
         dict,
+        name,
         displayWidth: box?.width ?? 0,
         displayHeight: box?.height ?? 0,
+        unmeasuredReason: reason,
       });
+      continue;
     }
+    if (subtype !== 'Form') continue;
+    // A form reached through itself was already walked at the outer level and its
+    // images are in `into` by reference: this is the line that keeps
+    // `/A → /B → /A` from recursing forever.
+    if (visiting.has(refKey)) continue;
+    if (depth >= MAX_FORM_DEPTH) {
+      unvisited.set(name, `below ${MAX_FORM_DEPTH} levels of form nesting`);
+      continue;
+    }
+    const nested = xObjectsOf(doc, formResources(doc, dict) ?? dict);
+    if (!nested) continue;
+    visiting.add(refKey);
+    discoverImages(
+      doc,
+      nested,
+      placements,
+      into,
+      unvisited,
+      depth + 1,
+      visiting,
+      reason ?? placements.blocked.get(refKey) ?? null,
+    );
+    visiting.delete(refKey);
   }
-  return [...byRef.values()];
+}
+
+/** The `/XObject` map of a resource dictionary, if it has one. */
+function xObjectsOf(doc: PDFDocument, resources: PDFDict | null | undefined): PDFDict | null {
+  return resources ? readDict(resources.get(PDFName.of('XObject')), doc) : null;
+}
+
+/**
+ * A form's own resources. PDF requires `/Resources` on a form that uses names; a
+ * form that omits it and carries `/XObject` directly is readable in the wild, so
+ * the caller falls back to the form dictionary rather than skipping it.
+ */
+function formResources(doc: PDFDocument, dict: PDFDict): PDFDict | null {
+  return readDict(dict.get(PDFName.of('Resources')), doc);
 }
 
 type Matrix = [number, number, number, number, number, number];
@@ -349,66 +477,194 @@ function multiplyMatrix(a: Matrix, b: Matrix): Matrix {
   ];
 }
 
+interface Placements {
+  /** Widest box each image reference is ever painted into, in points. */
+  boxes: Map<string, { width: number; height: number }>;
+  /** Forms the walk could not follow: reference → the reason, as a clause. */
+  blocked: Map<string, string>;
+  /** Why one page's content could not be measured, by page index. */
+  unreadablePages: Map<number, string>;
+}
+
 /**
- * The box, in points, each image XObject is painted into, by reference string.
+ * The box each image XObject is painted into, at every depth, by reference string.
  *
  * A page draws an image as `[w 0 0 h x y] cm /Im1 Do` after any number of `q` /
- * `cm` / `Q` pairs, so the honest measure of "how big is this on the page" is
- * the unit square through the CTM that was current when `Do` ran. The widest
- * placement wins: an image used once at poster size and once as a thumbnail has
- * to keep enough pixels for the poster. Inline images (`BI … EI`) need no
- * lookup and are not in this map.
+ * `cm` / `Q` pairs, so the honest measure of "how big is this on the page" is the
+ * unit square through the CTM that was current when `Do` ran. A form is walked
+ * through its own content with that CTM extended the way a viewer extends it:
+ * shift the `/BBox` lower-left to the origin, apply the form's `/Matrix`, then
+ * the transform the form was drawn with. The widest placement wins — and because
+ * the walk goes through every matrix that reaches a shared form, a form used once
+ * as a stamp and once as a poster leaves enough pixels for the poster.
  *
- * Only page-level resources are walked, which is what `collectImages` encodes;
- * a picture buried in a Form XObject is neither found nor resized here.
+ * Inline images (`BI … EI`) need no lookup and are not in this map.
  */
-function displayedImageBoxes(doc: PDFDocument): Map<string, { width: number; height: number }> {
-  const boxes = new Map<string, { width: number; height: number }>();
-  for (const page of doc.getPages()) {
-    const resources = readDict(page.node.Resources?.(), doc);
-    const xobjects = readDict(resources?.get(PDFName.of('XObject')), doc);
-    if (!xobjects) continue;
-    const byName = new Map<string, string>();
-    for (const [key, value] of xobjects.entries()) {
-      if (!(value instanceof PDFRef)) continue;
-      byName.set(String(key).replace(/^\//, ''), value.toString());
-    }
-    let ops;
+function measurePlacements(doc: PDFDocument): Placements {
+  const state: Placements = { boxes: new Map(), blocked: new Map(), unreadablePages: new Map() };
+  /** Decoded form content, so a form drawn five times is decompressed once. */
+  const parsed = new Map<string, ContentOp[] | null>();
+  doc.getPages().forEach((page, index) => {
+    const xobjects = xObjectsOf(doc, readDict(page.node.Resources?.(), doc));
+    if (!xobjects) return;
+    let ops: ContentOp[];
     try {
       ops = pageContentOps(page);
     } catch {
-      // A content stream this parser cannot read simply reports no placement, and
-      // the image keeps its own resolution rather than being guessed smaller.
-      continue;
+      // Not "a page with no pictures on it": every image placed from this page
+      // keeps its resolution instead of being measured against a box nobody saw.
+      state.unreadablePages.set(
+        index,
+        `is placed on page ${index + 1}, whose content stream this parser could not read`,
+      );
+      return;
     }
-    let ctm = IDENTITY_MATRIX;
-    const stack: Matrix[] = [];
-    for (const op of ops) {
-      if (op.name === 'q') {
-        stack.push(ctm);
-      } else if (op.name === 'Q') {
-        ctm = stack.pop() ?? IDENTITY_MATRIX;
-      } else if (op.name === 'cm') {
-        const values = op.operands.filter((item) => item.kind === 'number').map((item) => (item as { value: number }).value);
-        if (values.length === 6) ctm = multiplyMatrix(values as Matrix, ctm);
-      } else if (op.name === 'Do') {
-        const name = op.operands.find((item) => item.kind === 'name') as { value?: string } | undefined;
-        const key = name?.value ? byName.get(name.value) : undefined;
-        if (!key) continue;
-        const corners = [
-          [ctm[4], ctm[5]],
-          [ctm[0] + ctm[4], ctm[1] + ctm[5]],
-          [ctm[2] + ctm[4], ctm[3] + ctm[5]],
-          [ctm[0] + ctm[2] + ctm[4], ctm[1] + ctm[3] + ctm[5]],
-        ];
-        const width = Math.abs(Math.max(...corners.map((c) => c[0])) - Math.min(...corners.map((c) => c[0])));
-        const height = Math.abs(Math.max(...corners.map((c) => c[1])) - Math.min(...corners.map((c) => c[1])));
-        const seen = boxes.get(key);
-        if (!seen || width * height > seen.width * seen.height) boxes.set(key, { width, height });
+    walkPlacements(state, doc, ops, xobjects, IDENTITY_MATRIX, 0, new Set<string>(), parsed);
+  });
+  return state;
+}
+
+function walkPlacements(
+  state: Placements,
+  doc: PDFDocument,
+  ops: ContentOp[],
+  xobjects: PDFDict | null,
+  start: Matrix,
+  depth: number,
+  visiting: Set<string>,
+  parsed: Map<string, ContentOp[] | null>,
+): void {
+  let ctm = start;
+  const stack: Matrix[] = [];
+  for (const op of ops) {
+    if (op.name === 'q') {
+      stack.push(ctm);
+    } else if (op.name === 'Q') {
+      ctm = stack.pop() ?? start;
+    } else if (op.name === 'cm') {
+      const values = op.operands.filter((item) => item.kind === 'number').map((item) => (item as { value: number }).value);
+      if (values.length === 6) ctm = multiplyMatrix(values as Matrix, ctm);
+    } else if (op.name === 'Do') {
+      const name = op.operands.find((item) => item.kind === 'name') as { value?: string } | undefined;
+      if (!name?.value) continue;
+      const entry = xobjects?.get(PDFName.of(name.value));
+      const ref = entry instanceof PDFRef ? entry : null;
+      if (!ref) continue;
+      const object = doc.context.lookup(ref);
+      const dict = object instanceof PDFStream ? object.dict : object;
+      if (!(dict instanceof PDFDict)) continue;
+      const subtype = readName(dict, 'Subtype');
+      const key = ref.toString();
+      if (subtype === 'Image') {
+        recordBox(state, key, ctm);
+        continue;
       }
+      if (subtype !== 'Form') continue;
+      const drawn = `/${name.value}`;
+      if (visiting.has(key)) {
+        // Drawn inside itself. The outer placement was measured and this one was
+        // not, so nothing under it can claim to know its widest size.
+        state.blocked.set(key, `the form ${drawn} is drawn inside itself, so not every placement of it was measured`);
+        continue;
+      }
+      if (depth >= MAX_FORM_DEPTH) {
+        state.blocked.set(key, `the form ${drawn} is below ${MAX_FORM_DEPTH} levels of form nesting`);
+        continue;
+      }
+      const formOps = formContentOps(object, parsed, key);
+      if (!formOps) {
+        state.blocked.set(key, `the content stream of the form ${drawn} could not be read`);
+        continue;
+      }
+      const bbox = readNumberArray(dict, 'BBox');
+      if (bbox.length !== 4 || bbox[2] <= bbox[0] || bbox[3] <= bbox[1]) {
+        state.blocked.set(key, `the form ${drawn} has no usable /BBox to map its own space through`);
+        continue;
+      }
+      const matrixValues = readNumberArray(dict, 'Matrix');
+      const matrix: Matrix = matrixValues.length === 6 ? (matrixValues as Matrix) : IDENTITY_MATRIX;
+      const base = multiplyMatrix(
+        multiplyMatrix([1, 0, 0, 1, -bbox[0], -bbox[1]], matrix),
+        ctm,
+      );
+      visiting.add(key);
+      walkPlacements(
+        state,
+        doc,
+        formOps,
+        xObjectsOf(doc, formResources(doc, dict) ?? dict),
+        base,
+        depth + 1,
+        visiting,
+        parsed,
+      );
+      visiting.delete(key);
     }
   }
-  return boxes;
+}
+
+/** Decoded operators of a form's content stream, or `null` when it cannot be read. */
+function formContentOps(object: unknown, parsed: Map<string, ContentOp[] | null>, key: string): ContentOp[] | null {
+  const cached = parsed.get(key);
+  if (cached !== undefined) return cached;
+  let ops: ContentOp[] | null = null;
+  if (object instanceof PDFStream) {
+    try {
+      ops = parseContentStream(streamBytes(object));
+    } catch {
+      ops = null;
+    }
+  }
+  parsed.set(key, ops);
+  return ops;
+}
+
+function recordBox(state: Placements, key: string, ctm: Matrix): void {
+  const corners = [
+    [ctm[4], ctm[5]],
+    [ctm[0] + ctm[4], ctm[1] + ctm[5]],
+    [ctm[2] + ctm[4], ctm[3] + ctm[5]],
+    [ctm[0] + ctm[2] + ctm[4], ctm[1] + ctm[3] + ctm[5]],
+  ];
+  const width = Math.abs(Math.max(...corners.map((c) => c[0])) - Math.min(...corners.map((c) => c[0])));
+  const height = Math.abs(Math.max(...corners.map((c) => c[1])) - Math.min(...corners.map((c) => c[1])));
+  const seen = state.boxes.get(key);
+  if (!seen || width * height > seen.width * seen.height) state.boxes.set(key, { width, height });
+}
+
+/** The numbers of a numeric array entry such as `/BBox` or `/Matrix`. */
+function readNumberArray(dict: PDFDict, key: string): number[] {
+  const value = dict.lookup(PDFName.of(key));
+  if (!(value instanceof PDFArray)) return [];
+  const out: number[] = [];
+  for (let i = 0; i < value.size(); i++) {
+    const item = value.get(i);
+    if (!(item instanceof PDFNumber)) return [];
+    out.push(item.asNumber());
+  }
+  return out;
+}
+
+/** Why an image was re-encoded without being downsampled; names the artwork. */
+function unmeasuredNote(images: ImageRef[]): string {
+  const named = images
+    .slice(0, 3)
+    .map((image) => `/${image.name} (${image.unmeasuredReason})`)
+    .join('; ');
+  const more = images.length > 3 ? `; and ${images.length - 3} more` : '';
+  return images.length === 1
+    ? `1 image sits inside artwork this walk could not measure (${named}${more}), so it was re-encoded at the resolution it is stored at and was not downsampled; the maximum-resolution cap did not touch it.`
+    : `${images.length} images sit inside artwork this walk could not measure (${named}${more}), so they were re-encoded at the resolution they are stored at and were not downsampled; the maximum-resolution cap did not touch them.`;
+}
+
+/** Why whole forms were never searched, so "nothing to do" is not a silent lie. */
+function unvisitedNote(unvisited: Map<string, string>): string {
+  const entries = [...unvisited.entries()];
+  const named = entries.slice(0, 3).map(([name, why]) => `/${name} (${why})`).join(', ');
+  const more = entries.length > 3 ? `, and ${entries.length - 3} more` : '';
+  return entries.length === 1
+    ? `1 Form XObject was not searched for images (${named}), so anything inside it is byte-for-byte unchanged.`
+    : `${entries.length} Form XObjects were not searched for images (${named}${more}), so anything inside them is byte-for-byte unchanged.`;
 }
 
 function readDict(value: unknown, doc?: PDFDocument): PDFDict | null {

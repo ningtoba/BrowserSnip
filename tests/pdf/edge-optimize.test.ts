@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import type { PageRender, PdfSession } from '@/lib/pdf/core/render';
 import { describeSize, inspectPdf, isToolInputError } from '@/lib/pdf/core/guard';
-import { openPDF, PDFName, PDFDict, PDFRef, PDFStream } from '@/lib/pdf/core/doc';
+import { openPDF, PDFName, PDFDict, PDFRawStream, PDFRef, PDFStream } from '@/lib/pdf/core/doc';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fileProblem, runPdfTool } from '@/lib/pdf/tools/runner';
 import { defaultValues, type ToolFile, type ToolResult, type ToolValues } from '@/lib/pdf/tools/types';
@@ -221,6 +221,51 @@ async function bytesOf(blob: Blob): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+/**
+ * A page whose only picture lives inside a Form XObject with its own resources,
+ * built the way an illustration export builds one: the page draws `/Art`, and
+ * `/Art` draws `/Im1`. The image is stored unfiltered, which is legal and keeps the
+ * fixture free of a compressor.
+ */
+async function nestedFormPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595, 842]);
+  const px = 16;
+  const content = (text: string): Uint8Array => new Uint8Array(Buffer.from(text, 'latin1'));
+  const imageRef = doc.context.register(
+    PDFRawStream.of(
+      doc.context.obj({
+        Type: 'XObject',
+        Subtype: 'Image',
+        Width: px,
+        Height: px,
+        BitsPerComponent: 8,
+        ColorSpace: 'DeviceRGB',
+      }) as PDFDict,
+      new Uint8Array(px * px * 3).fill(180),
+    ),
+  );
+  const formRef = doc.context.register(
+    PDFRawStream.of(
+      doc.context.obj({
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 100, 100],
+        Resources: { XObject: { Im1: imageRef } },
+      }) as PDFDict,
+      content('q 8 0 0 8 0 0 cm /Im1 Do Q'),
+    ),
+  );
+  const resources = page.node.Resources();
+  if (!resources) throw new Error('the fixture page has no /Resources to add a form to');
+  resources.set(PDFName.of('XObject'), doc.context.obj({ Art: formRef }) as PDFDict);
+  page.node.set(
+    PDFName.of('Contents'),
+    doc.context.register(PDFRawStream.of(doc.context.obj({}), content('q 2 0 0 2 60 60 cm /Art Do Q'))),
+  );
+  return doc.save({ useObjectStreams: false });
+}
+
 async function run(id: string, values: ToolValues = {}, files?: File[]) {
   const outcome = await runPdfTool({
     toolId: id,
@@ -323,6 +368,20 @@ describe('pdf-compress reports the sizes it measured', () => {
     expect(outcome.message).not.toMatch(/NaN|undefined|Infinity/);
     const reopened = await inspectPdf(outcome.bytes, 'out');
     expect(reopened.pages).toBe(4);
+  });
+
+  it('counts the picture a Form XObject draws instead of saying there are none', async () => {
+    // The gap this closes: artwork inside a form used to make a file look
+    // image-free, because only page-level resources were walked.
+    const source = await nestedFormPdf();
+    const outcome = await run('pdf-compress', { preset: 'balanced' }, [pdfFile(source, 'artwork.pdf')]);
+    const joined = outcome.warnings.join(' ');
+    expect(joined, `the nested image was not counted: ${outcome.message}`).not.toMatch(/no images/i);
+    expect(outcome.message).toContain('0 of 1 image(s) re-encoded, 1 left untouched.');
+    // jsdom has no 2-D raster, so the honest sentence is the one about the browser —
+    // and it has to talk about the one image the nested walk found.
+    expect(joined).toMatch(/cannot re-encode images.*its one image/);
+    expect((await openPDF(outcome.bytes)).getPageCount()).toBe(1);
   });
 
   it('says "nothing to save" rather than "-0%" when the rebuild is not smaller (E14)', async () => {

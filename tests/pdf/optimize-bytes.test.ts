@@ -32,7 +32,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as pdfjs from 'pdfjs-dist';
-import { GlobalWorkerOptions } from 'pdfjs-dist';
+import { GlobalWorkerOptions, OPS } from 'pdfjs-dist';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
@@ -43,12 +43,22 @@ import {
   PDFNumber,
   PDFRawStream,
   PDFRef,
+  PDFStream,
   openPDF,
 } from '@/lib/pdf/core/doc';
 import { compressPDF } from '@/lib/pdf/core/compress';
 import { applyRedactions } from '@/lib/pdf/core/redact';
 import { addLayer, listLayers } from '@/lib/pdf/core/layers';
-import { appendContentOps, makeOp, operand, pageContentOps, streamBytes } from '@/lib/pdf/core/content';
+import {
+  appendContentOps,
+  makeOp,
+  operand,
+  pageContentOps,
+  parseContentStream,
+  serialiseContentStream,
+  streamBytes,
+} from '@/lib/pdf/core/content';
+import type { ContentOp } from '@/lib/pdf/core/content';
 import { mediaBox } from '@/lib/pdf/core/pages';
 import { describeSize } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
@@ -649,6 +659,225 @@ function placeImage(
   ]);
 }
 
+/* ── fixtures: artwork nested in Form XObjects ────────────────────────────── */
+
+/** The depth `core/compress` stops descending at, spelled out again on this side. */
+const WALK_FORM_DEPTH = 6;
+
+interface NestedOptions {
+  /** Pixels per side of every stored image. */
+  px: number;
+  /** Side each image is painted at, in the units of the form that draws it. */
+  boxPt: number;
+  /** How many Form XObject levels hang off the page. */
+  levels: number;
+  /** Scale the page's `cm` draws the outermost form with, in points per form unit. */
+  formScale: number;
+  /** Fraction of its parent's box each nested form is drawn into. */
+  perLevelScale?: number;
+  /** Where every form's `/BBox` starts, so the walk has to subtract it. */
+  bboxOffset?: number;
+  /** Have the innermost form draw the outermost one back: a reference cycle. */
+  cycle?: boolean;
+  /** Give every image a `/SMask` hiding its bottom half, as a logo would have. */
+  mask?: boolean;
+}
+
+interface NestedFixture {
+  bytes: Uint8Array;
+  /** The form XObject references, outermost first; each holds its own resources. */
+  forms: PDFRef[];
+  /** One image per form level, outermost first, with the bytes it was written with. */
+  images: Array<{ ref: PDFRef; bytes: Uint8Array }>;
+}
+
+/** A Flate RGB image with enough dither that a re-encode has somewhere to go. */
+function addDitheredImage(
+  doc: PDFDocument,
+  px: number,
+  mask = false,
+): { ref: PDFRef; bytes: Uint8Array } {
+  const samples = new Uint8Array(px * px * 3);
+  for (let y = 0; y < px; y++) {
+    for (let x = 0; x < px; x++) {
+      const at = (y * px + x) * 3;
+      const value = [0, 255, 90, 200][(y < px / 2 ? 0 : 2) + (x < px / 2 ? 0 : 1)];
+      const jitter = noiseAt(y * px + x, 36);
+      for (let c = 0; c < 3; c++) samples[at + c] = Math.max(0, Math.min(255, value + jitter));
+    }
+  }
+  const bytes = new Uint8Array(deflateSync(Buffer.from(samples)));
+  const dict = doc.context.obj({
+    Type: 'XObject',
+    Subtype: 'Image',
+    Width: px,
+    Height: px,
+    BitsPerComponent: 8,
+    ColorSpace: 'DeviceRGB',
+    Filter: 'FlateDecode',
+  }) as PDFDict;
+  const ref = doc.context.register(PDFRawStream.of(dict, bytes));
+  if (mask) {
+    // The top half opaque, the bottom half hidden: painting it onto paper is what
+    // makes an unchanged-resolution re-encode worth doing at all.
+    const alpha = new Uint8Array(px * px);
+    for (let y = 0; y < px; y++) {
+      for (let x = 0; x < px; x++) alpha[y * px + x] = y < px / 2 ? 255 : 0;
+    }
+    const maskRef = doc.context.register(
+      PDFRawStream.of(
+        doc.context.obj({
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: px,
+          Height: px,
+          BitsPerComponent: 8,
+          ColorSpace: 'DeviceGray',
+          Filter: 'FlateDecode',
+        }) as PDFDict,
+        new Uint8Array(deflateSync(Buffer.from(alpha))),
+      ),
+    );
+    dict.set(PDFName.of('SMask'), maskRef);
+  }
+  return { ref, bytes };
+}
+
+/**
+ * Form XObjects built by hand, the way an illustration export builds them.
+ *
+ * Every level is its own stream with its own `/Resources /XObject`, holding one
+ * image and the next form down; the page draws only the outermost one with `Do`.
+ * `/BBox` can start away from the origin, each level can shrink the next, and the
+ * innermost form can draw the outermost one back to make a cycle the walk has to
+ * survive. A form does not scale its `/BBox` into the box it is drawn in — one
+ * form unit becomes `cm`-scale parent units — so an image `boxPt` wide in the
+ * form at `level` is
+ * `boxPt · formScale · perLevelScale^level` points wide on the page, and every
+ * expected size in these tests is computed from the fixture rather than read out
+ * of the producer.
+ */
+async function nestedFixture(options: NestedOptions): Promise<NestedFixture> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  page.drawText('Page with nested artwork', { x: 60, y: 760, size: 14, font, color: rgb(0, 0, 0) });
+  const second = doc.addPage([595, 842]);
+  second.drawText('Second page body text', { x: 60, y: 760, size: 14, font });
+
+  const side = 100;
+  const offset = options.bboxOffset ?? 0;
+  const shrink = options.perLevelScale ?? 1;
+  const images: Array<{ ref: PDFRef; bytes: Uint8Array }> = [];
+  for (let level = 0; level < options.levels; level++) {
+    images.push(addDitheredImage(doc, options.px, options.mask ?? false));
+  }
+
+  const forms: PDFRef[] = [];
+  const dicts: PDFDict[] = [];
+  for (let level = 0; level < options.levels; level++) {
+    const dict = doc.context.obj({
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [offset, offset, offset + side, offset + side],
+      Resources: { XObject: {} },
+    }) as PDFDict;
+    dicts.push(dict);
+    forms.push(doc.context.register(PDFRawStream.of(dict, new Uint8Array())));
+  }
+
+  const number = (value: number) => operand.number(value);
+  const place = (size: number, name: string): ContentOp[] => [
+    makeOp('q'),
+    makeOp('cm', [number(size), number(0), number(0), number(size), number(offset), number(offset)]),
+    makeOp('Do', [operand.name(name)]),
+    makeOp('Q'),
+  ];
+
+  for (let level = 0; level < options.levels; level++) {
+    const xobjects = dicts[level].lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('XObject'), PDFDict);
+    const own = `Im${level}`;
+    xobjects.set(PDFName.of(own), images[level].ref);
+    const ops: ContentOp[] = [...place(options.boxPt, own)];
+    if (level + 1 < options.levels) {
+      xobjects.set(PDFName.of(`F${level + 1}`), forms[level + 1]);
+      ops.push(...place(shrink, `F${level + 1}`));
+    } else if (options.cycle) {
+      xobjects.set(PDFName.of('F0'), forms[0]);
+      ops.push(...place(0.5, 'F0'));
+    }
+    doc.context.assign(forms[level], PDFRawStream.of(dicts[level], serialiseContentStream(ops)));
+  }
+
+  placeImage(doc, page, forms[0], 'Art', options.formScale);
+  return { bytes: await doc.save({ useObjectStreams: false }), forms, images };
+}
+
+/* ── a resource walk that is not the producer's ───────────────────────────── */
+
+interface FoundImage {
+  /** Resource path from the page, e.g. `/Art/F2/Im2`. */
+  path: string;
+  dict: PDFDict;
+  /** The bytes the stream stores, encoded as they sit in the file. */
+  bytes: Uint8Array;
+}
+
+/**
+ * Every image in the file, found by walking each page's resource tree by hand.
+ *
+ * This is the count `report.images.total` has to match and the proof that a
+ * stream was actually rewritten: it descends into `/Subtype /Form` XObjects, dedups
+ * by reference, guards a form that reaches itself, and stops at the same depth the
+ * module does — pass `limit` to see past that bound and count what is really in
+ * the file. Written independently of `core/compress` on purpose: the whole point of
+ * the check is that the two do not share a mistake.
+ */
+function walkImageResources(doc: PDFDocument, limit = WALK_FORM_DEPTH): FoundImage[] {
+  const found: FoundImage[] = [];
+  const seen = new Set<string>();
+  const dictFor = (value: unknown): PDFDict | null => {
+    const object = value instanceof PDFRef ? doc.context.lookup(value) : value;
+    const dict = object instanceof PDFStream ? object.dict : object;
+    return dict instanceof PDFDict ? dict : null;
+  };
+  const subtypeOf = (dict: PDFDict): string => String(dict.get(PDFName.of('Subtype')) ?? '').replace(/^\//, '');
+  const walk = (xobjects: PDFDict, depth: number, path: string, visiting: Set<string>): void => {
+    for (const [key, value] of xobjects.entries()) {
+      const ref = value instanceof PDFRef ? value : null;
+      if (!ref) continue;
+      const dict = dictFor(value);
+      if (!dict) continue;
+      const name = String(key).replace(/^\//, '');
+      const at = `${path}/${name}`;
+      const subtype = subtypeOf(dict);
+      if (subtype === 'Image') {
+        if (seen.has(ref.toString())) continue;
+        seen.add(ref.toString());
+        const object = doc.context.lookup(ref);
+        found.push({
+          path: at,
+          dict,
+          bytes: object instanceof PDFRawStream ? object.contents : new Uint8Array(),
+        });
+      } else if (subtype === 'Form' && depth < limit && !visiting.has(ref.toString())) {
+        const resources = dictFor(dict.get(PDFName.of('Resources')));
+        const nested = resources ? dictFor(resources.get(PDFName.of('XObject'))) : null;
+        if (!nested) continue;
+        visiting.add(ref.toString());
+        walk(nested, depth + 1, at, visiting);
+        visiting.delete(ref.toString());
+      }
+    }
+  };
+  for (const page of doc.getPages()) {
+    const resources = dictFor(page.node.Resources());
+    const xobjects = resources ? dictFor(resources.get(PDFName.of('XObject'))) : null;
+    if (xobjects) walk(xobjects, 0, '', new Set());
+  }
+  return found;
+}
+
 /** A document of `count` pages, optionally titled for the render double. */
 async function textPdf(count = 2, title = ''): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -954,6 +1183,200 @@ describe('core/compress re-encodes pixels that can be measured', () => {
 
 });
 
+/* ── images nested in Form XObjects ───────────────────────────────── */
+
+describe('core/compress reaches images nested in Form XObjects', () => {
+  beforeEach(() => {
+    rasterAvailable = true;
+  });
+
+  /** The one image the resource walk found at `path`, or a failing message. */
+  function storedAt(images: FoundImage[], path: string): FoundImage {
+    const found = images.find((image) => image.path === path);
+    expect(found, `the resource walk found no image at ${path}`).toBeTruthy();
+    return found as FoundImage;
+  }
+
+  /** The `/XObject` names one form's own content draws. */
+  function drawnNames(doc: PDFDocument, ref: PDFRef): string[] {
+    const stream = doc.context.lookup(ref);
+    expect(stream instanceof PDFStream, `the form ${ref.toString()} is not a stream any more`).toBe(true);
+    return parseContentStream(streamBytes(stream as PDFStream))
+      .filter((op) => op.name === 'Do')
+      .map((op) => String((op.operands[0] as { value?: string }).value ?? ''));
+  }
+
+  /** How many rasters a reader's own display list paints on a page. */
+  async function paintedImages(bytes: Uint8Array, page = 1): Promise<number> {
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(bytes.slice()),
+      isEvalSupported: false,
+      disableAutoFetch: true,
+    }).promise;
+    try {
+      const list = await (await doc.getPage(page)).getOperatorList();
+      // A form's operators are inlined into the page's list, so a picture inside a
+      // form shows up here exactly as a page-level one does.
+      const paint = (OPS as unknown as Record<string, number>).paintImageXObject;
+      return list.fnArray.filter((id: number) => id === paint).length;
+    } finally {
+      await doc.destroy();
+    }
+  }
+
+  it('finds, counts and replaces the image a Form XObject draws', async () => {
+    // 8 form units through the page's 2× placement is 16 pt on the page, so 64 px
+    // is 288 dpi and the 72 dpi ask halves it.
+    const fixture = await nestedFixture({ px: 64, boxPt: 8, levels: 1, formScale: 2 });
+    expect(
+      walkImageResources(await openPDF(fixture.bytes)),
+      'the fixture must really nest its image inside a form',
+    ).toHaveLength(1);
+
+    const { bytes: out, report } = await compressPDF(
+      { bytes: fixture.bytes },
+      { preset: 'balanced', maxDpi: 72 },
+    );
+    const doc = await openPDF(out);
+    const images = walkImageResources(doc);
+    expect(report.images.total, 'report.images.total must match an independent resource walk').toBe(
+      images.length,
+    );
+    expect(report.images.total).toBe(1);
+    expect(report.images.unmeasured).toBe(0);
+    expect(report.images.replaced).toBe(1);
+
+    const [image] = images;
+    expect(dictName(image.dict, 'Subtype')).toBe('Image');
+    expect(dictName(image.dict, 'Filter'), 'the nested stream was never re-encoded').toBe('DCTDecode');
+    expect(dictNumber(image.dict, 'Width'), 'downsampled through the form matrix').toBe(16);
+    expect(Array.from(image.bytes)).not.toEqual(Array.from(fixture.images[0].bytes));
+    // The form still asks for the picture, under the same resource name.
+    expect(drawnNames(doc, fixture.forms[0])).toContain('Im0');
+    expect(await paintedImages(out)).toBe(1);
+  });
+
+  it('measures a nested image through every matrix that reaches it', async () => {
+    // Two levels, each halving: /Im0 is 8 × 2 = 16 pt (288 dpi → 16 px) and /Im1 is
+    // 8 × 2 × 0.5 = 8 pt (576 dpi → 8 px). One flat page-level measure would give
+    // both of them the same width; the two different numbers are the point.
+    const fixture = await nestedFixture({
+      px: 64,
+      boxPt: 8,
+      levels: 2,
+      formScale: 2,
+      perLevelScale: 0.5,
+      bboxOffset: 20,
+    });
+    const { bytes: out, report } = await compressPDF(
+      { bytes: fixture.bytes },
+      { preset: 'balanced', maxDpi: 72 },
+    );
+    const images = walkImageResources(await openPDF(out));
+    expect(report.images.total).toBe(images.length);
+    expect(report.images.total).toBe(2);
+    expect(report.images.replaced).toBe(2);
+    expect(report.images.unmeasured).toBe(0);
+    expect(dictNumber(storedAt(images, '/Art/Im0').dict, 'Width')).toBe(16);
+    expect(dictNumber(storedAt(images, '/Art/F1/Im1').dict, 'Width')).toBe(8);
+  });
+
+  it('walks a form that draws itself once, and refuses to resize what it cannot measure', async () => {
+    // /F1 draws /F0 back, so one placement of every image in the cycle is always
+    // deeper than the walk that is measuring it. Vitest would time out rather than
+    // fail if either walk had no cycle guard, so the assertions below are about the
+    // report: found, re-encoded, and explicitly not resized.
+    const fixture = await nestedFixture({ px: 64, boxPt: 8, levels: 2, formScale: 2, cycle: true, mask: true });
+    const { bytes: out, report } = await compressPDF(
+      { bytes: fixture.bytes },
+      { preset: 'balanced', maxDpi: 72 },
+    );
+    const images = walkImageResources(await openPDF(out));
+    expect(report.images.total).toBe(images.length);
+    expect(report.images.total).toBe(2);
+    expect(report.images.unmeasured).toBe(2);
+    const note = report.notes.join(' ');
+    expect(note).toMatch(/could not measure/);
+    expect(note).toContain('/Im0');
+    // Replacing the stream is safe wherever the image lives, so the artwork still
+    // went through a canvas — and it came back the same size it went in.
+    expect(report.images.replaced).toBe(2);
+    for (const image of images) {
+      expect(dictName(image.dict, 'Filter'), 'the stream should still have been replaced').toBe('DCTDecode');
+      expect(dictNumber(image.dict, 'Width'), 'resized on a box nobody measured').toBe(64);
+      expect(image.dict.get(PDFName.of('SMask')) instanceof PDFRef, 'the soft mask went missing').toBe(true);
+    }
+  });
+
+  it('stops at the depth it says it stops at, and names the form it left behind', async () => {
+    const fixture = await nestedFixture({ px: 64, boxPt: 8, levels: 7, formScale: 2 });
+    const before = walkImageResources(await openPDF(fixture.bytes), Number.POSITIVE_INFINITY);
+    expect(before, 'the fixture must be seven forms deep').toHaveLength(7);
+
+    const { bytes: out, report } = await compressPDF(
+      { bytes: fixture.bytes },
+      { preset: 'balanced', maxDpi: 72 },
+    );
+    const images = walkImageResources(await openPDF(out));
+    expect(report.images.total).toBe(images.length);
+    // Six levels of form are searched, the seventh is not, and the report says so.
+    expect(report.images.total).toBe(6);
+    expect(report.images.unmeasured).toBe(0);
+    const note = report.notes.find((line) => /was not searched for images/.test(line));
+    expect(note, `no note about a skipped form in ${JSON.stringify(report.notes)}`).toBeDefined();
+    expect(note).toContain('/F6');
+
+    const deep = storedAt(before, '/Art/F1/F2/F3/F4/F5/F6/Im6');
+    const untouched = storedAt(
+      walkImageResources(await openPDF(out), Number.POSITIVE_INFINITY),
+      deep.path,
+    );
+    expect(dictName(untouched.dict, 'Filter'), 'past the bound the image was touched anyway').toBe('FlateDecode');
+    expect(Array.from(untouched.bytes)).toEqual(Array.from(deep.bytes));
+  });
+
+  it('shrinks nested artwork, and the picture is still drawn', async () => {
+    // Three levels of 96 px pictures drawn 12 form units wide at 2×: 24 pt, so
+    // 288 dpi gives way to the 72 dpi ask and only the pixels go.
+    const fixture = await nestedFixture({ px: 96, boxPt: 12, levels: 3, formScale: 2 });
+    const { bytes: out, report } = await compressPDF(
+      { bytes: fixture.bytes },
+      { preset: 'balanced', maxDpi: 72 },
+    );
+    const doc = await openPDF(out);
+    const images = walkImageResources(doc);
+    expect(report.images.total, 'report.images.total must match an independent resource walk').toBe(
+      images.length,
+    );
+    expect(report.images.total).toBe(3);
+    expect(report.images.replaced).toBe(3);
+    expect(out.byteLength, 'nested artwork must still come out smaller').toBeLessThan(
+      fixture.bytes.byteLength,
+    );
+    expect(doc.getPageCount()).toBe(2);
+    // The text the tool promises to keep is still text, and the reader still
+    // paints three pictures on page 1.
+    expect((await extractableText(out)).join(' ')).toContain('Page with nested artwork');
+    expect(await paintedImages(out)).toBe(3);
+    for (let level = 0; level < 3; level++) {
+      expect(drawnNames(doc, fixture.forms[level]), `form ${level} stopped drawing its image`).toContain(
+        `Im${level}`,
+      );
+      const path = `/Art${Array.from({ length: level }, (_, i) => `/F${i + 1}`).join('')}/Im${level}`;
+      const image = storedAt(images, path);
+      expect(dictNumber(image.dict, 'Width')).toBe(24);
+      const decoded = decodeStubJpeg(image.bytes);
+      const means = quadrantMeans(decoded.rgb, decoded.width, decoded.height);
+      // All four quadrants of the source survived: a blank box, or the top-left
+      // corner copied about, fails one of these.
+      expect(Math.round(means[0])).toBeLessThan(40);
+      expect(Math.round(means[1])).toBeGreaterThan(215);
+      expect(means[1] - means[0]).toBeGreaterThan(40);
+      expect(means[3] - means[2]).toBeGreaterThan(40);
+    }
+  });
+});
+
 /* ── core/redact.ts ───────────────────────────────────────────────────────── */
 
 describe('core/redact deletes glyphs rather than painting over them', () => {
@@ -1020,6 +1443,25 @@ describe('optimize tools print numbers the output bytes agree with', () => {
     expect(outcome.message).toContain('1 of 1 image(s) re-encoded');
     expect(outcome.pagesOut).toBe(2);
     expect((await openPDF(outcome.bytes)).getPageCount()).toBe(2);
+  });
+
+  it('pdf-compress counts the images it found inside forms and names the ones it could not reach', async () => {
+    // Seven levels of form: six are searched and re-encoded, the seventh is the
+    // case the report has to admit to by name rather than silently skip.
+    const fixture = await nestedFixture({ px: 64, boxPt: 8, levels: 7, formScale: 2 });
+    const outcome = await runTool('pdf-compress', { preset: 'balanced', maxDpi: 72 }, [
+      pdfFile(fixture.bytes, 'artwork.pdf'),
+    ]);
+    const walked = walkImageResources(await openPDF(outcome.bytes));
+    expect(walked).toHaveLength(6);
+    // The count in the sentence is the count in the file, and none of it is the
+    // "no images" sentence the flat walk used to print over an illustration.
+    expect(outcome.message).toContain('6 of 6 image(s) re-encoded');
+    expect(outcome.warnings.join(' ')).not.toMatch(/no images/i);
+    const note = outcome.warnings.find((line) => /was not searched for images/.test(line));
+    expect(note, `no note about the skipped form in ${JSON.stringify(outcome.warnings)}`).toBeDefined();
+    expect(note).toContain('/F6');
+    expect(outcome.bytes.byteLength).toBeLessThan(fixture.bytes.byteLength);
   });
 
   it('sanitize-pdf counts the optional content groups it leaves behind', async () => {
