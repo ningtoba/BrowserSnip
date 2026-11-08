@@ -730,7 +730,7 @@ export default function PageOrganizer(): JSX.Element {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-cream-border bg-cream-light/40 px-3 py-2">
           <div role="toolbar" aria-label="Actions for the selected pages" className="flex flex-wrap items-center gap-1.5">
             <ToolbarButton
@@ -860,283 +860,289 @@ export default function PageOrganizer(): JSX.Element {
           </ul>
         )}
 
-        {/* the plan */}
-        <div
-          ref={gridRef}
-          className="min-h-0 flex-1 overflow-y-auto p-3"
-          onDragOver={onGridDragOver}
-          onDrop={onGridDrop}
-          onScroll={(event) =>
-            setScroll({
-              top: event.currentTarget.scrollTop,
-              height: event.currentTarget.clientHeight,
-              width: event.currentTarget.clientWidth,
-            })
-          }
-        >
-          {saveError && <Notice tone="danger">{saveError}</Notice>}
-          {refusal && (
-            <p className="mb-2 text-[10px] leading-relaxed text-danger" data-save-refusal>
-              Save is off: {refusal}
-            </p>
-          )}
-          <ul
-            role="listbox"
-            aria-multiselectable="true"
-            aria-label={`Planned page order, ${stats.total} page${stats.total === 1 ? '' : 's'}`}
-            aria-activedescendant={
-              state.focused !== null &&
-              state.focused >= windowRange.start &&
-              state.focused < windowRange.end
-                ? `plan-card-${state.focused}`
-                : undefined
-            }
-            className="grid list-none gap-3 p-0 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))]"
-          >
-            {windowRange.hiddenBefore > 0 && (
-              <li
-                aria-hidden
-                className="col-span-full text-[10px] text-ink-muted"
-                style={{ height: windowRange.padTop }}
-              >
-                {windowRange.hiddenBefore} earlier pages are not drawn — scroll to see them.
-              </li>
-            )}
-            {mounted.map((model) => (
-              <PlanCard key={model.key} model={model} handlers={handlers} />
-            ))}
-            {state.plan.length === 0 && (
-              <li className="col-span-full rounded-doodle-md border border-dashed border-cream-border p-6 text-center text-[11px] leading-relaxed text-ink-muted">
-                Every page was removed, so this plan has 0 output pages and Save is off. Drag a page in
-                from the right, or press Reset order.
-              </li>
-            )}
-            {windowRange.hiddenAfter > 0 && (
-              <li
-                aria-hidden
-                className="col-span-full text-[10px] text-ink-muted"
-                style={{ height: windowRange.padBottom }}
-              >
-                {windowRange.hiddenAfter} later pages are not drawn — scroll to see them.
-              </li>
-            )}
-            {state.gap !== null && windowRange.end < state.plan.length && (
-              <li className="col-span-full text-[10px] text-accent" aria-hidden>
-                Release to place the carried pages at position {state.gap + 1} of {state.plan.length}.
-              </li>
-            )}
-          </ul>
-
-          <div className="mt-4 rounded-doodle-md border border-cream-border bg-cream-light p-3">
-            <label
-              className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted"
-              htmlFor="plan-order-field"
-            >
-              Page order value
-            </label>
-            <div className="mt-1 flex gap-2">
-              <input
-                id="plan-order-field"
-                value={planText}
-                onChange={(event) => {
-                  setPlanText(event.target.value);
-                  setPlanTextDirty(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    applyPlanText();
-                  }
-                  if (event.key === 'Escape') {
-                    setPlanText(planToPageOrder(stateRef.current.plan));
-                    setPlanTextDirty(false);
-                  }
-                }}
-                spellCheck={false}
-                className="doodle-input flex-1 font-mono text-[11px]"
-                aria-describedby="plan-order-help"
-                aria-invalid={state.inputError ? true : undefined}
-              />
-              <button type="button" onClick={applyPlanText} className="doodle-btn text-[11px]">
-                Apply
-              </button>
-            </div>
-            <p id="plan-order-help" className="mt-1 text-[10px] leading-relaxed text-ink-muted">
-              This is the <code>pageOrder</code> value the tool registry parses, so the sidebar field and
-              this grid always agree.{' '}
-              {state.plan.length === 0
-                ? 'The grid is empty, so the plan is published as an explicit empty plan: Run refuses it instead of copying every page.'
-                : multiFile
-                  ? 'This plan uses more than one file, so its tokens carry a file prefix (f2:3) and only the Save button above can build it — the sidebar Run reads the first file alone.'
-                  : 'Tokens: 3 = page 3, 3r90 = page 3 rotated 90°, blank = empty sheet.'}
-            </p>
-            {state.inputError && <p className="mt-1 text-[10px] text-danger">{state.inputError}</p>}
-          </div>
-        </div>
-
-        {/* sources */}
-        <aside className="flex max-h-80 min-h-0 w-full shrink-0 flex-col border-t border-cream-border bg-cream-light/40 lg:max-h-none lg:w-72 lg:border-l lg:border-t-0">
+        {/* The plan grid and the source tray share a row at `lg`; the action
+           toolbar and the honesty lines above them are full-width strips. They
+           used to be siblings of the grid inside one `lg:flex-row`, which let the
+           toolbar claim 717 px of a 960 px pane and left the grid 24 px wide. */}
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          {/* the plan */}
           <div
-            className="flex shrink-0 flex-wrap gap-1 border-b border-cream-border px-2 py-2"
-            role="tablist"
-            aria-label="Source files"
-          >
-            {sources.map((source, index) => (
-              <button
-                key={`${source.name}-${index}`}
-                type="button"
-                role="tab"
-                aria-selected={tray === index}
-                title={source.name}
-                onClick={() => setTray(index)}
-                className={`doodle-chip max-w-[10rem] truncate text-[10px] ${
-                  tray === index ? 'doodle-chip-active' : 'doodle-chip-inactive'
-                }`}
-              >
-                {index + 1}. {source.name}
-                {source.status === 'locked' ? ' 🔒' : ''}
-              </button>
-            ))}
-          </div>
-
-          {traySource?.status === 'locked' && (
-            <div className="shrink-0 space-y-1 border-b border-cream-border px-2 py-2">
-              <p className="text-[10px] leading-relaxed text-warn">{traySource.message}</p>
-              <div className="flex gap-1">
-                <input
-                  type="password"
-                  value={passwords[tray] ?? ''}
-                  onChange={(event) => setPasswords((c) => ({ ...c, [tray]: event.target.value }))}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void retryWithPassword(tray);
-                    }
-                  }}
-                  placeholder="Password"
-                  className="doodle-input flex-1 text-[11px]"
-                  aria-label={`Password for ${traySource.name}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => void retryWithPassword(tray)}
-                  className="doodle-btn text-[10px]"
-                >
-                  Open
-                </button>
-              </div>
-            </div>
-          )}
-
-          {traySource?.status === 'error' && (
-            <div className="shrink-0 border-b border-cream-border px-2 py-2">
-              <p className="text-[10px] leading-relaxed text-danger">{traySource.message}</p>
-            </div>
-          )}
-
-          <div className="flex shrink-0 items-center gap-1 px-2 py-2">
-            <input
-              value={traySpec}
-              onChange={(event) => setTraySpec(event.target.value)}
-              className="doodle-input flex-1 font-mono text-[10px]"
-              aria-label={`Pages to insert from ${traySource?.name ?? 'this file'}`}
-              placeholder="1,3,5-7"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (trayTotal === 0) return;
-                insertFromTray(resolvePages(traySpec || 'all', trayTotal));
-              }}
-              disabled={!traySource || traySource.status !== 'ready'}
-              className="doodle-btn text-[10px] disabled:opacity-40"
-              title={
-                traySource?.status === 'ready'
-                  ? 'Insert the listed pages after the selection'
-                  : 'Waiting for this file to preview'
-              }
-            >
-              Insert
-            </button>
-            <button
-              type="button"
-              onClick={() => handlers.onAction({ type: 'useAsBase', source: tray })}
-              disabled={!traySource || traySource.status !== 'ready'}
-              className="doodle-chip text-[10px] doodle-chip-inactive disabled:opacity-40"
-              title="Replace the plan with every page of this file"
-            >
-              Use as base
-            </button>
-          </div>
-
-          <div
-            className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+            ref={gridRef}
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3"
+            onDragOver={onGridDragOver}
+            onDrop={onGridDrop}
             onScroll={(event) =>
-              setTrayScroll({
+              setScroll({
                 top: event.currentTarget.scrollTop,
                 height: event.currentTarget.clientHeight,
+                width: event.currentTarget.clientWidth,
               })
             }
           >
-            {traySource?.status === 'loading' && (
-              <p className="px-1 py-2 text-[10px] text-ink-muted">
-                Rendering thumbnails… {traySource.done}/{traySource.pages || '?'}
+            {saveError && <Notice tone="danger">{saveError}</Notice>}
+            {refusal && (
+              <p className="mb-2 text-[10px] leading-relaxed text-danger" data-save-refusal>
+                Save is off: {refusal}
               </p>
             )}
-            <div className="grid grid-cols-3 gap-1.5">
-              {trayPages.map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = 'copy';
-                    event.dataTransfer.setData('text/plain', `f${tray + 1}:${page + 1}`);
-                    dispatch({ type: 'dragStart', payload: { kind: 'source', source: tray, page } });
-                  }}
-                  onDragEnd={() => dispatch({ type: 'dragEnd' })}
-                  onClick={() => insertFromTray([page])}
-                  title={`Insert page ${page + 1} of ${traySource?.name ?? ''}`}
-                  aria-label={`Insert page ${page + 1} of ${traySource?.name ?? 'this file'}`}
-                  className="relative min-h-[28px] overflow-hidden rounded border border-cream-border bg-white hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            <ul
+              role="listbox"
+              aria-multiselectable="true"
+              aria-label={`Planned page order, ${stats.total} page${stats.total === 1 ? '' : 's'}`}
+              aria-activedescendant={
+                state.focused !== null &&
+                state.focused >= windowRange.start &&
+                state.focused < windowRange.end
+                  ? `plan-card-${state.focused}`
+                  : undefined
+              }
+              className="grid list-none gap-3 p-0 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))]"
+            >
+              {windowRange.hiddenBefore > 0 && (
+                <li
+                  aria-hidden
+                  className="col-span-full text-[10px] text-ink-muted"
+                  style={{ height: windowRange.padTop }}
                 >
-                  {traySource?.thumbs[page] ? (
-                    <img
-                      src={traySource.thumbs[page]}
-                      alt=""
-                      className="h-auto w-full select-none"
-                      draggable={false}
-                      onLoad={(event) =>
-                        handlers.onMeasure(tray, page, {
-                          width: event.currentTarget.naturalWidth,
-                          height: event.currentTarget.naturalHeight,
-                        })
-                      }
-                    />
-                  ) : (
-                    <span className="flex aspect-[3/4] items-center justify-center bg-cream-soft text-[9px] text-ink-muted">
-                      {page + 1}
-                    </span>
-                  )}
-                  <span className="absolute bottom-0 right-0 bg-white/85 px-1 text-[8px] font-semibold tabular-nums text-ink-muted">
-                    {page + 1}
-                  </span>
+                  {windowRange.hiddenBefore} earlier pages are not drawn — scroll to see them.
+                </li>
+              )}
+              {mounted.map((model) => (
+                <PlanCard key={model.key} model={model} handlers={handlers} />
+              ))}
+              {state.plan.length === 0 && (
+                <li className="col-span-full rounded-doodle-md border border-dashed border-cream-border p-6 text-center text-[11px] leading-relaxed text-ink-muted">
+                  Every page was removed, so this plan has 0 output pages and Save is off. Drag a page in
+                  from the right, or press Reset order.
+                </li>
+              )}
+              {windowRange.hiddenAfter > 0 && (
+                <li
+                  aria-hidden
+                  className="col-span-full text-[10px] text-ink-muted"
+                  style={{ height: windowRange.padBottom }}
+                >
+                  {windowRange.hiddenAfter} later pages are not drawn — scroll to see them.
+                </li>
+              )}
+              {state.gap !== null && windowRange.end < state.plan.length && (
+                <li className="col-span-full text-[10px] text-accent" aria-hidden>
+                  Release to place the carried pages at position {state.gap + 1} of {state.plan.length}.
+                </li>
+              )}
+            </ul>
+
+            <div className="mt-4 rounded-doodle-md border border-cream-border bg-cream-light p-3">
+              <label
+                className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted"
+                htmlFor="plan-order-field"
+              >
+                Page order value
+              </label>
+              <div className="mt-1 flex gap-2">
+                <input
+                  id="plan-order-field"
+                  value={planText}
+                  onChange={(event) => {
+                    setPlanText(event.target.value);
+                    setPlanTextDirty(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      applyPlanText();
+                    }
+                    if (event.key === 'Escape') {
+                      setPlanText(planToPageOrder(stateRef.current.plan));
+                      setPlanTextDirty(false);
+                    }
+                  }}
+                  spellCheck={false}
+                  className="doodle-input flex-1 font-mono text-[11px]"
+                  aria-describedby="plan-order-help"
+                  aria-invalid={state.inputError ? true : undefined}
+                />
+                <button type="button" onClick={applyPlanText} className="doodle-btn text-[11px]">
+                  Apply
+                </button>
+              </div>
+              <p id="plan-order-help" className="mt-1 text-[10px] leading-relaxed text-ink-muted">
+                This is the <code>pageOrder</code> value the tool registry parses, so the sidebar field and
+                this grid always agree.{' '}
+                {state.plan.length === 0
+                  ? 'The grid is empty, so the plan is published as an explicit empty plan: Run refuses it instead of copying every page.'
+                  : multiFile
+                    ? 'This plan uses more than one file, so its tokens carry a file prefix (f2:3) and only the Save button above can build it — the sidebar Run reads the first file alone.'
+                    : 'Tokens: 3 = page 3, 3r90 = page 3 rotated 90°, blank = empty sheet.'}
+              </p>
+              {state.inputError && <p className="mt-1 text-[10px] text-danger">{state.inputError}</p>}
+            </div>
+          </div>
+
+          {/* sources */}
+          <aside className="flex max-h-80 min-h-0 w-full shrink-0 flex-col border-t border-cream-border bg-cream-light/40 lg:max-h-none lg:w-72 lg:border-l lg:border-t-0">
+            <div
+              className="flex shrink-0 flex-wrap gap-1 border-b border-cream-border px-2 py-2"
+              role="tablist"
+              aria-label="Source files"
+            >
+              {sources.map((source, index) => (
+                <button
+                  key={`${source.name}-${index}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tray === index}
+                  title={source.name}
+                  onClick={() => setTray(index)}
+                  className={`doodle-chip max-w-[10rem] truncate text-[10px] ${
+                    tray === index ? 'doodle-chip-active' : 'doodle-chip-inactive'
+                  }`}
+                >
+                  {index + 1}. {source.name}
+                  {source.status === 'locked' ? ' 🔒' : ''}
                 </button>
               ))}
             </div>
-            {(trayWindow.hiddenBefore > 0 || trayWindow.hiddenAfter > 0) && (
-              <p className="px-1 pt-2 text-[10px] text-ink-muted">
-                Showing pages {trayWindow.start + 1}–{trayWindow.end} of {trayTotal}.
-              </p>
+
+            {traySource?.status === 'locked' && (
+              <div className="shrink-0 space-y-1 border-b border-cream-border px-2 py-2">
+                <p className="text-[10px] leading-relaxed text-warn">{traySource.message}</p>
+                <div className="flex gap-1">
+                  <input
+                    type="password"
+                    value={passwords[tray] ?? ''}
+                    onChange={(event) => setPasswords((c) => ({ ...c, [tray]: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void retryWithPassword(tray);
+                      }
+                    }}
+                    placeholder="Password"
+                    className="doodle-input flex-1 text-[11px]"
+                    aria-label={`Password for ${traySource.name}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void retryWithPassword(tray)}
+                    className="doodle-btn text-[10px]"
+                  >
+                    Open
+                  </button>
+                </div>
+              </div>
             )}
-            {traySource?.status === 'ready' && (
-              <p className="px-1 pt-2 text-[10px] leading-relaxed text-ink-muted">
-                Drag a page into the plan, or click it to insert after the selected page. Used here:{' '}
-                {stats.perSource[tray] ?? 0} of {traySource.pages}.
-              </p>
+
+            {traySource?.status === 'error' && (
+              <div className="shrink-0 border-b border-cream-border px-2 py-2">
+                <p className="text-[10px] leading-relaxed text-danger">{traySource.message}</p>
+              </div>
             )}
-          </div>
-        </aside>
+
+            <div className="flex shrink-0 items-center gap-1 px-2 py-2">
+              <input
+                value={traySpec}
+                onChange={(event) => setTraySpec(event.target.value)}
+                className="doodle-input flex-1 font-mono text-[10px]"
+                aria-label={`Pages to insert from ${traySource?.name ?? 'this file'}`}
+                placeholder="1,3,5-7"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (trayTotal === 0) return;
+                  insertFromTray(resolvePages(traySpec || 'all', trayTotal));
+                }}
+                disabled={!traySource || traySource.status !== 'ready'}
+                className="doodle-btn text-[10px] disabled:opacity-40"
+                title={
+                  traySource?.status === 'ready'
+                    ? 'Insert the listed pages after the selection'
+                    : 'Waiting for this file to preview'
+                }
+              >
+                Insert
+              </button>
+              <button
+                type="button"
+                onClick={() => handlers.onAction({ type: 'useAsBase', source: tray })}
+                disabled={!traySource || traySource.status !== 'ready'}
+                className="doodle-chip text-[10px] doodle-chip-inactive disabled:opacity-40"
+                title="Replace the plan with every page of this file"
+              >
+                Use as base
+              </button>
+            </div>
+
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+              onScroll={(event) =>
+                setTrayScroll({
+                  top: event.currentTarget.scrollTop,
+                  height: event.currentTarget.clientHeight,
+                })
+              }
+            >
+              {traySource?.status === 'loading' && (
+                <p className="px-1 py-2 text-[10px] text-ink-muted">
+                  Rendering thumbnails… {traySource.done}/{traySource.pages || '?'}
+                </p>
+              )}
+              <div className="grid grid-cols-3 gap-1.5">
+                {trayPages.map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'copy';
+                      event.dataTransfer.setData('text/plain', `f${tray + 1}:${page + 1}`);
+                      dispatch({ type: 'dragStart', payload: { kind: 'source', source: tray, page } });
+                    }}
+                    onDragEnd={() => dispatch({ type: 'dragEnd' })}
+                    onClick={() => insertFromTray([page])}
+                    title={`Insert page ${page + 1} of ${traySource?.name ?? ''}`}
+                    aria-label={`Insert page ${page + 1} of ${traySource?.name ?? 'this file'}`}
+                    className="relative min-h-[28px] overflow-hidden rounded border border-cream-border bg-white hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    {traySource?.thumbs[page] ? (
+                      <img
+                        src={traySource.thumbs[page]}
+                        alt=""
+                        className="h-auto w-full select-none"
+                        draggable={false}
+                        onLoad={(event) =>
+                          handlers.onMeasure(tray, page, {
+                            width: event.currentTarget.naturalWidth,
+                            height: event.currentTarget.naturalHeight,
+                          })
+                        }
+                      />
+                    ) : (
+                      <span className="flex aspect-[3/4] items-center justify-center bg-cream-soft text-[9px] text-ink-muted">
+                        {page + 1}
+                      </span>
+                    )}
+                    <span className="absolute bottom-0 right-0 bg-white/85 px-1 text-[8px] font-semibold tabular-nums text-ink-muted">
+                      {page + 1}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {(trayWindow.hiddenBefore > 0 || trayWindow.hiddenAfter > 0) && (
+                <p className="px-1 pt-2 text-[10px] text-ink-muted">
+                  Showing pages {trayWindow.start + 1}–{trayWindow.end} of {trayTotal}.
+                </p>
+              )}
+              {traySource?.status === 'ready' && (
+                <p className="px-1 pt-2 text-[10px] leading-relaxed text-ink-muted">
+                  Drag a page into the plan, or click it to insert after the selected page. Used here:{' '}
+                  {stats.perSource[tray] ?? 0} of {traySource.pages}.
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
 
       {/* live region: every plan edit, carry, refusal and undo is announced here */}

@@ -976,6 +976,52 @@ describe('pane shell', () => {
     expect(screen.getByText(/first becomes the page order you edit/)).toBeInTheDocument();
     cleanup();
   });
+
+  /**
+   * The row that holds the plan must hold nothing but the plan and the tray.
+   *
+   * Measured in Chromium on the build before this test: with the action toolbar
+   * and the honesty lines as siblings of the grid inside one `lg:flex-row`, the
+   * `shrink-0` toolbar kept its content width and the grid's box was 24 px of a
+   * 960 px pane at a 1280 px viewport (`docs/TOOL-CAMPAIGN.md`, organize row) —
+   * one clipped column of 152 px cards beside 717 px of empty toolbar strip.
+   * jsdom has no layout, so the promise is pinned structurally: the wide strips
+   * sit above the row, the row is only [grid, tray], and the grid may shrink.
+   */
+  it('gives the plan grid the pane width, not what the toolbar leaves over', async () => {
+    const { cleanup, render } = await import('@testing-library/react');
+    const PageOrganizer = (await import('@/components/tools/pdf/organize/PageOrganizer')).default;
+    const { useFileStore } = await import('@/stores/file-store');
+    useFileStore.setState({
+      files: [new File(['%PDF-1.4'], 'plan.pdf', { type: 'application/pdf' })],
+      file: null,
+      params: {},
+    });
+    const { container } = render(createElement(PageOrganizer));
+
+    const list = container.querySelector('[role="listbox"]');
+    const grid = list?.parentElement as HTMLElement | undefined;
+    const toolbar = container.querySelector('[role="toolbar"]');
+    const tray = container.querySelector('aside');
+    expect(grid, 'the scrollable plan grid').toBeTruthy();
+    expect(toolbar).toBeTruthy();
+    expect(tray, 'the source-file tray').toBeTruthy();
+
+    const row = grid?.parentElement as HTMLElement | undefined;
+    expect(row?.className, 'the grid and the tray share one flex row at lg').toMatch(/lg:flex-row/);
+    expect(
+      [...(row?.children ?? [])].map((node) => node.tagName),
+      'nothing else may join that row',
+    ).toEqual(['DIV', 'ASIDE']);
+    expect(row?.contains(toolbar ?? null), 'the toolbar is a strip above the row, not a column beside it').toBe(
+      false,
+    );
+    // A flex item’s default `min-width: auto` is what let one 152 px card hold
+    // the whole grid open; without `min-w-0` the cards overflow the pane.
+    expect(grid?.className).toMatch(/min-w-0/);
+    expect(grid?.className).toMatch(/overflow-y-auto/);
+    cleanup();
+  });
 });
 
 // ── the pane's plan and the registry's tool must describe one file ──────────
