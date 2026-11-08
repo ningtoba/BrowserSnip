@@ -171,3 +171,11 @@ OK
      band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
 FAIL
   - the sheet carries 19.50 % non-white px and the output 0.00 % — this is paper under a plausible file name, not the page
+
+═══ a second deployed run, after the docs push (CI 42500113537), same site
+invert-colors pages=1   329 640 bytes   (first run: 329 639)   polarity ok, ink 86.90 %
+scanner-effect pages=2   28 441 bytes   (first run: 28 440)    achromatic, vs plain Δ136.0/153.0/152.9
+rasterize-pdf (baseline) 326 906 bytes  (first run: 326 906)
+The one-byte differences are pdf-lib's timestamp; the measured regions are identical
+page for page, so the claim is measured-equal and not byte-equal — the same wording the
+`rasterize-pdf` row uses for the same reason.
