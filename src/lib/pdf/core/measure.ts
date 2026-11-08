@@ -545,6 +545,15 @@ export async function applyColorFilter(
       filter: filter || undefined,
       background: opts.background ?? '#ffffff',
     });
+    // `renderPage` settles when the paint is only *scheduled*; its synchronous
+    // work is the background fill, and `RenderOptions.filter` lands inside this
+    // same promise on the *finished* bitmap (`core/render.ts`). Reading
+    // `render.ctx` or encoding `render.canvas` before this await copied paper
+    // with a filter applied to nothing — which is how `pdf-to-greyscale`'s
+    // re-render method shipped a 1166×1652 image at 0.00 % ink for a source page
+    // measuring 19.50 %. Same missing await as `detectSkew` above, `694e007`,
+    // `6b9b479`, `8313e2d`, `4ba14b6` and `38ef532`.
+    await render.finished;
     if (typeof opts.threshold === 'number') {
       const data = render.ctx.getImageData(0, 0, render.width, render.height);
       thresholdPixels(data.data, opts.threshold);
