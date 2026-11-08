@@ -87,11 +87,30 @@ interface OcrCall {
 
 const ocrCalls = (): OcrCall[] => sink<OcrCall>('__editOcr');
 
+/** Reads of a page canvas taken before pdf.js had painted it — see the double below. */
+const earlyReads = (): number[] => sink<number>('__editEarlyReads');
+
 vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/pdf/core/render')>();
-  const pixels = new Uint8ClampedArray(4 * 4 * 4);
+  // Standing rule 1: this double used to answer `getImageData` from one shared array
+  // with no `finished` at all, so a caller that encoded the canvas before the paint
+  // landed could not be told from one that waited — which is how three shipped tools
+  // handed back a page of paper with 1,400 tests green. It now models the ordering:
+  // background-fill pixels until the task settles, ink afterwards, in a later task.
+  const paper = new Uint8ClampedArray(4 * 4 * 4).fill(255);
+  const inked = new Uint8ClampedArray(paper);
+  inked[0] = 0;
+  inked[1] = 0;
+  inked[2] = 0;
+  let painted = false;
+  const readCanvas = (where: string): void => {
+    if (!painted) earlyReads().push(...(where === 'encode' ? [1, 1] : [1]));
+  };
   const ctx = {
-    getImageData: () => ({ data: pixels, width: 4, height: 4 }),
+    getImageData: () => {
+      readCanvas('read');
+      return { data: new Uint8ClampedArray(painted ? inked : paper), width: 4, height: 4 };
+    },
     putImageData: () => {},
   } as unknown as CanvasRenderingContext2D;
   const canvas = {} as HTMLCanvasElement;
@@ -103,7 +122,32 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
     renderToCanvas: async () => ({ width: 4, height: 4 }),
     renderPage: async (n: number, scale: number, opts: { filter?: string } = {}) => {
       renderCalls().push({ page: n, scale, filter: opts.filter });
-      return { canvas, ctx, width: 4, height: 4, unitsPerPixel: 1 / scale, pageNumber: n, cancel: () => {} };
+      painted = false;
+      let settle: () => void = () => {};
+      let abort: (reason: Error) => void = () => {};
+      const finished = new Promise<void>((resolve, reject) => {
+        settle = resolve;
+        abort = reject;
+      });
+      finished.catch(() => undefined);
+      const timer = setTimeout(() => {
+        painted = true;
+        settle();
+      }, 0);
+      return {
+        canvas,
+        ctx,
+        width: 4,
+        height: 4,
+        unitsPerPixel: 1 / scale,
+        pageNumber: n,
+        finished,
+        cancel: () => {
+          if (painted) return;
+          clearTimeout(timer);
+          abort(new actual.RenderCancelled('test render cancelled'));
+        },
+      };
     },
     textContent: async () => ({ items: [] }),
     textItems: async () => [],
@@ -114,7 +158,11 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
   return {
     ...actual,
     openRender: async () => session,
-    canvasToBlob: async () => new Blob([base64(JPEG_1PX) as BlobPart], { type: 'image/jpeg' }),
+    canvasToBlob: async () => {
+      // Encoding is the read that matters: it is what copies the bitmap into the file.
+      readCanvas('encode');
+      return new Blob([base64(JPEG_1PX) as BlobPart], { type: 'image/jpeg' });
+    },
   };
 });
 
@@ -1119,6 +1167,21 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
 });
 
 describe('raster colour tools (E7, E8, E9, E15)', () => {
+  // The structural twin of `tests/pdf/colour-tools-ink.test.ts`, and the reason this
+  // file's double had to stop being generous: all three tools reach `rerasterise`, and
+  // a double whose `renderPage` returned no `finished` could not tell a caller that
+  // waited for the paint from one that encoded a page of paper.
+  it.each(['invert-colors', 'adjust-colors', 'scanner-effect'])(
+    '%s encodes each page only after pdf.js has painted it',
+    async (id) => {
+      earlyReads().length = 0;
+      const bytes = await fixture([{ size: A4 }, { size: A4 }], 'inked pair');
+      const outcome = await run(id, { dpi: 150, pages: 'all' }, [bytes]);
+      await outputBytes(outcome);
+      expect(earlyReads(), `${id} copied a page canvas that had not been painted`).toEqual([]);
+    },
+  );
+
   it('rebuilds every page at its own displayed size, rotated pages included (E8, E9)', async () => {
     renderCalls().length = 0;
     const bytes = await fixture([{ size: A4 }, { size: CARD }, { size: A4, rotation: 90 }], 'mixed');

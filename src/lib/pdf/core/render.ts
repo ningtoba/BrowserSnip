@@ -201,8 +201,10 @@ function applyFilterToPage(
   if (!source) return;
   source.filter = filter;
   source.drawImage(canvas, 0, 0);
-  // The identity transform, because pdf.js leaves the page transform on the
-  // context and this copy is device-pixel to device-pixel.
+  // pdf.js leaves the page transform on the context — `beginDrawing` calls `ctx.save()`
+  // and then `ctx.transform(...viewport.transform)`, and nothing restores it when the
+  // task settles — so the copy back has to state the space it means. Without the
+  // identity transform this draw is the viewport's, not the bitmap's.
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   // Both are pdf.js's to leave as it likes — the copy must be a plain replace, so
