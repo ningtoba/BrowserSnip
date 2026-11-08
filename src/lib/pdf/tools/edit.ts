@@ -1506,15 +1506,22 @@ export const editTools: PdfToolDefinition[] = [
         if (mode === 'searchable') {
           const added = await addSearchableTextLayer(input.doc, results, { invisible: true });
           if (added.pages === 0) {
+            // The refusal has to be readable on its own: the report card shows
+            // these blocks, not the run's `warnings`, so the line names how many
+            // pages the recogniser actually read as well as what it found there.
+            const examined = results.length - skipped.length;
             return admit(
               reportResult(
                 [
-                  { title: 'No layer was added', text: `No text was recognised on the ${countLabel(results.length, 'page')} you selected, so the document was not changed.` },
+                  {
+                    title: 'No layer was added',
+                    text: `No text was recognised on the ${countLabel(examined, 'page')} the recogniser read${skipped.length > 0 ? `, and ${countLabel(skipped.length, 'page')} already had its own text layer and was left alone` : ''}, so the document was not changed.`,
+                  },
                   ...quiet.blocks,
                 ],
                 // A page that was skipped was never analysed, so "nothing was
                 // recognised" would be a claim about a read that did not happen.
-                { message: skipped.length === results.length
+                { message: examined === 0
                   ? 'Nothing was read — every page you picked already has a text layer, so the file is unchanged.'
                   : 'No text was recognised — the file is unchanged.' },
               ),

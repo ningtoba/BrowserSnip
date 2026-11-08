@@ -1063,6 +1063,8 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     giveOcrPages([{
       page: 1, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
       ink: { sampled: 4338250, ratio: 0, blank: true },
+    }, {
+      page: 2, text: 'its own words', width: 10, height: 10, blocks: [], words: [], alreadySearchable: true,
     }]);
     const outcome = await run('ocr-pdf', { mode: 'searchable' });
     expect(outcome.outputs).toHaveLength(0);
@@ -1072,6 +1074,10 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     // "Nothing was recognised" is only true of a page that was read; the note
     // says which of the two it was.
     expect(outcome.warnings.join('\n')).toMatch(/yielded no text at all because there is nothing on it/i);
+    // In the browser the refusal is read off this card alone — the report surface
+    // does not paint `warnings` — so the line has to separate the page the
+    // recogniser read from the page it left alone.
+    expect(text).toMatch(/the 1 page the recogniser read, and 1 page already had its own text layer/i);
 
     const rebuilt = await run('ocr-pdf', { mode: 'replace' });
     expect(rebuilt.outputs).toHaveLength(0);
@@ -1103,7 +1109,7 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     expect(message).toMatch(/Resolution/iu);
   });
 
-  it('does not blame the recogniser for a failure that is not the engine\u2019s', async () => {
+  it('does not blame the recogniser for a failure that is not the engine’s', async () => {
     failOcr(new Error('This PDF is encrypted'));
     const message = await run('ocr-pdf', {}).catch((error: unknown) => (error as Error).message);
     expect(message).toMatch(/OCR could not run on/iu);
