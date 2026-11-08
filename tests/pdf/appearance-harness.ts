@@ -107,10 +107,11 @@ export function appearanceInk(doc: PDFDocument, dict: PDFDict): AppearanceInk {
 /**
  * Measure one appearance stream's operators.
  *
- * `resources` is the stream's own `/Resources` dict, which is where `/GS1` and
- * `/Im0` resolve to the state and the image they name; without it an alpha or a
- * placed image is a name this harness cannot price, and is counted as solid ink
- * over nothing.
+ * `resources` is the stream's own `/Resources` dict: `/GS1` names an alpha there
+ * and `/Im0` names the image that gives a placed raster its size. Read without
+ * one, a `Do` measures no ink at all and a `gs` cannot fade anything — the latter
+ * can only over-report, which is why the table's rows are measured from a saved
+ * file, where the resources are always there to read.
  */
 export function measureOps(ops: string, resources: PDFDict | null = null): AppearanceInk {
   const paintOps: string[] = [];
