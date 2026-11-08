@@ -265,8 +265,13 @@ its heading; nothing was deleted.
 **Harness.** CDP over headless Chromium against the dev server on 5261,
 `/tmp/sample.pdf` (10-page CV, page 1 = 595.28 × 841.89 pt), viewport 1500 × 1400
 at deviceScaleFactor 1 so one CSS px is one PDF point at 100 % zoom and the whole
-page is on screen. `/tmp/sweep.mjs` (modes: default sweep, `--proof`, `--edge`,
-`--repeat`) plus `/tmp/bytescan.py`. One fresh document load per tool, page
+page is on screen. The harness is in the repo now, so this pass can be run again
+rather than re-invented: `docs/research/audit3-cdp.mjs` (CDP session, painted-area
+probe), `docs/research/audit3-sweep.mjs` (modes: default sweep, `--proof`,
+`--edge`, `--repeat`) and `docs/research/audit3-bytescan.py` (the exported bytes).
+The committed copies were used for the final measurements in this file, so
+re-running the pass needs only the dev server on 5261 (override with `BASE`) and a
+`/tmp/sample.pdf`. One fresh document load per tool, page
 cleared first, so each exported file holds exactly one annotation and the bytes
 are attributable to one gesture.
 
@@ -336,7 +341,7 @@ because the gesture had created nothing: `armedAfter=line, added=0`, which is th
 shape of §7 and §8. After the change, `created=1, endpoints moved=false`, and a
 Line drag created at every one of twelve release points tried — inside the page,
 200 px past its right edge, and below the old 1000 px fold
-(`node /tmp/sweep.mjs --edge`, all twelve `created:1`; before the fix the same
+(`node docs/research/audit3-sweep.mjs --edge`, all twelve `created:1`; before the fix the same
 sweep alternated `1,0,1,0` because the fixed press point was the corner of
 whatever the previous probe had left selected). Handles and the knob are Select's
 chrome now; the selection outline stays painted under a pen, so *which* mark
