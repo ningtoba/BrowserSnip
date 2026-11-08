@@ -244,11 +244,6 @@ function isLiveAnnotation(
 }
 
 /**
- * pdf-lib exposes `/Annots` as a `PDFArray | PDFRef | undefined` through a
- * generated accessor whose public type is an opaque `PDFObject` union, so the
- * array is narrowed here once instead of at every call site.
- */
-/**
  * A PDF object reference or inline dictionary, as returned by the generated
  * `/Annots` accessor.
  */
@@ -266,7 +261,10 @@ interface PdfPageNodeWithAnnots {
 function readAnnotsArray(page: PDFPage): MaybePdfArray | null {
   // SAFETY: `PDFPageLeaf.Annots()` always returns a `PDFArray` (or throws when
   // the inherited value is not an array); only `size`/`get` are used, so the
-  // narrower structural view is sound.
+  // narrower structural view is sound. pdf-lib exposes `/Annots` as a
+  // `PDFArray | PDFRef | undefined` through a generated accessor whose public
+  // type is an opaque `PDFObject` union, so the array is narrowed here once
+  // instead of at every call site.
   const node = page.node as unknown as PdfPageNodeWithAnnots;
   try {
     return node.Annots?.() ?? null;
@@ -332,6 +330,9 @@ function readName(dict: AnnotationDict, key: string): string | null {
 function dictGet(dict: AnnotationDict, key: string): AnnotationValue | null {
   const name = PDFName.of(key);
   const raw = dict.lookup?.(name) ?? dict.get?.(name);
+  // SAFETY: every PDF object implements `toString()` as the PDF source text it
+  // would be written with, which is all the helpers below parse; an absent key
+  // is the only `null`.
   return raw === undefined || raw === null ? null : (raw as AnnotationValue);
 }
 
