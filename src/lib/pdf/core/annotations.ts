@@ -187,6 +187,22 @@ export const UNDERLINE_BELOW_BASELINE_EM = 0.05;
  * (x-height about 0.5 em), which is lower than the middle of the em box. */
 export const STRIKE_ABOVE_BASELINE_EM = 0.3;
 
+/**
+ * What a link paints inside its own rectangle.
+ *
+ * PDF treats `/Link` as invisible furniture — the rect is the click target and a
+ * viewer may draw its own highlight — so an empty appearance stream is legal.
+ * It is not honest here: the editor shows a dashed box over the area the user
+ * dragged, and a file that paints nothing disagrees with the page that was
+ * marked. These two numbers describe that box and are shared with the overlay,
+ * so the rectangle on screen is the rectangle in the bytes. The colour is the
+ * mark's own (`/C`), never a constant: a link recoloured in the inspector has to
+ * come out that way.
+ */
+export const LINK_WASH_ALPHA = 0.08;
+/** Dash of the link's border, in points: on, off. Written to `/BS /D` as well. */
+export const LINK_BORDER_DASH: readonly number[] = [5, 3];
+
 /* FreeText layout, in fractions of the font size. `textLayout` below is the
  * authority for what gets written; the editor's type-in surface imports these
  * numbers instead of inventing its own, so the text the user watches is laid
@@ -469,7 +485,7 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
     BM: 'Normal',
     NM: context.addRandomSuffix('snip', 8),
     F: flagsValue(spec.flags),
-    BS: { W: round(strokeWidth), S: 'S' },
+    BS: borderStyle(spec.kind, strokeWidth),
     AP: { N: appearanceRef },
   };
 
@@ -704,9 +720,23 @@ function dictSubtype(kind: AnnotationKind): string {
 }
 
 function defaultStrokeWidth(kind: AnnotationKind, rect: QuadRect): number {
-  if (kind === 'Highlight' || kind === 'Redact' || kind === 'Popup' || kind === 'Link') return 0;
+  if (kind === 'Highlight' || kind === 'Redact' || kind === 'Popup') return 0;
+  // A link's box is drawn with a fixed rule rather than a pen the user chose, and
+  // `/BS` has to describe the stroke the appearance stream lays down.
+  if (kind === 'Link') return 1;
   if (MARKUP_KINDS.includes(kind)) return clamp(Math.min(Math.max(rect.height * 0.06, 0.6), 2), 0.2, 12);
   return 1;
+}
+
+/**
+ * `/BS` — the border a viewer draws when it paints the dictionary instead of
+ * `/AP`. A link is dashed here and in its appearance stream, so the two cannot
+ * tell two stories about the same box.
+ */
+function borderStyle(kind: AnnotationKind, strokeWidth: number): ObjDict {
+  const border: ObjDict = { W: round(strokeWidth), S: 'S' };
+  if (kind === 'Link') border.D = [...LINK_BORDER_DASH];
+  return border;
 }
 
 function flagsValue(names: string[] | undefined): number {
@@ -1109,9 +1139,10 @@ function appearance(
       ].join('\n');
       break;
     case 'Link':
-      // Link annotations are invisible; the stream exists so viewers that
-      // require /AP still have something to composite.
-      ap.ops = 'q Q';
+      // See `LINK_WASH_ALPHA`: a link is a click target *and* the box the editor
+      // drew over it, so the stream paints that box.
+      ap.ops = linkOps(shape, stroke, strokeWidth);
+      ap.extGState = { [GS_KEY]: linkWashState(context) };
       break;
     case 'Redact':
       ap.ops = ['q', paint(fill ?? color, true), rectPath(0, 0, w, h), 'f', 'Q'].join('\n');
@@ -1195,6 +1226,43 @@ function markupOps(
   }
   parts.push('Q');
   return parts.join('\n');
+}
+
+/**
+ * The link's box: a translucent wash over the click area and a dashed rule on
+ * its edge, both in the mark's colour.
+ *
+ * The rule is stroked *inside* the rect because an appearance is clipped to its
+ * own `/BBox`, which is the size of `/Rect` — centred on the geometry, half the
+ * stroke would be cut off and the box would read thinner than the one on screen.
+ */
+function linkOps(
+  rect: QuadRect,
+  color: [number, number, number],
+  strokeWidth: number,
+): string {
+  const w = round(rect.width);
+  const h = round(rect.height);
+  const width = round(Math.max(strokeWidth, 0.2));
+  const inset = Math.min(width / 2, Math.min(w, h) / 2);
+  return [
+    'q',
+    `/${GS_KEY} gs`,
+    paint(color, true),
+    rectPath(0, 0, w, h),
+    'f',
+    paint(color, false),
+    `${f(width)} w`,
+    `[${LINK_BORDER_DASH.join(' ')}] 0 d`,
+    rectPath(inset, inset, Math.max(w - inset * 2, 0.01), Math.max(h - inset * 2, 0.01)),
+    'S',
+    'Q',
+  ].join('\n');
+}
+
+/** Fill alpha only, so the link's wash is see-through and its rule is not. */
+function linkWashState(context: PDFContext): PDFRef {
+  return context.register(context.obj({ Type: 'ExtGState', ca: LINK_WASH_ALPHA }));
 }
 
 /** Sticky-note icon: body with the top-right corner folded over. */

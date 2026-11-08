@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PDFArray,
   PDFBool,
+  PDFContext,
   PDFDict,
   PDFDocument,
   PDFName,
@@ -22,6 +23,7 @@ import {
 } from '@maxwbh/pdf-lib';
 import {
   ANNOTATION_KINDS,
+  LINK_WASH_ALPHA,
   addAnnotation,
   addAnnotations,
   annotationCount,
@@ -35,6 +37,7 @@ import {
   type AnnotationKind,
   type AnnotationSpec,
 } from '@/lib/pdf/core/annotations';
+import { appearanceInk, measureOps } from './appearance-harness';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 
 /* ------------------------------------------------------------------ *
@@ -619,6 +622,199 @@ describe('appearance streams', () => {
     expect(ops).toMatch(/<3f3f203f206f6b>/);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * A link's appearance: the box the user dragged, in the bytes         *
+ * ------------------------------------------------------------------ *
+ *
+ * `docs/research/edit-pdf-audit.md` §3.2 recorded an exported `/Link` whose
+ * `/AP /N` was four bytes — `q Q` — against 3 726 px² of painted canvas. A link
+ * with no appearance is invisible to any viewer that renders `/AP`, so the file
+ * disagreed with the page that was marked. These are the bytes that answer it.
+ */
+
+const LINK_BOX = { x: 40, y: 200, width: 148, height: 12 };
+
+function linkSpec(over: Partial<AnnotationSpec> = {}): AnnotationSpec {
+  return baseSpec('Link', {
+    rect: LINK_BOX,
+    color: '#2563eb',
+    link: { type: 'uri', uri: 'https://example.com/audit' },
+    ...over,
+  });
+}
+
+describe('a link paints the box it was dragged over', () => {
+  it('writes real ink and keeps the action that makes it a link', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, linkSpec());
+    const reloaded = await roundTrip(doc);
+    const dict = firstAnnotation(reloaded);
+    expect(nameValue(dict, 'Subtype', reloaded)).toBe('Link');
+    const action = dict.lookupMaybe(PDFName.of('A'), PDFDict);
+    expect(nameValue(action as PDFDict, 'S', reloaded)).toBe('URI');
+    expect(textValue(action as PDFDict, 'URI', reloaded)).toBe('https://example.com/audit');
+
+    const ops = appearanceOps(reloaded, dict);
+    expect(ops.trim()).not.toBe('q Q');
+    // The wash, in the mark's own colour at its own alpha, then the same colour
+    // as a dashed rule: what the overlay draws, in points.
+    expect(ops).toMatch(/\/GS1 gs/);
+    expect(ops).toMatch(/0\.145 0\.388 0\.922 rg/);
+    expect(ops).toMatch(/0\.145 0\.388 0\.922 RG/);
+    expect(ops).toMatch(/\[5 3\] 0 d/);
+    expect(ops).toMatch(/1 w/);
+    expect(ops.match(/re/g)).toHaveLength(2);
+    expect(ops).toMatch(/f[\s\S]*S/);
+    expect(appearanceInk(reloaded, dict).inkPt2).toBeGreaterThan(0);
+  });
+
+  it('keeps the dragged rect as the click target and strokes the rule inside it', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, linkSpec());
+    addAnnotation(doc, linkSpec({ rect: { x: 40, y: 100, width: 148, height: 0.6 } }));
+    const reloaded = await roundTrip(doc);
+    const [normal, thin] = annotationDicts(reloaded);
+    // An appearance is clipped to its /BBox, so the rule is inset by half its
+    // width instead of the rect being grown to fit the ink.
+    expect(numbers(normal.get(PDFName.of('Rect')), reloaded)).toEqual([40, 200, 188, 212]);
+    expect(rectangles(appearanceOps(reloaded, normal))).toEqual([
+      [0, 0, 148, 12],
+      [0.5, 0.5, 147, 11],
+    ]);
+    expect(numbers(thin.get(PDFName.of('Rect')), reloaded)).toEqual([40, 100, 188, 100.6]);
+    const [wash, border] = rectangles(appearanceOps(reloaded, thin));
+    expect(wash).toEqual([0, 0, 148, 0.6]);
+    // Half of a 1 pt rule would fall outside a 0.6 pt box and be cut, so the inset
+    // gives up to the box's own shorter side; `rectPath` keeps a flat rect drawn.
+    expect(border[0]).toBeCloseTo(0.3, 6);
+    expect(border[2]).toBeCloseTo(148 - 0.6, 6);
+    expect(border[3]).toBeCloseTo(0.01, 6);
+    expect(appearanceInk(reloaded, thin).inkPt2).toBeGreaterThan(0);
+  });
+
+  it('describes the border in /BS the way the stream strokes it', async () => {
+    const doc = await docWithPages();
+    // No `borderWidth`: the writer's own default has to agree with the rule it paints.
+    addAnnotation(doc, linkSpec({ borderWidth: undefined }));
+    const reloaded = await roundTrip(doc);
+    const dict = firstAnnotation(reloaded);
+    const border = dict.lookupMaybe(PDFName.of('BS'), PDFDict) as PDFDict;
+    expect((border.get(PDFName.of('W')) as PDFNumber).asNumber()).toBe(1);
+    expect(numbers(border.get(PDFName.of('D')), reloaded)).toEqual([5, 3]);
+    expect(appearanceOps(reloaded, dict)).toMatch(/1 w/);
+    expect(appearanceOps(reloaded, dict)).toMatch(/\[5 3\] 0 d/);
+  });
+
+  it('publishes the wash alpha as an /ExtGState the stream names', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, linkSpec());
+    const reloaded = await roundTrip(doc);
+    const dict = firstAnnotation(reloaded);
+    const states = appearanceResources(reloaded, dict).lookupMaybe(PDFName.of('ExtGState'), PDFDict);
+    expect(states, 'the link appearance declares no /ExtGState').toBeTruthy();
+    const wash = reloaded.context.lookup(states!.get(PDFName.of('GS1'))) as PDFDict;
+    expect((wash.get(PDFName.of('ca')) as PDFNumber).asNumber()).toBe(LINK_WASH_ALPHA);
+    // Only the fill is translucent: a rule faded to 8 % is not the box the user drew.
+    expect(wash.get(PDFName.of('CA'))).toBeUndefined();
+  });
+
+  it('measures the link box at its alpha, not at the size of its rect', async () => {
+    const doc = await docWithPages();
+    addAnnotation(doc, linkSpec());
+    const reloaded = await roundTrip(doc);
+    const dict = firstAnnotation(reloaded);
+    const boxArea = LINK_BOX.width * LINK_BOX.height;
+    const frame = 2 * (LINK_BOX.width - 1 + LINK_BOX.height - 1);
+    // Wash + dashed rule, worked out by hand from the operators the test above
+    // named. An estimate that matched the box exactly would not be measuring ink.
+    expect(appearanceInk(reloaded, dict).inkPt2).toBeCloseTo(
+      boxArea * LINK_WASH_ALPHA + frame * 1 * (5 / 8),
+      2,
+    );
+  });
+
+  it('reports no ink for a link the file hides with /CA 0', async () => {
+    // The measure has to be able to say "nothing visible", or every row of the
+    // per-subtype table is a tautology: `q Q` and a hidden box both paint paper.
+    const doc = await docWithPages();
+    addAnnotation(doc, linkSpec({ opacity: 0 }));
+    const reloaded = await roundTrip(doc);
+    const dict = firstAnnotation(reloaded);
+    expect(appearanceOps(reloaded, dict)).toMatch(/re/);
+    expect(appearanceInk(reloaded, dict).inkPt2).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reading ink out of an appearance stream                             *
+ * ------------------------------------------------------------------ */
+
+describe('measuring what an appearance stream lays down', () => {
+  it('reads an empty stream as no ink', () => {
+    const empty = measureOps('q Q\n');
+    expect(empty.inkPt2).toBe(0);
+    expect(empty.paintOps).toEqual([]);
+    expect(measureOps('q\n0 0 148 12 re\nn\nQ').inkPt2).toBe(0);
+  });
+
+  it('measures a flat rule by its stroke, not by a bounding box', () => {
+    // The trap that reported underline and strike-out as invisible: a horizontal
+    // rule encloses no area, and every one of these marks is nothing but a stroke.
+    const rule = measureOps('q\n0 0 0 RG\n1 w\n0 5 m\n100 5 l\nS\nQ');
+    expect(rule.inkPt2).toBeCloseTo(100, 6);
+    expect(measureOps('0 0 0 RG 0.8 w 0 0 m 60 0 l 60 40 l S').inkPt2).toBeCloseTo(80, 6);
+  });
+
+  it('subtracts the gaps a dash leaves open', () => {
+    const solid = measureOps('0 0 0 RG 1 w 0 5 m 100 5 l S');
+    const dashed = measureOps('0 0 0 RG 1 w [5 3] 0 d 0 5 m 100 5 l S');
+    expect(dashed.inkPt2).toBeCloseTo(solid.inkPt2 * (5 / 8), 6);
+  });
+
+  it('counts a placed image at the size the transform gives it', () => {
+    const placed = measureOps('q\n120 0 0 40 10 10 cm\n/Im0 Do\nQ', imageResources());
+    expect(placed.inkPt2).toBeCloseTo(120 * 40, 6);
+  });
+
+  it('counts a shown text run, and refuses an invisible render mode', () => {
+    const shown = measureOps('/F1 12 Tf 4 20 Td <61626364> Tj');
+    expect(shown.inkPt2).toBeGreaterThan(0);
+    expect(measureOps('/F1 12 Tf 3 Tr <61626364> Tj').inkPt2).toBe(0);
+    expect(measureOps('/F1 12 Tf 0 Tr <> Tj').inkPt2).toBe(0);
+  });
+
+  it('applies an /ExtGState alpha the stream asks for', () => {
+    const half = measureOps('/GS1 gs 1 0 0 rg 0 0 10 10 re f', stateResources(0.5));
+    expect(half.inkPt2).toBeCloseTo(50, 6);
+    const hidden = measureOps('/GS1 gs 1 0 0 rg 0 0 10 10 re f', stateResources(0));
+    expect(hidden.inkPt2).toBe(0);
+  });
+});
+
+/** A one-unit `/Im0` image, as `embedRasterImage` registers it. */
+function imageResources(): PDFDict {
+  const context = PDFContext.create();
+  const image = context.register(
+    context.obj({ Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, BBox: [0, 0, 1, 1] }),
+  );
+  return context.obj({ XObject: { Im0: image } }) as PDFDict;
+}
+
+/** A `/GS1` state carrying one fill alpha, as an appearance declares it. */
+function stateResources(ca: number): PDFDict {
+  const context = PDFContext.create();
+  const state = context.register(context.obj({ Type: 'ExtGState', ca }));
+  return context.obj({ ExtGState: { GS1: state } }) as PDFDict;
+}
+
+/** Every `x y w h re` in an appearance stream, in the order they are built. */
+function rectangles(ops: string): number[][] {
+  const out: number[][] = [];
+  const found = ops.matchAll(/(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) re/g);
+  for (const match of found) out.push(match.slice(1, 5).map(Number));
+  return out;
+}
 
 /* ------------------------------------------------------------------ *
  * listAnnotations / removeAnnotations on foreign documents            *
