@@ -1,0 +1,197 @@
+[
+ {
+  "tool": "pdf-crop",
+  "tag": "margins",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "fields": {
+   "Top margin": "40",
+   "Left margin": "40",
+   "Every page": "toggle"
+  }
+ },
+ {
+  "tool": "sign",
+  "tag": "drawn",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Place signatures|Add text to PDF"
+ },
+ {
+  "tool": "edit-pdf-text",
+  "tag": "pane",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Save|Download|Apply|Rewrite"
+ },
+ {
+  "tool": "redact-pdf",
+  "tag": "pane",
+  "files": [
+   "/tmp/triage/in/annot.pdf"
+  ],
+  "label": "Apply|Redact|Save|Download"
+ },
+ {
+  "tool": "form-creator",
+  "tag": "pane",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "fields": {
+   "Fields": "text:q1|Alpha question"
+  },
+  "label": "Save form|Create"
+ },
+ {
+  "tool": "scan-to-pdf",
+  "tag": "photo",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "label": "Generate PDF|Add photos"
+ },
+ {
+  "tool": "add-stamps",
+  "tag": "pane",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "fields": {
+   "Stamp": "toggle"
+  },
+  "label": "Save|Apply|Download"
+ },
+ {
+  "tool": "edit-pdf",
+  "tag": "pane",
+  "files": [
+   "/tmp/triage/in/annot.pdf"
+  ],
+  "label": "Save|Download|Apply"
+ },
+ {
+  "tool": "add-attachments",
+  "tag": "picker",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "fields": {
+   "Files to attach": "/tmp/triage/in/note.txt"
+  }
+ },
+ {
+  "tool": "digital-sign-pdf",
+  "tag": "picker",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "fields": {
+   "Certificate (PEM or P12)": "/tmp/triage/in/signer-cert.pem",
+   "Private key (PEM)": "/tmp/triage/in/signer-key.pem"
+  }
+ },
+ {
+  "tool": "pdf-layers",
+  "tag": "hide",
+  "files": [
+   "/tmp/triage/in/layers.pdf"
+  ],
+  "fields": {
+   "Hide these layers": "toggle"
+  }
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "real",
+  "files": [
+   "/tmp/triage/in/photo.heic"
+  ]
+ },
+ {
+  "tool": "trim",
+  "tag": "run",
+  "route": "/tool/trim",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Trim Video",
+  "timeout": 420000
+ },
+ {
+  "tool": "resize",
+  "tag": "run",
+  "route": "/tool/resize",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Resize Video",
+  "timeout": 420000
+ },
+ {
+  "tool": "crop",
+  "tag": "run",
+  "route": "/tool/crop",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Crop Video",
+  "timeout": 420000
+ },
+ {
+  "tool": "compress",
+  "tag": "run",
+  "route": "/tool/compress",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Compress Video",
+  "timeout": 420000
+ },
+ {
+  "tool": "gif",
+  "tag": "run",
+  "route": "/tool/gif",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Convert to GIF",
+  "timeout": 420000
+ },
+ {
+  "tool": "audio",
+  "tag": "run",
+  "route": "/tool/audio",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Apply Audio Changes",
+  "timeout": 420000
+ },
+ {
+  "tool": "speed",
+  "tag": "run",
+  "route": "/tool/speed",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Apply Speed Change",
+  "timeout": 420000,
+  "eval": [
+   "(()=>{const b=[...document.querySelectorAll('button')].find(x=>(x.innerText||'').trim()==='2x');if(b){b.click();return 'clicked 2x'}return 'NO CHIP'})()"
+  ]
+ },
+ {
+  "tool": "metadata",
+  "tag": "run",
+  "route": "/tool/metadata",
+  "files": [
+   "/tmp/triage/in/clip.mp4"
+  ],
+  "label": "Strip Metadata",
+  "timeout": 420000
+ }
+]
