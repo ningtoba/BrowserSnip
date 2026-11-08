@@ -83,8 +83,18 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
 /** Tilt each test wants reported per page, in degrees, plus its confidence. */
 const skew = vi.hoisted(() => ({ angles: [] as { angle: number; confidence: number }[], failures: new Set<number>() }));
 
+/**
+ * The un-stubbed `detectSkew`, captured so one test can drive the *real* helper
+ * against the render double below — the double is only worth repairing if a
+ * helper that skips `await render.finished` demonstrably fails against it.
+ */
+const realMeasure = vi.hoisted(() => ({
+  detectSkew: null as unknown as typeof import('@/lib/pdf/core/measure').detectSkew,
+}));
+
 vi.mock('@/lib/pdf/core/measure', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/measure')>();
+  realMeasure.detectSkew = real.detectSkew;
   return {
     ...real,
     detectSkew: async (_session: unknown, page: number) => {
@@ -114,6 +124,10 @@ const session = vi.hoisted(() => ({
   pages: [] as Array<[number, number]>,
   rendered: 0,
   aborted: false,
+  /** `getImageData` calls served before the paint landed. */
+  blankReads: 0,
+  /** The inked buffer the last completed paint handed out, for measuring with. */
+  lastPainted: null as null | { data: Uint8ClampedArray; width: number; height: number },
 }));
 
 vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
@@ -130,15 +144,69 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           const [widthPt, heightPt] = session.pages[n - 1] ?? [595, 842];
           const width = Math.round(widthPt * scale);
           const height = Math.round(heightPt * scale);
+          // The double models pdf.js **ordering**, not just shape (standing
+          // rule 1): when `renderPage` settles the canvas holds only the
+          // synchronous background fill, and striped ink lands when `finished`
+          // resolves. A helper that copies pixels without awaiting the paint
+          // measures a blank page — the deskew and CBZ bugs passed against the
+          // old `finished: Promise.resolve()` because nothing could get early.
+          const blank = new Uint8ClampedArray(width * height * 4);
+          for (let p = 0; p < blank.length; p += 4) {
+            blank[p] = 255;
+            blank[p + 1] = 255;
+            blank[p + 2] = 255;
+            blank[p + 3] = 255;
+          }
+          const painted = blank.slice();
+          // Rows the way body text lands: ~10 pt of ink every 16 pt. Nothing in
+          // the assertions below depends on that density — the test compares two
+          // readings of the same canvas — but a double that painted nothing at
+          // all would prove nothing either.
+          const rowPitch = Math.max(8, Math.round(16 * scale));
+          const barHeight = Math.max(3, Math.round(10 * scale));
+          for (let y = rowPitch; y + barHeight < height - rowPitch; y += rowPitch) {
+            for (let row = y; row < y + barHeight && row < height; row++) {
+              // Black ink on the white ground: zero the colour channels, keep
+              // the alpha the background gave them — a transparent "bar" is
+              // paper to `alphaMaskFromPixels`, not ink.
+              const start = row * width * 4;
+              const end = (row * width + width) * 4;
+              for (let p = start; p < end; p += 4) {
+                painted[p] = 0;
+                painted[p + 1] = 0;
+                painted[p + 2] = 0;
+              }
+            }
+          }
+          let pixels = blank;
+          let cancelled = false;
+          const finished = new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              if (cancelled) reject(new real.RenderCancelled('test render cancelled'));
+              else {
+                pixels = painted;
+                session.lastPainted = { data: painted, width, height };
+                resolve();
+              }
+            }, 0);
+          });
+          finished.catch(() => undefined);
           return {
             canvas: {} as HTMLCanvasElement,
-            ctx: {} as CanvasRenderingContext2D,
+            ctx: {
+              getImageData: (_x: number, _y: number, w: number, h: number) => {
+                if (pixels === blank) session.blankReads += 1;
+                return { data: pixels.slice(0, w * h * 4), width: w, height: h } as unknown as ImageData;
+              },
+            } as unknown as CanvasRenderingContext2D,
             width,
             height,
             unitsPerPixel: 1 / scale,
             pageNumber: n,
-            finished: Promise.resolve(),
-            cancel: () => {},
+            finished,
+            cancel: () => {
+              cancelled = true;
+            },
           };
         },
         textItems: async () => [],
@@ -169,6 +237,8 @@ beforeEach(() => {
   skew.failures = new Set();
   session.pages = [[595, 842]];
   session.rendered = 0;
+  session.blankReads = 0;
+  session.lastPainted = null;
 });
 
 /** ── fixtures ───────────────────────────────────────────────────────────── */
@@ -943,10 +1013,20 @@ describe('deskew-pdf turns the page without breaking it (E6, E9, E15, E16)', () 
     const content = pageContentStreams(doc.getPage(0))
       .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
       .join('\n');
-    expect(content).toMatch(/^q\s+0\.999/);
+    const cm = /^q\s+(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)/.exec(content);
+    expect(cm, `the correction matrix should lead the content: ${content.slice(0, 80)}`).toBeTruthy();
+    // The sign the deployed bug inverted: a bitmap tilt of +2.5° (text running
+    // downhill, y down) must be turned back **counterclockwise** in user space,
+    // i.e. `cm` = [cos +2.5°, sin +2.5°, −sin +2.5°, cos +2.5°]. Passing the
+    // estimate through un-negated wrote sin −2.5° and doubled the lean.
+    expect(Number(cm![2]), 'cm b must be sin(+2.5°): the page turns counterclockwise').toBeGreaterThan(0.04);
+    expect(Number(cm![2])).toBeLessThan(0.05);
+    expect(Number(cm![3])).toBeLessThan(-0.04);
     expect(content).toMatch(/cm/);
     expect(content).toMatch(/Q/);
-    expect(outcome.message).toMatch(/Straightened 1 page\(s\): 1 \(2\.50°\)/);
+    expect(outcome.message).toMatch(
+      /Straightened 1 page\(s\): 1 \(tilt \+2\.50°, turned 2\.50° counterclockwise\)/,
+    );
     expect(outcome.warnings.join(' ')).toMatch(/page 3 \(45\.00° is past the 10° limit\)/);
     expect(doc.getPage(1).getSize()).toEqual({ width: 595, height: 842 });
   });
@@ -1005,6 +1085,42 @@ describe('deskew-pdf turns the page without breaking it (E6, E9, E15, E16)', () 
     skew.angles = [{ angle: 4, confidence: 0.7 }];
     const marked = await run('deskew-pdf', {}, [pdfFile(source, 'marks.pdf')]);
     expect(marked.warnings.join(' ')).toMatch(/1 annotation\(s\) kept their old coordinates/i);
+  });
+
+  it('the render double paints only on `finished`, so the real detectSkew is held to it (rule 1)', async () => {
+    // Standing rule 1, repaired for this file: `finished: Promise.resolve()` was
+    // the blind spot that let a helper read an unpainted canvas and still pass.
+    // The double now hands out background-fill pixels until `finished` resolves
+    // and inked ones after, so the assertion is a **comparison, not a threshold**:
+    // whatever `detectSkew` answers has to be exactly what the same pure estimate
+    // answers on the canvas the paint actually landed in. A helper that reads
+    // early measures an empty page, and an empty page estimates
+    // `{ angle: 0, confidence: 0 }` — no ink-density guess to argue with, and no
+    // number to nudge downward until the test passes again.
+    session.pages = [[595, 842]];
+    const { openRender } = await import('@/lib/pdf/core/render');
+    const renderSession = await openRender(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {});
+    try {
+      const estimate = await realMeasure.detectSkew(renderSession, 1, { maxAngle: 10 });
+      const painted = session.lastPainted;
+      expect(painted, 'the double never painted, so it proves nothing').toBeTruthy();
+      const { alphaMaskFromPixels, skewFromProjectionProfile } = await import('@/lib/pdf/core/measure');
+      const onPaintedCanvas = skewFromProjectionProfile(
+        alphaMaskFromPixels(painted!.data, painted!.width, painted!.height),
+        painted!.width,
+        painted!.height,
+        10,
+      );
+      expect(session.blankReads, 'detectSkew read the canvas before the paint landed').toBe(0);
+      expect(estimate).toEqual(onPaintedCanvas);
+      // The two must not agree by both being nothing: the painted rows are
+      // horizontal, so a real measurement has confidence and an empty bitmap has
+      // none, and only that difference can make this test go red.
+      expect(onPaintedCanvas.confidence).toBeGreaterThan(0);
+      expect(Math.abs(estimate.angle), 'the double paints horizontal rows').toBeLessThan(0.15);
+    } finally {
+      await renderSession.destroy();
+    }
   });
 });
 

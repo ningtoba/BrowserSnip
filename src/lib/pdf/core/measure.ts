@@ -431,7 +431,13 @@ export interface SkewOptions {
   cutoff?: number;
 }
 
-/** Projection-profile skew estimate for one page, in degrees. */
+/**
+ * Projection-profile skew estimate for one page, in **bitmap** degrees: the angle
+ * the rendered text lines run at, measured with y pointing *down* (a page whose
+ * text rises to the right — a positive PDF user-space rotation — answers
+ * negative). The correction handed to `applySkew` is the negation of this, which
+ * is what {@link deskewAngleFor} exists to spell out.
+ */
 export async function detectSkew(
   session: PdfSession,
   page: number,
@@ -439,6 +445,13 @@ export async function detectSkew(
 ): Promise<SkewEstimate> {
   const render = await session.renderPage(page, opts.scale ?? 1.5, { background: '#ffffff' });
   try {
+    // `renderPage` settles when the paint is only *scheduled*; its synchronous
+    // work is the white background fill. Reading the bitmap before `finished`
+    // therefore measured an empty page, the estimator found under 32 ink pixels,
+    // and every tilted page came back `{ angle: 0, confidence: 0 }` — deskew
+    // reported "nothing to do" on a 6° scan. Same lesson as `renderToCanvas`
+    // (`694e007`) and `rasterizePages` (`6b9b479`).
+    await render.finished;
     const data = render.ctx.getImageData(0, 0, render.width, render.height).data;
     const mask = alphaMaskFromPixels(data, render.width, render.height, { cutoff: opts.cutoff ?? 200 });
     return skewFromProjectionProfile(mask, render.width, render.height, opts.maxAngle ?? 7);
@@ -597,9 +610,14 @@ export async function scannerEffect(
 }
 
 /**
- * Rotate one page around its centre by `angle` degrees using `skewFromProjectionProfile`
- * output as the source angle. Exposed for the deskew tool, which keeps the
- * correction angle in its own state.
+ * The angle to hand `applySkew` for a measured tilt: the negation of
+ * {@link SkewEstimate.angle}, clamped to ±`maxAngle`.
+ *
+ * The two live in different conventions — the estimate is a bitmap angle (y
+ * down), `applySkew` turns the page clockwise as it is viewed — so this one
+ * negation is the whole translation between them, and skipping it turns a
+ * straighten into a double tilt. Clamped because a page past the user's
+ * "largest angle to correct" must be left alone rather than half-turned.
  */
 export function deskewAngleFor(measured: SkewEstimate, maxAngle: number): number {
   return clamp(-measured.angle, -maxAngle, maxAngle);
