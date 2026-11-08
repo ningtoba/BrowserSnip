@@ -13,7 +13,7 @@
  * | `repairPDF`          | `tools/optimize.ts` (`repair`) — the damaged-file reader and its raw-byte fallback exist nowhere else. |
  * | `scanImagesToPdf`    | `tools/legacy.ts` (`scan-to-pdf`) — kept instead of `core/pack.pdfFromImages` because that path re-encodes every page as PNG; a camera frame is already JPEG and must stay JPEG. |
  * | `drawSignatureMarks` | `tools/legacy.ts` (`sign`) — placing a picture or a typed name at a point the user dragged to. |
- * | `comparePDFs`        | `tools/legacy.ts` (`compare`) — the pixel diff that produces an annotated PDF. `tools/security.ts` computes a diff for its *report*, but throws the canvas away instead of writing a file. |
+ * | `comparePDFs`        | `tools/legacy.ts` (`compare`) — the pixel diff that produces an annotated PDF, and the only compare path the shipped page reaches. `tools/security.ts` computes a diff for its *report*, but collects each page's overlay into a local `images` list it never returns, so that path writes no picture and no file. |
  *
  * What this module is waiting on, so it can shrink to nothing:
  * - `core/pack` gaining "keep the source container" so the scan path can move
@@ -443,6 +443,13 @@ export async function comparePDFs(
         sessionA.renderPage(page, scale),
         sessionB.renderPage(page, scale),
       ]);
+      // `renderPage` settles when the task is *scheduled*; the pixels arrive on
+      // `finished`. Both canvases are read below — once into the page copy, once
+      // through the diff — and reading them early is what shipped a comparison
+      // where every page measured paper, so nothing could ever be marked
+      // (the campaign's unawaited-paint family; `docs/TOOL-CAMPAIGN.md`, the
+      // `compare-pdfs` row, carries the deployed numbers).
+      await Promise.all([renderA.finished, renderB.finished]);
       const width = Math.max(renderA.width, renderB.width);
       const height = Math.max(renderA.height, renderB.height);
       const sheet = document.createElement('canvas');

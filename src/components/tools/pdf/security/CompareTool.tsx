@@ -4,11 +4,12 @@
  * Adjust sensitivity and highlight colour, then generate a comparison PDF with
  * differences highlighted.
  *
- * The diff itself is computed by the preview (`CompareMain`), page by page, over
- * as many pages as both documents have. This panel's job is to state that scope
- * before the run: which two files, how many pages actually get compared, what the
- * threshold catches, and what "0% differ" means (E6, E13, E15, E18). The wording
- * lives in `editor/documentFacts` so the sentence is testable without a canvas.
+ * The preview measures the page in view; the export runs page by page over as many
+ * pages as both documents have. This panel's job is to state that scope before the
+ * run: which two files, how many pages actually get compared, what the threshold
+ * catches, what "0% differ" means, and where the changed areas are (E6, E13, E15,
+ * E18). The wording that does not depend on a canvas lives in
+ * `editor/documentFacts`, so the sentence is testable without one.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
@@ -24,6 +25,8 @@ import {
   type DocPageCount,
 } from '@/components/tools/pdf/editor/documentFacts';
 import {
+  diffAreaAttribute,
+  diffAreaWords,
   getCompareState, setCompareSensitivity, setCompareHighlightColor,
   subscribeCompare,
 } from './CompareMain';
@@ -35,7 +38,13 @@ export function CompareTool() {
   const [st, setSt] = useState(getCompareState());
   const [counts, setCounts] = useState<{ a: DocPageCount | null; b: DocPageCount | null }>({ a: null, b: null });
 
-  useEffect(() => subscribeCompare(() => setSt(getCompareState())), []);
+  // `_state` is one mutable object the pane writes into, so handing it to
+  // `useState` unchanged asks React to compare a value with itself: the card below
+  // kept printing the numbers of the first render — `0 %` and "Nothing differs on
+  // the page in view" — over a pane that had just measured 13,600 changed pixels.
+  // A copy per notification is what makes this panel read the verdict, not its own
+  // initial state.
+  useEffect(() => subscribeCompare(() => setSt({ ...getCompareState(), diffAreas: [...getCompareState().diffAreas] })), []);
 
   // The preview knows the minimum of the two page counts; the panel measures both,
   // because "pages 6–9 of the longer file were not compared" is the sentence that
@@ -158,18 +167,51 @@ export function CompareTool() {
         aria-live="polite"
       >
         <p className="text-2xl font-bold text-accent tabular-nums" data-compare-diff={st.diffPercent}>
-          {st.diffPercent}%
+          {st.compared ? `${st.diffPercent}%` : '—'}
         </p>
         <p className="text-[10px] leading-relaxed text-ink-muted">
-          {st.diffPixels > 0
-            ? <>
-                {st.diffRegions} changed area{st.diffRegions === 1 ? '' : 's'} on page {st.page} ·{' '}
-                {st.diffPixels.toLocaleString()} of {st.totalPixels.toLocaleString()} pixels · compared against{' '}
-                {report.comparedPages} page{report.comparedPages === 1 ? '' : 's'} both files have
-              </>
-            : `Page ${st.page} matches at this sensitivity — ${report.comparedPages} page${report.comparedPages === 1 ? '' : 's'} in common are being checked`}
+          {!st.compared
+            ? `Neither page has been read yet — the figures below are not a verdict.`
+            : st.diffPixels > 0
+              ? <>
+                  {st.diffRegions} changed area{st.diffRegions === 1 ? '' : 's'} on page {st.page} ·{' '}
+                  {st.diffPixels.toLocaleString()} of {st.totalPixels.toLocaleString()} pixels · compared against{' '}
+                  {report.comparedPages} page{report.comparedPages === 1 ? '' : 's'} both files have
+                </>
+              : `Page ${st.page} matches at this sensitivity — ${report.comparedPages} page${report.comparedPages === 1 ? '' : 's'} in common are being checked`}
         </p>
-        {st.diffPixels === 0 && (
+        {/*
+          Where, not merely how much. Each line is the changed area's own bounds in
+          the page's points, measured from its top-left, so a reader can look at the
+          sheet beside the panel and find the number they are being shown — and so
+          the export's marks can be compared with a coordinate rather than an ink
+          percentage (`docs/research/compare-measure.py` reads the same box out of
+          the downloaded file).
+        */}
+        {st.compared && st.diffAreas.length > 0 && (
+          <motion.ul variants={scaleIn} data-compare-areas={st.diffAreas.length} className="mt-1 space-y-0.5 text-left">
+            {st.diffAreas.slice(0, 3).map((area, index) => (
+              <li
+                key={`${area.x0}-${area.y0}-${area.x1}-${area.y1}`}
+                data-compare-area={diffAreaAttribute(area)}
+                className="font-mono text-[10px] text-ink-muted"
+              >
+                · area {index + 1}: {diffAreaWords(area)} from the {st.areasOnPage ? "page's" : "compared sheet's"} top-left
+              </li>
+            ))}
+            {st.diffAreas.length < st.diffRegions && (
+              <li className="text-[10px] text-ink-muted">
+                · {st.diffRegions - st.diffAreas.length} smaller area{st.diffRegions - st.diffAreas.length === 1 ? '' : 's'} not listed
+              </li>
+            )}
+            {!st.areasOnPage && (
+              <li className="text-[10px] text-ink-muted">
+                · the two sheets differ in size, so these are counted from the top of the taller one
+              </li>
+            )}
+          </motion.ul>
+        )}
+        {st.compared && st.diffPixels === 0 && (
           <p className="mt-1 text-[10px] leading-relaxed text-warn" data-compare-identical>
             Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it —
             move to another page, or lower the sensitivity to catch smaller changes.
@@ -180,7 +222,7 @@ export function CompareTool() {
       {/* What will be written, in words (E6, E13) */}
       <motion.ul
         variants={scaleIn}
-        data-compare-report={report.notes.length}
+        data-compare-report={report.notes.length + (st.compared ? 0 : 1)}
         className={`space-y-1 rounded-[12px] border px-3 py-2.5 text-[10px] leading-relaxed ${
           report.tone === 'danger'
             ? 'border-danger/25 bg-danger/[0.07] text-danger'
@@ -192,6 +234,9 @@ export function CompareTool() {
         {report.notes.map((note) => (
           <li key={note}>· {note}</li>
         ))}
+        {!st.compared && (
+          <li key="unread">· Nothing has been compared yet, so the "no pixels differ" line above is not a verdict.</li>
+        )}
       </motion.ul>
 
       {/* Sensitivity */}
@@ -224,7 +269,8 @@ export function CompareTool() {
       {/* Info */}
       <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">
         Changes are found by rendering both pages and comparing their pixels, not by reading the text. The output is a
-        copy of A with every changed area marked; both files stay in this tab.
+        copy of A with every changed area marked in the colour you chose; the verdict beside the pages is for the page
+        in view, and the marks run across every page both files have. Both files stay in this tab.
       </motion.p>
 
       {/* What the run had to admit: pages only one document has, files it could

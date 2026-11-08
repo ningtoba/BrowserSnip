@@ -740,7 +740,7 @@ export const securityTools: PdfToolDefinition[] = [
   {
     id: 'compare-pdfs',
     name: 'Compare PDFs',
-    description: 'Diff two documents page by page and export the differences',
+    description: 'Compare two PDFs page by page and export the first one, marked where they differ',
     icon: '🔍',
     category: 'security',
     keywords: ['diff', 'changes', 'versions', 'audit'],
@@ -749,11 +749,25 @@ export const securityTools: PdfToolDefinition[] = [
     maxFiles: 2,
     surface: 'custom',
     outputSuffix: '_comparison.pdf',
-    promise: 'A page-by-page report of what differs, with a picture of each changed area when you compare pixels.',
+    // What the shipped page does, measured rather than remembered. It used to
+    // promise "a page-by-page report of what differs, with a picture of each
+    // changed area when you compare pixels", and three things contradicted that:
+    // the route (`#/tool/compare-pdfs`) mounts the pane and this entry's own panel,
+    // so the rail form whose Pixels / Text content / Both segment the sentence
+    // leans on is never rendered — with two files loaded the only enabled buttons
+    // on the deployed page were the panel's own “Generate comparison PDF”, “◂ Prev”
+    // and “Next ▸”; the `run` below collects an overlay per differing page into
+    // `images` and then returns without them, so no picture reaches anybody; and a
+    // page that differs really does come back as one marked band across the sheet,
+    // not as a cut-out of each area. The report this `run` writes is a true thing
+    // to promise *when something calls it* — see `docs/TOOL-CAMPAIGN.md`, the
+    // `compare-pdfs` row, for which side of that seam owns the decision.
+    promise: 'Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted.',
     actionLabel: 'Compare',
     notes: [
       'Comparison works page against page by number, so a document with one page inserted reports every later page as different.',
       'A difference in rendering is not a difference in content: two files can hold the same text and still differ in pixels because of a font substitute.',
+      'The numbers beside the pages are for the page in view; the marks are painted across every page both files have, and a page only one file has is reported and left out.',
     ],
     fields: [
       {
@@ -783,16 +797,29 @@ export const securityTools: PdfToolDefinition[] = [
       const rows: { label: string; value: string }[] = [];
       const images: { label: string; blob: Blob }[] = [];
       const textlessPages: number[] = [];
+      /**
+       * Pages this run can say differ, keyed by page number so a page examined twice
+       * (`Both` mode reads its pixels and then its words) is counted once.
+       *
+       * The headline used to count rows matching `/differ|only in/`, and
+       * “no visible difference” contains *differ* — so a pair that is the same file
+       * twice was reported as “3 of 3 page(s) differ”, and a text change found in
+       * `Both` mode was not counted at all. Reading the prose back was the bug;
+       * every row now records its own verdict.
+       */
+      const differing = new Set<number>();
       const sa = await openRender(a.bytes, { password: context.password });
       const sb = await openRender(b.bytes, { password: context.password });
       try {
         for (let page = 1; page <= pages; page++) {
           if (page > a.pageCount) {
             rows.push({ label: `Page ${page}`, value: 'only in the second file' });
+            differing.add(page);
             continue;
           }
           if (page > b.pageCount) {
             rows.push({ label: `Page ${page}`, value: 'only in the first file' });
+            differing.add(page);
             continue;
           }
           if (mode !== 'visual' && mode !== 'both') {
@@ -811,10 +838,16 @@ export const securityTools: PdfToolDefinition[] = [
                   : `text differs (${diffWords(ta, tb)})`,
             });
             if (silent) textlessPages.push(page);
+            else if (ta !== tb) differing.add(page);
             continue;
           }
           const scale = dpi / 72;
           const [ra, rb] = await Promise.all([sa.renderPage(page, scale), sb.renderPage(page, scale)]);
+          // `renderPage` settles while pdf.js is still working; the pixels arrive on
+          // `finished`. Reading both canvases a step early compared two sheets of
+          // paper, which is how a page with a real change in it reported
+          // “no visible difference”.
+          await Promise.all([ra.finished, rb.finished]);
           const { percent, overlay } = visualDiff(ra.canvas, rb.canvas, sensitivity);
           ra.cancel();
           rb.cancel();
@@ -823,12 +856,16 @@ export const securityTools: PdfToolDefinition[] = [
             value: percent < 0.05 ? 'no visible difference' : `${percent.toFixed(2)}% of pixels differ`,
           });
           if (percent >= 0.05) {
+            differing.add(page);
             images.push({ label: `Page ${page}`, blob: await overlay });
           }
           if (mode === 'both') {
             const ta = (await sa.textItems(page)).map((i) => i.str).join(' ');
             const tb = (await sb.textItems(page)).map((i) => i.str).join(' ');
-            if (ta !== tb) rows.push({ label: `Page ${page} text`, value: diffWords(ta, tb) });
+            if (ta !== tb) {
+              differing.add(page);
+              rows.push({ label: `Page ${page} text`, value: diffWords(ta, tb) });
+            }
           }
           context.progress(page / pages, `Compared page ${page} of ${pages}`);
         }
@@ -836,7 +873,7 @@ export const securityTools: PdfToolDefinition[] = [
         await sa.destroy();
         await sb.destroy();
       }
-      const changed = rows.filter((r) => /differ|only in/.test(r.value)).length;
+      const changed = differing.size;
       const message = textlessPages.length === pages
         ? `Nothing could be compared: none of the ${pages} page(s) carries a text layer. Run OCR on both files, or compare pixels.`
         : changed === 0

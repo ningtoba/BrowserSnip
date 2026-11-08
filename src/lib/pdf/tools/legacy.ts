@@ -354,11 +354,15 @@ export const legacyTools: PdfToolDefinition[] = [
   },
   {
     id: 'compare',
-    // `compare-pdfs` (security.ts) exports a difference report and holds the plain
-    // name; this entry is the pane that shows both files at once, and two catalogue
-    // rows called "Compare PDFs" is a choice nobody can read.
+    // The fold (`registry.ts` TOOL_ALIASES) points `compare` at `compare-pdfs`, so
+    // only one "Compare PDFs" card is listed — but the page behind that card runs
+    // *this* definition: `ToolWorkspace` mounts `CompareTool` as the panel for
+    // `compare-pdfs`, and that panel calls `usePdfTool('compare')`. Measured on the
+    // deployed route with two files loaded, the enabled buttons are this entry's
+    // “Generate comparison PDF”, “◂ Prev” and “Next ▸” — no rail form, so
+    // `compare-pdfs`'s own report `run` has no control that reaches it.
     name: 'Compare Side by Side',
-    description: 'View two PDFs side by side and highlight every difference',
+    description: 'View two PDFs side by side and mark the differences your sensitivity catches',
     icon: '🔍',
     category: 'security',
     keywords: ['diff', 'changes', 'versions', 'redline'],
