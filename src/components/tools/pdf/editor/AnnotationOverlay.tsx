@@ -785,9 +785,9 @@ function Mark({
        * same wash and this same dash in the mark's colour, in points where the
        * screen uses pixels at the current zoom, and the rule is held inside the
        * rect for the same reason FreeText's is — an appearance is clipped to
-       * `/Rect`. The label underneath the box is authoring chrome: it hangs
-       * outside the rect, and growing the click area to fit it would move the
-       * target the user aimed.
+       * `/Rect`. The label above the box stays authoring chrome: it hangs outside
+       * the rect, and growing the click area to fit it would move the target the
+       * user aimed.
        */
       const inset = Math.min(strokeWidth / 2, Math.min(box.width, box.height) / 2);
       return (
@@ -798,7 +798,7 @@ function Mark({
             y={box.y + inset}
             width={Math.max(box.width - inset * 2, 0.1)}
             height={Math.max(box.height - inset * 2, 0.1)}
-            fill={wash(annotation.color, LINK_WASH_ALPHA)}
+            fill={wash(stroke, LINK_WASH_ALPHA)}
             stroke={stroke}
             strokeWidth={strokeWidth}
             strokeDasharray={LINK_BORDER_DASH.map((length) => length * geom.zoom).join(' ')}

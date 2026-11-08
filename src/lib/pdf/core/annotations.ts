@@ -1254,7 +1254,7 @@ function linkOps(
     paint(color, false),
     `${f(width)} w`,
     `[${LINK_BORDER_DASH.join(' ')}] 0 d`,
-    rectPath(inset, inset, Math.max(w - inset * 2, 0.01), Math.max(h - inset * 2, 0.01)),
+    rectPath(inset, inset, w - inset * 2, h - inset * 2),
     'S',
     'Q',
   ].join('\n');
