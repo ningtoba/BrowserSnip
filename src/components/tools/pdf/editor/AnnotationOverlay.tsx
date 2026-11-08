@@ -16,6 +16,8 @@ import type { CssRect, PageGeom, Point } from './geometry';
 import { markScreenRotation, pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
 import {
   FREE_TEXT_LINE_EM,
+  LINK_BORDER_DASH,
+  LINK_WASH_ALPHA,
   freeTextInset,
   markupRule,
   quadRing,
@@ -777,18 +779,29 @@ function Mark({
         </g>
       );
     }
-    case 'Link':
+    case 'Link': {
+      /**
+       * The box the user dragged is what the file paints: `linkOps` writes this
+       * same wash and this same dash in the mark's colour, in points where the
+       * screen uses pixels at the current zoom, and the rule is held inside the
+       * rect for the same reason FreeText's is — an appearance is clipped to
+       * `/Rect`. The label underneath the box is authoring chrome: it hangs
+       * outside the rect, and growing the click area to fit it would move the
+       * target the user aimed.
+       */
+      const inset = Math.min(strokeWidth / 2, Math.min(box.width, box.height) / 2);
       return (
-        <g opacity={opacity}>
+        <g {...common}>
           <rect
-            x={box.x}
-            y={box.y}
-            width={box.width}
-            height={box.height}
-            fill="rgba(37, 99, 235, 0.08)"
-            stroke={annotation.color}
-            strokeWidth={1}
-            strokeDasharray="5 3"
+            data-link-box={annotation.id}
+            x={box.x + inset}
+            y={box.y + inset}
+            width={Math.max(box.width - inset * 2, 0.1)}
+            height={Math.max(box.height - inset * 2, 0.1)}
+            fill={wash(annotation.color, LINK_WASH_ALPHA)}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeDasharray={LINK_BORDER_DASH.map((length) => length * geom.zoom).join(' ')}
           />
           <text
             x={box.x + 2}
@@ -801,6 +814,7 @@ function Mark({
           </text>
         </g>
       );
+    }
     case 'Redact':
       return (
         <rect
@@ -871,6 +885,15 @@ function arrowHead(from: Point, to: Point): string {
 }
 
 const round = (value: number): number => Math.round(value * 10) / 10;
+
+/** One mark's colour, thinned to a wash that lets the page read through it. */
+function wash(hex: string, alpha: number): string {
+  const digits = String(hex ?? '').replace('#', '');
+  const full = digits.length === 3 ? digits.split('').map((d) => d + d).join('') : digits;
+  if (!/^[\da-f]{6}$/i.test(full)) return 'none';
+  const value = Number.parseInt(full, 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
 
 const clip = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;

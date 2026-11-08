@@ -225,6 +225,7 @@ function registerFixedFont(doc: PDFDocument, width = 600): PDFRef {
 }
 
 function setPageFont(doc: PDFDocument, page: PDFPage, key: string, ref: PDFRef): void {
+  void doc;
   const { Font } = page.node.normalizedEntries();
   Font.set(PDFName.of(key), ref);
 }
@@ -249,6 +250,7 @@ function pageContent(doc: PDFDocument, pageIndex = 0): string {
 }
 
 function setPageXObject(doc: PDFDocument, page: PDFPage, key: string, ref: PDFRef): void {
+  void doc;
   const { XObject } = page.node.normalizedEntries();
   XObject.set(PDFName.of(key), ref);
 }
@@ -773,8 +775,17 @@ describe('measuring what an appearance stream lays down', () => {
   });
 
   it('counts a placed image at the size the transform gives it', () => {
+    // A raster stamp writes `w 0 0 h 0 0 cm /Im0 Do` and an `/Image` carries no
+    // `/BBox`: the unit square is its space. Pricing it at nothing would call a
+    // signature invisible in a file that plainly holds the pixels.
     const placed = measureOps('q\n120 0 0 40 10 10 cm\n/Im0 Do\nQ', imageResources());
     expect(placed.inkPt2).toBeCloseTo(120 * 40, 6);
+    expect(measureOps('q\n120 0 0 40 10 10 cm\n/Nope Do\nQ', imageResources()).inkPt2).toBe(0);
+  });
+
+  it('counts a nested form by its own /BBox', () => {
+    const placed = measureOps('q\n2 0 0 2 0 0 cm\n/Fm0 Do\nQ', formResources([0, 0, 30, 10]));
+    expect(placed.inkPt2).toBeCloseTo(30 * 10 * 4, 6);
   });
 
   it('counts a shown text run, and refuses an invisible render mode', () => {
@@ -792,13 +803,22 @@ describe('measuring what an appearance stream lays down', () => {
   });
 });
 
-/** A one-unit `/Im0` image, as `embedRasterImage` registers it. */
+/** A one-pixel `/Im0` image, as `embedRasterImage` registers it: no `/BBox`. */
 function imageResources(): PDFDict {
   const context = PDFContext.create();
   const image = context.register(
-    context.obj({ Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, BBox: [0, 0, 1, 1] }),
+    context.flateStream('x', { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 }),
   );
   return context.obj({ XObject: { Im0: image } }) as PDFDict;
+}
+
+/** A nested form XObject, which is priced by the `/BBox` it declares. */
+function formResources(bbox: number[]): PDFDict {
+  const context = PDFContext.create();
+  const form = context.register(
+    context.flateStream('q Q', { Type: 'XObject', Subtype: 'Form', BBox: bbox }),
+  );
+  return context.obj({ XObject: { Fm0: form } }) as PDFDict;
 }
 
 /** A `/GS1` state carrying one fill alpha, as an appearance declares it. */

@@ -541,7 +541,10 @@ const resolverFor = (context: PDFContext): Resolve => (value) =>
 
 const asDict = (value: unknown, resolve: Resolve): PDFDict | null => {
   const resolved = resolve(value);
-  return resolved instanceof PDFDict ? resolved : null;
+  if (resolved instanceof PDFDict) return resolved;
+  // A stream is not a dictionary in this library: its entries live in its `dict`.
+  const holder = resolved as { dict?: unknown } | null | undefined;
+  return holder?.dict instanceof PDFDict ? holder.dict : null;
 };
 
 /** The resolver a dictionary's own context gives, so refs in that file resolve. */
@@ -585,13 +588,23 @@ function resourceEntry(resources: PDFDict | null, group: string, key: string | n
   return entries ? asDict(entries.get(PDFName.of(key)), resolve) : null;
 }
 
-/** The area inside an XObject's `/BBox`; 1×1 for an image, which `cm` scales up. */
+/**
+ * The area one placed XObject covers, before the transform in front of it.
+ *
+ * A form is priced by the `/BBox` PDF requires of it. An `/Image` has none — its
+ * own coordinate space is the unit square, which the `cm` in front of the `Do`
+ * scales up to the mark's rect — and reading only `/BBox` priced every photo and
+ * signature in the palette at nothing, which is how this harness nearly reported
+ * a placed raster as invisible ink.
+ */
 function xObjectArea(resources: PDFDict | null, key: string | null): number {
   const object = resourceEntry(resources, 'XObject', key);
   if (!object) return 0;
   const box = numberArray(object.get(PDFName.of('BBox')), contextOf(object));
-  if (box.length < 4) return 0;
-  return Math.abs((box[2] - box[0]) * (box[3] - box[1]));
+  if (box.length >= 4) return Math.abs((box[2] - box[0]) * (box[3] - box[1]));
+  const width = readNumber(object.get(PDFName.of('Width')));
+  const height = readNumber(object.get(PDFName.of('Height')));
+  return Number.isFinite(width) && Number.isFinite(height) ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------ *

@@ -44,10 +44,12 @@ import {
 import { snapTextLines } from '@/components/tools/pdf/editor/quads';
 import {
   FREE_TEXT_LINE_EM,
+  LINK_BORDER_DASH,
+  LINK_WASH_ALPHA,
   TEXT_BASELINE_SHARE,
   freeTextInset,
+  hexToRgb01,
   markupRule,
-  quadRing,
 } from '@/lib/pdf/core/annotations';
 import { AnnotationOverlay } from '@/components/tools/pdf/editor/AnnotationOverlay';
 import {
@@ -111,8 +113,9 @@ import {
   undoHistory,
 } from '@/components/tools/pdf/editor/history';
 import AnnotationEditor from '@/components/tools/pdf/editor/AnnotationEditor';
-import type { EditorAnnotation, EditorToolId, ToolStyle } from '@/components/tools/pdf/editor/types';
+import type { EditorAnnotation, EditorToolId, PlacedRaster, ToolStyle } from '@/components/tools/pdf/editor/types';
 import { defaultStyleFor } from '@/components/tools/pdf/editor/tools';
+import { fakeJpeg, inkOfSpecs } from './appearance-harness';
 
 /* ------------------------------------------------------------------ *
  * Fixtures                                                            *
@@ -988,6 +991,21 @@ function elementPaintedArea(element: Element): number {
   if (tag === 'rect' || tag === 'image') {
     return Number(element.getAttribute('width')) * Number(element.getAttribute('height'));
   }
+  /**
+   * An `<ellipse>` has no box of its own in the DOM either — its geometry is two
+   * radii — and every circle the palette draws is one. Measure the paper it
+   * covers: the enclosed area when it is filled, the ring around it when it is
+   * stroked (Ramanujan's perimeter, which is within a percent of the true one at
+   * any aspect a mouse can drag).
+   */
+  if (tag === 'ellipse' || tag === 'circle') {
+    const rx = Number(element.getAttribute(tag === 'circle' ? 'r' : 'rx'));
+    const ry = Number(tag === 'circle' ? element.getAttribute('r') : element.getAttribute('ry'));
+    const filled = (element.getAttribute('fill') ?? 'none') !== 'none';
+    if (filled) return Math.PI * rx * ry;
+    const h = ((rx - ry) ** 2) / ((rx + ry) ** 2 || 1);
+    return Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h))) * Math.max(stroke, 0.5);
+  }
   const corners = shapeCorners(element);
   return corners.length >= 3 ? ringArea(corners) : 0;
 }
@@ -996,7 +1014,9 @@ function elementPaintedArea(element: Element): number {
 function markPaintedArea(id: string): number {
   const group = document.querySelector(`[data-mark="${id}"]`);
   expect(group, `mark ${id} is not on the page`).toBeTruthy();
-  const children = Array.from(group!.querySelectorAll('polygon, path, line, polyline, rect, image'));
+  const children = Array.from(
+    group!.querySelectorAll('polygon, path, line, polyline, rect, image, ellipse, circle'),
+  );
   expect(children.length).toBeGreaterThan(0);
   return children.reduce((total, element) => total + elementPaintedArea(element), 0);
 }
@@ -1239,6 +1259,146 @@ describe('the release of a drag', () => {
     expect(end.x).toBeCloseTo(release.x * overlayGeom.zoom, 1);
     expect(end.y).toBeCloseTo(release.y * overlayGeom.zoom, 1);
   });
+});
+
+/* ------------------------------------------------------------------ *
+ * 11d. What the overlay paints has to be in the file                  *
+ * ------------------------------------------------------------------ *
+ *
+ * Audit #3 measured every tool twice — the area a real browser painted, and the
+ * area the exported annotation covers — and found one number nobody had ever
+ * compared. Link came back 3 726 px² against 0 pt²: a mark you could see, move
+ * and delete that a viewer painting `/AP` would never draw. The table below is
+ * that comparison kept as a test, one row per tool the palette can create: the
+ * canvas side read out of the overlay's own DOM, the byte side read out of the
+ * saved file's `/AP /N`.
+ *
+ * Two traps the rows are built to survive:
+ *
+ * - *A rule has no height.* `<line>` and `m … l S` enclose nothing, so both sides
+ *   price a stroke as length × width. A box-based measure reported underline and
+ *   strike-out as invisible and they were fine; the canvas assertion here refuses
+ *   a 0 px² row outright, so that artifact cannot quietly turn a row into a
+ *   tautology.
+ * - *One green assertion is not a table.* A check that only ever looked at a
+ *   highlight could not have caught a link, and the fix for one subtype must not
+ *   hide a mark that loses its ink next week. Hence one `it` per tool, and the
+ *   empty-stream cases in `annotations.test.ts` that prove the measure can say 0.
+ */
+
+describe('what the overlay paints is in the file', () => {
+  /** The gesture each tool really makes, in the shape the pointer path hands it over. */
+  function gestureFor(tool: EditorToolId): Parameters<typeof build>[1] {
+    const drag = { x: 60, y: 500, width: 160, height: 60 };
+    switch (TOOL_BY_ID[tool].gesture) {
+      case 'markup':
+        return {
+          drag: { x: 62, y: 98, width: 108, height: 12 },
+          lines: snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 116 }),
+        };
+      case 'segment':
+        return dragGesturePayload(tool, { x: 60, y: 400 }, { x: 220, y: 460 });
+      case 'path':
+      case 'vertices':
+        return { points: [{ x: 60, y: 400 }, { x: 120, y: 440 }, { x: 190, y: 400 }] };
+      case 'place': {
+        // A stamp writes its label; an image and a signature write their raster.
+        if (tool === 'stamp') return { drag };
+        const raster: PlacedRaster = { bytes: fakeJpeg(80, 40), url: 'blob:ink-table', width: 80, height: 40 };
+        return { drag, raster };
+      }
+      case 'box':
+      default:
+        break;
+    }
+    switch (TOOL_BY_ID[tool].kind) {
+      case 'Link':
+        // Drag the clickable area, then name the target in the dialog that opens.
+        return {
+          drag: { x: 70, y: 95, width: 148, height: 12 },
+          link: { type: 'uri', uri: 'https://example.com/audit' },
+        };
+      case 'Text':
+        return { drag: { x: 300, y: 300, width: 0, height: 0 }, text: 'Audit note' };
+      case 'FreeText':
+        return { drag: { x: 70, y: 620, width: 200, height: 40 }, text: 'Audit text box' };
+      default:
+        return { drag };
+    }
+  }
+
+  const rows = CREATED_TOOLS.map((tool) => ({
+    tool,
+    kind: TOOL_BY_ID[tool].kind,
+    mark: build(tool, gestureFor(tool)),
+  }));
+
+  it('paints a link in the colour and at the size the file will write', async () => {
+    // The audit's number for a link was 3 726 px² of canvas against 0 pt² of file.
+    // Both sides now come from the same two numbers, in the mark's own colour, so
+    // a link recoloured in the inspector cannot look right here and print blue.
+    const geom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, rotation: 0 };
+    const mark = build(
+      'link',
+      { drag: { x: 70, y: 95, width: 148, height: 12 }, link: { type: 'uri', uri: 'https://example.com/audit' } },
+      { color: '#DC2626' },
+    )!;
+    const view = renderOverlay({ geom, annotations: [mark] });
+    const box = document.querySelector('[data-link-box]')!;
+    view.unmount();
+    // jsdom keeps attribute strings; a browser resolves them to `rgb(…)`. What is
+    // worth holding here is that both come from the mark's colour, not from a
+    // literal blue: the wash is the same ink at `LINK_WASH_ALPHA`.
+    expect(box.getAttribute('stroke')).toBe('#DC2626');
+    expect(box.getAttribute('fill')).toBe(`rgba(220, 38, 38, ${LINK_WASH_ALPHA})`);
+    // The rule and the dash are the mark's points, drawn at the page's scale.
+    expect(box.getAttribute('stroke-width')).toBe('2');
+    expect(box.getAttribute('stroke-dasharray')).toBe('10 6');
+    // Half the rule off each edge — 1 pt in the file, 1 px here at 2× — because
+    // the appearance stream is clipped to `/Rect` and SVG is not.
+    expect(box.getAttribute('x')).toBe('141');
+    expect(box.getAttribute('width')).toBe('294');
+
+    const [file] = await inkOfSpecs([{ spec: annotationToSpec(mark), tool: 'link' }]);
+    expect(file.rect).toEqual([70, 685, 218, 697]);
+    expect(hexToRgb01('#DC2626').every((v) => file.ops.includes(String(Math.round(v * 1000) / 1000)))).toBe(true);
+    expect(file.borderWidth).toBe(mark.borderWidth);
+    expect(file.borderDash).toEqual([...LINK_BORDER_DASH]);
+    expect(file.ops).toContain(`[${LINK_BORDER_DASH.join(' ')}] 0 d`);
+    expect(file.inkPt2).toBeGreaterThan(0);
+  });
+
+  it('is one row per creating tool, and names the subtype each one exports', () => {
+    expect(rows.map((row) => `${row.tool}→${row.kind}`).sort()).toEqual(
+      TOOLS.filter((meta) => isPlacementTool(meta.id))
+        .map((meta) => `${meta.id}→${meta.kind}`)
+        .sort(),
+    );
+    // 15 subtypes: the palette's 17 tools share Stamp between stamp, image and
+    // signature and nothing else collapses. `Caret`, `Popup`, `Widget` and
+    // `Squiggly` are kinds the writer knows and no tool makes, so they are not
+    // rows here.
+    expect(new Set(rows.map((row) => row.kind)).size).toBe(15);
+  });
+
+  for (const row of rows) {
+    it(`${row.tool} writes the ink it paints`, async () => {
+      expect(row.mark, `${row.tool} builds no mark from its own gesture`).not.toBeNull();
+      const view = renderOverlay({ annotations: [row.mark!] });
+      const paintedPx = markPaintedArea(row.mark!.id);
+      view.unmount();
+      // A blind row would pass the gate below by never reaching it.
+      expect(paintedPx, `${row.tool} paints nothing on the overlay`).toBeGreaterThan(0);
+
+      const [file] = await inkOfSpecs([{ spec: annotationToSpec(row.mark!), tool: row.tool }]);
+      expect(file.kind).toBe(row.kind);
+      expect(file.ops.trim(), `${row.tool} exports an empty appearance stream`).not.toBe('q Q');
+      expect(
+        file.inkPt2,
+        `${row.tool} (${row.kind}) covers ${paintedPx} px² on the canvas and nothing in the file:\n${file.ops}`,
+      ).toBeGreaterThan(0);
+    });
+  }
 });
 
 describe('a mark wears one boundary at a time', () => {
