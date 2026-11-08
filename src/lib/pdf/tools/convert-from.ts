@@ -430,6 +430,17 @@ async function exportPages(
           sideways.push(`${page} (image ${render.width}×${render.height} px, page shows as ${box.widthPt}×${box.heightPt} pt)`);
         }
       }
+      // `renderPage` settles when the paint is *scheduled*; the pixels land on
+      // `finished`. Encoding the canvas before that shipped four identical
+      // 44 128-byte PNGs at 0.00 % ink on the deployed site (`exportPages` is the
+      // only rasteriser in this file, and each of its five callers reaches it):
+      // every page had its own correct pixel size and none had any paint, because
+      // `canvasToBlob` → `flattenIfNeeded` copies the canvas synchronously. Same
+      // one await `rasterizePages` needed in `6b9b479` and `rasterize-pdf` in
+      // `4ba14b6`; the await belongs here, not in `core/raster.ts`, which only
+      // encodes the canvas it is handed, nor in `core/render.ts`, which is already
+      // honest about `finished`.
+      await render.finished;
       const blob = await canvasToBlob(render.canvas, options.format, options.quality, {
         background: '#ffffff',
         // The density the user asked for travels into the file, not just into
