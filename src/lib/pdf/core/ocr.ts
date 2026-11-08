@@ -35,7 +35,7 @@ import type { FlattenedPaddleOcrResult } from 'ppu-paddle-ocr/web';
 import { RenderCancelled, joinReadingOrder } from './render';
 import type { ExtractedTextItem, PdfSession } from './render';
 import { resolvePages } from './pages';
-import { dpiToScale } from './measure';
+import { dpiToScale, inkRatio, isBlankFromRatio } from './measure';
 import { getFont } from './fonts';
 import { viewerRectToUserSpace, viewerSizeOf, pageFrameOfView } from './tables';
 import type { PageFrame, QuadRect, TopLeftBox } from './tables';
@@ -65,6 +65,67 @@ export interface OcrPageResult {
   words: OcrWord[];
   /** True when the page already carried a real text layer and was skipped. */
   alreadySearchable: boolean;
+  /**
+   * What the painted page bitmap is actually made of, measured here rather than
+   * inferred from the word count. Absent when the page was never rendered — a
+   * skipped page, or one the recogniser never reached — which is the difference
+   * between "this page is empty" and "nobody looked", and callers must not
+   * collapse the two.
+   */
+  ink?: OcrInkReading;
+}
+
+/** Non-white coverage of one rendered page, measured after pdf.js painted it. */
+export interface OcrInkReading {
+  /** Pixels the reading covers (`inkRatio` skips the fully transparent ones). */
+  sampled: number;
+  /** Fraction of them that are ink, 0..1. */
+  ratio: number;
+  /** `ratio` under the blank rule ({@link BLANK_INK_RATIO}): nothing on the page. */
+  blank: boolean;
+}
+
+/**
+ * Ink at or below this fraction is a page with nothing on it — the same 0.1 %
+ * floor `isBlankPage` in `./measure` applies, so the two blank rules in this
+ * library stay one number with one meaning.
+ */
+export const BLANK_INK_RATIO = 0.001;
+
+/**
+ * The reader could not do its work. This is a statement about the *engine*, and
+ * it is deliberately not the same thing as "the page has no text": a file that
+ * was never analysed cannot be reported as a file with nothing in it.
+ *
+ * `phase` keeps the two honest differences apart —
+ * `load` the models never arrived, `recognise` they arrived but stopped
+ * answering partway through — and both mean the document was not read.
+ */
+/**
+ * The reader could not do its work. This is a statement about the *engine*, and
+ * it is deliberately not the same thing as "the page has no text": a file that
+ * was never analysed cannot be reported as a file with nothing in it.
+ *
+ * `phase` keeps the two honest differences apart — `load` the models never
+ * arrived, `recognise` they arrived but stopped answering partway through — and
+ * both mean the document was not read. The message stays the engine's own words
+ * verbatim: `digitize-document` quotes this string in its degradation line, and
+ * a wrapper sentence here would put this row's phrasing in that tool's mouth.
+ */
+export class OcrEngineUnavailable extends Error {
+  readonly phase: 'load' | 'recognise';
+  /** Page the reader died on, for `phase: 'recognise'`. */
+  readonly page?: number;
+  /** The engine's own words, kept so the report can name the real reason. */
+  readonly detail: string;
+
+  constructor(phase: 'load' | 'recognise', detail: string, page?: number) {
+    super(detail);
+    this.name = 'OcrEngineUnavailable';
+    this.phase = phase;
+    this.detail = detail;
+    if (page !== undefined) this.page = page;
+  }
 }
 
 export interface OcrDocumentOptions {
@@ -158,6 +219,11 @@ export function isPageSearchable(
  * Pages that already carry a text layer are skipped and reported with
  * `alreadySearchable: true`, because that is what a user expects from
  * "OCR PDF": it adds text where there is none and leaves good pages alone.
+ *
+ * Three outcomes leave this function and they are not interchangeable: the
+ * engine could not read the file at all ({@link OcrEngineUnavailable}), a page
+ * was read and holds no letters, and a page was read and holds no ink
+ * (`OcrPageResult.ink`). Only the first is a claim about the reader.
  */
 export async function ocrDocument(
   session: PdfSession,
@@ -169,7 +235,13 @@ export async function ocrDocument(
 
   if (opts.lang) opts.onStatus?.(`Language hint: ${opts.lang}`);
   opts.onStatus?.('Loading the OCR models…');
-  await initOcr();
+  try {
+    await initOcr();
+  } catch (error) {
+    // The models are fetched on first use; a failure here is the reader missing,
+    // not the document empty, and must never reach the user as "no text found".
+    throw new OcrEngineUnavailable('load', describe(error));
+  }
   opts.onStatus?.('OCR engine ready');
 
   for (let i = 0; i < pages.length; i++) {
@@ -198,8 +270,39 @@ export async function ocrDocument(
     opts.onStatus?.(`Recognising page ${pageNumber}…`);
     const render = await session.renderPage(pageNumber, scale, { background: '#ffffff' });
     let recognised: FlattenedPaddleOcrResult;
+    let ink: OcrInkReading | undefined;
     try {
-      recognised = await recognizeCanvas(render.canvas);
+      // `renderPage` settles when the paint is *scheduled*; the pixels land on
+      // `finished`. Reading the canvas on the statement after `renderPage` is
+      // what made this tool answer "Nothing was recognised" about a legible
+      // scan: measured off the same bitmap in Chromium
+      // (`docs/research/ocr-cause-probe.mjs`), it holds 0 non-white px at the
+      // settle and 94 145 px (2.17 %) once `finished` resolves. Same family as
+      // `6b9b479`, `4ba14b6`, `8313e2d`, `38ef532` — the await belongs at the
+      // read, and `core/render.ts` is already honest about the paint.
+      // A rejection here is pdf.js saying it never painted (or was cancelled):
+      // that is not the engine's fault and is not wrapped as such.
+      await render.finished;
+      ink = measurePageInk(render);
+      try {
+        // `noCache` is not an optimisation flag: the vendor result cache keys on
+        // the buffer length plus its first 1024 bytes, so two same-size sheets
+        // that begin with paper collide and page N is answered with page N−1's
+        // words. See `src/lib/ocr/engine.ts` for the measurement.
+        recognised = await recognizeCanvas(render.canvas, { noCache: true });
+      } catch (error) {
+        if (opts.signal?.aborted) {
+          throw new RenderCancelled('OCR was cancelled before it finished this document.');
+        }
+        // A reader that throws is still not a document that is empty: report it
+        // as the engine failing on this page, with the page named.
+        throw new OcrEngineUnavailable('recognise', describe(error), pageNumber);
+      }
+    } catch (error) {
+      if (opts.signal?.aborted) {
+        throw new RenderCancelled('OCR was cancelled before it finished this document.');
+      }
+      throw error;
     } finally {
       render.cancel();
     }
@@ -239,6 +342,7 @@ export async function ocrDocument(
       blocks,
       words,
       alreadySearchable: false,
+      ink,
     });
     opts.onProgress?.(i + 1, pages.length, pageNumber);
   }
@@ -345,6 +449,42 @@ export function ocrCounts(results: readonly OcrPageResult[]): {
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/**
+ * Non-white coverage of a painted page bitmap, or `undefined` when the bitmap
+ * cannot be read at all.
+ *
+ * `render` must already have awaited `finished`, or this measures the white fill
+ * and every page looks blank — which is the defect this module just learned about
+ * the hard way. A canvas with no readable pixels yields no claim rather than a
+ * false one: "not measured" and "measured empty" are different sentences.
+ */
+function measurePageInk(render: {
+  ctx?: CanvasRenderingContext2D;
+  width: number;
+  height: number;
+}): OcrInkReading | undefined {
+  if (!render.ctx?.getImageData) return undefined;
+  let data: Uint8ClampedArray;
+  try {
+    data = render.ctx.getImageData(0, 0, render.width, render.height).data;
+  } catch {
+    return undefined;
+  }
+  const ratio = inkRatio(data, { stride: 1 });
+  const sampled = Math.floor(data.length / 4);
+  if (sampled === 0) return undefined;
+  return {
+    sampled,
+    ratio: round(ratio, 6),
+    blank: isBlankFromRatio(ratio, BLANK_INK_RATIO),
+  };
+}
+
+/** The engine's own words, for an error that has to name a reason. */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Read a page's unrotated box and /Rotate from pdf.js. `page.view` is the

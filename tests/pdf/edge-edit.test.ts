@@ -139,9 +139,10 @@ function giveOcrPages(pages: OcrPageResult[]): void {
   (globalThis as unknown as { __editOcrResult?: () => OcrPageResult[] }).__editOcrResult = () => pages;
 }
 
-function failOcr(message: string): void {
+/** Make `ocrDocument` throw the error the real module would throw. */
+function failOcr(error: Error): void {
   (globalThis as unknown as { __editOcrResult?: () => OcrPageResult[] }).__editOcrResult = () => {
-    throw new Error(message);
+    throw error;
   };
 }
 
@@ -992,7 +993,11 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     const outcome = await run('ocr-pdf', { mode: 'searchable', pages: 'all', skipSearchable: true }, [bytes]);
     expect(ocrCalls()[0]!.options).toMatchObject({ force: false, pages: 'all' });
     expect(outcome.outputs).toHaveLength(0);
-    expect(outcome.message).toMatch(/no text was recognised/i);
+    // A skipped page was never analysed, so the line may not claim the reader
+    // looked and found nothing — that is a different, truer sentence.
+    expect(outcome.message).toMatch(/Nothing was read/i);
+    expect(outcome.message).toMatch(/already has a text layer/i);
+    expect(outcome.message).not.toMatch(/was recognised/i);
     expect(outcome.warnings.join('\n')).toMatch(/1 page already had a text layer/i);
 
     await run('ocr-pdf', { mode: 'searchable', pages: 'all', skipSearchable: false }, [bytes]);
@@ -1017,15 +1022,93 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
   });
 
   it('tells a scan with no readable text what to do next (E10)', async () => {
-    giveOcrPages([{ page: 1, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false }]);
+    giveOcrPages([{
+      page: 1, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+      ink: { sampled: 4338250, ratio: 0.3535, blank: false },
+    }]);
     const outcome = await run('ocr-pdf', { mode: 'report' });
     expect(outcome.message).toMatch(/Read nothing/i);
-    expect(outcome.warnings.join('\n')).toMatch(/too faint to read|invisible text layer/i);
+    // The measured figure is in the sentence, and it says the sheet is not blank.
+    expect(outcome.message).toMatch(/35\.35 % of the rendered sheet is not paper/i);
+    expect(outcome.message).not.toMatch(/blank/i);
+    expect(outcome.warnings.join('\n')).toMatch(/too faint to read|higher Resolution/i);
+  });
+
+  /**
+   * The three silences are three claims, and the campaign's rule is that a page
+   * nobody analysed must never be described as an empty one. Each row asserts
+   * its own sentence appears and the *other two* do not.
+   */
+  it('separates a blank sheet, an unreadable sheet and a sheet never read (E10)', async () => {
+    const blank = { page: 1, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+      ink: { sampled: 4338250, ratio: 0, blank: true } };
+    const unreadable = { page: 2, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+      ink: { sampled: 4338250, ratio: 0.0217, blank: false } };
+    const neverRead = { page: 3, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false };
+    giveOcrPages([blank, unreadable, neverRead]);
+    const outcome = await run('ocr-pdf', { mode: 'report' });
+    const warnings = outcome.warnings.join('\n');
+
+    expect(warnings).toMatch(/page 1 at 0\.00 % of the rendered sheet is ink/i);
+    expect(warnings).toMatch(/page 2 at 2\.17 %/i);
+    expect(warnings).toMatch(/1 page was never analysed by this run \(page 3\)/i);
+    // Report mode names the reason on the page it belongs to, not in one blur.
+    const text = JSON.stringify(outcome.report ?? outcome);
+    expect(text).toMatch(/Page 1[\s\S]*blank — the rendered sheet measures 0\.00 % ink/i);
+    expect(text).toMatch(/Page 2[\s\S]*no letters found, and it is not a blank sheet: 2\.17 %/i);
+    expect(text).toMatch(/Page 3[\s\S]*not analysed by this run/i);
+  });
+
+  it('refuses to call a blank document recognised, and keeps the file unchanged', async () => {
+    giveOcrPages([{
+      page: 1, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+      ink: { sampled: 4338250, ratio: 0, blank: true },
+    }]);
+    const outcome = await run('ocr-pdf', { mode: 'searchable' });
+    expect(outcome.outputs).toHaveLength(0);
+    expect(outcome.message).toMatch(/No text was recognised — the file is unchanged/i);
+    const text = JSON.stringify(outcome.report ?? outcome);
+    expect(text).toMatch(/blank — the rendered sheet measures 0\.00 % ink/i);
+    // "Nothing was recognised" is only true of a page that was read; the note
+    // says which of the two it was.
+    expect(outcome.warnings.join('\n')).toMatch(/yielded no text at all because there is nothing on it/i);
+
+    const rebuilt = await run('ocr-pdf', { mode: 'replace' });
+    expect(rebuilt.outputs).toHaveLength(0);
+    expect(rebuilt.message).toMatch(/Nothing was written — the file is unchanged/i);
   });
 
   it('names the recogniser when OCR cannot run, instead of a fake success (E20)', async () => {
-    failOcr('onnx wasm missing');
-    await expect(run('ocr-pdf', {})).rejects.toThrow(/recogniser could not run in this tab/i);
+    const { OcrEngineUnavailable } = await import('@/lib/pdf/core/ocr');
+    failOcr(new OcrEngineUnavailable('load', 'Failed to fetch resource from https://models.invalid/det.ort'));
+    const outcome = await run('ocr-pdf', {}).catch((error: unknown) => error as Error);
+    expect(outcome).toBeInstanceOf(Error);
+    const message = (outcome as Error).message;
+    // Three claims, all required: what failed, that the file was not read, and
+    // what would fix it. None of them may be a statement about the pages.
+    expect(message).toMatch(/recogniser could not run in this tab/iu);
+    expect(message).toMatch(/nothing in .* was read/iu);
+    expect(message).toMatch(/check the connection/iu);
+    expect(message).toMatch(/Failed to fetch resource/iu);
+    expect(message).not.toMatch(/no text|blank|nothing was recognised/iu);
+  });
+
+  it('names the page and the retry when the engine stops mid-document (E20)', async () => {
+    const { OcrEngineUnavailable } = await import('@/lib/pdf/core/ocr');
+    failOcr(new OcrEngineUnavailable('recognise', 'onnx runtime trapped', 2));
+    const message = await run('ocr-pdf', {}).catch((error: unknown) => (error as Error).message);
+    expect(message).toMatch(/could not run past page 2/iu);
+    expect(message).toMatch(/the file was not read/iu);
+    expect(message).toMatch(/onnx runtime trapped/iu);
+    expect(message).toMatch(/Resolution/iu);
+  });
+
+  it('does not blame the recogniser for a failure that is not the engine\u2019s', async () => {
+    failOcr(new Error('This PDF is encrypted'));
+    const message = await run('ocr-pdf', {}).catch((error: unknown) => (error as Error).message);
+    expect(message).toMatch(/OCR could not run on/iu);
+    expect(message).toMatch(/This PDF is encrypted/iu);
+    expect(message).not.toMatch(/check the connection/iu);
   });
 });
 

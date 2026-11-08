@@ -118,9 +118,23 @@ export async function initOcr(): Promise<void> {
 /**
  * Run OCR on a single canvas element with automatic preprocessing.
  * The engine must be initialized first (call initOcr()).
+ *
+ * `noCache` is a correctness flag, not an optimisation one, and a caller that
+ * reads more than one page must set it. The vendor result cache
+ * (`ppu-paddle-ocr` `core/image-cache.js`) keys on the buffer's total byte
+ * length plus the **first 1024 bytes** of RGBA — roughly the first 250 pixels,
+ * i.e. the top-left corner of the page. Two pages of the same size that both
+ * begin with white paper therefore share a key, and the second is answered from
+ * the first: measured in Chromium against `docs/research/ocr-cause-probe.mjs`, a
+ * page whose only content is a smooth gradient came back carrying the six lines
+ * of copy that belonged to the page before it, while reading that same page
+ * first returned nothing. That is a *fabricated* result rather than a weaker
+ * one, and a text layer built from it puts words on a page that never had them.
+ * The default stays `false` so existing single-image callers keep the cache.
  */
 export async function recognizeCanvas(
   canvas: HTMLCanvasElement,
+  opts: { noCache?: boolean } = {},
 ): Promise<FlattenedPaddleOcrResult> {
   if (!service || status !== 'ready') {
     throw new Error('OCR engine not initialized. Call initOcr() first.');
@@ -129,7 +143,10 @@ export async function recognizeCanvas(
   // Preprocess for better quality on document photos
   const processed = preprocessForOcr(canvas);
 
-  const result = await service.recognize(processed, { flatten: true });
+  const result = await service.recognize(processed, {
+    flatten: true,
+    noCache: opts.noCache === true,
+  });
 
   // Clean up temp canvas
   processed.width = 0;

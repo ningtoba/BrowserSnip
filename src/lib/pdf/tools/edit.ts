@@ -25,6 +25,7 @@ import { drawTextU, isWinAnsiSafe, measureText, wrapText } from '../core/fonts';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
 import { addPageLabels, readPageLabels, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
+import type { OcrPageResult } from '../core/ocr';
 import { canvasToBlob } from '../core/render';
 import { embedImageBytes } from '../core/pack';
 import { newPDF } from '../core/doc';
@@ -1421,7 +1422,7 @@ export const editTools: PdfToolDefinition[] = [
         { value: 'it', label: 'Italian' }, { value: 'pt', label: 'Portuguese' },
         { value: 'ru', label: 'Russian' }, { value: 'zh', label: 'Chinese' },
         { value: 'ja', label: 'Japanese' }, { value: 'ko', label: 'Korean' },
-      ], help: 'Which alphabet and word list the recogniser expects. A page in another language still comes out, but worse.' },
+      ], help: 'Recorded with the run. This build ships one English–Latin reader, so the choice does not change what is recognised — a page in another script comes back garbled whatever you pick here.' },
       { key: 'mode', label: 'Output', group: 'Output', type: 'segmented', default: 'searchable', options: [
         { value: 'searchable', label: 'Invisible text layer (keeps the scan)' },
         { value: 'replace', label: 'Replace the page with text' },
@@ -1434,11 +1435,12 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'The OCR model is downloaded once and cached; the pages themselves are recognised on this device.',
       'Pages that already carry a text layer are left alone unless you ask for a fresh read, so a mixed document keeps what it has.',
+      'Language is a label on the run, not a switch: only the English–Latin dictionary is bundled, so every choice reads the page with the same model.',
     ],
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
-      const { ocrDocument, addSearchableTextLayer } = await import('../core/ocr');
+      const { ocrDocument, addSearchableTextLayer, OcrEngineUnavailable } = await import('../core/ocr');
       const session = await withRender(input, context).then((result) => result.session);
       const dpi = readNumber(context, notes, { key: 'dpi', label: 'Resolution', fallback: 300, min: 150, max: 600, integer: true, unit: 'dpi' });
       let results;
@@ -1456,8 +1458,19 @@ export const editTools: PdfToolDefinition[] = [
         });
       } catch (error) {
         if (context.signal.aborted) throw error;
-        // E20: an absent engine is named, not reported as "0 characters, done".
-        throw new Error(`The recogniser could not run in this tab: ${error instanceof Error ? error.message : String(error)} The OCR model is downloaded once and cached — check the connection, then run again.`);
+        // E20, and the distinction this tool exists to get right: an engine that
+        // never arrived is not a document with nothing in it. Both branches name
+        // what failed, say that the file was **not read**, and say what would fix
+        // it. An engine is a capability that degrades with a warning, never into
+        // a silent success, and here there is nothing to degrade to.
+        if (error instanceof OcrEngineUnavailable) {
+          throw new Error(error.phase === 'load'
+            ? `The recogniser could not run in this tab, so nothing in "${input.name}" was read: ${error.detail} The OCR model is downloaded once and cached — check the connection (or let this page reach the CDN), then run this again.`
+            : `The recogniser could not run past page ${error.page ?? '?'} of "${input.name}", so the file was not read: ${error.detail} Run it again; a lower "Resolution" hands it a smaller picture of each page.`);
+        }
+        // Anything else is a document or renderer failure. Wrapping it in "the
+        // recogniser could not run" would be the same lie wearing another hat.
+        throw new Error(`OCR could not run on "${input.name}": ${error instanceof Error ? error.message : String(error)}`);
       }
       try {
         const mode = stringValue(context.values, 'mode', 'searchable');
@@ -1465,24 +1478,25 @@ export const editTools: PdfToolDefinition[] = [
         if (skipped.length > 0) {
           note(notes, `${countLabel(skipped.length, 'page')} already had a text layer and was left as it was.${booleanValue(context.values, 'skipSearchable', true) ? ' Turn off "skip pages that already have text" to read them again.' : ''}`);
         }
-        const blank = results.filter((page) => !page.alreadySearchable && page.text.trim() === '');
-        if (blank.length > 0) {
-          // E10: say what a scan is, instead of "done, 0 characters".
-          note(notes, `${countLabel(blank.length, 'page')} yielded no text at all — they are either blank or too faint to read. Try a higher resolution, or scan again at 300 dpi or better.`);
-        }
+        // E10: "no text" is three different findings — never read, blank sheet,
+        // sheet with ink that is not letters — and the ink measured off the
+        // painted bitmap is what tells them apart. One sentence must not stand
+        // in for another.
+        const quiet = ocrQuietPages(results);
+        for (const line of ocrQuietSummary(quiet)) note(notes, line);
         if (results.length === 0) {
           return admit(
-            reportResult([{ title: 'Nothing to read', text: 'The page selection matched no page of this document.' }], { message: 'No page was recognised.' }),
+            reportResult([{ title: 'Nothing to read', text: 'The page selection matched no page of this document.' }], { message: 'Nothing was read: no page was selected.' }),
             notes,
           );
         }
         if (mode === 'report') {
           const characters = results.reduce((sum, page) => sum + page.text.trim().length, 0);
           const outcome = reportResult(
-            results.map((page) => ({ title: `Page ${page.page}`, text: page.text.trim() || '(no text found on this page)' })),
+            results.map((page) => ({ title: `Page ${page.page}`, text: page.text.trim() || ocrQuietPageLine(page) })),
             { message: characters > 0
               ? `Read ${characters.toLocaleString()} characters across ${countLabel(results.length, 'page')}.`
-              : `Read nothing: none of the ${countLabel(results.length, 'page')} carries readable text.` },
+              : `Read nothing: ${ocrQuietSummary(quiet).join(' ') || `not one of the ${countLabel(results.length, 'page')} carries readable text.`}` },
           );
           if (characters === 0) {
             note(notes, 'No page has a text layer. Run this tool with "Invisible text layer" or "Replace the page with text" to make the document searchable.');
@@ -1494,8 +1508,15 @@ export const editTools: PdfToolDefinition[] = [
           if (added.pages === 0) {
             return admit(
               reportResult(
-                [{ title: 'No layer was added', text: `Nothing was recognised on the ${countLabel(results.length, 'page')} you selected, so the document was not changed.` }],
-                { message: 'No text was recognised — the file is unchanged.' },
+                [
+                  { title: 'No layer was added', text: `No text was recognised on the ${countLabel(results.length, 'page')} you selected, so the document was not changed.` },
+                  ...quiet.blocks,
+                ],
+                // A page that was skipped was never analysed, so "nothing was
+                // recognised" would be a claim about a read that did not happen.
+                { message: skipped.length === results.length
+                  ? 'Nothing was read — every page you picked already has a text layer, so the file is unchanged.'
+                  : 'No text was recognised — the file is unchanged.' },
               ),
               notes,
             );
@@ -1507,6 +1528,20 @@ export const editTools: PdfToolDefinition[] = [
             input.doc,
             notes,
             `Added ${countLabel(added.words, 'recognised word')} to ${countLabel(added.pages, 'page')} as an invisible layer — the scan looks unchanged but the text is now selectable and searchable.`,
+          );
+        }
+        if (quiet.read > 0 && quiet.pages.length === quiet.read) {
+          // "Replace the page with text" over sheets that produced no text would
+          // ship blank pages under a line about rebuilt documents.
+          return admit(
+            reportResult(
+              [
+                { title: 'Nothing was written', text: `The ${countLabel(quiet.read, 'page')} the recogniser read produced no text, so a rebuilt file would hold sheets of paper beside whatever you wanted kept. Nothing was changed.` },
+                ...quiet.blocks,
+              ],
+              { message: 'Nothing was written — the file is unchanged.' },
+            ),
+            notes,
           );
         }
         const rebuilt = await textOnlyPdf(input.doc, results);
@@ -2000,6 +2035,104 @@ async function textOnlyPdf(source: PDFDocument, results: { page: number; text: s
     }
   }
   return doc;
+}
+
+/**
+ * Why a page the recogniser read produced no text. The three kinds are three
+ * different claims — a sheet with nothing on it, a sheet whose ink is not
+ * letters, and a page this run never looked at — so they must not share one
+ * sentence, and none of them is the same as "the engine did not run".
+ *
+ * The percentages come from `core/ocr`'s measurement of the **painted** bitmap,
+ * never from the word list: an empty word list is also what an absent reader
+ * produces.
+ */
+type OcrQuietKind = 'blank' | 'unreadable' | 'unexamined';
+
+interface OcrQuietPage {
+  page: number;
+  kind: OcrQuietKind;
+  /** Non-white coverage of the rendered sheet, in percent; null if unmeasured. */
+  percent: number | null;
+}
+
+interface OcrQuiet {
+  pages: OcrQuietPage[];
+  /** Pages the recogniser actually rendered and read, silent or not. */
+  read: number;
+  /** One block per silent page, for the report the rail shows. */
+  blocks: { title: string; text: string }[];
+}
+
+function ocrQuietPages(results: OcrPageResult[]): OcrQuiet {
+  const pages: OcrQuietPage[] = [];
+  let read = 0;
+  for (const result of results) {
+    // A page left alone is not a silent page; its own note already says so.
+    if (result.alreadySearchable) continue;
+    read += 1;
+    if (result.text.trim() !== '') continue;
+    const entry = ocrQuietPageOf(result);
+    if (entry) pages.push(entry);
+  }
+  return {
+    pages,
+    read,
+    blocks: pages.map((entry) => ({ title: `Page ${entry.page}`, text: ocrQuietSentence(entry) })),
+  };
+}
+
+/** Classify one silent page from the reading the recogniser left behind. */
+function ocrQuietPageOf(result: OcrPageResult): OcrQuietPage | null {
+  if (result.alreadySearchable) return null;
+  if (!result.ink) return { page: result.page, kind: 'unexamined', percent: null };
+  return {
+    page: result.page,
+    kind: result.ink.blank ? 'blank' : 'unreadable',
+    percent: Math.round(result.ink.ratio * 10000) / 100,
+  };
+}
+
+function ocrQuietSentence(entry: OcrQuietPage): string {
+  if (entry.kind === 'blank') {
+    return `blank — the rendered sheet measures ${entry.percent?.toFixed(2)} % ink, so there was nothing on it to read.`;
+  }
+  if (entry.kind === 'unreadable') {
+    return `no letters found, and it is not a blank sheet: ${entry.percent?.toFixed(2)} % of the rendered page is ink. A picture, handwriting, or a scan too faint to resolve — try a higher Resolution.`;
+  }
+  return 'not analysed by this run, so nothing is claimed about it.';
+}
+
+/** One honest note per kind of silence. */
+function ocrQuietSummary(quiet: OcrQuiet): string[] {
+  const lines: string[] = [];
+  const named = (kind: OcrQuietKind) =>
+    quiet.pages
+      .filter((entry) => entry.kind === kind)
+      .map((entry) => (entry.percent === null ? `page ${entry.page}` : `page ${entry.page} at ${entry.percent.toFixed(2)} %`))
+      .join(', ');
+  const blank = quiet.pages.filter((entry) => entry.kind === 'blank');
+  if (blank.length > 0) {
+    lines.push(`${countLabel(blank.length, 'page')} yielded no text at all because there is nothing on ${blank.length === 1 ? 'it' : 'them'}: ${named('blank')} of the rendered sheet is ink.`);
+  }
+  const faint = quiet.pages.filter((entry) => entry.kind === 'unreadable');
+  if (faint.length > 0) {
+    lines.push(`${countLabel(faint.length, 'page')} yielded no text at all, though ${faint.length === 1 ? 'it carries' : 'they carry'} ink — ${named('unreadable')} of the rendered ${faint.length === 1 ? 'sheet is' : 'sheets are'} not paper. A picture, handwriting or a faint scan is what that measures; try a higher Resolution, or scan again at 300 dpi or better.`);
+  }
+  const never = quiet.pages.filter((entry) => entry.kind === 'unexamined');
+  if (never.length > 0) {
+    lines.push(`${countLabel(never.length, 'page')} ${never.length === 1 ? 'was' : 'were'} never analysed by this run (${named('unexamined')}), so nothing is claimed about ${never.length === 1 ? 'it' : 'them'}.`);
+  }
+  return lines;
+}
+
+/** The parenthetical a report-mode page gets when it holds no text. */
+function ocrQuietPageLine(result: OcrPageResult): string {
+  const entry = ocrQuietPageOf(result);
+  if (entry) return `(${ocrQuietSentence(entry)})`;
+  return result.alreadySearchable
+    ? '(its own text layer was left as it was)'
+    : '(no readable text found)';
 }
 
 async function toPng(doc: PDFDocument, bytes: Uint8Array): Promise<Uint8Array> {
