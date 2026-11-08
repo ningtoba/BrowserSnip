@@ -203,6 +203,13 @@ if (!(await wait('window.__blobs.length>0', 180000))) {
   throw new Error('the tool produced no output blob');
 }
 await sleep(1000);
+// The screen half of the campaign's rule: the result card holding the pages it
+// just exported, so "inked" is also visible and not only counted.
+if (process.env.SHOT) {
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
+  console.log('screenshot:', process.env.SHOT);
+}
 const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output:', JSON.stringify({ type: info.type, bytes: info.size, file: OUT }));
