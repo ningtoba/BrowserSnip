@@ -958,11 +958,15 @@ export default function PageOrganizer(): JSX.Element {
                     }
                   }}
                   spellCheck={false}
-                  className="doodle-input flex-1 font-mono text-[11px]"
+                  className="doodle-input min-w-0 flex-1 font-mono text-[11px]"
                   aria-describedby="plan-order-help"
                   aria-invalid={state.inputError ? true : undefined}
                 />
-                <button type="button" onClick={applyPlanText} className="doodle-btn text-[11px]">
+                <button
+                  type="button"
+                  onClick={applyPlanText}
+                  className="doodle-btn w-auto shrink-0 px-3 py-1.5 text-[11px]"
+                >
                   Apply
                 </button>
               </div>
@@ -1019,13 +1023,13 @@ export default function PageOrganizer(): JSX.Element {
                       }
                     }}
                     placeholder="Password"
-                    className="doodle-input flex-1 text-[11px]"
+                    className="doodle-input min-w-0 flex-1 text-[11px]"
                     aria-label={`Password for ${traySource.name}`}
                   />
                   <button
                     type="button"
                     onClick={() => void retryWithPassword(tray)}
-                    className="doodle-btn text-[10px]"
+                    className="doodle-btn w-auto shrink-0 px-3 py-1.5 text-[10px]"
                   >
                     Open
                   </button>
@@ -1043,7 +1047,7 @@ export default function PageOrganizer(): JSX.Element {
               <input
                 value={traySpec}
                 onChange={(event) => setTraySpec(event.target.value)}
-                className="doodle-input flex-1 font-mono text-[10px]"
+                className="doodle-input min-w-0 flex-1 font-mono text-[10px]"
                 aria-label={`Pages to insert from ${traySource?.name ?? 'this file'}`}
                 placeholder="1,3,5-7"
               />
@@ -1054,7 +1058,7 @@ export default function PageOrganizer(): JSX.Element {
                   insertFromTray(resolvePages(traySpec || 'all', trayTotal));
                 }}
                 disabled={!traySource || traySource.status !== 'ready'}
-                className="doodle-btn text-[10px] disabled:opacity-40"
+                className="doodle-btn w-auto shrink-0 px-3 py-1.5 text-[10px] disabled:opacity-40"
                 title={
                   traySource?.status === 'ready'
                     ? 'Insert the listed pages after the selection'

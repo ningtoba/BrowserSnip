@@ -1022,6 +1022,50 @@ describe('pane shell', () => {
     expect(grid?.className).toMatch(/overflow-y-auto/);
     cleanup();
   });
+
+  /**
+   * `.doodle-btn` is `w-full` and `.doodle-input` is `w-full` (index.css): in a
+   * flex row the button's 100 % base size is the whole row, so the `flex-1`
+   * field only grows into free space that never exists. Measured in Chromium
+   * before this test, the plan-order field was 26 px wide showing one character
+   * of `1, 2, 3, 4, 5, 6` (130 px of content), and the tray's page-range field
+   * 26 px showing `all` — the two places this pane asks for typing. Same family
+   * as the grid squeeze above: a bespoke surface, none of the generated form's
+   * layout. Pinned structurally because jsdom has no layout to measure.
+   */
+  it('does not let a full-width button starve the field beside it', async () => {
+    const { cleanup, render } = await import('@testing-library/react');
+    const PageOrganizer = (await import('@/components/tools/pdf/organize/PageOrganizer')).default;
+    const { useFileStore } = await import('@/stores/file-store');
+    useFileStore.setState({
+      files: [new File(['%PDF-1.4'], 'plan.pdf', { type: 'application/pdf' })],
+      file: null,
+      params: {},
+    });
+    const { container } = render(createElement(PageOrganizer));
+
+    const rows = [...container.querySelectorAll('div')]
+      .map((row) => ({
+        row,
+        field: row.querySelector(':scope > input.doodle-input'),
+        buttons: [...row.querySelectorAll(':scope > button.doodle-btn')],
+      }))
+      .filter((entry) => entry.field && entry.buttons.length > 0);
+    expect(rows.length, 'the plan-order row and the tray page-range row').toBeGreaterThanOrEqual(2);
+
+    for (const { field, buttons } of rows) {
+      for (const button of buttons) {
+        expect(
+          button.className,
+          `a w-full button beside “${field.getAttribute('aria-label') || field.id}” eats the row`,
+        ).toMatch(/\bw-auto\b/);
+      }
+      // The field has to be allowed to give width back, or a long plan string
+      // pushes the row open instead of scrolling inside the input.
+      expect(field.className).toMatch(/min-w-0/);
+    }
+    cleanup();
+  });
 });
 
 // ── the pane's plan and the registry's tool must describe one file ──────────
