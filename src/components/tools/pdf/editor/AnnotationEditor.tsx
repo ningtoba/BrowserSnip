@@ -875,12 +875,17 @@ export function AnnotationEditor(): JSX.Element {
     if (!geom || !work) return null;
     if (gesture?.mode === 'drag') {
       const drag = normaliseDrag(gesture.from, gesture.to);
+      // The two points of a segment drag, in the order they were drawn — the
+      // same pair the release hands the builder, so the rubber band and the
+      // committed mark cannot disagree about which end the head sits on.
+      const ends = TOOL_BY_ID[tool].gesture === 'segment' ? [gesture.from, gesture.to] : null;
       return buildAnnotation({
         tool,
         page,
         style,
         geom,
         drag,
+        ...(ends ? { points: ends } : {}),
         ...(MARKUP_TOOLS.includes(tool) ? { lines: linesUnder(drag) } : {}),
         ...(rasterReady && raster ? { raster } : {}),
       });
@@ -1230,7 +1235,8 @@ export function AnnotationEditor(): JSX.Element {
     const current = gesture;
     if (!current) return;
     if (current.mode === 'drag') {
-      const box = normaliseDrag(current.from, pointFrom(event));
+      const to = pointFrom(event);
+      const box = normaliseDrag(current.from, to);
       // With Select armed, a band drawn on empty paper is a marquee; a click is
       // the release of the selection.
       if (tool === 'select') {
@@ -1244,6 +1250,16 @@ export function AnnotationEditor(): JSX.Element {
         const merged = current.additive ? addToSelection(work?.selection ?? [], ids) : ids;
         updateWork((next) => ({ ...next, selection: merged }));
         setStatus(marqueeNotice(ids.length, page));
+        return;
+      }
+      // Line and Arrow draw the drag's diagonal, so the press and the release in
+      // that order are the geometry. A box is not: `normaliseDrag` sorts the
+      // corners, which throws away the direction the arrow head has to point in,
+      // and `buildSegment` reads endpoints — handed a box it found nothing and
+      // told the user to draw a bigger shape after a full-size drag.
+      if (TOOL_BY_ID[tool].gesture === 'segment') {
+        finishPath([current.from, to]);
+        setGesture(null);
         return;
       }
       finishDrag(box, Boolean(current.additive));
