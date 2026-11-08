@@ -1,0 +1,173 @@
+# deployed re-measurement, https://www.browsersnip.com, 2026-11-08T16:19Z, commits 7cf6ce2 + 1455946 (CI 42498140597)
+
+########## invert p1
+== post-invert-p1.pdf: src p1 → out p1
+   src  box=420.0x595.0 images=0 ink=18.90% (at 200 dpi)
+   out  box=420.0x595.0 images=1 ink=86.90% (239141 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +255.0
+     copy   src (220.4,220.4,220.4) l=220.4 c=  0.0 h=  0.0  →  out ( 33.8, 33.8, 33.8) l= 33.8 c=  0.0 h=  0.0  Δluma  -186.6
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  Δluma  -255.0
+   POLARITY ok: bar 0.0→255.0 (ink became light), band 255.0→0.0 (paper became dark)
+   invert=1.0 on bar: predicted (255.0,255.0,255.0) measured (255.0,255.0,255.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
+   invert=1.0 on copy: predicted ( 34.6, 34.6, 34.6) measured ( 33.8, 33.8, 33.8) Δpred   0.8 Δidentity 186.6 Δopposite 186.6 → ok
+   invert=1.0 on band: predicted (  0.0,  0.0,  0.0) measured (  0.0,  0.0,  0.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
+OK
+
+########## invert p2
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (229.9, 77.0,204.0) l=137.2 c=153.0 h=310.2  Δluma   +19.4
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out (229.1,203.9, 24.0) l=190.9 c=205.1 h= 52.6  Δluma  +127.4
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0  Δluma   +77.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  Δluma   -76.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (  1.1,  1.1,  1.1) l=  1.1 c=  0.0 h=  0.0  Δluma  -252.7
+   invert=1.0 on red: predicted ( 26.0,230.0,230.0) measured ( 24.0,229.9,230.0) Δpred   2.0 Δidentity 205.0 Δopposite 205.0 → ok
+   invert=1.0 on green: predicted (230.0, 77.0,204.0) measured (229.9, 77.0,204.0) Δpred   0.1 Δidentity 204.9 Δopposite 204.9 → ok
+   invert=1.0 on blue: predicted (230.0,204.0, 26.0) measured (229.1,203.9, 24.0) Δpred   2.0 Δidentity 205.0 Δopposite 205.0 → ok
+   invert=1.0 on grey: predicted (166.0,166.0,166.0) measured (166.0,166.0,166.0) Δpred   0.0 Δidentity  77.0 Δopposite  77.0 → ok
+   invert=1.0 on wash: predicted ( 90.0, 90.0, 90.0) measured ( 89.0, 89.0, 89.0) Δpred   1.0 Δidentity  76.0 Δopposite  76.0 → ok
+   invert=1.0 on band: predicted (  1.2,  1.2,  1.2) measured (  1.1,  1.1,  1.1) Δpred   0.2 Δidentity 252.7 Δopposite 252.7 → ok
+OK
+
+########## invert p3 empty
+== post-invert-p3.pdf: src p3 → out p1
+   src  box=420.0x595.0 images=0 ink= 0.00% (at 200 dpi)
+   out  box=420.0x595.0 images=1 ink=100.00% (275176 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  Δluma  -255.0
+   invert=1.0 on band: predicted (  0.0,  0.0,  0.0) measured (  0.0,  0.0,  0.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
+OK
+
+########## adjust identity
+== post-adjust-identity.pdf: src p2 → out p1
+   src  box=420.0x595.0 images=0 ink=19.50% (at 200 dpi)
+   out  box=420.0x595.0 images=1 ink=19.65% (54070 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (230.0, 26.0, 27.0) l= 87.1 c=203.9 h=359.7
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out ( 25.1,178.0, 51.0) l=117.8 c=153.0 h=130.2
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 25.9, 51.0,230.9) l= 64.0 c=205.0 h=232.6
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   same as post-plain-p2.pdf: red Δ0.1, green Δ0.1, blue Δ0.0, grey Δ0.0, wash Δ0.0, band Δ0.0
+OK
+
+########## adjust brightness=1.6
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (254.9, 41.0, 41.0) l=104.9 c=213.9 h=360.0  Δluma   +19.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out ( 41.0,254.9, 81.0) l=171.1 c=214.0 h=131.2  Δluma   +53.4
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 41.1, 81.0,254.8) l= 88.9 c=213.7 h=228.8  Δluma   +25.4
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (142.0,142.0,142.0) l=142.0 c=  0.0 h=  0.0  Δluma   +53.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma   +90.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (254.1,254.1,254.1) l=254.1 c=  0.0 h=  0.0
+   brightness=1.6 on red: predicted (255.0, 40.0, 40.0) measured (254.9, 41.0, 41.0) Δpred   1.0 Δidentity  25.9 Δopposite 111.7 → ok
+   brightness=1.6 on green: predicted ( 40.0,255.0, 81.6) measured ( 41.0,254.9, 81.0) Δpred   1.0 Δidentity  76.9 Δopposite 143.7 → ok
+   brightness=1.6 on blue: predicted ( 40.0, 81.6,255.0) measured ( 41.1, 81.0,254.8) Δpred   1.1 Δidentity  30.0 Δopposite 111.7 → ok
+   brightness=1.6 on grey: predicted (142.4,142.4,142.4) measured (142.0,142.0,142.0) Δpred   0.4 Δidentity  53.0 Δopposite  86.4 → ok
+   brightness=1.6 on wash: predicted (255.0,255.0,255.0) measured (255.0,255.0,255.0) Δpred   0.0 Δidentity  90.0 Δopposite 151.9 → ok
+OK
+
+########## adjust contrast=2
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (254.0,  0.0,  0.1) l= 76.0 c=253.9 h=360.0  Δluma   -10.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (  1.0,228.0,  0.1) l=134.2 c=228.0 h=119.8  Δluma   +16.4
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out (  0.0,  0.1,253.8) l= 29.0 c=253.7 h=240.0  Δluma   -34.5
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 50.0, 50.0, 50.0) l= 50.0 c=  0.0 h=  0.0  Δluma   -39.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (204.0,204.0,204.0) l=204.0 c=  0.0 h=  0.0  Δluma   +39.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   contrast=2.0 on red: predicted (255.0,  0.0,  0.0) measured (254.0,  0.0,  0.1) Δpred   1.0 Δidentity  25.0 Δopposite  76.2 → ok
+   contrast=2.0 on green: predicted (  0.0,228.5,  0.0) measured (  1.0,228.0,  0.1) Δpred   1.0 Δidentity  50.9 Δopposite  89.2 → ok
+   contrast=2.0 on blue: predicted (  0.0,  0.0,255.0) measured (  0.0,  0.1,253.8) Δpred   1.2 Δidentity  50.9 Δopposite  89.1 → ok
+   contrast=2.0 on grey: predicted ( 50.5, 50.5, 50.5) measured ( 50.0, 50.0, 50.0) Δpred   0.5 Δidentity  39.0 Δopposite  58.2 → ok
+   contrast=2.0 on wash: predicted (202.5,202.5,202.5) measured (204.0,204.0,204.0) Δpred   1.5 Δidentity  39.0 Δopposite  57.8 → ok
+OK
+
+########## adjust saturation=0
+   out  box=420.0x595.0 images=1 ink=19.53% (53740 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 69.0, 69.0, 69.0) l= 69.0 c=  0.0 h=  0.0  Δluma   -17.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (136.0,136.0,136.0) l=136.0 c=  0.0 h=  0.0  Δluma   +18.2
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 59.0, 59.0, 59.0) l= 59.0 c=  0.0 h=  0.0
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   saturation=0.0 on red: predicted ( 68.4, 68.4, 68.4) measured ( 69.0, 69.0, 69.0) Δpred   0.6 Δidentity 160.0 Δopposite 160.0 → ok
+   saturation=0.0 on green: predicted (136.3,136.3,136.3) measured (136.0,136.0,136.0) Δpred   0.3 Δidentity 111.0 Δopposite 111.0 → ok
+   saturation=0.0 on blue: predicted ( 58.3, 58.3, 58.3) measured ( 59.0, 59.0, 59.0) Δpred   0.7 Δidentity 170.0 Δopposite 170.0 → ok
+OK
+
+########## adjust hue=180
+   out  box=420.0x595.0 images=1 ink=19.70% (54216 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (  0.1,113.0,112.9) l= 79.2 c=112.9 h=180.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (247.9, 95.0,222.0) l=155.2 c=153.0 h=310.2  Δluma   +37.4
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 91.1, 66.0,  0.0) l= 66.0 c= 91.1 h= 43.5
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   hue=180.0 on red: predicted (  0.0,111.9,111.9) measured (  0.1,113.0,112.9) Δpred   1.1 Δidentity 228.9 Δopposite   1.1 → ok (the opposite ask is the same turn here)
+   hue=180.0 on green: predicted (247.5, 94.5,221.5) measured (247.9, 95.0,222.0) Δpred   0.5 Δidentity 222.9 Δopposite   0.5 → ok (the opposite ask is the same turn here)
+   hue=180.0 on blue: predicted ( 91.6, 65.6,  0.0) measured ( 91.1, 66.0,  0.0) Δpred   0.5 Δidentity 229.0 Δopposite   0.5 → ok (the opposite ask is the same turn here)
+OK
+
+########## adjust grayscale=1
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 69.0, 69.0, 69.0) l= 69.0 c=  0.0 h=  0.0  Δluma   -17.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (137.0,137.0,137.0) l=137.0 c=  0.0 h=  0.0  Δluma   +19.2
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 59.0, 59.0, 59.0) l= 59.0 c=  0.0 h=  0.0
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   ACHROMATIC ok: worst channel spread 0.0
+   grayscale=1.0 on red: predicted ( 68.4, 68.4, 68.4) measured ( 69.0, 69.0, 69.0) Δpred   0.6 Δidentity 160.0 Δopposite 160.0 → ok
+   grayscale=1.0 on green: predicted (136.3,136.3,136.3) measured (137.0,137.0,137.0) Δpred   0.7 Δidentity 112.0 Δopposite 112.0 → ok
+   grayscale=1.0 on blue: predicted ( 58.3, 58.3, 58.3) measured ( 59.0, 59.0, 59.0) Δpred   0.7 Δidentity 170.0 Δopposite 170.0 → ok
+OK
+
+########## adjust threshold=0.5
+== post-adjust-thresh.pdf: src p1 → out p1
+   src  box=420.0x595.0 images=0 ink=18.90% (at 200 dpi)
+   out  box=420.0x595.0 images=1 ink=15.93% (43830 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0
+     copy   src (220.4,220.4,220.4) l=220.4 c=  0.0 h=  0.0  →  out (220.5,220.5,220.5) l=220.5 c=  0.0 h=  0.0
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
+   BILEVEL: 0 px between 64 and 191 in the output against 8520 in the source sheet at the same density
+OK
+
+########## scanner p1
+== post-scanner-p1.pdf: src p1 → out p1
+   src  box=420.0x595.0 images=0 ink=18.49% (at 220 dpi)
+   out  box=420.0x595.0 images=1 ink=16.02% (53380 of 333214 sampled px, read from the embedded raster 1283×1818)
+   regions (rgb / luma / spread / hue°):
+     bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0
+     copy   src (220.2,220.2,220.2) l=220.2 c=  0.0 h=  0.0  →  out (223.4,223.4,223.4) l=223.4 c=  0.0 h=  0.0
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
+   VACUOUS: no region on this sheet can tell the ask from doing nothing
+   vs plain rasterisation: bar Δ0.0, copy Δ2.4, band Δ0.0 | mid tones 6743→2213 | edge transition width (px) bar 1→0
+OK
+
+########## scanner p2
+   src  box=420.0x595.0 images=0 ink=19.51% (at 220 dpi)
+   out  box=420.0x595.0 images=1 ink=19.42% (64695 of 333214 sampled px, read from the embedded raster 1283×1818)
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 94.0, 94.0, 94.0) l= 94.0 c=  0.0 h=  0.0  Δluma    +8.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (178.0,178.0,178.0) l=178.0 c=  0.0 h=  0.0  Δluma   +60.2
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 78.0, 78.0, 78.0) l= 78.0 c=  0.0 h=  0.0  Δluma   +14.5
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (123.0,123.0,123.0) l=123.0 c=  0.0 h=  0.0  Δluma   +34.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (207.0,207.0,207.0) l=207.0 c=  0.0 h=  0.0  Δluma   +42.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
+   ACHROMATIC ok: worst channel spread 0.0
+   vs plain rasterisation: red Δ136.0, green Δ153.0, blue Δ152.9, grey Δ34.0, wash Δ41.0, band Δ0.0 | mid tones 52481→53874 | edge transition width (px) red 1→0, grey 0→0
+OK
+
+########## greyscale raster (open)
+== post-greyscale-raster.pdf: src p2 → out p1
+   src  box=420.0x595.0 images=0 ink=19.50% (at 200 dpi)
+   out  box=420.0x595.0 images=1 ink= 0.00% (0 of 275176 sampled px, read from the embedded raster 1166×1652)
+   regions (rgb / luma / spread / hue°):
+     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +169.0
+     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +137.2
+     blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +191.5
+     grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +166.0
+     wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma   +90.0
+     band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
+FAIL
+  - the sheet carries 19.50 % non-white px and the output 0.00 % — this is paper under a plausible file name, not the page
