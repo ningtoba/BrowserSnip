@@ -45,6 +45,8 @@ import {
   clampZoom,
   fitRectInBox,
   fitWidthZoom,
+  isClickGesture,
+  isMeaningfulDrag,
   normaliseDrag,
   pdfQuadFromViewportBox,
   pdfToScreenPoint,
@@ -74,6 +76,7 @@ import {
   buildAnnotation,
   describeAnnotation,
   exportPlan,
+  markupTapTarget,
   moveAnnotation,
   redactionNeedsRasterising,
   workSignature,
@@ -1138,6 +1141,93 @@ describe('every mark paints an area in the file', () => {
     expect(mark.rect.width * mark.rect.height).toBeGreaterThan(200);
     const [area] = await areasOf([mark]);
     expect(area, `${kind} painted ${area}pt² of ink`).toBeGreaterThan(100);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 7b. A click and a drag are two different questions                   *
+ * ------------------------------------------------------------------ *
+ *
+ * `isMeaningfulDrag` asks whether a gesture describes a box; the editor also has
+ * to ask whether the pointer merely pressed and released. The first question was
+ * used for both, so a drag straight along a line of text — wide, and a hair tall
+ * at most — was a click: the second highlight over the same words was read as a
+ * finger pointing at the first, which selected it, left the tool armed and
+ * painted nothing. The audit's §1b logged exactly that alternation (1, 0, 0) and
+ * blamed the palette for it.
+ */
+describe('a click and a drag', () => {
+  it('calls a drag along the text a drag, not a click', () => {
+    // 143 px of words covered, 0 px of height: every markup tool lives on this.
+    const along = { x: 202, y: 216, width: 143, height: 0 };
+    expect(isClickGesture(along)).toBe(false);
+    // It is also not a box, which is why one predicate cannot answer both.
+    expect(isMeaningfulDrag(along)).toBe(false);
+  });
+
+  it('points at the mark already there only for a click', () => {
+    // The decision the editor makes, at the seam it makes it at: a drag along the
+    // words draws over them, a click on them selects what is there, and a click on
+    // bare paper starts a mark the way it always did.
+    const lines = snapTextLines(pageText(), { x0: 60, y0: 118, x1: 200, y1: 134 });
+    const first = build('highlight', { drag: { x: 60, y: 118, width: 140, height: 16 }, lines })!;
+    expect(markupTapTarget({ x: 70, y: 126, width: 120, height: 0 }, [first], 0, flat)).toBeNull();
+    expect(
+      markupTapTarget({ x: 70, y: 126, width: 1, height: 1 }, [first], 0, flat)?.id,
+    ).toBe(first.id);
+    expect(markupTapTarget({ x: 400, y: 500, width: 1, height: 1 }, [first], 0, flat)).toBeNull();
+  });
+
+  it('calls a press that went nowhere a click, in every direction', () => {
+    expect(isClickGesture({ x: 80, y: 90, width: 0, height: 0 })).toBe(true);
+    expect(isClickGesture({ x: 80, y: 90, width: 2, height: 1 })).toBe(true);
+    expect(isClickGesture({ x: 80, y: 90, width: 12, height: 2 })).toBe(false);
+    expect(isClickGesture({ x: 80, y: 90, width: 2, height: 12 })).toBe(false);
+    expect(isClickGesture({ x: 80, y: 90, width: 12, height: 12 })).toBe(false);
+  });
+
+  it('keeps the two questions apart at the same size', () => {
+    // A square band is a box, a drag and not a click; the predicates disagree
+    // only on the flat case, which is the one the markup tools live on.
+    const box = { x: 10, y: 10, width: 40, height: 40 };
+    expect(isMeaningfulDrag(box)).toBe(true);
+    expect(isClickGesture(box)).toBe(false);
+    const press = { x: 10, y: 10, width: 1, height: 1 };
+    expect(isMeaningfulDrag(press)).toBe(false);
+    expect(isClickGesture(press)).toBe(true);
+  });
+
+  it('still marks the words under a flat drag', () => {
+    // The path the tap check used to intercept: a band with no height crosses a
+    // line of text, so it snaps and builds like any other markup drag. The quad
+    // comes from the words, not from the drag's height, which is the whole reason
+    // a flat drag is a real gesture here.
+    const lines = snapTextLines(pageText(), { x0: 60, y0: 122, x1: 200, y1: 122 });
+    expect(lines.length).toBeGreaterThan(0);
+    const cornersOf = (quads: number[]) => [
+      { x: quads[0], y: quads[1] },
+      { x: quads[2], y: quads[3] },
+      { x: quads[4], y: quads[5] },
+      { x: quads[6], y: quads[7] },
+    ];
+    for (const tool of ['highlight', 'underline', 'strike'] as const) {
+      const mark = build(tool, { drag: { x: 60, y: 118, width: 140, height: 0 }, lines })!;
+      expect(mark, `${tool} built nothing from a flat drag`).toBeTruthy();
+      const quads = mark.quadPoints!;
+      expect(quads.length).toBeGreaterThanOrEqual(8);
+      expect(Math.abs(quads[2] - quads[0]), `${tool}'s quad has no length`).toBeGreaterThan(50);
+      // The quad keeps a height even though the drag had none, because its height
+      // is one em of the text it sits on — without it `markupRule` collapses the
+      // rule onto one point and the mark paints nothing.
+      expect(Math.abs(quads[5] - quads[1]), `${tool}'s quad has no height`).toBeGreaterThan(4);
+      if (tool === 'highlight') continue;
+      const rule = markupRule(
+        cornersOf(quads),
+        tool === 'underline' ? 'Underline' : 'StrikeOut',
+        mark.borderWidth,
+      );
+      expect(Math.hypot(rule.x2 - rule.x1, rule.y2 - rule.y1), `${tool} strokes a point`).toBeGreaterThan(50);
+    }
   });
 });
 

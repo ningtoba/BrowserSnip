@@ -51,7 +51,7 @@ export interface PageGeom {
 
 export const MIN_ZOOM = 0.5;
 export const MAX_ZOOM = 4;
-/** A drag smaller than this is treated as a click, not a rectangle. */
+/** How far the pointer has to move before a press is a drag rather than a click. */
 export const MIN_DRAG_PX = 3;
 
 export function clampZoom(zoom: number): number {
@@ -250,8 +250,26 @@ export function normaliseDrag(from: Point, to: Point): CssRect {
   };
 }
 
+/**
+ * Did this gesture describe a box? Both axes must have size, because a rectangle
+ * with one flat side is not a shape — see `isClickGesture` for the other question,
+ * which is not the same one.
+ */
 export function isMeaningfulDrag(rect: CssRect, minPx = MIN_DRAG_PX): boolean {
   return rect.width >= minPx && rect.height >= minPx;
+}
+
+/**
+ * Was this gesture a click — the pointer pressed, sat still, and released?
+ *
+ * Travel, not area: a drag straight along a line of text covers 140 px of page
+ * and has zero height, which is the most natural markup gesture there is, and it
+ * is not a click. Asking for size on both axes instead called it one, so a second
+ * highlight over words already marked was read as a finger pointing at the first
+ * one: the mark was selected, the tool stayed armed, and the page gained nothing.
+ */
+export function isClickGesture(rect: CssRect, minPx = MIN_DRAG_PX): boolean {
+  return rect.width < minPx && rect.height < minPx;
 }
 
 /** A box of `width` × `height` points centred on a PDF-space point. */

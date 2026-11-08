@@ -41,7 +41,7 @@ import {
   MIN_ZOOM,
   clampZoom,
   fitWidthZoom,
-  isMeaningfulDrag,
+  isClickGesture,
   normaliseAngle,
   normaliseDrag,
   pdfToScreenPoint,
@@ -95,7 +95,7 @@ import {
   exportPlan,
   marksInMarquee,
   marksSummary,
-  markAtPoint,
+  markupTapTarget,
   moveMarks,
   nextAnnotationId,
   pageSelection,
@@ -909,27 +909,21 @@ export function AnnotationEditor(): JSX.Element {
       let lines: ReturnType<typeof linesUnder> = [];
       if (MARKUP_TOOLS.includes(tool)) {
         // A click on a mark that is already there is the user pointing at that
-        // mark, not asking for a second one on top of it. Checked before the
-        // text snap, because the words under an existing highlight always snap.
-        if (!isMeaningfulDrag(drag)) {
-          const tapped = markAtPoint(
-            work.history.present,
-            page,
-            screenToPdfPoint({ x: drag.x + drag.width / 2, y: drag.y + drag.height / 2 }, geom),
-          );
-          if (tapped) {
-            // The tool stays in the hand (Highlight is sticky by ruling); only the
-            // selection moves, which is what makes Delete and arrow-nudge work on
-            // the mark that was clicked. Shift takes it into the set instead.
-            updateWork((current) => ({
-              ...current,
-              selection: additive
-                ? toggleSelected(current.selection, tapped.id)
-                : selectOnly(tapped.id),
-            }));
-            setStatus(`Selected ${describeAnnotation(tapped)} instead of drawing a second mark.`);
-            return;
-          }
+        // mark, not asking for a second one on top of it. Only a click: a drag
+        // along the words is the gesture these tools exist for.
+        const tapped = markupTapTarget(drag, work.history.present, page, geom);
+        if (tapped) {
+          // The tool stays in the hand (Highlight is sticky by ruling); only the
+          // selection moves, which is what makes Delete and arrow-nudge work on
+          // the mark that was clicked. Shift takes it into the set instead.
+          updateWork((current) => ({
+            ...current,
+            selection: additive
+              ? toggleSelected(current.selection, tapped.id)
+              : selectOnly(tapped.id),
+          }));
+          setStatus(`Selected ${describeAnnotation(tapped)} instead of drawing a second mark.`);
+          return;
         }
         lines = linesUnder(drag);
         if (lines.length === 0) {
@@ -1238,7 +1232,7 @@ export function AnnotationEditor(): JSX.Element {
       // the release of the selection.
       if (tool === 'select') {
         setGesture(null);
-        if (!isMeaningfulDrag(box)) {
+        if (isClickGesture(box)) {
           updateWork((next) => ({ ...next, selection: [] }));
           setStatus(selectionNotice(0, page));
           return;
@@ -1894,7 +1888,9 @@ export function AnnotationEditor(): JSX.Element {
   /** The marquee being dragged with Select, or `null` for any other gesture. */
   const marqueeBand =
     tool === 'select' && gesture?.mode === 'drag' ? normaliseDrag(gesture.from, gesture.to) : null;
-  const marquee = marqueeBand && isMeaningfulDrag(marqueeBand) ? marqueeBand : null;
+  // Painted whenever the release will honour it: a band is a band by travel, so
+  // a flat one along a row still shows while it is dragged.
+  const marquee = marqueeBand && !isClickGesture(marqueeBand) ? marqueeBand : null;
   const toolMeta = TOOL_BY_ID[tool];
   /**
    * The footer sentence for the armed tool. A placement tool says what happens

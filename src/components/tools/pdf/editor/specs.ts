@@ -16,6 +16,7 @@ import {
   clampRectToPage,
   fitRectInBox,
   isMeaningfulDrag,
+  isClickGesture,
   normaliseAngle,
   normaliseDrag,
   pdfQuadFromViewportBox,
@@ -876,6 +877,31 @@ function toMarkFrame(point: Point, mark: EditorAnnotation): Point {
   const angle = carriedAngle(mark);
   if (angle === 0) return point;
   return rotatePointAbout(point, rectCentre(mark.rect), -angle);
+}
+
+/**
+ * The mark a markup press points at, or `null` when it should draw.
+ *
+ * Two questions have to be answered in order, and the second one only exists for
+ * a click: did the pointer travel, and if it did not, is there a mark under it?
+ * A drag straight along a line of text has no height — that is what covering a
+ * line looks like — and when the box question was used for the travel question
+ * too, that drag counted as a click on the highlight already there. The page then
+ * selected the old mark, kept the tool armed and painted nothing, which is the
+ * report "Highlight and Underline make no mark the second time".
+ */
+export function markupTapTarget(
+  drag: CssRect,
+  annotations: readonly EditorAnnotation[],
+  page: number,
+  geom: PageGeom,
+): EditorAnnotation | null {
+  if (!isClickGesture(drag)) return null;
+  return markAtPoint(
+    annotations,
+    page,
+    screenToPdfPoint({ x: drag.x + drag.width / 2, y: drag.y + drag.height / 2 }, geom),
+  );
 }
 
 /** Whether one mark's real ink covers a page-space point, rotation included. */
