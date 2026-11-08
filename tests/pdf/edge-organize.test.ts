@@ -258,6 +258,25 @@ const TINY_PNG = Uint8Array.from(
   ),
 );
 
+/**
+ * Two real 4×4 PNGs that differ only in what they paint: the render double
+ * hands out the inked one once `PageRender.finished` has resolved and the blank
+ * one before that, so a rasteriser that encodes an unpainted canvas is caught by
+ * the bytes in the archive rather than by a call count.
+ */
+const INKED_PNG = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAADElEQVR4nGNgIB0AAAA0AAF2Xq7DAAAAAElFTkSuQmCC',
+    'base64',
+  ),
+);
+const BLANK_PNG = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAE0lEQVR4nGP8//8/AwwwwVl4OQCWbgMF7ZjH1AAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
+
 /** A dictionary, whether it is inline or behind a reference. */
 function dictOf(doc: PDFDocument, value: unknown): PDFDict | null {
   const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
@@ -404,15 +423,30 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           }),
           cleanup: () => {},
         }),
-        renderPage: async (n: number, scale: number) => ({
-          canvas: {} as HTMLCanvasElement,
-          ctx: {} as CanvasRenderingContext2D,
-          width: Math.round(200 * scale),
-          height: Math.round(100 * scale),
-          unitsPerPixel: 1 / scale,
-          pageNumber: n,
-          cancel: () => {},
-        }),
+        renderPage: async (n: number, scale: number) => {
+          // pdf.js paints *after* `renderPage` settles: the canvas holds nothing
+          // until `finished` resolves. A caller that encodes before that ships a
+          // blank sheet — which is what `pdf-to-cbz` did — so the double has to
+          // model the ordering, not just the sizes.
+          const canvas = { painted: false } as unknown as HTMLCanvasElement;
+          const finished = new Promise<void>((resolve) => {
+            setTimeout(() => {
+              (canvas as unknown as { painted: boolean }).painted = true;
+              resolve();
+            }, 0);
+          });
+          finished.catch(() => undefined);
+          return {
+            canvas,
+            ctx: {} as CanvasRenderingContext2D,
+            width: Math.round(200 * scale),
+            height: Math.round(100 * scale),
+            unitsPerPixel: 1 / scale,
+            pageNumber: n,
+            finished,
+            cancel: () => {},
+          };
+        },
         metadata: async () => ({ numPages, fingerprint: 'organize-render-double', formFields: 0 }),
         attachments: async () => ({}),
         destroy: async () => {},
@@ -425,10 +459,13 @@ vi.mock('@/lib/pdf/core/raster', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/raster')>();
   return {
     ...real,
-    canvasToBlob: async (_canvas: unknown, format: string) =>
-      new Blob([format === 'png' ? TINY_PNG : TINY_JPEG], {
-        type: format === 'png' ? 'image/png' : 'image/jpeg',
-      }),
+    // The painted flag is what the `finished` promise flips: encoding a canvas
+    // that was never awaited yields the blank sheet, and the archive keeps it.
+    canvasToBlob: async (canvas: unknown, format: string) => {
+      const painted = (canvas as { painted?: boolean } | null)?.painted === true;
+      const bytes = format === 'png' ? (painted ? INKED_PNG : BLANK_PNG) : TINY_JPEG;
+      return new Blob([bytes], { type: format === 'png' ? 'image/png' : 'image/jpeg' });
+    },
   };
 });
 
@@ -1283,6 +1320,12 @@ describe('each tool is checked against its own output file', () => {
     for (const entry of entries) {
       const bytes = await zip.file(entry)!.async('uint8array');
       expect([...bytes.slice(0, 4)], `${entry} is not a PNG`).toEqual([0x89, 0x50, 0x4e, 0x47]);
+      // And not a PNG of *nothing*: the page has to be encoded after pdf.js
+      // painted it. Measured on the deployed site, the shipped archive held six
+      // identical 23 690-byte blank JPEGs while the tool reported success.
+      expect([...bytes], `${entry} is a blank sheet — the canvas was encoded before it was painted`).toEqual([
+        ...INKED_PNG,
+      ]);
     }
     expect(outcome.outputs[0].name).toBe('comic.cbz');
   });

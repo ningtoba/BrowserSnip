@@ -526,6 +526,14 @@ export async function rasterizePages(
       filter: options.filter,
       background: options.background,
     });
+    // `renderPage` settles when the task is *scheduled*; the pixels land on
+    // `finished`. Encoding `render.canvas` before that shipped a CBZ of blank
+    // sheets: measured on the deployed build, six identical 23 690-byte JPEGs at
+    // 0.00 % ink under a line that read "6 pages rendered at 200 dpi"
+    // (`docs/research/cbz-bytes.mjs`). Same rule `renderToCanvas` learned in
+    // `694e007` — a copied or encoded canvas is only worth what pdf.js has
+    // painted into it by then.
+    await render.finished;
     const blob = await canvasToBlob(render.canvas, options.format, options.quality ?? 0.92, {
       background: options.background,
     });
