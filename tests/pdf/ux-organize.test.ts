@@ -1046,11 +1046,11 @@ describe('pane shell', () => {
 
     const rows = [...container.querySelectorAll('div')]
       .map((row) => ({
-        row,
-        field: row.querySelector(':scope > input.doodle-input'),
-        buttons: [...row.querySelectorAll(':scope > button.doodle-btn')],
+        field: row.querySelector<HTMLInputElement>(':scope > input.doodle-input'),
+        buttons: [...row.querySelectorAll<HTMLButtonElement>(':scope > button.doodle-btn')],
       }))
-      .filter((entry) => entry.field && entry.buttons.length > 0);
+      .filter((entry): entry is { field: HTMLInputElement; buttons: HTMLButtonElement[] } =>
+        Boolean(entry.field) && entry.buttons.length > 0);
     expect(rows.length, 'the plan-order row and the tray page-range row').toBeGreaterThanOrEqual(2);
 
     for (const { field, buttons } of rows) {
