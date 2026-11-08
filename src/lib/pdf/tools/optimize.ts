@@ -1075,6 +1075,16 @@ export const optimizeTools: PdfToolDefinition[] = [
           const render: PageRender = await session.renderPage(i + 1, scale, {
             background: format === 'jpeg' ? '#ffffff' : undefined,
           });
+          // `renderPage` settles when the task is *scheduled*; the ink lands on
+          // `finished`. Embedding the canvas before that shipped a picture of
+          // nothing: measured on the deployed build, a text sheet at 13.88 % ink
+          // came back as one image XObject at 0.00 % non-white, under a line that
+          // read "Rasterised 1 page(s) to JPEG at 200 dpi. 7.0 KB → 24.1 KB
+          // (+242 %)" (`docs/research/rasterize-fixture.mjs` → `rail-tool-bytes.mjs`
+          // → `rail-measure.py`). The same rule `6b9b479` and `694e007` recorded:
+          // a canvas is worth only what pdf.js has painted into it by the time it
+          // is read, and "turn the pages into images" is the tool that promises it.
+          await render.finished;
           const placed = await embedRenderedPage(target, render, format, quality);
           encodedAs = placed.encodedAs;
           const width = keepPageSize ? size.width : render.width;
