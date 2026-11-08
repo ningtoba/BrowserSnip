@@ -6,8 +6,9 @@
  * a page holding a scanned image or a signature.
  */
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
+import { PDFName } from '@maxwbh/pdf-lib';
 import { OPS } from 'pdfjs-dist';
-import { cropBox, mediaBox } from './pages';
+import { cropBox, mediaBox, type PageBox } from './pages';
 import type { PdfSession } from './render';
 
 export interface PageContentProfile {
@@ -40,7 +41,25 @@ const PAINTING_OPS: Set<number> = operatorIds([
   'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke',
   'closeFillStroke', 'closeEOFillStroke', 'shadingFill', 'paintXObject',
   'beginInlineImage',
+  // Raster is ink. pdf.js resolves `Do` on an image XObject to
+  // `paintImageXObject` — never to `paintXObject`, which is a form's operator —
+  // so before these ids a scanned page arrived with `paintOps === 0` and the
+  // rule below called a photograph empty. Measured on the deployed build: a
+  // 3-page, 2.3 MB scan-only file was refused with "All 3 pages look blank", and
+  // in a mixed document the scan was deleted next to the true blanks, against
+  // both this module's header note and the tool's own ("a scanned image or a
+  // signature counts as ink").
+  'paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject',
+  'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup',
+  'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat',
+  'paintSolidColorImageMask',
   'showText', 'showSpacedText', 'nextLineShowText', 'nextLineSetSpacingShowText',
+]);
+
+/** Operators that lay down a vector shape — a signature, a rule, a chart line. */
+const STROKE_OR_FILL_OPS: Set<number> = operatorIds([
+  'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke',
+  'closeFillStroke', 'closeEOFillStroke', 'shadingFill',
 ]);
 
 /** Operators that paint raster — a scanned page is ink, not a blank sheet. */
@@ -78,12 +97,14 @@ export async function profilePage(
       if (size === 0) invisible += 1;
     }
     let paintOps = 0;
+    let strokesOrFills = 0;
     let images = 0;
     let inkArea = 0;
     const ops = operators.fnArray;
     for (let i = 0; i < ops.length; i++) {
       const id = ops[i];
       if (PAINTING_OPS.has(id)) paintOps += 1;
+      if (STROKE_OR_FILL_OPS.has(id)) strokesOrFills += 1;
       if (IMAGE_OPS.has(id)) {
         images += 1;
         const args = operators.argsArray[i];
@@ -101,8 +122,14 @@ export async function profilePage(
       annotationRects,
       inkArea,
       blankByContent: paintOps === 0 && visibleText === 0 && annotationRects === 0,
+      // The second branch is for a page that runs painting operators yet shows
+      // nothing a reader would call ink — an existing OCR layer's invisible text
+      // is the case it exists for. A stroke or a fill is ink (a signature, a
+      // ruled line, a chart), so it now holds that branch shut; without that
+      // guard a page whose only content is a 0.1 pt line was deleted.
       blankByAppearance:
-        (paintOps === 0 || (images === 0 && visibleText === 0)) && annotationRects === 0,
+        (paintOps === 0 || (images === 0 && visibleText === 0 && strokesOrFills === 0)) &&
+        annotationRects === 0,
     };
   } finally {
     proxy.cleanup();
@@ -120,11 +147,14 @@ function estimateImageArea(args: unknown, fallbackW: number, fallbackH: number):
 /**
  * Resolve names to pdf.js's numeric operator ids.
  *
- * SAFETY: `OPS` is the frozen name → id table the renderer and the worker are
- * both built from, so reading it by name is the same mapping the display list is
- * encoded with; the index signature is only how TypeScript is told that.
+ * A name that no longer exists in `OPS` is skipped silently, which is why the
+ * tables above are pinned by the browser measurement in `docs/TOOL-CAMPAIGN.md`
+ * rather than trusted.
  */
 function operatorIds(names: string[]): Set<number> {
+  // SAFETY: `OPS` is the frozen name → id table the renderer and the worker are
+  // both built from, so reading it by name is the same mapping the display list
+  // is encoded with; the index signature is only how TypeScript is told that.
   const table = OPS as unknown as Record<string, number>;
   const ids = new Set<number>();
   for (const name of names) {
@@ -167,12 +197,50 @@ function countVisibleAnnotations(doc: PDFDocument, pageIndex: number): number {
   const page = doc.getPage(pageIndex);
   const annots = readAnnotsArray(page);
   if (!annots) return 0;
+  const context = pdfContext(doc);
+  const box = cropBox(page);
   let count = 0;
   for (let i = 0; i < annots.size(); i++) {
     const resolved = resolveAnnotation(doc, annots.get(i));
-    if (resolved && !isHiddenAnnotation(resolved)) count += 1;
+    if (resolved && isLiveAnnotation(context, resolved, box)) count += 1;
   }
   return count;
+}
+
+/**
+ * An annotation counts as content only where a reader can meet it: the
+ * invisible / hidden / no-view flags are off **and** `/Rect` lands on the page.
+ *
+ * The second half is what stops `keepAnnotated` degrading into "keep
+ * everything". A mark parked at `[900 900 940 920]` on a 200 × 100 sheet is
+ * clipped away by every viewer, so a sheet whose only annotation is off-page is
+ * still blank; a rect that merely hangs over the edge is not, because part of
+ * it draws. `/Rect` is in default user space, so the crop box is the right frame
+ * whether or not the page carries `/Rotate`.
+ *
+ * An unreadable `/Rect` keeps the page. This is a deletion rule, and "I could
+ * not place it" is not evidence that nothing is drawn.
+ */
+function isLiveAnnotation(
+  context: PdfContextLookup,
+  dict: AnnotationDict,
+  box: PageBox,
+): boolean {
+  if (isHiddenAnnotation(dict)) return false;
+  const rect = readRect(context, dict);
+  if (!rect) return true;
+  const [x1, y1, x2, y2] = rect;
+  const left = Math.min(x1, x2);
+  const right = Math.max(x1, x2);
+  const bottom = Math.min(y1, y2);
+  const top = Math.max(y1, y2);
+  if (right <= left || top <= bottom) return false;
+  return (
+    right > box.x &&
+    left < box.x + box.width &&
+    top > box.y &&
+    bottom < box.y + box.height
+  );
 }
 
 /**
@@ -208,62 +276,110 @@ function readAnnotsArray(page: PDFPage): MaybePdfArray | null {
 }
 
 interface AnnotationDict {
-  lookup?: (key: string) => unknown;
-  get?: (key: string) => unknown;
-  has?: (key: string) => boolean;
+  lookup?: (key: unknown) => unknown;
+  get?: (key: unknown) => unknown;
+  has?: (key: unknown) => boolean;
 }
 
 /** Indirect annotation references must be resolved through the context. */
 interface PdfContextLookup {
   lookup: (ref: unknown) => unknown;
-  obj: (num: number, gen: number) => unknown;
 }
 
 function pdfContext(doc: PDFDocument): PdfContextLookup {
-  // SAFETY: `PDFContext` always exposes `obj(num, gen)` and `lookup(ref)`; the
-  // public class declares them but the union returned by `get`/`lookup` is
-  // typed as `PDFObject`, so only the two methods needed here are named.
+  // SAFETY: `PDFContext.lookup(ref)` is public and always present; the value it
+  // answers is the opaque `PDFObject` union, which is narrowed by
+  // `isAnnotationDict` rather than by the return type.
   return doc.context as unknown as PdfContextLookup;
 }
 
-function isAnnotationDict(value: AnnotationEntry): value is AnnotationDict {
-  const candidate = value as AnnotationDict;
+function isAnnotationDict(value: unknown): value is AnnotationDict {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AnnotationDict>;
   return typeof candidate.get === 'function' || typeof candidate.lookup === 'function';
 }
 
-function resolveAnnotation(doc: PDFDocument, ref: AnnotationEntry): AnnotationDict | null {
-  if (!ref) return null;
-  if (isAnnotationDict(ref) && readName(ref, 'Subtype')) return ref;
-  const text = ref.toString?.() ?? String(ref);
-  const match = /^(\d+)\s+0\s+R$/.exec(text.trim());
-  if (!match) return null;
-  const context = pdfContext(doc);
-  const resolved = context.lookup(context.obj(Number(match[1]), Number(match[2])));
-  return resolved && isAnnotationDict(resolved as AnnotationEntry) ? (resolved as AnnotationDict) : null;
+/**
+ * The `/Annots` array holds `PDFRef` objects in the ordinary case, and
+ * `PDFContext.lookup(ref)` resolves one directly. This used to round-trip the
+ * entry through `toString()` and rebuild it with `context.obj(num, gen)`, but in
+ * this fork `obj()` is the *literal* helper — `ctx.obj(20, 0)` answers a
+ * `PDFNumber` (measured: `constructor.name === 'PDFNumber'`, `String(...) ===
+ * "20"`), which is not a dictionary. Every referenced annotation therefore
+ * resolved to nothing, `annotationRects` was always 0, and "keep pages that only
+ * hold annotations" was a toggle over nothing.
+ */
+function resolveAnnotation(doc: PDFDocument, entry: AnnotationEntry): AnnotationDict | null {
+  if (!entry) return null;
+  if (isAnnotationDict(entry) && readName(entry, 'Subtype')) return entry;
+  const resolved = pdfContext(doc).lookup(entry);
+  return isAnnotationDict(resolved) ? resolved : null;
 }
 
 function readName(dict: AnnotationDict, key: string): string | null {
-  const raw = dict.get?.(key) ?? dict.lookup?.(key);
-  if (raw === undefined || raw === null) return null;
-  const text = String((raw as { toString?: () => string }).toString?.() ?? raw);
-  return text ? text.replace(/^\//, '') : null;
+  const raw = dictGet(dict, key);
+  if (!raw) return null;
+  return String(raw).replace(/^\//, '') || null;
 }
 
+/**
+ * `PDFDict` is keyed by `PDFName` *instances*, so a plain string key never hits:
+ * `dict.get('Subtype')` answers undefined for every dictionary in the file, and
+ * `/Subtype` and `/F` read as absent on annotations that plainly carry them.
+ * `lookup` is asked before `get` because it resolves a value parked behind a
+ * reference — an annotation dictionary written as `/Rect 12 0 R` is legal.
+ */
+function dictGet(dict: AnnotationDict, key: string): AnnotationValue | null {
+  const name = PDFName.of(key);
+  const raw = dict.lookup?.(name) ?? dict.get?.(name);
+  return raw === undefined || raw === null ? null : (raw as AnnotationValue);
+}
+
+/** Any PDF object value, read as the text these helpers parse. */
+type AnnotationValue = { toString(): string };
+
 function readNumber(dict: AnnotationDict, key: string): number {
-  const raw = dict.get?.(key) ?? dict.lookup?.(key);
-  if (raw === undefined || raw === null) return 0;
-  const text = String((raw as { toString?: () => string }).toString?.() ?? raw);
-  const value = Number(text.trim());
+  const raw = dictGet(dict, key);
+  if (!raw) return 0;
+  const value = Number(String(raw).trim());
   return Number.isFinite(value) ? value : 0;
 }
 
-/** Annotation flag bits 2 (Invisible), 4 (Hidden) and 128 (NoView). */
+/**
+ * The `/F` bits that keep an annotation from the reader: `Invisible` 0x01,
+ * `Hidden` 0x02, `NoView` 0x20 — the masks pdf.js numbers the same flags with
+ * (`AnnotationFlag` in `pdfjs-dist`, from ISO 32000-1 Table 165).
+ *
+ * These read `1 << 1`, `1 << 7`, `1 << 2`, i.e. 2, 128 and 4: Hidden by luck,
+ * Invisible and NoView never. It stayed unseen because `resolveAnnotation`
+ * returned nothing, so there was never a flag for the test to read.
+ */
 function isHiddenAnnotation(dict: AnnotationDict): boolean {
   const flags = readNumber(dict, 'F');
-  const INVISIBLE = 1 << 1;
-  const HIDDEN = 1 << 7;
-  const NO_VIEW = 1 << 2;
+  const INVISIBLE = 0x01;
+  const HIDDEN = 0x02;
+  const NO_VIEW = 0x20;
   return (flags & (INVISIBLE | HIDDEN | NO_VIEW)) !== 0;
+}
+
+/**
+ * `/Rect` as four numbers, or `null` when the entry is not four readable
+ * numbers. Each component is resolved through the context, because a rect is
+ * written with indirect numbers as often as with literals.
+ */
+function readRect(context: PdfContextLookup, dict: AnnotationDict): number[] | null {
+  const value = context.lookup(dictGet(dict, 'Rect'));
+  // SAFETY: a `/Rect` is a `PDFArray`; only `size`/`get` are used, so the
+  // narrower structural view is what the entry has to satisfy to be read.
+  const array = value as MaybePdfArray | null;
+  if (!array || typeof array.size !== 'function' || array.size() !== 4) return null;
+  const out: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const n = Number(String(context.lookup(array.get(i))).trim());
+    if (!Number.isFinite(n)) return null;
+    out.push(n);
+  }
+  return out;
 }
 
 /** Effective drawn area of a page in square points, after /Rotate. */

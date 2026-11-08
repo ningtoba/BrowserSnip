@@ -31,6 +31,7 @@
  * the rail’s own pre-check.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { OPS } from 'pdfjs-dist';
 import {
   PDFArray,
   PDFDict,
@@ -47,6 +48,7 @@ import { resolvePages } from '@/lib/pdf/core/pages';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
+import { openRender } from '@/lib/pdf/core/render';
 
 /* ── fixtures ─────────────────────────────────────────────────────────────── */
 
@@ -251,12 +253,6 @@ const TINY_JPEG = Uint8Array.from(
     'base64',
   ),
 );
-const TINY_PNG = Uint8Array.from(
-  Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-    'base64',
-  ),
-);
 
 /**
  * Two real 4×4 PNGs that differ only in what they paint: the render double
@@ -388,7 +384,44 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
     S: OPS.stroke,
     sh: OPS.shadingFill,
   };
-  const paintable = new Set<number>(Object.values(ids));
+  // The id a display list carries for an image, which is not a content-stream
+  // token and so is not in `ids`: only the `Do` resolver below may put it on the
+  // list.
+  const imagePaint = OPS.paintImageXObject;
+  const paintable = new Set<number>([...Object.values(ids), imagePaint]);
+  /**
+   * A `Do` is not one operator. pdf.js resolves the named XObject's `/Subtype`
+   * and emits `paintImageXObject` for an image, `paintFormXObjectBegin/End`
+   * around a form — the id the display list carries, not the token the content
+   * stream typed. The double used to answer every `Do` with `paintXObject`, and
+   * that invented vocabulary is what let a scanned page look painted to the
+   * blank-page rule in jsdom while the browser called it blank.
+   */
+  type PdfObjects = { PDFDict: typeof PDFDict; PDFName: typeof PDFName };
+  const xObjectSubtypes = (
+    page: { node: { Resources(): unknown } },
+    context: { lookup(value: unknown): unknown },
+    cls: PdfObjects,
+  ): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const res = page.node.Resources();
+    const dict = res instanceof cls.PDFDict ? res : (context.lookup(res) as PDFDict | null);
+    if (!(dict instanceof cls.PDFDict)) return out;
+    const group = context.lookup(dict.get(cls.PDFName.of('XObject')));
+    if (!(group instanceof cls.PDFDict)) return out;
+    for (const [key, value] of group.entries()) {
+      const target = context.lookup(value);
+      // An image XObject is a *stream* with a dictionary in front of it, not a
+      // dictionary; reading only `PDFDict` here is how the double stayed back on
+      // the old vocabulary.
+      const shapes = target as { dict?: unknown } | null;
+      const header = shapes?.dict instanceof cls.PDFDict ? shapes.dict : target;
+      if (!(header instanceof cls.PDFDict)) continue;
+      const subtype = header.get(cls.PDFName.of('Subtype'));
+      out[key.toString().replace(/^\//, '')] = String(subtype ?? '').replace(/^\//, '');
+    }
+    return out;
+  };
   return {
     ...real,
     openRender: async (bytes: Uint8Array) => {
@@ -399,11 +432,42 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           .join('\n');
         const fnArray: number[] = [];
         const argsArray: unknown[] = [];
+        const subtypes = xObjectSubtypes(page, doc.context, { PDFDict, PDFName });
+        let pendingName = '';
         for (const token of content.split(/[\s\n]+/)) {
-          const id = ids[token];
-          if (id === undefined || !paintable.has(id)) continue;
+          // A PDF name is anything after `/` up to whitespace or a delimiter —
+          // pdf-lib names its images `/Image-7098480789`, and a stricter pattern
+          // silently lost the operand, so `Do` resolved to the wrong id.
+          if (/^\/[^\s\]>]+$/.test(token)) {
+            pendingName = token.slice(1);
+            continue;
+          }
+          let id = ids[token];
+          if (id === undefined) continue;
+          if (token === 'Do') {
+            const subtype = subtypes[pendingName];
+            // A `Do` whose target cannot be read is a broken double, not a
+            // judgment call: guessing here is how every image quietly went back
+            // to the invented `paintXObject` id and the blank-page rule passed in
+            // jsdom while the browser called a scan blank.
+            if (subtype === undefined) {
+              throw new Error(
+                `render double: /${pendingName || '?'} Do resolved to no XObject in this page's /Resources`,
+              );
+            }
+            // Real pdf.js: an image paints with `paintImageXObject`. A form's
+            // operators come from inside it, which the double does not inline, so
+            // a form keeps the single `paintXObject` id it always used here.
+            id = subtype === 'Image' ? imagePaint : OPS.paintXObject;
+          }
+          if (!paintable.has(id)) continue;
+          pendingName = '';
           fnArray.push(id);
-          argsArray.push(id === OPS.paintXObject || id === OPS.beginInlineImage ? { width: 100, height: 50 } : undefined);
+          argsArray.push(
+            id === OPS.paintXObject || id === OPS.beginInlineImage || id === imagePaint
+              ? { width: 100, height: 50 }
+              : undefined,
+          );
         }
         const items = shownStrings(content)
           .filter((str) => str.trim() !== '')
@@ -1292,6 +1356,165 @@ describe('each tool is checked against its own output file', () => {
     // The scan carries no text at all: if the display list were unread, this is
     // the page that would have been thrown away.
     expect(doc.getPages().map((page) => [Math.round(page.getWidth()), Math.round(page.getHeight())])).toEqual([[300, 150]]);
+  });
+
+  /**
+   * A page whose only content is one hairline stroke: a signature drawn with a
+   * pen, a ruled line, a chart axis. The appearance rule used to read "no image
+   * and no visible text" as blank, which threw pages like this away — so the
+   * raster fix must not be allowed to swing the other way.
+   */
+  const hairline = (doc: PDFDocument, index: number): void => {
+    const page = doc.getPage(index);
+    page.drawLine({ start: { x: 20, y: 50 }, end: { x: 180, y: 50 }, thickness: 0.1, color: rgb(0, 0, 0) });
+  };
+
+  /** The drawing operators a page runs, decoded out of the saved bytes. */
+  const streamOf = (doc: PDFDocument, index: number): string =>
+    pageContentStreams(doc.getPages()[index])
+      .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
+      .join('\n');
+
+  it('remove-blank-pages keeps the sheet whose only ink is a hairline stroke', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 100]);
+    doc.addPage([200, 100]);
+    hairline(doc, 1);
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'signed.pdf');
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const kept = await open(await bytesOf(outcome));
+    // The stroke sheet survives and the empty one still goes: the fix is
+    // two-sided, or "nothing is blank" has only replaced "everything is".
+    expect(kept.getPageCount(), 'a signature is ink, not a blank sheet').toBe(1);
+    expect(outcome.message).toMatch(/Removed 1 page \(1\), kept 1 page/i);
+    // What the surviving file actually draws, not just how many sheets are left:
+    // a 160 pt line at 0.1 w, still stroked.
+    const strokes = streamOf(kept, 0);
+    expect(strokes, 'the kept sheet is the stroke sheet').toMatch(/20 50 m/);
+    expect(strokes).toMatch(/180 50 l/);
+    expect(strokes).toMatch(/0\.1 w/);
+    expect(strokes).toMatch(/\bS\b/);
+  });
+
+  it('remove-blank-pages still deletes a sheet that paints nothing at all', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100, empty: true },
+        { width: 200, height: 100, image: true },
+        { width: 200, height: 100, empty: true },
+      ]),
+      'mixed.pdf',
+    );
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const bytes = await bytesOf(outcome);
+    const kept = await open(bytes);
+    expect(kept.getPages().map((page) => Math.round(page.getWidth())), 'both empty sheets went, the scan stayed').toEqual([200]);
+    expect(outcome.message).toMatch(/Removed 2 pages \(1,3\), kept 1 page/i);
+    // The one sheet left still carries the raster it was kept for.
+    expect(text(bytes), 'the survivor is the scanned sheet, with its image').toMatch(/\/Subtype\s*\/Image/);
+  });
+
+  /**
+   * The vocabulary of the double itself, checked against what pdf.js really puts
+   * on a display list. `remove-blank-pages` passed in jsdom and deleted scans in
+   * the browser because the double answered every `Do` with `paintXObject` — an
+   * id real pdf.js reserves for forms. Asserting the ids, rather than only the
+   * page count, is what stops that double drifting back unnoticed: a rule that
+   * accepts `paintXObject` would keep the scan either way.
+   */
+  it('the render double hands an image XObject the id pdf.js actually emits', async () => {
+    const session = await openRender(await sheets([{ width: 200, height: 100, image: true }]));
+    const proxy = await session.page(1);
+    const { fnArray } = await proxy.getOperatorList();
+    expect(fnArray.filter((id) => id === OPS.paintImageXObject), 'one image, one paintImageXObject').toHaveLength(1);
+    expect(fnArray, 'paintXObject is a form operator; this page draws no form').not.toContain(OPS.paintXObject);
+    proxy.cleanup();
+    await session.destroy();
+
+    // And the double cannot fall back quietly: a `Do` it cannot resolve to an
+    // XObject is a broken stand-in, not an excuse to guess the old id.
+    const ghost = await PDFDocument.create();
+    const sheet = ghost.addPage([200, 100]);
+    sheet.node.set(PDFName.of('Contents'), ghost.context.stream('q 1 0 0 1 0 0 cm /Ghost Do Q'));
+    await expect(openRender(await ghost.save({ useObjectStreams: false }))).rejects.toThrow(
+      /\/Ghost Do resolved to no XObject/,
+    );
+  });
+
+  /**
+   * One `Link` annotation on an otherwise empty sheet, written the way producers
+   * write it: the `/Annots` array holds a reference, and the dictionary with the
+   * `/Rect` and `/F` lives behind it.
+   */
+  async function annotate(
+    spec: { flags?: number; rect?: number[] } = {},
+  ): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 100]);
+    const dict = doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: spec.rect ?? [60, 40, 140, 55],
+      ...(spec.flags === undefined ? {} : { F: spec.flags }),
+      A: { S: 'GoTo', D: [0, 'Fit'] },
+    });
+    const ref = doc.context.register(dict);
+    doc.getPage(0).node.set(PDFName.of('Annots'), doc.context.obj([ref]));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('remove-blank-pages keeps an annotation-only sheet only while it is told to', async () => {
+    const source = fileOf(await annotate(), 'link-only.pdf');
+
+    const kept = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    expect(kept.message, 'the toggle has to reach the count').toMatch(
+      /No blank pages were found in 1 page/i,
+    );
+
+    // Toggle it off and the same sheet is empty: the refusal the tool already
+    // spells out proves it was the annotation that saved it above, not the
+    // raster fix leaking into this path.
+    await expect(run('remove-blank-pages', { keepAnnotated: false }, [source])).rejects.toThrow(
+      /look blank, and deleting every one/i,
+    );
+  });
+
+  /** Every sheet is blank but this one, whose only content is the annotation. */
+  const keptByAnnotation = async (bytes: Uint8Array): Promise<boolean> => {
+    try {
+      const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [fileOf(bytes, 'annot.pdf')]);
+      return /No blank pages were found in 1 page/i.test(outcome.message ?? '');
+    } catch {
+      return false;
+    }
+  };
+
+  it('remove-blank-pages does not turn keepAnnotated into keepEverything', async () => {
+    // The flags that hide an annotation from the reader (pdf.js `AnnotationFlag`:
+    // Invisible 0x01, Hidden 0x02, NoView 0x20), and the placements that put it
+    // where no viewer draws it. Each sheet still has to go.
+    for (const [what, spec] of [
+      ['Hidden (/F 2)', { flags: 2 }],
+      ['Invisible (/F 1)', { flags: 1 }],
+      ['NoView (/F 32)', { flags: 32 }],
+      ['parked off the sheet', { rect: [900, 900, 940, 920] }],
+      ['reduced to a point', { rect: [60, 40, 60, 40] }],
+    ] as [string, { flags?: number; rect?: number[] }][] /* what, annotation spec */) {
+      expect(await keptByAnnotation(await annotate(spec)), `${what} is not content`).toBe(false);
+    }
+  });
+
+  it('remove-blank-pages keeps a sheet an annotation still reaches', async () => {
+    // The other side of the same two rules: a flag that does not hide anything
+    // (Print 0x04, ReadOnly 0x40, Locked 0x80) must not delete the sheet, and
+    // neither must a `/Rect` that merely hangs over the edge — part of it draws.
+    for (const flags of [4, 64, 128]) {
+      expect(await keptByAnnotation(await annotate({ flags })), `/F ${flags} does not hide`).toBe(true);
+    }
+    expect(
+      await keptByAnnotation(await annotate({ rect: [180, 90, 260, 130] })),
+      'a clipped annotation is still on the page',
+    ).toBe(true);
   });
 
   it('remove-blank-pages keeps a document whose pages all have content', async () => {
