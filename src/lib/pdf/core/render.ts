@@ -85,7 +85,20 @@ export interface PdfSession {
 export interface RenderOptions {
   scale?: number;
   rotation?: number;
-  /** CSS filter applied while painting, e.g. `invert(1)` or `grayscale(1)`. */
+  /**
+   * CSS filter applied to the rendered page — e.g. `invert(1)`, `grayscale(1)`,
+   * `contrast(1.35)`. Empty or `none` means "paint the page exactly as displayed".
+   *
+   * It lands on the **finished bitmap**, not during the paint, and that is not an
+   * implementation detail: pdf.js calls `resetCtxToDefault` in `beginDrawing`,
+   * which writes `filter = 'none'` over whatever the caller set on the context, so
+   * an assignment before `page.render()` only ever reached pdf.js's own background
+   * fill. `invert-colors` shipped inverted paper with un-inverted ink that way —
+   * black text on a black sheet, which measures as ink and reads as nothing.
+   *
+   * Because the pass is part of the paint, a caller sees it only after
+   * {@link PageRender.finished} resolves, exactly like the pixels themselves.
+   */
   filter?: string;
   background?: string;
 }
@@ -157,6 +170,48 @@ export interface ExtractedTextItem {
 
 export class RenderCancelled extends Error {
   readonly name = 'RenderCancelled';
+}
+
+/**
+ * Filter a finished page bitmap in place: paper and ink together, exactly once.
+ *
+ * The filter cannot ride on the paint. pdf.js's `beginDrawing` calls
+ * `resetCtxToDefault`, which writes `filter = 'none'` over anything the caller put
+ * on the context before `page.render()` — so a pre-paint assignment reaches only
+ * pdf.js's own background fill, and `invert-colors` shipped inverted paper under
+ * un-inverted ink (black text on a black sheet: it measures as ink and reads as
+ * nothing). Applying it after the last operator is what makes the option mean what
+ * it says.
+ *
+ * A second surface rather than a self-copy because `copy` must replace the page
+ * with the *filtered* pixels: drawing a canvas onto itself while filtering depends
+ * on the implementation snapshotting the source first. One page-sized canvas per
+ * page, released when this returns, inside a loop that already keeps one page in
+ * flight.
+ */
+function applyFilterToPage(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  filter: string,
+): void {
+  const painted = document.createElement('canvas');
+  painted.width = canvas.width;
+  painted.height = canvas.height;
+  const source = painted.getContext('2d');
+  if (!source) return;
+  source.filter = filter;
+  source.drawImage(canvas, 0, 0);
+  // The identity transform, because pdf.js leaves the page transform on the
+  // context and this copy is device-pixel to device-pixel.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Both are pdf.js's to leave as it likes — the copy must be a plain replace, so
+  // neither the alpha nor a leftover filter may ride on it.
+  ctx.globalAlpha = 1;
+  ctx.filter = 'none';
+  ctx.globalCompositeOperation = 'copy';
+  ctx.drawImage(painted, 0, 0);
+  ctx.restore();
 }
 
 export async function openRender(
@@ -253,15 +308,18 @@ export async function openRender(
         ctx.fillStyle = renderOptions.background;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-      if (renderOptions.filter && renderOptions.filter !== 'none') {
-        ctx.filter = renderOptions.filter;
-      }
       const task: RenderTask = page.render({ canvasContext: ctx, viewport });
+      const filter = renderOptions.filter && renderOptions.filter !== 'none' ? renderOptions.filter : null;
       // pdf.js paints asynchronously; this promise is the only evidence the
       // bitmap holds anything. The extra `catch` marks the rejection as observed
       // so a caller that never awaits `finished` does not log an unhandled
       // rejection when its render is cancelled — awaiting still sees the error.
-      const finished = task.promise.then(() => undefined);
+      const finished = task.promise.then(() => {
+        // Paper and ink together, once, after the last operator has landed. A
+        // page the caller asked to filter is filtered here or not at all: see
+        // `RenderOptions.filter` for why the pre-paint assignment could not work.
+        if (filter) applyFilterToPage(canvas, ctx, filter);
+      });
       finished.catch(() => undefined);
       return {
         canvas,

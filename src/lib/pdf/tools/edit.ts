@@ -1994,6 +1994,11 @@ async function rerasterise(
         background: '#ffffff',
       });
       try {
+        // `renderPage` settles when the task is *scheduled*; the pixels land on
+        // `finished`. Reading the canvas before that shipped a page of paper — the
+        // `pdf-to-cbz` / `rasterize-pdf` / `pdf-to-image` class, this copy reaching
+        // `invert-colors`, `adjust-colors` and `scanner-effect` through one helper.
+        await render.finished;
         if (job.whitening || job.sharpen || job.threshold !== undefined) {
           const data = render.ctx.getImageData(0, 0, render.width, render.height);
           if (job.whitening) whitenPixels(data.data, 0.45);
