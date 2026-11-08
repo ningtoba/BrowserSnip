@@ -15,6 +15,11 @@ Source files touched: none.
 > the whole palette — canvas ink and exported bytes for all 17 tools, the three
 > defects found and fixed, and the list of claims in this file that turned out to
 > be false — is `# Audit #3 — the verification pass` at the end of the file.
+>
+> **Audit #4 re-opened one of audit #3's own verdicts.** §3.2 filed the link's
+> empty appearance stream as "not a defect"; it was a defect, it is fixed, and the
+> row in the per-tool table below is the one that changed. Everything else in that
+> table still stands.
 
 ## Findings
 
@@ -183,6 +188,11 @@ marks 12->13; placed = [{"id":"amw7b88w247","x":751,"y":230,"w":200,"h":38,"stro
 ### 4. [OK] Link: drag → URL dialog → Add link
 
 > **[audit #3] verified:** 0→1, URI in the file. See §3.2 for why the file paints nothing, and the `get_links()` note in §16.
+>
+> **[audit #4] the second half of that sentence was the defect, and it is fixed:**
+> "the on-page outline is the only feedback" is exactly the disagreement the file
+> should not have had with the page. The outline is exported now, in the mark's own
+> colour; the URI and the dragged rect are unchanged.
 
 marks 13->14; placed=[{"id":"amw7b8bfd4o","x":1131,"y":256,"w":140,"h":43,"stroke":"rgb(37, 99, 235)","fill":"rgba(37, 99, 235, 0.08)","op":"1","sw":"1px"}]; armedAfter=select. Link is an invisible annotation by nature — the on-page outline is the only feedback.
 
@@ -298,7 +308,8 @@ are attributable to one gesture.
 "Gesture" is what a user does with that tool, run once from an empty page;
 arming is asserted through `[data-armed-tool]` before every gesture. Canvas area
 is CSS px² of visible ink on the overlay; file ink is pt² measured in the exported
-bytes the same way. `0.0` next to a link is honest: see §3.2.
+bytes the same way. `0.0` next to a link is this harness, not the file: MuPDF never
+composites a `/Link` appearance — see §3.2, where audit #4 reversed that row.
 
 | tool | normal gesture | marks | canvas px² | exported annotation | file ink pt² | verdict |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -317,7 +328,7 @@ bytes the same way. `0.0` next to a link is honest: see §3.2.
 | stamp | click | 0→1 | 9 635 | `/Stamp`, text `Approved` | 1 263.2 | verified |
 | image | click, choose PNG | 0→1 | 38 400 | `/Stamp` with `/Im0 Do`, 240 × 160 cm | 38 480.0 | verified |
 | signature | click, draw in pad, Place signature | 0→1 | 11 868 | `/Stamp` with `/Im0 Do` | 2 210.5 | verified |
-| link | drag, URL, Add link | 0→1 | 3 726 | `/Link` `/A << /URI (https://example.com/audit) >>` | 0.0 | verified as a link; see §3.2 |
+| link | drag, URL, Add link | 0→1 | 3 726 | `/Link` `/A << /URI (https://example.com/audit) >>` | 0.0 | **was §3.2 "not a defect" — fixed by audit #4; MuPDF's own render cannot see it** |
 | redact | drag over a text row | 0→1 | 1 776 | `/Redact` `0 0 148 12 re f` **and** the burn in the page content | 12.0 layer / 1 990.0 file | verified; `CYBERJAYA` is gone from the exported text |
 
 Console/exception output for the whole sweep: none. Every file starts `%PDF-1.7`
@@ -349,15 +360,50 @@ Delete and the inspector will act on is still visible. UX-BRIEF's own line —
 "Nothing clickable looks inert" — argues the same way from the other side: a grip
 the armed tool will not honour should not be painted.
 
-## 3.2 [not a defect, worth knowing] A link's appearance stream is empty
+## 3.2 [reversed by audit #4: it was a defect] A link's appearance stream was empty
 
-The exported `/Link` carries `/AP << /N >>` whose form stream is exactly `q Q` —
-four bytes that draw nothing — so the blue outline and the URL label the canvas
-paints are authoring chrome and the file is invisible, which is the PDF
-convention for links and matches what the re-run's finding 4 concluded above. Recording the number
-because the audit's method is "the bytes decide": `inkAnnots = 0.0 pt²` for link
-is expected, not a lie. (If a visible link is ever wanted, this stream is where
-it goes.)
+The exported `/Link` carried `/AP << /N >>` whose form stream was exactly `q Q` —
+four bytes that draw nothing — and this file filed that as "the PDF convention for
+links". The convention is about *viewers*, not about *files*: this editor draws a
+dashed box wherever the user dragged, so a file that paints nothing disagrees with
+the page that was marked, and a viewer that composites `/AP` shows a link the user
+can hit but cannot see. The number this pass recorded — 3 726 px² of canvas
+against `inkAnnots = 0.0 pt²` — was not "expected, not a lie". It was the bug.
+
+Fixed in `0ea6eac` (stream) and `efff499` (the overlay stopped deciding the same
+appearance twice). The stream now writes, in the mark's own colour:
+
+```text
+q  /GS1 gs  0.145 0.388 0.922 rg  0 0 148 12 re  f
+   0.145 0.388 0.922 RG  1 w  [5 3] 0 d  0.5 0.5 147 11 re  S  Q
+```
+
+`/GS1` is `/ExtGState << /ca 0.08 >>` — the wash, fill alpha only, so the rule
+stays solid. The rule is stroked *inside* the box because an appearance is clipped
+to its `/BBox`, and `/Rect` is untouched: a click area grown to fit its ink would
+aim somewhere the user did not point. `/BS` carries the same `/W 1` and `/D [5 3]`
+so a viewer painting the dictionary tells the same story, and `/A` and the target
+are unchanged — the box is cosmetic on top of a working link.
+
+**Two renderers, two verdicts, both worth knowing before the next measurement.**
+This file's own byte check still reports `layerInk = 0.0` for link: MuPDF does not
+composite `/Link` appearances at all (`page.annots()` does not enumerate them, so
+`get_pixmap(annots=True)` never reaches the stream). Poppler does — the same crop
+of the same file measures 1 969.8 pt² of non-white paper with the appearance and
+430.4 pt² with `/AP` set to null — and so does Chrome's viewer: blanking only the
+stream's bytes changes the rendered page by a band whose colour is (238, 243, 253),
+which is 8 % of #2563EB over white to three decimals. A harness built on MuPDF
+cannot see this class of defect in either direction.
+
+The comparison is a test now, and wider than the link: `tests/pdf/ux-annotation.test.ts`
+§11d holds one row per creating tool, measuring the overlay's own DOM against the
+saved `/AP /N` (`tests/pdf/appearance-harness.ts`). It found no further subtype
+painting canvas with no ink, and it found two blind spots in the measurement — a
+canvas measure that knew nothing about `<ellipse>` (a circle scored 0 px², so the
+row would have been waived instead of checked), and a byte measure that read only
+`/BBox` and therefore priced every `/Image` at nothing, since an image's space is
+the unit square that the `cm` in front of the `Do` scales. Both traps are the same
+shape as the `<line>` one in §2 and §3: *measuring the box instead of the ink*.
 
 ## 3.3 [new, P3] Polygon and PolyLine do not take a drag, and §11/§12 measured one that did not happen
 
