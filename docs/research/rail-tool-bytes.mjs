@@ -71,7 +71,13 @@ if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');return
   throw new Error(`no enabled button matching ${LABEL} after loading ${PDF}`);
 }
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
-if (!(await wait('window.__blobs.length>0'))) throw new Error('the tool produced no output blob');
+if (!(await wait('window.__blobs.length>0', 60000))) {
+  // A refusal is an answer too: print what the rail says instead of a download,
+  // so a tool that turns down a legitimate file is caught by this probe.
+  const text = await ev(`(document.body.innerText || '').slice(0, 1600)`);
+  console.log('NO OUTPUT — the screen says:', JSON.stringify(text));
+  throw new Error('the tool produced no output blob');
+}
 await sleep(1200);
 const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
