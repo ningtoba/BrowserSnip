@@ -37,7 +37,7 @@ import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { readZip } from '@/lib/pdf/core/archive';
 import { pageUsesColor } from '@/lib/pdf/core/content';
 import { ToolInputError } from '@/lib/pdf/core/guard';
-import type { PageRender } from '@/lib/pdf/core/render';
+import type { PageRender, RenderOptions } from '@/lib/pdf/core/render';
 import type { ToolFile, ToolResult, ToolRunContext, ToolValues } from '@/lib/pdf/tools/types';
 
 /* ── pdf.js in jsdom ──────────────────────────────────────────────────────── */
@@ -67,11 +67,41 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
       const session = await openReal(bytes, options);
       // Everything pdf.js can do headless (parse, text layer, viewport maths,
       // operator lists) stays real; only the painting is replaced.
-      session.renderPage = async (n: number, scale: number): Promise<PageRender> => {
+      session.renderPage = async (
+        n: number,
+        scale: number,
+        renderOptions: RenderOptions = {},
+      ): Promise<PageRender> => {
         RASTER.pages.push(n);
         const proxy = await session.page(n);
         const viewport = proxy.getViewport({ scale, rotation: proxy.rotate });
-        const canvas = paintPage(n, Math.max(1, Math.floor(viewport.width)), Math.max(1, Math.floor(viewport.height)));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+        const surface = surfaceOf(canvas);
+        // Standing rule 1: the only thing a real `renderPage` does before it
+        // returns is the synchronous `background` fill. This double used to paint
+        // the page's signature colour *here* and hand back
+        // `finished: Promise.resolve()`, so every `expectPageSignature` below was
+        // satisfied by a canvas that a real pdf.js had not touched yet — 80 green
+        // tests over a `pdf-to-image` export of blank pages (`38ef532`).
+        fillSurface(surface, cssColour(renderOptions.background) ?? [0, 0, 0, 0]);
+        let settle: () => void = () => undefined;
+        let abort: (reason: Error) => void = () => undefined;
+        let settled = false;
+        const finished = new Promise<void>((resolve, reject) => {
+          settle = resolve;
+          abort = reject;
+        });
+        // The ink lands in a **later task**, as pdf.js does it: a caller that
+        // encodes without waiting gets the background only, and a cancelled
+        // render never gets ink at all.
+        const timer = setTimeout(() => {
+          settled = true;
+          paintSurface(surface, n);
+          settle();
+        }, 0);
+        finished.catch(() => undefined);
         return {
           canvas,
           ctx: canvas.getContext('2d') as CanvasRenderingContext2D,
@@ -79,9 +109,14 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           height: canvas.height,
           unitsPerPixel: 1 / scale,
           pageNumber: n,
-          // `paintPage` above is synchronous, so the fake is already painted.
-          finished: Promise.resolve(),
-          cancel: () => proxy.cleanup(),
+          finished,
+          cancel: () => {
+            if (!settled) {
+              clearTimeout(timer);
+              abort(new real.RenderCancelled('test render cancelled'));
+            }
+            proxy.cleanup();
+          },
         };
       };
       return session;
@@ -115,19 +150,29 @@ function pageColour(page: number): [number, number, number] {
   return [(page * 37) % 251 + 2, (page * 79) % 241 + 3, (page * 101) % 247 + 4];
 }
 
-function paintPage(page: number, width: number, height: number): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const surface = surfaceOf(canvas);
-  const [r, g, b] = pageColour(page);
-  for (let i = 0; i < width * height; i++) {
+/** `#rgb` / `#rrggbb` as samples, or `null` when the caller asked for no fill. */
+function cssColour(input: unknown): [number, number, number, number] | null {
+  const text = typeof input === 'string' ? input.trim() : '';
+  if (!text || text === 'none' || text === 'transparent') return null;
+  const hex = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text)?.[1] ?? '';
+  const parts = hex.length === 3
+    ? [...hex].map((digit) => Number.parseInt(digit + digit, 16))
+    : [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0, 255];
+}
+
+function fillSurface(surface: Surface, [r, g, b, a]: [number, number, number, number]): void {
+  for (let i = 0; i < surface.width * surface.height; i++) {
     surface.data[i * 4] = r;
     surface.data[i * 4 + 1] = g;
     surface.data[i * 4 + 2] = b;
-    surface.data[i * 4 + 3] = 255;
+    surface.data[i * 4 + 3] = a;
   }
-  return canvas;
+}
+
+/** The paint pdf.js finishes later: an opaque sheet in the page's own colour. */
+function paintSurface(surface: Surface, page: number): void {
+  fillSurface(surface, [...pageColour(page), 255] as [number, number, number, number]);
 }
 
 const NOOP = () => undefined;
@@ -1528,6 +1573,34 @@ function decodeRaster(bytes: Uint8Array, extension: string): DecodedImage {
 }
 
 describe('raster export', () => {
+  /**
+   * Standing rule 1, pointed back at this file's own double.
+   *
+   * The double used to paint synchronously and return `finished: Promise.resolve()`,
+   * which is a contract the real `renderPage` does not offer — and it let every
+   * `expectPageSignature` below pass while the shipped export was blank. This test
+   * is what costs a future repair of that double its greenness if someone makes it
+   * generous again.
+   */
+  it('holds a page canvas unpainted until finished resolves', async () => {
+    const { openRender } = await import('@/lib/pdf/core/render');
+    const session = await openRender(await textPdfCached());
+    const render = await session.renderPage(1, 1, { background: '#ffffff' });
+    const shape = { width: render.width, height: render.height };
+    const early = render.ctx.getImageData(0, 0, render.width, render.height);
+    expect(
+      pixelAt({ ...shape, data: early.data }, Math.floor(render.width / 2), Math.floor(render.height / 2)).slice(0, 3),
+      'the unawaited canvas already carried the page colour',
+    ).toEqual([255, 255, 255]);
+    await render.finished;
+    const late = render.ctx.getImageData(0, 0, render.width, render.height);
+    expect(
+      pixelAt({ ...shape, data: late.data }, Math.floor(render.width / 2), Math.floor(render.height / 2)).slice(0, 3),
+      'the awaited canvas is not the page it renders',
+    ).toEqual(pageColour(1));
+    await session.destroy();
+  });
+
   it('renders every page at its own size and rotation (E8, E9)', async () => {
     const outcome = await run('pdf-to-image', { pages: 'all', format: 'png', dpi: 72 }, [
       fileOf(await mixedPdf(), 'sizes.pdf'),
