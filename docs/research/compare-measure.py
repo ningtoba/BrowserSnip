@@ -113,6 +113,24 @@ def check_verdict(args, verdict):
             fails.append(f"the verdict says {pixels} pixels differ on a pair that is the same file twice")
         if areas:
             fails.append(f"the verdict invented {len(areas)} changed area(s) where there are none: {areas}")
+    # The card beside the pages and the strip above them read one store. When they
+    # disagree, one of them is showing something other than the comparison — which is
+    # how the deployed pane printed “Nothing differs on the page in view” under a
+    # strip that had just measured 13,600 changed pixels.
+    card = verdict.get("panelDiff")
+    strip = verdict.get("stripPercent")
+    if card is None or strip is None:
+        fails.append(
+            f"only one surface publishes its percentage (card={card} strip={strip}), "
+            "so the two cannot be shown to agree"
+        )
+    elif str(card) != str(strip):
+        fails.append(
+            f"the card says {card}% while the strip says {strip}% — one of them is not "
+            "reading the comparison that ran"
+        )
+    else:
+        notes.append(f"   card and strip publish the same number: {card}%")
     for line in notes:
         print(line)
     print(f"   verdict: read={bool(verdict.get('read'))} pixels={pixels} areas={len(areas)} "

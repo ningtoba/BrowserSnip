@@ -150,6 +150,11 @@ const READ_VERDICT = `(async()=>{
     pixels:Number(num(status,'data-compare-pixels')??0),
     identical:num(status,'data-compare-identical'),
     panelPercent:panel?panel.innerText.trim():null,
+    // The card and the strip are two components reading one store; a number that
+    // agrees between them is the evidence that both are reading it, not that one of
+    // them is still showing what it mounted with.
+    panelDiff:num(panel,'data-compare-diff'),
+    stripPercent:num(status,'data-compare-percent'),
     areas:nums,
     areaText:areas,
     panelIdentical:!!document.querySelector('[data-compare-identical]'),

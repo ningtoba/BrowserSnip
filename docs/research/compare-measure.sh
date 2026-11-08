@@ -42,9 +42,15 @@ run() {
   echo "--- run $name (case=$case page=$page)"
   BASE=$BASE DIR=$DIR CASE=$case PAGE=$page VERDICT=$DIR/$name.json \
     OUT=$DIR/$name.pdf PORT=$PORT "$@" \
-    timeout 900 node docs/research/compare-rail.mjs 2>&1 \
-    | grep -E '^(verdict|export|warm|console errors|screenshot|NO OUTPUT)' \
-    | cut -c1-420
+    timeout 900 node docs/research/compare-rail.mjs > "$DIR/$name.run.log" 2>&1
+  grep -E '^(verdict|export|warm|console errors|screenshot|NO OUTPUT)' "$DIR/$name.run.log" | cut -c1-420
+  if ! grep -q '^verdict ' "$DIR/$name.run.log"; then
+    # A run that never published a verdict is itself the finding; show why instead of
+    # letting an empty line pass for a measurement.
+    echo "   NO VERDICT LINE — tail of the run:"
+    tail -4 "$DIR/$name.run.log" | cut -c1-300
+    FAILED=$((FAILED + 1))
+  fi
 }
 
 # check <OK|FAIL> <label> <compare-measure args…>
@@ -52,7 +58,7 @@ check() {
   local want=$1 label=$2; shift 2
   echo "--- check [$label]"
   if python3 docs/research/compare-measure.py --tol "$TOL" "$@" > "$DIR/last-check.txt" 2>&1; then got=OK; else got=FAIL; fi
-  sed -n '1p;/verdict:/p;/^   /p;/^   FAIL/p' "$DIR/last-check.txt" | sed -n '1,12p'
+  sed -n '1,12p' "$DIR/last-check.txt"
   if [ "$got" != "$want" ]; then
     if [ "${CONTROL:-}" = "1" ]; then
       echo "   *** CONTROL BROKEN: [$label] passed on a file that must fail it"
@@ -108,8 +114,10 @@ CONTROL=1 check FAIL "a mark asked for on a pair that is the same file" \
   --src "$DIR/a.pdf" --out "$DIR/same.pdf" --page 1 --rect "$RECT" --label "CONTROL: A vs A, asked to be marked"
 CONTROL=1 check FAIL "no-mark asked for on the sheet that really changed" \
   --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 1 --no-rect --label "CONTROL: p1, asked to be clean"
-CONTROL=1 check FAIL "ink asked for from a blank sheet" \
-  --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 3 --min-ink-frac 1.5 --label "CONTROL: blank sheet, asked for ink"
+CONTROL=1 check FAIL "the mark, asked for on the sheet that is empty" \
+  --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 3 --rect "$RECT" --label "CONTROL: p3, asked for the mark that sits on p1"
+CONTROL=1 check FAIL "A's ink, asked for from the blank pair's page" \
+  --src "$DIR/a.pdf" --out "$DIR/blanks.pdf" --page 1 --label "CONTROL: the blank export, asked to be A's page"
 
 echo
 if [ $FAILED -eq 0 ] && [ $CONTROLS_BROKEN -eq 0 ]; then
