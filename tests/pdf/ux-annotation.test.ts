@@ -955,10 +955,15 @@ function ringArea(corners: { x: number; y: number }[]): number {
  * How much paper one painted overlay element covers, in CSS px².
  *
  * A filled ring is its own area; a stroked rule is length × stroke width, which
- * is the ink the stroke lays down. jsdom lays nothing out, so `line` and `path`
- * carry the same information the browser paints from — the coordinates and the
- * stroke width — and no `getBoundingClientRect()` in jsdom can tell you whether
- * a mark is visible. That is exactly the measurement that must not be faked.
+ * is the ink the stroke lays down. jsdom lays nothing out and draws no canvas,
+ * so `line` and `path` carry the same information the browser paints from — the
+ * coordinates and the stroke width.
+ *
+ * Measure the ink, never the element's box: `getBoundingClientRect()` of a
+ * horizontal `<line>` is zero tall however thick the stroke, so a box-based
+ * audit reads `area=0px` on an underline that plainly paints. That artifact cost
+ * two rounds of "the markup is invisible" reports, one of them answered by
+ * rebuilding the renderer for nothing.
  */
 function elementPaintedArea(element: Element): number {
   const tag = element.tagName.toLowerCase();
@@ -1039,10 +1044,10 @@ describe('the overlay paints a quad as a ring', () => {
     expect(spans[1][0] - spans[0][1]).toBeGreaterThan(100);
   });
 
-  it('paints the rule where the shared function puts it, as a bar with area', () => {
-    // One line, one quad, so the painted bar can be compared with the number
-    // `markupRule` — the very function `core/annotations` strokes the appearance
-    // stream with — without guessing which element is which.
+  it('strokes the rule where the shared function puts it', () => {
+    // One line, one quad, so the painted `<line>` can be compared with the
+    // number `markupRule` — the very function `core/annotations` strokes the
+    // appearance stream with — without guessing which element is which.
     const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 });
     const mark = build('underline', { drag: { x: 70, y: 98, width: 40, height: 8 }, lines: [lines[0]] })!;
     expect(mark.quadPoints).toHaveLength(8);
@@ -1062,27 +1067,101 @@ describe('the overlay paints a quad as a ring', () => {
     );
     const from = pdfToScreenPoint({ x: rule.x1, y: rule.y1 }, overlayGeom);
     const to = pdfToScreenPoint({ x: rule.x2, y: rule.y2 }, overlayGeom);
-    // The bar's four corners straddle the rule's centre line, so the midpoints of
-    // its short ends are the two endpoints the writer strokes to.
-    const corners = shapeCorners(painted);
-    expect(corners).toHaveLength(4);
-    const centreLine = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
-      x: (a.x + b.x) / 2,
-      y: (a.y + b.y) / 2,
-    });
-    const near = (candidate: { x: number; y: number }, target: { x: number; y: number }) =>
-      Math.hypot(candidate.x - target.x, candidate.y - target.y);
-    const start = centreLine(corners[0], corners[3]);
-    const end = centreLine(corners[1], corners[2]);
-    expect(near(start, { x: Math.round(from.x * 10) / 10, y: Math.round(from.y * 10) / 10 })).toBeLessThan(0.2);
-    expect(near(end, { x: Math.round(to.x * 10) / 10, y: Math.round(to.y * 10) / 10 })).toBeLessThan(0.2);
+    const at = (name: string) => Number(painted.getAttribute(name));
+    expect(at('x1')).toBeCloseTo(Math.round(from.x * 10) / 10, 6);
+    expect(at('y1')).toBeCloseTo(Math.round(from.y * 10) / 10, 6);
+    expect(at('x2')).toBeCloseTo(Math.round(to.x * 10) / 10, 6);
+    expect(at('y2')).toBeCloseTo(Math.round(to.y * 10) / 10, 6);
     // And that is under the feet of the letters, not through them: the rule sits
     // below the baseline the quad was anchored on.
     const baselineTop = pdfToScreenPoint({ x: quad[0], y: quad[1] }, overlayGeom).y;
     const quadBottom = pdfToScreenPoint({ x: quad[4], y: quad[5] }, overlayGeom).y;
     const baseline = baselineTop + (quadBottom - baselineTop) * TEXT_BASELINE_SHARE;
-    expect(start.y).toBeGreaterThan(baseline);
-    expect(start.y).toBeLessThan(quadBottom);
+    expect(at('y1')).toBeGreaterThan(baseline);
+    expect(at('y1')).toBeLessThan(quadBottom);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 11b. Every mark paints an area, at any zoom and on a turned page     *
+ * ------------------------------------------------------------------ *
+ *
+ * "It created a mark" is not the claim a user makes when they say the underline
+ * is missing. These cases ask the overlay's own DOM how much paper each mark
+ * covers — the same question an audit asks with `getBoundingClientRect()`, which
+ * is why a rule used to be painted as a bar with area instead of a stroke whose
+ * box is zero tall — and refuse any tool that answers with nothing.
+ */
+
+describe('every markup and segment tool paints an area', () => {
+  const markupCases = [
+    ['highlight', 'Highlight'],
+    ['underline', 'Underline'],
+    ['strike', 'StrikeOut'],
+    ['squiggly', 'Squiggly'],
+  ] as const;
+
+  function markupMark(tool: string, kind: string, geom: PageGeom): EditorAnnotation {
+    const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 116 });
+    const drag = { x: 62, y: 98, width: 108, height: 12 };
+    const built = build(tool === 'squiggly' ? 'underline' : (tool as EditorToolId), { geom, drag, lines })!;
+    return built.kind === kind ? built : { ...built, kind: kind as EditorAnnotation['kind'] };
+  }
+
+  function segmentMark(tool: EditorToolId, geom: PageGeom): EditorAnnotation {
+    // The gesture the editor sends for a drag: the press, then the release.
+    return build(tool, { geom, points: [{ x: 60, y: 400 }, { x: 220, y: 460 }] })!;
+  }
+
+  const geometryAt = (zoom: number, rotation: 0 | 90): PageGeom => ({
+    zoom,
+    cssWidth: (rotation === 90 ? PAGE_H : PAGE_W) * zoom,
+    cssHeight: (rotation === 90 ? PAGE_W : PAGE_H) * zoom,
+    rotation,
+  });
+
+  for (const zoom of [1, 1.4, 2]) {
+    for (const rotation of [0, 90] as const) {
+      for (const [tool, kind] of markupCases) {
+        it(`${tool} covers paper at ${Math.round(zoom * 100)} % zoom on a ${rotation}° page`, () => {
+          const geom = geometryAt(zoom, rotation);
+          const mark = markupMark(tool, kind, geom);
+          renderOverlay({ geom, annotations: [mark] });
+          const area = markPaintedArea(mark.id);
+          // A 108 pt run of text at this zoom, stroked at the mark's own width:
+          // the bar is the whole run, so anything near zero is a collapsed rule.
+          expect(area, `${kind} painted ${area} px² at ${zoom}x / ${rotation}°`).toBeGreaterThan(10 * zoom);
+        });
+      }
+      for (const tool of ['line', 'arrow'] as const) {
+        it(`${tool} covers paper at ${Math.round(zoom * 100)} % zoom on a ${rotation}° page`, () => {
+          const geom = geometryAt(zoom, rotation);
+          const mark = segmentMark(tool, geom);
+          renderOverlay({ geom, annotations: [mark] });
+          const area = markPaintedArea(mark.id);
+          // The drag was 160 × 60 points; its diagonal is ~171 pt long.
+          expect(area, `${tool} painted ${area} px² at ${zoom}x / ${rotation}°`).toBeGreaterThan(100 * zoom);
+        });
+      }
+    }
+  }
+
+  it('keeps the rule as wide as the quad it underlines', () => {
+    // The measured failure was a rule with no length: the endpoints of
+    // `markupRule` sat on top of each other because the box they were mixed from
+    // had no height. Compare the painted rule with the quad it belongs to.
+    const geom = geometryAt(1, 0);
+    const mark = markupMark('underline', 'Underline', geom);
+    renderOverlay({ geom, annotations: [mark] });
+    const quad = mark.quadPoints!;
+    const quadWidth = Math.abs(quad[2] - quad[0]) * geom.zoom;
+    const rule = document.querySelector('[data-markup-rule="Underline"]')!;
+    const paintedWidth = Math.abs(Number(rule.getAttribute('x2')) - Number(rule.getAttribute('x1')));
+    expect(paintedWidth).toBeGreaterThanOrEqual(quadWidth * 0.95);
+    expect(paintedWidth).toBeGreaterThan(50);
+    // The quad still has a height for the rule to be mixed over — the number the
+    // `TEXT_BASELINE_SHARE` re-anchoring depends on.
+    expect(Math.abs(quad[1] - quad[5])).toBeGreaterThan(1);
   });
 });
 

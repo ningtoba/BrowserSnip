@@ -566,12 +566,16 @@ function Mark({
               const from = pdfToScreenPoint({ x: rule.x1, y: rule.y1 }, geom);
               const to = pdfToScreenPoint({ x: rule.x2, y: rule.y2 }, geom);
               return (
-                <path
+                <line
                   key={index}
                   data-markup-rule={ruleKind}
-                  d={ruleBar(from, to, strokeWidth)}
-                  fill={stroke}
-                  stroke="none"
+                  x1={round(from.x)}
+                  y1={round(from.y)}
+                  x2={round(to.x)}
+                  y2={round(to.y)}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
                 />
               );
             }
@@ -820,38 +824,6 @@ function Mark({
 
 /** One stored quad (8 numbers) painted as a `<polygon points>` string. */
 const paintedPoint = (point: Point): string => `${round(point.x)},${round(point.y)}`;
-
-/**
- * A markup rule as the bar of ink it is: `from`→`to` widened by `width`.
- *
- * The rule used to be a stroked `<line>`, which paints the same bar but *reports*
- * a zero-height bounding box when the rule is horizontal — and an underline or a
- * strike-out across an unrotated line of text always is. Anything that asks the
- * DOM "did this mark paint?" — an audit measuring the created element, a
- * hit test, a thumbnail — then reads `0px` on a rule that is plainly on the
- * screen, which is how "the underline is invisible" survived being fixed twice.
- * Filling the outline makes the element's box the ink, so the question can be
- * asked of the mark and answered. The ends are offset along the rule's normal, so
- * a mark on a turned page keeps its width instead of shearing.
- */
-export function ruleBar(from: Point, to: Point, width: number): string {
-  const length = Math.hypot(to.x - from.x, to.y - from.y);
-  const half = Math.max(width, 0.5) / 2;
-  const dx = length > 0 ? (-(to.y - from.y) / length) * half : 0;
-  const dy = length > 0 ? ((to.x - from.x) / length) * half : 0;
-  return [
-    'M',
-    paintedPoint({ x: from.x + dx, y: from.y + dy }),
-    'L',
-    paintedPoint({ x: to.x + dx, y: to.y + dy }),
-    'L',
-    paintedPoint({ x: to.x - dx, y: to.y - dy }),
-    'L',
-    paintedPoint({ x: from.x - dx, y: from.y - dy }),
-    'Z',
-  ].join(' ');
-}
-
 
 /** The stored quads of a markup mark, eight numbers at a time. */
 function chunkQuads(points: number[]): number[][] {

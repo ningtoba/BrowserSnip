@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { render, screen } from '@testing-library/react';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, decodePDFRawStream } from '@maxwbh/pdf-lib';
 import {
   addAnnotations,
   annotationCount,
@@ -965,6 +965,181 @@ describe('painting one markup quad', () => {
  * seams that claim is checked at: the maths, the spec handed to the writer, and
  * the bytes the writer puts in the file.
  */
+
+/* ------------------------------------------------------------------ *
+ * 5a. The ink in the bytes                                            *
+ * ------------------------------------------------------------------ *
+ *
+ * The mark count only says a record was written. What the user sees is the
+ * appearance stream, so this decodes it and measures the area it lays down: a
+ * rule of no length, a stroke of no width, a path of one point — all of them
+ * pass a count test and all of them print an empty page.
+ */
+
+/**
+ * The appearance operators of a saved annotation — what a viewer paints.
+ *
+ * Read from the reloaded bytes, not from the object the builder made, and
+ * decompressed the way `tests/pdf/annotations.test.ts` does it: a saved stream
+ * is a `PDFRawStream` and its `contents` are flated.
+ */
+function appearanceText(stream: PDFStream): string {
+  expect(stream, 'the appearance is not a raw stream in the file').toBeInstanceOf(PDFRawStream);
+  return new TextDecoder().decode(decodePDFRawStream(stream as PDFRawStream).decode());
+}
+
+/**
+ * The area of ink an appearance stream paints, in pt².
+ *
+ * Strokes count as length × line width, fills as the shoelace area of the path.
+ * That is what a viewer puts on paper, and it is the number that must never be
+ * zero for a mark the user drew.
+ */
+function streamPaintedArea(stream: string): number {
+  let width = 1;
+  let path: { x: number; y: number }[] = [];
+  let stack: number[] = [];
+  let area = 0;
+  const closePath = () => {
+    path = [];
+    stack = [];
+  };
+  for (const token of stream.replace(/\n/g, ' ').split(/\s+/)) {
+    if (token === '') continue;
+    const number = Number(token);
+    if (Number.isFinite(number)) {
+      stack.push(number);
+      continue;
+    }
+    const point = (at: number) => ({ x: stack[stack.length + at - 1], y: stack[stack.length + at] });
+    switch (token) {
+      case 'w':
+        width = stack[stack.length - 1] || 0;
+        break;
+      case 'm':
+      case 'l':
+        if (stack.length >= 2) path.push(point(-1));
+        break;
+      case 'c':
+        // Two control points and the end; the end is the one that extends the path.
+        if (stack.length >= 6) path.push(point(-1));
+        break;
+      case 'v':
+      case 'y':
+        if (stack.length >= 4) path.push(point(-1));
+        break;
+      case 'S': {
+        let length = 0;
+        for (let i = 1; i < path.length; i += 1) {
+          length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+        }
+        area += length * Math.max(width, 0.2);
+        closePath();
+        break;
+      }
+      case 'f':
+      case 'f*':
+      case 'B': {
+        let twice = 0;
+        for (let i = 0; i < path.length; i += 1) {
+          const a = path[i];
+          const b = path[(i + 1) % path.length];
+          twice += a.x * b.y - b.x * a.y;
+        }
+        area += Math.abs(twice / 2);
+        closePath();
+        break;
+      }
+      default:
+        stack = [];
+    }
+  }
+  return area;
+}
+
+describe('every mark paints an area in the file', () => {
+  /** The appearance streams of the annotations, in the order they were written. */
+  async function areasOf(marks: EditorAnnotation[]): Promise<number[]> {
+    const doc = await PDFDocument.create();
+    doc.addPage([PAGE_W, PAGE_H]);
+    addAnnotations(doc, marks.map(annotationToSpec));
+    const bytes = await doc.save({ useObjectStreams: false });
+    const reloaded = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const annots = reloaded.getPage(0).node.Annots();
+    expect(annots).toBeTruthy();
+    const out: number[] = [];
+    for (let i = 0; i < annots!.size(); i += 1) {
+      const dict = reloaded.context.lookupMaybe(annots!.get(i), PDFDict);
+      expect(dict, `annotation ${i} did not round-trip as a dictionary`).toBeTruthy();
+      const ap = (dict as PDFDict).get(PDFName.of('AP'));
+      const apDict = reloaded.context.lookupMaybe(ap, PDFDict);
+      const streamRef = apDict?.get(PDFName.of('N'));
+      const stream = reloaded.context.lookupMaybe(streamRef, PDFStream);
+      expect(stream, `annotation ${i} has no /AP /N stream`).toBeTruthy();
+      out.push(streamPaintedArea(appearanceText(stream as PDFStream)));
+    }
+    return out;
+  }
+
+  it.each([
+    ['highlight', 'Highlight'],
+    ['underline', 'Underline'],
+    ['strike', 'StrikeOut'],
+    ['squiggly', 'Squiggly'],
+  ] as const)('%s strokes or fills a real area', async (tool, kind) => {
+    const lines = snapTextLines(pageText(), { x0: 60, y0: 118, x1: 200, y1: 134 });
+    const base = build(tool === 'squiggly' ? 'underline' : tool, {
+      drag: { x: 60, y: 118, width: 140, height: 16 },
+      lines,
+    })!;
+    const mark: EditorAnnotation = kind === base.kind ? base : { ...base, kind };
+    const [area] = await areasOf([mark]);
+    // The quad spans ~140 pt of a text line; an area this small means the rule
+    // collapsed onto itself, which is what "the mark is there but invisible"
+    // looks like from the outside.
+    expect(area, `${kind} painted ${area}pt² of ink`).toBeGreaterThan(50);
+  });
+
+  it('strokes a rule across the whole quad, not a point on it', async () => {
+    // The regression this catches: a markup quad whose top and bottom edges were
+    // made to coincide puts both ends of `markupRule` on the same spot, and the
+    // mark then paints 0pt² while still counting as created.
+    const lines = snapTextLines(pageText(), { x0: 60, y0: 118, x1: 200, y1: 134 });
+    const mark = build('underline', { drag: { x: 60, y: 118, width: 140, height: 16 }, lines })!;
+    const quad = mark.quadPoints!;
+    expect(quad[1] - quad[5]).toBeGreaterThan(1); // the quad has a height to mix over
+    const rule = markupRule(
+      [
+        { x: quad[0], y: quad[1] },
+        { x: quad[2], y: quad[3] },
+        { x: quad[4], y: quad[5] },
+        { x: quad[6], y: quad[7] },
+      ],
+      'Underline',
+      mark.borderWidth,
+    );
+    expect(Math.hypot(rule.x2 - rule.x1, rule.y2 - rule.y1)).toBeGreaterThan(50);
+    const areas = await areasOf([mark]);
+    expect(areas[0]).toBeGreaterThan(Math.hypot(rule.x2 - rule.x1, rule.y2 - rule.y1) * 0.5);
+  });
+
+  it.each([
+    ['line', 'Line'],
+    ['arrow', 'Arrow'],
+  ] as const)('%s keeps a drag end to end and paints it', async (tool, kind) => {
+    // A segment tool is armed by a drag, and a drag has a press and a release;
+    // the file has to carry the whole distance between them, not a stub.
+    const mark = build(tool, {
+      points: [{ x: 60, y: 600 }, { x: 300, y: 640 }],
+    })!;
+    expect(mark.kind).toBe(kind);
+    const length = Math.hypot(mark.lineEnds![2] - mark.lineEnds![0], mark.lineEnds![3] - mark.lineEnds![1]);
+    expect(length).toBeGreaterThan(200);
+    expect(mark.rect.width * mark.rect.height).toBeGreaterThan(200);
+    const [area] = await areasOf([mark]);
+    expect(area, `${kind} painted ${area}pt² of ink`).toBeGreaterThan(100);
+  });
+});
 
 describe('a turned mark', () => {
   const rect = { x: 100, y: 200, width: 120, height: 40 };
