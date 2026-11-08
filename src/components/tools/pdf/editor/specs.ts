@@ -984,6 +984,27 @@ export function dragFromPoints(from: Point, to: Point): CssRect {
   return normaliseDrag(from, to);
 }
 
+/**
+ * What a released drag hands the builder: the box every drag tool draws from,
+ * plus the two ends in draw order for a segment tool.
+ *
+ * A segment *is* the press and the release in that order. `normaliseDrag` sorts
+ * the corners, so a box alone cannot say which end an arrow head sits on, and
+ * `buildSegment` reads endpoints only — handed a box it built nothing while the
+ * editor blamed the user for a drag 280 pt wide. The preview and the commit ask
+ * here because two places deciding this is how they drift apart, and it is not
+ * visible from a builder test: those can hand `points` in by hand while the
+ * pointer path never sends any.
+ */
+export function dragGesturePayload(
+  tool: EditorToolId,
+  from: Point,
+  to: Point,
+): Pick<BuildInput, 'drag' | 'points'> {
+  const drag = normaliseDrag(from, to);
+  return TOOL_BY_ID[tool].gesture === 'segment' ? { drag, points: [from, to] } : { drag };
+}
+
 /* ------------------------------------------------------------------ *
  * Export                                                              *
  * ------------------------------------------------------------------ */

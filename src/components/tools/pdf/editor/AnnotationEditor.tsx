@@ -88,6 +88,7 @@ import {
   canRotate,
   carriedAngle,
   describeAnnotation,
+  dragGesturePayload,
   dropEmptyMarks,
   duplicateMarks,
   emptyMarks,
@@ -874,18 +875,14 @@ export function AnnotationEditor(): JSX.Element {
   const draft = useMemo<EditorAnnotation | null>(() => {
     if (!geom || !work) return null;
     if (gesture?.mode === 'drag') {
-      const drag = normaliseDrag(gesture.from, gesture.to);
-      // The two points of a segment drag, in the order they were drawn — the
-      // same pair the release hands the builder, so the rubber band and the
-      // committed mark cannot disagree about which end the head sits on.
-      const ends = TOOL_BY_ID[tool].gesture === 'segment' ? [gesture.from, gesture.to] : null;
+      const payload = dragGesturePayload(tool, gesture.from, gesture.to);
+      const drag = payload.drag!;
       return buildAnnotation({
         tool,
         page,
         style,
         geom,
-        drag,
-        ...(ends ? { points: ends } : {}),
+        ...payload,
         ...(MARKUP_TOOLS.includes(tool) ? { lines: linesUnder(drag) } : {}),
         ...(rasterReady && raster ? { raster } : {}),
       });
@@ -1252,13 +1249,11 @@ export function AnnotationEditor(): JSX.Element {
         setStatus(marqueeNotice(ids.length, page));
         return;
       }
-      // Line and Arrow draw the drag's diagonal, so the press and the release in
-      // that order are the geometry. A box is not: `normaliseDrag` sorts the
-      // corners, which throws away the direction the arrow head has to point in,
-      // and `buildSegment` reads endpoints — handed a box it found nothing and
-      // told the user to draw a bigger shape after a full-size drag.
-      if (TOOL_BY_ID[tool].gesture === 'segment') {
-        finishPath([current.from, to]);
+      // Line and Arrow draw the drag's diagonal, so the release hands the builder
+      // the two ends rather than the box that contains them.
+      const payload = dragGesturePayload(tool, current.from, to);
+      if (payload.points) {
+        finishPath(payload.points);
         setGesture(null);
         return;
       }

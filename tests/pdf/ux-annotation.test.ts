@@ -59,6 +59,7 @@ import {
   carriedAngle,
   duplicateAnnotation,
   duplicateMarks,
+  dragGesturePayload,
   handleCursor,
   markAtPoint,
   markBounds,
@@ -1162,6 +1163,81 @@ describe('every markup and segment tool paints an area', () => {
     // The quad still has a height for the rule to be mixed over — the number the
     // `TEXT_BASELINE_SHARE` re-anchoring depends on.
     expect(Math.abs(quad[1] - quad[5])).toBeGreaterThan(1);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 11c. What the release of a drag hands the builder                    *
+ * ------------------------------------------------------------------ *
+ *
+ * A builder test can hand `points` in by hand and stay green while the pointer
+ * path never sends any, which is exactly how Line and Arrow shipped with a drag
+ * that created nothing and a status line blaming the user for it. The release
+ * rule lives in `dragGesturePayload` so the one decision a segment depends on —
+ * the two ends, not the box around them — is testable and shared with the
+ * rubber band.
+ */
+describe('the release of a drag', () => {
+  const press = { x: 60, y: 400 };
+  const release = { x: 220, y: 460 };
+  const segmentTools = ['line', 'arrow'] as const;
+
+  it('keeps the two ends of a segment, in the order they were drawn', () => {
+    for (const tool of segmentTools) {
+      const payload = dragGesturePayload(tool, press, release);
+      expect(payload.points, `${tool} was released without endpoints`).toEqual([press, release]);
+      // The box is still there: the mark's rect is built from the ends plus the
+      // stroke, but a segment tool that lost the box would lose its hit target.
+      expect(payload.drag).toEqual({ x: 60, y: 400, width: 160, height: 60 });
+    }
+  });
+
+  it('hands every other drag tool the box and no endpoints', () => {
+    for (const tool of ['square', 'circle', 'redact', 'highlight', 'select'] as const) {
+      expect(dragGesturePayload(tool, press, release).points, tool).toBeUndefined();
+    }
+  });
+
+  it('builds a segment that covers paper', () => {
+    for (const tool of segmentTools) {
+      const mark = build(tool, dragGesturePayload(tool, press, release));
+      expect(mark, `${tool} built nothing from its own release`).not.toBeNull();
+      renderOverlay({ annotations: [mark!] });
+      const area = markPaintedArea(mark!.id);
+      // The diagonal is 171 pt at 1x, 342 px at the overlay's 2x, and it is
+      // stroked: anything near zero means the ends never reached the builder.
+      expect(area, `${tool} painted ${area} px²`).toBeGreaterThan(300);
+    }
+  });
+
+  it('is the whole difference between a mark and silence', () => {
+    // The shipped wiring: the box alone. `buildSegment` has nothing to read, so
+    // the gesture creates no annotation and the tool stays armed.
+    for (const tool of segmentTools) {
+      const box = dragGesturePayload(tool, press, release).drag!;
+      expect(build(tool, { drag: box }), `${tool} was built from a box`).toBeNull();
+    }
+  });
+
+  it('points the arrow head at the end the pointer left from', () => {
+    const mark = build('arrow', dragGesturePayload('arrow', press, release))!;
+    expect(mark.lineArrow).toBe('end');
+    renderOverlay({ annotations: [mark] });
+    const head = document.querySelector('[data-mark] polygon');
+    expect(head, 'the arrow painted no head').toBeTruthy();
+    const corners = shapeCorners(head!);
+    const centre = {
+      x: corners.reduce((t, c) => t + c.x, 0) / corners.length,
+      y: corners.reduce((t, c) => t + c.y, 0) / corners.length,
+    };
+    const end = pdfToScreenPoint({ x: mark.lineEnds![2], y: mark.lineEnds![3] }, overlayGeom);
+    const start = pdfToScreenPoint({ x: mark.lineEnds![0], y: mark.lineEnds![1] }, overlayGeom);
+    expect(Math.hypot(centre.x - end.x, centre.y - end.y)).toBeLessThan(
+      Math.hypot(centre.x - start.x, centre.y - start.y),
+    );
+    // And the ends are the gesture, not the sorted corners of its bounding box.
+    expect(end.x).toBeCloseTo(release.x * overlayGeom.zoom, 1);
+    expect(end.y).toBeCloseTo(release.y * overlayGeom.zoom, 1);
   });
 });
 
