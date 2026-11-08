@@ -73,6 +73,7 @@ check() {
 INVERT_PAGE=1
 COLOUR_PAGE=2
 EMPTY_PAGE=3
+TURNED_PAGE=4
 
 run invert-colors Invert post-invert-p1.pdf "pages=$INVERT_PAGE"
 run invert-colors Invert post-invert-p2.pdf "pages=$COLOUR_PAGE"
@@ -87,6 +88,8 @@ run adjust-colors 'Adjust colors' post-adjust-thresh.pdf "threshold=0.5 pages=$I
 run scanner-effect 'Apply scan effect' post-scanner-p1.pdf "pages=$INVERT_PAGE"
 run scanner-effect 'Apply scan effect' post-scanner-p2.pdf "pages=$COLOUR_PAGE"
 run scanner-effect 'Apply scan effect' post-scanner-flat.pdf "whitening=0 sharpen=0 grayscale=0 contrast=1 pages=$INVERT_PAGE"
+run invert-colors Invert post-invert-p4.pdf "pages=$TURNED_PAGE"
+run adjust-colors 'Adjust colors' post-adjust-identity-p4.pdf "pages=$TURNED_PAGE"
 # `rasterize-pdf` has no page picker, so these baselines hold all three sheets and
 # the checks name the index they read.
 run rasterize-pdf Rasterize post-plain-p1.pdf ""
@@ -153,6 +156,9 @@ CONTROL=1 check FAIL "threshold on an unthresholded page" --page $INVERT_PAGE \
 CONTROL=1 check FAIL "the effect on itself" --page $COLOUR_PAGE \
   --out $DIR/post-scanner-p2.pdf --not-plain $DIR/post-scanner-p2.pdf \
   --label "CONTROL: scanner output compared with itself"
+CONTROL=1 check FAIL "polarity on a turned sheet that was not inverted" --page $TURNED_PAGE \
+  --out $DIR/post-plain-p1.pdf --out-page $TURNED_PAGE --polarity \
+  --label "CONTROL: rasterize-pdf of the /Rotate 90 sheet, asked to be a negative"
 
 echo
 echo "═══ the fourth consumer of RenderOptions.filter, reached through another helper"
@@ -164,6 +170,19 @@ echo "═══ the fourth consumer of RenderOptions.filter, reached through ano
 check OPEN "greyscale re-render (core/measure.ts owns the await)" --page $COLOUR_PAGE \
   --out $DIR/post-greyscale-raster.pdf --ask grayscale=1 --inked \
   --label "pdf-to-greyscale, Method = Re-render"
+
+echo
+echo "═══ the turned sheet: the same displayed regions on a page carrying /Rotate 90"
+# A raster colour tool photographs the page *as displayed*, and the fixture's fractions are
+# displayed fractions, so this case is what says the checker and the tool agree about which
+# feature is which. Sheet 4 stores a portrait box, displays landscape, and its ink was placed
+# through the turn — an un-inverted mapping would read paper where the bar should be, and the
+# box check below is the tool's half of the same claim.
+check OK "identity on a turned sheet" --page $TURNED_PAGE --out $DIR/post-adjust-identity-p4.pdf \
+  --same-as $DIR/post-plain-p1.pdf --base-page $TURNED_PAGE \
+  --label "adjust-colors at defaults, /Rotate 90"
+check OK "invert on a turned sheet" --page $TURNED_PAGE --out $DIR/post-invert-p4.pdf \
+  --ask invert=1 --polarity --label "invert-colors, /Rotate 90"
 
 echo
 if [ $FAILED -eq 0 ] && [ $CONTROLS_BROKEN -eq 0 ]; then

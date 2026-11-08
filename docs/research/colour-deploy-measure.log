@@ -1,7 +1,9 @@
-# deployed re-measurement, https://www.browsersnip.com, 2026-11-08T16:19Z, commits 7cf6ce2 + 1455946 (CI 42498140597)
+# deployed measurement, https://www.browsersnip.com, 2026-11-08T16:49Z — CI 42500113537 (code 7cf6ce2, tests 1455946 + b90a650)
+# fixture: docs/research/colour-fixture.mjs, 4 sheets — bar+copy+band, colour squares + two greys,
+#          an empty control, and the same three regions on a sheet carrying /Rotate 90.
+# produced by docs/research/colour-measure.sh; each block is colour-ink.py on one downloaded file.
 
 ########## invert p1
-== post-invert-p1.pdf: src p1 → out p1
    src  box=420.0x595.0 images=0 ink=18.90% (at 200 dpi)
    out  box=420.0x595.0 images=1 ink=86.90% (239141 of 275176 sampled px, read from the embedded raster 1166×1652)
    regions (rgb / luma / spread / hue°):
@@ -14,8 +16,7 @@
    invert=1.0 on band: predicted (  0.0,  0.0,  0.0) measured (  0.0,  0.0,  0.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
 OK
 
-########## invert p2
-     green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (229.9, 77.0,204.0) l=137.2 c=153.0 h=310.2  Δluma   +19.4
+########## invert p2 colour
      blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out (229.1,203.9, 24.0) l=190.9 c=205.1 h= 52.6  Δluma  +127.4
      grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0  Δluma   +77.0
      wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  Δluma   -76.0
@@ -37,8 +38,20 @@ OK
    invert=1.0 on band: predicted (  0.0,  0.0,  0.0) measured (  0.0,  0.0,  0.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
 OK
 
+########## invert p4 turned
+   src  box=595.0x420.0 images=0 ink=56.76% (at 200 dpi)
+   out  box=595.0x420.0 images=1 ink=90.45% (248905 of 275176 sampled px, read from the embedded raster 1652×1166)
+   regions (rgb / luma / spread / hue°):
+     bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  Δluma  +255.0
+     copy   src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (230.0, 77.0,204.0) l=137.2 c=153.0 h=310.2  Δluma   +19.5
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  Δluma  -255.0
+   POLARITY ok: bar 0.0→255.0 (ink became light), band 255.0→0.0 (paper became dark)
+   invert=1.0 on bar: predicted (255.0,255.0,255.0) measured (255.0,255.0,255.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
+   invert=1.0 on copy: predicted (230.0, 77.0,204.0) measured (230.0, 77.0,204.0) Δpred   0.0 Δidentity 205.0 Δopposite 205.0 → ok
+   invert=1.0 on band: predicted (  0.0,  0.0,  0.0) measured (  0.0,  0.0,  0.0) Δpred   0.0 Δidentity 255.0 Δopposite 255.0 → ok
+OK
+
 ########## adjust identity
-== post-adjust-identity.pdf: src p2 → out p1
    src  box=420.0x595.0 images=0 ink=19.50% (at 200 dpi)
    out  box=420.0x595.0 images=1 ink=19.65% (54070 of 275176 sampled px, read from the embedded raster 1166×1652)
    regions (rgb / luma / spread / hue°):
@@ -48,11 +61,21 @@ OK
      grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0
      wash   src (165.0,165.0,165.0) l=165.0 c=  0.0 h=  0.0  →  out (166.0,166.0,166.0) l=166.0 c=  0.0 h=  0.0
      band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (253.9,253.9,253.9) l=253.9 c=  0.0 h=  0.0
-   same as post-plain-p2.pdf: red Δ0.1, green Δ0.1, blue Δ0.0, grey Δ0.0, wash Δ0.0, band Δ0.0
+   same as post-plain-p1.pdf: red Δ0.1, green Δ0.1, blue Δ0.0, grey Δ0.0, wash Δ0.0, band Δ0.0
+OK
+
+########## adjust identity p4 turned
+== post-adjust-identity-p4.pdf: src p4 → out p1
+   src  box=595.0x420.0 images=0 ink=56.76% (at 200 dpi)
+   out  box=595.0x420.0 images=1 ink=57.13% (157196 of 275176 sampled px, read from the embedded raster 1652×1166)
+   regions (rgb / luma / spread / hue°):
+     bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0
+     copy   src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2
+     band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
+   same as post-plain-p1.pdf: bar Δ0.0, copy Δ0.0, band Δ0.0
 OK
 
 ########## adjust brightness=1.6
-     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (254.9, 41.0, 41.0) l=104.9 c=213.9 h=360.0  Δluma   +19.0
      green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out ( 41.0,254.9, 81.0) l=171.1 c=214.0 h=131.2  Δluma   +53.4
      blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 41.1, 81.0,254.8) l= 88.9 c=213.7 h=228.8  Δluma   +25.4
      grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out (142.0,142.0,142.0) l=142.0 c=  0.0 h=  0.0  Δluma   +53.0
@@ -66,7 +89,6 @@ OK
 OK
 
 ########## adjust contrast=2
-     red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (254.0,  0.0,  0.1) l= 76.0 c=253.9 h=360.0  Δluma   -10.0
      green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (  1.0,228.0,  0.1) l=134.2 c=228.0 h=119.8  Δluma   +16.4
      blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out (  0.0,  0.1,253.8) l= 29.0 c=253.7 h=240.0  Δluma   -34.5
      grey   src ( 89.0, 89.0, 89.0) l= 89.0 c=  0.0 h=  0.0  →  out ( 50.0, 50.0, 50.0) l= 50.0 c=  0.0 h=  0.0  Δluma   -39.0
@@ -80,7 +102,6 @@ OK
 OK
 
 ########## adjust saturation=0
-   out  box=420.0x595.0 images=1 ink=19.53% (53740 of 275176 sampled px, read from the embedded raster 1166×1652)
    regions (rgb / luma / spread / hue°):
      red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 69.0, 69.0, 69.0) l= 69.0 c=  0.0 h=  0.0  Δluma   -17.0
      green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (136.0,136.0,136.0) l=136.0 c=  0.0 h=  0.0  Δluma   +18.2
@@ -94,7 +115,6 @@ OK
 OK
 
 ########## adjust hue=180
-   out  box=420.0x595.0 images=1 ink=19.70% (54216 of 275176 sampled px, read from the embedded raster 1166×1652)
    regions (rgb / luma / spread / hue°):
      red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out (  0.1,113.0,112.9) l= 79.2 c=112.9 h=180.0
      green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (247.9, 95.0,222.0) l=155.2 c=153.0 h=310.2  Δluma   +37.4
@@ -108,7 +128,6 @@ OK
 OK
 
 ########## adjust grayscale=1
-   regions (rgb / luma / spread / hue°):
      red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 69.0, 69.0, 69.0) l= 69.0 c=  0.0 h=  0.0  Δluma   -17.0
      green  src ( 25.0,178.0, 51.0) l=117.8 c=153.0 h=130.2  →  out (137.0,137.0,137.0) l=137.0 c=  0.0 h=  0.0  Δluma   +19.2
      blue   src ( 25.0, 51.0,229.0) l= 63.5 c=204.0 h=232.4  →  out ( 59.0, 59.0, 59.0) l= 59.0 c=  0.0 h=  0.0
@@ -140,12 +159,10 @@ OK
      bar    src (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0  →  out (  0.0,  0.0,  0.0) l=  0.0 c=  0.0 h=  0.0
      copy   src (220.2,220.2,220.2) l=220.2 c=  0.0 h=  0.0  →  out (223.4,223.4,223.4) l=223.4 c=  0.0 h=  0.0
      band   src (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
-   VACUOUS: no region on this sheet can tell the ask from doing nothing
    vs plain rasterisation: bar Δ0.0, copy Δ2.4, band Δ0.0 | mid tones 6743→2213 | edge transition width (px) bar 1→0
 OK
 
 ########## scanner p2
-   src  box=420.0x595.0 images=0 ink=19.51% (at 220 dpi)
    out  box=420.0x595.0 images=1 ink=19.42% (64695 of 333214 sampled px, read from the embedded raster 1283×1818)
    regions (rgb / luma / spread / hue°):
      red    src (229.0, 25.0, 25.0) l= 86.0 c=204.0 h=  0.0  →  out ( 94.0, 94.0, 94.0) l= 94.0 c=  0.0 h=  0.0  Δluma    +8.0
@@ -158,8 +175,7 @@ OK
    vs plain rasterisation: red Δ136.0, green Δ153.0, blue Δ152.9, grey Δ34.0, wash Δ41.0, band Δ0.0 | mid tones 52481→53874 | edge transition width (px) red 1→0, grey 0→0
 OK
 
-########## greyscale raster (open)
-== post-greyscale-raster.pdf: src p2 → out p1
+########## greyscale raster (OPEN)
    src  box=420.0x595.0 images=0 ink=19.50% (at 200 dpi)
    out  box=420.0x595.0 images=1 ink= 0.00% (0 of 275176 sampled px, read from the embedded raster 1166×1652)
    regions (rgb / luma / spread / hue°):
@@ -171,11 +187,3 @@ OK
      band   src (253.8,253.8,253.8) l=253.8 c=  0.0 h=  0.0  →  out (255.0,255.0,255.0) l=255.0 c=  0.0 h=  0.0
 FAIL
   - the sheet carries 19.50 % non-white px and the output 0.00 % — this is paper under a plausible file name, not the page
-
-═══ a second deployed run, after the docs push (CI 42500113537), same site
-invert-colors pages=1   329 640 bytes   (first run: 329 639)   polarity ok, ink 86.90 %
-scanner-effect pages=2   28 441 bytes   (first run: 28 440)    achromatic, vs plain Δ136.0/153.0/152.9
-rasterize-pdf (baseline) 326 906 bytes  (first run: 326 906)
-The one-byte differences are pdf-lib's timestamp; the measured regions are identical
-page for page, so the claim is measured-equal and not byte-equal — the same wording the
-`rasterize-pdf` row uses for the same reason.

@@ -22,7 +22,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
-const { PDFDocument, StandardFonts, rgb } = createRequire(import.meta.url)('@maxwbh/pdf-lib');
+const { PDFDocument, StandardFonts, degrees, rgb } = createRequire(import.meta.url)('@maxwbh/pdf-lib');
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -37,7 +37,9 @@ const BOX = [420, 595];
 
 /**
  * The named regions, as fractions of the *displayed* sheet from its top-left —
- * the same table `colour-ink.py` carries, in the same order.
+ * the same table `colour-ink.py` carries, in the same order. On a page carrying
+ * `/Rotate` the two spaces differ, which is why `rotatedFixture` places its ink
+ * through the turn rather than with `rectOf`.
  */
 export const REGIONS = {
   bar: { x0: 0.10, y0: 0.10, x1: 0.90, y1: 0.22 },
@@ -60,13 +62,33 @@ function lineText(index) {
   return `${String(index + 1).padStart(2, '0')} ${words.join(' ')}`;
 }
 
-/** PDF-space rectangle for a fractional region, y measured from the bottom. */
+/** PDF-space rectangle for a fractional region of an unturned page, y from the bottom. */
 function rectOf(region) {
   return {
     x: region.x0 * BOX[0],
     y: BOX[1] - region.y1 * BOX[1],
     width: (region.x1 - region.x0) * BOX[0],
     height: (region.y1 - region.y0) * BOX[1],
+  };
+}
+
+/**
+ * A displayed rectangle on a page carrying `/Rotate 90`, in that page's own coordinates.
+ *
+ * `colour-ink.py` names its regions in **displayed** fractions, because that is what
+ * pdf.js paints and what PyMuPDF rasterises (`page.rect` is the turned box). On a turned
+ * sheet the fixture therefore has to place its ink where the turn will leave it: rotating
+ * the page clockwise sends its own left edge to the displayed top, so a displayed
+ * rectangle (u across, v down) is written at stored `x = v`, `y = u`. Measured rather than
+ * trusted — a mirrored inverse reads back as paper where the bar should be, which is
+ * exactly how a colour row on a rotated page would compare the wrong features.
+ */
+function displayedRect(region) {
+  return {
+    x: region.y0 * BOX[0],
+    y: region.x0 * BOX[1],
+    width: (region.y1 - region.y0) * BOX[0],
+    height: (region.x1 - region.x0) * BOX[1],
   };
 }
 
@@ -99,6 +121,15 @@ async function colourFixture() {
   colour.drawText('colour sheet', { x: 34, y: 60, size: 10, font, color: rgb(0, 0, 0) });
 
   doc.addPage(BOX); // the empty control
+
+  // Sheet 4: the same displayed regions on a page that stores a portrait box and carries
+  // `/Rotate 90`. It is the turned case the campaign asks a rasteriser to prove, and it is
+  // what keeps this fixture's fractions honest.
+  const turned = doc.addPage(BOX);
+  turned.setRotation(degrees(90));
+  turned.drawRectangle({ ...displayedRect(REGIONS.bar), color: rgb(0, 0, 0) });
+  turned.drawRectangle({ ...displayedRect(REGIONS.copy), color: rgb(0.1, 0.7, 0.2) });
+  turned.drawRectangle({ ...displayedRect(REGIONS.band), color: rgb(1, 1, 1) });
   return doc.save({ useObjectStreams: false });
 }
 

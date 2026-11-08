@@ -37,8 +37,12 @@ TOL = 8.0            # per channel: a 0.9-quality JPEG of the sheet, resampled
 MIN_MOVE = 8.0       # a region must be predicted to move at least this to judge an ask
 INK_WHITE = 245      # "non-white" exactly as rail-measure.py counts it
 
-# Fractions of the *displayed* sheet from its top-left, matching REGIONS in
-# colour-fixture.mjs. Keep the two tables in step.
+# Fractions of the **displayed** sheet from its top-left, matching REGIONS in
+# colour-fixture.mjs. PyMuPDF rasterises a page as displayed and pdf.js paints it the same
+# way, so this is the one space in which a source sheet and a produced page can be
+# compared — and sheet 4 of the fixture exists to prove it: it stores a portrait box with
+# `/Rotate 90` and the fixture places that ink *through* the turn, so a mirrored or
+# un-inverted mapping reads paper where the bar should be. Keep the two tables in step.
 REGIONS = {
     "bar": (0.10, 0.10, 0.90, 0.22),      # solid black
     "copy": (0.08, 0.26, 0.92, 0.82),     # 26 lines of body copy
@@ -50,7 +54,12 @@ REGIONS = {
     "wash": (0.39, 0.36, 0.61, 0.50),     # luma ~166, above it
 }
 # Which regions each sheet of the fixture carries.
-PAGE_REGIONS = {1: ("bar", "copy", "band"), 2: ("red", "green", "blue", "grey", "wash", "band"), 3: ("band",)}
+PAGE_REGIONS = {
+    1: ("bar", "copy", "band"),
+    2: ("red", "green", "blue", "grey", "wash", "band"),
+    3: ("band",),                                # the empty control
+    4: ("bar", "copy", "band"),                  # the same three, on a turned sheet
+}
 
 
 def luma(rgb):
@@ -339,6 +348,13 @@ def main():
             print(f"MISSING {path}")
             return 2
 
+    if args.page not in PAGE_REGIONS:
+        # Guessing sheet 1 would measure the bar against whatever really sits at those
+        # fractions on an unknown sheet — the mistake this table exists to prevent.
+        print(f"--page {args.page}: this checker knows the fixture's sheets "
+              f"{sorted(PAGE_REGIONS)}; add that sheet's regions to PAGE_REGIONS first")
+        return 2
+
     out_index = (args.out_page or args.page) - 1
     out_doc, out_page, out_pix = check_page(args.out, out_index)
     out_native = native_raster(out_doc, out_page)
@@ -356,7 +372,7 @@ def main():
     if out_native is not None and src_box.width > 0:
         src_dpi = max(24, min(600, round(72 * out_native.width / src_box.width)))
     src_doc, src_page, src_pix = check_page(args.src, args.page - 1, dpi=src_dpi)
-    names = PAGE_REGIONS.get(args.page, PAGE_REGIONS[1])
+    names = PAGE_REGIONS[args.page]
     asks = [parse_ask(a) for a in args.ask]
 
     src_imgs = len(src_page.get_images(full=True))
