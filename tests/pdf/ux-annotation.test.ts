@@ -923,6 +923,78 @@ function polygonCorners(element: SVGPolygonElement): { x: number; y: number }[] 
     });
 }
 
+/** The corners of any painted ring: `<polygon points>` or a `<path d="M … L … Z">`. */
+function shapeCorners(element: Element): { x: number; y: number }[] {
+  const raw = element.tagName.toLowerCase() === 'polygon'
+    ? (element.getAttribute('points') ?? '').replace(/\s+/g, ' ').trim()
+    : (element.getAttribute('d') ?? '')
+        .replace(/[MLZ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+  return raw
+    .split(' ')
+    .filter(Boolean)
+    .map((pair) => {
+      const [x, y] = pair.split(',').map(Number);
+      return { x, y };
+    });
+}
+
+/** Area of a closed ring (shoelace), the way the browser would fill it. */
+function ringArea(corners: { x: number; y: number }[]): number {
+  let twice = 0;
+  for (let i = 0; i < corners.length; i += 1) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    twice += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(twice / 2);
+}
+
+/**
+ * How much paper one painted overlay element covers, in CSS px².
+ *
+ * A filled ring is its own area; a stroked rule is length × stroke width, which
+ * is the ink the stroke lays down. jsdom lays nothing out, so `line` and `path`
+ * carry the same information the browser paints from — the coordinates and the
+ * stroke width — and no `getBoundingClientRect()` in jsdom can tell you whether
+ * a mark is visible. That is exactly the measurement that must not be faked.
+ */
+function elementPaintedArea(element: Element): number {
+  const tag = element.tagName.toLowerCase();
+  const stroke = Number(element.getAttribute('stroke-width') ?? 0);
+  if (tag === 'line') {
+    const from = { x: Number(element.getAttribute('x1')), y: Number(element.getAttribute('y1')) };
+    const to = { x: Number(element.getAttribute('x2')), y: Number(element.getAttribute('y2')) };
+    return Math.hypot(to.x - from.x, to.y - from.y) * Math.max(stroke, 0.5);
+  }
+  if (tag === 'polyline' || tag === 'path') {
+    const filled = (element.getAttribute('fill') ?? 'none') !== 'none';
+    const corners = shapeCorners(element);
+    if (filled && corners.length >= 3) return ringArea(corners);
+    let length = 0;
+    const points = tag === 'polyline' ? polygonCorners(element as SVGPolylineElement) : corners;
+    for (let i = 1; i < points.length; i += 1) {
+      length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    }
+    return length * Math.max(stroke, 0.5);
+  }
+  if (tag === 'rect' || tag === 'image') {
+    return Number(element.getAttribute('width')) * Number(element.getAttribute('height'));
+  }
+  const corners = shapeCorners(element);
+  return corners.length >= 3 ? ringArea(corners) : 0;
+}
+
+/** The painted area of a whole mark: every element inside `[data-mark]`. */
+function markPaintedArea(id: string): number {
+  const group = document.querySelector(`[data-mark="${id}"]`);
+  expect(group, `mark ${id} is not on the page`).toBeTruthy();
+  const children = Array.from(group!.querySelectorAll('polygon, path, line, polyline, rect, image'));
+  expect(children.length).toBeGreaterThan(0);
+  return children.reduce((total, element) => total + elementPaintedArea(element), 0);
+}
+
 describe('the overlay paints a quad as a ring', () => {
   it('draws one closed rectangle per line, with no diagonal edge', () => {
     const { highlight } = markupMarks();
@@ -967,15 +1039,16 @@ describe('the overlay paints a quad as a ring', () => {
     expect(spans[1][0] - spans[0][1]).toBeGreaterThan(100);
   });
 
-  it('strokes the rule where the shared function puts it', () => {
-    // One line, one quad, so the painted `<line>` can be compared with the
-    // number `markupRule` — the very function `core/annotations` strokes the
-    // appearance stream with — without guessing which element is which.
+  it('paints the rule where the shared function puts it, as a bar with area', () => {
+    // One line, one quad, so the painted bar can be compared with the number
+    // `markupRule` — the very function `core/annotations` strokes the appearance
+    // stream with — without guessing which element is which.
     const lines = snapTextLines(threeLines(), { x0: 60, y0: 95, x1: 210, y1: 155 });
     const mark = build('underline', { drag: { x: 70, y: 98, width: 40, height: 8 }, lines: [lines[0]] })!;
     expect(mark.quadPoints).toHaveLength(8);
     renderOverlay({ annotations: [mark] });
-    const painted = document.querySelector('line')!;
+    const painted = document.querySelector('[data-markup-rule="Underline"]')!;
+    expect(painted).toBeTruthy();
     const quad = mark.quadPoints!;
     const rule = markupRule(
       [
@@ -989,17 +1062,27 @@ describe('the overlay paints a quad as a ring', () => {
     );
     const from = pdfToScreenPoint({ x: rule.x1, y: rule.y1 }, overlayGeom);
     const to = pdfToScreenPoint({ x: rule.x2, y: rule.y2 }, overlayGeom);
-    expect(Number(painted.getAttribute('x1'))).toBeCloseTo(Math.round(from.x * 10) / 10, 6);
-    expect(Number(painted.getAttribute('y1'))).toBeCloseTo(Math.round(from.y * 10) / 10, 6);
-    expect(Number(painted.getAttribute('x2'))).toBeCloseTo(Math.round(to.x * 10) / 10, 6);
-    expect(Number(painted.getAttribute('y2'))).toBeCloseTo(Math.round(to.y * 10) / 10, 6);
+    // The bar's four corners straddle the rule's centre line, so the midpoints of
+    // its short ends are the two endpoints the writer strokes to.
+    const corners = shapeCorners(painted);
+    expect(corners).toHaveLength(4);
+    const centreLine = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+    });
+    const near = (candidate: { x: number; y: number }, target: { x: number; y: number }) =>
+      Math.hypot(candidate.x - target.x, candidate.y - target.y);
+    const start = centreLine(corners[0], corners[3]);
+    const end = centreLine(corners[1], corners[2]);
+    expect(near(start, { x: Math.round(from.x * 10) / 10, y: Math.round(from.y * 10) / 10 })).toBeLessThan(0.2);
+    expect(near(end, { x: Math.round(to.x * 10) / 10, y: Math.round(to.y * 10) / 10 })).toBeLessThan(0.2);
     // And that is under the feet of the letters, not through them: the rule sits
     // below the baseline the quad was anchored on.
     const baselineTop = pdfToScreenPoint({ x: quad[0], y: quad[1] }, overlayGeom).y;
     const quadBottom = pdfToScreenPoint({ x: quad[4], y: quad[5] }, overlayGeom).y;
     const baseline = baselineTop + (quadBottom - baselineTop) * TEXT_BASELINE_SHARE;
-    expect(Number(painted.getAttribute('y1'))).toBeGreaterThan(baseline);
-    expect(Number(painted.getAttribute('y1'))).toBeLessThan(quadBottom);
+    expect(start.y).toBeGreaterThan(baseline);
+    expect(start.y).toBeLessThan(quadBottom);
   });
 });
 
