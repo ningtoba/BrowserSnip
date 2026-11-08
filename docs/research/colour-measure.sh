@@ -95,8 +95,13 @@ run adjust-colors 'Adjust colors' post-adjust-identity-p4.pdf "pages=$TURNED_PAG
 run rasterize-pdf Rasterize post-plain-p1.pdf ""
 run rasterize-pdf Rasterize post-plain-p2.pdf ""
 # The fourth consumer of `RenderOptions.filter`: its raster method is a segment the
-# default-clicking probe cannot reach, so this one clicks it.
+# default-clicking probe cannot reach, so this one clicks it. Three cases, because
+# the one number that found the defect ("is there ink") is not enough for a tool
+# whose whole job is colour, and because the segment and the page picker are both
+# things the user sets that no earlier probe ever touched.
 run pdf-to-greyscale 'Convert to greyscale' post-greyscale-raster.pdf "mode=Re-render pages=$COLOUR_PAGE"
+run pdf-to-greyscale 'Convert to greyscale' post-greyscale-grey1.pdf "mode=Re-render pages=$INVERT_PAGE"
+run pdf-to-greyscale 'Convert to greyscale' post-greyscale-select.pdf "mode=Re-render pages=2-4"
 
 echo
 echo "═══ invert-colors: polarity, per region, and the sheet that has no ink to swap"
@@ -163,13 +168,27 @@ CONTROL=1 check FAIL "polarity on a turned sheet that was not inverted" --page $
 echo
 echo "═══ the fourth consumer of RenderOptions.filter, reached through another helper"
 # `pdf-to-greyscale` with Method = Re-render goes through `core/measure.ts`'s
-# `applyColorFilter`, which reads the canvas without awaiting `finished`. The segment
-# is clicked here and read back out of `aria-pressed`, so "reached, not yet driven" is
-# no longer an excuse for not knowing its number: it is paper, 0 non-white px, where
-# its own source sheet measures 19.50 %.
-check OPEN "greyscale re-render (core/measure.ts owns the await)" --page $COLOUR_PAGE \
-  --out $DIR/post-greyscale-raster.pdf --ask grayscale=1 --inked \
-  --label "pdf-to-greyscale, Method = Re-render"
+# `applyColorFilter`, a rasteriser of its own that did not await `render.finished`,
+# so it encoded paper with a filter applied to nothing. The segment is clicked here
+# and read back out of `aria-pressed`, so "reached, not yet driven" is no longer an
+# excuse for not knowing its number.
+check OK "greyscale re-render (ink + colour removed)" --page $COLOUR_PAGE \
+  --out $DIR/post-greyscale-raster.pdf --ask grayscale=1 --inked --achromatic \
+  --label "pdf-to-greyscale, Method = Re-render: the page, in grey"
+# Identity, standing rule 4: on a sheet that is *already* grey the operator is a
+# no-op, so the re-render must be the same picture `rasterize-pdf` writes. This is
+# the assertion a filter applied twice, or a second pass nobody asked for, breaks.
+check OK "greyscale re-render of a grey sheet = a plain rasterisation" --page $INVERT_PAGE \
+  --out $DIR/post-greyscale-grey1.pdf --same-as $DIR/post-plain-p1.pdf --base-page $INVERT_PAGE --inked \
+  --label "pdf-to-greyscale Re-render on sheet $INVERT_PAGE, against rasterize-pdf"
+# The page picker, sheet by sheet: `2-4` writes three pages, and each of them is
+# the sheet it names — not the first three, and not one page three times.
+check OK "greyscale selection: output 1 is source page 2" --page $COLOUR_PAGE --out-page 1 \
+  --out $DIR/post-greyscale-select.pdf --inked --achromatic --label "selection 2-4, sheet 1 ← page 2"
+check OK "greyscale selection: output 2 is the empty page 3" --page $EMPTY_PAGE --out-page 2 \
+  --out $DIR/post-greyscale-select.pdf --blank --label "selection 2-4, sheet 2 ← page 3"
+check OK "greyscale selection: output 3 is the turned page 4" --page $TURNED_PAGE --out-page 3 \
+  --out $DIR/post-greyscale-select.pdf --inked --label "selection 2-4, sheet 3 ← page 4 (/Rotate 90)"
 
 echo
 echo "═══ the turned sheet: the same displayed regions on a page carrying /Rotate 90"
