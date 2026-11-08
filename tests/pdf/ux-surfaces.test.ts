@@ -529,6 +529,14 @@ describe('compare reports differences as areas', () => {
     // "the two pages are equal".
     expect(main).toMatch(/Neither page has been read yet/);
     expect(main).toMatch(/data-compare-read=\{st\.compared\}/);
+    // The strip publishes its own percentage so the harness can show the card and
+    // the strip agree; two surfaces over one store is where this tool lied.
+    expect(main).toMatch(/data-compare-percent=\{st\.diffPercent\}/);
+    const panel = await import('node:fs').then((fs) =>
+      fs.readFileSync('src/components/tools/pdf/security/CompareTool.tsx', 'utf8'),
+    );
+    expect(panel).toMatch(/data-compare-diff=\{st\.diffPercent\}/);
+    expect(panel).toMatch(/setSt\(\{ \.\.\.getCompareState\(\)/);
   });
 
   it('promises only what the shipped compare page demonstrably does', () => {

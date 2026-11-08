@@ -42,7 +42,12 @@ const FILES_BY_CASE = {
 const FILES = FILES_BY_CASE[CASE] ?? FILES_BY_CASE.pair;
 
 const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox',
-  `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/compare-${CASE}-${PORT}`, 'about:blank'], { stdio: 'ignore' });
+  `--remote-debugging-port=${PORT}`,
+  // A fresh profile per run: the app persists the loaded pair in IndexedDB, so a
+  // reused directory can hand this probe the *previous* run's documents and it
+  // would measure a pair it never loaded (that is how one A-versus-A run came back
+  // with 13,998 changed pixels).
+  `--user-data-dir=/tmp/compare-${CASE}-${PORT}-${Date.now()}`, 'about:blank'], { stdio: 'ignore' });
 let ws;
 for (let i = 0; i < 60 && !ws; i++) {
   try {
@@ -166,6 +171,14 @@ await send('Page.enable');
 await send('Runtime.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 1150, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: `${BASE}/#/tool/compare-pdfs` });
+// `DARK=1` is the dark-mode half of the screen evidence: the shell reads one
+// stored preference and writes `html.dark`, so the setting is written the way the
+// toggle writes it and the page is reloaded to pick it up.
+if (process.env.DARK) {
+  await ev(`(()=>{try{localStorage.setItem('browsersnip:theme','dark')}catch(e){};return 1})()`);
+  await send('Page.reload');
+  await sleep(2500);
+}
 if (!(await wait(`document.readyState === 'complete' && !!document.querySelector('input[type=file][multiple], input[type=file]')`, 90000))) {
   throw new Error('no file input on the route');
 }

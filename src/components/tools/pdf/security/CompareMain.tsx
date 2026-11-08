@@ -244,6 +244,22 @@ export function CompareMain() {
    */
   const compared = useRef<ComparedFrame | null>(null);
   /**
+   * The pairs handed to pdf.js, one at a time.
+   *
+   * `page.render()` owns the canvas it is given for as long as its task lives, so
+   * two renders that overlap on canvas A do not compose: measured on the dev server
+   * (whose StrictMode runs the load effect twice), a pair of byte-identical
+   * documents came back as **13,998 of 249,900 pixels differing in two changed
+   * areas**, because the canvas that was being photographed held ink over a paper
+   * fill another task had already wiped — `opaque 2.98 %` where a painted sheet is
+   * `opaque 100 %`. A user reaches the same overlap by turning the page while a pair
+   * is still painting. One queue, and one token that lets only the pair last
+   * published answer for the verdict.
+   */
+  const queued = useRef<Promise<void>>(Promise.resolve());
+  /** The pair this pane was last asked to show, checked before anything is published. */
+  const renders = useRef(0);
+  /**
    * The unified frame the diff ran in. Both pages are bottom-aligned inside it,
    * which is what lets the overlay land on the words rather than a page-height
    * above or below them when the two documents differ in size.
@@ -259,6 +275,7 @@ export function CompareMain() {
   useEffect(() => () => {
     _repaint = null;
     compared.current = null;
+    renders.current += 1;
   }, []);
 
   // ── Load and render both PDFs ─────────────────────────────
@@ -278,7 +295,15 @@ export function CompareMain() {
         _state.totalPages = totalPages;
         _state.compared = false;
 
-        await renderPagePair(docA, docB, Math.min(_state.page, totalPages));
+        // Only one pair is in pdf.js at a time; see the `queued` ref for why.
+        const token = renders.current;
+        const start = (pair: () => Promise<void>) => {
+          queued.current = queued.current.then(pair, pair);
+          return queued.current;
+        };
+        await start(async () => {
+          if (renders.current === token) await renderPagePair(docA, docB, Math.min(_state.page, totalPages));
+        });
         setLoading(false);
       } catch { setLoading(false); }
     };
@@ -298,7 +323,14 @@ export function CompareMain() {
         // WASM buffers per proxy until it is destroyed explicitly.
         opened.push(docA, docB);
         if (cancelled) return;
-        await renderPagePair(docA, docB, Math.min(st.page, pageCount));
+        const token = renders.current;
+        const start = (pair: () => Promise<void>) => {
+          queued.current = queued.current.then(pair, pair);
+          return queued.current;
+        };
+        await start(async () => {
+          if (renders.current === token) await renderPagePair(docA, docB, Math.min(st.page, pageCount));
+        });
       } catch {
         /* the next page render reports the failure */
       } finally {
@@ -313,6 +345,8 @@ export function CompareMain() {
   }, [st.page]);
 
   const renderPagePair = async (docA: pdfjsLib.PDFDocumentProxy, docB: pdfjsLib.PDFDocumentProxy, pageNum: number) => {
+    const token = renders.current + 1;
+    renders.current = token;
     const [pageA, pageB] = await Promise.all([
       docA.getPage(pageNum),
       docB.getPage(pageNum),
@@ -350,6 +384,9 @@ export function CompareMain() {
     // Render doc B
     cB.width = vpBU.width; cB.height = vpBU.height;
     await pageB.render({ canvasContext: cB.getContext('2d')!, viewport: vpBU }).promise;
+    // A pair superseded while it was painting must not publish over the one that
+    // superseded it — the pixels in the canvas are the newer pair's by then.
+    if (renders.current !== token) return;
 
     // Compute diff at unified resolution
     const diffScale = DISPLAY_SCALE;
@@ -519,6 +556,7 @@ export function CompareMain() {
           aria-live="polite"
           data-compare-counts={st.diffRegions}
           data-compare-pixels={st.diffPixels}
+          data-compare-percent={st.diffPercent}
           data-compare-read={st.compared}
           data-compare-identical={st.compared && st.diffPixels === 0}
           data-compare-area={largest ? diffAreaAttribute(largest) : undefined}

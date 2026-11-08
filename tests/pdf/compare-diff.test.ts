@@ -44,7 +44,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
-import { createElement } from 'react';
+import { createElement, StrictMode } from 'react';
 import { deflateSync, inflateSync } from 'node:zlib';
 import {
   PDFArray,
@@ -132,6 +132,11 @@ const rig = vi.hoisted(() => ({
   /** How many page renders the double was asked for, so a slider move can be shown
    *  to re-answer from pixels rather than by rendering again. */
   renders: 0,
+  /** Render tasks alive right now, and the most that ever overlapped: one page
+   *  canvas cannot be photographed while a second task is still painting into it,
+   *  which is what a torn verdict looks like in the browser. */
+  inFlight: 0,
+  maxInFlight: 0,
   /** Document bytes (FNV-1a) → the sheets that document stands for. */
   models: new Map<number, { box: [number, number]; ink: InkRect[] }[]>(),
 }));
@@ -454,7 +459,15 @@ vi.mock('pdfjs-dist', async (importOriginal) => {
       cleanup: () => {},
       render: ({ canvasContext }: { canvasContext: StubContext }) => {
         rig.renders += 1;
+        rig.inFlight += 1;
+        rig.maxInFlight = Math.max(rig.maxInFlight, rig.inFlight);
         const canvas = canvasContext.canvas;
+        let finished = false;
+        const leave = () => {
+          if (finished) return;
+          finished = true;
+          rig.inFlight -= 1;
+        };
         pageCanvas.set(canvas, sheet);
         // pdf.js paints its background synchronously and the page on a later frame,
         // which is exactly the gap a caller can fall into.
@@ -465,6 +478,7 @@ vi.mock('pdfjs-dist', async (importOriginal) => {
           settle = resolve;
         });
         const timer = setTimeout(() => {
+          leave();
           paintInk(canvas, sheet);
           landed.add(canvas);
           settle();
@@ -473,6 +487,7 @@ vi.mock('pdfjs-dist', async (importOriginal) => {
         return {
           promise,
           cancel: () => {
+            leave();
             clearTimeout(timer);
           },
         };
@@ -689,6 +704,8 @@ afterEach(() => {
 beforeEach(() => {
   rig.earlyReads = 0;
   rig.renders = 0;
+  rig.inFlight = 0;
+  rig.maxInFlight = 0;
 });
 
 /* ══ 1. the exported file: the difference, painted where it was planted ═════ */
@@ -896,6 +913,12 @@ describe('the pane’s verdict', () => {
       card?.textContent?.trim(),
       'the card is showing its own initial state rather than the verdict',
     ).toBe(`${percent}%`);
+    // The strip above the pages and the card beside them must publish one number:
+    // the deployed pair showed 13,600 changed pixels on the strip under a card that
+    // still read 0 %, because the card re-rendered for some other reason or not at
+    // all.
+    const strip = view.container.querySelector('[data-compare-counts]');
+    expect(strip?.getAttribute('data-compare-percent')).toBe(card?.getAttribute('data-compare-diff'));
     expect(view.container.querySelector('[data-compare-areas]')?.getAttribute('data-compare-areas')).toBe('1');
     expect(
       [...view.container.querySelectorAll('p')].some((p) => /Nothing differs on the page in view/.test(p.textContent ?? '')),
@@ -930,6 +953,30 @@ describe('the pane’s verdict', () => {
     act(() => setCompareSensitivity(30));
     expect(getCompareState().diffPixels, 'the verdict did not come back').toBe(PLANTED_AREA);
     expect(rig.renders, 'the slider re-rendered both pages instead of reusing the pixels').toBe(rendered);
+  });
+
+  it('refuses to photograph a sheet another render task is still painting', async () => {
+    // React's StrictMode runs the load effect twice, which is how the dev server
+    // reached the race the deployed page can also reach by turning a pair over
+    // while it is still painting: two `page.render()` tasks on one canvas. Measured
+    // there, a pair of byte-identical documents answered 13,998 changed pixels in
+    // two areas, over a canvas that read `opaque 2.98 %` instead of 100 %.
+    startFresh();
+    useFileStore.getState().setFiles([pdfFile('a.pdf', bytesA), pdfFile('b.pdf', bytesB)]);
+    render(createElement(StrictMode, null, createElement(CompareMain)));
+    await waitFor(() => expect(getCompareState().compared).toBe(true), { timeout: 20_000 });
+    expect(rig.maxInFlight, 'two render tasks were on one canvas at once').toBeLessThanOrEqual(1);
+    const state = getCompareState();
+    expect(state.diffPixels).toBe(PLANTED_AREA);
+    expect(state.diffAreas[0]).toEqual({ x0: PLANTED.x0, y0: PLANTED.y0, x1: PLANTED.x1, y1: PLANTED.y1 });
+    // Both sheets are paper under their ink: a torn canvas has ink floating on
+    // transparency, which is what turned A-versus-A into a difference.
+    for (const canvas of sheetCanvases()) {
+      const raster = surfaceAsRaster(canvas);
+      let transparent = 0;
+      for (let i = 0; i < raster.alpha.length; i++) if (raster.alpha[i] === 0) transparent += 1;
+      expect(transparent, 'a photographed sheet is not fully painted').toBe(0);
+    }
   });
 
   it('marks the overlay in the frame the sheet is drawn in', async () => {

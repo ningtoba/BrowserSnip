@@ -40,7 +40,10 @@ run() {
   shift 3
   PORT=$((PORT + 1))
   echo "--- run $name (case=$case page=$page)"
-  BASE=$BASE DIR=$DIR CASE=$case PAGE=$page VERDICT=$DIR/$name.json \
+  # `env`, because a word coming from "$@" is a command name to bash, not an
+  # assignment — `WARM=1` alone would be "command not found" and the run would be
+  # silently missing.
+  env BASE=$BASE DIR=$DIR CASE=$case PAGE=$page VERDICT=$DIR/$name.json \
     OUT=$DIR/$name.pdf PORT=$PORT "$@" \
     timeout 900 node docs/research/compare-rail.mjs > "$DIR/$name.run.log" 2>&1
   grep -E '^(verdict|export|warm|console errors|screenshot|NO OUTPUT)' "$DIR/$name.run.log" | cut -c1-420
