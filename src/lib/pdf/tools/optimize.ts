@@ -39,7 +39,7 @@ import {
   stripJavaScript,
 } from '../core/content';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
-import { listLayers } from '../core/layers';
+import { listLayers, removeHiddenLayerContent } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
 import { EngineUnavailable } from '../engines/provider';
 import { repairPDF } from '@/lib/pdf-engine/commands';
@@ -1211,10 +1211,10 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'sanitize-pdf',
     name: 'Sanitize PDF',
-    description: 'Strip scripts, embedded files, annotations metadata and XMP',
+    description: 'Strip scripts, embedded files, annotations, metadata and hidden layers',
     icon: '🧪',
     category: 'optimize',
-    keywords: ['clean', 'privacy', 'remove javascript', 'strip'],
+    keywords: ['clean', 'privacy', 'remove javascript', 'strip', 'hidden layers', 'cad export'],
     outputSuffix: '_sanitized.pdf',
     actionLabel: 'Sanitize',
     promise: 'Scripts, attachments and optional metadata removed, with a count of everything actually taken out.',
@@ -1224,10 +1224,19 @@ export const optimizeTools: PdfToolDefinition[] = [
       { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove', help: 'XMP is what desktop search indexes. Without it the document stops describing itself to those tools.' },
       { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove', help: 'The info dictionary holds title, author and dates — most readers show it as blank afterwards.' },
       { key: 'annotations', label: 'Remove annotations and form fields', type: 'toggle', default: false, group: 'What to remove', help: 'Comments, highlights, form fields and links all go. Anything you filled in goes with them.' },
+      {
+        key: 'hiddenLayers',
+        label: 'Remove hidden layer content',
+        type: 'toggle',
+        default: false,
+        group: 'Hidden layers',
+        help: 'Deletes the drawing operators of layers the default view switches off, so a suppressed revision leaves the file. It cannot be undone: a reader that would have shown that layer now has nothing to show.',
+      },
     ],
     notes: [
       'Everything runs on the document structure in this tab; no engine download is needed.',
       'This hides and removes optional parts, it does not redact: text under a removed annotation is still in the file.',
+      'Hidden layer content is off by default because it changes what the document can show, not only what it shows: a layer another view or an export intent switches back on is left alone and named.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1294,8 +1303,51 @@ export const optimizeTools: PdfToolDefinition[] = [
       // Optional content is neither an annotation nor an attachment, so nothing
       // above touches it — but "sanitized" reads like "nothing hidden is left",
       // and a CAD export with twelve switched-off layers still ships all twelve.
+      // Removing that ink is the user's call, not a default: it changes what the
+      // document can show, and the output file cannot bring the layers back.
+      const removeHidden = booleanValue(values, 'hiddenLayers', false);
+      if (removeHidden) {
+        const cleanup = removeHiddenLayerContent(doc);
+        if (cleanup.refused) {
+          warnings.push(`Hidden layer content was not removed: ${cleanup.refused}.`);
+          actions.push('no hidden layer content was removed');
+        } else {
+          // A layer the file switches off but this reader cannot safely empty is
+          // an admission, not a result: say so instead of "0 operators removed".
+          const emptied = cleanup.removed.filter((layer) => layer.operators > 0 || layer.definitionRemoved);
+          if (emptied.length === 0) {
+            actions.push(
+              cleanup.removed.length > 0 || cleanup.kept.length > 0 || cleanup.unresolved > 0
+                ? 'no hidden layer could be emptied without guessing'
+                : 'no layer is switched off in the default view',
+            );
+          } else {
+            const names = emptied.map((layer) => `"${layer.name}"`).join(', ');
+            actions.push(
+              `${cleanup.operators} hidden layer operator(s) of ${names} removed (${describeSize(cleanup.contentBytes)} of content, ${cleanup.definitions} layer definition(s) deleted)`,
+            );
+            removed.push('the content of hidden layers');
+          }
+        }
+        for (const kept of cleanup.kept) {
+          warnings.push(`"${kept.name}" is off in the default view but ${kept.reason}, so its content stays in the file.`);
+        }
+        if (cleanup.conditional > 0) {
+          warnings.push(`${cleanup.conditional} section(s) of content are guarded by a condition over several layers (OCMD) rather than by one layer; they stay.`);
+        }
+        if (cleanup.unresolved > 0) {
+          warnings.push(`${cleanup.unresolved} optional-content reference(s) could not be tied to one layer, so the layer definitions stayed even where their ink went.`);
+        }
+        if (cleanup.unreadable > 0) {
+          warnings.push(`${cleanup.unreadable} part(s) of the content could not be read, so nothing was taken out of them and every layer definition stayed.`);
+        }
+        if (cleanup.hiddenPages > 0) {
+          warnings.push(`${cleanup.hiddenPages} page(s) are themselves optional content; their pages and their content were left alone.`);
+        }
+      }
+
       const layers = listLayers(doc);
-      if (layers.length > 0) {
+      if (layers.length > 0 && !removeHidden) {
         const off = layers.filter((layer) => !layer.on).length;
         warnings.push(
           `${layers.length} optional content group(s) (layer${layers.length === 1 ? '' : 's'}) were left in place${

@@ -1719,6 +1719,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'Only the default viewing configuration is edited; named configurations keep their own state, as in other viewers.',
       'Hiding a layer turns it off in the layers panel; it does not delete the content.',
+      'To take hidden ink out of the file instead, use Sanitize PDF with "Remove hidden layer content": that deletes the operators, and cannot be undone in the output.',
     ],
     async run(context) {
       const notes: string[] = [];

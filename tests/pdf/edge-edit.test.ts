@@ -921,6 +921,40 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     await expect(run('pdf-layers', {})).rejects.toThrow(/nothing would change/i);
   });
 
+  it('hides a layer without deleting its ink, and names the tool that does (E13)', async () => {
+    const { addLayer, listLayers } = await import('@/lib/pdf/core/layers');
+    const source = await PDFDocument.create();
+    const font = await source.embedFont(StandardFonts.Helvetica);
+    const page = source.addPage(A4);
+    const xref = addLayer(source, 'Revision B', { on: false });
+    // The layer's own ink, guarded the way a CAD export guards it.
+    page.node.set(PDFName.of('Resources'), source.context.obj({ Font: source.context.obj({ F1: font.ref }) }));
+    page.node.set(
+      PDFName.of('Contents'),
+      source.context.register(
+        source.context.flateStream(
+          [`/OC ${xref} 0 R BDC`, 'BT /F1 14 Tf 60 700 Td (REVISION-B-INK) Tj ET', 'EMC'].join('\n'),
+          {},
+        ),
+      ),
+    );
+    const bytes = await source.save({ useObjectStreams: false });
+
+    const outcome = await run('pdf-layers', { hide: ['Revision B'] }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    const content = pageContentStreams(doc.getPage(0))
+      .map((stream) => new TextDecoder('latin1').decode(stream.bytes))
+      .join('\n');
+    // This entry edits the default view: switched off, and still in the file.
+    expect(content).toContain('REVISION-B-INK');
+    expect(listLayers(doc).map((layer) => [layer.name, layer.on])).toEqual([['Revision B', false]]);
+    // The definition has to survive too: deleting it is what makes the ink show.
+    expect(outcome.message).toMatch(/1 layer/i);
+
+    const notes = (getPdfTool('pdf-layers')?.notes ?? []).join(' ');
+    expect(notes).toMatch(/Sanitize PDF with "Remove hidden layer content"/);
+  });
+
   it('does not claim fields were created when none could be placed (E13, E15)', async () => {
     await expect(run('form-creator', { fieldSpecs: [] })).rejects.toThrow(/drag at least one field/i);
     const outcome = await run('form-creator', {
