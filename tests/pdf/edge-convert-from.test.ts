@@ -1849,7 +1849,45 @@ describe('pdf-to-greyscale', () => {
     expect(outcome.message).toMatch(/Re-rendered|Text is now part of the image/i);
     expect(RASTER.pages).toEqual([1, 2, 3, 4]);
   });
+
+  it('re-renders the pages the selection named, each carrying its own page’s ink (E9)', async () => {
+    // Standing rule 2, on the branch every earlier probe skipped because the
+    // segment defaults to `vectors`: the deployed defect was a re-rendered sheet
+    // holding one full-size image XObject at **0.00 % non-white px** for a source
+    // page measuring 19.50 % — the page count, the file size and the report line
+    // were all true about everything except the pixels (`docs/TOOL-CAMPAIGN.md`).
+    // So the count above is not the evidence; this is. `core/measure`'s raster is
+    // read back by the *other* shipped tool that can open one (`extract-images`,
+    // standing rule 4), which decodes the embedded image through the real pdf.js.
+    RASTER.pages.length = 0;
+    const outcome = await run(
+      'pdf-to-greyscale',
+      { mode: 'raster', dpi: 96, pages: '2-4' },
+      [fileOf(await mixedPdf(), 'sizes.pdf')],
+    );
+    expect(RASTER.pages, 'the re-render painted a page the selection did not name').toEqual([2, 3, 4]);
+    const grey = await PDFDocument.load(await bytesOf(outcome));
+    expect(grey.getPageCount(), 'a three-page selection did not write three pages').toBe(3);
+
+    const extracted = await run('extract-images', { pages: 'all', smallest: 0 }, [
+      fileOf(await bytesOf(outcome), 'grey.pdf'),
+    ]);
+    const entries = await zipEntries(extracted);
+    expect(entries, 'one image per re-rendered page').toHaveLength(3);
+    entries.forEach((entry, index) => {
+      const image = decodePng(entry.bytes);
+      // Page 2 is Letter landscape, page 3 stores 400×300 with `/Rotate 90` and
+      // page 4 stores the same box turned 180: three different rasters, so one
+      // sheet written three times cannot pass this loop.
+      expect(`${image.width}x${image.height}`, `${entry.name} is the wrong sheet`)
+        .toEqual(RASTER_SIZES[index]);
+      expectPageSignature(image, index + 2, entry.name);
+    });
+  });
 });
+
+/** The three re-rendered sheets, at 96 dpi: each page box as it is *displayed*. */
+const RASTER_SIZES = ['1056x816', '400x533', '533x400'];
 
 /* ── page-dimensions ──────────────────────────────────────────────────────── */
 
