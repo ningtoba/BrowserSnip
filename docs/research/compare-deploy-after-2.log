@@ -1,0 +1,93 @@
+{"dir":"/tmp/compare-deploy2","box":[420,595],"known":{"page":1,"x0":40,"y0":60,"x1":380,"y1":100},"pages":{"a":3,"b":3,"blank":1},"bytes":{"a":2511,"b":2549,"blank":863}}
+--- run pair-cold (case=pair page=1)
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":6991,"pct":2.8,"mark":0},{"opaque":249900,"opaquePct":100,"px":20591,"pct":8.24,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":13600,"opaquePct":5.44,"px":13600,"pct":5.44,"mark":13600},"verdictLine":"1 CHANGED AREA · 13,600 OF 249,900 PIXELS (5.4%) ON PAGE 1 · LARGEST AT X 40–380 · Y 60–100 PT FROM T
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":86070,"file":"/tmp/compare-deploy2/pair-cold.pdf","case":"pair","page":1,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; 1 changed area on page 1 · 13,600 of 249,900 pixels · compared against 3 pages both files have ;; · Both documents have 3 pages; every page is c
+console errors: []
+--- run pair-warm (case=pair page=1)
+warm {"turnedToNext":1,"turnedBack":1}
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":6991,"pct":2.8,"mark":0},{"opaque":249900,"opaquePct":100,"px":20591,"pct":8.24,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":13600,"opaquePct":5.44,"px":13600,"pct":5.44,"mark":13600},"verdictLine":"1 CHANGED AREA · 13,600 OF 249,900 PIXELS (5.4%) ON PAGE 1 · LARGEST AT X 40–380 · Y 60–100 PT FROM T
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":86070,"file":"/tmp/compare-deploy2/pair-warm.pdf","case":"pair","page":1,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; 1 changed area on page 1 · 13,600 of 249,900 pixels · compared against 3 pages both files have ;; · Both documents have 3 pages; every page is c
+console errors: []
+--- run pair-page2 (case=pair page=2)
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":4253,"pct":1.7,"mark":0},{"opaque":249900,"opaquePct":100,"px":4253,"pct":1.7,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":0,"opaquePct":0,"px":0,"pct":0,"mark":0},"verdictLine":"NO DIFFERENCES FOUND ON PAGE 2 AT THIS SENSITIVITY — THE EXPORT MARKS NOTHING.","read":"true","counts":"0","pixels":0,"identic
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":86070,"file":"/tmp/compare-deploy2/pair-page2.pdf","case":"pair","page":2,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it — move to another page, or lower the sensitiv
+console errors: []
+--- run pair-page3 (case=pair page=3)
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":0,"pct":0,"mark":0},{"opaque":249900,"opaquePct":100,"px":0,"pct":0,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":0,"opaquePct":0,"px":0,"pct":0,"mark":0},"verdictLine":"NO DIFFERENCES FOUND ON PAGE 3 AT THIS SENSITIVITY — THE EXPORT MARKS NOTHING.","read":"true","counts":"0","pixels":0,"identical":"true"
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":86070,"file":"/tmp/compare-deploy2/pair-page3.pdf","case":"pair","page":3,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it — move to another page, or lower the sensitiv
+console errors: []
+--- run same (case=same page=1)
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":6991,"pct":2.8,"mark":0},{"opaque":249900,"opaquePct":100,"px":6991,"pct":2.8,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":0,"opaquePct":0,"px":0,"pct":0,"mark":0},"verdictLine":"NO DIFFERENCES FOUND ON PAGE 1 AT THIS SENSITIVITY — THE EXPORT MARKS NOTHING.","read":"true","counts":"0","pixels":0,"identic
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":85247,"file":"/tmp/compare-deploy2/same.pdf","case":"same","page":1,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it — move to another page, or lower the sensitivity to
+console errors: []
+--- run blanks (case=blank page=1)
+verdict {"mounted":3,"sizes":[[420,595],[420,595]],"pageInk":[{"opaque":249900,"opaquePct":100,"px":0,"pct":0,"mark":0},{"opaque":249900,"opaquePct":100,"px":0,"pct":0,"mark":0}],"overlaySize":[420,595],"overlayInk":{"opaque":0,"opaquePct":0,"px":0,"pct":0,"mark":0},"verdictLine":"NO DIFFERENCES FOUND ON PAGE 1 AT THIS SENSITIVITY — THE EXPORT MARKS NOTHING.","read":"true","counts":"0","pixels":0,"identical":"true"
+export clicked "Generate comparison PDF"
+export {"type":"application/pdf","bytes":8393,"file":"/tmp/compare-deploy2/blanks.pdf","case":"blank","page":1,"report":"Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted. ;; Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it — move to another page, or lower the sensitivity 
+console errors: []
+
+═══ the exported file: the difference, marked where it was planted
+--- check [pair, sheet 1 — verdict and bytes, both localised]
+export p1: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 8.30 % (source sheet 2.25 %), highlight 5.42 % (58847 px), bbox (39.8, 60.0, 380.2, 99.8)
+   verdict area (40, 60, 380, 100) against the planted (40.0, 60.0, 380.0, 100.0) — edges off by 0.0 pt
+   card and strip publish the same number: 5.4%
+   verdict: read=True pixels=13600 areas=2 counts=1 percent=5.4%
+   localised: (39.8, 60.0, 380.2, 99.8) against the planted (40.0, 60.0, 380.0, 100.0) — edges off by 0.16 pt
+   marked area 13558 pt² against the planted 13600 pt² (99.7 % of it)
+   OK
+--- check [pair, sheet 1 after a page turn — the same marks]
+export p1 (warm): out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 8.30 % (source sheet 2.25 %), highlight 5.42 % (58847 px), bbox (39.8, 60.0, 380.2, 99.8)
+   verdict area (40, 60, 380, 100) against the planted (40.0, 60.0, 380.0, 100.0) — edges off by 0.0 pt
+   card and strip publish the same number: 5.4%
+   verdict: read=True pixels=13600 areas=2 counts=1 percent=5.4%
+   localised: (39.8, 60.0, 380.2, 99.8) against the planted (40.0, 60.0, 380.0, 100.0) — edges off by 0.16 pt
+   marked area 13558 pt² against the planted 13600 pt² (99.7 % of it)
+   OK
+--- check [pair, sheet 2 — no marks, all of its own ink]
+export p2: out page 2 box 420.0x595.0 pt, 2 image XObject(s), ink 1.76 % (source sheet 1.37 %), highlight 0.00 % (0 px), bbox none
+   card and strip publish the same number: 0%
+   verdict: read=True pixels=0 areas=0 counts=0 percent=0%
+   OK
+--- check [pair, sheet 3 — blank against blank is not a difference]
+export p3: out page 3 box 420.0x595.0 pt, 2 image XObject(s), ink 0.11 % (source sheet 0.00 %), highlight 0.00 % (0 px), bbox none
+   card and strip publish the same number: 0%
+   verdict: read=True pixels=0 areas=0 counts=0 percent=0%
+   OK
+--- check [A against A — no marks anywhere, and the page is still inked]
+A vs A p1: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 2.81 % (source sheet 2.25 %), highlight 0.00 % (0 px), bbox none
+   card and strip publish the same number: 0%
+   verdict: read=True pixels=0 areas=0 counts=0 percent=0%
+   OK
+--- check [blank against blank — empty, and called empty]
+blank pair p1: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 0.11 % (source sheet 0.00 %), highlight 0.00 % (0 px), bbox none
+   card and strip publish the same number: 0%
+   verdict: read=True pixels=0 areas=0 counts=0 percent=0%
+   OK
+
+═══ controls: the same assertions must FAIL on files that earned them
+--- check [a mark asked for on the unchanged sheet]
+CONTROL: p2, asked to be marked: out page 2 box 420.0x595.0 pt, 2 image XObject(s), ink 1.76 % (source sheet 1.37 %), highlight 0.00 % (0 px), bbox none
+   marked area 0 pt² against the planted 13600 pt² (0.0 % of it)
+   FAIL: nothing is marked, but a difference was planted at 40.0,60.0-380.0,100.0 pt
+--- check [a mark asked for on a pair that is the same file]
+CONTROL: A vs A, asked to be marked: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 2.81 % (source sheet 2.25 %), highlight 0.00 % (0 px), bbox none
+   marked area 0 pt² against the planted 13600 pt² (0.0 % of it)
+   FAIL: nothing is marked, but a difference was planted at 40.0,60.0-380.0,100.0 pt
+--- check [no-mark asked for on the sheet that really changed]
+CONTROL: p1, asked to be clean: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 8.30 % (source sheet 2.25 %), highlight 5.42 % (58847 px), bbox (39.8, 60.0, 380.2, 99.8)
+   FAIL: 58847 px are marked on a page whose two sources are the same sheet (bbox (39.8, 60.0, 380.2, 99.8))
+--- check [the mark, asked for on the sheet that is empty]
+CONTROL: p3, asked for the mark that sits on p1: out page 3 box 420.0x595.0 pt, 2 image XObject(s), ink 0.11 % (source sheet 0.00 %), highlight 0.00 % (0 px), bbox none
+   marked area 0 pt² against the planted 13600 pt² (0.0 % of it)
+   FAIL: nothing is marked, but a difference was planted at 40.0,60.0-380.0,100.0 pt
+--- check [A's ink, asked for from the blank pair's page]
+CONTROL: the blank export, asked to be A's page: out page 1 box 420.0x595.0 pt, 2 image XObject(s), ink 0.11 % (source sheet 2.25 %), highlight 0.00 % (0 px), bbox none
+   FAIL: the page carries 0.11 % ink against its own source sheet's 2.25 % — 5 % of it, under the 85 % floor
+
+compare-measure: every case measured as asked, and every control failed as asked.
+ALLDONE
