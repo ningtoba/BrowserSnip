@@ -191,7 +191,10 @@ in this app does any more.
 `font-subset-tool.mjs` types text into the header-footer rail (a real user path
 that draws user text through this module), reads every value back out of the DOM,
 runs the tool and keeps the download; `font-subset-tool-measure.py` then measures
-the ink of each character MuPDF finds in the produced file.
+the ink of each character MuPDF finds in the produced file. **Both rows below are
+the live site**: the first against the deployed build before this fix, the second
+against the same URL after CI `42568232279` deployed it (the dev-server run of the
+same probe gives the same figures).
 
 Header left `#ABZ4—ŠžΩФабв`, header right `漢字あアイ`, 36 pt (the rail clamps 40),
 rule off, one 1500 × 500 pt page:
@@ -199,7 +202,7 @@ rule off, one 1500 × 500 pt page:
 | | `#` | `A` | `B` | `Z` | `4` | `—` | `Š` | `ž` | `Ω` | `Ф` | `а` | `б` | `в` | `漢` | `字` | `あ` | `ア` | `イ` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | deployed before the fix | 1 039 | 914 | 239 | 6 | 842 | 420 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| after the fix | 1 039 | 914 | 239 | 848 | 842 | 420 | 994 | 762 | 1 138 | 1 298 | 758 | 1 023 | 897 | 2 150 | 1 544 | 1 615 | 913 | 733 |
+| deployed after the fix | 1 039 | 914 | 239 | 848 | 842 | 420 | 994 | 762 | 1 138 | 1 298 | 758 | 1 023 | 897 | 2 150 | 1 544 | 1 615 | 913 | 733 |
 
 Twelve of the eighteen characters typed into the rail painted nothing on the
 deployed build, and all twelve extract normally in the same file: `extractText`
@@ -213,7 +216,10 @@ warnings**, a `/FontFile2` TrueType program for the Latin/Cyrillic face and a
 `/FontFile3 /CIDFontType0C` program under a `/CIDFontType0` for the JP face.
 
 `Z` is the sharp one: 6 px of noise before (a record read from the wrong byte),
-848 px after, at the same place, in the same tool run — while `#`, `A`, `B`, `4`
+848 px after, at the same place, in the same tool run. `docs/research/shots/
+font-subset-1-deployed-after.png` is the deployed result card holding the page the
+same run produced, header text legible in the preview, `887 B → 20.0 KB`, no
+console error. — while `#`, `A`, `B`, `4`
 and `—` measured the same pixels both times. Which glyphs survive a bad `loca`
 also depends on the reader: FreeType re-derives glyph lengths when the index looks
 wrong, and fontTools walks the index as written, so a subset can print a *shape*
