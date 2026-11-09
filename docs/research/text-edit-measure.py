@@ -132,6 +132,7 @@ def share_of(text, needles):
 
 
 def measure(outdir):
+    """Judge each edited block from the two files, not from the engine's report."""
     rows = []
     for name in sorted(os.listdir(outdir)):
         if not name.endswith(".json"):
@@ -145,19 +146,33 @@ def measure(outdir):
             plan = json.load(fh)
         before = pymupdf.open(before_path)
         after = pymupdf.open(after_path)
-        source_fonts = {f[3] for p in before for f in p.get_fonts(full=True)}
         for entry in plan.get("perBlock", []):
             page_no = entry["page"]
             if page_no > before.page_count or page_no > after.page_count:
                 continue
             bpage, apage = before[page_no - 1], after[page_no - 1]
-            rect = union(entry["deletion"])
-            old_words = words_in(bpage, rect)
-            new_words = words_in(apage, rect)
-            spans = spans_in(apage, rect)
-            replacements = [entry.get("replacement", "")]
-            residual_share, residual_text = share_of(new_words, replacements + [entry.get("text", "")])
-            own_font = any(span["font"] in source_fonts or "+" in span["font"] for span in spans)
+            region = union(entry["deletion"])
+            box = rect_of(entry["box"])
+            old_words = words_in(bpage, region)
+            # What the source set this block in, read off the source file.
+            source_spans = spans_in(bpage, region)
+            source_faces = sorted({s["font"] for s in source_spans})
+            replacement = entry.get("replacement", "")
+            after_spans = spans_in(apage, box)
+            on_pieces, off_pieces = pieces_placed(
+                apage, [e for e in plan.get("expected", []) if e.get("id") == entry.get("id")]
+            )
+            after_faces = sorted({x["font"] for x in after_spans})
+            # Did the block's own words stop existing? Read the whole page back
+            # and look for each source word of length >= 4: a fragment of the new
+            # text is a tokeniser artefact, an old word found again is a failure.
+            replacements = " ".join(
+                other.get("replacement", "") for other in plan.get("perBlock", []) if other["page"] == page_no
+            )
+            residual, residual_text = old_words_surviving(
+                entry.get("text", ""), page_text(apage), replacements
+            )
+            placed = first_line_placement(apage, replacement, box, entry.get("fontSize", 0))
             rows.append({
                 "file": stem,
                 "page": page_no,
@@ -168,32 +183,156 @@ def measure(outdir):
                     "needsRaster": entry["needsRaster"],
                     "lostOutside": entry.get("lostOutside", 0),
                 },
-                "old": old_words[:48],
-                "new": new_words[:48],
-                "wanted": (replacements[0] or "")[:48],
-                "oldSurvives": old_words.strip() != "" and entry.get("text", "")[:12] in old_words,
-                "newPresent": bool(replacements[0]) and norm(replacements[0]) in norm(new_words),
-                "residualShare": round(residual_share, 3),
+                "old": old_words[:44],
+                "wanted": replacement[:44],
+                "residualShare": round(residual, 3),
                 "residualText": residual_text,
-                "faces": sorted({s["font"] for s in spans}),
-                "facesFromSource": bool(spans) and all(
-                    s["font"] in source_fonts or s["font"].split("+")[0] in
-                    {f.split("+")[-1] for f in source_fonts} for s in spans),
-                "sizes": sorted({round(s["size"], 2) for s in spans}),
-                "fontSize": entry.get("fontSize"),
-                "inkBefore": round(ink_ratio(bpage, rect), 4),
-                "inkAfter": round(ink_ratio(apage, rect), 4),
+                "sourceFaces": source_faces,
+                "afterFaces": after_faces,
+                "afterPieceFaces": sorted({(p["found"] or {}).get("face", "") for p in on_pieces} - {""}),
+                "faceKept": bool(on_pieces) and bool(source_faces) and all(
+                    (p["found"] or {})["face"] in source_faces
+                    for p in on_pieces
+                ),
+                "fontSize": round(entry.get("fontSize", 0), 2),
+                "pieces": len(on_pieces),
+                "piecesTotal": len(on_pieces) + len(off_pieces),
+                "piecesOff": off_pieces[:3],
+                "pieceFaces": sorted({(p["found"] or {}).get("face", "") for p in on_pieces} - {""}),
+                "placed": placed,
+                "inkBefore": round(ink_ratio(bpage, region), 4),
+                "inkAfter": round(ink_ratio(apage, region), 4),
                 "patches": [
                     {"rect": [round(p["rect"].x0, 1), round(p["rect"].y0, 1),
                               round(p["rect"].x1, 1), round(p["rect"].y1, 1)],
                      "fill": p["fill"], "share": p["share"]}
-                    for p in patches_added(filled_quads(bpage), filled_quads(apage), rect)
+                    for p in patches_added(filled_quads(bpage), filled_quads(apage), region)
                 ],
-                "ownFont": own_font,
             })
         before.close()
         after.close()
     return rows
+
+
+def page_text(page):
+    return norm(page.get_text("text", flags=pymupdf.TEXT_PRESERVE_LIGATURES | pymupdf.TEXT_PRESERVE_WHITESPACE))
+
+
+def old_words_surviving(old_text, after_text, replacements):
+    """
+    Share of the block's source words that can still be found in the edited page.
+
+    Word-level, and only words of four letters or more, because the difference
+    between "removed" and "covered" is exactly what Ctrl-F answers. A word the
+    rewrite *kept* (the editor's own text may repeat the producer's) is not a
+    survivor, and neither is a word another block on the page now paints: a line
+    box spans the gutter between two columns.
+    """
+    words = [w for w in norm(old_text).split(" ") if len(w) >= 4 and w not in replacements]
+    if not words:
+        return 0.0, ""
+    left = [w for w in words if w in after_text]
+    return len(left) / len(words), " ".join(left[:6])
+
+
+def page_words(page):
+    """
+    Every word the page paints, with the size and face of the span that draws it.
+
+    A span's own box is the glyph ink and a word box is the extent of the word, so
+    neither contains the other; the two are joined by the span's baseline origin,
+    which always sits at or left of the word it starts.
+    """
+    spans = [
+        (pymupdf.Rect(span["bbox"]), span)
+        for block in page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_LIGATURES).get("blocks", [])
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+    ]
+    out = []
+    for word in page.get_text("words"):
+        box = pymupdf.Rect(word[:4])
+        best = None
+        for rect, span in spans:
+            if norm(word[4]) not in norm(span["text"]):
+                continue
+            origin = pymupdf.Point(*span["origin"])
+            if origin.y < box.y0 - 1 or origin.y > box.y1 + 1:
+                continue
+            if origin.x > box.x1:
+                continue
+            distance = box.x0 - origin.x
+            if best is None or distance < best[0]:
+                best = (distance, span)
+        out.append({"box": box, "text": word[4], "span": best[1] if best else None})
+    return out
+
+
+def pieces_placed(page, expected):
+    """
+    Match each piece the writer laid out against a word the produced file really
+    paints, at the place and size the writer asked for.
+
+    A piece is placed when a word with its text starts within 2 pt of the expected
+    x, the baseline falls inside the word's box, and the face painting it is
+    within 5 % of the expected size. Position and size are what the user judges —
+    my text, there, that size — so they are measured off the file, not assumed
+    from an operator count.
+    """
+    words = page_words(page)
+    on = []
+    off = []
+    for piece in expected:
+        head = (norm(piece["text"]).split(" ") or [""])[0]
+        hit = None
+        for word in words:
+            if not word["text"].startswith(head):
+                continue
+            if abs(word["box"].x0 - piece["x"]) > 2:
+                continue
+            if not (word["box"].y0 - 1 <= piece["baseline"] <= word["box"].y1 + 1):
+                continue
+            span = word["span"]
+            if span is None or abs(span["size"] - piece["size"]) > max(0.4, piece["size"] * 0.05):
+                continue
+            hit = {
+                "x": round(word["box"].x0, 2),
+                "y": round(word["box"].y1, 2),
+                "face": span["font"],
+                "size": round(span["size"], 2),
+            }
+            break
+        (on if hit else off).append(dict(piece, found=hit))
+    return on, off
+
+
+def first_line_placement(page, replacement, box, size):
+    """
+    Where the replacement really landed: the first word's span, its offset from
+    the block's own top-left, and its size against the block's source size.
+
+    Judged on the first word rather than the whole string because a rewrite
+    re-wraps: the text below the block's first line is expected to sit lower than
+    the box the old words occupied, and that is a reflow to report, not a miss.
+    """
+    head = (replacement.split() or [""])[0]
+    if not head:
+        return None
+    for block in page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_LIGATURES).get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text = span.get("text", "")
+                if head not in text:
+                    continue
+                rect = pymupdf.Rect(span["bbox"])
+                return {
+                    "dx": round(rect.x0 - box.x0, 2),
+                    "dy": round(rect.y0 - box.y0, 2),
+                    "size": round(span["size"], 2),
+                    "face": span["font"],
+                    "text": text[:32],
+                }
+    return None
 
 
 def norm(text):
@@ -201,34 +340,38 @@ def norm(text):
 
 
 def verdict(row):
-    if row["engine"]["nothingRemoved"]:
-        return "not-removed"
+    """One word for what the produced file says about one edited block."""
+    if row["engine"]["nothingRemoved"] or row["residualShare"] > 0.05:
+        return "residual" if not row["engine"]["nothingRemoved"] else "not-removed"
+    if row["piecesTotal"] == 0:
+        return "missing"
+    if row["pieces"] < row["piecesTotal"]:
+        return "misplaced"
     if row["patches"]:
         return "patched"
-    if not row["newPresent"]:
-        return "text-missing"
-    if row["residualShare"] > 0.05:
-        return "residual-text"
-    if not row["ownFont"]:
+    if not row["faceKept"]:
         return "substituted"
     return "clean"
+
+
+VERDICTS = ("clean", "substituted", "residual", "not-removed", "missing", "misplaced",
+            "wrong-size", "patched")
 
 
 def report(rows):
     by_file = {}
     for row in rows:
         by_file.setdefault(row["file"], []).append(row)
-    print(f"{'file':16} {'blocks':>6} {'clean':>6} {'patched':>8} {'not-rem':>8} "
-          f"{'resid':>6} {'missing':>8} {'subst':>6} {'collat>0':>9}")
+    head = f"{'file':14} {'blocks':>6} " + " ".join(f"{v[:9]:>9}" for v in VERDICTS) + f" {'collat':>7} {'face-kept':>10}"
+    print(head)
     for stem, entries in by_file.items():
-        counts = dict.fromkeys(("clean", "patched", "not-removed", "residual-text",
-                                "text-missing", "substituted"), 0)
+        counts = dict.fromkeys(VERDICTS, 0)
         for row in entries:
             counts[verdict(row)] += 1
         collateral = sum(1 for r in entries if r["engine"]["lostOutside"] > 0)
-        print(f"{stem:16} {len(entries):6} {counts['clean']:6} {counts['patched']:8} "
-              f"{counts['not-removed']:8} {counts['residual-text']:6} "
-              f"{counts['text-missing']:8} {counts['substituted']:6} {collateral:9}")
+        kept = sum(1 for r in entries if r["faceKept"])
+        print(f"{stem:14} {len(entries):6} " + " ".join(f"{counts[v]:9}" for v in VERDICTS)
+              + f" {collateral:7} {kept:10}")
     return by_file
 
 
@@ -243,9 +386,9 @@ def main():
         for stem, entries in by_file.items():
             for row in entries[:3]:
                 print(json.dumps({"file": stem, "verdict": verdict(row), **{
-                    k: row[k] for k in ("old", "new", "wanted", "faces", "sizes",
-                                        "inkBefore", "inkAfter", "patches", "engine",
-                                        "residualText")}}, indent=2, default=str))
+                    k: row[k] for k in ("old", "wanted", "sourceFaces", "afterFaces",
+                                        "placed", "inkBefore", "inkAfter", "patches",
+                                        "engine", "residualText")}}, indent=2, default=str))
     print(f"\n{len(rows)} blocks measured across {len(by_file)} files")
 
 

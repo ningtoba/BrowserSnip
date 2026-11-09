@@ -1369,8 +1369,46 @@ interface FontInfo {
   widthOf(code: number): number;
   /** Map a glyph code to Unicode; `undefined` when the code is unmapped. */
   unicodeOf(code: number): number | undefined;
+  /**
+   * The Unicode → code direction, i.e. how this font would spell a character.
+   * `undefined` when the font carries no mapping for it, which is the test a
+   * writer makes before reusing the face for text the producer never set.
+   */
+  codeOf(unicode: number): number | undefined;
+  /** The font dictionary the resource name resolves to, for reuse. */
+  dict: PDFDict;
+  /** The object the dictionary is stored under, when it is an indirect one. */
+  ref: PDFRef | null;
   ascent: number;
   descent: number;
+}
+
+/**
+ * A page's own font, offered to a writer that wants to keep it.
+ *
+ * In-place editing runs on the document that is already open, so the face the
+ * producer set this text in is reachable: the dictionary, the codes it spells
+ * characters with, and the widths it gives them. `codeOf` answers the only
+ * question that decides whether it can be reused — can this font write the text
+ * the user typed? — and `missingFor` lists the characters it cannot.
+ */
+export interface SourceFont {
+  /** `/BaseFont` as written, e.g. `ABCDEF+MinionPro-Regular`. */
+  baseFont: string;
+  /** `/Subtype`: `/Type1`, `/TrueType`, `/Type0`, `/Type3`. */
+  subtype: string;
+  /** Bytes per code: 1 for a simple font, 2 for an Identity CID font. */
+  codeSize: number;
+  /** The dictionary, so a writer can put it in another page's resources. */
+  dict: PDFDict;
+  ref: PDFRef | null;
+  /** Resource name inside the stream that drew the run. */
+  resource: string;
+  /** Every code the font can spell, and its width in 1/1000 em. */
+  codeOf(unicode: number): number | undefined;
+  widthOf(code: number): number;
+  /** Characters this font cannot write — see {@link codeOf}. */
+  missingFor(text: string): string[];
 }
 
 /** The AFM-derived metrics of one standard-14 face, in 1/1000 em units. */
@@ -1458,11 +1496,27 @@ function normaliseStandardFontName(baseFont: string): string | null {
 function buildStandardFace(name: string): StandardFace | null {
   try {
     const embedder = StandardFontEmbedder.for(name as never);
-    // `CharMetrics` is indexed by character code, exactly like the AFM `C` field.
+    // `CharMetrics` is a **dense list in code order**, not an array indexed by
+    // code: `CharMetrics[0]` is `space` (code 32), so reading the index as the
+    // code shifted every glyph's width by 32 places and made a page of
+    // Helvetica measure about 9 % too wide. A run measured too wide sticks out
+    // of the box it was drawn in, so a deletion aimed at the words the viewer
+    // paints misses their tails — and a rewrite that re-positions the survivors
+    // moves them right. The AFM's own glyph name is the reliable key: name →
+    // Unicode → the code this encoding spells it with.
     const widths = new Map<number, number>();
-    embedder.font.CharMetrics.forEach((metric, code) => {
-      if (typeof metric.WX === 'number') widths.set(code, metric.WX);
-    });
+    for (const metric of embedder.font.CharMetrics) {
+      if (typeof metric.WX !== 'number' || typeof metric.N !== 'string') continue;
+      const unicode = nameToUnicode(metric.N);
+      if (unicode === undefined) continue;
+      let code: number | undefined;
+      try {
+        code = embedder.encoding.encodeUnicodeCodePoint(unicode).code;
+      } catch {
+        code = undefined; // a glyph this face's encoding cannot spell
+      }
+      if (code !== undefined && !widths.has(code)) widths.set(code, metric.WX);
+    }
     // The encoding knows which Unicode code points the face can hold; reading it
     // backwards is what turns a WinAnsi byte (or a Symbol/Zapf code) into text.
     const unicode = new Map<number, number>();
@@ -1628,6 +1682,19 @@ function fontCacheFor(page: PDFPage): FontCache {
   return cache;
 }
 
+/** Stable per-session id of a `/Resources` dictionary, for the font cache. */
+const resourceIds = new WeakMap<PDFDict, string>();
+let resourceIdCount = 0;
+
+function resourceKeyOf(page: PDFPage, resources: PDFDict): string {
+  const known = resourceIds.get(resources);
+  if (known) return known;
+  const ref = page.doc.context.getObjectRef(resources);
+  const key = ref ? ref.toString() : `direct:${(resourceIdCount += 1)}`;
+  resourceIds.set(resources, key);
+  return key;
+}
+
 function resourcesDict(page: PDFPage): PDFDict | undefined {
   // SAFETY: `Resources` and `getInheritableAttribute` are generated accessors on
   // `PDFPageLeaf` that the public `PDFPageNode` type does not declare; both exist
@@ -1643,20 +1710,32 @@ function resourcesDict(page: PDFPage): PDFDict | undefined {
   return inherited ? node.context.lookup(inherited as PDFRef, PDFDict) : undefined;
 }
 
-function lookupFontDict(page: PDFPage, resourceName: string): PDFDict | undefined {
-  const resources = resourcesDict(page);
-  if (!resources) return undefined;
-  const fonts = resources.lookupMaybe(PDFName.of('Font'), PDFDict);
+function lookupFontDict(
+  page: PDFPage,
+  resourceName: string,
+  resources: PDFDict | undefined,
+): PDFDict | undefined {
+  const dict = resources ?? resourcesDict(page);
+  if (!dict) return undefined;
+  const fonts = dict.lookupMaybe(PDFName.of('Font'), PDFDict);
   if (!fonts) return undefined;
   const value = fonts.get(PDFName.of(resourceName));
   if (!value) return undefined;
   return page.doc.context.lookup(value as PDFRef, PDFDict);
 }
 
-function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
+/**
+ * The metrics and code→Unicode map of one font resource.
+ *
+ * `resources` is the dictionary the operator's name is resolved in — a Form
+ * XObject brings its own fonts, and its `/F1` is not the page's `/F1` — so the
+ * cache is keyed by the dictionary as well as the name.
+ */
+function buildFontInfo(page: PDFPage, resourceName: string, resources?: PDFDict): FontInfo | null {
   const cache = fontCacheFor(page);
-  if (cache.fonts.has(resourceName)) return cache.fonts.get(resourceName) ?? null;
-  const dict = lookupFontDict(page, resourceName);
+  const cacheKey = `${resources ? resourceKeyOf(page, resources) : 'page'}/${resourceName}`;
+  if (cache.fonts.has(cacheKey)) return cache.fonts.get(cacheKey) ?? null;
+  const dict = lookupFontDict(page, resourceName, resources);
   const context = page.doc.context;
   const info: FontInfo | null = (() => {
     if (!dict) return null;
@@ -1677,6 +1756,7 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
       const toUnicodeRef = dict.get(PDFName.of('ToUnicode'));
       const unicode = toUnicodeRef ? toUnicodeMap(context, toUnicodeRef) : undefined;
       const missing = numberFromDict(descendant, 'MissingWidth') ?? numberFromDict(descriptor, 'MissingWidth') ?? dw;
+      const unicodeOf = (code: number): number | undefined => (unicode ? unicode.get(code) : undefined);
       return {
         name: resourceName,
         subtype: subtypeName,
@@ -1685,7 +1765,10 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
         isType3: false,
         measured: widths !== null || unicode !== undefined,
         widthOf: (code: number) => (widths ? (widths.get(code) ?? missing) : dw),
-        unicodeOf: (code: number) => (unicode ? unicode.get(code) : undefined),
+        unicodeOf,
+        codeOf: reverseOf(unicodeOf, codeSize),
+        dict,
+        ref: context.getObjectRef(dict) ?? null,
         ascent: ascent / 1000,
         descent: descent / 1000,
       };
@@ -1703,6 +1786,9 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
         measured: widths !== null,
         widthOf: (code: number) => (widths ? (widths.get(code) ?? 500) : 500),
         unicodeOf: (code: number) => code,
+        codeOf: (unicode: number) => (unicode >= 0 && unicode < 256 ? unicode : undefined),
+        dict,
+        ref: context.getObjectRef(dict) ?? null,
         ascent: ascent / 1000,
         descent: descent / 1000,
       };
@@ -1715,6 +1801,13 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
     const standard = widths === null ? standardMetrics(baseFont) : null;
     const missing = numberFromDict(descriptor, 'MissingWidth') ?? 500;
     const assumedWinAnsi = !encodingDifferences && !isSymbolLike(baseFont);
+    const unicodeOf = (code: number): number | undefined => {
+      const viaDifferences = encodingDifferences?.get(code);
+      if (viaDifferences !== undefined) return viaDifferences;
+      if (standard) return standard.unicode(code) ?? (assumedWinAnsi ? winAnsiToUnicode(code) : undefined);
+      if (assumedWinAnsi) return winAnsiToUnicode(code);
+      return code;
+    };
     return {
       name: resourceName,
       subtype: subtypeName || '/Type1',
@@ -1727,21 +1820,80 @@ function buildFontInfo(page: PDFPage, resourceName: string): FontInfo | null {
         if (standard) return standard.width(code);
         return missing;
       },
-      unicodeOf: (code: number) => {
-        const viaDifferences = encodingDifferences?.get(code);
-        if (viaDifferences !== undefined) return viaDifferences;
-        if (standard) return standard.unicode(code) ?? (assumedWinAnsi ? winAnsiToUnicode(code) : undefined);
-        if (assumedWinAnsi) return winAnsiToUnicode(code);
-        return code;
-      },
+      unicodeOf,
+      codeOf: reverseOf(unicodeOf, 1),
+      dict,
+      ref: context.getObjectRef(dict) ?? null,
       // A standard-14 face has no `/FontDescriptor`, so its real ascender and
       // descender come from the AFM rather than the 750/-250 guess.
       ascent: (descriptor ? ascent : standard?.ascent ?? ascent) / 1000,
       descent: (descriptor ? descent : standard?.descent ?? descent) / 1000,
     };
   })();
-  cache.fonts.set(resourceName, info);
+  cache.fonts.set(cacheKey, info);
   return info;
+}
+
+/**
+ * The reuse-facing view of a resolved font, memoised per `FontInfo`.
+ *
+ * The walker hands the same object to every glyph of every run that used the
+ * font, so a page with one face pays for one projection.
+ */
+const fontProjections = new WeakMap<FontInfo, SourceFont>();
+
+function sourceFontOf(info: FontInfo): SourceFont {
+  const known = fontProjections.get(info);
+  if (known) return known;
+  const made = buildSourceFont(info);
+  fontProjections.set(info, made);
+  return made;
+}
+
+function buildSourceFont(info: FontInfo): SourceFont {
+  return {
+    baseFont: info.baseFont,
+    subtype: info.subtype,
+    codeSize: info.codeSize,
+    dict: info.dict,
+    ref: info.ref,
+    resource: info.name,
+    codeOf: info.codeOf,
+    widthOf: (code: number) => info.widthOf(code),
+    missingFor: (text: string) => {
+      const missing: string[] = [];
+      for (const character of text) {
+        const code = info.codeOf(character.codePointAt(0) as number);
+        // A code the font maps but gives no width to is a glyph the producer
+        // dropped when it subsetted: the viewer would paint .notdef.
+        if (code === undefined || info.widthOf(code) <= 0) missing.push(character);
+      }
+      return missing;
+    },
+  };
+}
+
+/**
+ * The Unicode → code direction of a font, built by scanning its forward map
+ * once. A code the font never mapped has no answer, which is exactly what a
+ * writer needs to know before reusing the face for new text.
+ */
+function reverseOf(
+  unicodeOf: (code: number) => number | undefined,
+  codeSize: number,
+): (unicode: number) => number | undefined {
+  let map: Map<number, number> | null = null;
+  const build = (): Map<number, number> => {
+    if (map) return map;
+    map = new Map();
+    const limit = codeSize >= 2 ? 0x10000 : 0x100;
+    for (let code = 0; code < limit; code += 1) {
+      const unicode = unicodeOf(code);
+      if (unicode !== undefined && !map.has(unicode)) map.set(unicode, code);
+    }
+    return map;
+  };
+  return (unicode: number) => build().get(unicode);
 }
 
 function isSymbolLike(baseFont: string): boolean {
@@ -1876,8 +2028,28 @@ const TEXT_SHOW_OPS = new Set(['Tj', 'TJ', "'", '"']);
 export interface TextSegment {
   text: string;
   rect: ContentRect;
-  /** Index of the operator that drew it inside the concatenated op list. */
+  /** Index of the operator that drew it inside `stream`'s own operator list. */
   opIndex: number;
+  /**
+   * Which content stream carried the operator: `page` for the page's own
+   * `/Contents`, the XObject's ref for text drawn inside a Form XObject. A
+   * removal has to write back to the stream it measured, so an index alone is
+   * not enough — the same operator number means different bytes per stream.
+   */
+  streamKey: string;
+  /** Horizontal scale (`Tz`) in force, needed to re-emit a pen move as a number. */
+  horizontalScale: number;
+  /**
+   * The middle of the glyph's **baseline**, in user space.
+   *
+   * `rect` is the font's em box (ascent to descent), so on a tightly set page it
+   * overlaps the line above and below. Deciding deletion on the rect alone made
+   * editing one line delete the head of the heading over it; the baseline is the
+   * one point that says which line a glyph belongs to.
+   */
+  baseline: { x: number; y: number };
+  /** The glyph's code bytes exactly as the file spells them (1 or 2 bytes). */
+  codes: Uint8Array;
   font: string;
   size: number;
   /** True when the widths came from real metrics rather than an estimate. */
@@ -1886,6 +2058,11 @@ export interface TextSegment {
   kerned: boolean;
   /** Text render mode in force (`3` = invisible, as an OCR layer uses). */
   renderMode: number;
+  /**
+   * The font object this glyph was really drawn in, when the page has one: what
+   * an in-place edit reuses instead of substituting its own face.
+   */
+  fontSource: SourceFont | null;
   type3: boolean;
   /**
    * Where the pen started and ended **along the text line**, in text-space units
@@ -1899,10 +2076,25 @@ export interface TextSegment {
 
 interface TextWalk {
   segments: TextSegment[];
+  /**
+   * Every glyph on its own, before {@link mergeSegments} joins neighbours: the
+   * list a partial excision rebuilds an operator from.
+   */
+  glyphs: TextSegment[];
+  /** Each content stream the walk read, the page's own first. */
+  streams: TextStream[];
   /** Per-operator fill colour state, indexed by operator position. */
   fillAtOp: (ColorValue | undefined)[];
   stateAtOp: TextStateSnapshot[];
   usesType3: boolean;
+  /**
+   * Image placements, in user space — the page's own pixels, which no operator
+   * edit can delete. Measured here so a "this sits on a raster" claim can name
+   * an actual image instead of guessing from how the text was spelled.
+   */
+  rasters: ContentRect[];
+  /** True when a form sat below {@link MAX_FORM_DEPTH} and was never read. */
+  truncatedForms: boolean;
 }
 
 interface TextStateSnapshot {
@@ -1912,187 +2104,402 @@ interface TextStateSnapshot {
   y: number;
 }
 
+/** How deep into nested Form XObjects the text walker may go. */
+const MAX_FORM_DEPTH = 6;
+
 /**
- * Walk a page's operators with a text-state machine: `BT/ET`, `Tm`, `Td`,
- * `TD`, `T*`, `TL`, `Tf`, `Tz`, `Tc`, `Tw`, `Ts`, `Tr` plus the `q/Q/cm`
- * graphics-state stack, then emit every glyph run with its rect in user space.
+ * One content stream the text walker can reach: the page's own `/Contents`, or
+ * a Form XObject drawn from it, at any depth.
+ *
+ * A removal has to write back into the stream it measured, so the walker keeps
+ * the stream's identity, its operator list, the `/Resources` that names its
+ * fonts, and the `/XObject` entry that reaches it — that entry is what gets
+ * repointed when the form turns out to be shared with another page.
  */
-function walkText(page: PDFPage, ops: ContentOp[]): TextWalk {
-  const segments: TextSegment[] = [];
+interface TextStream {
+  /** `null` for the page's own content; the XObject's ref for a form. */
+  ref: PDFRef | null;
+  /** Identity used by segments and maps: `page`, a ref, or `direct:<n>`. */
+  key: string;
+  ops: ContentOp[];
+  /**
+   * How this stream is reached: the dictionary whose `/Resources` names it (the
+   * page node, or an outer form's stream dict) and the `/XObject` key. Empty for
+   * the page's own content.
+   */
+  entry?: { container: PDFDict; name: string; dict: PDFDict };
+  /** The stream that drew this one, so a rewrite can copy the chain it hangs from. */
+  parent: TextStream | null;
+  resources: PDFDict | undefined;
+  /** How many `Do` invocations of this stream the page holds. */
+  invocations: number;
+  /** 0 for the page's own streams. */
+  depth: number;
+  /** The form's own stream dictionary, kept so a copy preserves `/BBox` & friends. */
+  dict?: PDFDict;
+}
+
+/** The unit square of an image placement, turned into user space by `ctm`. */
+function unitBox(ctm: Matrix): ContentRect {
+  const corners = [apply(ctm, 0, 0), apply(ctm, 1, 0), apply(ctm, 0, 1), apply(ctm, 1, 1)];
+  const xs = corners.map((corner) => corner[0]);
+  const ys = corners.map((corner) => corner[1]);
+  return {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+/**
+ * Walk a page's operators with a text-state machine: `BT/ET`, `Tm`, `Td`, `TD`,
+ * `T*`, `TL`, `Tf`, `Tz`, `Tc`, `Tw`, `Ts`, `Tr` plus the `q/Q/cm` graphics-state
+ * stack, then emit every glyph run with its rect in user space.
+ *
+ * Two limits this walker used to have, both measured on real files before being
+ * fixed (see the `edit-pdf-text` row of `docs/TOOL-CAMPAIGN.md`):
+ *
+ * - **The numbers in a `TJ` array move the pen.** A producer that sets two
+ *   columns with one operator — `[(left) -17997 (right)] TJ` — paints the second
+ *   string 18 em along. Skipping the number measured both strings side by side,
+ *   so neither rect matched the words on the page and a deletion box hit the
+ *   wrong run (or no run at all).
+ * - **Text lives inside Form XObjects.** Word, InDesign and every Distiller or
+ *   print driver wrap a page's content in one. Reading only `/Contents` saw a
+ *   `Do` and none of the words, which is why a block in such a document could
+ *   not be deleted at all.
+ *
+ * @param options.forms read Form XObjects too. The text editor and `textRects`
+ *   need the whole truth; the colour helpers keep working on the page's own
+ *   stream, whose operator indexes their state arrays are keyed by.
+ */
+function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } = {}): TextWalk {
+  const context = page.doc.context;
+  const glyphs: TextSegment[] = [];
   const fillAtOp: (ColorValue | undefined)[] = [];
   const stateAtOp: TextStateSnapshot[] = [];
-  let ctm: Matrix = IDENTITY;
-  const ctmStack: Matrix[] = [];
-  let tm: Matrix = IDENTITY;
-  let tlm: Matrix = IDENTITY;
-  let leading = 0;
-  let font: FontInfo | null = null;
-  let size = 0;
-  let charSpacing = 0;
-  let wordSpacing = 0;
-  let horizontalScale = 1;
-  let rise = 0;
-  let renderMode = 0;
-  let fill: ColorValue = { space: 'gray', value: 0 };
+  const rasters: ContentRect[] = [];
+  const streams: TextStream[] = [];
+  const byKey = new Map<string, TextStream>();
+  const pageStream: TextStream = {
+    ref: null,
+    key: 'page',
+    ops,
+    parent: null,
+    resources: resourcesDict(page),
+    invocations: 1,
+    depth: 0,
+  };
+  streams.push(pageStream);
   let usesType3 = false;
+  let truncatedForms = false;
+  let directKeys = 0;
+  /** The `Do` chain being walked, so a self-referencing form cannot loop. */
+  const path = new Set<string>();
 
-  const showString = (bytes: Uint8Array, opIndex: number, kerned: boolean, dx: (code: number) => number) => {
-    if (!bytes.length) return;
-    const codeSize = font?.codeSize ?? 1;
-    let advance = 0;
-    const ascender = (font?.ascent ?? 0.75) * Math.abs(size) * scaleOf(multiply(ctm, tm));
-    const descender = (font?.descent ?? -0.25) * Math.abs(size) * scaleOf(multiply(ctm, tm));
-    for (let i = 0; i + codeSize - 1 < bytes.length; i += codeSize) {
-      let code = 0;
-      for (let j = 0; j < codeSize; j++) code = code * 256 + bytes[i + j];
-      const unicode = font?.unicodeOf(code) ?? code;
-      // One segment per glyph, each carrying **its own** character: an earlier
-      // version labelled only the first glyph of the string and blanked the
-      // rest, so `textRects` returned "P" for "Plain Helvetica text" — which is
-      // what made a page this app had just written look like it had no text.
-      const character = unicode ? String.fromCodePoint(unicode) : '';
-      const widthUnits = (font?.widthOf(code) ?? 500) + (dx(code) / (Math.abs(size) || 1)) * 1000;
-      const glyphAdvance =
-        (widthUnits / 1000) * Math.abs(size) * horizontalScale + (code === 0x20 ? wordSpacing : 0) + charSpacing;
-      advance += glyphAdvance;
-      const from = apply(multiply(ctm, tm), advance - glyphAdvance, rise);
-      const to = apply(multiply(ctm, tm), advance, rise);
-      const left = Math.min(from[0], to[0]);
-      const right = Math.max(from[0], to[0]);
-      const top = Math.max(from[1], to[1]) + Math.max(ascender, 0);
-      const bottom = Math.min(from[1], to[1]) + Math.min(descender, 0);
-      segments.push({
-        text: character,
-        rect: { x: left, y: bottom, width: right - left, height: top - bottom },
-        opIndex,
-        font: font?.name ?? '',
-        size,
-        measured: font?.measured ?? false,
-        kerned,
-        renderMode,
-        type3: font?.isType3 ?? false,
-        pen: { from: advance - glyphAdvance, to: advance },
-      });
-      if (font?.isType3) usesType3 = true;
-    }
-    // Advance the text matrix by the total displacement.
-    const total = advance;
-    tm = multiply(tm, translate(total, 0));
-    tlm = multiply(tlm, translate(total, 0));
+  const valueOf = (dict: PDFDict, key: string): PDFObject | undefined => {
+    const raw = dict.get(PDFName.of(key));
+    return raw === undefined ? undefined : context.lookup(raw);
   };
 
-  for (let index = 0; index < ops.length; index++) {
-    const op = ops[index];
-    const values = numbersOf(op);
-    switch (op.name) {
-      case 'q':
-        ctmStack.push(ctm);
-        break;
-      case 'Q':
-        ctm = ctmStack.pop() ?? IDENTITY;
-        break;
-      case 'cm':
-        if (values.length >= 6) ctm = multiply(ctm, [values[0], values[1], values[2], values[3], values[4], values[5]]);
-        break;
-      case 'BT':
-        tm = IDENTITY;
-        tlm = IDENTITY;
-        break;
-      case 'ET':
-        break;
-      case 'Tf': {
-        const name = op.operands.find((o): o is NameOperand => o.kind === 'name');
-        font = name ? buildFontInfo(page, name.value) : null;
-        size = values[0] ?? 0;
-        break;
+  const numbersFrom = (dict: PDFDict, key: string): number[] => {
+    const array = valueOf(dict, key);
+    if (!(array instanceof PDFArray)) return [];
+    const out: number[] = [];
+    for (let index = 0; index < array.size(); index++) {
+      const value = context.lookup(array.get(index));
+      if (value instanceof PDFNumber) out.push(value.asNumber());
+    }
+    return out;
+  };
+
+
+  const visit = (stream: TextStream, ctm0: Matrix): void => {
+    let ctm = ctm0;
+    const ctmStack: Matrix[] = [];
+    let tm: Matrix = IDENTITY;
+    let tlm: Matrix = IDENTITY;
+    let leading = 0;
+    let font: FontInfo | null = null;
+    let size = 0;
+    let charSpacing = 0;
+    let wordSpacing = 0;
+    let horizontalScale = 1;
+    let rise = 0;
+    let renderMode = 0;
+    let fill: ColorValue = { space: 'gray', value: 0 };
+    // The page's own operators keep the per-operator state arrays the colour
+    // helpers index by position; a form's operators are numbered in its stream.
+    const record = stream.depth === 0;
+
+    /**
+     * Lay one string out, starting at `penStart` **along this operator's own
+     * text line** — the pen position a `TJ` number moved it to, in text-space
+     * points measured from where the operator began. Returns where the pen ends,
+     * also operator-relative, so the next string in the same array continues the
+     * same ruler instead of starting a fresh one.
+     *
+     * Operator-relative is the point: two runs are neighbours when one ends
+     * where the next starts, and a partial excision writes its survivors back
+     * with numbers that name the gaps between them. Both readings need one
+     * coordinate for the whole operator, not one per string.
+     */
+    const show = (bytes: Uint8Array, opIndex: number, kerned: boolean, penStart: number): number => {
+      const codeSize = font?.codeSize ?? 1;
+      if (!bytes.length) return penStart;
+      const full = multiply(ctm, tm);
+      const ascender = (font?.ascent ?? 0.75) * Math.abs(size) * scaleOf(full);
+      const descender = (font?.descent ?? -0.25) * Math.abs(size) * scaleOf(full);
+      let pen = penStart;
+      for (let i = 0; i + codeSize - 1 < bytes.length; i += codeSize) {
+        let code = 0;
+        for (let j = 0; j < codeSize; j++) code = code * 256 + bytes[i + j];
+        const unicode = font?.unicodeOf(code) ?? code;
+        // One glyph per entry, each carrying **its own** character: an earlier
+        // version labelled only the first glyph of the string and blanked the
+        // rest, so `textRects` returned "P" for "Plain Helvetica text" — which
+        // is what made a page this app had just written look like it had no text.
+        const character = unicode ? String.fromCodePoint(unicode) : '';
+        const glyphAdvance =
+          ((font?.widthOf(code) ?? 500) / 1000) * Math.abs(size) * horizontalScale +
+          (code === 0x20 ? wordSpacing : 0) +
+          charSpacing;
+        const from = apply(full, pen, rise);
+        pen += glyphAdvance;
+        const to = apply(full, pen, rise);
+        const left = Math.min(from[0], to[0]);
+        const right = Math.max(from[0], to[0]);
+        const top = Math.max(from[1], to[1]) + Math.max(ascender, 0);
+        const bottom = Math.min(from[1], to[1]) + Math.min(descender, 0);
+        const middle = apply(full, (pen - glyphAdvance + pen) / 2, rise);
+        glyphs.push({
+          text: character,
+          rect: { x: left, y: bottom, width: right - left, height: top - bottom },
+          baseline: { x: middle[0], y: middle[1] },
+          opIndex,
+          streamKey: stream.key,
+          horizontalScale,
+          codes: bytes.subarray(i, i + codeSize),
+          font: font?.name ?? '',
+          size,
+          measured: font?.measured ?? false,
+          kerned,
+          renderMode,
+          fontSource: font ? sourceFontOf(font) : null,
+          type3: font?.isType3 ?? false,
+          pen: { from: pen - glyphAdvance, to: pen },
+        });
+        if (font?.isType3) usesType3 = true;
       }
-      case 'Tm':
-        if (values.length >= 6) {
-          tm = [values[0], values[1], values[2], values[3], values[4], values[5]];
-          tlm = tm;
+      return pen;
+    };
+
+    /**
+     * Move the pen by `by` text-space points.
+     *
+     * Only `Tm` moves. Showing text never displaces the **line** matrix `Tlm`,
+     * which is what `Td`, `TD` and `T*` start from — carrying the advance into
+     * `Tlm` shifted every following line of a `Tj`-per-line page along the page
+     * (a run measured at x 177 for words printed at x 50), and a deletion box
+     * aimed at the words then found nothing.
+     */
+    const movePen = (by: number): void => {
+      if (!by) return;
+      tm = multiply(tm, translate(by, 0));
+    };
+
+    for (let index = 0; index < stream.ops.length; index++) {
+      const op = stream.ops[index];
+      const values = numbersOf(op);
+      switch (op.name) {
+        case 'q':
+          ctmStack.push(ctm);
+          break;
+        case 'Q':
+          ctm = ctmStack.pop() ?? IDENTITY;
+          break;
+        case 'cm':
+          if (values.length >= 6) ctm = multiply(ctm, [values[0], values[1], values[2], values[3], values[4], values[5]]);
+          break;
+        case 'BT':
+          tm = IDENTITY;
+          tlm = IDENTITY;
+          break;
+        case 'ET':
+          break;
+        case 'Tf': {
+          const name = op.operands.find((o): o is NameOperand => o.kind === 'name');
+          font = name ? buildFontInfo(page, name.value, stream.resources) : null;
+          size = values[0] ?? 0;
+          break;
         }
-        break;
-      case 'Td':
-        if (values.length >= 2) {
-          tlm = multiply(translate(values[0], values[1]), tlm);
+        case 'Tm':
+          if (values.length >= 6) {
+            tm = [values[0], values[1], values[2], values[3], values[4], values[5]];
+            tlm = tm;
+          }
+          break;
+        case 'Td':
+          if (values.length >= 2) {
+            tlm = multiply(translate(values[0], values[1]), tlm);
+            tm = tlm;
+          }
+          break;
+        case 'TD':
+          if (values.length >= 2) {
+            leading = -values[1];
+            tlm = multiply(translate(values[0], values[1]), tlm);
+            tm = tlm;
+          }
+          break;
+        case 'TL':
+          leading = values[0] ?? 0;
+          break;
+        case 'Tz':
+          horizontalScale = (values[0] ?? 100) / 100;
+          break;
+        case 'Tc':
+          charSpacing = values[0] ?? 0;
+          break;
+        case 'Tw':
+          wordSpacing = values[0] ?? 0;
+          break;
+        case 'Ts':
+          rise = values[0] ?? 0;
+          break;
+        case 'Tr':
+          renderMode = values[0] ?? 0;
+          break;
+        case 'T*':
+          tlm = multiply(translate(0, -leading), tlm);
+          tm = tlm;
+          break;
+        case 'g':
+        case 'rg':
+        case 'k':
+          fill = colorFromOp(op, FILL_OPS[op.name]);
+          break;
+        case 'BI':
+          // An inline image covers the unit box of the current matrix.
+          rasters.push(unitBox(ctm));
+          break;
+        case 'Do': {
+          if (!options.forms) break;
+          const name = op.operands.find((o): o is NameOperand => o.kind === 'name');
+          if (!name || !stream.resources) break;
+          const foundXObjects = valueOf(stream.resources, 'XObject');
+          const xobjects = foundXObjects instanceof PDFDict ? foundXObjects : undefined;
+          if (!xobjects) break;
+          const raw = xobjects.get(PDFName.of(name.value));
+          if (!raw) break;
+          const found = context.lookup(raw);
+          if (!(found instanceof PDFStream)) break;
+          const subtype = valueOf(found.dict, 'Subtype');
+          const kind = subtype instanceof PDFName ? subtype.asString() : '';
+          if (kind === '/Image') {
+            // Pixels, not operators: nothing edited here can delete them, so a
+            // block over them is reported as needing the raster answer by name.
+            rasters.push(unitBox(ctm));
+            break;
+          }
+          if (kind !== '/Form') break;
+          const ref = raw instanceof PDFRef ? raw : null;
+          const key = ref ? ref.toString() : `direct:${directKeys++}`;
+          if (path.has(key)) break;
+          if (stream.depth + 1 > MAX_FORM_DEPTH) {
+            truncatedForms = true;
+            break;
+          }
+          let inner = byKey.get(key);
+          if (!inner) {
+            inner = {
+              ref,
+              key,
+              ops: parseContentStream(streamBytes(found)),
+              entry: { container: stream.ref === null ? (page.node as unknown as PDFDict) : (stream.dict as PDFDict), name: name.value, dict: xobjects },
+              parent: stream,
+              dict: found.dict,
+              resources: (() => {
+                const own = valueOf(found.dict, 'Resources');
+                return own instanceof PDFDict ? own : stream.resources;
+              })(),
+              invocations: 0,
+              depth: stream.depth + 1,
+            };
+            byKey.set(key, inner);
+            streams.push(inner);
+          }
+          inner.invocations += 1;
+          const matrixValues = numbersFrom(found.dict, 'Matrix');
+          const matrix: Matrix =
+            matrixValues.length === 6
+              ? [
+                  matrixValues[0],
+                  matrixValues[1],
+                  matrixValues[2],
+                  matrixValues[3],
+                  matrixValues[4],
+                  matrixValues[5],
+                ]
+              : IDENTITY;
+          path.add(key);
+          visit(inner, multiply(ctm, matrix));
+          path.delete(key);
+          break;
+        }
+        default:
+          break;
+      }
+      if (record) {
+        fillAtOp[index] = fill;
+        stateAtOp[index] = { font, size, x: tm[4], y: tm[5] };
+      }
+
+      if (op.name === 'Tj' || op.name === "'" || op.name === '"') {
+        if (op.name !== 'Tj') {
+          tlm = multiply(translate(0, -leading), tlm);
           tm = tlm;
         }
-        break;
-      case 'TD':
-        if (values.length >= 2) {
-          leading = -values[1];
-          tlm = multiply(translate(values[0], values[1]), tlm);
-          tm = tlm;
-        }
-        break;
-      case 'TL':
-        leading = values[0] ?? 0;
-        break;
-      case 'Tz':
-        horizontalScale = (values[0] ?? 100) / 100;
-        break;
-      case 'Tc':
-        charSpacing = values[0] ?? 0;
-        break;
-      case 'Tw':
-        wordSpacing = values[0] ?? 0;
-        break;
-      case 'Ts':
-        rise = values[0] ?? 0;
-        break;
-      case 'Tr':
-        renderMode = values[0] ?? 0;
-        break;
-      case 'T*':
-        tlm = multiply(translate(0, -leading), tlm);
-        tm = tlm;
-        break;
-      case 'g':
-      case 'rg':
-      case 'k':
-        fill = colorFromOp(op, FILL_OPS[op.name]);
-        break;
-      default:
-        break;
-    }
-    fillAtOp[index] = fill;
-    stateAtOp[index] = { font, size, x: tm[4], y: tm[5] };
-
-    if (op.name === 'Tj' || op.name === "'") {
-      if (op.name === "'") {
-        tlm = multiply(translate(0, -leading), tlm);
-        tm = tlm;
+        const value = op.operands.find((o): o is StringOperand => o.kind === 'string');
+        if (value) movePen(show(value.bytes, index, false, 0));
+        continue;
       }
-      const value = op.operands.find((o): o is StringOperand => o.kind === 'string');
-      if (value) showString(value.bytes, index, false, () => 0);
-      continue;
+      if (op.name === 'TJ') {
+        const array = op.operands.find((o): o is ArrayOperand => o.kind === 'array');
+        if (!array) continue;
+        const kerned = array.items.some((i) => i.kind === 'number' && i.value !== 0);
+        // Each string is its own run, starting where the numbers before it moved
+        // the pen. A number after the last string still moves the pen, so the
+        // text that follows in the same block keeps its place.
+        let pen = 0;
+        for (const item of array.items) {
+          if (item.kind === 'number') {
+            pen -= (item.value / 1000) * Math.abs(size) * horizontalScale;
+            continue;
+          }
+          if (item.kind !== 'string') continue;
+          pen = show(item.bytes, index, kerned, pen);
+        }
+        movePen(pen);
+      }
     }
-    if (op.name === '"') {
-      tlm = multiply(translate(0, -leading), tlm);
-      tm = tlm;
-      const value = op.operands.find((o): o is StringOperand => o.kind === 'string');
-      if (value) showString(value.bytes, index, false, () => 0);
-      continue;
-    }
-    if (op.name === 'TJ') {
-      const array = op.operands.find((o): o is ArrayOperand => o.kind === 'array');
-      if (!array) continue;
-      const strings = array.items.filter((i): i is StringOperand => i.kind === 'string');
-      const kerned = array.items.some((i) => i.kind === 'number' && i.value !== 0);
-      // Each string in the array is its own run. The numbers between them are
-      // **not** applied: the pen is advanced by glyph widths alone, so a kerned
-      // line comes back as one contiguous run whose rect is a shade wide. That
-      // is deliberate — every consumer here removes or replaces whole runs, and
-      // a run measured from its own widths is the same run pdf-lib will redraw.
-      for (const value of strings) showString(value.bytes, index, kerned, () => 0);
-      continue;
-    }
-  }
+  };
 
+  visit(pageStream, IDENTITY);
   // Merge consecutive one-character segments from the same operator: the
   // per-glyph rects above are needed to decide what to remove, but callers
   // want readable runs.
-  return { segments: mergeSegments(segments), fillAtOp, stateAtOp, usesType3 };
+  return {
+    segments: mergeSegments(glyphs),
+    glyphs,
+    streams,
+    fillAtOp,
+    stateAtOp,
+    usesType3,
+    rasters,
+    truncatedForms,
+  };
 }
 
 function mergeSegments(segments: TextSegment[]): TextSegment[] {
@@ -2102,6 +2509,7 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
     if (
       previous &&
       previous.opIndex === segment.opIndex &&
+      previous.streamKey === segment.streamKey &&
       previous.font === segment.font &&
       previous.size === segment.size &&
       previous.renderMode === segment.renderMode &&
@@ -2114,9 +2522,18 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
       const bottom = Math.min(previous.rect.y, segment.rect.y);
       const right = Math.max(previous.rect.x + previous.rect.width, segment.rect.x + segment.rect.width);
       const top = Math.max(previous.rect.y + previous.rect.height, segment.rect.y + segment.rect.height);
+      const codes = new Uint8Array(previous.codes.length + segment.codes.length);
+      codes.set(previous.codes, 0);
+      codes.set(segment.codes, previous.codes.length);
       out[out.length - 1] = {
         ...previous,
         text: previous.text + segment.text,
+        // Same line by construction: `pen` is contiguous along it.
+        baseline: {
+          x: (previous.baseline.x + segment.baseline.x) / 2,
+          y: (previous.baseline.y + segment.baseline.y) / 2,
+        },
+        codes,
         rect: { x: left, y: bottom, width: right - left, height: top - bottom },
         kerned: previous.kerned || segment.kerned,
         pen: { from: previous.pen.from, to: segment.pen.to },
@@ -2129,12 +2546,45 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
 }
 
 /**
+ * The runs a page paints **inside** `rects`, by the same rule a deletion uses:
+ * a glyph belongs to a box when its baseline is in the box, not merely when its
+ * em box grazes it. Exported because a leftover check and a deletion have to
+ * agree on what "inside this rectangle" means, or a tool reports text it never
+ * saw.
+ */
+export function textInRects(page: PDFPage, rects: ContentRect[]): { rect: ContentRect; text: string }[] {
+  const targets = rects.filter((r) => r.width > 0 || r.height > 0);
+  if (targets.length === 0) return [];
+  const walk = walkText(page, pageContentOps(page), { forms: true });
+  const byOp = new Map<string, { texts: string[]; rect: ContentRect }>();
+  for (const glyph of walk.glyphs) {
+    if (!targets.some((rect) => ownsGlyph(glyph, rect))) continue;
+    const key = `${glyph.streamKey}|${glyph.opIndex}`;
+    const known = byOp.get(key);
+    if (known) {
+      known.texts.push(glyph.text);
+      const x0 = Math.min(known.rect.x, glyph.rect.x);
+      const y0 = Math.min(known.rect.y, glyph.rect.y);
+      known.rect = {
+        x: x0,
+        y: y0,
+        width: Math.max(known.rect.x + known.rect.width, glyph.rect.x + glyph.rect.width) - x0,
+        height: Math.max(known.rect.y + known.rect.height, glyph.rect.y + glyph.rect.height) - y0,
+      };
+      continue;
+    }
+    byOp.set(key, { texts: [glyph.text], rect: { ...glyph.rect } });
+  }
+  return [...byOp.values()].map((entry) => ({ rect: entry.rect, text: entry.texts.join('') }));
+}
+
+/**
  * Every piece of selectable text on a page with the rectangle it occupies,
  * recovered from `Tm`/`Td`/`TD`/`T*`/`TL`/`Tz` plus `TJ` arrays and the font
  * widths in the page's own resources.
  */
 export function textRects(page: PDFPage): { rect: ContentRect; text: string }[] {
-  return walkText(page, pageContentOps(page))
+  return walkText(page, pageContentOps(page), { forms: true })
     .segments.filter((s) => s.text.length > 0)
     .map(({ rect, text }) => ({ rect, text }));
 }
@@ -2144,60 +2594,338 @@ function intersects(a: ContentRect, b: ContentRect): boolean {
 }
 
 /**
- * Permanently delete the glyphs inside `rects`, including words that are
- * spread across several `BT … ET` blocks. Kept neighbours survive: a partially
- * covered `Tj` is rewritten as a `TJ` array whose numbers skip the excised
- * glyphs, so the rest of the line stays where it was.
+ * True when `glyph` is one of the glyphs *of* `rect`: it is painted inside the
+ * box horizontally, and its baseline lies within the box's vertical span (plus
+ * half a point, because the two come from different measurements of the same
+ * line). A run merely passing *through* the box with its baseline in another
+ * line is not the box's text, and deleting it would take a neighbour's words.
  */
-export function removeTextInRects(page: PDFPage, rects: ContentRect[]): { removedGlyphRuns: number; needsRasterFallback: boolean } {
-  const ops = pageContentOps(page);
-  const walk = walkText(page, ops);
+function ownsGlyph(glyph: TextSegment, rect: ContentRect): boolean {
+  const eps = 0.5;
+  const inX =
+    glyph.rect.x + glyph.rect.width > rect.x &&
+    glyph.rect.x < rect.x + rect.width;
+  const inY =
+    glyph.baseline.y >= rect.y - eps &&
+    glyph.baseline.y <= rect.y + rect.height + eps;
+  return inX && inY;
+}
+
+/**
+ * Why a deletion was not a plain, complete one — named, so the caller can say
+ * it. `docs/TOOL-CAMPAIGN.md`'s standing rule is that a tool never claims what
+ * the bytes contradict, and "covered" is not "removed".
+ */
+export type RemovalReason =
+  /** The run is set in a Type3 font: its glyphs can be dropped, its face cannot be reused. */
+  | 'type3-font'
+  /** The font carries no widths, so the glyph boxes measured here are estimates. */
+  | 'unmeasured-widths'
+  /** A real image placement overlaps the region; no operator edit clears pixels. */
+  | 'image-behind'
+  /** The words live in a Form XObject this page draws more than once. */
+  | 'form-reused'
+  /** A form sat below the walker's depth limit, so its words were never read. */
+  | 'form-too-deep'
+  /** A rect matched no text in this page's content at all. */
+  | 'nothing-at-rect'
+  /** The words are in a form the engine cannot copy without editing others. */
+  | 'form-not-copied';
+
+export interface TextRemoval {
+  /** Text-showing operators that lost at least one glyph, page and forms alike. */
+  removedGlyphRuns: number;
+  /** Individual glyph codes dropped. */
+  removedGlyphs: number;
+  /** Codes kept and re-emitted so their neighbours stay where they were. */
+  keptGlyphs: number;
+  /** Glyphs still inside the rects afterwards. `0` is the answer that means success. */
+  leftover: number;
+  /** Rects that found no text in this page's content. */
+  unmatchedRects: number;
+  /** Forms rewritten in addition to the page's own stream. */
+  formsRewritten: number;
+  /** True only when measured pixels overlap the region — see `RemovalReason`. */
+  needsRasterFallback: boolean;
+  reasons: RemovalReason[];
+}
+
+const NO_REMOVAL: TextRemoval = {
+  removedGlyphRuns: 0,
+  removedGlyphs: 0,
+  keptGlyphs: 0,
+  leftover: 0,
+  unmatchedRects: 0,
+  formsRewritten: 0,
+  needsRasterFallback: false,
+  reasons: [],
+};
+
+/**
+ * Permanently delete the glyphs inside `rects`, including words spread across
+ * several `BT … ET` blocks and words drawn inside Form XObjects.
+ *
+ * Kept neighbours survive: a partially covered `Tj` is rewritten as a `TJ`
+ * array whose numbers skip the excised glyphs, so the rest of the line stays
+ * exactly where it was. Dropping the whole operator instead — which is what this
+ * function used to do — is how editing one column silently deleted the column
+ * beside it, and how a block that shared an operator with its neighbour came
+ * back with both of them missing.
+ *
+ * A form that another page reaches as well is copied before it is rewritten, so
+ * removing a word here does not remove it there.
+ */
+export function removeTextInRects(page: PDFPage, rects: ContentRect[]): TextRemoval {
   const targets = rects.filter((r) => r.width > 0 || r.height > 0);
-  const affected = walk.segments.filter(
-    (segment) => targets.some((rect) => intersects(segment.rect, rect)) && TEXT_SHOW_OPS.has(ops[segment.opIndex]?.name ?? ''),
-  );
-  if (affected.length === 0) return { removedGlyphRuns: 0, needsRasterFallback: walk.usesType3 };
-
-  // Re-walk per glyph so partially covered runs can be split. Because the
-  // merged segments above lost the per-glyph split, measure from the operands:
-  const dropByOp = new Map<number, { all: boolean; kept: string }>();
-  for (const segment of affected) {
-    const kept = segment.text;
-    dropByOp.set(segment.opIndex, { all: kept.length === 0, kept });
+  if (targets.length === 0) return { ...NO_REMOVAL };
+  const walk = walkText(page, pageContentOps(page), { forms: true });
+  const streams = new Map(walk.streams.map((stream) => [stream.key, stream]));
+  const hits = walk.glyphs.filter((glyph) => targets.some((rect) => ownsGlyph(glyph, rect)));
+  const reasons = new Set<RemovalReason>();
+  if (walk.rasters.some((box) => targets.some((rect) => intersects(box, rect)))) {
+    reasons.add('image-behind');
+  }
+  if (walk.truncatedForms) reasons.add('form-too-deep');
+  const unmatchedRects = targets.filter((rect) => !hits.some((glyph) => intersects(glyph.rect, rect))).length;
+  if (unmatchedRects > 0) reasons.add('nothing-at-rect');
+  if (hits.length === 0) {
+    return {
+      ...NO_REMOVAL,
+      leftover: walk.glyphs.filter(
+        (glyph) => glyph.text.trim().length > 0 && targets.some((rect) => ownsGlyph(glyph, rect)),
+      ).length,
+      unmatchedRects,
+      needsRasterFallback: reasons.has('image-behind'),
+      reasons: [...reasons],
+    };
   }
 
+  // Every glyph of each affected operator, so a partial cover can be rebuilt.
+  const affectedKeys = new Set(hits.map((glyph) => `${glyph.streamKey}|${glyph.opIndex}`));
+  const byOp = new Map<string, TextSegment[]>();
+  for (const glyph of walk.glyphs) {
+    const key = `${glyph.streamKey}|${glyph.opIndex}`;
+    if (!affectedKeys.has(key)) continue;
+    const list = byOp.get(key);
+    if (list) list.push(glyph);
+    else byOp.set(key, [glyph]);
+  }
+
+  const edits = new Map<string, Map<number, ContentOp[] | null>>();
+  const dropped = new Set<TextSegment>();
+  for (const glyph of hits) dropped.add(glyph);
   let removedGlyphRuns = 0;
-  let kernedAffected = 0;
-  const next = ops.slice();
-  for (const [opIndex] of dropByOp) {
-    const op = ops[opIndex];
-    removedGlyphRuns++;
-    if (op.name === 'TJ') kernedAffected++;
-    const replacement: ContentOp[] = [];
-    if (op.name === "'" || op.name === '"') replacement.push(makeOp('T*'));
-    // Dropping the operator entirely is safe: the pen position only matters
-    // for text after it in the same block, which keeps its own `Td`.
-    next[opIndex] = makeOp('nop', []);
-    void replacement;
+  for (const [key] of byOp) {
+    const [streamKey, index] = key.split('|');
+    const opIndex = Number(index);
+    const stream = streams.get(streamKey);
+    const op = stream?.ops[opIndex];
+    if (!stream || !op || !TEXT_SHOW_OPS.has(op.name)) continue;
+    const rebuild = rebuildShow(op, byOp.get(key) as TextSegment[], dropped);
+    removedGlyphRuns += 1;
+    const perStream = edits.get(streamKey) ?? new Map<number, ContentOp[] | null>();
+    perStream.set(opIndex, rebuild.ops);
+    edits.set(streamKey, perStream);
   }
-  const cleaned = next.filter((op) => op.name !== 'nop');
-  const type3 = affected.some((segment) => segment.type3);
-  const unmeasured = affected.some((segment) => !segment.measured);
-  const heavilyMixedTj = kernedAffected >= Math.max(2, affected.length * 0.5);
-  const changed = rewritePageContent(page, (current) => {
-    // `current` is a fresh parse, so re-run the matcher against it by index
-    // when the operator count still lines up; otherwise fall back to writing
-    // `cleaned` verbatim.
-    if (current.length === ops.length) {
-      return current.filter((_, index) => !dropByOp.has(index));
+
+  let keptGlyphs = 0;
+  const nextOps = new Map<string, ContentOp[]>();
+  for (const [streamKey, perStream] of edits) {
+    const stream = streams.get(streamKey) as TextStream;
+    const next = stream.ops.flatMap((op, index): ContentOp[] =>
+      perStream.has(index) ? (perStream.get(index) ?? []) : [op],
+    );
+    if (stream.depth === 0) rewritePageContent(page, () => next);
+    else {
+      nextOps.set(streamKey, next);
+      if (stream.invocations > 1) reasons.add('form-reused');
     }
-    return cleaned;
-  });
-  void changed;
+  }
+  const forms = commitFormStreams(page, walk.streams, nextOps);
+  if (forms.uncopyable.size > 0) reasons.add('form-not-copied');
+  const formsRewritten = forms.rewritten;
+  const removedGlyphs = dropped.size;
+  for (const list of byOp.values()) keptGlyphs += list.filter((glyph) => !dropped.has(glyph)).length;
+  if (hits.some((glyph) => glyph.type3)) reasons.add('type3-font');
+  if (hits.some((glyph) => !glyph.measured)) reasons.add('unmeasured-widths');
+
+  // Verify against the bytes that were just written, the way `core/redact` does:
+  // a leftover count is the difference between "removed" and "claimed removed".
+  const after = walkText(page, pageContentOps(page), { forms: true });
+  const leftover = after.glyphs.filter(
+    (glyph) => glyph.text.trim().length > 0 && targets.some((rect) => ownsGlyph(glyph, rect)),
+  ).length;
+
   return {
     removedGlyphRuns,
-    needsRasterFallback: type3 || unmeasured || heavilyMixedTj || walk.usesType3,
+    removedGlyphs,
+    keptGlyphs,
+    leftover,
+    unmatchedRects,
+    formsRewritten,
+    needsRasterFallback: reasons.has('image-behind'),
+    reasons: [...reasons],
   };
+}
+
+/**
+ * Rebuild one text-showing operator after dropping `dropped` of its glyphs.
+ *
+ * The survivors are re-emitted as a `TJ` array whose numbers carry every pen
+ * move the excision opened up, measured from the glyphs' own pen positions — so
+ * the original kerning between kept glyphs, and the displacement a producer used
+ * to place a second column, both survive the edit.
+ *
+ * @returns the operators that replace this one, or `null` for "delete it".
+ */
+function rebuildShow(op: ContentOp, glyphs: TextSegment[], dropped: Set<TextSegment>): {
+  ops: ContentOp[] | null;
+} {
+  const kept = glyphs.filter((glyph) => !dropped.has(glyph));
+  // `'` and `"` move to the next line before showing; the move belongs to the
+  // text object, not to the glyphs, so it is kept even when the words are not.
+  const lead: ContentOp[] = op.name === "'" || op.name === '"' ? [makeOp('T*')] : [];
+  if (glyphs.length === 0) return { ops: lead.length ? lead : null };
+  if (kept.length === 0) return { ops: lead.length ? lead : null };
+  const items: ContentOperand[] = [];
+  let cursor = 0;
+  let index = 0;
+  while (index < glyphs.length) {
+    const glyph = glyphs[index];
+    if (dropped.has(glyph)) {
+      index += 1;
+      continue;
+    }
+    const gap = glyph.pen.from - cursor;
+    if (gap > 0.01) items.push(operand.number(penNumber(gap, glyph.size, glyph.horizontalScale)));
+    let bytes: number[] = [];
+    let last = glyph;
+    while (index < glyphs.length && !dropped.has(glyphs[index])) {
+      for (const byte of Array.from(glyphs[index].codes)) bytes.push(byte);
+      last = glyphs[index];
+      index += 1;
+    }
+    items.push(operand.hex(new Uint8Array(bytes)));
+    cursor = last.pen.to;
+  }
+  const tail = (glyphs[glyphs.length - 1].pen.to ?? 0) - cursor;
+  if (tail > 0.01) {
+    const last = glyphs[glyphs.length - 1];
+    items.push(operand.number(penNumber(tail, last.size, last.horizontalScale)));
+  }
+  return { ops: [...lead, makeOp('TJ', [operand.array(items)])] };
+}
+
+/**
+ * The `TJ` number that moves the pen by `shift` points at this size.
+ *
+ * `walkText` reads a number as `-n/1000 × Tf × Tz`, so this is that formula
+ * inverted; writing anything else would shift the kept words on the next read.
+ */
+function penNumber(shift: number, size: number, horizontalScale: number): number {
+  const em = Math.abs(size) * (horizontalScale || 1);
+  if (!(em > 0)) return 0;
+  return -Math.round((shift * 1000) / em);
+}
+
+/**
+ * Copy every form the rewrite touched — and every ancestor it hangs from — and
+ * point the page at the copies.
+ *
+ * The original objects are left alone: a form another page (or another `Do` on
+ * this one) draws keeps its own bytes, so removing a word here cannot remove it
+ * there. Ancestors are copied because the `/XObject` entry naming a nested form
+ * lives in the parent's `/Resources`, and that is the dictionary being repointed.
+ *
+ * @param nextOps the rewritten operator list per stream, `key` by `streamKey`.
+ * @returns the number of streams that carried an edit.
+ */
+function commitFormStreams(
+  page: PDFPage,
+  streams: TextStream[],
+  nextOps: Map<string, ContentOp[]>,
+): { rewritten: number; uncopyable: Set<string> } {
+  const context = page.doc.context;
+  const copies = new Map<string, PDFRef>();
+  const uncopyable = new Set<string>();
+
+  const ensureCopy = (stream: TextStream): PDFRef | null => {
+    const known = copies.get(stream.key);
+    if (known) return known;
+    const source = stream.ref ? context.lookup(stream.ref) : null;
+    if (!(source instanceof PDFStream)) {
+      // A form written as a direct object: the page names it, but there is no
+      // object to copy, so rewriting it would rewrite every other user too.
+      uncopyable.add(stream.key);
+      return null;
+    }
+    const ref = context.nextRef();
+    const bytes = serialiseContentStream(nextOps.get(stream.key) ?? stream.ops);
+    context.assign(ref, formStream(page, source.dict, bytes));
+    copies.set(stream.key, ref);
+    // The dictionary that names this stream: the page node for a page-level
+    // form, or the *copy* of the outer form's dictionary for a nested one, so
+    // the repoint never disturbs a form another page still draws.
+    const parent = stream.parent && stream.parent.depth > 0 ? stream.parent : null;
+    if (stream.parent && stream.parent.depth > 0 && !ensureCopy(stream.parent)) {
+      uncopyable.add(stream.key);
+      return null;
+    }
+    const holder = parent ? context.lookup(copies.get(parent.key) as PDFRef) : null;
+    const container = parent
+      ? holder instanceof PDFStream
+        ? holder.dict
+        : null
+      : (page.node as unknown as PDFDict);
+    if (container && stream.entry) repointXObject(context, container, stream.entry.name, ref);
+    return ref;
+  };
+
+  let rewritten = 0;
+  for (const stream of streams) {
+    if (stream.depth === 0 || !nextOps.has(stream.key)) continue;
+    if (ensureCopy(stream)) rewritten += 1;
+  }
+  return { rewritten, uncopyable };
+}
+
+/**
+ * A copy of `dict`'s stream holding `bytes`, minus the keys that describe the
+ * old encoding (`/Length`, `/Filter`, `/DecodeParms`) so the new ones rule.
+ */
+function formStream(page: PDFPage, dict: PDFDict, bytes: Uint8Array): PDFRawStream {
+  const context = page.doc.context;
+  const stream = context.flateStream(bytes, {});
+  for (const [key, value] of dict.entries()) {
+    if (MECHANICAL_STREAM_KEYS.has(key.asString())) continue;
+    stream.dict.set(key, value);
+  }
+  stream.dict.set(PDFName.of('Length'), PDFNumber.of(stream.contents.length));
+  return stream;
+}
+
+const MECHANICAL_STREAM_KEYS = new Set(['/Length', '/Filter', '/DecodeParms', '/F', '/FFilter']);
+
+/**
+ * Name `ref` at `/XObject` › `name` inside `container`'s `/Resources`, copying
+ * `/Resources` and `/XObject` first so a dictionary shared with another page or
+ * form is not disturbed.
+ */
+function repointXObject(context: PDFContext, container: PDFDict, name: string, ref: PDFRef): void {
+  const deref = (dict: PDFDict | undefined, key: string): PDFDict | undefined => {
+    const raw = dict?.get(PDFName.of(key));
+    const value = raw === undefined ? undefined : context.lookup(raw);
+    return value instanceof PDFDict ? value : undefined;
+  };
+  const resources = deref(container, 'Resources');
+  const copy = context.obj({});
+  if (resources) for (const [key, value] of resources.entries()) copy.set(key, value);
+  const xobjects = deref(resources, 'XObject');
+  const newXobjects = context.obj({});
+  if (xobjects) for (const [key, value] of xobjects.entries()) newXobjects.set(key, value);
+  newXobjects.set(PDFName.of(name), ref);
+  copy.set(PDFName.of('XObject'), newXobjects);
+  container.set(PDFName.of('Resources'), copy);
 }
 
 /**

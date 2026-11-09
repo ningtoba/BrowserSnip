@@ -108,12 +108,39 @@ async function install() {
 
   /** Text still inside a set of viewer-space boxes, read out of the file's own bytes. */
   function survivingText(mods, page, boxes) {
+    return textInRects(mods, page, boxes).inside;
+  }
+
+  /**
+   * The page's text, split into what falls inside a set of viewer-space boxes
+   * and what does not. Both halves come from the same walk, so the difference
+   * between "before" and "after" counts characters and not run boundaries — a
+   * rebuilt run splits differently, which is not the same as a lost word.
+   */
+  function textInRects(mods, page, boxes) {
     const frame = mods.draw.frameOfPage(page);
     const rects = boxes.map((box) => mods.model.viewerBoxToUserSpace(box, frame));
-    return mods.content
-      .textRects(page)
-      .filter((entry) => entry.text.trim().length > 0 && rects.some((r) => overlaps(r, entry.rect)))
-      .map((entry) => ({ text: entry.text, rect: entry.rect }));
+    const inside = owned(page, rects).filter((e) => e.text.trim().length > 0);
+    const all = mods.content.textRects(page);
+    const chars = (list) => list.reduce((n, entry) => n + entry.text.length, 0);
+    // Every character once: `all` is the page's text, `inside` the owned subset,
+    // so the difference is what the block does not own.
+    return { inside, outsideChars: Math.max(0, chars(all) - chars(inside)), totalChars: chars(all) };
+  }
+
+  /**
+   * The runs that belong to `rects`. `content.textInRects` is the engine's own
+   * answer; the fallback (any run whose box overlaps) exists so this rig still
+   * runs against a build that predates the export — the before/after table needs
+   * one instrument, not two.
+   */
+  function owned(page, rects) {
+    if (mods.content.textInRects) return mods.content.textInRects(page, rects);
+    return mods.content.textRects(page).filter((entry) => rects.some((r) => overlaps(r, entry.rect)));
+  }
+
+  function round2(value) {
+    return Math.round(value * 100) / 100;
   }
 
   function overlaps(a, b) {
@@ -121,26 +148,31 @@ async function install() {
   }
 
   /**
-   * The page's text **outside** the deletion boxes, as one string. Read before
-   * and after a deletion, the difference is the collateral damage: an operator
-   * dropped whole because one of its glyphs was inside the block.
+   * The engine's own text runs within 30 pt of a box it missed, with the rect
+   * each one was measured at, so a miss is named rather than guessed at.
    */
-  function outsideText(mods, page, boxes) {
+  function nearText(mods, doc, page1, boxes) {
+    const page = doc.getPage(page1 - 1);
     const frame = mods.draw.frameOfPage(page);
     const rects = boxes.map((box) => mods.model.viewerBoxToUserSpace(box, frame));
+    const near = (entry) =>
+      rects.some((r) => {
+        const dx = Math.max(r.x - (entry.rect.x + entry.rect.width), entry.rect.x - (r.x + r.width), 0);
+        const dy = Math.max(r.y - (entry.rect.y + entry.rect.height), entry.rect.y - (r.y + r.height), 0);
+        return Math.hypot(dx, dy) < 30;
+      });
     return mods.content
       .textRects(page)
-      .filter((entry) => entry.text.trim().length > 0 && !rects.some((r) => overlaps(r, entry.rect)))
-      .map((entry) => entry.text)
-      .join('');
+      .filter((entry) => entry.text.trim().length > 0 && near(entry))
+      .slice(0, 8)
+      .map((entry) => ({
+        text: entry.text.slice(0, 28),
+        rect: [round(entry.rect.x), round(entry.rect.y), round(entry.rect.width), round(entry.rect.height)],
+      }));
   }
 
-  /** Up to 60 characters around the first difference, to name what vanished. */
-  function firstLost(before, after) {
-    if (before === after) return '';
-    let i = 0;
-    while (i < before.length && before[i] === after[i]) i += 1;
-    return before.slice(Math.max(0, i - 8), i + 52);
+  function round(value) {
+    return Math.round(value * 10) / 10;
   }
 
   window.__measure = async (b64, options) => {
@@ -154,19 +186,18 @@ async function install() {
         const page = fresh.getPage(entry.page - 1);
         const frame = mods.draw.frameOfPage(page);
         const boxes = mods.model.deletionBoxes(paragraph);
-        const beforeText = survivingText(mods, page, boxes);
-        const outsideBefore = outsideText(mods, page, boxes);
+        const before = textInRects(mods, page, boxes);
         const report = mods.draw.deleteOriginalText(page, boxes, frame);
-        const afterText = survivingText(mods, page, boxes);
-        const outsideAfter = outsideText(mods, page, boxes);
+        const after = textInRects(mods, page, boxes);
         perBlock.push({
+          id: `probe-${perBlock.length}`,
           page: entry.page,
           text: paragraph.text.slice(0, 60),
           chars: paragraph.text.length,
           lines: paragraph.lines.length,
           box: paragraph.box,
           deletion: boxes,
-          ops: beforeText.length,
+          ops: before.inside.length,
           invisible: Boolean(paragraph.invisible),
           fontSize: paragraph.size,
           fonts: [...new Set(paragraph.lines.flatMap((line) => line.items.map((item) => item.fontName)).filter(Boolean))],
@@ -174,12 +205,16 @@ async function install() {
           leftover: report.leftover,
           nothingRemoved: report.nothingRemoved,
           needsRaster: report.needsRasterFallback,
-          // Collateral damage: words outside the block's own boxes that the
-          // deletion took anyway — a whole `TJ` dropped for one touched glyph.
-          lostOutside: outsideBefore.length - outsideAfter.length,
-          lostOutsideSample: firstLost(outsideBefore, outsideAfter),
+          // Collateral damage: characters the deletion took from outside the
+          // block's own boxes. Total page text, minus what the box accounted for,
+          // so a run that merely re-splits on rebuild does not read as a loss.
+          lostOutside: before.outsideChars - after.outsideChars,
+          leftover: report.leftover,
+          // When the engine finds nothing at the box, what it *does* find nearby
+          // is the difference between a coordinate bug and a run drawn elsewhere.
+          nearby: report.removed === 0 ? nearText(mods, fresh, entry.page, boxes) : [],
           replacement: options.mode === 'same' ? paragraph.text : retype(paragraph.text),
-          survived: afterText.map((t) => t.text.slice(0, 24)),
+          survived: after.inside.map((t) => t.text.slice(0, 24)),
         });
       }
     }
@@ -215,6 +250,27 @@ async function install() {
         });
       }
     }
+    // Where each edited block is going to be written, line by line, from the
+    // same layout call the writer uses: the checker compares these against what
+    // the produced file really paints, so "at the right position and size" is a
+    // measured claim and not a restating of the model.
+    const expected = [];
+    for (const object of objects) {
+      const prepared = await mods.draw.prepareTextObject(doc, object);
+      for (const line of prepared.layout.lines) {
+        for (const piece of line.pieces) {
+          if (piece.text.trim().length === 0) continue;
+          expected.push({
+            id: object.id,
+            page: object.page,
+            text: piece.text.slice(0, 60),
+            x: round2(object.box.x + piece.x),
+            baseline: round2(object.box.y + line.baseline),
+            size: round2(piece.run.size),
+          });
+        }
+      }
+    }
     const outcome = await mods.draw.applyEdits(doc, objects);
     const saved = await mods.doc.savePDF(doc);
     return {
@@ -226,6 +282,7 @@ async function install() {
         canvasSize: entry.canvasSize,
       })),
       perBlock,
+      expected,
       outcome,
       bytes: toB64(saved),
     };
@@ -271,8 +328,8 @@ for (const name of fixtures) {
   fs.writeFileSync(path.join(OUT, `${stem}-before.pdf`), source);
   fs.writeFileSync(path.join(OUT, `${stem}.json`), JSON.stringify(result, null, 2));
   const blocks = result.perBlock.length;
-  const clean = result.perBlock.filter((b) => !b.nothingRemoved && b.leftover === 0).length;
-  const partial = result.perBlock.filter((b) => !b.nothingRemoved && b.leftover > 0).length;
+  const clean = result.perBlock.filter((b) => !b.nothingRemoved && b.leftover === 0 && b.survived.length === 0).length;
+  const partial = result.perBlock.filter((b) => !b.nothingRemoved && (b.leftover > 0 || b.survived.length > 0)).length;
   const none = result.perBlock.filter((b) => b.nothingRemoved).length;
   summary.push({
     file: name,
