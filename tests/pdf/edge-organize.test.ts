@@ -903,24 +903,31 @@ describe('inputs are handled honestly', () => {
     expect(drawnText(doc, 0)).toMatch(/sheet 1/);
   });
 
-  it('refuses a document another program locked with a real cipher (E5, encrypted-inputs)', async () => {
-    // libqpdf locked this one, so its streams are AES-128 ciphertext. Rotating it
-    // used to answer "Rotated 3 pages by 90°." over a file with no words in it:
-    // the guard refuses instead, and says which cipher it cannot undo.
+  it('decrypts a document another program locked with a real cipher (E5, encrypted-inputs)', async () => {
+    // libqpdf locked this one, so its streams were AES-128 ciphertext. Rotating it
+    // used to answer "Rotated 3 pages by 90°." over a file with no words in it, and
+    // then the guard refused the run outright. `core/crypto` undoes the cipher now,
+    // so the run succeeds *and* the copy still says what the original said.
     const ciphered = fileOf(encryptedFixture('aes-128-user.pdf'), 'aes-128.pdf');
-    const failure = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2').then(
-      () => null,
-      (error: unknown) => error,
-    );
-    expect(isToolInputError(failure), 'the refusal is a bare Error').toBe(true);
-    expect((failure as Error).message).toMatch(/"aes-128\.pdf" is encrypted with AES-128 \(crypt filter \/StdCF, revision 4\)/);
-    expect((failure as Error).message).toMatch(/cannot decrypt them yet/);
+    const outcome = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2');
+    const bytes = await bytesOf(outcome);
+    // The gate is re-issued over the decrypted copy — this app's honest shape: a
+    // password and the /P flags with no crypt filter, rather than a foreign cipher
+    // claim laid on plaintext.
+    expect(text(bytes)).toMatch(/\/Encrypt/);
+    expect(warn(outcome)).toMatch(/re-applied/i);
+    const produced = await PDFDocument.load(bytes, { password: 'hunter2', updateMetadata: false });
+    expect(produced.getPageCount()).toBe(3);
+    expect(produced.getPages().every((page) => page.getRotation().angle === 90)).toBe(true);
+    expect(drawnText(produced, 0)).toMatch(/Lighthouse Inventory 1887 page 1/);
+    expect(drawnText(produced, 0)).toMatch(/Sheet ALPHA body copy/);
 
-    // The copy the tool would have handed back, rebuilt by hand with the guard
-    // out of the way: the page count survives, and the page itself is not a
-    // content stream this app can inflate any more. That — not the page count —
-    // is what "preserved the protection" was hiding. See `docs/research/
-    // encrypted-inputs-findings.md` §3: 18 of 18 produced files, blank.
+    // The copy this app would have handed back with the decrypt pass out of the
+    // way, rebuilt by hand straight off `PDFDocument.load`: the page count
+    // survives, and the page is not content anybody can inflate. That — not the
+    // page count — is what "preserved the protection" was hiding. See
+    // `docs/research/encrypted-inputs-findings.md` §3: 18 of 18 produced files,
+    // every one of them blank.
     const source = await PDFDocument.load(encryptedFixture('aes-128-user.pdf'), {
       password: 'hunter2',
       updateMetadata: false,
@@ -930,6 +937,20 @@ describe('inputs are handled honestly', () => {
     const copy = await PDFDocument.load(await target.save());
     expect(copy.getPageCount()).toBe(1);
     expect(() => drawnText(copy, 0)).toThrow(/could not be decompressed/);
+  });
+
+  it('still refuses a cipher core/crypto does not read, and names it (E5)', async () => {
+    // The direction that must not quietly open: AES-256 stays refused, and the
+    // sentence says which strength it is rather than "encrypted".
+    const ciphered = fileOf(encryptedFixture('aes-256-user.pdf'), 'aes-256.pdf');
+    const failure = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2').then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isToolInputError(failure), 'the refusal is a bare Error').toBe(true);
+    expect((failure as Error).message)
+      .toMatch(/"aes-256\.pdf" is encrypted with AES-256 \(crypt filter \/StdCF, revision 6\)/);
+    expect((failure as Error).message).toMatch(/reads RC4-128 and AES-128 files/);
   });
 
   it('says when a file was added twice instead of merging it silently (E16)', async () => {

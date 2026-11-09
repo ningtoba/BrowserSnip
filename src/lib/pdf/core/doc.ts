@@ -45,6 +45,7 @@ import type {
   PDFPermissions,
 } from '@maxwbh/pdf-lib';
 import { cropBox } from './pages';
+import { decryptDocument } from './crypto';
 
 type FontkitInstance = Parameters<PDFDocument['registerFontkit']>[0];
 
@@ -109,6 +110,10 @@ export function looksEncrypted(bytes: Uint8Array): boolean {
  * Open a PDF. Unlike the previous `pdf-lib` call sites in this repo, a wrong
  * password is reported as a `PasswordRequiredError` so the UI can re-prompt
  * instead of showing a generic red banner.
+ *
+ * A file whose crypt filter names a real cipher is decrypted here first, so every
+ * tool in the catalogue is handed plaintext rather than ciphertext — see
+ * `decryptCipheredPDF` and `core/crypto.ts`.
  */
 export async function openPDF(
   src: ArrayBuffer | Uint8Array | Bytes,
@@ -116,6 +121,9 @@ export async function openPDF(
 ): Promise<PDFDocument> {
   const bytes = toBytes(src);
   const { password, ignoreEncryption = false } = options;
+
+  const decrypted = await decryptCipheredPDF(bytes, options);
+  if (decrypted) return decrypted;
 
   if (password) {
     try {
@@ -141,6 +149,50 @@ export async function openPDF(
     ignoreEncryption: true,
     updateMetadata: options.updateMetadata ?? true,
   });
+}
+
+/** What `PDFDocument.load` stamps into `/Info`; the decrypt pass repeats it. */
+const LOADED_PRODUCER = 'pdf-lib (https://github.com/Hopding/pdf-lib)';
+
+/**
+ * Undo a real cipher, when `core/crypto` can, and hand back a plaintext document.
+ *
+ * `null` means "this is not the path for this file", and every caller's existing
+ * behaviour then applies untouched: no `/Encrypt` entry at all; a gate whose
+ * effective crypt filter is `/None` (what this app's own `protect` writes, whose
+ * streams were never ciphered); a cipher this app refuses by name, such as
+ * AES-256, a public-key handler or a file whose objects live in object streams; a
+ * lock whose secret did not open it; and a file too damaged to parse, whose error
+ * the ordinary path reports. Keeping the exception list on the returning-null side
+ * is what limits this to the case that was actually broken — a file with
+ * ciphertext behind its dictionary, and the password to open it.
+ */
+async function decryptCipheredPDF(
+  bytes: Bytes,
+  options: OpenOptions,
+): Promise<PDFDocument | null> {
+  if (!looksEncrypted(bytes)) return null;
+  let doc: PDFDocument;
+  try {
+    // The structure is readable whatever the cipher: `pdf-lib` only checks a
+    // password when asked to, and checking one is not the same as undoing it.
+    doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  } catch {
+    return null;
+  }
+  const outcome = await decryptDocument(doc, options.password);
+  if (outcome.kind !== 'decrypted') return null;
+  // Stamped *after* the strings are readable: loading with `updateMetadata` would
+  // write a plaintext ModDate into a still-ciphered document, and the pass would
+  // then decrypt its own stamp into mojibake.
+  if (options.updateMetadata !== false) {
+    const now = new Date();
+    doc.setProducer(LOADED_PRODUCER);
+    doc.setModificationDate(now);
+    if (!doc.getCreator()) doc.setCreator(LOADED_PRODUCER);
+    if (!doc.getCreationDate()) doc.setCreationDate(now);
+  }
+  return doc;
 }
 
 export async function newPDF(): Promise<PDFDocument> {

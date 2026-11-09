@@ -29,6 +29,13 @@
 import { PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef } from '@maxwbh/pdf-lib';
 import { formatBytes } from '@/lib/utils/format';
 import { looksEncrypted } from './doc';
+import {
+  assessAccess,
+  decryptDocument,
+  readObstacle,
+  supportsCipher,
+  type UnsupportedReason,
+} from './crypto';
 import { tryResolvePages } from './pages';
 import type { ToolField, ToolValues } from '../tools/types';
 
@@ -237,6 +244,17 @@ export interface PdfEncryption {
   version: number | null;
   /** `/R`, the handler *revision*. */
   revision: number | null;
+  /**
+   * Whether a rewriting tool may run on this file at all: `true` when there is no
+   * cipher to undo — no dictionary, or the `/None` filter this app's own `protect`
+   * writes — and when `core/crypto` can read the streams that are ciphered.
+   * `false` means the dictionary selects a cipher this app cannot undo, and
+   * `refusal` names it. Rewriting a `false` file copies ciphertext and labels it
+   * plaintext, which is the 18-of-18 blank-paper bug this field exists to stop.
+   */
+  supported: boolean;
+  /** Why the cipher is refused, when it is: named, never just "encrypted". */
+  refusal: UnsupportedReason | null;
 }
 
 /** No dictionary: nothing is encrypted and nothing needs saying about a cipher. */
@@ -248,13 +266,21 @@ const NO_ENCRYPTION: PdfEncryption = {
   method: null,
   version: null,
   revision: null,
+  supported: true,
+  refusal: null,
 };
 
 /** The predefined filters, which are named in `/StmF` but never appear in `/CF`. */
 const PLAINTEXT_FILTERS = new Set(['None', 'Identity']);
 
 /** An `/Encrypt` entry with no readable dictionary behind it: a lock, unnameable. */
-const UNREADABLE_ENCRYPTION: PdfEncryption = { ...NO_ENCRYPTION, state: 'ciphered', algorithm: 'unknown' };
+const UNREADABLE_ENCRYPTION: PdfEncryption = {
+  ...NO_ENCRYPTION,
+  state: 'ciphered',
+  algorithm: 'unknown',
+  supported: false,
+  refusal: 'missing-parameters',
+};
 
 /**
  * The cipher a crypt filter applies to a name that filter is, or `null` when the
@@ -292,6 +318,9 @@ function cipherName(dict: PDFDict, method: string): string {
  * name in the file is not the cipher the bytes carry.
  */
 export function classifyEncryption(dict: PDFDict): PdfEncryption {
+  // One question, answered by the module that would have to undo the cipher: this
+  // guard may only claim a strength that `core/crypto` reads back as words.
+  const support = supportsCipher(dict);
   const version = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber() ?? null;
   const revision = dict.lookupMaybe(PDFName.of('R'), PDFNumber)?.asNumber() ?? null;
   const streamFilter = dict.lookupMaybe(PDFName.of('StmF'), PDFName)?.decodeText() ?? null;
@@ -301,7 +330,15 @@ export function classifyEncryption(dict: PDFDict): PdfEncryption {
   // `/V` is required and defaults to 1; a dictionary without one still claims a
   // handler, and "we cannot read the streams" is the honest verdict.
   if (version === null) {
-    return { ...NO_ENCRYPTION, ...base, state: 'ciphered', algorithm: 'unknown', method: null };
+    return {
+      ...NO_ENCRYPTION,
+      ...base,
+      state: 'ciphered',
+      algorithm: 'unknown',
+      method: null,
+      supported: support.supported,
+      refusal: support.supported ? null : support.reason,
+    };
   }
 
   if (version >= 4) {
@@ -320,6 +357,8 @@ export function classifyEncryption(dict: PDFDict): PdfEncryption {
       state: 'ciphered',
       algorithm,
       method: streamMethod ?? stringMethod,
+      supported: support.supported,
+      refusal: support.supported ? null : support.reason,
     };
   }
 
@@ -334,6 +373,8 @@ export function classifyEncryption(dict: PDFDict): PdfEncryption {
     state: 'ciphered',
     algorithm,
     method: algorithm === 'unknown' ? null : 'RC4',
+    supported: support.supported,
+    refusal: support.supported ? null : support.reason,
   };
 }
 
@@ -391,6 +432,14 @@ export interface PdfInspection {
   needsPassword: boolean;
   /** A password was supplied and it opened the document (E5). */
   passwordAccepted: boolean;
+  /**
+   * Which of the two secrets a PDF can carry opened it, once a real cipher was
+   * undone: the **user** secret gates opening, the **owner** secret gates
+   * permissions and grants a reader as well, and `empty` means the file carries a
+   * permissions-only lock and nobody had to type anything. `null` when nothing
+   * opened it, or when the lock is a gate this app reads without the cipher table.
+   */
+  passwordLevel: 'user' | 'owner' | 'empty' | null;
   /**
    * The file opens on the empty password: it is restricted, not locked. Anyone
    * can read it, and the `/P` flags only ask a reader to behave — which is what
@@ -454,10 +503,23 @@ function declaredPageCount(doc: PDFDocument): number | null {
   }
 }
 
+/**
+ * What one parse learned about a file's lock, and whether it could be opened.
+ *
+ * `encryption` is read from the dictionary **before** a decrypt pass runs, because
+ * the pass answers a question about the file the user handed over, not about the
+ * document left in memory: `core/crypto` drops the `/Encrypt` entry it has undone,
+ * so a classification taken afterwards would describe plaintext that still carries
+ * somebody else's claim.
+ */
 interface LoadOutcome {
   doc: PDFDocument | null;
+  /** The source dictionary's own verdict, obstacles included. */
+  encryption: PdfEncryption;
   encrypted: boolean;
   passwordAccepted: boolean;
+  /** Which secret opened a ciphered document, from the dictionary's own check. */
+  passwordLevel: 'user' | 'owner' | 'empty' | null;
   /** The user password is empty, so the file opens for anyone: `/P` only restricts. */
   opensWithEmptyPassword: boolean;
   refused: ToolInputErrorCode | null;
@@ -479,17 +541,35 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     const crypto = /encrypt|password|pad|decrypt/i.test(message);
     return {
       doc: null,
+      encryption: UNREADABLE_ENCRYPTION,
       encrypted: looksEncrypted(bytes),
       passwordAccepted: false,
+      passwordLevel: null,
       opensWithEmptyPassword: false,
       refused: crypto && password ? 'BAD_PASSWORD' : crypto ? 'PASSWORD_REQUIRED' : 'CORRUPT',
       detail: err,
     };
   }
   const encrypted = lenient.isEncrypted;
+  const dict = encryptDict(lenient);
+  // Classified here, before anything is undone, and with the two things only a
+  // parsed document can show (`core/crypto:readObstacle`) folded in. An
+  // `/Encrypt` entry the parser could not resolve to a dictionary still claims a
+  // handler, so it counts as ciphered — the refusal an unreadable lock earns is
+  // "cannot decrypt", never a copy of bytes nobody has read.
+  const encryption = !encrypted
+    ? NO_ENCRYPTION
+    : dict
+      ? obstacles(classifyEncryption(dict), lenient)
+      : UNREADABLE_ENCRYPTION;
   if (!encrypted) {
-    return { doc: lenient, encrypted: false, passwordAccepted: false, opensWithEmptyPassword: false, refused: null };
+    return { doc: lenient, encryption, encrypted: false, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: null };
   }
+  // A file whose crypt filter names a real cipher is answered by the module that
+  // can undo it, not by a probe load: `core/crypto` checks `/U` at the revision
+  // the file actually uses, keeps the two secrets apart, and hands back plaintext.
+  const ciphered = await cipheredOutcome(lenient, encryption, password);
+  if (ciphered) return ciphered;
   // An `/Encrypt` entry is not a lock. Two different passwords protect a PDF: the
   // **user** password gates opening, the owner password only gates permission
   // changes. A permissions-only file hashes the empty user password, so anyone
@@ -501,8 +581,10 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     const open = await PDFDocument.load(bytes, { password: '', updateMetadata: false });
     return {
       doc: open,
+      encryption,
       encrypted: true,
       passwordAccepted: Boolean(password),
+      passwordLevel: password ? null : 'empty',
       opensWithEmptyPassword: true,
       refused: null,
     };
@@ -510,23 +592,87 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     /* the user password is real — fall through to it */
   }
   if (!password) {
-    return { doc: lenient, encrypted: true, passwordAccepted: false, opensWithEmptyPassword: false, refused: 'PASSWORD_REQUIRED' };
+    return { doc: lenient, encryption, encrypted: true, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: 'PASSWORD_REQUIRED' };
   }
   try {
     const opened = await PDFDocument.load(bytes, { password, updateMetadata: false });
-    return { doc: opened, encrypted: true, passwordAccepted: true, opensWithEmptyPassword: false, refused: null };
+    return { doc: opened, encryption, encrypted: true, passwordAccepted: true, passwordLevel: 'user', opensWithEmptyPassword: false, refused: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const crypto = /encrypt|password/i.test(message);
     return {
       doc: lenient,
+      encryption,
       encrypted: true,
       passwordAccepted: false,
+      passwordLevel: null,
       opensWithEmptyPassword: false,
       refused: crypto ? 'BAD_PASSWORD' : 'CORRUPT',
       detail: err,
     };
   }
+}
+
+/**
+ * What a ciphered document is, and what this app can do with it, in one answer.
+ *
+ * `null` means the lock is not a cipher this module reads — either a gate whose
+ * effective filter is `/None`, whose streams were never ciphered and whose probes
+ * below decide exactly as they always did, or a cipher named and refused (see
+ * `cipheredInputError`). Otherwise the verdict comes from the dictionary's own
+ * `/U` check, which is the only place that can tell a user secret from an owner
+ * secret, and the document handed back has already been decrypted.
+ */
+async function cipheredOutcome(
+  lenient: PDFDocument,
+  encryption: PdfEncryption,
+  password?: string,
+): Promise<LoadOutcome | null> {
+  const verdict = assessAccess(lenient, password);
+  if (verdict.kind === 'gate-only' || verdict.kind === 'unsupported') return null;
+  if (verdict.kind === 'needs-password') {
+    return {
+      doc: lenient,
+      encryption,
+      encrypted: true,
+      passwordAccepted: false,
+      passwordLevel: null,
+      opensWithEmptyPassword: false,
+      refused: 'PASSWORD_REQUIRED',
+    };
+  }
+  if (verdict.kind === 'bad-password') {
+    return {
+      doc: lenient,
+      encryption,
+      encrypted: true,
+      passwordAccepted: false,
+      passwordLevel: null,
+      opensWithEmptyPassword: false,
+      refused: 'BAD_PASSWORD',
+    };
+  }
+  const outcome = await decryptDocument(lenient, password);
+  if (outcome.kind !== 'decrypted') {
+    return {
+      doc: lenient,
+      encryption,
+      encrypted: true,
+      passwordAccepted: false,
+      passwordLevel: null,
+      opensWithEmptyPassword: false,
+      refused: 'CORRUPT',
+    };
+  }
+  return {
+    doc: lenient,
+    encryption,
+    encrypted: true,
+    passwordAccepted: outcome.suppliedMatched,
+    passwordLevel: outcome.openedAs,
+    opensWithEmptyPassword: outcome.openedAs === 'empty',
+    refused: null,
+  };
 }
 
 function quote(name: string): string {
@@ -572,13 +718,64 @@ export function notAPdfError(name: string): ToolInputError {
  * `/None` — what this app's own `protect` writes — keeps working, because its
  * streams are plaintext.
  */
+/**
+ * The two things the dictionary cannot say about its own file.
+ *
+ * `@maxwbh/pdf-lib` expands object streams while it parses, before any decryptor
+ * is consulted, so in a ciphered file every object inside one — page tree,
+ * outlines, form fields — is absent from the document this app would rewrite. And
+ * a file whose producer *claimed* a cipher without running one (the fork's own
+ * `save({ encrypt })`) would be decrypted into garbage by a module that believed
+ * the claim. Both are visible only from the parsed result, and `core/crypto`
+ * answers them, so the guard's classification and the decrypt pass cannot disagree.
+ */
+function obstacles(encryption: PdfEncryption, doc: PDFDocument | null): PdfEncryption {
+  if (encryption.state !== 'ciphered' || !encryption.supported || !doc) return encryption;
+  const obstacle = readObstacle(doc);
+  return obstacle ? { ...encryption, supported: false, refusal: obstacle } : encryption;
+}
+
+/** What a refusal is actually about, in the sentence's own words. */
+const REFUSAL_CLAUSE: Record<UnsupportedReason, string> = {
+  'aes-256': 'this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet',
+  'rc4-40': 'this app reads RC4 at 128 bits and above, and has no fixture for 40-bit RC4 to claim it',
+  'public-key': 'it is locked by a certificate handler rather than a password this app can check',
+  'unsupported-filter': 'the crypt filter it selects is one this app does not implement',
+  'missing-parameters': 'its encryption dictionary is missing a value the key derivation needs',
+  'no-aes-primitives': 'this browser offers no AES-CBC, so the cipher cannot be undone here',
+  'object-streams': 'its objects live in compressed object streams, which this engine cannot re-read once ciphered',
+  'plaintext-claim': 'the dictionary claims a cipher its producer never ran, and its page streams are already readable',
+  // A gate is never refused — the filter it selects is `/None`, "the data are not
+  // encrypted" — so this clause exists only to keep the list beside the type.
+  'no-cipher': 'there is no cipher in force to undo',
+};
+
+/**
+ * The refusal a content-rewriting tool gives a file whose streams are ciphertext
+ * this app cannot undo.
+ *
+ * This app *reads* a locked document: pdf.js implements the ciphers, so the
+ * preview, the page count and the extracted words are right, and every cipher
+ * `core/crypto` undoes is edited normally now. What is refused here is the rest:
+ * the engine would copy each page stream exactly as the file stores it and the
+ * writer would label the copy with whatever filter the source claimed.
+ * Measured over 18 runs by an outside-locked file: the right page count, the
+ * password still working, and blank paper
+ * (`docs/research/encrypted-inputs-findings.md` §3).
+ *
+ * The sentence names the cipher the dictionary actually selects *and* why this
+ * one is refused, and never claims that encryption as such is unsupported — a
+ * password gate whose crypt filter is `/None`, which is what this app's own
+ * `protect` writes, keeps being edited normally because its streams are plaintext.
+ */
 export function cipheredInputError(name: string, encryption: PdfEncryption): ToolInputError {
+  const why = encryption.refusal ? REFUSAL_CLAUSE[encryption.refusal] : 'this app cannot undo it';
   return new ToolInputError(
     'UNSUPPORTED',
-    `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and this app cannot decrypt them yet.`,
+    `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and ${why}.`,
     {
       fileName: name,
-      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path copies the page streams without decrypting them, and the copy opens as blank pages. A file locked the way this app’s own Protect locks it — a password gate with no crypt filter — is edited normally.',
+      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was.',
     },
   );
 }
@@ -615,6 +812,7 @@ async function probePdf(
     encryption: null,
     needsPassword: false,
     passwordAccepted: false,
+    passwordLevel: null,
     opensWithEmptyPassword: false,
     permissions: null,
     version,
@@ -660,11 +858,7 @@ async function probePdf(
   // could not resolve to a dictionary still claims a handler, so it counts as
   // ciphered — the refusal an unreadable lock earns is "cannot decrypt", never a
   // copy of bytes nobody has read.
-  const encryption = encrypted
-    ? dict
-      ? classifyEncryption(dict)
-      : UNREADABLE_ENCRYPTION
-    : NO_ENCRYPTION;
+  const encryption = outcome.encryption;
   const declaredPages = outcome.doc ? declaredPageCount(outcome.doc) : null;
   const pages = outcome.doc ? safePageCount(outcome.doc) : 0;
   const recovered =
@@ -679,6 +873,7 @@ async function probePdf(
     encryption,
     needsPassword: outcome.refused === 'PASSWORD_REQUIRED',
     passwordAccepted: outcome.passwordAccepted,
+    passwordLevel: outcome.passwordLevel,
     opensWithEmptyPassword: outcome.opensWithEmptyPassword,
     permissions,
     truncated,
@@ -817,7 +1012,7 @@ export async function preflightPdf(
   // app cannot undo, typing the right password does not unblock the run — so
   // "enter it and try again" would send the user off to do work that changes
   // nothing, and the file would still come back with empty pages.
-  if (options.rejectCiphered && inspection.encryption?.state === 'ciphered') {
+  if (options.rejectCiphered && inspection.encryption?.state === 'ciphered' && !inspection.encryption.supported) {
     return cipheredInputError(source.name, inspection.encryption);
   }
   if (!inspection.error) return null;

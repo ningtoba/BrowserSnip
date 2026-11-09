@@ -42,7 +42,8 @@
  * judged. The gate-only tests are green in both states, which is the point of the
  * split: nothing that works today is refused by this guard.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef } from '@maxwbh/pdf-lib';
@@ -63,6 +64,21 @@ import { getPdfTool } from '@/lib/pdf/tools/registry';
 import type { ToolValues } from '@/lib/pdf/tools/types';
 
 const FIXTURES = resolve(process.cwd(), 'tests/fixtures/encrypted');
+
+beforeAll(() => {
+  // `flatten-pdf` reads the page through pdf.js, and pdf.js assigns an `http://`
+  // worker URL that Node's ESM loader refuses. Same shim `edge-security.test.ts`
+  // carries: without it the rewriting table below cannot ask flatten anything at
+  // all, and a tool that never ran is not a tool that passed.
+  let workerPath = `file://${process.cwd()}/node_modules/pdfjs-dist/build/pdf.worker.mjs`;
+  Object.defineProperty(GlobalWorkerOptions, 'workerSrc', {
+    configurable: true,
+    get: () => workerPath,
+    set: (value: string) => {
+      if (value.startsWith('file:') || value.startsWith('data:')) workerPath = value;
+    },
+  });
+}, 120_000);
 
 /** `tests/fixtures/encrypted` — written by libqpdf and MuPDF, never by this app. */
 const fixtureBytes = (name: string): Uint8Array => new Uint8Array(readFileSync(join(FIXTURES, name)));
@@ -357,47 +373,93 @@ describe('the ciphertext the guard refuses', () => {
     expect(view.words).toContain(PLANTED);
   });
 
-  it('reads no words out of an AES-128 file, and cannot even inflate its streams', async () => {
-    // The measurement behind the refusal, on the bytes rather than on a message:
-    // the opened document has 3 pages, the password works, and its content is not
-    // text at all. A decrypt pass on load will redden this test, and that is the
-    // moment this guard can be reconsidered.
+  it('reads no words out of an AES-128 file *without* the decrypt pass', async () => {
+    // The measurement that made the refusal necessary, kept as the contrast case:
+    // `PDFDocument.load` on these bytes still has 3 pages, still inflates nothing,
+    // and still holds no text. `core/crypto` is the change, so this is the before.
     const view = await engineView(fixtureBytes('aes-128-user.pdf'), PASSWORD);
     expect(view.words).not.toContain(PLANTED);
     expect(view.undecoded).toBeGreaterThan(0);
   });
 
-  it('reads no words out of an RC4-128 file either', async () => {
-    const view = await engineView(fixtureBytes('rc4-128-user.pdf'), PASSWORD);
+  it.each([
+    'aes-128-user.pdf',
+    'mu-aes-128-user.pdf',
+    'rc4-128-user.pdf',
+    'mu-rc4-128-user.pdf',
+  ])('reads every word of %s through the app\u2019s own read path', async (name) => {
+    // The other half of the rule: a file at these two strengths is not refused any
+    // more, it is decrypted. Scored on the planted sentence rather than on "it
+    // opened" — 18 of 18 rebuilt files in the rig opened, counted 3 pages and held
+    // no characters at all.
+    const doc = await openPDF(fixtureBytes(name), { password: PASSWORD });
+    const view = await engineView(await doc.save({ useObjectStreams: false }));
+    expect(view.undecoded, name).toBe(0);
+    expect(view.words, name).toContain(PLANTED);
+    expect(view.words, name).toContain('Sheet ALPHA body copy');
+    expect(view.words, name).toContain('Sheet CHARLIE body copy');
+  });
+
+  it('reads the owner-only file with nothing typed, because its user secret is empty', async () => {
+    const doc = await openPDF(fixtureBytes('rc4-128-owner.pdf'));
+    const view = await engineView(await doc.save({ useObjectStreams: false }));
+    expect(view.words).toContain(PLANTED);
+  });
+
+  it('still reads no words out of an AES-256 file, which is still refused by name', async () => {
+    // Read leniently, without the secret: `@maxwbh/pdf-lib`'s own revision-6
+    // password check is the separate defect the `encrypted-inputs` row records, so
+    // handing it the right password only proves that check throws.
+    const view = await engineView(fixtureBytes('aes-256-user.pdf'));
     expect(view.words).not.toContain(PLANTED);
+    expect(view.undecoded).toBeGreaterThan(0);
   });
 });
 
 /* ── 4. the refusal ──────────────────────────────────────────────────────── */
 
 describe('the refusal says what the file is and what to do', () => {
-  it('names the cipher, the filter and the revision', async () => {
-    const seen = await inspectPdf(fixtureBytes('aes-128-user.pdf'), 'contract.pdf', { password: PASSWORD });
+  it('names the cipher, the filter and the revision it cannot undo', async () => {
+    const seen = await inspectPdf(fixtureBytes('aes-256-user.pdf'), 'contract.pdf', { password: PASSWORD });
+    expect(seen.encryption).toMatchObject({
+      state: 'ciphered', algorithm: 'AES-256', supported: false, refusal: 'aes-256',
+    });
     const error = cipheredInputError('contract.pdf', seen.encryption as PdfEncryption);
     expect(error.code).toBe('UNSUPPORTED');
     expect(error.fileName).toBe('contract.pdf');
     expect(error.passwordRequired).toBe(false);
     expect(error.message).toBe(
-      '"contract.pdf" is encrypted with AES-128 (crypt filter /StdCF, revision 4): '
-      + 'its pages are stored as ciphertext, and this app cannot decrypt them yet.',
+      '"contract.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): '
+      + 'its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, '
+      + 'and cannot undo a 256-bit one yet.',
     );
     expect(error.hint).toMatch(/Decrypt the file in the program that locked it/);
     expect(error.hint).toMatch(/password alone does not help/);
     expect(error.hint).toMatch(/open and preview/);
     expect(error.hint).toMatch(/blank pages/);
-    // The other half of the rule, stated in the sentence itself.
-    expect(error.hint).toMatch(/a password gate with no crypt filter[\s\S]*is edited normally/);
+    // Both halves of the new rule, in the sentence itself: the strengths that work
+    // are named, and so is the gate that always worked.
+    expect(error.hint).toMatch(/RC4-128 or AES-128 are decrypted and edited normally now/);
+    expect(error.hint).toMatch(/a password gate with no crypt filter[\s\S]*always was/);
   });
 
   it('does not claim that every locked file is refused', async () => {
-    const seen = await inspectPdf(fixtureBytes('rc4-128-user.pdf'), 'scan.pdf', { password: PASSWORD });
-    const error = cipheredInputError('scan.pdf', seen.encryption as PdfEncryption);
-    expect(error.message).toMatch(/RC4-128 \(revision 3\)/);
+    // 40-bit RC4 has no fixture from either outside producer, so the claim made
+    // here is narrower than "every cipher": a strength nobody has read back as
+    // words is named as unread, never as unsupported-in-principle.
+    const error = cipheredInputError('scan.pdf', {
+      state: 'ciphered',
+      algorithm: 'RC4-40',
+      streamFilter: null,
+      stringFilter: null,
+      method: 'RC4',
+      version: 1,
+      revision: 2,
+      supported: false,
+      refusal: 'rc4-40',
+    });
+    expect(error.message).toMatch(/RC4-40 \(revision 2\)/);
+    expect(error.message).toMatch(/has no fixture for 40-bit RC4/);
     const said = `${error.message} ${error.hint}`;
     expect(said).not.toMatch(/\b(all|every|any) (encrypted|password[- ]protected) files\b/i);
     expect(said).not.toMatch(/cannot (open|read|preview) (this |the )?(encrypted )?(file|PDF|pages)/i);
@@ -430,69 +492,66 @@ const READING: { id: string; values: ToolValues }[] = [
   { id: 'extract-attachments', values: {} },
 ];
 
-describe.each([
-  'aes-128-user.pdf',
-  'rc4-128-user.pdf',
-  'rc4-128-owner.pdf',
-  'aes-256-user.pdf',
-  'mu-aes-128-user.pdf',
-  'mu-rc4-128-user.pdf',
-] as const)(
-  'a ciphered input read from %s',
-  (name) => {
-    // The owner-only file's user password is empty, so it is run with nothing.
-    const password = name === 'rc4-128-owner.pdf' ? undefined : PASSWORD;
+/**
+ * The six outside-locked fixtures, split by what this app can now do with them.
+ *
+ * `decrypts` is not a hope: for the five at the two proven strengths every
+ * rewriting tool must hand back a file whose planted sentence is still in it, and
+ * for the sixth (AES-256) it must still refuse, by name. Both directions are
+ * asserted per tool, because the bug this row measured was one-sided — a page
+ * count that matched while the text was gone.
+ */
+const CIPHERED_INPUTS = [
+  { name: 'aes-128-user.pdf', decrypts: true, cipher: 'AES-128' },
+  { name: 'rc4-128-user.pdf', decrypts: true, cipher: 'RC4-128' },
+  { name: 'mu-aes-128-user.pdf', decrypts: true, cipher: 'AES-128' },
+  { name: 'mu-rc4-128-user.pdf', decrypts: true, cipher: 'RC4-128' },
+  // The owner-only file's user password is empty, so it is run with nothing.
+  { name: 'rc4-128-owner.pdf', decrypts: true, cipher: 'RC4-128' },
+  { name: 'aes-256-user.pdf', decrypts: false, cipher: 'AES-256' },
+] as const;
 
-    it.each(REWRITING)('is refused by $id before any work, rather than emptied', async ({ id, values }) => {
-      const refusal = await run(id, values, name, password).then(
-        () => null,
+describe.each(CIPHERED_INPUTS)('a ciphered input read from $name', ({ name, decrypts, cipher }) => {
+  // The owner-only file carries an empty user secret; the rest need the password.
+  const password = name.endsWith('-owner.pdf') ? undefined : PASSWORD;
+
+  it.each(REWRITING)(
+    decrypts ? '$id hands back a file that still says it' : '$id is refused before any work, rather than emptied',
+    async ({ id, values }) => {
+      const outcome = await run(id, values, name, password).then(
+        (ran) => ran as unknown,
         (error: unknown) => error,
       );
-      expect(refusal, `${id} produced a file from ${name} instead of refusing it`).toBeTruthy();
-      expect(isToolInputError(refusal), 'the refusal is a bare Error').toBe(true);
-      const error = refusal as ReturnType<typeof cipheredInputError>;
-      expect(error.code).toBe('UNSUPPORTED');
-      expect(error.passwordRequired).toBe(false);
-      expect(error.message).toContain(name);
-      expect(error.message).toMatch(/stored as ciphertext, and this app cannot decrypt them yet/);
-    });
+      if (!decrypts) {
+        expect(isToolInputError(outcome), `${id} produced a file from ${name} instead of refusing it`).toBe(true);
+        const error = outcome as ReturnType<typeof cipheredInputError>;
+        expect(error.code).toBe('UNSUPPORTED');
+        expect(error.passwordRequired).toBe(false);
+        expect(error.message).toContain(name);
+        expect(error.message).toContain(cipher);
+        expect(error.message).toMatch(/stored as ciphertext, and /);
+        return;
+      }
+      expect(isToolInputError(outcome), `${id} refused ${name}: ${(outcome as Error).message}`).toBe(false);
+      const produced = outcome as Awaited<ReturnType<typeof runPdfTool>>;
+      expect(produced.outputs.length, `${id} produced nothing from ${name}`).toBeGreaterThan(0);
+      // The words, in the bytes the user would download: what a page count cannot
+      // tell us, and what the rig's 18 blank outputs were made of.
+      const bytes = new Uint8Array(await produced.outputs[0].blob.arrayBuffer());
+      const view = await engineView(bytes);
+      expect(view.undecoded, `${id} left ciphertext in ${name}`).toBe(0);
+      expect(view.words, `${id} lost the planted sentence of ${name}`).toContain(PLANTED);
+    },
+  );
 
-    it.each(READING)('is not refused as encrypted by $id, which rewrites nothing', async ({ id, values }) => {
-      // A reader may still refuse this file for its own reason — there are no
-      // attachments to pull out — but it must not be the cipher refusal, which
-      // would withhold a tool whose answer does not depend on decrypting.
-      const error = await run(id, values, name, password).then(() => null, (caught: unknown) => caught);
-      if (error === null) return;
-      const blamed = isToolInputError(error) && error.code === 'UNSUPPORTED' && /ciphertext/.test(error.message);
-      expect(blamed, `${id} refused ${name} as encrypted: ${error instanceof Error ? error.message : String(error)}`).toBe(false);
-    });
-  },
-);
-
-describe('the refusal is the pre-flight’s, not each tool’s', () => {
-  it('is raised before a password is ever asked for', async () => {
-    const refusal = await preflightPdf(asSource(fixtureBytes('aes-128-user.pdf'), 'aes-128-user.pdf'), undefined, {
-      rejectCiphered: true,
-    });
-    expect(refusal?.code).toBe('UNSUPPORTED');
-    expect(refusal?.message).toMatch(/AES-128/);
-    expect(refusal?.passwordRequired).toBe(false);
-  });
-
-  it('leaves the password gate standing for a gate-only file', async () => {
-    const source = asSource(await gateOnly(), 'own-protected.pdf');
-    const blind = await preflightPdf(source, undefined, { rejectCiphered: true });
-    expect(blind?.code).toBe('PASSWORD_REQUIRED');
-    expect(blind?.passwordRequired).toBe(true);
-    expect(await preflightPdf(source, PASSWORD, { rejectCiphered: true })).toBeNull();
-  });
-
-  it('asks nothing of a reader, and nothing of an unlocked file', async () => {
-    const ciphered = asSource(fixtureBytes('aes-128-user.pdf'), 'aes-128-user.pdf');
-    expect(await preflightPdf(ciphered, PASSWORD)).toBeNull();
-    expect(await preflightPdf(ciphered, PASSWORD, { rejectCiphered: false })).toBeNull();
-    const plain = asSource(fixtureBytes('plain.pdf'), 'plain.pdf');
-    expect(await preflightPdf(plain, undefined, { rejectCiphered: true })).toBeNull();
+  it.each(READING)('is not refused as encrypted by $id, which rewrites nothing', async ({ id, values }) => {
+    // A reader may still refuse this file for its own reason — there are no
+    // attachments to pull out — but it must not be the cipher refusal, which
+    // would withhold a tool whose answer does not depend on decrypting.
+    const error = await run(id, values, name, password).then(() => null, (caught: unknown) => caught);
+    if (error === null) return;
+    const blamed = isToolInputError(error) && error.code === 'UNSUPPORTED' && /ciphertext/.test(error.message);
+    expect(blamed, `${id} refused ${name} as encrypted: ${error instanceof Error ? error.message : String(error)}`).toBe(false);
   });
 });
 

@@ -53,6 +53,7 @@ import {
   PDFRawStream,
   PDFRef,
   PDFString,
+  decodePDFRawStream,
   rc4Encrypt,
 } from '@maxwbh/pdf-lib';
 import type { PDFContext, PDFDocument, PDFObject } from '@maxwbh/pdf-lib';
@@ -77,6 +78,8 @@ export type UnsupportedReason =
   | 'no-aes-primitives'
   /** Objects live in object streams, which the parser cannot re-read. */
   | 'object-streams'
+  /** The dictionary names a cipher over bytes that are already plaintext. */
+  | 'plaintext-claim'
   /** The effective crypt filter is `/None`: a password gate over plaintext. */
   | 'no-cipher';
 
@@ -533,14 +536,32 @@ export function assessAccess(doc: PDFDocument, password?: string): AccessVerdict
       : { kind: 'unsupported', reason: read.reason, strength: null };
   }
   // A cipher this module can undo is still useless where the page tree lives
-  // inside an object stream: those bytes were inflated before anyone was asked.
-  if (objectStreamsUnreadable(doc)) {
-    return { kind: 'unsupported', reason: 'object-streams', strength: read.cipher.strength };
-  }
+  // inside an object stream, or where the dictionary claims a cipher this app's
+  // own writer never ran: `readObstacle` names both.
+  const obstacle = readObstacle(doc);
+  if (obstacle) return { kind: 'unsupported', reason: obstacle, strength: read.cipher.strength };
   return verdictFor(read.cipher, password);
 }
 
 /* ── the pass ────────────────────────────────────────────────────────────── */
+
+/**
+ * Whether the cipher one dictionary selects is one this module undoes.
+ *
+ * The dictionary-only half of `assessAccess`, so `core/guard.ts` can answer
+ * "supported?" while it classifies a lock, before any password is in play: the
+ * two strengths above are yes, a gate whose filter is `/None` is yes because
+ * there is nothing to undo, and everything else is a named reason.
+ */
+export type CipherSupport = { supported: true } | { supported: false; reason: UnsupportedReason };
+
+export function supportsCipher(dict: PDFDict): CipherSupport {
+  const read = readCipher(dict.context, dict);
+  if (read.ok) return { supported: true };
+  // A gate is supported because there is nothing to undo: its bytes are already
+  // plaintext, which is the case `core/guard.ts` keeps rewriting normally.
+  return read.reason === 'no-cipher' ? { supported: true } : { supported: false, reason: read.reason };
+}
 
 /**
  * Files this app cannot read even with the cipher undone.
@@ -551,6 +572,51 @@ export function assessAccess(doc: PDFDocument, password?: string): AccessVerdict
  * inside — page tree, outlines, form fields — is absent. It is visible from the
  * context, and it is not a cipher this module can serve.
  */
+/**
+ * The contradiction this app must not silently resolve: a dictionary that names a
+ * cipher over bytes that are already plaintext.
+ *
+ * `@maxwbh/pdf-lib`'s own `save({ encrypt })` writes exactly that — `/CFM /AESV2`
+ * selected, and no `encryptStream` call behind it — which is the `protect` row's
+ * defect and the mirror image of the one this module fixes. A reader that
+ * believes the claim runs a cipher over plaintext and gets garbage, so undoing
+ * what was never ciphered would do the same damage here. A page's own content
+ * stream is the evidence, and it is the right thing to ask: with
+ * `/EncryptMetadata false` the metadata stream is plaintext in a genuinely
+ * ciphered file, while the page always is not.
+ */
+export function readObstacle(doc: PDFDocument): UnsupportedReason | null {
+  if (objectStreamsUnreadable(doc)) return 'object-streams';
+  return claimsACipherItNeverRan(doc) ? 'plaintext-claim' : null;
+}
+
+function claimsACipherItNeverRan(doc: PDFDocument): boolean {
+  let streams = 0;
+  let readable = 0;
+  try {
+    for (const page of doc.getPages()) {
+      const value = page.node.get(PDFName.of('Contents'));
+      const items = value instanceof PDFArray
+        ? Array.from({ length: value.size() }, (_, index) => value.get(index))
+        : [value];
+      for (const item of items) {
+        const stream = item instanceof PDFRef ? doc.context.lookup(item) : item;
+        if (!(stream instanceof PDFRawStream) || !stream.dict.get(PDFName.of('Filter'))) continue;
+        streams += 1;
+        try {
+          decodePDFRawStream(stream).decode();
+          readable += 1;
+        } catch {
+          /* the payload will not filter: that is what ciphertext looks like */
+        }
+      }
+    }
+  } catch {
+    return false;
+  }
+  return streams > 0 && readable === streams;
+}
+
 export function objectStreamsUnreadable(doc: PDFDocument): boolean {
   return doc.context
     .enumerateIndirectObjects()
@@ -583,6 +649,9 @@ export async function decryptDocument(doc: PDFDocument, password?: string): Prom
   const cipher = cipherOf(context);
   if (!cipher) return { kind: 'unsupported', reason: 'missing-parameters', strength };
 
+  // The encryption dictionary's own /O and /U strings are exempt from the cipher
+  // they describe (ISO 32000-1 §7.3.2.1), as is user metadata when the
+  // dictionary says `/EncryptMetadata false`.
   const exempt = exemptRefs(context, cipher);
   let streams = 0;
   let strings = 0;
