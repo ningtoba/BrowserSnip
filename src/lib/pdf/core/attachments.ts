@@ -355,6 +355,57 @@ export async function addAttachments(
   return listAttachments(doc).length;
 }
 
+/** What a page-copy carry did with the embedded files. */
+export interface AttachmentCarry {
+  /** Attachments that reached the new document. */
+  carried: number;
+  /** Entries left behind because that name had already been carried. */
+  collided: number;
+}
+
+/**
+ * Carry the embedded files of `sources` into `target`.
+ *
+ * A page copy moves page objects; the `/EmbeddedFiles` name tree hangs off the
+ * **catalog**, and `/AF` off the document, so nothing follows the pages and an
+ * attached source file vanished from every rebuild without a word. The payloads
+ * are re-written rather than spliced across contexts: `listAttachments` decodes
+ * the real bytes and `addAttachments` writes them back with the `/CheckSum`,
+ * `/Size` and dates readers expect, so an entry whose stream a foreign producer
+ * wrote in an unsupported filter still travels instead of being dropped.
+ *
+ * Name-tree keys must be unique (ISO 32000-1 §7.9.6), so the **first** file
+ * carried under a name keeps it and the rest are counted in `collided` for the
+ * caller to report — silently overwriting one attachment with another would be
+ * the same bug wearing a different hat.
+ */
+export async function copyAttachments(
+  target: PDFDocument,
+  sources: PDFDocument[],
+): Promise<AttachmentCarry> {
+  const held = new Set(listAttachments(target).map((entry) => entry.name));
+  const inputs: AttachmentInput[] = [];
+  let collided = 0;
+  for (const doc of sources) {
+    for (const entry of listAttachments(doc)) {
+      if (held.has(entry.name)) {
+        collided += 1;
+        continue;
+      }
+      held.add(entry.name);
+      inputs.push({
+        name: entry.name,
+        bytes: entry.bytes,
+        ...(entry.mimeType !== undefined ? { mimeType: entry.mimeType } : {}),
+        ...(entry.description !== undefined ? { description: entry.description } : {}),
+      });
+    }
+  }
+  if (inputs.length === 0) return { carried: 0, collided };
+  await addAttachments(target, inputs);
+  return { carried: inputs.length, collided };
+}
+
 /**
  * Replace the payload of an existing attachment, keeping its name, description
  * and file specification.

@@ -35,7 +35,18 @@ import {
   degrees,
   rgb,
 } from '../core/doc';
-import { collectPages, newPDF, openPDF, savePDF } from '../core/doc';
+import {
+  carryPageFurniture,
+  collectPages,
+  newPDF,
+  openPDF,
+  savePDF,
+  type CopyFidelity,
+  type PageCopyMap,
+} from '../core/doc';
+import { countOutlineNodes, readOutline } from '../core/bookmarks';
+import { listAttachments } from '../core/attachments';
+import { listFormFields } from '../core/forms';
 import { PAGE_SIZES, cropBox, formatPages, mediaBox, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
 import { createZip } from '../core/archive';
@@ -427,6 +438,74 @@ function noteRebuildLoss(subject: string, doc: PDFDocument, indices: number[], n
       `${subject} rebuilt the pages, so this document's bookmarks are not in the output — the optional CoherentPDF engine edits bookmarks without a rebuild.`,
     );
   }
+  // Both of these are page-independent structures the rebuild has no handle on:
+  // the embedded files hang off the catalog, and the field list off `/AcroForm`.
+  const attached = listAttachments(doc).length;
+  if (attached > 0) {
+    notes.add(
+      `${subject} rebuilt the pages, so this document's ${countLabel(attached, 'attached file')} ${attached === 1 ? 'is' : 'are'} not in the output.`,
+    );
+  }
+  noteFormFields(listFormFields(doc).length, notes);
+}
+
+/** `1 bookmark` / `3 bookmarks`, for a sentence that has to read like English. */
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** How many bookmarks a document's outline holds, grouping headings included. */
+function outlineSize(doc: PDFDocument): number {
+  return countOutlineNodes(readOutline(doc));
+}
+
+/**
+ * Admit the bookmarks a page copy had to leave behind.
+ *
+ * The copy re-points every bookmark whose destination travelled; what remains is
+ * a bookmark aimed at a page this output does not contain, which is dropped
+ * rather than left on the wrong sheet (see `remapOutline`).
+ */
+function noteDroppedBookmarks(
+  total: number,
+  carried: number,
+  dropped: number,
+  notes: Notes,
+): void {
+  if (dropped <= 0 || total <= 0) return;
+  notes.add(
+    `${dropped} of this document's ${countLabel(total, 'bookmark')} pointed at ${dropped === 1 ? 'a page that is' : 'pages that are'} not in this output, so ${dropped === 1 ? 'it was' : 'they were'} dropped; ${carried > 0 ? `${carried} came with the pages` : 'none came with the pages'}.`,
+  );
+}
+
+/** The field list is not a page object, so a copy can never carry it. */
+function noteFormFields(count: number, notes: Notes): void {
+  if (count <= 0) return;
+  notes.add(
+    `This document has ${countLabel(count, 'form field')}: the copied pages keep their boxes, but a page copy cannot carry the field list, so ${count === 1 ? 'it is' : 'they are'} no longer editable in the output. Flatten the form first if the values have to survive.`,
+  );
+}
+
+/**
+ * Say out loud whatever the page copy could not carry.
+ *
+ * `collectPages` keeps the outline and the embedded files; this is the remainder,
+ * stated with a count instead of left silent. The copy used to drop the whole
+ * table of contents and every attached file without a word.
+ */
+function notePageCopy(sources: PDFDocument[], fidelity: CopyFidelity, notes: Notes): void {
+  noteDroppedBookmarks(
+    fidelity.bookmarks + fidelity.bookmarksDropped,
+    fidelity.bookmarks,
+    fidelity.bookmarksDropped,
+    notes,
+  );
+  if (fidelity.attachmentsCollided > 0) {
+    notes.add(
+      `${countLabel(fidelity.attachmentsCollided, 'attached file')} shared a name with one already carried, so only the first copy is in the output.`,
+    );
+  }
+  noteFormFields(sources.reduce((sum, doc) => sum + listFormFields(doc).length, 0), notes);
 }
 
 /**
@@ -439,14 +518,13 @@ function noteRebuildLoss(subject: string, doc: PDFDocument, indices: number[], n
  */
 async function savable(input: OpenedInput, notes: Notes): Promise<PDFDocument> {
   if (!input.inspection?.encrypted) return input.doc;
-  const outlines = hasOutlines(input.doc);
   const rebuilt = await rebuildDocument(input.doc);
   notes.add(
     `"${input.name}" is password protected, so the pages were copied into a new file — the output opens without a password.`,
   );
-  if (outlines) {
-    notes.add(`The copy does not carry "${input.name}"'s bookmarks across.`);
-  }
+  // The copy re-points the bookmarks and carries the embedded files across, so
+  // the field list is the only thing this rebuild can still lose.
+  noteFormFields(listFormFields(input.doc).length, notes);
   return rebuilt;
 }
 
@@ -495,9 +573,10 @@ const PDF_MAX_EDGE = 14400;
 const MAX_EDGE_TEXT = '14 400 pt';
 
 /**
- * What a page-tree copy costs. Every tool that rebuilds the document rather than
- * editing it in place loses the outline, and the run only says so when the file
- * happened to have one — so the standing disclosure belongs on the tool.
+ * What a page-tree copy costs. The shared primitive re-points the bookmarks
+ * whose pages travelled and carries the embedded files, so the standing loss is
+ * the catalogue's form-field list: the widget boxes come along, the thing that
+ * made them fields does not.
  *
  * The form-field half of this sentence is measured, not assumed: `copyPages`
  * carries a page's widget annotations but never the catalogue's `/AcroForm`, so
@@ -506,7 +585,7 @@ const MAX_EDGE_TEXT = '14 400 pt';
  * pages" would be the overclaim this pass exists to remove.
  */
 const PAGE_COPY_NOTE =
-  'The pages are copied into a new file: the ink and the link annotations travel with them, but this document’s own bookmarks do not, and a fillable form loses the field list that makes its boxes editable.';
+  'The pages are copied into a new file. The ink, the annotations, the bookmarks that point at pages you kept and any attached files travel with them. What never travels is the form-field list: a fillable form stops being fillable, so flatten it first if the values have to survive.';
 
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
@@ -766,8 +845,8 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Merge',
     promise: 'One PDF with every file’s pages in your order, and — while bookmarks are switched on — one entry per source file.',
     notes: [
-      'Pages are copied rather than redrawn, so the source files are untouched and their link annotations come with them. The catalogue’s form field list does not, so a fillable form needs filling before it is merged.',
-      'A bookmark is written for the first page of each file. Bookmarks *inside* a source file are not carried over — use the bookmark editor for those.',
+      'Pages are copied rather than redrawn, so the source files are untouched and their link annotations and attached files come with them. The catalogue’s form field list does not, so a fillable form needs filling before it is merged.',
+      'With “Add a bookmark for each file” on, one entry is written for the first page of each file and the bookmarks *inside* a source file are not carried over. Switch it off and the original trees are re-pointed at the merged pages instead — use the bookmark editor to combine the two.',
     ],
     fields: [
       {
@@ -795,6 +874,7 @@ export const organizeTools: PdfToolDefinition[] = [
       noteRepeated(inputs, notes);
       const target = await newPDF();
       const marks: { title: string; page: number }[] = [];
+      const copies: PageCopyMap[] = [];
       const sheetSizes = new Set<string>();
       for (let i = 0; i < inputs.length; i++) {
         throwIfAborted(context.signal);
@@ -802,6 +882,11 @@ export const organizeTools: PdfToolDefinition[] = [
         const start = target.getPageCount();
         marks.push({ title: input.name, page: start });
         const copied = await target.copyPages(input.doc, resolvePages('all', input.pageCount));
+        // Source page index → merged index. The blank spacer is appended after
+        // this file's own pages, so the run of offsets stays contiguous.
+        const mapping = new Map<number, number>();
+        for (let page = 0; page < copied.length; page++) mapping.set(page, start + page);
+        copies.push({ doc: input.doc, mapping });
         for (const page of copied) {
           target.addPage(page);
           const box = visibleBox(page);
@@ -824,12 +909,20 @@ export const organizeTools: PdfToolDefinition[] = [
         );
       }
       const outlineSource = inputs.find((input) => hasOutlines(input.doc));
-      if (outlineSource) {
+      // With the per-file entries switched off the source trees are re-pointed
+      // and carried instead; with them on they are replaced, which is what the
+      // tool advertises, so the note says how to get the other behaviour.
+      const perFileBookmarks = booleanValue(context.values, 'bookmarks', true);
+      if (outlineSource && perFileBookmarks) {
         notes.add(
-          `"${outlineSource.name}" already had bookmarks: only the new per-file entries were written, and ${outlineSource.name}’s own tree was left behind.`,
+          `"${outlineSource.name}" already had bookmarks: only the new per-file entries were written, and ${outlineSource.name}’s own tree was left behind. Switch "Add a bookmark for each file" off to bring the original bookmarks along instead.`,
         );
       }
-      if (booleanValue(context.values, 'bookmarks', true)) {
+      const fidelity = await carryPageFurniture(target, copies, { outlines: !perFileBookmarks });
+      if (!perFileBookmarks) {
+        notePageCopy(copies.map((copy) => copy.doc), fidelity, notes);
+      }
+      if (perFileBookmarks) {
         const written = writeFlatOutline(target, marks);
         if (written === 0) {
           notes.add('Bookmarks could not be written for these files, so the merge continued without them.');
@@ -976,10 +1069,15 @@ export const organizeTools: PdfToolDefinition[] = [
       const files: { blob: Blob; name: string }[] = [];
       const used = new Set<string>();
       const stem = safeStem(input.name);
+      // A bookmark belongs to exactly one output file, so counting what every
+      // file carried says what the *job* lost — and the ranges are disjoint, so
+      // no bookmark is counted twice.
+      let carriedBookmarks = 0;
       for (let i = 0; i < groups.length; i++) {
         throwIfAborted(context.signal);
         const group = groups[i];
         const doc = await collectPages([{ doc: input.doc, pages: group.pages }]);
+        carriedBookmarks += doc.fidelity.bookmarks;
         const bytes = await savePDF(doc.doc);
         files.push({
           blob: new Blob([bytes], { type: 'application/pdf' }),
@@ -987,6 +1085,14 @@ export const organizeTools: PdfToolDefinition[] = [
         });
         context.progress((i + 1) / groups.length, `Wrote ${group.name}`);
       }
+      const splitOutline = outlineSize(input.doc);
+      noteDroppedBookmarks(
+        splitOutline,
+        carriedBookmarks,
+        Math.max(0, splitOutline - carriedBookmarks),
+        notes,
+      );
+      noteFormFields(listFormFields(input.doc).length, notes);
       return filesOut(files, notes, `Created ${files.length} file${files.length === 1 ? '' : 's'} from ${pageCountLabel(total)}.`);
     },
   },
@@ -1026,9 +1132,10 @@ export const organizeTools: PdfToolDefinition[] = [
         notes.add(`You selected every page, so the extracted file matches the original's content (${pageCountLabel(pages.length)}).`);
       }
       if (booleanValue(context.values, 'mergeIntoOne', true)) {
-        const doc = await collectPages([{ doc: input.doc, pages }]);
+        const built = await collectPages([{ doc: input.doc, pages }]);
+        notePageCopy([input.doc], built.fidelity, notes);
         return pdfOut(
-          doc.doc,
+          built.doc,
           notes,
           `Extracted ${pageCountLabel(pages.length)} of ${pageCountLabel(input.pageCount)}.`,
         );
@@ -1036,9 +1143,11 @@ export const organizeTools: PdfToolDefinition[] = [
       const stem = safeStem(input.name);
       const used = new Set<string>();
       const files: { blob: Blob; name: string }[] = [];
+      let carriedBookmarks = 0;
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
         const doc = await collectPages([{ doc: input.doc, pages: [pages[i]] }]);
+        carriedBookmarks += doc.fidelity.bookmarks;
         const bytes = await savePDF(doc.doc);
         files.push({
           blob: new Blob([bytes], { type: 'application/pdf' }),
@@ -1046,6 +1155,14 @@ export const organizeTools: PdfToolDefinition[] = [
         });
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
+      const singleOutline = outlineSize(input.doc);
+      noteDroppedBookmarks(
+        singleOutline,
+        carriedBookmarks,
+        Math.max(0, singleOutline - carriedBookmarks),
+        notes,
+      );
+      noteFormFields(listFormFields(input.doc).length, notes);
       return filesOut(files, notes, `Created ${files.length} single-page files.`);
     },
   },
@@ -1084,6 +1201,7 @@ export const organizeTools: PdfToolDefinition[] = [
         );
       }
       const doc = await collectPages([{ doc: input.doc, pages: keep }]);
+      notePageCopy([input.doc], doc.fidelity, notes);
       return pdfOut(
         doc.doc,
         notes,
@@ -1127,6 +1245,9 @@ export const organizeTools: PdfToolDefinition[] = [
       const target = await newPDF();
       let planIndex = 0;
       let stamped = 0;
+      // Source page → the sheet it landed on. A page used twice keeps its first
+      // copy as the bookmark target, and a blank sheet claims no index.
+      const mapping = new Map<number, number>();
       for (const item of plan) {
         throwIfAborted(context.signal);
         if (item.blank) {
@@ -1138,6 +1259,7 @@ export const organizeTools: PdfToolDefinition[] = [
           target.insertPage(planIndex, [size.width, size.height]);
         } else {
           const [page] = await target.copyPages(input.doc, [item.page]);
+          if (!mapping.has(item.page)) mapping.set(item.page, planIndex);
           // Only re-set the rotation when the plan says so, so a `/Rotate 90`
           // page is not silently flattened to 0 by being reordered (E9).
           if (item.rotate !== null) page.setRotation(degrees(normaliseRotation(item.rotate)));
@@ -1168,7 +1290,8 @@ export const organizeTools: PdfToolDefinition[] = [
       if (isIdentity) {
         notes.add('The order you set matches the document as it is, so the output is a copy rather than a rearrangement.');
       }
-      noteRebuildLoss('Reordering', input.doc, resolvePages('all', input.pageCount), notes);
+      const fidelity = await carryPageFurniture(target, [{ doc: input.doc, mapping }]);
+      notePageCopy([input.doc], fidelity, notes);
       return pdfOut(target, notes, `Rebuilt the document with ${pageCountLabel(target.getPageCount())}.`);
     },
   },
@@ -1335,10 +1458,10 @@ export const organizeTools: PdfToolDefinition[] = [
       if (input.pageCount < 2) {
         notes.add(`This document has ${pageCountLabel(input.pageCount)}, so reversing changes nothing — the output is a copy.`);
       }
-      if (hasOutlines(input.doc)) {
-        notes.add('Bookmarks were written for the original order, so they are not carried into the reversed file.');
-      }
+      // The copy re-points every bookmark at the sheet its page became, so the
+      // reversed file keeps the outline — it just walks the document backwards.
       const doc = await collectPages([{ doc: input.doc, pages: [...pages].reverse() }]);
+      notePageCopy([input.doc], doc.fidelity, notes);
       return pdfOut(doc.doc, notes, `Reversed ${pageCountLabel(pages.length)}.`);
     },
   },
@@ -1404,6 +1527,16 @@ export const organizeTools: PdfToolDefinition[] = [
       if (sizeSpec === 'same' && distinctSizes(input.doc, resolvePages('all', total)) > 1) {
         notes.add(`This document mixes page sizes, so the blank sheets match page ${neighbourIndex + 1} beside them.`);
       }
+      // Every original page is present, shifted by the blanks that landed before
+      // it, so no bookmark can be lost here — but the field list still is.
+      const spacerMapping = new Map<number, number>();
+      for (let page = 0; page < total; page++) {
+        spacerMapping.set(page, page < insertAt ? page : page + count);
+      }
+      const fidelity = await carryPageFurniture(target, [
+        { doc: input.doc, mapping: spacerMapping },
+      ]);
+      notePageCopy([input.doc], fidelity, notes);
       return pdfOut(
         target,
         notes,
@@ -1481,6 +1614,10 @@ export const organizeTools: PdfToolDefinition[] = [
         );
       }
       const target = await newPDF();
+      const copies: PageCopyMap[] = inputs.map((item) => ({
+        doc: item.doc,
+        mapping: new Map<number, number>(),
+      }));
       for (let i = 0; i < plan.length; i++) {
         if (i % 25 === 0) throwIfAborted(context.signal);
         const item = plan[i];
@@ -1488,11 +1625,15 @@ export const organizeTools: PdfToolDefinition[] = [
         // copied fresh rather than reused from a cache.
         const [page] = await target.copyPages(inputs[item.source].doc, [item.page]);
         target.addPage(page);
+        const mapping = copies[item.source].mapping;
+        if (!mapping.has(item.page)) mapping.set(item.page, i);
         context.progress((i + 1) / plan.length, `Page ${i + 1}`);
       }
       if (distinctSizes(target, resolvePages('all', target.getPageCount())) > 1) {
         notes.add('Each page kept its own size, so the mixed file has mixed page sizes. "Fix page size" can even them out afterwards.');
       }
+      const fidelity = await carryPageFurniture(target, copies);
+      notePageCopy(copies.map((copy) => copy.doc), fidelity, notes);
       return pdfOut(target, notes, `Mixed ${pageCountLabel(plan.length)} from ${inputs.length} files.`);
     },
   },
@@ -1557,6 +1698,7 @@ export const organizeTools: PdfToolDefinition[] = [
         notes.add(`An odd ${pageCountLabel(total)} scan splits ${half} + ${total - half}, so the last sheet has no back page.`);
       }
       const doc = await collectPages([{ doc: input.doc, pages: interleaved }]);
+      notePageCopy([input.doc], doc.fidelity, notes);
       return pdfOut(
         doc.doc,
         notes,
@@ -2405,6 +2547,7 @@ export const organizeTools: PdfToolDefinition[] = [
           );
         }
         const doc = await collectPages([{ doc: input.doc, pages: keep }]);
+        notePageCopy([input.doc], doc.fidelity, notes);
         return pdfOut(
           doc.doc,
           notes,

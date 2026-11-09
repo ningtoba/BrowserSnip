@@ -211,6 +211,75 @@ export function readOutline(doc: PDFDocument): OutlineNode[] {
 }
 
 // ---------------------------------------------------------------------------
+// Carrying an outline across a page copy
+// ---------------------------------------------------------------------------
+
+export interface RemappedOutline {
+  /** The bookmarks the copy can write into the new document. */
+  nodes: OutlineNode[];
+  /** How many were dropped because their destination page is not in the copy. */
+  dropped: number;
+}
+
+/** Every node in a bookmark tree, headings included. */
+export function countOutlineNodes(nodes: OutlineNode[]): number {
+  return nodes.reduce((sum, node) => sum + 1 + countOutlineNodes(node.children ?? []), 0);
+}
+
+/**
+ * Re-point a document's bookmarks at the pages a copy placed in a new document.
+ *
+ * `mapping` is *source* page index → *destination* page index, exactly as the
+ * page copy produced it. Where one source page was copied twice it maps to its
+ * **first** copy: a bookmark names a place in the reading order, and the first
+ * sheet is where a reader following it expects to land.
+ *
+ * A bookmark whose own destination did not travel is **dropped**, not snapped to
+ * the nearest copied page — "Chapter 3" opening on page 2 points at the wrong
+ * section with a confident title, which is worse than one entry fewer. Leaving
+ * it on its old page number is not an option either: `writeOutline` throws for a
+ * destination the output has no sheet for, so a stale bookmark would either lie
+ * or abort the run. Its children keep their own destinations and are re-parented
+ * into the heading's place.
+ *
+ * A heading (`page === null`) carries no destination of its own, so it always
+ * travels — even emptied, which is how it stood in the source.
+ */
+export function remapOutline(
+  nodes: OutlineNode[],
+  mapping: Map<number, number>,
+): RemappedOutline {
+  const walk = (level: OutlineNode[]): OutlineNode[] => {
+    const kept: OutlineNode[] = [];
+    for (const node of level) {
+      const children = node.children ? walk(node.children) : [];
+      if (node.page === null || node.page === undefined) {
+        const heading: OutlineNode = { ...node, page: null };
+        if (children.length > 0) heading.children = children;
+        else delete heading.children;
+        kept.push(heading);
+        continue;
+      }
+      const page = mapping.get(node.page);
+      if (page === undefined) {
+        kept.push(...children);
+        continue;
+      }
+      const next: OutlineNode = { ...node, page };
+      if (children.length > 0) next.children = children;
+      else delete next.children;
+      kept.push(next);
+    }
+    return kept;
+  };
+  const carried = walk(nodes);
+  return {
+    nodes: carried,
+    dropped: countOutlineNodes(nodes) - countOutlineNodes(carried),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
 

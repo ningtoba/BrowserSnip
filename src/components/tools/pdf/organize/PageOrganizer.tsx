@@ -32,7 +32,15 @@
 import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
-import { PasswordRequiredError, degrees, newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
+import {
+  PasswordRequiredError,
+  carryPageFurniture,
+  degrees,
+  newPDF,
+  openPDF,
+  savePDF,
+  type CopyFidelity,
+} from '@/lib/pdf/core/doc';
 import type { PDFDocument } from '@maxwbh/pdf-lib';
 import { displayedSize, resolvePages } from '@/lib/pdf/core/pages';
 import { openRender, thumbnails, type PdfSession } from '@/lib/pdf/core/render';
@@ -539,7 +547,7 @@ export default function PageOrganizer(): JSX.Element {
 
   // ── export ────────────────────────────────────────────────────────────────
   const buildPlan = useCallback(
-    async (plan: Plan): Promise<PDFDocument> => {
+    async (plan: Plan): Promise<{ doc: PDFDocument; fidelity: CopyFidelity }> => {
       if (plan.length === 0) throw new Error('The page order is empty — add a page first.');
       const blocked = planRefusal(plan, planSources, statuses);
       if (blocked) throw new Error(blocked);
@@ -572,6 +580,10 @@ export default function PageOrganizer(): JSX.Element {
       };
 
       const target = await newPDF();
+      // Where each source page lands, so the copied document can be given back
+      // its bookmarks: they live on the catalog, not on a page, and a bare
+      // `copyPages` leaves them behind with the file they came from.
+      const placed = new Map<PDFDocument, Map<number, number>>();
       for (let index = 0; index < plan.length; index += 1) {
         const item = plan[index];
         if (item.kind === 'blank') {
@@ -589,6 +601,13 @@ export default function PageOrganizer(): JSX.Element {
           const angle = outputRotation(sourceAngle, item.rotate);
           if (angle !== sourceAngle) page.setRotation(degrees(angle));
           target.insertPage(index, page);
+          let mapping = placed.get(source);
+          if (!mapping) {
+            mapping = new Map<number, number>();
+            placed.set(source, mapping);
+          }
+          // A page used twice keeps its first copy as the bookmark target.
+          if (!mapping.has(item.page)) mapping.set(item.page, index);
         }
         useProcessStore
           .getState()
@@ -599,7 +618,11 @@ export default function PageOrganizer(): JSX.Element {
               : `Placed page ${index + 1} of ${plan.length}`,
           );
       }
-      return target;
+      const fidelity = await carryPageFurniture(
+        target,
+        [...placed].map(([doc, mapping]) => ({ doc, mapping })),
+      );
+      return { doc: target, fidelity };
     },
     [files, planSources, statuses],
   );
@@ -621,7 +644,7 @@ export default function PageOrganizer(): JSX.Element {
       `Rebuilding ${planAtStart.length} page${planAtStart.length === 1 ? '' : 's'}…`,
     );
     try {
-      const doc = await buildPlan(planAtStart);
+      const { doc, fidelity } = await buildPlan(planAtStart);
       store.setPercent(94, 'Saving…');
       const bytes = await savePDF(doc);
       const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
@@ -641,11 +664,24 @@ export default function PageOrganizer(): JSX.Element {
           built.perSource.filter((n) => n > 0).length
         } file(s), ${built.blanks} blank sheet${built.blanks === 1 ? '' : 's'}.`,
       );
+      if (fidelity.bookmarksDropped > 0) {
+        store.appendLog(
+          `PageOrganizer: ${fidelity.bookmarksDropped} bookmark${fidelity.bookmarksDropped === 1 ? '' : 's'} left out because its page is not in the order; ${fidelity.bookmarks} re-pointed.`,
+        );
+      }
       dispatch({
         type: 'announce',
         message: `Saved a ${planAtStart.length}-page PDF: ${built.pages} page${
           built.pages === 1 ? '' : 's'
-        } from documents, ${built.blanks} blank.`,
+        } from documents, ${built.blanks} blank.${
+          fidelity.bookmarksDropped > 0
+            ? ` ${fidelity.bookmarksDropped} bookmark${
+                fidelity.bookmarksDropped === 1 ? '' : 's'
+              } pointed at ${fidelity.bookmarksDropped === 1 ? 'a page that is' : 'pages that are'} not in this order, so ${
+                fidelity.bookmarksDropped === 1 ? 'it was' : 'they were'
+              } dropped; ${fidelity.bookmarks} came with the pages.`
+            : ''
+        }`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'The reordered PDF could not be saved.';

@@ -46,6 +46,14 @@ import type {
 } from '@maxwbh/pdf-lib';
 import { cropBox } from './pages';
 import { decryptDocument } from './crypto';
+import {
+  countOutlineNodes,
+  readOutline,
+  remapOutline,
+  writeOutline,
+  type OutlineNode,
+} from './bookmarks';
+import { copyAttachments } from './attachments';
 
 type FontkitInstance = Parameters<PDFDocument['registerFontkit']>[0];
 
@@ -342,20 +350,103 @@ export async function clonePDF(
 /**
  * Import pages from one or more documents into a fresh document, preserving
  * the requested order and mapping source indices to destination pages.
+ *
+ * This is **the** page-copy primitive: every tool that rebuilds a document from
+ * copied pages comes through here or through `carryPageFurniture` directly. A
+ * copy moves page objects, and page objects are not where the bookmarks or the
+ * embedded files live — see `carryPageFurniture` for what travels and what the
+ * caller has to admit it lost.
  */
 export async function collectPages(
   sources: { doc: PDFDocument; pages: number[] }[],
-): Promise<{ doc: PDFDocument; ranges: { start: number; count: number }[] }> {
+): Promise<{
+  doc: PDFDocument;
+  ranges: { start: number; count: number }[];
+  fidelity: CopyFidelity;
+}> {
   const target = await newPDF();
   const ranges: { start: number; count: number }[] = [];
+  const copies: PageCopyMap[] = [];
   for (const { doc, pages } of sources) {
     if (pages.length === 0) continue;
     const start = target.getPageCount();
     const copied = await target.copyPages(doc, pages);
     copied.forEach((p) => target.addPage(p));
     ranges.push({ start, count: pages.length });
+    const mapping = new Map<number, number>();
+    pages.forEach((page, offset) => {
+      // First copy wins: a bookmark can only point at one of them.
+      if (!mapping.has(page)) mapping.set(page, start + offset);
+    });
+    copies.push({ doc, mapping });
   }
-  return { doc: target, ranges };
+  const fidelity = await carryPageFurniture(target, copies);
+  return { doc: target, ranges, fidelity };
+}
+
+/** A source document and where its pages landed in a copy. */
+export interface PageCopyMap {
+  doc: PDFDocument;
+  /** Source page index → destination page index; pages that stayed home are absent. */
+  mapping: Map<number, number>;
+}
+
+/** What a page copy did with the parts of a document that are not pages. */
+export interface CopyFidelity {
+  /** Bookmarks re-pointed at the copied pages and written to the output. */
+  bookmarks: number;
+  /** Bookmarks dropped because their destination page is not in the output. */
+  bookmarksDropped: number;
+  /** Embedded files that travelled with the pages. */
+  attachments: number;
+  /** Embedded files left behind because that name had already been carried. */
+  attachmentsCollided: number;
+}
+
+/**
+ * Carry the outline and the embedded files of the copied documents into the new
+ * one, and report what could not come.
+ *
+ * Both live above the page tree — `/Outlines` and `/Names → /EmbeddedFiles` on
+ * the catalog, `/AF` on the document — so `copyPages` leaves them with the file
+ * they came from. Measured on an unencrypted fixture, that cost every rebuilding
+ * tool its whole table of contents and every attached source file, silently.
+ *
+ * A bookmark whose destination page was **not** copied is dropped rather than
+ * snapped to the nearest surviving page; `remapOutline` carries the reasoning and
+ * the count, which the tool owes the user as a warning.
+ */
+export async function carryPageFurniture(
+  target: PDFDocument,
+  copies: PageCopyMap[],
+  options: { outlines?: boolean; attachments?: boolean } = {},
+): Promise<CopyFidelity> {
+  const wantOutlines = options.outlines !== false;
+  const nodes: OutlineNode[] = [];
+  let bookmarksDropped = 0;
+  if (wantOutlines) {
+    for (const { doc, mapping } of copies) {
+      const remapped = remapOutline(readOutline(doc), mapping);
+      nodes.push(...remapped.nodes);
+      bookmarksDropped += remapped.dropped;
+    }
+  }
+  // `writeOutline` replaces whatever is there, so the whole tree goes in one go:
+  // writing it per source would keep only the last document's bookmarks.
+  if (nodes.length > 0) writeOutline(target, nodes);
+  const files =
+    options.attachments === false
+      ? { carried: 0, collided: 0 }
+      : await copyAttachments(
+          target,
+          copies.map((copy) => copy.doc),
+        );
+  return {
+    bookmarks: countOutlineNodes(nodes),
+    bookmarksDropped,
+    attachments: files.carried,
+    attachmentsCollided: files.collided,
+  };
 }
 
 /**
