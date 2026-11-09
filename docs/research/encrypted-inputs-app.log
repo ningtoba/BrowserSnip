@@ -1,0 +1,418 @@
+
+ RUN  v4.1.9 /home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip
+
+Warning: Please use the `legacy` build in Node.js environments.
+
+### einp-q-r3-rc4-128-user.pdf  [qpdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=RC4-128 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-q-r3-rc4-128-user.pdf" is password protected."
+  gate: user password: accepted=true pages=3 error=— · ""einp-q-r3-rc4-128-user.pdf": 3 pages."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-q-r3-rc4-128-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-q-r3-rc4-128-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["c%íáÁÁÒòçNÅ˝", "checked"] bookmarks=1 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 10× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-user--rotate.pdf
+  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=2 ops=2 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-user--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 14× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "". · 1× Unknown command "a¼á½Öð«".
+       engine pages=3 annots=6/entries 6 fields=2 ["c%íáÁÁÒòçNÅ˝", "checked"] bookmarks=1 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-user--protect.pdf
+
+### einp-q-r4-aes-128-user.pdf  [qpdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-128 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-q-r4-aes-128-user.pdf" is password protected."
+  gate: user password: accepted=true pages=3 error=— · ""einp-q-r4-aes-128-user.pdf": 3 pages."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-q-r4-aes-128-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-q-r4-aes-128-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "Ñ¬$O>WÏAÙ\u0005‘BÐÔþ\u0014›Ù˘˘ˆä…oàŸ!ñ‡^Œš"] bookmarks=1 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-user--rotate.pdf
+  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=2 ops=2 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 8× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-user--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 14× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "@Æ". · 1× Unknown command "@ùSïf¶ÉÓ®_Hyá¼eÙ".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "Ñ¬$O>WÏAÙ\u0005‘BÐÔþ\u0014›Ù˘˘ˆä…oàŸ!ñ‡^Œš"] bookmarks=1 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-user--protect.pdf
+
+### einp-q-r6-aes-256-user.pdf  [qpdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-256 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-q-r6-aes-256-user.pdf" is password protected."
+  gate: user password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-q-r6-aes-256-user.pdf"."
+  gate: owner password: accepted=false pages=3 error=BAD_PASSWORD
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-q-r6-aes-256-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-q-r6-aes-256-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): throws Error: Input document to `PDFDocument.load` is encrypted. You can use `PDFDocument.load(..., { ignoreEncryption: true })` if you wish to load the document anyways.
+       at: new PDFDocument (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@maxwbh/pdf-lib/src/api/PDFDocument.ts:250:15) ← PDFDocument.load (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@m
+  after rotate: throws ToolInputError: That password is not correct for "einp-q-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after delete page 2: throws ToolInputError: That password is not correct for "einp-q-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after protect again: throws ToolInputError: That password is not correct for "einp-q-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+
+### einp-q-r3-rc4-128-owner.pdf  [qpdf (outside) · owner-password-only]
+  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=RC4-128 pages=3 /P=-3376 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: user password: accepted=false pages=3 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=true pages=3 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-owner.pdf\"'s bookmarks across.","The source was protected (RC4-128); the result opens without one."]
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÔÎ“$üŁIðˇ€m\u000f"] bookmarks=1 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 11× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-owner.pdf\"'s bookmarks across.","The source was protected (RC4-128); the result opens without one."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-owner--rotate.pdf
+  after delete page 2: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=2 /P=— accepted=false error=— · ""remove-pages": 2 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=2 ops=2 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["The source was protected (RC4-128); the result opens without one."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-owner--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 16× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Unknown command "¥Ü$ÚMòUîFÍ¬S-v". · 1× Unknown command "ð^NøS`^OùNLvþZ".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÔÎ“$üŁIðˇ€m\u000f"] bookmarks=1 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r3-rc4-128-owner--protect.pdf
+
+### einp-q-r4-aes-128-owner.pdf  [qpdf (outside) · owner-password-only]
+  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=AES-128 pages=3 /P=-3376 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: user password: accepted=false pages=3 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=true pages=3 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-owner.pdf\"'s bookmarks across.","The source was protected (AES-128); the result opens without one."]
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ı/TÀ[½Oﬂ'@_˚ßı)Ö£ˇ%kIå3I„Û^ı\u0000V\\ö"] bookmarks=1 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 11× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-owner.pdf\"'s bookmarks across.","The source was protected (AES-128); the result opens without one."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-owner--rotate.pdf
+  after delete page 2: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=2 /P=— accepted=false error=— · ""remove-pages": 2 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=2 ops=2 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["The source was protected (AES-128); the result opens without one."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-owner--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 16× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring invalid character: N · 1× Unknown command "ß­×þbnNá". · 1× Unknown command ">".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "ı/TÀ[½Oﬂ'@_˚ßı)Ö£ˇ%kIå3I„Û^ı\u0000V\\ö"] bookmarks=1 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-q-r4-aes-128-owner--protect.pdf
+
+### einp-q-r6-aes-256-owner.pdf  [qpdf (outside) · owner-password-only]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-256 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-q-r6-aes-256-owner.pdf" is password protected."
+  gate: user password: accepted=false pages=3 error=PASSWORD_REQUIRED · ""einp-q-r6-aes-256-owner.pdf" is password protected."
+  gate: owner password: accepted=false pages=3 error=BAD_PASSWORD
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-q-r6-aes-256-owner.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-q-r6-aes-256-owner.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\u0015$ÔQõÂ�„−Q\bþ]>‚ÍBªé¹ÛÌıR_žØ\nÔd9·", "checked"] bookmarks=1 attachments=[] · page 1: 37 d7 6c 63 /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: throws ToolInputError: "einp-q-r6-aes-256-owner.pdf" is password protected.
+       at: preflightPdf (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:639:10) ← runPdfTool (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/runner.ts:340:23) ← run (/home/n
+  after delete page 2: throws ToolInputError: "einp-q-r6-aes-256-owner.pdf" is password protected.
+       at: preflightPdf (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:639:10) ← runPdfTool (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/runner.ts:340:23) ← run (/home/n
+  after protect again: throws ToolInputError: That password is not correct for "einp-q-r6-aes-256-owner.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+
+### einp-mu-r3-rc4-128-user.pdf  [mupdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=RC4-128 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r3-rc4-128-user.pdf" is password protected."
+  gate: user password: accepted=true pages=3 error=— · ""einp-mu-r3-rc4-128-user.pdf": 3 pages."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-mu-r3-rc4-128-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-mu-r3-rc4-128-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["@oò3ˆ¨ßF³s‰,", "checked"] bookmarks=1 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=3 ops=4 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-mu-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r3-rc4-128-user--rotate.pdf
+  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=2 ops=4 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r3-rc4-128-user--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=4 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
+       engine pages=3 annots=6/entries 6 fields=2 ["@oò3ˆ¨ßF³s‰,", "checked"] bookmarks=1 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r3-rc4-128-user--protect.pdf
+
+### einp-mu-r4-aes-128-user.pdf  [mupdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-128 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r4-aes-128-user.pdf" is password protected."
+  gate: user password: accepted=true pages=3 error=— · ""einp-mu-r4-aes-128-user.pdf": 3 pages."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-mu-r4-aes-128-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-mu-r4-aes-128-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "o¸Ï«Æ�¨%z0Fl`�ÑıJ\u0001Z\u0015\u0000R\u000eı‰⁄š?ùoR+"] bookmarks=1 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 5× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-mu-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r4-aes-128-user--rotate.pdf
+  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=2 ops=2 text=" | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 4× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r4-aes-128-user--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=2 text=" |  | "
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 5× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "o¸Ï«Æ�¨%z0Fl`�ÑıJ\u0001Z\u0015\u0000R\u000eı‰⁄š?ùoR+"] bookmarks=1 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/einp-mu-r4-aes-128-user--protect.pdf
+
+### einp-mu-r6-aes-256-user.pdf  [mupdf (outside) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-256 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r6-aes-256-user.pdf" is password protected."
+  gate: user password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-mu-r6-aes-256-user.pdf"."
+  gate: owner password: accepted=false pages=3 error=BAD_PASSWORD
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-mu-r6-aes-256-user.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-mu-r6-aes-256-user.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): throws Error: Input document to `PDFDocument.load` is encrypted. You can use `PDFDocument.load(..., { ignoreEncryption: true })` if you wish to load the document anyways.
+       at: new PDFDocument (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@maxwbh/pdf-lib/src/api/PDFDocument.ts:250:15) ← PDFDocument.load (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@m
+  after rotate: throws ToolInputError: That password is not correct for "einp-mu-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after delete page 2: throws ToolInputError: That password is not correct for "einp-mu-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after protect again: throws ToolInputError: That password is not correct for "einp-mu-r6-aes-256-user.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+
+### einp-mu-r6-aes-256-owner.pdf  [mupdf (outside) · owner-password-only]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-256 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r6-aes-256-owner.pdf" is password protected."
+  gate: user password: accepted=false pages=3 error=PASSWORD_REQUIRED · ""einp-mu-r6-aes-256-owner.pdf" is password protected."
+  gate: owner password: accepted=false pages=3 error=BAD_PASSWORD
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "einp-mu-r6-aes-256-owner.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""einp-mu-r6-aes-256-owner.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "¦ÙjŸ\u0001Æ×g!oL‘?—úÀêW\u0003$ÿ4àFÀg&å@þ•ò"] bookmarks=1 attachments=[] · page 1: f2 49 36 0f /Filter /FlateDecode — ciphertext behind its own /Filter
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: throws ToolInputError: "einp-mu-r6-aes-256-owner.pdf" is password protected.
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after delete page 2: throws ToolInputError: "einp-mu-r6-aes-256-owner.pdf" is password protected.
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+  after protect again: throws ToolInputError: That password is not correct for "einp-mu-r6-aes-256-owner.pdf".
+       at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
+
+### base.pdf  [MuPDF (unencrypted control) · no-password]
+  gate: no password: encrypted=false needsPassword=false opensEmpty=false algorithm=— pages=3 /P=— error=— · ""base.pdf": 3 pages."
+  gate: user password: accepted=false pages=3 error=— · ""base.pdf": 3 pages."
+  gate: owner password: accepted=false pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=— · ""base.pdf": 3 pages."
+  tool asks without one: ran with no password at all (nothing was asked); warnings=[]
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=3 warnings=[]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/base--rotate.pdf
+  after delete page 2: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=2 /P=— accepted=false error=— · ""remove-pages": 2 pages."
+       gate (this app): none:no user:no owner:no again:no
+       pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=2 warnings=[]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/base--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/base--protect.pdf
+
+### own-protected.pdf  [this app (protect) · user-password · user password supplied]
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=no cipher pages=3 /P=-3392 error=PASSWORD_REQUIRED · ""own-protected.pdf" is password protected."
+  gate: user password: accepted=true pages=3 error=— · ""own-protected.pdf": 3 pages."
+  gate: owner password: accepted=true pages=3 error=—
+  gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "own-protected.pdf"."
+  tool asks without one: refused: PASSWORD_REQUIRED isPasswordRequired=true · ""own-protected.pdf" is password protected."
+  page count: app=3 MuPDF=3
+  preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
+       draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
+       pdf.js said: (none)
+  thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
+  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=3 warnings=["\"own-protected.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"own-protected.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Rotated 3 pages by 90°."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/own-protected--rotate.pdf
+  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3392 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+       pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       message: "Removed 1 page, kept 2 pages."
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/own-protected--remove-pages.pdf
+  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
+       pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
+       draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
+       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=3 warnings=[]
+       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
+       dumped: out/own-protected--protect.pdf
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:46:43
+   Duration  2.91s (transform 553ms, setup 29ms, import 721ms, tests 1.83s, environment 267ms)
+
