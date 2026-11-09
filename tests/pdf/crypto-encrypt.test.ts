@@ -449,13 +449,19 @@ describe('an edit keeps the protection it came with, rather than a new one', () 
     expect(resealed!.strength).toBe('AES-128');
     expect(dictValue(bytes, 'O'), 'a different /O is a different owner password').toBe(dictValue(locked, 'O'));
     expect(dictValue(bytes, 'U')).toBe(dictValue(locked, 'U'));
-    expect(dictValue(bytes, 'Perms')).toBe(dictValue(locked, 'Perms'));
+    expect(dictValue(bytes, 'Perms'), 'a different /Perms is a checksum over different flags').toBe(dictValue(locked, 'Perms'));
     expect(/\/P (-?\d+)/.exec(encryptBody(bytes))![1])
       .toBe(/\/P (-?\d+)/.exec(encryptBody(locked))![1]);
-    // /ID[0] carries the key's salt and must not move; /ID[1] marks the update.
-    const idOf = (b: Uint8Array) => (b: PDFArray) => latin1.decode((b.get(0) as PDFHexString).asBytes());
-    expect(idOf(bytes)(await sealed(bytes).then((d) => d.context.trailerInfo.ID as PDFArray)))
-      .toBe(idOf(locked)(await sealed(locked).then((d) => d.context.trailerInfo.ID as PDFArray)));
+    // `/ID[0]` is the salt `/U` and `/Perms` were both derived over, so it must not
+    // move; `/ID[1]` is the one the spec asks a modified file to change.
+    const idPair = async (source: Uint8Array) => {
+      const ids = (await sealed(source)).context.trailerInfo.ID as PDFArray;
+      return [0, 1].map((index) => latin1.decode((ids.get(index) as PDFHexString).asBytes()));
+    };
+    const [lockedFirst, lockedSecond] = await idPair(locked);
+    const [copyFirst, copySecond] = await idPair(bytes);
+    expect(copyFirst, 'a new /ID[0] would be a new file key, and a new key is a new lock').toBe(lockedFirst);
+    expect(copySecond).not.toBe(lockedSecond);
 
     // Still ciphertext, still readable, still asks for nothing.
     expect(latin1.decode(bytes)).not.toContain(FIELD_VALUE);
