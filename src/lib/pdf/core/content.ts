@@ -2686,7 +2686,10 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
       previous.font === segment.font &&
       previous.size === segment.size &&
       previous.renderMode === segment.renderMode &&
-      !segment.moved &&
+      // Two strings separated by a `TJ` move start further along the pen than
+      // the one before it ended, so contiguity already keeps them apart here —
+      // and `moved` is what splits them for `textInRects`, which groups by
+      // operator rather than by pen.
       Math.abs(previous.pen.to - segment.pen.from) < 0.01
     ) {
       // One operator, one line: the glyphs are neighbours by construction, so

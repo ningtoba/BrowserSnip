@@ -385,6 +385,48 @@ describe('a TJ array is measured where it is painted', () => {
   });
 });
 
+describe('a run is measured with the face it is drawn in', () => {
+  it('agrees with the standard-14 metrics a viewer paints with', async () => {
+    // Two independent tables of the same face: `content.ts`'s own reading of
+    // pdf-lib's AFM data, and pdf-lib's `widthOfTextAtSize`. A page of
+    // non-embedded Helvetica that measures 9 % wide in one of them puts the end
+    // of every line outside the box the other two programs draw it in — which is
+    // how a deletion misses a line's tail and how a rewrite shifts its survivors.
+    const text = 'Talently Self-Assessment';
+    const doc = await fixtureDoc([{ fonts: { F1: StandardFonts.HelveticaBold }, ops: showOps(`/F1 20 Tf\n50 739 Td\n(${text}) Tj\n`) }]);
+    const embedder = await doc.embedFont(StandardFonts.HelveticaBold);
+    const expected = embedder.widthOfTextAtSize(text, 20);
+    const run = textInRects(doc.getPages()[0], [{ x: 0, y: 0, width: A4[0], height: A4[1] }])[0];
+    expect(run.text).toBe(text);
+    // Advance sums, not ink bounds: a viewer's ink box adds side bearings, so
+    // the two tables are allowed a percent apart — and were 9 % apart before the
+    // metric table was keyed by glyph name, which is the number this asserts.
+    expect(Math.abs(run.rect.width - expected)).toBeLessThan(expected * 0.02);
+  });
+
+  it('does not read the glyph list position as the character code', async () => {
+    // The AFM's metrics are a dense list starting at `space`; indexed as if it
+    // were sparse, every width belongs to a different character. `' '` and `i`
+    // are the pair that gives it away: 278 and 278 units, against 600 for the
+    // `A` that lands on the same index once the offset is lost.
+    const doc = await fixtureDoc([{ fonts: { F1: StandardFonts.Helvetica }, ops: showOps('/F1 10 Tf\n50 700 Td\n(ii iii) Tj\n') }]);
+    const run = textInRects(doc.getPages()[0], [{ x: 0, y: 0, width: A4[0], height: A4[1] }])[0];
+    const embedder = await doc.embedFont(StandardFonts.Helvetica);
+    expect(Math.abs(run.rect.width - embedder.widthOfTextAtSize('ii iii', 10))).toBeLessThan(0.6);
+  });
+
+  it('keeps two columns of one operator as two runs', async () => {
+    // `[(left) -3600 (right)] TJ` is two words half a page apart. Joined, they
+    // read `leftright` to anything that asks the page for its text — which is
+    // what a copy, a Ctrl-F hit and the editor's leftover check all consume.
+    const doc = await fixtureDoc([
+      { fonts: { F1: StandardFonts.Helvetica }, ops: showOps('/F1 12 Tf\n50 700 Td\n[(left) -3600 (right)] TJ\n') },
+    ]);
+    const runs = textRects(doc.getPages()[0]);
+    expect(runs.map((run) => run.text)).toEqual(['left', 'right']);
+  });
+});
+
 /* ══════════════════════════════════════════════════════════════════════════
  * CAUSE 2 — text drawn inside a Form XObject
  * ════════════════════════════════════════════════════════════════════════ */
@@ -470,6 +512,29 @@ describe('text inside a Form XObject is real text the engine can reach', () => {
  * ════════════════════════════════════════════════════════════════════════ */
 
 describe('a deletion box takes the line it names, not the one above it', () => {
+  it('leaves a heading whose em box reaches into the body line below', async () => {
+    // The geometry of the campaign CV: a 20 pt heading over a 10 pt line 18 pt
+    // below it. The heading's ascent-to-descent box spans the body line's box,
+    // so judging coverage by that box deletes the heading's tail as well.
+    const doc = await fixtureDoc([
+      {
+        fonts: { F1: StandardFonts.HelveticaBold, F2: StandardFonts.Helvetica },
+        // Leading of 12 pt under a 20 pt face: the descender box of the heading
+        // reaches to y 734.9, and the body line's box runs to 738 — they overlap,
+        // while the heading's baseline (739) is outside the body box entirely.
+        ops: `${showOps('/F1 20 Tf\n50 739 Td\n(Heading words) Tj\n')}${showOps('/F2 10 Tf\n50 727 Td\n(body line) Tj\n')}`,
+      },
+    ]);
+    const page = doc.getPages()[0];
+    // User space, origin bottom-left: the body baseline is 721, the heading's 739.
+    const bodyLine = { x: 49.4, y: 725, width: 200, height: 13 };
+    const outcome = removeTextInRects(page, [bodyLine]);
+    expect(outcome.leftover).toBe(0);
+    const left = textRects(page).map((run) => run.text);
+    expect(left.join(' ')).toContain('Heading words');
+    expect(left.join(' ')).not.toContain('body');
+  });
+
   it('leaves the heading over a body line alone', async () => {
     const doc = await fixtureDoc([
       {
