@@ -6,7 +6,8 @@
  * silently meaning "all pages"). `resolvePages` is now the single source of
  * truth and throws typed, user-facing errors instead.
  */
-import type { PDFPage } from '@maxwbh/pdf-lib';
+import type { PDFObject, PDFPage } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFName, PDFRef, PDFStream } from '@maxwbh/pdf-lib';
 
 export type PageSpec = string | number[] | 'all' | 'odd' | 'even' | undefined | null;
 
@@ -191,6 +192,75 @@ export function displayedSize(page: PDFPage): { width: number; height: number } 
   const { width, height } = page.getSize();
   const rot = ((page.getRotation().angle % 360) + 360) % 360;
   return rot % 180 === 90 ? { width: height, height: width } : { width, height };
+}
+
+/**
+ * What a page holds where its content should be.
+ *
+ * `/Contents` is **optional** (ISO 32000-1 §14.11.2). A page with no content
+ * stream is a blank sheet — which is exactly what this app's own `add-blank-page`
+ * writes — and `absent` names that legal shape. `unreadable` is the damage: a
+ * `/Contents` that is there but resolves to no stream at all, a dangling
+ * reference, a number, an array slot pointing at nothing.
+ *
+ * The two must not share a code path, because the pdf-lib fork this app stamps
+ * pages with answers both with one error: `PDFPageEmbedder.embedIntoContext`
+ * throws `Can't embed page with missing Contents`, and throws it at `save()`, long
+ * after the call site that queued the embed ever returned.
+ *
+ * Decoding is deliberately not attempted here. A stream that exists but cannot be
+ * inflated reports as `draws` and fails loudly where its bytes are actually read,
+ * which keeps this predicate cheap on every page and stops a broken file from being
+ * mistaken for a blank one.
+ */
+export function pageContentsState(page: PDFPage): 'draws' | 'absent' | 'unreadable' {
+  const node = pageNode(page);
+  const raw = node.get(PDFName.of('Contents'));
+  if (raw === undefined || raw === null) return 'absent';
+  const { context } = node;
+  const value = raw instanceof PDFRef ? context.lookup(raw) : raw;
+  if (value instanceof PDFArray) {
+    for (let index = 0; index < value.size(); index++) {
+      if (!(context.lookup(value.get(index)) instanceof PDFStream)) return 'unreadable';
+    }
+    return 'draws';
+  }
+  return value instanceof PDFStream ? 'draws' : 'unreadable';
+}
+
+/**
+ * Give a page that has no `/Contents` the empty one the embedder accepts.
+ *
+ * Returns `true` when the entry had to be written, that is, when the page is
+ * blank. Only `absent` is ever touched: an empty array already round-trips, and
+ * anything present-but-broken is left where the reader can fail on it. A blank page
+ * then takes the identical geometry path to an inked one — same box, same rotation,
+ * same cell — and draws nothing.
+ */
+export function ensurePageContents(page: PDFPage): boolean {
+  if (pageContentsState(page) !== 'absent') return false;
+  const node = pageNode(page);
+  node.set(PDFName.of('Contents'), PDFArray.withContext(node.context));
+  return true;
+}
+
+/**
+ * The three page-dictionary members these two readers need.
+ *
+ * `get` and `set` are inherited from `PDFDict`, and `context` is the leaf's owning
+ * `PDFContext`; none of the three is declared on the public `PDFPageNode` type.
+ */
+type PageContentNode = {
+  context: PDFPage['doc']['context'];
+  get(key: PDFName): PDFObject | undefined;
+  set(key: PDFName, value: PDFArray): void;
+};
+
+function pageNode(page: PDFPage): PageContentNode {
+  // SAFETY: every page node is a `PDFPageLeaf`, which carries all three at runtime.
+  // `/Contents` is not an inheritable entry, so the leaf's own dictionary is the
+  // whole answer.
+  return page.node as unknown as PageContentNode;
 }
 
 export function setMediaAndCrop(page: PDFPage, box: PageBox): void {

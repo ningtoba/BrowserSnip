@@ -47,7 +47,7 @@ import {
 import { countOutlineNodes, readOutline } from '../core/bookmarks';
 import { listAttachments } from '../core/attachments';
 import { listFormFields } from '../core/forms';
-import { PAGE_SIZES, cropBox, formatPages, mediaBox, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
+import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, mediaBox, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
 import { createZip } from '../core/archive';
 import {
@@ -307,18 +307,22 @@ async function stamp(
 ): Promise<boolean> {
   const region = options.region ?? sourceBox(source);
   if (region.width <= 0 || region.height <= 0 || dest.width <= 0 || dest.height <= 0) return false;
-  let embedded: PDFEmbeddedPage;
-  try {
-    embedded = await target.embedPage(source, {
-      left: region.x,
-      bottom: region.y,
-      right: region.x + region.width,
-      top: region.y + region.height,
-    });
-  } catch {
-    // A page with no content stream cannot be stamped; the cell stays blank.
-    return false;
-  }
+  // A page with no `/Contents` is **blank**, not damaged — `/Contents` is optional,
+  // and this app's own `add-blank-page` writes pages without one. The fork's page
+  // embedder refuses the absent key with `Can't embed page with missing Contents`,
+  // and it refuses it at `save()` (the embed is only queued here), so no `try`/`catch`
+  // around the call could have caught it: all seven imposition tools turned a legal
+  // file away (`docs/TOOL-TRIAGE.md`, ERRORS 1). Giving the blank the empty content
+  // array the embedder already accepts keeps it on the same path as an inked page —
+  // right box, right rotation, right cell, nothing drawn. A `/Contents` that exists
+  // but cannot be decoded is left alone, so it still fails loudly.
+  ensurePageContents(source);
+  const embedded = await target.embedPage(source, {
+    left: region.x,
+    bottom: region.y,
+    right: region.x + region.width,
+    top: region.y + region.height,
+  });
   const clockwise = normalise360(rotationOf(source) + (options.angle ?? 0));
   // `/Rotate` turns the sheet clockwise; the content-matrix turns counter-clockwise.
   const radians = (-clockwise * Math.PI) / 180;
