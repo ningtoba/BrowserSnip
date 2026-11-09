@@ -63,6 +63,14 @@ is deployed):
 | add-stamps | rail probe: its *surface* is the page editor, so the rail's action button is absent | byte-proved in `style-controls-invariant.test.ts` instead: `.font`, `.italic`, `.fontSize` and `.color` each change the produced file |
 | in-place edit text | — | exported block drawn in the family the panel chose, at the size and colour it chose |
 
+**Re-measured on the deployed site** (`BASE=https://www.browsersnip.com`, CI
+`42580577194` green, same rig, same checker): `every produced file says what its surface
+claimed`, with the same numbers as the dev build — text box `NotoSans-Bold-9742` at
+22 pt, fill `(0.545 0.361 0.965)`, baselines **44.0 pt** apart, 4 600 ink px against a
+screen claim of 2 lines / 22 pt / 44 pt / weight 700; stamp `Times-Bold` 30 pt, 7 496
+ink px; note `/C` and no `/DA`/`/DR`; header/footer adding `NotoSans-Bold-7733`;
+watermark adding `NotoSans-Bold-5563` and drawing `Courier-Bold` 48 pt.
+
 Two honest gaps in that table:
 
 * The **before** column for the four editor surfaces is empty: the rig drives the new
@@ -71,6 +79,13 @@ Two honest gaps in that table:
 * `add-stamps` and the before `page-numbers` exit 1 in the rail probe for the same class
   of reason — the button and the field the probe addresses belong to whichever build is
   under it.
+* **The in-place text editor exports no file to the probe**, on the dev build or on the
+  deployed one: `window.__export` clicks the toolbar's `Export` and no Blob arrives. Its
+  style path is the one `layoutBlock` already measures in `text-style-bytes.test.ts` (the
+  `edittext.pdf` claims come from that file's sibling cases) and the campaign's
+  `edit-pdf-text` row already proves its export end to end, so this is a **probe gap, not
+  a shipped-behaviour gap** — but the browser half of that surface is not yet evidenced,
+  and saying so is cheaper than implying it was.
 
 ## Dead-control census, from the invariant test
 
