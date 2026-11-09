@@ -116,6 +116,9 @@ const jobs = [
   { id: 'noto-italic', label: 'bundled Noto Sans, synthesised italic', url: LOCAL['NotoSans-Regular.ttf'], via: 'app', forceNoto: true, italic: true, chars: LATIN },
   { id: 'noto-pdflib-subset', label: 'pdf-lib own subsetter (TTF)', url: LOCAL['NotoSans-Regular.ttf'], via: 'pdflib-subset', chars: LATIN },
   { id: 'noto-pdflib-full', label: 'pdf-lib whole face, no subset (control)', url: LOCAL['NotoSans-Regular.ttf'], via: 'pdflib-full', chars: LATIN },
+  // The ledger row's own characters, at the size its numbers came from, so this
+  // table can be lined up against the one it replaces.
+  { id: 'noto-ledger-set', label: 'bundled Noto Sans, the row\'s six characters at 40 pt', url: LOCAL['NotoSans-Regular.ttf'], via: 'app', forceNoto: true, size: 40, chars: [...'#A4B—Z'] },
   { id: 'standard-14', label: 'pdf-lib standard 14 (Helvetica)', url: null, via: 'standard14', chars: SCRIPT_CHARS.winAnsi },
   { id: 'mono-face', label: 'bundled JetBrains Mono, module writer (code blocks)', url: LOCAL['jetbrains-mono-400.ttf'], via: 'unicode-face', chars: SCRIPT_CHARS.winAnsi },
   { id: 'mono-pdflib', label: 'bundled JetBrains Mono, pdf-lib subsetter (before)', url: LOCAL['jetbrains-mono-400.ttf'], via: 'pdflib-subset', chars: SCRIPT_CHARS.winAnsi },

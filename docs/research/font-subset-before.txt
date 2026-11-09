@@ -13,14 +13,16 @@ MuPDF error: library error: FT_New_Memory_Face(NotoSansTC-Regular-1733): unknown
 per-glyph ink, MuPDF at 150 dpi, reference = the same face drawn by MuPDF itself
 
 face                 flavour cff guard glyphs lost  program mupdf  pdf.js first lost      KB
-noto-regular         TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    30.0
+noto-regular         TTF     dead         267   216     122 FT_Load_Glyph(NotoSans    211      row 0    30.0
 noto-bold            TTF     dead         267   216     129 FT_Load_Glyph(NotoSans    216      row 0    29.1
-noto-italic          TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    30.0
-noto-pdflib-subset   TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    29.5
+noto-italic          TTF     dead         267   216     122 FT_Load_Glyph(NotoSans    211      row 0    30.0
+noto-pdflib-subset   TTF     dead         267   216     122 FT_Load_Glyph(NotoSans    211      row 0    29.5
 noto-pdflib-full     TTF     dead         267     0       0  clean      2          -   298.6
+noto-ledger-set      TTF     dead           6     3       2 FT_Load_Glyph(NotoSans      3      row 3     3.2
 standard-14          unknown dead         160     0       0  clean      2          -     7.7
-app-arabic           TTF     dead          32     0       1  clean      0          -     6.9
-pdflib-arabic        TTF     dead          32     0       2  clean      0          -     6.7
+mono-pdflib          TTF     dead         160     0       0  clean      1          -    19.3
+app-arabic           TTF     dead          32     0       0  clean      0          -     6.9
+pdflib-arabic        TTF     dead          32     0       1  clean      0          -     6.7
 full-arabic          TTF     dead          32     0       1  clean      0          -    91.9
 app-hebrew           TTF     dead          27     0       0  clean      0          -     5.6
 app-devanagari       TTF     dead          43     0       0  clean      0          -     9.3
@@ -52,7 +54,7 @@ app-tc               CFF     dead          34    34       0 library error: FT_Ne
    lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
    ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
    lost ink with no MuPDF reference either (1 of 216 lost): /
-   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   glyph program differs from the source face (122): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
    ": IndexError reading the record at byte 96
    %: IndexError reading the record at byte 384
 
@@ -74,7 +76,7 @@ app-tc               CFF     dead          34    34       0 library error: FT_Ne
    lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
    ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
    lost ink with no MuPDF reference either (1 of 216 lost): /
-   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   glyph program differs from the source face (122): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
    ": IndexError reading the record at byte 96
    %: IndexError reading the record at byte 384
 
@@ -85,7 +87,7 @@ app-tc               CFF     dead          34    34       0 library error: FT_Ne
    lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
    ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
    lost ink with no MuPDF reference either (1 of 216 lost): /
-   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   glyph program differs from the source face (122): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
    ": IndexError reading the record at byte 96
    %: IndexError reading the record at byte 384
 
@@ -93,15 +95,28 @@ app-tc               CFF     dead          34    34       0 library error: FT_Ne
    /NotoSans-Regular-5311: FontFile2 holding a TTF program of 556216 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 3053 code points, fontTools parses
    loca: 3313 of 4688 glyph records do not start on a 4-byte boundary (glyph 5 at byte 97)
 
+## noto-ledger-set — bundled Noto Sans, the row's six characters at 40 pt (TTF face, via app)
+   /NotoSans-Regular-8659: FontFile2 holding a TTF program of 753 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 6 code points, fontTools parses
+   MuPDF: FT_Load_Glyph(NotoSans-Regular-8659,4,FT_LOAD_NO_HINTING): invalid outline
+   loca: 3 of 7 glyph records do not start on a 4-byte boundary (glyph 4 at byte 282); 3 of 7 entries give a glyph a different number of bytes than its record occupies (glyph 4 at byte 282: loca says 104, the record is 105, and the same disagreement runs to glyph 6 at byte 410)
+   lost ink (3 of 6): BZ—
+   ink produced/reference: B 0/1439, — 0/539, Z 0/1048
+   glyph program differs from the source face (2): Z—
+   —: error reading the record at byte 386
+   Z: error reading the record at byte 410
+
+## mono-pdflib — bundled JetBrains Mono, pdf-lib subsetter (before) (TTF face, via pdflib-subset)
+   /JetBrainsMono-Regular-4964: FontFile2 holding a TTF program of 12601 B from a 112172 B face, descendant /CIDFontType2, /ToUnicode covers 161 code points, fontTools parses
+   loca: 89 of 177 glyph records do not start on a 4-byte boundary (glyph 5 at byte 262)
+
 ## app-arabic — on-demand Noto Sans Arabic (TTF face, via app)
    /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 4222 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 32 code points, fontTools parses
    loca: 22 of 42 glyph records do not start on a 4-byte boundary (glyph 7 at byte 558)
-   glyph program differs from the source face (1): ز
 
 ## pdflib-arabic — pdf-lib own subsetter, Noto Sans Arabic (TTF face, via pdflib-subset)
    /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 4244 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 32 code points, fontTools parses
    loca: 22 of 43 glyph records do not start on a 4-byte boundary (glyph 7 at byte 558)
-   glyph program differs from the source face (2): زه
+   glyph program differs from the source face (1): ه
 
 ## full-arabic — whole Noto Sans Arabic, unsubsetted (control) (TTF face, via pdflib-full)
    /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 177004 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 1161 code points, fontTools parses
@@ -221,4 +236,4 @@ app-tc               CFF     dead          34    34       0 library error: FT_Ne
    ink produced/reference: ㄅ 0/320, ㄆ 0/314, ㄇ 0/371, ㄈ 0/320, ㄉ 0/320, ㄊ 0/317
    lost ink with no MuPDF reference either (1 of 34 lost): ㄏ
 
-wrote /tmp/fsb/measured.json
+wrote /tmp/fsb/measured-prefix.json

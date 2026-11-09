@@ -8,8 +8,20 @@
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import type { PDFFont } from '@maxwbh/pdf-lib';
 import { fontkit, withFontkit } from '../../src/lib/pdf/core/doc';
-import { clearFontCache, drawTextU, embedUnicodeFace, SCRIPT_FONTS } from '../../src/lib/pdf/core/fonts';
+import * as fontsModule from '../../src/lib/pdf/core/fonts';
 import type { DrawTextOptions } from '../../src/lib/pdf/core/fonts';
+
+/**
+ * `embedUnicodeFace` exists only in the build that routed every raw-bytes caller
+ * through this module. It is read off the namespace so the probe still bundles
+ * against the pre-fix tree, which is what the "before" column is measured from.
+ */
+const embedUnicodeFace = (fontsModule as Record<string, unknown>).embedUnicodeFace as
+  | ((doc: import('@maxwbh/pdf-lib').PDFDocument, bytes: Uint8Array) => Promise<import('@maxwbh/pdf-lib').PDFFont>)
+  | undefined;
+const clearFontCache = fontsModule.clearFontCache;
+const drawTextU = fontsModule.drawTextU;
+const SCRIPT_FONTS = fontsModule.SCRIPT_FONTS;
 
 export type FaceFlavour = 'TTF' | 'CFF' | 'unknown';
 
@@ -30,6 +42,8 @@ export interface FaceJob {
   forceNoto?: boolean;
   bold?: boolean;
   italic?: boolean;
+  /** point size; the default keeps the grid dense, 40 lines up with the ledger row */
+  size?: number;
   chars: string[];
 }
 
@@ -118,10 +132,10 @@ export async function runProbe(jobs: FaceJob[]): Promise<JobReport[]> {
       drawn: [],
       refused: [],
       pageWidth: WIDTH,
-      pageHeight: MARGIN * 2 + job.chars.length * STEP,
+      pageHeight: MARGIN * 2 + job.chars.length * (job.size ? job.size * 1.4 : STEP),
       rowsPerSide: job.chars.length,
-      baselineStep: STEP,
-      fontSize: SIZE,
+      baselineStep: job.size ? job.size * 1.4 : STEP,
+      fontSize: job.size ?? SIZE,
       pdf: new Uint8Array(),
     };
     try {
@@ -139,6 +153,7 @@ export async function runProbe(jobs: FaceJob[]): Promise<JobReport[]> {
       if (job.via === 'unicode-face') {
         const url = job.url;
         if (typeof url !== 'string') throw new Error(`${job.id}: no face url`);
+        if (!embedUnicodeFace) throw new Error('this build has no embedUnicodeFace');
         drawn = await embedUnicodeFace(doc, await fetchBytes(url));
       } else if (job.via === 'standard14') {
         drawn = await doc.embedFont(StandardFonts.Helvetica);
@@ -151,16 +166,16 @@ export async function runProbe(jobs: FaceJob[]): Promise<JobReport[]> {
       }
       for (let i = 0; i < job.chars.length; i += 1) {
         const ch = job.chars[i];
-        const y = report.pageHeight - MARGIN - (i + 1) * STEP + 6;
+        const y = report.pageHeight - MARGIN - (i + 1) * report.baselineStep + 6;
         try {
           if (drawn) {
-            page.drawText(ch, { x: MARGIN, y, size: SIZE, font: drawn, color: rgb(0, 0, 0) });
+            page.drawText(ch, { x: MARGIN, y, size: report.fontSize, font: drawn, color: rgb(0, 0, 0) });
           } else {
             const style: DrawTextOptions = {
               text: ch,
               x: MARGIN,
               y,
-              size: SIZE,
+              size: report.fontSize,
               fontFamily: job.forceNoto ? (script ? script.label : 'noto-sans') : undefined,
             };
             if (job.bold) style.bold = true;

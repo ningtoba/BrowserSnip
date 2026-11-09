@@ -10,6 +10,7 @@ noto-bold            TTF     dead         267     0       0  clean      2       
 noto-italic          TTF     dead         267     0       0  clean      2          -    30.1
 noto-pdflib-subset   TTF     dead         267   216     122 FT_Load_Glyph(NotoSans    211      row 0    29.5
 noto-pdflib-full     TTF     dead         267     0       0  clean      2          -   298.6
+noto-ledger-set      TTF     dead           6     0       0  clean      0          -     3.2
 standard-14          unknown dead         160     0       0  clean      2          -     7.7
 mono-face            TTF     dead         160     0       0  clean      1          -    19.6
 mono-pdflib          TTF     dead         160     0       0  clean      1          -    19.3
