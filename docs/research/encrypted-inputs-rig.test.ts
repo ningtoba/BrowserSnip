@@ -30,11 +30,12 @@
  *   9 `census (engine)`        — what the editing engine counts, beside what MuPDF counts
  *  10 `after rotate` / `after delete page 2` / `after protect again` — the three
  *     routine operations, each with the output's own gate, preview, engine census
- *     and the runner's warnings.
+ *     and the runner's warnings — or, since the ciphered-input guard, the refusal
+ *     that stands in for the file and the sentence that explains it.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   PDFArray,
@@ -459,7 +460,23 @@ describe.skipIf(!DIR)('what this app believes about files a real encryptor locke
 
       for (const op of OPS) {
         await step(`after ${op.label}`, async () => {
-          const outcome = await run(op.id, op.values, pdfFile(bytes, file), keyed || undefined);
+          /**
+           * A refusal is one of the answers this row exists to record.
+           *
+           * Since the `encrypted-inputs` guard, a fixture whose crypt filter names
+           * a real cipher is refused before any work, so the row reads `refused:
+           * UNSUPPORTED …` with the sentence the user sees instead of the
+           * `dumped: out/…` line of a file the readers would go on to judge. Both
+           * are recorded here: "produced nothing, and said why" is a different
+           * finding from "produced a file", and it is the finding the guard is for.
+           */
+          const outcome = await run(op.id, op.values, pdfFile(bytes, file), keyed || undefined)
+            .then((ran) => ran, (error: unknown) => {
+              const coded = error as { code?: string; hint?: string; passwordRequired?: boolean };
+              return `refused: ${coded.code ?? '—'} isPasswordRequired=${isPasswordRequired(error)} `
+                + `· "${(error as Error).message}"\n       hint: ${JSON.stringify(coded.hint ?? '—')}`;
+            });
+          if (typeof outcome === 'string') return outcome;
           const produced = await bytesOf(outcome);
           const name = `${file.replace(/\.pdf$/, '')}--${op.id}.pdf`;
           writeFileSync(path.join(OUT_DIR, name), produced);
@@ -506,7 +523,26 @@ describe.skipIf(!DIR)('what this app believes about files a real encryptor locke
 
     // Every fixture, plus the two controls this app and MuPDF wrote.
     expect(rows.length).toBe(source.fixtures.length + 2);
-    expect(existsSync(path.join(OUT_DIR, `${source.fixtures[0].file.replace(/\.pdf$/, '')}--rotate.pdf`))).toBe(true);
+
+    /**
+     * The guard's acceptance criterion, counted on the files rather than read out
+     * of a message: every fixture locked by an outside tool with a real crypt
+     * filter produced **no** rewritten file (it was refused), and both controls —
+     * the unlocked document and this app's own `/None` gate — still produced all
+     * three. Before the guard this was 18 produced files, 18 of them judged
+     * `silent-loss` by five readers; see `encrypted-inputs-findings.md` §3 for the
+     * pre-guard logs, kept beside this file as `*-pre-guard.log`.
+     */
+    const dumped = readdirSync(OUT_DIR).filter((entry) => entry.endsWith('.pdf'));
+    for (const fixture of source.fixtures) {
+      const stem = fixture.file.replace(/\.pdf$/, '');
+      expect(dumped.filter((entry) => entry.startsWith(`${stem}--`)), `${fixture.file} was rewritten`).toEqual([]);
+    }
+    for (const control of ['base', 'own-protected']) {
+      for (const op of OPS) {
+        expect(dumped, `${control} produced no ${op.id} output`).toContain(`${control}--${op.id}.pdf`);
+      }
+    }
     writeFileSync(path.join(DIR, 'app-claims.json'), `${JSON.stringify(rows, null, 1)}\n`);
     writeFileSync(path.join(DIR, 'app-probe.log'), `${transcripts.join('\n\n')}\n`);
   }, 900_000);

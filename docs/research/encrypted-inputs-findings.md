@@ -15,7 +15,11 @@ python3 docs/research/encrypted-inputs-table.py     /tmp/einp      # render the 
 `docs/research/encrypted-inputs-run.sh` runs all four and leaves the logs in this
 directory: `encrypted-inputs-fixtures.log`, `encrypted-inputs-app.log` (what the
 app said, 12 documents × 12 probes), `encrypted-inputs-readers.log` (what the
-bytes are) and `encrypted-inputs-table.md` (both tables).
+bytes are) and `encrypted-inputs-table.md` (both tables). §2–§4 describe the run
+that made this file, and the logs of **that** run are kept beside it as
+`encrypted-inputs-{fixtures,app,readers}-pre-guard.log` and
+`encrypted-inputs-table-pre-guard.md`; the un-hyphenated logs are the same rig
+re-run after the ciphered-input guard landed, and §8 is what moved.
 
 The question, from the `protect` row: an encrypted PDF arrives from an outside
 tool. What does this app believe, and is the belief true?
@@ -284,3 +288,67 @@ still be green because they read what they wrote. Until that pass lands, the
 honest product answer is the one the intake already half-gives: an encrypted file
 previews correctly, and every operation on it should be gated behind "this copy may
 need re-doing in the tool that locked it" rather than reported as a success.
+
+## 8. The guard, re-measured with this rig
+
+That last sentence is what shipped, on `3f4f188` and `7dfe088`, and the same rig
+was run again to score it. Nothing else about the harness moved: same twelve
+documents, same twelve probes, same five readers.
+
+**A refusal, not a rewrite, wherever a cipher is really in force.** Every one of
+the ten outside-locked fixtures is now classified from its **effective crypt
+filter** — `/StmF` and `/StrF` resolved through `/CF`, with `/None` and `/Identity`
+predefined and `/V 1`–`/V 3` implying RC4 — as `ciphered`, and every tool that
+hands back a rebuilt PDF is refused before any work, through `preflightPdf`. 30 of the 30 operation runs on those fixtures (10 files × rotate,
+delete a page, protect) answer:
+
+```
+after rotate: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r3-rc4-128-user.pdf" is encrypted with RC4-128 (revision 3): its pages are stored as ciphertext, and this app cannot decrypt them yet."
+       hint: "Decrypt the file in the program that locked it, … A file locked the way this app's own Protect locks it — a password gate with no crypt filter — is edited normally."
+```
+
+naming the cipher the file actually selects — 40 sentences in all, counting the ten
+no-password probes beside the 30 operation runs: 12 RC4-128, 12 AES-128, 16
+AES-256 — and never promising that encryption as such is unsupported, because it
+is not. `isPasswordRequired` is false on the refusal: asking for a password the
+tool cannot use would send the user to do work that changes nothing.
+
+**The count the §3 verdict line was made of:**
+
+| | before (`…-pre-guard.log`) | after |
+| --- | --- | --- |
+| files produced from the ten outside-locked fixtures | 18 | **0** |
+| of those, judged `silent-loss` by MuPDF/qpdf/pypdf | 18 of 18 (100 %) | — |
+| `qpdf --check` errors on produced files | 18 of 18 | — |
+| operation runs that produced nothing at all | 12 (the AES-256 aborts) + 18 blanks | 30 refusals, each with a reason |
+| files produced from the two controls | 6 | 6, judged 3 `reads` + 3 `partial-loss` |
+| `own-protected.pdf` after rotate | 3/3 planted pages, 0.46 % ink, opens with `user` | identical |
+
+The controls are the half that had to stay working, and it did, byte for byte:
+`own-protected.pdf` — this app's `/None` gate over the same document — still
+rotates, still answers to the user password, still carries the words and the ink
+(`planted_pages 3`, `sheet 1 ink 0.46 %`), and still loses only the bookmarks and
+the enclosure the page copy has always lost. A gate is not a cipher, and now
+nothing in the intake treats it as one.
+
+**One hole the guard exposed on the way in, and its measurement.**
+`core/doc.ts:looksEncrypted` — the cheap trailer scan that decides whether the
+pre-flight parses at all — recognised only qpdf's reference spelling
+(`/Encrypt 12 0 R`). MuPDF inlines the dictionary (`/Encrypt<</Filter/Standard…>>`),
+so every MuPDF-written fixture read as unencrypted in front of the parse and walked
+straight through into the rewriting tools. The run before the scan was fixed is the
+measurement: it wrote 6 produced files, all of them from `einp-mu-r3-rc4-128-user`
+and `einp-mu-r4-aes-128-user`, and answered `BAD_PASSWORD` and `PASSWORD_REQUIRED`
+for the two MuPDF AES-256 files — and the rig's own new assertion,
+`einp-mu-r3-rc4-128-user.pdf was rewritten`, is what caught it. The scan now matches
+`/Encrypt` unless a word character follows — which still excludes the
+`/EncryptMetadata` key in the same trailer — and `tests/fixtures/encrypted/` carries
+MuPDF-locked files, in both spellings, so the two producers stay covered.
+
+**What is still open, unchanged by this.** The decrypt pass on load in
+`core/doc.ts:openPDF` (the recommendation above), the R6 user-password check, and
+the two secrets not being distinguished. The guard is the stop-loss, not the fix:
+the AES-256 fixtures are now refused for a *true* reason instead of a false one,
+and a file with a real cipher is still not editable here — the rig's acceptance
+criterion for the decrypt pass (`planted_pages 3→3` on the foreign fixtures) is
+therefore **not** met yet, and this row stays open.
