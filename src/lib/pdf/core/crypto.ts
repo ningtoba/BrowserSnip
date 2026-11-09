@@ -29,13 +29,22 @@
  * `core/guard.ts` refuses a rewrite on that answer rather than on the bare
  * presence of a cipher.
  *
+ * It writes too, and at one strength only: `encryptDocument` saves a document as
+ * **AES-128** (`/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, selected by
+ * `/StmF` and `/StrF`) with the `/O`, `/U`, `/P` and `/Perms` values revision 4
+ * defines, running the *same* key schedule over the *same* primitives as the read
+ * path — Algorithms 1-5 in one module, so the writer and the reader cannot drift
+ * apart, and so a file this app protects is a file this app can read back. RC4
+ * stays read-only: it is what the outside fixtures were measured with, and a
+ * strength nobody has to choose is a strength nobody is sold.
+ *
  * The primitives, in the order the constraints arrive: **MD5** comes from
  * `node-forge`, already a dependency and already how `core/attachments.ts`
  * computes a file's `/CheckSum` (Web Crypto does not implement MD5).
- * **AES-128-CBC** is native Web Crypto, which is why the pass is asynchronous.
- * **RC4** has no Web Crypto name, so it is delegated to the fork's own
- * `rc4Encrypt`, which this module's fixture test exercises end to end. Nothing
- * leaves the tab and nothing new is installed.
+ * **AES-128-CBC** is native Web Crypto, which is why both passes are
+ * asynchronous. **RC4** has no Web Crypto name, so it is delegated to the fork's
+ * own `rc4Encrypt`, which this module's fixture test exercises end to end.
+ * Nothing leaves the tab and nothing new is installed.
  *
  * The two kinds of secret stay apart, because the spec keeps them apart: the
  * **user** secret gates opening, the **owner** secret gates permissions and grants
@@ -53,6 +62,7 @@ import {
   PDFRawStream,
   PDFRef,
   PDFString,
+  PDFStream,
   decodePDFRawStream,
   rc4Encrypt,
 } from '@maxwbh/pdf-lib';
@@ -247,6 +257,31 @@ function xorOnes(bytes: Uint8Array, value: number): Uint8Array {
   return Uint8Array.from(bytes, (byte) => byte ^ value);
 }
 
+/**
+ * Encrypt one string or payload: a fresh IV in front, then CBC over whole blocks.
+ *
+ * Web Crypto's AES-CBC applies the PKCS#5 padding the spec's AES crypt filter
+ * asks for, so the payload is always `16 + 16·n` bytes and an empty stream still
+ * yields a 32-byte payload — which is the shape `aesCbcDecrypt` insists on, so a
+ * file this app writes is a file the read path accepts without the pad repair.
+ */
+async function aesCbcEncrypt(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+  const api = subtle();
+  if (!api) throw new Error('Web Crypto AES is unavailable');
+  const iv = randomBytes(16);
+  const sealed = await api.encrypt({ name: 'AES-CBC', iv }, await aesKey(key), data);
+  return concat(iv, new Uint8Array(sealed));
+}
+
+/** `n` bytes from the platform CSPRNG; the `/ID` and the AES IVs both come from here. */
+function randomBytes(n: number): Uint8Array {
+  const bytes = new Uint8Array(n);
+  const host = (globalThis as { crypto?: Crypto }).crypto;
+  if (host?.getRandomValues) host.getRandomValues(bytes);
+  else for (let index = 0; index < n; index++) bytes[index] = Math.floor(Math.random() * 256);
+  return bytes;
+}
+
 /* ── the encryption dictionary ───────────────────────────────────────────── */
 
 /** The `/Encrypt` dictionary, whether the trailer references it or inlines it. */
@@ -405,17 +440,22 @@ function readCipher(context: PDFContext, dict: PDFDict): CipherRead {
 
 /* ── key derivation (ISO 32000-1 §7.3.3, revisions 2-4) ──────────────────── */
 
+/** `/P` as the key derivations want it: four bytes, low-order byte first. */
+function permissionsBytes(permissions: number): Uint8Array {
+  return Uint8Array.from([
+    permissions & 0xff,
+    (permissions >> 8) & 0xff,
+    (permissions >> 16) & 0xff,
+    (permissions >> 24) & 0xff,
+  ]);
+}
+
 /** Algorithm 2: the file encryption key, from a padded user password. */
 function fileEncryptionKey(cipher: Cipher, padded: Uint8Array): Uint8Array {
   const parts = [
     padded,
     cipher.owner,
-    Uint8Array.from([
-      cipher.permissions & 0xff,
-      (cipher.permissions >> 8) & 0xff,
-      (cipher.permissions >> 16) & 0xff,
-      (cipher.permissions >> 24) & 0xff,
-    ]),
+    permissionsBytes(cipher.permissions),
     cipher.documentId,
   ];
   if (cipher.revision >= 4 && !cipher.metadataEncrypted) {
@@ -426,6 +466,26 @@ function fileEncryptionKey(cipher: Cipher, padded: Uint8Array): Uint8Array {
     for (let round = 0; round < 50; round++) hash = md5(hash.subarray(0, cipher.keyBytes));
   }
   return hash.subarray(0, cipher.keyBytes);
+}
+
+/**
+ * Algorithm 3: the `/O` value — the user password wrapped by the owner one.
+ *
+ * This is `userSecretsFromOwner` run forwards, and it has to agree with it: the
+ * file key comes from the *user* password even when an owner secret opens the
+ * file, so an owner password can only grant access by unwrapping `/O` first.
+ */
+function ownerValue(revision: number, keyBytes: number, ownerPassword: string, userPassword: string): Uint8Array {
+  let hash = md5(padSecret(ownerPassword));
+  if (revision >= 3) {
+    for (let round = 0; round < 50; round++) hash = md5(hash);
+  }
+  const key = hash.subarray(0, keyBytes);
+  let value = rc4Encrypt(key, padSecret(userPassword));
+  if (revision >= 3) {
+    for (let round = 1; round <= 19; round++) value = rc4Encrypt(xorWithRepeat(key, round), value);
+  }
+  return value;
 }
 
 /**
@@ -660,14 +720,14 @@ export async function decryptDocument(doc: PDFDocument, password?: string): Prom
     const cleared = exempt.has(refKey(ref));
     if (object instanceof PDFRawStream) {
       if (cipher.stream && !cleared) {
-        const plain = await decryptBytes(cipher, fileKey, ref, cipher.stream, object.getContents());
+        const plain = await cryptBytes(cipher, fileKey, ref, cipher.stream, object.getContents(), 'open');
         writeStream(context, ref, object, plain);
         streams += 1;
       }
-      if (!cleared) strings += await decryptStrings(context, object.dict, ref, cipher, fileKey);
+      if (!cleared) strings += await rewriteStrings(object.dict, ref, cipher, fileKey, 'open');
       continue;
     }
-    if (!cleared) strings += await decryptStrings(context, object, ref, cipher, fileKey);
+    if (!cleared) strings += await rewriteStrings(object, ref, cipher, fileKey, 'open');
   }
 
   context.trailerInfo.Encrypt = undefined;
@@ -684,16 +744,20 @@ function cipherOf(context: PDFContext): Cipher | null {
 
 const refKey = (ref: PDFRef): string => `${ref.objectNumber} ${ref.generationNumber}`;
 
-/** One payload's bytes, under one method. */
-function decryptBytes(
+/** One payload's bytes, under one method, in one direction. */
+function cryptBytes(
   cipher: Cipher,
   fileKey: Uint8Array,
   ref: PDFRef,
   method: Method,
   data: Uint8Array,
+  mode: CipherMode,
 ): Promise<Uint8Array> | Uint8Array {
   const key = objectKey(cipher, fileKey, ref, method);
-  return method === 'RC4' ? rc4Encrypt(key, data) : aesCbcDecrypt(key, data);
+  // RC4 is its own inverse; AES-CBC is not, and only the AES half needs Web
+  // Crypto, which is why the pass is asynchronous whatever the strength.
+  if (method === 'RC4') return rc4Encrypt(key, data);
+  return mode === 'seal' ? aesCbcEncrypt(key, data) : aesCbcDecrypt(key, data);
 }
 
 /**
@@ -726,19 +790,19 @@ function writeStream(context: PDFContext, ref: PDFRef, stream: PDFRawStream, pla
 }
 
 /**
- * Decrypt every string of one object in place, with that object's key, and return
- * how many were undone.
+ * Rewrite every string of one object with that object's key, and count them.
  *
- * Strings are rewritten as hex because arbitrary bytes have to survive: a literal
- * `(...)` would need the cipher's output escaped, and a value that came out wrong
- * would read as mojibake rather than refuse.
+ * The same walk runs in both directions, because the cipher is symmetric and the
+ * spelling is the one that survives arbitrary bytes: strings are rewritten as
+ * hex, since a literal `(...)` would need the ciphertext escaped and a value that
+ * came out wrong would read as mojibake rather than refuse.
  */
-async function decryptStrings(
-  context: PDFContext,
+async function rewriteStrings(
   value: unknown,
   ref: PDFRef,
   cipher: Cipher,
   fileKey: Uint8Array,
+  mode: CipherMode,
   depth = 0,
 ): Promise<number> {
   const method = cipher.string;
@@ -751,10 +815,10 @@ async function decryptStrings(
     for (let index = 0; index < value.size(); index++) {
       const item = value.get(index);
       if (item instanceof PDFString || item instanceof PDFHexString) {
-        value.set(index, PDFHexString.fromBytes(await decryptBytes(cipher, fileKey, ref, method, item.asBytes())));
+        value.set(index, PDFHexString.fromBytes(await cryptBytes(cipher, fileKey, ref, method, item.asBytes(), mode)));
         done += 1;
       } else {
-        done += await decryptStrings(context, item, ref, cipher, fileKey, depth + 1);
+        done += await rewriteStrings(item, ref, cipher, fileKey, mode, depth + 1);
       }
     }
     return done;
@@ -763,10 +827,10 @@ async function decryptStrings(
     let done = 0;
     for (const [key, item] of value.entries()) {
       if (item instanceof PDFString || item instanceof PDFHexString) {
-        value.set(key, PDFHexString.fromBytes(await decryptBytes(cipher, fileKey, ref, method, item.asBytes())));
+        value.set(key, PDFHexString.fromBytes(await cryptBytes(cipher, fileKey, ref, method, item.asBytes(), mode)));
         done += 1;
       } else {
-        done += await decryptStrings(context, item, ref, cipher, fileKey, depth + 1);
+        done += await rewriteStrings(item, ref, cipher, fileKey, mode, depth + 1);
       }
     }
     return done;
@@ -774,5 +838,188 @@ async function decryptStrings(
   return 0;
 }
 
-/** Keep the type import honest: this module reads parsed values, it never builds them. */
+/* ── the write path ──────────────────────────────────────────────────────── */
+
+/** Which way the filter runs over the bytes it is handed. */
+type CipherMode = 'seal' | 'open';
+
+/** The one shape this module both writes and reads: `/V 4 /R 4` with `/AESV2`. */
+const WRITE_REVISION = 4;
+const WRITE_KEY_BYTES = 16;
+const WRITE_METHOD: Method = 'AESV2';
+const CRYPT_FILTER = 'StdCF';
+
+/** What a caller asks `encryptDocument` to write. */
+export interface CipherRequest {
+  /**
+   * The secret a reader types to open the file. `''` is a permissions-only lock:
+   * the empty user password is a real secret in this scheme, and the file still
+   * carries ciphertext, which is exactly what a gate with no cipher did not.
+   */
+  userPassword: string;
+  /** The secret that lifts the restrictions, and unwraps `/O` to open the file. */
+  ownerPassword: string;
+  /**
+   * The raw `/P` integer, Table 25 bits already OR-ed. It is asked for rather
+   * than derived because the same four bytes feed the file key, `/U` and `/Perms`:
+   * one value, three uses, and the value a test can read back off the file.
+   */
+  permissions: number;
+}
+
+/** What `encryptDocument` did to the document it was handed. */
+export interface CipherWritten {
+  strength: CipherStrength;
+  /** `/O`, `/U`, `/P` and `/Perms` as written, for a caller that reports them. */
+  permissions: number;
+  /** The file encryption key, before it was salted per object. */
+  fileKey: Uint8Array;
+  streams: number;
+  strings: number;
+}
+
+/** Algorithm 5: the value that lets a reader tell a rewritten `/P` from a legal one. */
+async function permsValue(cipher: Cipher, fileKey: Uint8Array): Promise<Uint8Array> {
+  const hash = md5(
+    fileKey,
+    permissionsBytes(cipher.permissions),
+    Uint8Array.from(cipher.metadataEncrypted ? [0xff, 0xff, 0xff, 0xff] : [0, 0, 0, 0]),
+    // The spec takes the first 16 bytes of the primary `/ID` element, and no more.
+    cipher.documentId.subarray(0, 16),
+    utf8.encode('adb'),
+  );
+  // `/Perms` is 16 bytes with no IV in front of it, so the AES half is one block
+  // of CBC under a zero IV — which is ECB, without asking Web Crypto for a mode
+  // it does not have to implement.
+  if (cipher.stream === 'AESV2') return aesEncryptBlock(fileKey, hash);
+  return rc4Encrypt(fileKey, hash);
+}
+
+/**
+ * The `/Encrypt` dictionary for the cipher this module just ran.
+ *
+ * `/CFM /AESV2 /Length 16` selected by both `/StmF` and `/StrF` is the shape the
+ * outside fixtures carry, and the shape `readCipher` accepts: a dictionary that
+ * names a filter it never selected would be read back as a gate, and a gate is
+ * what the bytes would not be.
+ */
+function encryptDictionary(
+  context: PDFContext,
+  cipher: Cipher,
+  owner: Uint8Array,
+  user: Uint8Array,
+  perms: Uint8Array,
+): PDFDict {
+  const standard = PDFDict.withContext(context);
+  standard.set(PDFName.of('CFM'), PDFName.of('AESV2'));
+  standard.set(PDFName.of('AuthEvent'), PDFName.of('DocOpen'));
+  standard.set(PDFName.of('Length'), PDFNumber.of(WRITE_KEY_BYTES));
+  const filters = PDFDict.withContext(context);
+  filters.set(PDFName.of(CRYPT_FILTER), standard);
+
+  const dict = PDFDict.withContext(context);
+  dict.set(PDFName.of('Filter'), PDFName.of('Standard'));
+  dict.set(PDFName.of('V'), PDFNumber.of(WRITE_REVISION));
+  dict.set(PDFName.of('R'), PDFNumber.of(WRITE_REVISION));
+  dict.set(PDFName.of('Length'), PDFNumber.of(WRITE_KEY_BYTES * 8));
+  dict.set(PDFName.of('P'), PDFNumber.of(cipher.permissions));
+  dict.set(PDFName.of('O'), PDFHexString.fromBytes(owner));
+  dict.set(PDFName.of('U'), PDFHexString.fromBytes(user));
+  dict.set(PDFName.of('Perms'), PDFHexString.fromBytes(perms));
+  dict.set(PDFName.of('EncryptMetadata'), PDFBool.True);
+  dict.set(PDFName.of('CF'), filters);
+  dict.set(PDFName.of('StmF'), PDFName.of(CRYPT_FILTER));
+  dict.set(PDFName.of('StrF'), PDFName.of(CRYPT_FILTER));
+  return dict;
+}
+
+/**
+ * Save a document as a genuinely ciphered one: AES-128, revision 4.
+ *
+ * It runs the read path's derivations forwards — Algorithm 3 for `/O`, 2 for the
+ * file key, 4 for `/U`, 5 for `/Perms`, 1 for every object key — so the two
+ * directions cannot hold two different ideas about what a password means here.
+ * The document is modified in place: the `/Encrypt` dictionary and the `/ID` it
+ * was derived from go into the trailer, every stream payload is replaced by the
+ * bytes the writer will serialize (deflated first, ciphered last, which is the
+ * order the spec writes them in), and every string by its ciphered hex form.
+ *
+ * Two things the caller owes this function, and `core/doc.ts:saveEncrypted` pays
+ * them: everything the writer would create *while* it writes must exist first (a
+ * field appearance generated during the save would land in the clear behind a
+ * dictionary that says ciphertext), and the save must not pack objects into
+ * object streams — `@maxwbh/pdf-lib` inflates those while parsing, before any
+ * decryptor runs, so a file that stores its page tree in one is a file this app
+ * could write and could not read back.
+ */
+export async function encryptDocument(
+  doc: PDFDocument,
+  request: CipherRequest,
+): Promise<CipherWritten> {
+  const context = doc.context;
+  const documentId = randomBytes(16);
+  // `/O` first: the file key is derived from the user password *and* the owner
+  // value, so a hash written after the key would be a hash of the wrong bytes.
+  const owner = ownerValue(WRITE_REVISION, WRITE_KEY_BYTES, request.ownerPassword, request.userPassword);
+  const cipher: Cipher = {
+    strength: 'AES-128',
+    revision: WRITE_REVISION,
+    stream: WRITE_METHOD,
+    string: WRITE_METHOD,
+    keyBytes: WRITE_KEY_BYTES,
+    owner,
+    // `/U` is written below and read back by `opensWith`; the derivation of the
+    // file key does not look at it.
+    user: new Uint8Array(32),
+    // `/P` is a 32-bit signed integer in the file; a caller that OR-ed its flags
+    // in JavaScript can easily hand over the unsigned form.
+    permissions: request.permissions | 0,
+    metadataEncrypted: true,
+    documentId,
+  };
+  const fileKey = fileEncryptionKey(cipher, padSecret(request.userPassword));
+  // Only the first 16 bytes of `/U` are the hash; the tail is arbitrary, and this
+  // one is derived rather than random so two saves of the same document differ
+  // by their IVs and nothing else.
+  const userHash = userKey(cipher, fileKey);
+  const user = concat(userHash, md5(userHash, documentId));
+
+  const perms = await permsValue(cipher, fileKey);
+  const dict = encryptDictionary(context, cipher, owner, user, perms);
+  // A document loaded with `ignoreEncryption` still carries its source's
+  // dictionary; leaving it registered would cipher a stale `/O` like any other
+  // string and describe the file twice.
+  const stale = context.trailerInfo.Encrypt;
+  if (stale instanceof PDFRef) context.delete(stale);
+  const ref = context.register(dict);
+  context.trailerInfo.Encrypt = ref;
+
+  const ids = PDFArray.withContext(context);
+  const idValue = PDFHexString.fromBytes(documentId);
+  ids.push(idValue);
+  ids.push(idValue);
+  context.trailerInfo.ID = ids;
+
+  let streams = 0;
+  let strings = 0;
+  for (const [objectRef, object] of context.enumerateIndirectObjects()) {
+    // The encryption dictionary is exempt from the cipher it describes (ISO
+    // 32000-1 §7.3.2.1): ciphering `/O` or `/U` would make the file unopenable.
+    if (refKey(objectRef) === refKey(ref)) continue;
+    if (object instanceof PDFStream) {
+      // `getContents()` is the *encoded* payload: a `PDFFlateStream` deflates on
+      // demand, and the cipher belongs outside the flate, not inside it.
+      const payload = await cryptBytes(cipher, fileKey, objectRef, WRITE_METHOD, object.getContents(), 'seal');
+      context.assign(objectRef, PDFRawStream.of(object.dict, payload));
+      streams += 1;
+      strings += await rewriteStrings(object.dict, objectRef, cipher, fileKey, 'seal');
+      continue;
+    }
+    strings += await rewriteStrings(object, objectRef, cipher, fileKey, 'seal');
+  }
+
+  return { strength: cipher.strength, permissions: cipher.permissions, fileKey, streams, strings };
+}
+
+/** Keep the type import honest: this module reads parsed values and builds dictionaries. */
 export type { PDFObject };

@@ -45,7 +45,7 @@ import type {
   PDFPermissions,
 } from '@maxwbh/pdf-lib';
 import { cropBox } from './pages';
-import { decryptDocument } from './crypto';
+import { decryptDocument, encryptDocument } from './crypto';
 import {
   countOutlineNodes,
   readOutline,
@@ -239,72 +239,90 @@ export interface PasswordOptions {
 }
 
 /**
- * The password gate and the `/P` flags, written as the crypt filter `/None`.
+ * The `/P` integer for the permission switches a caller holds (Table 25).
  *
- * `@maxwbh/pdf-lib`'s `save({ encrypt })` registers an `/Encrypt` dictionary and
- * a document `/ID`, and its `PDFSecurity` computes `/O` and `/U` by the
- * revision-4 algorithm — but nothing ever calls `PDFSecurity.encryptStream` or
- * `encryptString`, so the strings and streams are serialized exactly as this app
- * holds them. The fork therefore has no strength to select: `version` chose the
- * label on a dictionary, not a cipher, and `/V 5 /R 6` with `/CFM /AESV2` was a
- * 256-bit label beside a 128-bit filter over plaintext bytes. Measured against
- * MuPDF, poppler, qpdf, pypdf and Ghostscript, that file opened nowhere: MuPDF
- * refused it outright, qpdf reported `some V=5 encryption dictionary parameters
- * are missing or the wrong type`, and where a reader did get in it decrypted
- * plaintext and lost the page.
+ * Bits 1-2 are always 0 and bits 7-8 and 13-32 always 1, so an all-on set is
+ * `-4` rather than `-1`; the six actions a reader can be refused are the rest.
+ * These same four bytes feed the file key, `/U` and `/Perms`, which is why an
+ * unset box changes the key and a protected file cannot be re-keyed by editing
+ * the dictionary — the check `/Perms` exists to make.
+ */
+export function permissionsToFlags(permissions: PDFPermissions | undefined): number {
+  const flags: [keyof PDFPermissions, number][] = [
+    ['printing', 0x0004],
+    ['modifying', 0x0008],
+    ['copying', 0x0010],
+    ['annotating', 0x0020],
+    ['fillingForms', 0x0100],
+    ['contentAccessibility', 0x0200],
+    ['documentAssembly', 0x0400],
+    ['printingHighQuality', 0x0800],
+  ];
+  let value = 0xfffff0c0;
+  for (const [key, mask] of flags) {
+    if (permissions?.[key]) value |= mask;
+  }
+  return value | 0;
+}
+
+/**
+ * The password gate, the `/P` flags **and the cipher**: AES-128, revision 4.
  *
- * What the bytes *are* is expressible, and it is what this writes: `/V 4 /R 4`
- * with a 128-bit key (the strength `/O` and `/U` are genuinely computed at), an
- * empty `/CF`, and no `/StmF` or `/StrF` — whose spec default is the predefined
- * crypt filter `/None`, "the data are not encrypted". Every reader asked here
- * opens that file, keeps its text, and — in MuPDF, qpdf and pypdf — refuses it
- * without the password. poppler reads it and reports it as unencrypted, because
- * a gate with no cipher is nothing for it to undo.
+ * `@maxwbh/pdf-lib`'s own `save({ encrypt })` registers an `/Encrypt` dictionary
+ * and a document `/ID`, and its `PDFSecurity` computes `/O` and `/U` to spec —
+ * but nothing ever calls `PDFSecurity.encryptStream` or `encryptString`, so every
+ * stream left the tab as plaintext behind a dictionary that said otherwise. That
+ * is why this file used to write the crypt filter `/None` out loud: the honest
+ * shape for an engine that ran no cipher.
  *
- * The dictionary is assembled here rather than by `save({ encrypt })` for one
- * reason: `setupEncryption` writes the cipher claim itself, and this file must
- * not serialize the document twice to take one key back out.
+ * The cipher exists now, in `core/crypto.ts:encryptDocument`, at the one strength
+ * the read path can also undo — `/V 4 /R 4` with `/CF /StdCF /CFM /AESV2
+ * /Length 16`, selected by `/StmF` and `/StrF`, and every stream and string
+ * ciphered on the way out. Writing a strength this app cannot read back would
+ * turn a protected download into blank paper the moment the user re-opened it
+ * here, so AES-256 (`/R 5`, `/R 6`) stays unwritten until it is also read.
+ *
+ * The dictionary is assembled there rather than by `save({ encrypt })` for the
+ * same reason the `/None` gate was: `setupEncryption` writes a cipher claim it
+ * does not run.
  */
 export async function saveEncrypted(
   doc: PDFDocument,
   opts: PasswordOptions,
 ): Promise<Bytes> {
+  const user = opts.userPassword ?? '';
   const owner =
     opts.ownerPassword && opts.ownerPassword.length > 0
       ? opts.ownerPassword
-      : opts.userPassword || randomOwnerPassword();
+      : user || randomOwnerPassword();
 
   if (!opts.userPassword && !opts.ownerPassword) {
     throw new Error('Enter an owner or a user password to protect this PDF.');
   }
 
-  const security = new PDFSecurity(doc.context);
-  // Revision 4 is not a preference: it is the only `/O` and `/U` this engine
-  // actually computes to spec, and the only `/V` whose crypt filters can name
-  // `/None`. Ask for 256-bit here and the answer is still a 128-bit hash.
-  security.setupEncryption({
+  // Whatever the writer would create *while* it writes has to exist before the
+  // cipher runs: field appearances are generated inside `save()`, page content
+  // and embedded assets are flushed there, and an object born after the walk
+  // would be serialized in the clear behind a dictionary that says ciphertext.
+  // Saving once and discarding the bytes is how that is guaranteed without
+  // reaching into the vendor's private form cache; the second save is the file.
+  await doc.save({ useObjectStreams: false });
+
+  // `/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, `/O`, `/U`, `/Perms` and the
+  // document `/ID` the three hashes are derived from are written there, along
+  // with every ciphered stream and string; `save()` alone never touches them.
+  await encryptDocument(doc, {
+    userPassword: user,
     ownerPassword: owner,
-    userPassword: opts.userPassword ?? '',
-    permissions: opts.permissions,
-    version: 4,
+    permissions: permissionsToFlags(opts.permissions),
   });
 
-  const dict = security.createEncryptDict();
-  dict.set(PDFName.of('CF'), PDFDict.withContext(doc.context));
-  dict.delete(PDFName.of('StmF'));
-  dict.delete(PDFName.of('StrF'));
-  dict.set(PDFName.of('EncryptMetadata'), PDFBool.True);
-  doc.context.trailerInfo.Encrypt = doc.context.register(dict);
-
-  // `/U` is computed over the `/ID`, so the pair is written from the same id the
-  // hashes were derived with; `save()` without `encrypt` leaves both alone.
-  const id = PDFArray.withContext(doc.context);
-  const documentId = PDFHexString.fromBytes(security.getDocumentId());
-  id.push(documentId);
-  id.push(documentId);
-  doc.context.trailerInfo.ID = id;
-
-  return doc.save({ useObjectStreams: true });
+  // `useObjectStreams: false` is not a size preference. `@maxwbh/pdf-lib` inflates
+  // object streams while it *parses*, before any decryptor is consulted, so a
+  // ciphered file that packs its dictionaries into one is a file this app writes
+  // and then cannot read — which `core/crypto.ts:objectStreamsUnreadable` refuses
+  // on sight, and would rightly refuse its own output.
+  return doc.save({ useObjectStreams: false, updateFieldAppearances: false });
 }
 
 function randomOwnerPassword(): string {
