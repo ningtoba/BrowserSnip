@@ -502,9 +502,11 @@ describe('encryptDocument, asked directly', () => {
     const doc = await sealed(await sample());
     const written = await encryptDocument(doc, { userPassword: USER, ownerPassword: OWNER, permissions: -3392 });
     // Two page content streams: every stream this document holds.
-    expect(written).toMatchObject({ strength: 'AES-128', permissions: -3392, streams: 2 });
-    expect(written.fileKey.length, 'a 128-bit file key').toBe(16);
+    expect(written).toEqual({ strength: 'AES-128', streams: 2, strings: expect.any(Number) });
     expect(written.strings).toBeGreaterThan(0);
+    // `/P` is the integer the caller handed over, signed, in the file — not one the
+    // module recomputed on the way.
+    expect(encryptBody(await doc.save({ useObjectStreams: false }))).toMatch(/\/P -3392\b/);
     // The dictionary is in the trailer, and the document in memory is the ciphered
     // one: a caller that keeps editing after the save is editing ciphertext.
     const body = latin1.decode(await doc.save({ useObjectStreams: false }));

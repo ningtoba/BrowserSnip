@@ -875,13 +875,14 @@ export interface CipherRequest {
   permissions: number;
 }
 
-/** What `encryptDocument` did to the document it was handed. */
+/**
+ * What `encryptDocument` did to the document it was handed.
+ *
+ * The file key is deliberately not here: it is the secret the whole scheme hangs
+ * on, and a caller that has it has the file.
+ */
 export interface CipherWritten {
   strength: CipherStrength;
-  /** `/O`, `/U`, `/P` and `/Perms` as written, for a caller that reports them. */
-  permissions: number;
-  /** The file encryption key, before it was salted per object. */
-  fileKey: Uint8Array;
   streams: number;
   strings: number;
 }
@@ -1004,11 +1005,8 @@ export async function encryptDocument(
   ids.push(idValue);
   context.trailerInfo.ID = ids;
 
-  let streams = 0;
-  let strings = 0;
-  ({ streams, strings } = await cipherIndirectObjects(context, cipher, fileKey, ref));
-
-  return { strength: cipher.strength, permissions: cipher.permissions, fileKey, streams, strings };
+  const { streams, strings } = await cipherIndirectObjects(context, cipher, fileKey, ref);
+  return { strength: cipher.strength, streams, strings };
 }
 
 /**
