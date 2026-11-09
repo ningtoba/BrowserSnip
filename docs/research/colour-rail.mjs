@@ -47,6 +47,10 @@ if (!SPEC && !TOOL) throw new Error('either TOOL (single run) or SPEC (batch) is
 
 /** Field key → the words the rail prints next to its control. */
 const FIELD_LABELS = {
+  // The security panels: `mode` is 'Method' for the colour tools but 'Protection
+  // type' here, so a spec run names that one by its printed words instead.
+  userPassword: 'Open password',
+  ownerPassword: 'Owner password',
   // The shared text-style model's rail keys: each tool renders these through
   // `textStyleFields`, so their labels are the same words everywhere.
   font: 'Typeface',
@@ -596,10 +600,6 @@ await ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.crea
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
   await send('DOM.setFileInputFiles', { nodeId, files: [PDF] });
 }
-if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`, 90000))) {
-  console.log('buttons:', JSON.stringify(await ev(`JSON.stringify([...document.querySelectorAll('button')].map(b=>[b.innerText.trim().slice(0,30),!b.disabled]))`)));
-  throw new Error(`no enabled button matching ${LABEL || TOOL} after loading ${PDF}`);
-}
 // The rail folds everything but its lead field behind "N more options".
 await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
 await sleep(400);
@@ -608,6 +608,16 @@ const applied = [];
 for (const [label, raw] of Object.entries(WANTED)) {
   const result = await setField(label, raw);
   applied.push(`${result.label}=${result.want}: "${result.before}" → "${result.after}"`);
+}
+
+// Asked *after* the fields are written, because a rail whose required field is
+// still empty disables its own run button — `protect` among them. Waiting first
+// made the probe report "no enabled button" for a tool that runs fine, and the
+// list of buttons it printed was the disabled one.
+if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`, 90000))) {
+  console.log('buttons:', JSON.stringify(await ev(`JSON.stringify([...document.querySelectorAll('button')].map(b=>[b.innerText.trim().slice(0,30),!b.disabled]))`)));
+  console.log('fields:', JSON.stringify(applied, null, 1));
+  throw new Error(`no enabled button matching ${LABEL || TOOL} after loading ${PDF}`);
 }
 console.log('fields:', JSON.stringify(applied, null, 1));
 

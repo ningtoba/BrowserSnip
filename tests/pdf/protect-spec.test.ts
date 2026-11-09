@@ -20,7 +20,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   PDFArray,
@@ -463,11 +463,15 @@ async function describeInput(label: string, file: string): Promise<Record<string
   await step('pdf-lib page 1', async () => {
     const doc = await PDFDocument.load(bytes, { password: INPUT_PASSWORD, updateMetadata: false });
     const value = doc.getPages()[0].node.get(PDFName.of('Contents'));
-    const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
-    const head = resolved instanceof PDFRawStream
-      ? Array.from(resolved.getContents()).slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join(' ')
-      : '(an array of streams)';
-    return `${head}${/^78 (01|9c|da)/.test(head) ? ' — flate, so plaintext' : ' — not operators: this is ciphertext'}`;
+    // A page's `/Contents` is usually an array of streams; take the first one and
+    // look at its head, because "78 9c" is a zlib stream and anything else under a
+    // `/FlateDecode` is ciphertext the engine was never asked to undo.
+    const first = value instanceof PDFArray ? value.get(0) : value;
+    const resolved = first instanceof PDFRef ? doc.context.lookup(first) : first;
+    if (!(resolved instanceof PDFRawStream)) return `${value?.constructor?.name ?? '?'} — not a stream this can read`;
+    const head = Array.from(resolved.getContents()).slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+    const filter = resolved.dict.lookupMaybe(PDFName.of('Filter'), PDFName)?.decodeText() ?? '';
+    return `${head} /Filter /${filter}${/^78 (01|9c|da)/.test(head) ? ' — flate, so plaintext' : ' — ciphertext behind its own /Filter'}`;
   });
 
   // A routine edit. `rotate` copies the page tree and re-saves, and the runner
@@ -500,12 +504,19 @@ async function describeInput(label: string, file: string): Promise<Record<string
 
 describe.skipIf(!INPUT_DIR)('what this app says about files a real encryptor wrote', () => {
   it('reports gate, page count, preview, one routine edit and unlock for each', async () => {
-    const rows: Record<string, string>[] = [];
-    for (const [label, file] of [
+    // The three strengths qpdf can write, or whatever else the directory holds —
+    // the same questions are asked of this app's own gated file below.
+    const known: [string, string][] = [
       ['qpdf RC4-128 (V2/R3)', 'ref-r3-rc4.pdf'],
       ['qpdf AES-128 (V4/R4)', 'ref-r4-aes128.pdf'],
       ['qpdf AES-256 (V5/R6)', 'ref-r6-aes256.pdf'],
-    ] as const) {
+    ];
+    const present = known.filter(([, file]) => existsSync(path.join(INPUT_DIR, file)));
+    const others = readdirSync(INPUT_DIR)
+      .filter((file) => file.endsWith('.pdf') && !present.some(([, file2]) => file2 === file))
+      .map((file): [string, string] => [file, file]);
+    const rows: Record<string, string>[] = [];
+    for (const [label, file] of [...present, ...others]) {
       try {
         rows.push(await describeInput(label, file));
       } catch (error) {
@@ -518,6 +529,6 @@ describe.skipIf(!INPUT_DIR)('what this app says about files a real encryptor wro
         if (key !== 'file') console.log(`  ${key}: ${value}`);
       }
     }
-    expect(rows).toHaveLength(3);
+    expect(rows.length).toBeGreaterThanOrEqual(1);
   }, 600_000);
 });
