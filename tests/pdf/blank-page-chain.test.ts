@@ -36,7 +36,7 @@ import type { PDFPage } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, parseContentStream, streamBytes } from '@/lib/pdf/core/content';
-import { cropBox, ensurePageContents, pageContentsState } from '@/lib/pdf/core/pages';
+import { cropBox, displayedSize, ensurePageContents, mediaBox, pageContentsState } from '@/lib/pdf/core/pages';
 
 /* ── the chain input: the product's own output ───────────────────────────── */
 
@@ -450,5 +450,115 @@ describe('the blank survives the chain, in the right place', () => {
     const blank = all.filter((form) => form.ink === 0);
     expect(blank, 'the blank page is imposed exactly once').toHaveLength(1);
     expect(Math.round(blank[0].bbox[2])).toBe(Math.round(BLANK_SIZE[0]));
+  });
+});
+
+/* ── the same class: other optional entries, measured not assumed ────────── */
+
+/**
+ * A PDF written byte by byte, so the optional page entries are genuinely absent.
+ *
+ * pdf-lib re-creates `/Resources`, `/Annots` and a normalised `/Contents` on every
+ * page it saves (`PDFPageLeaf.normalize`), so the library cannot write the file that
+ * tests the reader. Two pages, both inheriting `/MediaBox` from the page tree, and
+ * neither carrying `/Rotate`, `/Resources`, `/Annots` or its own `/MediaBox`; page 1
+ * paints a rectangle with no resource dictionary to lean on, page 2 has no
+ * `/Contents` at all.
+ */
+function bareLegalPdf(): Uint8Array {
+  const content = '0 0.6 0 rg\n20 20 260 160 re f\n';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 /MediaBox [0 0 300 200] >>',
+    '<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>',
+    `<< /Length ${content.length} >>`,
+    '<< /Type /Page /Parent 2 0 R >>',
+  ];
+  const parts = ['%PDF-1.4\n'];
+  const offsets: number[] = [];
+  let at = parts[0].length;
+  objects.forEach((body, index) => {
+    offsets.push(at);
+    const text = index === 3
+      ? `${index + 1} 0 obj\n${body}\nstream\n${content}endstream\nendobj\n`
+      : `${index + 1} 0 obj\n${body}\nendobj\n`;
+    parts.push(text);
+    at += Buffer.byteLength(text, 'latin1');
+  });
+  const xref = at;
+  parts.push(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+  for (const offset of offsets) parts.push(`${String(offset).padStart(10, '0')} 00000 n \n`);
+  parts.push(
+    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
+  );
+  return Uint8Array.from(Buffer.from(parts.join(''), 'latin1'));
+}
+
+/** Output page counts for the two-sheet bare file, under `VALUES`. */
+const BARE_COUNTS: Record<SevenTool, number> = {
+  'rotate-custom': 2,
+  'n-up': 1,
+  booklet: 2,
+  'combine-single-page': 1,
+  posterize: 8,
+  'divide-pages': 4,
+  'fix-page-size': 2,
+};
+
+/** Read a page dictionary entry the way the file wrote it: own value, unresolved. */
+function ownEntry(page: PDFPage, key: string): unknown {
+  const node = page.node as unknown as { get(name: PDFName): unknown };
+  return node.get(PDFName.of(key));
+}
+
+describe('the same mistake, elsewhere in the page dictionary', () => {
+  it('the file really omits every one of those entries', async () => {
+    const doc = await open(bareLegalPdf());
+    expect(doc.getPageCount()).toBe(2);
+    for (const page of doc.getPages()) {
+      for (const key of ['MediaBox', 'Rotate', 'Resources', 'Annots']) {
+        expect(ownEntry(page, key), `page carries its own /${key}`).toBeUndefined();
+      }
+    }
+    expect(pageContentsState(doc.getPages()[1]), 'the second sheet has no content stream').toBe('absent');
+  });
+
+  it('the page readers inherit what the dictionary does not carry', async () => {
+    const page = (await open(bareLegalPdf())).getPage(0);
+    // Absent /Rotate is 0, not an error; /MediaBox comes from the page tree.
+    expect(page.getRotation().angle).toBe(0);
+    expect(mediaBox(page)).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+    expect(cropBox(page)).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+    expect(displayedSize(page)).toEqual({ width: 300, height: 200 });
+    expect(inkOf(page), 'a page with no /Resources still draws its rectangle').toBeGreaterThan(0);
+  });
+
+  it.each(SEVEN)('%s imposes a page whose box is inherited and whose /Rotate is absent', async (toolId) => {
+    const doc = await open(await bytesOf(await run(toolId, bareLegalPdf(), VALUES[toolId])));
+    expect(doc.getPageCount(), `${toolId} changed the sheet count`).toBe(BARE_COUNTS[toolId]);
+    const inked = doc.getPages().filter((_, index) => reachableInk(doc, index) > 0);
+    expect(inked.length, `${toolId} dropped the only page that paints`).toBeGreaterThan(0);
+    for (const page of doc.getPages()) {
+      expect(page.getWidth() * page.getHeight(), 'a sheet collapsed to nothing').toBeGreaterThan(0);
+    }
+  });
+
+  it('rotate-custom turns the inherited box of the blank sheet', async () => {
+    const doc = await open(await bytesOf(await run('rotate-custom', bareLegalPdf(), VALUES['rotate-custom'])));
+    // 300 × 200 inherited, no /Rotate, no /Contents: a quarter turn returns 200 × 300,
+    // blank, and the inked sheet keeps its ink.
+    expect([Math.round(doc.getPage(1).getWidth()), Math.round(doc.getPage(1).getHeight())]).toEqual([200, 300]);
+    expect(reachableInk(doc, 1), 'the blank sheet drew something it did not have').toBe(0);
+    expect(reachableInk(doc, 0)).toBeGreaterThan(0);
+  });
+
+  it('n-up keeps the inked page in cell 1 and the blank in cell 2', async () => {
+    const doc = await open(await bytesOf(await run('n-up', bareLegalPdf(), VALUES['n-up'])));
+    expect(doc.getPageCount()).toBe(1);
+    const cells = formsOf(doc, 0);
+    expect(cells.map((cell) => cell.bbox.slice(2).map(Math.round)), 'both cells come from the inherited box')
+      .toEqual([[300, 200], [300, 200]]);
+    expect(cells[0].ink, 'the inked page is still first').toBeGreaterThan(0);
+    expect(cells[1].ink, 'the blank page is still second, and still blank').toBe(0);
   });
 });
