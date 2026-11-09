@@ -280,7 +280,7 @@ async function install() {
         canvasSize: entry.canvasSize,
       })),
       perBlock,
-      expected: outcome.placed.map((piece) => ({
+      expected: (outcome.placed || []).map((piece) => ({
         id: piece.id,
         page: piece.page,
         text: piece.text.slice(0, 60),
