@@ -222,7 +222,12 @@ if (!withBlank) {
     console.log('\nVERDICT: RED — n-up refused the blank page this app just wrote (no file).');
   } else {
     console.log(`\n${measure([withBlank, imposed])}`);
-    console.log('\nVERDICT: GREEN — the blank page survived the chain into the N-up file.');
+    // "Survived" is about the bytes: every source page, the blank included, is
+    // drawn as a form XObject in its cell, in order. Whether each sheet's cells sit
+    // *on* the paper is a separate, older defect — `n-up` numbers its cells across
+    // the whole run, so sheets after the first are placed below the page. That is
+    // pinned in `tests/pdf/blank-page-chain.test.ts`, not here.
+    console.log('\nVERDICT: GREEN — the blank page was imposed, in its cell, in order. See the note above on sheet placement.');
   }
 }
 

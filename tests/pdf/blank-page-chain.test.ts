@@ -368,6 +368,8 @@ describe('the blank survives the chain, in the right place', () => {
     const doc = await open(await bytesOf(await run('n-up', await withOwnBlank(), VALUES['n-up'])));
     expect(doc.getPageCount()).toBe(3);
     // Five pages, two per sheet: sheet 2 holds the blank (source 3) then source 4.
+    // That they land *on* the paper is a separate question, pinned at the end of
+    // this file; what matters to the blank page is that its cell exists, in order.
     const second = formsOf(doc, 1);
     expect(second.map((form) => Math.round(form.bbox[2])), 'both cells of sheet 2 are filled').toHaveLength(2);
     expect(Math.round(second[0].bbox[2])).toBe(Math.round(BLANK_SIZE[0]));
@@ -560,5 +562,57 @@ describe('the same mistake, elsewhere in the page dictionary', () => {
       .toEqual([[300, 200], [300, 200]]);
     expect(cells[0].ink, 'the inked page is still first').toBeGreaterThan(0);
     expect(cells[1].ink, 'the blank page is still second, and still blank').toBe(0);
+  });
+});
+
+/* ── what this file does NOT fix, pinned with the numbers ────────────────── */
+
+/**
+ * The translation each `Do` runs under, in draw order.
+ *
+ * `stamp` places a cell with `q tx ty cm … /Form Do Q`, so the first translate of
+ * each block is where that cell sits on the sheet.
+ */
+function cellOffsets(doc: PDFDocument, index: number): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const stream of pageContentStreams(doc.getPages()[index])) {
+    const text = Buffer.from(stream.bytes).toString('latin1');
+    for (const block of text.match(/q[\s\S]*?Do/g) ?? []) {
+      const cm = block.match(/(-?[\d.]+)\s+(-?[\d.]+)\s+cm/);
+      if (cm) out.push({ x: Number(cm[1]), y: Number(cm[2]) });
+    }
+  }
+  return out;
+}
+
+describe('the neighbouring defect, measured and left alone', () => {
+  /**
+   * `n-up` numbers its cells across the whole run instead of within a sheet, so
+   * every sheet after the first is placed below the paper.
+   *
+   * `gridBox`'s function takes a cell of the grid (`0 … perSheet-1`) and derives
+   * `row = floor(cell / columns)`, but `n-up` hands it the global index: with
+   * 2 per sheet, sheet 2 asks for cells 2 and 3 and gets row 1, sheet 3 asks for
+   * cell 4 and gets row 2. The content is in the file — it is simply off the page,
+   * which is why the run prints "Placed 5 pages on 3 sheets" over a file whose
+   * sheets 2 and 3 rasterise at 0.000 % ink (measured with `pymupdf` on the deployed
+   * site by `scripts/live-blank-chain-proof.mjs`). The case below uses a document
+   * with **no blank pages at all** — four sheets, 100 to 400 pt wide — so it is not
+   * this branch's doing and it is not in the class the predicate fixes; the repair is
+   * to pass the within-sheet cell (`cell % perSheet`), and this pin flips when
+   * somebody makes it.
+   */
+  it('puts every sheet after the first below the paper', async () => {
+    const doc = await open(await bytesOf(await run('n-up', await inkedFour(), VALUES['n-up'])));
+    // Four sheets, two per page of output: the second output sheet is cells 2 and
+    // 3 of the run, which `gridBox` reads as rows 1 of a one-row grid.
+    expect(doc.getPageCount()).toBe(2);
+    const first = cellOffsets(doc, 0);
+    const second = cellOffsets(doc, 1);
+    expect(first.every((cell) => cell.y >= 0), 'sheet 1 is on the paper').toBe(true);
+    expect(second.every((cell) => cell.y < 0), 'sheet 2 was placed under it').toBe(true);
+    // The columns are right, and so is the sheet count — only the row is counted
+    // from the start of the run, which is what pushes the second sheet off it.
+    expect(second.map((cell) => cell.x >= 0), 'the halves are still left and right').toEqual([true, true]);
   });
 });
