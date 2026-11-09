@@ -47,6 +47,26 @@ if (!SPEC && !TOOL) throw new Error('either TOOL (single run) or SPEC (batch) is
 
 /** Field key → the words the rail prints next to its control. */
 const FIELD_LABELS = {
+  // The shared text-style model's rail keys: each tool renders these through
+  // `textStyleFields`, so their labels are the same words everywhere.
+  font: 'Typeface',
+  bold: 'Bold',
+  italic: 'Italic',
+  fontSize: 'Font size',
+  color: 'Colour',
+  align: 'Alignment',
+  lineSpacing: 'Line height',
+  headerLeft: 'Header left',
+  headerCenter: 'Header centre',
+  headerRight: 'Header right',
+  footerLeft: 'Footer left',
+  footerCenter: 'Footer centre',
+  footerRight: 'Footer right',
+  stamp: 'Stamp',
+  text: 'Text',
+  prefix: 'Prefix',
+  suffix: 'Suffix',
+  position: 'Position',
   dpi: 'Resolution',
   pages: 'Pages',
   mode: 'Method',
