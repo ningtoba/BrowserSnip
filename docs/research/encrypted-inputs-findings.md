@@ -351,4 +351,11 @@ the two secrets not being distinguished. The guard is the stop-loss, not the fix
 the AES-256 fixtures are now refused for a *true* reason instead of a false one,
 and a file with a real cipher is still not editable here — the rig's acceptance
 criterion for the decrypt pass (`planted_pages 3→3` on the foreign fixtures) is
-therefore **not** met yet, and this row stays open.
+therefore **not** met yet, and this row stays open. One more seam this pass did not
+widen into, named so the next reader does not have to rediscover it: the guard
+lives in `preflightPdf`, which is what `runPdfTool` calls, so the seven panes that
+open a document themselves (`PageOrganizer`, `CropTool`, `FormFillMain`,
+`FormCreatorMain`, `AnnotationEditor`, `TextEditor`, `CompareTool`) still reach
+`core/doc.ts:openPDF` without it — a ciphered file dropped on the Organize, Crop,
+Sign, Redact, Form or Text pane can still come back empty. Measured? No: those
+paths have no rig of their own, which is stated as an absence rather than a result.
