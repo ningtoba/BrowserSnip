@@ -1960,6 +1960,8 @@ function buildCoverage(
     }
     const gid = cidToGid ? (cidToGid.get(code) ?? (identity ? code : undefined)) : identity ? code : undefined;
     if (gid === undefined) return false;
+    // SAFETY: fontkit declares `numGlyphs` on its concrete TrueType/CFF faces
+    // only; the `?? 0` below is what makes a face without one harmless.
     const total = (face as unknown as { numGlyphs?: number }).numGlyphs ?? 0;
     return gid > 0 && (total === 0 || gid < total);
   };
@@ -2577,7 +2579,15 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
               ref,
               key,
               ops: parseContentStream(streamBytes(found)),
-              entry: { container: stream.ref === null ? (page.node as unknown as PDFDict) : (stream.dict as PDFDict), name: name.value, dict: xobjects },
+              // SAFETY: a page node and a form's stream dictionary are both
+              // `PDFDict` at runtime (`PDFPageLeaf extends PDFDict`), and the entry
+              // is only used to re-point `/Resources` › `/XObject`, which both do.
+              entry: {
+                // SAFETY: both candidates are `PDFDict` at runtime, as above.
+                container: (stream.ref === null ? page.node : stream.dict) as unknown as PDFDict,
+                name: name.value,
+                dict: xobjects,
+              },
               parent: stream,
               dict: found.dict,
               resources: (() => {
@@ -3132,6 +3142,8 @@ function commitFormStreams(
       return null;
     }
     const holder = parent ? context.lookup(copies.get(parent.key) as PDFRef) : null;
+    // SAFETY: `PDFPageLeaf extends PDFDict`, so the page node answers `get`/`set`
+    // for `/Resources` exactly as a form's own dictionary does.
     const container = parent
       ? holder instanceof PDFStream
         ? holder.dict
