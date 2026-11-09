@@ -3188,6 +3188,138 @@ function repointXObject(context: PDFContext, container: PDFDict, name: string, r
   container.set(PDFName.of('Resources'), copy);
 }
 
+/** A font a page can draw with, as its resources name it. */
+export interface PageFontName {
+  /** Resource key inside `/Resources/Font`. */
+  resource: string;
+  /** `/BaseFont`, without the leading slash. */
+  baseFont: string;
+  /** `/Subtype`: `/Type1`, `/TrueType`, `/Type0`, `/Type3`. */
+  subtype: string;
+  /** True when a font program travels with the face (embedded, maybe subset). */
+  embedded: boolean;
+}
+
+/**
+ * Every font the page's own resources name, including inherited ones.
+ *
+ * `edit-pdf-text` reports against this list: a block said to be rewritten "in the
+ * document's font" has to appear here, and a face that only the editor could have
+ * added shows up as exactly that.
+ */
+export function pageFontNames(page: PDFPage): PageFontName[] {
+  const context = page.doc.context;
+  const out: PageFontName[] = [];
+  const resources = resourcesDict(page);
+  const fonts = resources ? context.lookup(resources.get(PDFName.of('Font'))) : undefined;
+  if (!(fonts instanceof PDFDict)) return out;
+  for (const [key, value] of fonts.entries()) {
+    const dict = context.lookup(value);
+    if (!(dict instanceof PDFDict)) continue;
+    const descriptor =
+      context.lookup(dict.get(PDFName.of('FontDescriptor'))) instanceof PDFDict
+        ? (context.lookup(dict.get(PDFName.of('FontDescriptor'))) as PDFDict)
+        : undefined;
+    const descendant = context.lookup(dict.get(PDFName.of('DescendantFonts')));
+    const descendantDict =
+      descendant instanceof PDFArray ? (context.lookup(descendant.get(0)) as PDFDict | undefined) : undefined;
+    const descendantDescriptor =
+      descendantDict && context.lookup(descendantDict.get(PDFName.of('FontDescriptor'))) instanceof PDFDict
+        ? (context.lookup(descendantDict.get(PDFName.of('FontDescriptor'))) as PDFDict)
+        : undefined;
+    const fileKeys = ['FontFile', 'FontFile2', 'FontFile3'] as const;
+    const embedded = [descriptor, descendantDescriptor].some(
+      (entry) => entry !== undefined && fileKeys.some((key) => entry.get(PDFName.of(key)) !== undefined),
+    );
+    out.push({
+      resource: (key instanceof PDFName ? key.asString() : String(key)).replace(/^\//, ''),
+      baseFont: (dict.lookupMaybe(PDFName.of('BaseFont'), PDFName)?.asString() ?? '').replace(/^\//, ''),
+      subtype: dict.lookupMaybe(PDFName.of('Subtype'), PDFName)?.asString() ?? '',
+      embedded,
+    });
+  }
+  return out;
+}
+
+/** A flat filled rectangle the page paints, with the colour it fills. */
+export interface PaintedRect {
+  rect: ContentRect;
+  /** `#rrggbb`, or `null` when the colour space is not one this reads. */
+  color: string | null;
+}
+
+/**
+ * The filled rectangles a page paints, in user space.
+ *
+ * This is how a cover patch is recognised from the file rather than from intent:
+ * `re` followed by a fill operator, with the `rg`/`g`/`k` colour in force and the
+ * CTM composed the way a viewer composes it. Text drawn by the editor is not in
+ * this list, so "no rectangle was painted over the block" is a claim about bytes.
+ */
+export function pagePatches(page: PDFPage): PaintedRect[] {
+  const out: PaintedRect[] = [];
+  const walk = (ops: ContentOp[]) => {
+    let ctm: Matrix = IDENTITY;
+    const stack: Matrix[] = [];
+    let pending: ContentRect[] = [];
+    let fill: ColorValue = { space: 'gray', value: 0 };
+    for (const op of ops) {
+      const values = numbersOf(op);
+      switch (op.name) {
+        case 'q':
+          stack.push(ctm);
+          break;
+        case 'Q':
+          ctm = stack.pop() ?? IDENTITY;
+          break;
+        case 'cm':
+          if (values.length >= 6) ctm = multiply(ctm, [values[0], values[1], values[2], values[3], values[4], values[5]]);
+          break;
+        case 're':
+          if (values.length >= 4) {
+            const corners = [
+              apply(ctm, values[0], values[1]),
+              apply(ctm, values[0] + values[2], values[1]),
+              apply(ctm, values[0], values[1] + values[3]),
+              apply(ctm, values[0] + values[2], values[1] + values[3]),
+            ];
+            const xs = corners.map((c) => c[0]);
+            const ys = corners.map((c) => c[1]);
+            pending.push({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
+          }
+          break;
+        case 'f':
+        case 'f*':
+        case 'B':
+        case 'B*': {
+          const rgbColor = toRgb(fill);
+          for (const rect of pending) out.push({ rect, color: rgbColor ? toHex(rgbColor) : null });
+          pending = [];
+          break;
+        }
+        case 'S':
+        case 'n':
+          pending = [];
+          break;
+        case 'g':
+        case 'rg':
+        case 'k':
+          fill = colorFromOp(op, FILL_OPS[op.name]);
+          pending = [];
+          break;
+        default:
+          break;
+      }
+    }
+  };
+  walk(pageContentOps(page));
+  return out;
+}
+
+function toHex(color: RGB): string {
+  return `#${color.map((channel) => Math.round(channel * 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
 /**
  * Reword the colour operators that paint text.
  *

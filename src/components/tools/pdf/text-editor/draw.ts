@@ -41,7 +41,7 @@ import {
   setWordSpacing,
   showText,
 } from '@maxwbh/pdf-lib';
-import type { PDFDocument, PDFImage, PDFPage } from '@/lib/pdf/core/doc';import { PDFName, rgb } from '@/lib/pdf/core/doc';
+import type { PDFDocument, PDFImage, PDFPage } from '@/lib/pdf/core/doc';import { PDFDict, PDFName, rgb } from '@/lib/pdf/core/doc';
 import { cropBox } from '@/lib/pdf/core/pages';
 import type { QuadRect, TopLeftBox, PageFrame } from '@/lib/pdf/core/tables';
 import { removeTextInRects, textRects, makeOp, operand } from '@/lib/pdf/core/content';
@@ -455,9 +455,9 @@ function drawRule(
  * One `/Font` resource entry per page per face, not one per drawn run.
  *
  * A source face is registered under its own `/BaseFont` when the page reaches it
- * through a Form XObject's resources; a page that already names it simply keeps
- * the entry pdf-lib (or the producer) made, because `newFontDictionary` reuses a
- * key that already points at the same object.
+ * through a Form XObject's resources; a page that already names it keeps the
+ * producer's key, because a second name for the same font object reads to an
+ * inventory as two faces.
  */
 function ensureFontKey(page: PDFPage, face: EditFace, cache: Map<string, PDFName>): PDFName {
   const source = face.source;
@@ -465,8 +465,25 @@ function ensureFontKey(page: PDFPage, face: EditFace, cache: Map<string, PDFName
   const key = ref.toString();
   const known = cache.get(key);
   if (known) return known;
-  const tag = (source ? source.baseFont : face.pdf!.name).replace(/^[^A-Za-z0-9]+/, '').slice(0, 24) || 'F';
-  const created = page.node.newFontDictionary(tag, ref);
+  // Reuse the name the page already gives this font: a second `/Font` entry for
+  // the same object is legal but reads as two faces to anything that inventories
+  // a page, and the producer's own key is the honest one to draw with.
+  const fontResources: PDFDict | undefined = source
+    ? (page.node.Resources()?.lookup(PDFName.of('Font')) as PDFDict | undefined)
+    : undefined;
+  let created: PDFName | undefined;
+  if (fontResources instanceof PDFDict) {
+    for (const [name, value] of fontResources.entries()) {
+      if (value.toString() === key) {
+        created = name;
+        break;
+      }
+    }
+  }
+  if (!created) {
+    const tag = (source ? source.baseFont : face.pdf!.name).replace(/^[^A-Za-z0-9]+/, '').slice(0, 24) || 'F';
+    created = page.node.newFontDictionary(tag, ref);
+  }
   cache.set(key, created);
   return created;
 }
