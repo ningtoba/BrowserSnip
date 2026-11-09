@@ -34,7 +34,10 @@ PERMISSION_BITS = {
 
 
 def run(cmd):
-    done = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    # errors="replace", not the default strict decode: Ghostscript writes C-level
+    # diagnostics that are not UTF-8, and a reader's complaint arriving as bytes is
+    # how the run used to die halfway through the table with a UnicodeDecodeError.
+    done = subprocess.run(cmd, capture_output=True, text=True, check=False, errors="replace")
     return done.returncode, done.stdout, done.stderr
 
 
@@ -75,9 +78,25 @@ def mupdf(path):
 # ── poppler ─────────────────────────────────────────────────────────────────
 def poppler(path):
     code_free, info_free, err_free = run(["pdfinfo", path])
-    code, out, err = run(["pdftotext", "-upw", PASSWORD, path, "-"])
+    # Both secrets, empty first, as TRY_PASSWORDS promises: a permissions-only file's
+    # user password is "", so handing poppler the owner password as -upw is a wrong
+    # password and poppler says so. Asking only the real one reported an honest
+    # refusal as "the reader cannot read this file".
+    code, out, err = -1, "", ""
+    for candidate in TRY_PASSWORDS:
+        args = ["-upw", candidate] if candidate else []
+        code, out, err = run(["pdftotext", *args, path, "-"])
+        if code == 0:
+            break
     if code_free != 0 and code != 0:
         return f"does not open: {clip(err or err_free, 160)}", "", ""
+    # A file with a real open password makes a bare `pdfinfo` fail, so the lines
+    # worth quoting have to be asked for with the secret — otherwise the table
+    # prints `pages=?` beside a file poppler reads perfectly well once it is typed.
+    if code_free != 0:
+        code_pw, info_pw, _ = run(["pdfinfo", "-upw", PASSWORD, path])
+        if code_pw == 0:
+            info_free = info_pw
     reported = next((row.split(":", 1)[1].strip() for row in info_free.splitlines()
                      if row.startswith("Encrypted")), "?")
     pages = next((row.split(":", 1)[1].strip() for row in info_free.splitlines()
@@ -165,10 +184,17 @@ def ghostscript(path):
                           if row.startswith("Pages")), "?")
             _, text, _ = run(["pdftotext", out, "-"])
             os.remove(out)
-        if code == 0 and pages not in ("0", "?"):
+        # `rc=0` and a page in the output is not yet a render: on a file it will not
+        # open, Ghostscript exits 0 having written a one-page stub and complained
+        # about the password on stderr. Taking that as success reported a refused
+        # file as "renders with no password", which is the opposite of the fact.
+        refused = "password" in (err or "").lower()
+        if code == 0 and pages not in ("0", "?") and not refused:
             return (f"renders{'' if candidate else ' with no password'} → wrote {pages} page(s), "
                     f"planted text through gs: {PLANTED in text}")
-        if "password" not in (err or "").lower():
+        if refused:
+            continue
+        if code != 0:
             return f"FAIL rc={code}: pages={pages} {clip(err, 120)}"
     return "refuses both passwords"
 

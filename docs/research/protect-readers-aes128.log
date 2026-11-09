@@ -1,0 +1,36 @@
+=== 00-source.pdf (5140 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
+=== 90-round-trip.pdf (3123 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
+=== protect-gated.pdf (7140 bytes)
+  mupdf   : opens, gate: opened with the password 'open-sesame', pages=3, cipher='Standard V4 R4 128-bit AES', /P allows ['access']
+           planted text extracted: True
+  poppler : opens, gate: asks for a password (yes (print:no copy:no change:no addNotes:no algorithm:AES)), pages=3, pdfinfo /P: yes (print:no copy:no change:no addNotes:no algorithm:AES)
+           planted text extracted: True
+  qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility']
+  pypdf   : opens, is_encrypted=True, gate: 'open-sesame', pages=3
+           planted text extracted: True
+  gs      : renders → wrote 3 page(s), planted text through gs: True
+=== protect-permissions-only.pdf (7140 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher='Standard V4 R4 128-bit AES', /P allows ['access']
+           planted text extracted: True
+  poppler : opens, gate: asks for a password (yes (print:no copy:no change:no addNotes:no algorithm:AES)), pages=3, pdfinfo /P: yes (print:no copy:no change:no addNotes:no algorithm:AES)
+           planted text extracted: True
+  qpdf    : opens, gate: opens with no password, restricted only, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility']
+  pypdf   : opens, is_encrypted=True, gate: opened on the empty password, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
