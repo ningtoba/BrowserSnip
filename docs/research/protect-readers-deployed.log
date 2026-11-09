@@ -1,20 +1,42 @@
-=== deployed-gated.pdf (1950 bytes)
-  mupdf   : opens, gate: opened with the password 'reader-pass', pages=3, cipher='Standard V4 R4 128-bit None', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+# https://www.browsersnip.com · protect · user "open-sesame"
+card: clicked <button> Protect PDF
+file in: /tmp/live-protect-kq5esg/claim.pdf
+mode is the default "Both"; fields before: 0:Not required unless the file is protected="" · 1:tool-field-userPassword=""
+typed Open password → #tool-field-userPassword
+typed Owner password → #tool-field-ownerPassword
+fields after    : 0:Not required unless the file is protected="" · 1:tool-field-userPassword="open-sesame"
+run: clicked <button> Protect
+result card: Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As written to the file: printing allowed (any resolution), editing allowed, copying allowed, comments allowed, form filling allowed, screen readers allowed, page assembly blocked. A PDF reader opened the copy with that password and read 3 page(s).
+warnings    : The viewer here could not draw claim_protected.pdf, so nothing is pictured — the download is still the file.
+download: clicked <button> Download
+downloaded: /tmp/live-protect-kq5esg/deployed-protected.pdf 3109 bytes
+# outside readers, on the file the deployed site downloaded
+=== claim.pdf (2268 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
            planted text extracted: True
   poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
            planted text extracted: True
-           reader's own complaint: Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
+=== claim_protected.pdf (3109 bytes)
+  mupdf   : opens, gate: opened with the password 'open-sesame', pages=3, cipher='Standard V4 R4 128-bit AES', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: asks for a password (yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES)), pages=3, pdfinfo /P: yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES)
+           planted text extracted: True
   qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
-  pypdf   : opens, is_encrypted=True, gate: 'reader-pass', pages=3
+  pypdf   : opens, is_encrypted=True, gate: 'open-sesame', pages=3
            planted text extracted: True
-  gs      : renders with no password → wrote 1 page(s), planted text through gs: False
-=== deployed-permissions-only.pdf (1950 bytes)
-  mupdf   : opens, gate: asks for no password, pages=3, cipher='Standard V4 R4 128-bit None', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+  gs      : renders → wrote 3 page(s), planted text through gs: True
+=== deployed-protected.pdf (3109 bytes)
+  mupdf   : opens, gate: opened with the password 'open-sesame', pages=3, cipher='Standard V4 R4 128-bit AES', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
            planted text extracted: True
-  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+  poppler : opens, gate: asks for a password (yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES)), pages=3, pdfinfo /P: yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES)
            planted text extracted: True
-           reader's own complaint: Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler
-  qpdf    : opens, gate: opens with no password, restricted only, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
-  pypdf   : opens, is_encrypted=True, gate: opened on the empty password, pages=3
+  qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=True, gate: 'open-sesame', pages=3
            planted text extracted: True
-  gs      : renders with no password → wrote 1 page(s), planted text through gs: False
+  gs      : renders → wrote 3 page(s), planted text through gs: True
+
+workdir: /tmp/live-protect-kq5esg
