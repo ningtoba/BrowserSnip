@@ -51,7 +51,18 @@ both spellings.
 modify, annotate, form-fill and assemble refused), which is the permission set the
 `protect` row and the `encrypted-inputs` rig use.
 
-No file here is written by this app. Its own password gate — `/V 4 /R 4` with an
-empty `/CF` and no `/StmF`, i.e. the crypt filter `/None`, "the data are not
-encrypted" — is produced in the tests by `core/doc.ts:saveEncrypted`, because that
-is the case that must keep working while the four above are refused.
+No file here is written by this app.
+
+Two of its shapes still matter and neither can be made here any more:
+
+- **a password gate with no cipher** (`/V 4 /R 4`, empty `/CF`, no `/StmF`) is what
+  `core/doc.ts:saveEncrypted` wrote while the vendor ran no cipher, and is what
+  files out in the wild carry. Since `89a5b7e` that writer produces AES-128
+  ciphertext instead, so tests build the gate with `tests/pdf/gate-harness.ts` —
+  a fixture that came from the writer would silently change meaning every time the
+  writer did, which is how `save({ encrypt })` once made an assertion prove
+  nothing.
+- **this app's own AES-128 file** is produced in the tests by `saveEncrypted`, and
+  it is evidence about the write path only in combination with a reader that is not
+  this app's — see `tests/pdf/crypto-encrypt.test.ts` (pdf.js, and the outside
+  reader table in `docs/research/protect-readers-aes128.log`).
