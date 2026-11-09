@@ -18,6 +18,9 @@
  *   `ToolInputError` with a stable code, the offending file name in the message,
  *   and `passwordRequired` set when the UI should re-prompt instead of showing a
  *   red banner.
+ * - `preflightPdf(source, password, { rejectCiphered })` is the runner's pass
+ *   before any tool allocates work, and the one place that asks what a lock *is*
+ *   — a gate this app can re-issue, or a cipher it cannot undo.
  *
  * The numeric/page-range/field helpers live here too so that one definition of
  * "valid input" serves both the rail (inline validation, E15) and the runner
@@ -193,45 +196,157 @@ export function decodePermissions(p: number): PdfPermissions {
 }
 
 /**
- * The cipher a file declares: `AES-256`, `AES-128`, `RC4-128`, `RC4-40`,
- * `no cipher` or `unknown`.
+ * What a locked file actually does to its contents — the question an `/Encrypt`
+ * entry cannot answer on its own.
  *
- * `/V` and `/R` name the *handler revision*; the cipher is the crypt filter
- * (`/CFM`) that `/StmF` and `/StrF` point at, and both of those default to the
- * predefined `/None` filter — "the data are not encrypted" (ISO 32000-1
- * §7.6.3.1). Reading `/V` alone reported this app's own `/None` gate as
- * `AES-128`, which is a cipher claim the bytes do not carry.
+ * A PDF can be locked two ways that look identical from the trailer:
+ *
+ * - `gate-only` — the dictionary carries a password and the `/P` flags, and its
+ *   **effective crypt filter is `/None`**, "the data are not encrypted"
+ *   (ISO 32000-1 §7.6.3.2, §7.4.4: `/StmF` and `/StrF` both default to it, and an
+ *   empty `/CF` selects nothing else). Every stream is plaintext, so this app can
+ *   read the page, copy it and write it back. This is what `protect` writes, and
+ *   the `encrypted-inputs` rig confirms the round trip keeps its words.
+ * - `ciphered` — `/StmF` or `/StrF` resolves to `RC4`, `AESV2` or `AESV3` (or
+ *   `/V` is 1-3, where RC4 is implied and there is no filter to opt out of). The
+ *   bytes are ciphertext. `core/doc.ts:openPDF` never decrypts them, so a tool
+ *   that copies pages hands back ciphertext that its writer then labels
+ *   plaintext, and every reader that believes the label draws blank paper.
+ *
+ * Refusing both would be its own regression, so the guard asks which of these two
+ * a file is — see `cipheredInputError`.
  */
-function algorithmOf(dict: PDFDict | undefined): string | null {
-  if (!dict) return null;
-  const version = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber();
-  if (version === undefined) return null;
-  if (version >= 4) {
-    const filters = dict.lookupMaybe(PDFName.of('CF'), PDFDict);
-    const declared = new Set<string>();
-    if (filters) {
-      for (const [, value] of filters.entries()) {
-        const filter = value instanceof PDFRef ? dict.context.lookupMaybe(value, PDFDict) : value;
-        if (!(filter instanceof PDFDict)) continue;
-        const method = filter.lookupMaybe(PDFName.of('CFM'), PDFName)?.decodeText();
-        if (method && method !== 'None') declared.add(method);
-      }
-    }
-    // No filter, or only `/None` filters: the dictionary says the data are not
-    // encrypted, and that is the whole answer whatever `/V` and `/R` say.
-    if (declared.size === 0) return 'no cipher';
-    if (declared.has('AESV3')) return 'AES-256';
-    if (declared.has('AESV2')) return 'AES-128';
-    if (declared.has('V2') || declared.has('RC4')) {
-      return (dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40) > 40 ? 'RC4-128' : 'RC4-40';
-    }
-    return 'unknown';
+export type EncryptionState = 'none' | 'gate-only' | 'ciphered';
+
+/** The whole of what the encryption dictionary claims. Safe to render and to name. */
+export interface PdfEncryption {
+  state: EncryptionState;
+  /**
+   * `AES-256`, `AES-128`, `RC4-128`, `RC4-40`, `unknown` when a cipher is claimed
+   * but this reader cannot name it, `no cipher` for a gate-only lock, `null` when
+   * there is no dictionary at all.
+   */
+  algorithm: string | null;
+  /** `/StmF` as the file spells it (`StdCF`), or `null` when the `/None` default applies. */
+  streamFilter: string | null;
+  /** `/StrF` likewise — the filter over strings rather than streams. */
+  stringFilter: string | null;
+  /** `/CFM` of the effective stream filter (`AESV2`, `V2`, …), or `null`. */
+  method: string | null;
+  /** `/V`, the handler *version*. */
+  version: number | null;
+  /** `/R`, the handler *revision*. */
+  revision: number | null;
+}
+
+/** No dictionary: nothing is encrypted and nothing needs saying about a cipher. */
+const NO_ENCRYPTION: PdfEncryption = {
+  state: 'none',
+  algorithm: null,
+  streamFilter: null,
+  stringFilter: null,
+  method: null,
+  version: null,
+  revision: null,
+};
+
+/** The predefined filters, which are named in `/StmF` but never appear in `/CF`. */
+const PLAINTEXT_FILTERS = new Set(['None', 'Identity']);
+
+/** An `/Encrypt` entry with no readable dictionary behind it: a lock, unnameable. */
+const UNREADABLE_ENCRYPTION: PdfEncryption = { ...NO_ENCRYPTION, state: 'ciphered', algorithm: 'unknown' };
+
+/**
+ * The cipher a crypt filter applies to a name that filter is, or `null` when the
+ * name is one of the predefined plaintext filters (including an absent `/StmF`,
+ * whose default is `/None`).
+ *
+ * A named filter that the dictionary does not define is reported as `unknown`
+ * rather than as nothing: a cipher this reader cannot resolve is still a cipher.
+ */
+function filterMethod(dict: PDFDict, name: string | null): string | null {
+  if (name === null || PLAINTEXT_FILTERS.has(name)) return null;
+  const filters = dict.lookupMaybe(PDFName.of('CF'), PDFDict);
+  const declared = filters?.get(PDFName.of(name));
+  const filter = declared instanceof PDFRef ? dict.context.lookupMaybe(declared, PDFDict) : declared;
+  if (!(filter instanceof PDFDict)) return 'unknown';
+  // `/CFM` defaults to `/None` inside a filter dictionary (ISO 32000-1 Table 30).
+  return filter.lookupMaybe(PDFName.of('CFM'), PDFName)?.decodeText() ?? 'None';
+}
+
+/** Name the cipher behind a `/CFM` method, at the key length the dictionary gives. */
+function cipherName(dict: PDFDict, method: string): string {
+  if (method === 'AESV3') return 'AES-256';
+  if (method === 'AESV2') return 'AES-128';
+  if (method === 'V2' || method === 'RC4') {
+    return (dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40) > 40 ? 'RC4-128' : 'RC4-40';
   }
-  // `/V 1` and `/V 2` predate crypt filters: RC4 with the key length in `/Length`.
-  const length = dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40;
-  if (version === 2 || (version === 1 && length > 40)) return 'RC4-128';
-  if (version === 1) return 'RC4-40';
   return 'unknown';
+}
+
+/**
+ * Classify one encryption dictionary.
+ *
+ * Deliberately reads the *effective* filters rather than listing everything in
+ * `/CF`: a dictionary can define an AES filter it never selects, and the strongest
+ * name in the file is not the cipher the bytes carry.
+ */
+export function classifyEncryption(dict: PDFDict): PdfEncryption {
+  const version = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber() ?? null;
+  const revision = dict.lookupMaybe(PDFName.of('R'), PDFNumber)?.asNumber() ?? null;
+  const streamFilter = dict.lookupMaybe(PDFName.of('StmF'), PDFName)?.decodeText() ?? null;
+  const stringFilter = dict.lookupMaybe(PDFName.of('StrF'), PDFName)?.decodeText() ?? null;
+  const base = { streamFilter, stringFilter, version, revision };
+
+  // `/V` is required and defaults to 1; a dictionary without one still claims a
+  // handler, and "we cannot read the streams" is the honest verdict.
+  if (version === null) {
+    return { ...NO_ENCRYPTION, ...base, state: 'ciphered', algorithm: 'unknown', method: null };
+  }
+
+  if (version >= 4) {
+    const streamMethod = filterMethod(dict, streamFilter);
+    const stringMethod = filterMethod(dict, stringFilter);
+    const methods = [streamMethod, stringMethod].filter((method): method is string => method !== null && method !== 'None');
+    // Nothing selected: the `/None` filter is in force, whatever `/V` and `/R`
+    // say. This is the shape of this app's own gate, and it round-trips.
+    if (methods.length === 0) {
+      return { ...NO_ENCRYPTION, ...base, state: 'gate-only', algorithm: 'no cipher' };
+    }
+    const algorithm = methods.map((method) => cipherName(dict, method)).find((name) => name !== 'unknown') ?? 'unknown';
+    return {
+      ...NO_ENCRYPTION,
+      ...base,
+      state: 'ciphered',
+      algorithm,
+      method: streamMethod ?? stringMethod,
+    };
+  }
+
+  // `/V 1`-`/V 3` predate crypt filters: the streams are RC4 at the key length in
+  // `/Length`, with no way for a file to say otherwise. `/V 3` is the revision
+  // AES-128 *handlers* use without filters, so its cipher is not nameable here.
+  const length = dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40;
+  const algorithm = version === 2 || (version === 1 && length > 40) ? 'RC4-128' : version === 1 ? 'RC4-40' : 'unknown';
+  return {
+    ...NO_ENCRYPTION,
+    ...base,
+    state: 'ciphered',
+    algorithm,
+    method: algorithm === 'unknown' ? null : 'RC4',
+  };
+}
+
+/**
+ * Short, truthful name for a ciphered file's lock: `AES-128 (crypt filter /StdCF,
+ * revision 4)`, or `RC4-128 (revision 3)` for a handler too old to name a filter.
+ */
+export function describeEncryption(encryption: PdfEncryption): string {
+  const cipher = encryption.algorithm === 'unknown' ? 'a cipher this app cannot name' : encryption.algorithm ?? 'a cipher';
+  const parts = [encryption.streamFilter ? `crypt filter /${encryption.streamFilter}` : null];
+  if (encryption.revision !== null) parts.push(`revision ${encryption.revision}`);
+  const detail = parts.filter(Boolean).join(', ');
+  return detail ? `${cipher} (${detail})` : cipher;
 }
 
 function encryptDict(doc: PDFDocument): PDFDict | undefined {
@@ -263,6 +378,14 @@ export interface PdfInspection {
   encrypted: boolean;
   /** Encryption scheme, e.g. `AES-256`, when the document is protected. */
   algorithm: string | null;
+  /**
+   * What the lock *does*: `none`, `gate-only` (a password and `/P` flags over
+   * plaintext streams) or `ciphered` (ciphertext this app cannot undo). `null`
+   * only in `cheap` mode, where there is no parsed dictionary to read — an entry
+   * in the trailer cannot tell a gate from a cipher, so a caller that needs to
+   * know pays for the parse (see `preflightPdf`).
+   */
+  encryption: PdfEncryption | null;
   /** The **user** password is set and none was supplied. Owner-only protection
    * never sets this: see `opensWithEmptyPassword`. */
   needsPassword: boolean;
@@ -434,6 +557,33 @@ export function notAPdfError(name: string): ToolInputError {
 }
 
 /**
+ * The refusal a content-rewriting tool gives a file whose streams are ciphertext.
+ *
+ * This app *reads* a locked document: pdf.js implements the ciphers, so the
+ * preview and the page count are right. What it cannot do is edit one — the
+ * engine holds each page stream exactly as the file stores it, nothing decrypts
+ * it, and the writer then labels the copy with the filter the source claims.
+ * Measured over 18 runs by an outside-locked fixture: the right page count, the
+ * password still working, and blank paper (`docs/research/encrypted-inputs-findings.md`).
+ * Saying no is the honest half of that; the decrypt pass on load is its own task.
+ *
+ * The sentence names the cipher the dictionary actually selects, and never claims
+ * that every encrypted file is refused: a password gate whose crypt filter is
+ * `/None` — what this app's own `protect` writes — keeps working, because its
+ * streams are plaintext.
+ */
+export function cipheredInputError(name: string, encryption: PdfEncryption): ToolInputError {
+  return new ToolInputError(
+    'UNSUPPORTED',
+    `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and this app cannot decrypt them yet.`,
+    {
+      fileName: name,
+      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path copies the page streams without decrypting them, and the copy opens as blank pages. A file locked the way this app’s own Protect locks it — a password gate with no crypt filter — is edited normally.',
+    },
+  );
+}
+
+/**
  * Report on a file without ever throwing, including on garbage input.
  */
 export async function inspectPdf(
@@ -462,6 +612,7 @@ async function probePdf(
     declaredPages: null,
     encrypted: false,
     algorithm: null,
+    encryption: null,
     needsPassword: false,
     passwordAccepted: false,
     opensWithEmptyPassword: false,
@@ -505,6 +656,15 @@ async function probePdf(
   const permissions =
     typeof rawPermission === 'number' ? decodePermissions(rawPermission) : null;
   const encrypted = outcome.encrypted || (outcome.doc?.isEncrypted ?? false);
+  // Classify the lock only when one was found. An `/Encrypt` entry the parser
+  // could not resolve to a dictionary still claims a handler, so it counts as
+  // ciphered — the refusal an unreadable lock earns is "cannot decrypt", never a
+  // copy of bytes nobody has read.
+  const encryption = encrypted
+    ? dict
+      ? classifyEncryption(dict)
+      : UNREADABLE_ENCRYPTION
+    : NO_ENCRYPTION;
   const declaredPages = outcome.doc ? declaredPageCount(outcome.doc) : null;
   const pages = outcome.doc ? safePageCount(outcome.doc) : 0;
   const recovered =
@@ -515,7 +675,8 @@ async function probePdf(
     pages,
     declaredPages,
     encrypted,
-    algorithm: encrypted ? algorithmOf(dict) : null,
+    algorithm: encryption.algorithm,
+    encryption,
     needsPassword: outcome.refused === 'PASSWORD_REQUIRED',
     passwordAccepted: outcome.passwordAccepted,
     opensWithEmptyPassword: outcome.opensWithEmptyPassword,
@@ -613,6 +774,21 @@ export async function openPdfInput(
   return { doc: opened.doc, inspection };
 }
 
+/** How `preflightPdf` is asked what to guard against. */
+export interface PreflightOptions {
+  /**
+   * Refuse an input whose content this app cannot decrypt — `ciphered`, in the
+   * classification's vocabulary.
+   *
+   * The runner sets this for every tool that hands back a PDF rebuilt from the
+   * source's own objects, because that is the copy that turns ciphertext into
+   * blank paper. It stays off for tools whose result is text, a picture, an
+   * archive or a report on screen: those read through pdf.js, which does undo
+   * these ciphers, and refusing them would withhold something that works today.
+   */
+  rejectCiphered?: boolean;
+}
+
 /**
  * Header-and-trailer only, over a `File`-shaped source: reads at most the first
  * 1 KB and last 4 KB so a large document is not copied into memory just to be
@@ -621,19 +797,28 @@ export async function openPdfInput(
 export async function preflightPdf(
   source: { name: string; size: number; blob: () => Blob },
   password?: string,
+  options: PreflightOptions = {},
 ): Promise<ToolInputError | null> {
   const edges = await readEdges(source);
   let inspection = await inspectPdf(edges, source.name, { password, cheap: true });
-  // The cheap pass can only see the `/Encrypt` entry, and an entry is not a
-  // lock — it cannot read the user-password hash. Before refusing, ask the
-  // parser: a restricted-but-open file must reach the tool (E5), and a genuinely
-  // locked one is still named here before the tool allocates any work (E4).
-  if (inspection.error === 'PASSWORD_REQUIRED') {
+  // The cheap pass can only see the `/Encrypt` **entry**. It cannot read the
+  // dictionary, so it cannot tell a lock from a gate (E5), and cannot tell a real
+  // crypt filter from the default `/None`. Either question is worth one parse, and
+  // paying for it here is what keeps a genuinely unusable file from being named
+  // halfway through a 500-page run (E4, E7).
+  if (inspection.encrypted && (options.rejectCiphered || inspection.error)) {
     inspection = await inspectPdf(
       new Uint8Array(await source.blob().arrayBuffer()),
       source.name,
       { password },
     );
+  }
+  // Judged before the password verdict, deliberately: when the cipher is one this
+  // app cannot undo, typing the right password does not unblock the run — so
+  // "enter it and try again" would send the user off to do work that changes
+  // nothing, and the file would still come back with empty pages.
+  if (options.rejectCiphered && inspection.encryption?.state === 'ciphered') {
+    return cipheredInputError(source.name, inspection.encryption);
   }
   if (!inspection.error) return null;
   return new ToolInputError(inspection.error, inspection.message, {

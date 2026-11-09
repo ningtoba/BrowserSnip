@@ -2427,6 +2427,9 @@ export const organizeTools: PdfToolDefinition[] = [
     minFiles: 1,
     surface: 'none',
     outputSuffix: '.zip',
+    // The archive holds each source file byte-for-byte: no page stream is copied,
+    // so a locked file is still itself inside it (and still says so — see its note).
+    readsOnly: true,
     actionLabel: 'Pack ZIP',
     promise: 'One ZIP archive holding every file byte-for-byte, with a text manifest of what is inside unless you switch it off.',
     notes: [
@@ -2510,6 +2513,7 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['comic', 'cbz', 'manga reader'],
     surface: 'none',
     outputSuffix: '.cbz',
+    readsOnly: true,
     actionLabel: 'Make CBZ',
     promise: 'A comic-book archive: the pages you pick rendered to images, numbered in reading order.',
     notes: [

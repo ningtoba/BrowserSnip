@@ -335,9 +335,17 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
   // One cheap header/trailer pass per file, before any tool allocates work: an
   // empty or mislabelled file, and a document the gate has no password for, are
   // settled here rather than halfway through a 500-page parse (E1, E2, E4, E7).
+  //
+  // The same pass is where a ciphered input is refused. Every tool below the
+  // pre-flight that writes a PDF back out rebuilds it from the source's own page
+  // streams, and this app never decrypts one — measured over 18 runs by an
+  // outside-locked file, the output kept its page count, kept the user's password
+  // and lost every word. A tool that only reads (declared `readsOnly`) takes its
+  // content from pdf.js, which does undo these ciphers, and keeps running.
   if (takesPdfInput(tool)) {
+    const rejectCiphered = !tool.readsOnly;
     for (const input of inputs) {
-      const refusal = await preflightPdf(input, effectivePassword);
+      const refusal = await preflightPdf(input, effectivePassword, { rejectCiphered });
       if (refusal) throw refusal;
     }
   }

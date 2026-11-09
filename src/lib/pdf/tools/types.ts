@@ -216,6 +216,23 @@ export interface PdfToolDefinition {
    * source's password to the output, which is right for rotate and wrong here.
    */
   stripsProtection?: boolean;
+  /**
+   * Set when the tool only *reads* the document: its result is text, a picture, an
+   * archive of bytes that were already in the file, or a report on the screen
+   * (`pdf-to-text`, `extract-attachments`, `page-dimensions`, `compare-pdfs`…).
+   *
+   * This is the exemption from the shared pre-flight's ciphered-input refusal, and
+   * it is declared rather than guessed because the two cases genuinely differ. A
+   * tool that rebuilds the page tree copies each page stream through an engine
+   * that never decrypts, so a file locked with RC4 or AES comes back with the
+   * right page count and blank paper. These tools take their content from pdf.js,
+   * which does implement those ciphers, or from the structure alone, and work on a
+   * locked file today — refusing them would be its own regression.
+   *
+   * Unset is the default and means "may write a PDF back out", which is the case
+   * the guard exists for.
+   */
+  readsOnly?: boolean;
   run?: (context: ToolRunContext) => Promise<ToolResult>;
   /** Provided instead of `run` for tools with bespoke execution (editors). */
   mainComponent?: ComponentType<{ context: ToolRunContext }>;

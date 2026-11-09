@@ -746,6 +746,9 @@ export const securityTools: PdfToolDefinition[] = [
     maxFiles: 2,
     surface: 'custom',
     outputSuffix: '_comparison.pdf',
+    // Despite the `_comparison.pdf` suffix this answers with a report and page
+    // images: both come from pdf.js, which undoes RC4 and AES itself.
+    readsOnly: true,
     // What the shipped page does, measured rather than remembered. It used to
     // promise "a page-by-page report of what differs, with a picture of each
     // changed area when you compare pixels", and three things contradicted that:
@@ -892,6 +895,7 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['properties', 'info', 'xmp', 'audit'],
     surface: 'none',
     outputSuffix: '_metadata.txt',
+    readsOnly: true,
     promise: 'Everything the file says about itself — properties, XMP, fonts, images, protection and attachments — read back, not guessed.',
     actionLabel: 'Read metadata',
     notes: [
@@ -1176,6 +1180,7 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['unpack', 'embedded files', 'unbundle'],
     surface: 'none',
     outputSuffix: '_attachments.zip',
+    readsOnly: true,
     promise: 'Every embedded file out of the PDF, each under its own name — one file when there is one, a ZIP when there are several.',
     actionLabel: 'Extract attachments',
     notes: [
@@ -1342,6 +1347,7 @@ export const securityTools: PdfToolDefinition[] = [
     keywords: ['verify', 'integrity', 'certificate details'],
     surface: 'none',
     outputSuffix: '_signature-report.txt',
+    readsOnly: true,
     promise: 'Whether each signature still matches these bytes, who signed, and what an empty signature field really means.',
     actionLabel: 'Validate signatures',
     notes: [

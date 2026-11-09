@@ -58,7 +58,9 @@ export {
 export type {
   FieldClamp,
   FieldIssue,
+  EncryptionState,
   PageRange,
+  PdfEncryption,
   PdfInspection,
   PdfPermissions,
   ToolInputErrorCode,

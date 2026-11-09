@@ -10,8 +10,11 @@
  * the whole complaint the refinement pass started from.
  *
  * Matrix rows covered: E1/E2 (the gate names the file), E5 (an unlocked output
- * must not still be encrypted), E6 (page 9 of a 3-page file names the real
- * count), E8 (mixed page sizes), E9 (rotated pages keep their orientation),
+ * must not still be encrypted, a gated one must still hold its words, and a file
+ * locked with a cipher this app cannot undo is refused rather than emptied — the
+ * two locks are tested apart, on a gate this app wrote and on a cipher libqpdf
+ * wrote), E6 (page 9 of a 3-page file names the real count), E8 (mixed page
+ * sizes), E9 (rotated pages keep their orientation),
  * E12 (a sheet that hits the PDF height limit says so), E13 (nothing to do is
  * not a success), E15 (numbers are bounded, and a correction is announced),
  * E16 (a repeat is handled, not merged twice by accident), E17 (sane download
@@ -32,6 +35,8 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { OPS } from 'pdfjs-dist';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   PDFArray,
   PDFDict,
@@ -45,6 +50,8 @@ import {
 } from '@maxwbh/pdf-lib';
 import { organizeTools } from '@/lib/pdf/tools/organize';
 import { resolvePages } from '@/lib/pdf/core/pages';
+import { saveEncrypted } from '@/lib/pdf/core/doc';
+import { isToolInputError } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
@@ -237,12 +244,28 @@ async function zipEntries(blob: Blob): Promise<string[]> {
   return Object.keys(zip.files);
 }
 
-async function encrypt(bytes: Uint8Array, password = 'hunter2'): Promise<Uint8Array> {
+/**
+ * Lock a document the way this app's `protect` does: a password gate and the `/P`
+ * flags over the crypt filter `/None` — "the data are not encrypted", so the page
+ * streams are copied through in the clear.
+ *
+ * This helper used to be `doc.save({ encrypt: … })`, and that one fixture is why
+ * the `encrypted-inputs` defect shipped. `@maxwbh/pdf-lib` writes an `/Encrypt`
+ * dictionary — `/V 4 /R 4`, `/StmF /StdCF`, `/CFM /AESV2` — and then never calls
+ * `PDFSecurity.encryptStream`, so every stream leaves as plaintext behind a
+ * dictionary claiming AES-128. `toMatch(/\/Encrypt/)` and
+ * `PDFDocument.load(bytes, { password })` on such a file are pdf-lib reading its
+ * own output: they cannot fail, and they measure no cipher. The next test uses a
+ * file libqpdf locked for real, which is the input those assertions never saw.
+ */
+async function gateLock(bytes: Uint8Array, password = 'hunter2'): Promise<Uint8Array> {
   const doc = await open(bytes);
-  return doc.save({
-    encrypt: { userPassword: password, ownerPassword: 'owner', version: 4, permissions: {} as never },
-  });
+  return saveEncrypted(doc, { userPassword: password, ownerPassword: 'owner' });
 }
+
+/** `tests/fixtures/encrypted/` — locked by libqpdf 12.3.2, never by this engine. */
+const encryptedFixture = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(resolve(process.cwd(), 'tests/fixtures/encrypted', name)));
 
 /* ── reading the words back out of a file ─────────────────────────────────── */
 
@@ -861,8 +884,8 @@ describe('inputs are handled honestly', () => {
     ).rejects.toThrow(/blank\.pdf.*(empty|0 bytes)/i);
   });
 
-  it('unlocks a protected document and does not hand it back still encrypted (E5)', async () => {
-    const locked = fileOf(await encrypt(await sheets(grid(4))), 'locked.pdf');
+  it('keeps a gated document gated and its words intact through a rewrite (E5)', async () => {
+    const locked = fileOf(await gateLock(await sheets(grid(4))), 'locked.pdf');
     expect(text(await bytesFrom(locked))).toMatch(/\/Encrypt/);
 
     const outcome = await run('rotate', { degrees: 90, pages: 'all' }, [locked], 'hunter2');
@@ -874,6 +897,39 @@ describe('inputs are handled honestly', () => {
     const doc = await PDFDocument.load(bytes, { password: 'hunter2' });
     expect(doc.getPages()[0].getRotation().angle).toBe(90);
     expect(warn(outcome)).toMatch(/re-applied/i);
+    // …and the part the self-encrypted fixture could not claim, because it never
+    // had a cipher to lose: the gate copies the page streams in the clear, so the
+    // words are still on the sheet after the rewrite.
+    expect(drawnText(doc, 0)).toMatch(/sheet 1/);
+  });
+
+  it('refuses a document another program locked with a real cipher (E5, encrypted-inputs)', async () => {
+    // libqpdf locked this one, so its streams are AES-128 ciphertext. Rotating it
+    // used to answer "Rotated 3 pages by 90°." over a file with no words in it:
+    // the guard refuses instead, and says which cipher it cannot undo.
+    const ciphered = fileOf(encryptedFixture('aes-128-user.pdf'), 'aes-128.pdf');
+    const failure = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2').then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isToolInputError(failure), 'the refusal is a bare Error').toBe(true);
+    expect((failure as Error).message).toMatch(/"aes-128\.pdf" is encrypted with AES-128 \(crypt filter \/StdCF, revision 4\)/);
+    expect((failure as Error).message).toMatch(/cannot decrypt them yet/);
+
+    // The copy the tool would have handed back, rebuilt by hand with the guard
+    // out of the way: the page count survives, and the page itself is not a
+    // content stream this app can inflate any more. That — not the page count —
+    // is what "preserved the protection" was hiding. See `docs/research/
+    // encrypted-inputs-findings.md` §3: 18 of 18 produced files, blank.
+    const source = await PDFDocument.load(encryptedFixture('aes-128-user.pdf'), {
+      password: 'hunter2',
+      updateMetadata: false,
+    });
+    const target = await PDFDocument.create();
+    for (const page of await target.copyPages(source, [0])) target.addPage(page);
+    const copy = await PDFDocument.load(await target.save());
+    expect(copy.getPageCount()).toBe(1);
+    expect(() => drawnText(copy, 0)).toThrow(/could not be decompressed/);
   });
 
   it('says when a file was added twice instead of merging it silently (E16)', async () => {
@@ -909,7 +965,9 @@ describe('inputs are handled honestly', () => {
 
   it('says that a protected file is still protected inside the archive (E5)', async () => {
     const openFile = fileOf(await sheets(grid(1)), 'open.pdf');
-    const locked = fileOf(await encrypt(await sheets(grid(1))), 'locked.pdf');
+    // A file locked outside this app: the note is about the bytes in the archive,
+    // so it has to hold for a real cipher and not just for a gate this app wrote.
+    const locked = fileOf(encryptedFixture('rc4-128-user.pdf'), 'locked.pdf');
     const outcome = await run('pdfs-to-zip', { includeReport: true }, [locked, openFile], 'hunter2');
     expect(warn(outcome)).toMatch(/"locked\.pdf" is still password protected inside the archive/i);
   });

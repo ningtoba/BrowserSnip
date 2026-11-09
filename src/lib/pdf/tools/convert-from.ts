@@ -584,6 +584,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['extract text', 'copy text', 'plain text', 'readability'],
     surface: 'none',
     outputSuffix: '.txt',
+    readsOnly: true,
     promise: 'A .txt file holding the words from the pages you picked, with a word count you can check against the original.',
     actionLabel: 'Extract text',
     notes: textOutNotes('text file'),
@@ -620,6 +621,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['md', 'readme', 'llm', 'notes'],
     surface: 'none',
     outputSuffix: '.md',
+    readsOnly: true,
     promise: 'A Markdown file with real headings, lists and tables — not a flat dump of every line.',
     actionLabel: 'Convert to Markdown',
     notes: textOutNotes('Markdown'),
@@ -659,6 +661,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['data', 'api', 'structured', 'parsing'],
     surface: 'none',
     outputSuffix: '.json',
+    readsOnly: true,
     promise: 'A JSON file with every block, its text, bounding box and fonts, plus the tables the grid implies.',
     actionLabel: 'Export JSON',
     notes: textOutNotes('JSON'),
@@ -696,6 +699,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['rag', 'llm', 'embedding', 'chunks', ' llamaindex'],
     surface: 'none',
     outputSuffix: '-llamaindex.json',
+    readsOnly: true,
     promise: 'One chunked, referenced JSON file an embedding pipeline can index without another pass.',
     actionLabel: 'Chunk for AI',
     notes: textOutNotes('chunks'),
@@ -745,6 +749,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['spreadsheet', 'rows', 'extract table'],
     surface: 'none',
     outputSuffix: '.csv',
+    readsOnly: true,
     promise: 'A CSV file with one row per detected table row — or an honest report when the pages hold no table at all.',
     actionLabel: 'Export CSV',
     notes: [
@@ -781,6 +786,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['table detection', 'rows', 'columns', 'data'],
     surface: 'none',
     outputSuffix: '-tables.json',
+    readsOnly: true,
     promise: 'Every table on the selected pages, as one file in the format you choose, with the page it came from.',
     actionLabel: 'Extract tables',
     notes: [
@@ -837,6 +843,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['xlsx', 'workbook', 'spreadsheet', 'sheets'],
     surface: 'none',
     outputSuffix: '.xlsx',
+    readsOnly: true,
     promise: 'A real .xlsx workbook with one worksheet per detected table, columns already widened.',
     actionLabel: 'Export spreadsheet',
     notes: [
@@ -896,6 +903,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['docx', 'editable', 'office', 'rewrite'],
     surface: 'none',
     outputSuffix: '.docx',
+    readsOnly: true,
     promise: 'An editable .docx rebuilt from the text, headings and tables — content you can rewrite, not a picture of the page.',
     actionLabel: 'Convert to Word',
     notes: [
@@ -936,6 +944,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['vector', 'illustrator', 'scale', 'svg'],
     surface: 'none',
     outputSuffix: '.svg',
+    readsOnly: true,
     promise: 'Vector pages that stay sharp at any zoom, with the text left as text wherever the page allows it.',
     actionLabel: 'Export SVG',
     notes: [
@@ -986,6 +995,9 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['photos', 'unembed', 'gallery', 'assets'],
     surface: 'none',
     outputSuffix: '-images.zip',
+    // The pictures are lifted out of the file rather than rendered, so on a
+    // ciphered document this reports them missing instead of inventing them.
+    readsOnly: true,
     promise: 'The original image bytes, page by page — no re-encoding, so what you get is what the file held.',
     actionLabel: 'Extract images',
     notes: [
@@ -1058,6 +1070,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['jpg', 'png', 'webp', 'bmp', 'tiff', 'screenshot'],
     surface: 'none',
     outputSuffix: '_images',
+    readsOnly: true,
     promise: 'One image per selected page in the format you choose, zipped when the selection runs to more than one page.',
     actionLabel: 'Export images',
     notes: [
@@ -1234,6 +1247,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     keywords: ['measure', 'a4', 'letter', 'audit', 'size'],
     surface: 'none',
     outputSuffix: '_dimensions.txt',
+    readsOnly: true,
     promise: 'A report of every page’s size in points and millimetres, its orientation, named format and rotation.',
     actionLabel: 'Measure pages',
     notes: [
