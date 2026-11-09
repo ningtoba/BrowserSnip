@@ -24,10 +24,11 @@
  *   rig's own control shows the same three operations keep its words, so these
  *   keep working exactly as they did.
  *
- * Every fixture is therefore locked **outside** this repo — `tests/fixtures/
- * encrypted/README.md` says why a file this engine encrypted is no evidence about
- * a cipher — and each assertion reads the classification, the refusal or the
- * produced bytes, never a sentence quoted from a plan.
+ * Every fixture is therefore locked **outside** this repo — by libqpdf and by
+ * MuPDF, in both trailer spellings — and each assertion reads the classification,
+ * the refusal or the produced bytes, never a sentence quoted from a plan. See
+ * `tests/fixtures/encrypted/README.md` for why a file this engine encrypted is no
+ * evidence about a cipher.
  *
  * `reads the no words out of an AES-128 file` below measures the cause rather than
  * the guard. When a decrypt pass lands in `core/doc.ts:openPDF` it is that test
@@ -47,7 +48,7 @@ import {
   preflightPdf,
   type PdfEncryption,
 } from '@/lib/pdf/core/guard';
-import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF, saveEncrypted, looksEncrypted } from '@/lib/pdf/core/doc';
 import { streamBytes } from '@/lib/pdf/core/content';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
@@ -230,6 +231,18 @@ describe('classifying what a lock does to the contents', () => {
     expect(seen.encryption).toMatchObject({ state: 'ciphered', algorithm: 'RC4-128' });
   });
 
+  it('names the same cipher whichever outside producer wrote the file', async () => {
+    // qpdf writes `/Encrypt 12 0 R`; MuPDF inlines the dictionary. Two spellings
+    // of one lock, and the classification reads the lock, not the spelling — so
+    // these two pairs must answer identically to their qpdf twins above.
+    const rc4 = await inspectPdf(fixtureBytes('mu-rc4-128-user.pdf'), 'mu-rc4-128-user.pdf', { password: PASSWORD });
+    expect(rc4.encryption).toMatchObject({ state: 'ciphered', algorithm: 'RC4-128', version: 2, revision: 3 });
+    const aes = await inspectPdf(fixtureBytes('mu-aes-128-user.pdf'), 'mu-aes-128-user.pdf', { password: PASSWORD });
+    expect(aes.encryption).toMatchObject({
+      state: 'ciphered', algorithm: 'AES-128', streamFilter: 'StdCF', method: 'AESV2', revision: 4,
+    });
+  });
+
   it('reads the effective filter out of a dictionary it is handed', async () => {
     const { context } = await PDFDocument.create();
     const classify = (build: (dict: PDFDict) => void): PdfEncryption => {
@@ -294,7 +307,31 @@ describe('classifying what a lock does to the contents', () => {
   });
 });
 
-/* ── 2. what the engine actually holds ───────────────────────────────────── */
+/* ── 2. the cheap scan that decides whether to parse at all ─────────── */
+
+describe('the trailer scan in front of the parse', () => {
+  it('finds an /Encrypt dictionary that is inlined, not just one that is referenced', () => {
+    // The MuPDF fixtures are the proof; this line is why they were ever refused.
+    // A scan matching only `/Encrypt 12 0 R` — the reference spelling qpdf uses,
+    // and the one `looksEncrypted` knew — called every MuPDF-locked file
+    // unencrypted, so the pre-flight never parsed it, no cipher was classified
+    // and the rewrite went ahead. The audit rig's `einp-mu-*` rows measured
+    // exactly that: they are the six fixtures this scan used to wave through.
+    const inlined = new TextEncoder().encode(
+      '%PDF-1.7\ntrailer<</Size 14/Root 1 0 R/Encrypt<</Filter/Standard/R 3/V 2/Length 128/P -3376>>>>\nstartxref\n4964\n%%EOF\n',
+    );
+    expect(looksEncrypted(inlined)).toBe(true);
+    for (const name of ['rc4-128-user.pdf', 'mu-rc4-128-user.pdf', 'mu-aes-128-user.pdf', 'aes-256-user.pdf']) {
+      expect(looksEncrypted(fixtureBytes(name)), name).toBe(true);
+    }
+    // And the permissions key is not the dictionary key: `/EncryptMetadata true`
+    // is in the same trailer as every one of these, and must not answer alone.
+    expect(looksEncrypted(new TextEncoder().encode('trailer<</EncryptMetadata true>>>>'))).toBe(false);
+    expect(looksEncrypted(fixtureBytes('plain.pdf'))).toBe(false);
+  });
+});
+
+/* ── 3. what the engine actually holds ───────────────────────────────────── */
 
 describe('the ciphertext the guard refuses', () => {
   it('reads the words this app can see in an unlocked file', async () => {
@@ -326,7 +363,7 @@ describe('the ciphertext the guard refuses', () => {
   });
 });
 
-/* ── 3. the refusal ──────────────────────────────────────────────────────── */
+/* ── 4. the refusal ──────────────────────────────────────────────────────── */
 
 describe('the refusal says what the file is and what to do', () => {
   it('names the cipher, the filter and the revision', async () => {
@@ -358,7 +395,7 @@ describe('the refusal says what the file is and what to do', () => {
   });
 });
 
-/* ── 4. the guard on the tools that rewrite content ──────────────────────── */
+/* ── 5. the guard on the tools that rewrite content ──────────────────────── */
 
 /** Tools that hand back a PDF rebuilt from the source's own page streams. */
 const REWRITING: { id: string; values: ToolValues }[] = [
@@ -383,7 +420,14 @@ const READING: { id: string; values: ToolValues }[] = [
   { id: 'extract-attachments', values: {} },
 ];
 
-describe.each(['aes-128-user.pdf', 'rc4-128-user.pdf', 'rc4-128-owner.pdf', 'aes-256-user.pdf'] as const)(
+describe.each([
+  'aes-128-user.pdf',
+  'rc4-128-user.pdf',
+  'rc4-128-owner.pdf',
+  'aes-256-user.pdf',
+  'mu-aes-128-user.pdf',
+  'mu-rc4-128-user.pdf',
+] as const)(
   'a ciphered input read from %s',
   (name) => {
     // The owner-only file's user password is empty, so it is run with nothing.
@@ -442,7 +486,7 @@ describe('the refusal is the pre-flight’s, not each tool’s', () => {
   });
 });
 
-/* ── 5. the direction that must not regress ─────────────────────────────── */
+/* ── 6. the direction that must not regress ─────────────────────────────── */
 
 describe('a gate-only file is edited exactly as it was before', () => {
   it('rotates this app’s protected file, keeps its gate and keeps its words', async () => {

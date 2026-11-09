@@ -88,11 +88,21 @@ export function isPasswordError(err: unknown): boolean {
   return /encrypt|password/i.test(msg) && !/not encrypted/i.test(msg);
 }
 
-/** Cheap structural check for an `/Encrypt` trailer entry without parsing. */
+/**
+ * Cheap structural check for an `/Encrypt` trailer entry without parsing.
+ *
+ * The key has to be recognised whatever follows it, because producers differ:
+ * qpdf writes `/Encrypt 12 0 R`, MuPDF inlines the whole dictionary —
+ * `/Encrypt<</Filter/Standard/R 3/V 2 …>>` — and a scan that only looked for the
+ * reference spelling called every MuPDF-locked file unencrypted, which is how a
+ * ciphered document reached an editing tool with nothing asked of it. The
+ * delimiter must not be a word character, or `/EncryptMetadata` answers yes on a
+ * file whose only crime is having permissions.
+ */
 export function looksEncrypted(bytes: Uint8Array): boolean {
   const tail = bytes.subarray(Math.max(0, bytes.length - 4096));
   const text = new TextDecoder('latin1').decode(tail);
-  return /\/Encrypt[\s\d]/.test(text) || /\/Encrypt>>/.test(text);
+  return /\/Encrypt(?![A-Za-z0-9_])/.test(text);
 }
 
 /**

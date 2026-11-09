@@ -1,8 +1,13 @@
 # `tests/fixtures/encrypted/` — files locked by somebody else's encryptor
 
 The test suite's encrypted inputs. **Every locked file here was written by
-libqpdf 12.3.2** (through `pikepdf`, which embeds it; the `qpdf` binary is not
-installed on this box), over `plain.pdf`, which MuPDF 1.28.2 wrote.
+somebody else's encryptor**, over `plain.pdf`:
+
+- `rc4-128-*`, `aes-128-user`, `aes-256-user` — libqpdf 12.3.2, through `pikepdf`
+  (the `qpdf` binary is not installed on this box, so qpdf's CLI option set runs
+  through the library that embeds it);
+- `mu-*` — MuPDF 1.28.2;
+- `plain.pdf` — MuPDF 1.28.2, unlocked: the base every lock starts from.
 
 They exist because this repo cannot make its own:
 
@@ -14,7 +19,8 @@ They exist because this repo cannot make its own:
 > `docs/TOOL-CAMPAIGN.md`, and `docs/research/encrypted-inputs-findings.md`.
 
 Rebuild with `python3 scripts/encrypted-fixtures.py` (it re-verifies each file
-with qpdf and MuPDF before it is kept). The same document, richer and measured
+with qpdf and MuPDF before it is kept, and prints the dictionary, the trailer
+spelling and the command that wrote it). The same document, richer and measured
 against five readers, is built for the audit rig by
 `docs/research/encrypted-inputs-fixtures.py`.
 
@@ -25,15 +31,23 @@ sheet word (`ALPHA` / `BRAVO` / `CHARLIE`) and a filled black rectangle on page 
 plus an outline of two entries. So a fixture's words are countable, and a copy
 that keeps its page count while losing its text is visible.
 
-| file | `/Encrypt` | what it is | password |
-| --- | --- | --- | --- |
-| `plain.pdf` | — | the unlocked base, written by MuPDF | none needed |
-| `rc4-128-user.pdf` | `/V 2 /R 3 /Length 128` | RC4-128, no crypt filters (they arrive with `/V 4`) | user `hunter2` |
-| `rc4-128-owner.pdf` | `/V 2 /R 3 /Length 128` | RC4-128 with an **empty user password**: anyone can open it, the streams are still ciphertext | owner `hunter2` |
-| `aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 /Length 16 >> /StmF /StdCF /StrF /StdCF` | AES-128 | user `hunter2` |
-| `aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 /Length 32 >> /StmF /StdCF /StrF /StdCF` | AES-256 | user `hunter2` |
+| file | `/Encrypt` | trailer | cipher | password |
+| --- | --- | --- | --- | --- |
+| `plain.pdf` | — | none | unlocked base, MuPDF | none needed |
+| `rc4-128-user.pdf` | `/V 2 /R 3 /Length 128` | reference | RC4-128, no crypt filters (they arrive with `/V 4`) | user `hunter2` |
+| `rc4-128-owner.pdf` | `/V 2 /R 3 /Length 128` | reference | RC4-128 with an **empty user password**: anyone can open it, the streams are still ciphertext | owner `hunter2` |
+| `aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 /Length 16 >> /StmF /StdCF /StrF /StdCF` | reference | AES-128 | user `hunter2` |
+| `aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 /Length 32 >> /StmF /StdCF /StrF /StdCF` | reference | AES-256 | user `hunter2` |
+| `mu-rc4-128-user.pdf` | `/V 2 /R 3 /Length 128` | **inlined** (`/Encrypt<<…>>`) | RC4-128 by the second producer | user `hunter2` |
+| `mu-aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 >> /StmF /StdCF /StrF /StdCF` | **inlined** | AES-128 by the second producer | user `hunter2` |
 
-`/P` is `-3376` on all four locked files (copy and accessibility allowed; print,
+The two trailer spellings are not decoration: `core/doc.ts:looksEncrypted` is the
+cheap pre-parse scan, and a version of it that recognised only `/Encrypt <ref>`
+reported every MuPDF-locked file as unencrypted — the audit rig's `einp-mu-*` rows
+are the measurement of what that cost. `tests/pdf/encrypted-guard.test.ts` pins
+both spellings.
+
+`/P` is `-3376` on every locked file (copy and accessibility allowed; print,
 modify, annotate, form-fill and assemble refused), which is the permission set the
 `protect` row and the `encrypted-inputs` rig use.
 

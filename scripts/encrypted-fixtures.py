@@ -6,10 +6,17 @@ this app edits with — cannot produce them: `save({ encrypt })` registers an
 `/Encrypt` dictionary and a `/ID` and never runs a cipher over the streams (see
 `docs/TOOL-CAMPAIGN.md`, the `protect` row), so a file this repo writes and then
 locks is evidence of a gate, never of a cipher. Every locked fixture here is
-therefore written by libqpdf (through `pikepdf`, which embeds it — the `qpdf`
-binary itself is not installed on this box) over one base document:
+therefore written by one of the two independent encryptors on this box over one
+base document:
 
-    python3 scripts/encrypted-fixtures.py [outdir]     # default tests/fixtures/encrypted
+    qpdf --encrypt <user> <owner> <bits> [options] -- plain.pdf out.pdf   (libqpdf 12.3.2, through pikepdf)
+    pymupdf: doc.save(out, encryption=…, owner_pw=…, user_pw=…, permissions=…)          (MuPDF 1.28.2)
+
+The `qpdf` binary itself is not installed, so qpdf's CLI option set runs through
+the library `pikepdf` embeds. The two producers also *spell* the lock differently
+— MuPDF inlines the encryption dictionary in the trailer, qpdf writes a reference
+— and that difference is recorded per file, because the guard's cheap trailer scan
+has to read both (`looksEncrypted` in `core/doc.ts`).
 
 Passwords are uniform so a test needs only one secret: the **user** password is
 `hunter2` on every `*-user` file (and empty on the `*-owner` file, which is the
@@ -18,11 +25,13 @@ permissions are qpdf's own spellings and match the `encrypted-inputs` rig: copy
 and accessibility allowed, print / modify / annotate / form / assemble refused,
 so `/P` is non-trivial and `decodePermissions` has something to decode.
 
-Each file is verified before it is kept — by the encryptor that opened it, with
+Each file is verified before it is kept — by the encryptor that wrote it, with
 the password it was given, and with MuPDF — and the `/Encrypt` dictionary plus a
 page count is printed, which is what `tests/fixtures/encrypted/README.md`
 records. A fixture that was never valid proves nothing, so a failed check stops
 the script rather than writing a doubtful file.
+
+    python3 scripts/encrypted-fixtures.py [outdir]     # default tests/fixtures/encrypted
 """
 import os
 import sys
@@ -56,6 +65,15 @@ FIXTURES = {
     "rc4-128-owner.pdf": (128, False, ""),
     "aes-128-user.pdf": (128, True, USER),
     "aes-256-user.pdf": (256, False, USER),
+}
+
+# The same locks by the other outside producer on this box. MuPDF also *spells*
+# the lock differently: it inlines the encryption dictionary in the trailer
+# (`/Encrypt<<…>>`) where qpdf writes a reference (`/Encrypt 12 0 R`), which is
+# what the cheap trailer scan has to recognise.
+MUPDF_FIXTURES = {
+    "mu-rc4-128-user.pdf": "PDF_ENCRYPT_RC4_128",
+    "mu-aes-128-user.pdf": "PDF_ENCRYPT_AES_128",
 }
 
 
@@ -124,6 +142,46 @@ def dictionary(path: str, password: str) -> dict:
         return flat
 
 
+def mupdf_lock(out: str, constant: str) -> str:
+    """Lock the base document with MuPDF, the second independent encryptor."""
+    permissions = py_constant("PDF_PERM_ACCESSIBILITY") | py_constant("PDF_PERM_COPY")
+    doc = pymupdf.open(BASE)
+    doc.save(out, encryption=py_constant(constant), owner_pw=OWNER, user_pw=USER, permissions=permissions)
+    doc.close()
+    if not os.path.exists(out):
+        raise RuntimeError(f"MuPDF reported success but wrote no {out}")
+    return (
+        f"python3 -c \"import pymupdf; d = pymupdf.open('plain.pdf'); d.save('{os.path.basename(out)}', "
+        f"encryption=pymupdf.{constant}, owner_pw={OWNER!r}, user_pw={USER!r}, "
+        "permissions=PDF_PERM_ACCESSIBILITY|PDF_PERM_COPY)\""
+    )
+
+
+def py_constant(name: str) -> int:
+    """A PyMuPDF `PDF_*` constant.
+
+    PyMuPDF assembles these onto the module at import time from its SWIG bindings,
+    so a static checker cannot see them even though they are always there — which
+    this asserts rather than assumes, same as the audit rig does.
+    """
+    value = getattr(pymupdf, name, None)
+    if value is None:
+        raise RuntimeError(f"pymupdf has no constant {name}")
+    return int(value)
+
+
+def trailer_spelling(path: str) -> str:
+    """How the file's trailer names its encryption dictionary, if it has one."""
+    with open(path, "rb") as handle:
+        handle.seek(max(0, os.path.getsize(path) - 4096))
+        tail = handle.read()
+    if b"/Encrypt<" in tail:
+        return "inlined (/Encrypt<<…)"
+    if b"/Encrypt " in tail:
+        return "a reference (/Encrypt N 0 R)"
+    return "no /Encrypt entry"
+
+
 def verify(name: str, path: str, password: str) -> str:
     """Open it with the tool that wrote it, and with MuPDF, or stop."""
     with pikepdf.open(path, password=password) as pdf:
@@ -159,18 +217,29 @@ def doc_needs_pass(path: str) -> bool:
 
 def main() -> None:
     build_base()
-    print(f"base   plain.pdf  (MuPDF, unlocked)\n       {verify('plain.pdf', BASE, '')}")
+    print(f"base   plain.pdf  (MuPDF, unlocked, {trailer_spelling(BASE)})\n       {verify('plain.pdf', BASE, '')}")
     for name, (bits, aes, user) in FIXTURES.items():
         path = os.path.join(TARGET, name)
         command = qpdf_lock(path, bits=bits, aes=aes, user=user)
-        fields = dictionary(path, user)
-        print(f"\nlock   {name}")
-        print(f"       {command}")
-        print(f"       /V {fields.get('V')} /R {fields.get('R')} /Length {fields.get('Length')} "
-              f"/CF {fields.get('CF')} /StmF {fields.get('StmF')} /StrF {fields.get('StrF')} "
-              f"/P {fields.get('P')}")
-        print(f"       {verify(name, path, user)}")
-    print(f"\nwrote {len(FIXTURES) + 1} files to {TARGET}")
+        report(name, path, user, "libqpdf", command)
+    for name, constant in MUPDF_FIXTURES.items():
+        path = os.path.join(TARGET, name)
+        command = mupdf_lock(path, constant)
+        report(name, path, USER, "MuPDF", command)
+    total = len(FIXTURES) + len(MUPDF_FIXTURES) + 1
+    print(f"\nwrote {total} files to {TARGET}")
+
+
+def report(name: str, path: str, user: str, made_by: str, command: str) -> None:
+    """One block per fixture: the command, the dictionary, the trailer, the checks."""
+    fields = dictionary(path, user)
+    print(f"\nlock   {name}  ({made_by})")
+    print(f"       {command}")
+    print(f"       /V {fields.get('V')} /R {fields.get('R')} /Length {fields.get('Length')} "
+          f"/CF {fields.get('CF')} /StmF {fields.get('StmF')} /StrF {fields.get('StrF')} "
+          f"/P {fields.get('P')}")
+    print(f"       trailer carries {trailer_spelling(path)}")
+    print(f"       {verify(name, path, user)}")
 
 
 if __name__ == "__main__":
