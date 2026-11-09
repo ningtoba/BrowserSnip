@@ -1,6 +1,6 @@
 # https://www.browsersnip.com · protect · user "open-sesame"
 card: clicked <button> Protect PDF
-file in: /tmp/live-protect-kq5esg/claim.pdf
+file in: /tmp/live-protect-2FBULF/claim.pdf
 mode is the default "Both"; fields before: 0:Not required unless the file is protected="" · 1:tool-field-userPassword=""
 typed Open password → #tool-field-userPassword
 typed Owner password → #tool-field-ownerPassword
@@ -9,7 +9,7 @@ run: clicked <button> Protect
 result card: Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As written to the file: printing allowed (any resolution), editing allowed, copying allowed, comments allowed, form filling allowed, screen readers allowed, page assembly blocked. A PDF reader opened the copy with that password and read 3 page(s).
 warnings    : The viewer here could not draw claim_protected.pdf, so nothing is pictured — the download is still the file.
 download: clicked <button> Download
-downloaded: /tmp/live-protect-kq5esg/deployed-protected.pdf 3109 bytes
+downloaded: /tmp/live-protect-2FBULF/deployed-protected.pdf 3109 bytes
 # outside readers, on the file the deployed site downloaded
 === claim.pdf (2268 bytes)
   mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
@@ -39,4 +39,4 @@ downloaded: /tmp/live-protect-kq5esg/deployed-protected.pdf 3109 bytes
            planted text extracted: True
   gs      : renders → wrote 3 page(s), planted text through gs: True
 
-workdir: /tmp/live-protect-kq5esg
+workdir: /tmp/live-protect-2FBULF
