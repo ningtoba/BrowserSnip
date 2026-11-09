@@ -1,0 +1,20 @@
+=== deployed-gated.pdf (1950 bytes)
+  mupdf   : opens, gate: opened with the password 'reader-pass', pages=3, cipher='Standard V4 R4 128-bit None', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+           reader's own complaint: Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler
+  qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=True, gate: 'reader-pass', pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 1 page(s), planted text through gs: False
+=== deployed-permissions-only.pdf (1950 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher='Standard V4 R4 128-bit None', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+           reader's own complaint: Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler
+  qpdf    : opens, gate: opens with no password, restricted only, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=True, gate: opened on the empty password, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 1 page(s), planted text through gs: False

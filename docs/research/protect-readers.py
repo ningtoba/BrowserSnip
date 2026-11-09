@@ -147,13 +147,29 @@ def pypdf_reader(path):
 
 
 def ghostscript(path):
+    """Ghostscript's own opinion, measured rather than trusted.
+
+    `rc=0` is not an answer: on a file whose dictionary declares more than the
+    bytes hold, gs exits 0 and writes a single blank page. So the render is
+    converted and read back, and the page count and the planted words are what
+    this reports.
+    """
+    out = f"/tmp/protect-gs-{os.getpid()}.pdf"
     for candidate in TRY_PASSWORDS:
-        code, _, err = run(["gs", "-o", os.devnull, "-sDEVICE=nullpage", "-dBATCH",
-                            "-dNOPAUSE", f"-dPDFPassword=({candidate})", path])
-        if code == 0:
-            return "renders" + (" with no password" if not candidate else " with the password")
+        code, _, err = run(["gs", "-o", out, "-sDEVICE=pdfwrite", "-dBATCH", "-dNOPAUSE",
+                            f"-dPDFPassword=({candidate})", path])
+        pages, text = "?", ""
+        if os.path.exists(out):
+            _, info, _ = run(["pdfinfo", out])
+            pages = next((row.split(":", 1)[1].strip() for row in info.splitlines()
+                          if row.startswith("Pages")), "?")
+            _, text, _ = run(["pdftotext", out, "-"])
+            os.remove(out)
+        if code == 0 and pages not in ("0", "?"):
+            return (f"renders{'' if candidate else ' with no password'} → wrote {pages} page(s), "
+                    f"planted text through gs: {PLANTED in text}")
         if "password" not in (err or "").lower():
-            return f"FAIL rc={code}: {clip(err, 140)}"
+            return f"FAIL rc={code}: pages={pages} {clip(err, 120)}"
     return "refuses both passwords"
 
 

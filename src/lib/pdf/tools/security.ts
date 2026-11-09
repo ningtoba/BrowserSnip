@@ -106,16 +106,21 @@ const PERMISSION_NOTES = [
 /**
  * What this browser's engine does and does not do to the bytes.
  *
- * `saveEncrypted` writes the password hashes, the `/P` flags and a crypt filter
- * of `/None`, because `@maxwbh/pdf-lib`'s writer never calls its own
+ * `saveEncrypted` writes the password hashes, the `/P` flags and no crypt
+ * filter, because `@maxwbh/pdf-lib`'s writer never calls its own
  * `PDFSecurity.encryptStream` — no stream or string leaves this tab other than
- * exactly as it arrived. Until it does, this tool offers no cipher: the strengths
- * it used to list (AES-256, AES-128, RC4-128, RC4-40) were labels on a dictionary,
- * and MuPDF, qpdf and pypdf each answered the AES-256 file with a refusal while
- * the readers that got through decrypted plaintext and lost the page (E5).
+ * exactly as it arrived. The reader split below is measured file for file in
+ * `docs/research/protect-readers-*.log`: MuPDF, qpdf, pypdf and the pdf.js build
+ * this app previews with all refuse the copy until the password is typed and
+ * then read every page; poppler reads the pages and never asks; Ghostscript
+ * collapses the file to one page, which is what it already did to the dictionary
+ * this replaced (E5).
  */
 const CIPHERTEXT_NOTE =
-  'What lands in the file is a password gate and the /P flags, with the crypt filter /None: the page streams are copied through, so a tool that ignores /Encrypt can still lift the text out. Ciphered output — AES-128 first, then AES-256 — needs an engine that runs the filter in both directions, and this browser does not have one yet.';
+  'What lands in the file is a password gate and the /P flags with no crypt filter, so the page streams are copied through: MuPDF, qpdf, pypdf and this app’s own reader ask for the password and then show every page, poppler shows the pages without asking, and Ghostscript reads one page of the three. A tool that ignores /Encrypt lifts the text out whatever the dictionary says.';
+
+const CIPHER_UNAVAILABLE_NOTE =
+  'No cipher strength is offered, because this browser’s engine runs none: AES-128 and AES-256 need a filter applied to every stream and string and, to be worth claiming, a reader that can undo it. AES-128 (`/CFM /AESV2`) is the next one to build; AES-256 (revision 6) needs `/OE`, `/UE` and `/Perms` on top.';
 
 const SCAN_ALTERNATIVE_NOTE =
   'When the bytes themselves must be unreadable, turn the pages into pictures first — PDF to Images, then Images to PDF — and protect the result. A scan holds no extractable text to recover, and a picture answers a text extractor whatever the dictionary says.';
@@ -168,7 +173,7 @@ export const securityTools: PdfToolDefinition[] = [
     outputSuffix: '_protected.pdf',
     promise: 'A copy that asks for your password before it opens, with the permissions you ticked written in and read back from the file.',
     actionLabel: 'Protect',
-    notes: [CIPHERTEXT_NOTE, SCAN_ALTERNATIVE_NOTE, ...PERMISSION_NOTES],
+    notes: [CIPHERTEXT_NOTE, CIPHER_UNAVAILABLE_NOTE, SCAN_ALTERNATIVE_NOTE, ...PERMISSION_NOTES],
     fields: [
       {
         key: 'mode',
@@ -358,7 +363,7 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The printing, copying and editing limits on this file, rewritten — and the result reports what the saved file actually recorded.',
     actionLabel: 'Change permissions',
     notes: [
-      'This tool writes the /P dictionary without an open password, so the document still opens freely. Use Protect to make it unreadable without one.',
+      'This tool writes the /P dictionary without an open password, so the document still opens freely. Use Protect to gate it with a password.',
       CIPHERTEXT_NOTE,
       ...PERMISSION_NOTES,
     ],

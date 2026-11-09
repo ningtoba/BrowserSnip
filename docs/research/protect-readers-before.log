@@ -6,7 +6,7 @@
   qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
   pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
            planted text extracted: True
-  gs      : renders with no password
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
 === 90-round-trip.pdf (2832 bytes)
   mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
            planted text extracted: True
@@ -15,7 +15,7 @@
   qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
   pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
            planted text extracted: True
-  gs      : renders with no password
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
 === protect-gated.pdf (3152 bytes)
   mupdf   : does not open: FileDataError: Failed to open file '/tmp/pb2/protect-gated.pdf' as type pdf.
            planted text extracted: False
@@ -25,7 +25,7 @@
   qpdf    : does not open: PdfError: /tmp/pb2/protect-gated.pdf (encryption dictionary, offset 1687): some V=5 encryption dictionary parameters are missing or the wrong type
   pypdf   : encrypted, and neither the empty nor the planted password is accepted
            planted text extracted: False
-  gs      : renders with no password
+  gs      : renders with no password → wrote 1 page(s), planted text through gs: False
 === protect-permissions-only.pdf (3151 bytes)
   mupdf   : does not open: FileDataError: Failed to open file '/tmp/pb2/protect-permissions-only.pdf' as type pdf.
            planted text extracted: False
@@ -35,4 +35,4 @@
   qpdf    : does not open: PdfError: /tmp/pb2/protect-permissions-only.pdf (encryption dictionary, offset 1687): some V=5 encryption dictionary parameters are missing or the wrong type
   pypdf   : encrypted, and neither the empty nor the planted password is accepted
            planted text extracted: False
-  gs      : renders with no password
+  gs      : renders with no password → wrote 1 page(s), planted text through gs: False
