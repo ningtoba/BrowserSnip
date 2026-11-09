@@ -94,6 +94,8 @@ import {
   MIN_BLOCK_SIZE,
   RESIZE_HANDLES,
   amendHistory,
+  BLOCKED_STATES,
+  blockOverlayBackground,
   canRedo,
   canUndo,
   clusterParagraphs,
@@ -2033,7 +2035,10 @@ function ObjectView({
     fontSize: `${object.style.size * zoom}px`,
     lineHeight: `${object.style.lineSpacing}`,
     color: object.style.color,
-    background: object.paperColor,
+    // A block whose words are still in the file is not a finished edit, so it is
+    // not painted in the page's own colour over the words it did not replace —
+    // that reads as "done" exactly where the bytes say "not done".
+    background: blockOverlayBackground(object.state, object.paperColor),
     textAlign: object.style.align,
     paddingLeft: `${Math.max(0, object.style.indent) * zoom}px`,
     letterSpacing: object.style.charSpacing ? `${object.style.charSpacing * zoom}px` : undefined,
@@ -2045,7 +2050,16 @@ function ObjectView({
     overflowWrap: 'break-word',
   };
   return (
-    <div style={{ ...style, position: 'absolute' }} onDoubleClick={() => onEditStart(object.id)}>
+    <div
+      style={{ ...style, position: 'absolute' }}
+      onDoubleClick={() => onEditStart(object.id)}
+      data-block-state={object.state}
+      title={
+        BLOCKED_STATES.has(object.state)
+          ? object.note ?? 'These words are still in the file: the built-in engine could not delete them.'
+          : undefined
+      }
+    >
       <div style={textStyle}>
         {editing ? (
           <EditorBox boxRef={editorRef} object={object} pendingKey={pendingKey} onCommit={onCommit} />

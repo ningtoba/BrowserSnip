@@ -1254,6 +1254,31 @@ export type ToolMode = 'edit' | 'add-text' | 'add-image';
 /** How far the commit got; drives the badges in the objects list. */
 export type CommitState = 'draft' | 'queued' | 'written' | 'needs-engine' | 'failed';
 
+/**
+ * The states in which the block's original words are **still in the file** —
+ * skipped by the built-in engine, or failed outright. Anything that shows the
+ * block has to say so: a paper-coloured box in the page's own colour is what a
+ * finished edit looks like, and that claim has to match the bytes.
+ */
+export const BLOCKED_STATES: ReadonlySet<CommitState> = new Set<CommitState>(['needs-engine', 'failed']);
+
+/** True when this block's words are still in the file. */
+export function blockStillHasSource(state: CommitState): boolean {
+  return BLOCKED_STATES.has(state);
+}
+
+/**
+ * The colour the on-screen box is painted in.
+ *
+ * A committed block normally wears the page's own sampled colour, because the
+ * export deletes the words underneath it. A block the engine could not delete
+ * still has those words in the file, so painting paper over them would show a
+ * finished edit that does not exist: it gets the warning tint instead.
+ */
+export function blockOverlayBackground(state: CommitState, paperColor: string): string {
+  return BLOCKED_STATES.has(state) ? 'rgb(var(--warn-rgb) / 0.14)' : paperColor;
+}
+
 export interface BaseObject {
   id: string;
   /** 1-based page. */

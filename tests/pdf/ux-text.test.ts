@@ -25,8 +25,11 @@ import type { ExtractedTextItem } from '@/lib/pdf/core/render';
 import { TextEditor } from '@/components/tools/pdf/text-editor/TextEditor';
 import { useFileStore } from '@/stores/file-store';
 import {
+  BLOCKED_STATES,
   DEFAULT_STYLE,
   MIN_BLOCK_SIZE,
+  blockOverlayBackground,
+  blockStillHasSource,
   RESIZE_HANDLES,
   canRedo,
   canUndo,
@@ -509,6 +512,27 @@ describe('export report', () => {
 /* ------------------------------------------------------------------ *
  * One-shot by default, sticky only when pinned (the brief's ruling)  * 
  * ------------------------------------------------------------------ */
+
+describe('a box that is not a finished edit', () => {
+  it('marks the states where the original words are still in the file', () => {
+    expect([...BLOCKED_STATES].sort()).toEqual(['failed', 'needs-engine']);
+    expect(blockStillHasSource('needs-engine')).toBe(true);
+    expect(blockStillHasSource('written')).toBe(false);
+    expect(blockStillHasSource('queued')).toBe(false);
+  });
+
+  it('refuses to paint paper over words the export did not remove', () => {
+    // A queued or written block wears the page's sampled colour: underneath it,
+    // the export deletes the runs. A blocked one keeps them, so the paper colour
+    // would be a claim the bytes contradict.
+    expect(blockOverlayBackground('queued', '#f2efe6')).toBe('#f2efe6');
+    expect(blockOverlayBackground('written', '#f2efe6')).toBe('#f2efe6');
+    expect(blockOverlayBackground('needs-engine', '#f2efe6')).not.toBe('#f2efe6');
+    expect(blockOverlayBackground('failed', '#f2efe6')).toMatch(/var\(--warn-rgb\)/);
+    // A token, not a hex literal: dark mode keeps its own warning colour.
+    expect(blockOverlayBackground('needs-engine', '#000000')).not.toMatch(/^#/);
+  });
+});
 
 describe('placement modes', () => {
   it('declare stickiness instead of inheriting it from handler order', () => {

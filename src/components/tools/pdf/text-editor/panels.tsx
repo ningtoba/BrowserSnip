@@ -9,6 +9,7 @@
 import {
   MIN_BLOCK_SIZE,
   SWATCH_COLORS,
+  blockStillHasSource,
   ZOOM_PRESETS,
   rulerTicks,
   type AlignMode,
@@ -900,7 +901,7 @@ export function ObjectList({
             <span className="truncate">{object.alt || objectLabel(object)}</span>
             <span
               className={`ml-auto shrink-0 rounded px-1 font-mono text-[9px] uppercase ${
-                object.state === 'needs-engine' || object.state === 'failed'
+                blockStillHasSource(object.state)
                   ? 'bg-warn/15 text-warn'
                   : object.state === 'written'
                     ? 'bg-success/15 text-success'
