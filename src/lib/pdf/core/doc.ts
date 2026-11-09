@@ -474,6 +474,12 @@ export async function carryPageFurniture(
  * The turn is composed around the centre of that box: the rotated bounding
  * rectangle is what gets scaled into `box`, so a quarter-turned sheet fills a
  * cell sized for it as displayed rather than overflowing its neighbour.
+ *
+ * `box` names a place on the **visible sheet**, not in raw user space, for the same
+ * reason the source is measured from its own `cropBox`: a page whose `/MediaBox` is
+ * `[36 36 612 792]` has its bottom-left corner at (36, 36), so a cell aimed at that
+ * sheet's own (0, 0) used to be drawn 36 pt off the corner — legal geometry, and no
+ * ink where the user asked for it.
  */
 export async function drawPageInto(
   target: PDFDocument,
@@ -515,9 +521,12 @@ export async function drawPageInto(
   }
 
   const scale = (options.scale ?? 1) * Math.min(box.width / drawnWidth, box.height / drawnHeight);
+  // The cell is relative to the sheet being filled, whose corner is not always the
+  // origin of the coordinates `drawPage` writes into.
+  const sheet = cropBox(page);
   page.drawPage(embedded, {
-    x: box.x + (box.width - drawnWidth * scale) / 2 - minX * scale,
-    y: box.y + (box.height - drawnHeight * scale) / 2 - minY * scale,
+    x: sheet.x + box.x + (box.width - drawnWidth * scale) / 2 - minX * scale,
+    y: sheet.y + box.y + (box.height - drawnHeight * scale) / 2 - minY * scale,
     xScale: scale,
     yScale: scale,
     rotate: degrees(-clockwise),
