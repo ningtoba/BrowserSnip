@@ -133,14 +133,14 @@ app says, e.g. after `rotate` on `einp-q-r3-rc4-128-user.pdf`:
 claims encrypted=true algorithm=no cipher needsPassword=false pages=3 /P=-3376 accepted=true error=—
 gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
 pdf.js pages=3 ops=2 text=" |  | "   draws: fillRect 1, drawImage 1, clip 1
-engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 7b 73 7d f5 — ciphertext
+engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: ae be c5 e2 — ciphertext
 runner: pagesOut=3   message: "Rotated 3 pages by 90°."
 ```
 
 and the bytes say:
 
 ```
-MuPDF  opens_with=[user] cipher='Standard V4 R4 128-bit None' /P=-4 pages=3
+MuPDF  "opens_with": ["user"], "cipher": "Standard V4 R4 128-bit None", "permissions": -4, pages 3
        planted_pages 3→0, sheet-1 ink 0.46 %→0.0 %, text 182→0 chars,
        fields 2→<UnicodeDecodeError …>, bookmarks 2→0, attachments 1→0
 qpdf   --check: errors detected; dictionary /V 4 /R 4, /CF empty, no /StmF → the file now
@@ -153,24 +153,41 @@ gs     1 page of 3
 
 Counted over the 18 files produced from foreign fixtures: **18/18 with
 `planted_pages = 0`, 18/18 with `ink_page1_percent = 0.0`, 18/18 rejected by
-`qpdf --check`, 12/18 still opening with the password the user holds** (the other 6
-are the `protect` runs, which answer to the new one instead). Every one of them
+`qpdf --check`, 12/18 still opening with the password the user holds** (the other
+6 are the `protect` runs, which answer to the new password instead). Counts and
+verdicts are stable across two independent runs of the rig — 36 runs, 12 aborted,
+18 produced, 18/18 `silent-loss`, and both control tables identical — and what moves
+between runs is the random key's output: the ciphertext bytes, the mojibake they
+produce in the field values, and how many of the produced files are bad enough to
+crash pdf.js (three in the first run, six in the logged one). Every one of them
 `verdict: silent-loss`. `delete page 2` is the same shape with `pages=2` — the
 count it reports is correct, which is exactly what makes it slip past a
 page-count check. `MuPDF opens_with=[empty,user,owner,again,again-owner]` on the
 owner-only runs: the restrictions went away with the dictionary.
 
-**Three of the eighteen are louder, and only on the screen.** All three operations on
-`einp-mu-r3-rc4-128-user.pdf` — the RC4-128 file MuPDF wrote — produce a file that
-makes **this app's own preview throw**: `UnknownErrorException: Invalid number:  (charCode 19)`.
-In the `protect` run the tool noticed something and blamed the wrong party:
+**On the MuPDF-written inputs the corrupted copy can also crash the preview.** In
+the logged run, six of the eighteen — all three operations on each of
+`einp-mu-r3-rc4-128-user.pdf` and `einp-mu-r4-aes-128-user.pdf` — hand back a page
+that makes **this app's own pdf.js throw**: `UnknownErrorException: Invalid number: j
+(charCode 106)`. The count moved between two runs of this rig (three, then six)
+because which bytes land in a `/Contents` position depends on the random key, so the
+claim is stated as far as the measurement goes: *on MuPDF-written RC4-128 and
+AES-128 inputs the produced file sometimes crashes the preview; on qpdf-written ones
+in these two runs it never did*. Same for the exact ciphertext head — `ae be c5 e2`
+in the log, `7b 73 7d f5` in the earlier run — the fact recorded is *"not `78 …`, so
+not flate, so ciphertext"*, not the bytes. In the `protect` run the tool noticed
+something and blamed the wrong party — twice in this log, once per MuPDF-written
+strength:
 
 > `No PDF reader could be started in this browser to re-check the saved file
-> (Invalid number:  (charCode 19)), so only the built-in engine's own view of it was verified.`
+> (Invalid number: j (charCode 106)), so only the built-in engine's own view of it was verified.`
+
+> `No PDF reader could be started in this browser to re-check the saved file
+> (Illegal character: 41), so only the built-in engine's own view of it was verified.`
 
 A reader *was* started — it read the file and threw. The sentence reports a missing
-reader where the bytes are the fault, which is the same misreading as the other
-fifteen cases except that in those fifteen the app says nothing at all.
+reader where the bytes are the fault, which is the same misreading as in the other
+produced files except that in those the app says nothing at all.
 
 ## 4. The verdict on the `rotate`-preserves-protection ruling
 

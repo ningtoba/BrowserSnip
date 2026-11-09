@@ -14,13 +14,13 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["c%íáÁÁÒòçNÅ˝", "checked"] bookmarks=1 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\"I-@Ú„KÄ;Îˇq", "checked"] bookmarks=1 attachments=[] · page 1: ae be c5 e2 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
        pdf.js pages=3 ops=2 text=" |  | "
        draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 10× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: ae be c5 e2 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -28,8 +28,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
        pdf.js pages=2 ops=2 text=" | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 8× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: ae be c5 e2 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -37,8 +37,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 14× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "". · 1× Unknown command "a¼á½Öð«".
-       engine pages=3 annots=6/entries 6 fields=2 ["c%íáÁÁÒòçNÅ˝", "checked"] bookmarks=1 attachments=[] · page 1: 51 38 93 d2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 14× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "|@¦ÃOÆwNqáE¯ÂÃ". · 1× Unknown command "#;".
+       engine pages=3 annots=6/entries 6 fields=2 ["\"I-@Ú„KÄ;Îˇq", "checked"] bookmarks=1 attachments=[] · page 1: ae be c5 e2 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -55,13 +55,13 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "Ñ¬$O>WÏAÙ\u0005‘BÐÔþ\u0014›Ù˘˘ˆä…oàŸ!ñ‡^Œš"] bookmarks=1 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "˙\u0017ÉP¯7\u0017sIö³WåÇÊ¨ïe\u0000[‡~4C»Y\u0003¨0;ˆ("] bookmarks=1 attachments=[] · page 1: 37 c0 c5 5e /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
        pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 10× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 37 c0 c5 5e /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -69,8 +69,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
        pdf.js pages=2 ops=2 text=" | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 8× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N"
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 37 c0 c5 5e /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -78,8 +78,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 14× Invalid stream: "FormatError: Unknown compression method in flate stream · 2× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "@Æ". · 1× Unknown command "@ùSïf¶ÉÓ®_Hyá¼eÙ".
-       engine pages=3 annots=6/entries 6 fields=2 ["checked", "Ñ¬$O>WÏAÙ\u0005‘BÐÔþ\u0014›Ù˘˘ˆä…oàŸ!ñ‡^Œš"] bookmarks=1 attachments=[] · page 1: f3 34 d1 1f /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "Á". · 1× Unknown command "DGÅöïq".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "˙\u0017ÉP¯7\u0017sIö³WåÇÊ¨ïe\u0000[‡~4C»Y\u0003¨0;ˆ("] bookmarks=1 attachments=[] · page 1: 37 c0 c5 5e /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -116,13 +116,13 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÔÎ“$üŁIðˇ€m\u000f"] bookmarks=1 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "¨â¸~qEŠ\u0010Y8�q"] bookmarks=1 attachments=[] · page 1: 25 0c 66 dc /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
        gate (this app): none:no user:no owner:no again:no
        pdf.js pages=3 ops=2 text=" |  | "
        draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 11× Invalid stream: "FormatError: Unknown compression method in flate stream
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 25 0c 66 dc /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-owner.pdf\"'s bookmarks across.","The source was protected (RC4-128); the result opens without one."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -131,7 +131,7 @@ Warning: Please use the `legacy` build in Node.js environments.
        gate (this app): none:no user:no owner:no again:no
        pdf.js pages=2 ops=2 text=" | "
        draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 25 0c 66 dc /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["The source was protected (RC4-128); the result opens without one."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -139,8 +139,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 16× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Unknown command "¥Ü$ÚMòUîFÍ¬S-v". · 1× Unknown command "ð^NøS`^OùNLvþZ".
-       engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÔÎ“$üŁIðˇ€m\u000f"] bookmarks=1 attachments=[] · page 1: 23 87 fb 60 /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× Invalid stream: "FormatError: Unknown compression method in flate stream · 1× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 1× Unknown command "Ù¦é~". · 1× Unknown command "vTqFáÚ¾x".
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "¨â¸~qEŠ\u0010Y8�q"] bookmarks=1 attachments=[] · page 1: 25 0c 66 dc /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -157,13 +157,13 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ı/TÀ[½Oﬂ'@_˚ßı)Ö£ˇ%kIå3I„Û^ı\u0000V\\ö"] bookmarks=1 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\u000b÷«¶^2ï>oK−±•ƒ%×7B£ƒ˚˚$iÆ*Ã‰\nPTI", "checked"] bookmarks=1 attachments=[] · page 1: 89 b7 4f a4 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
        gate (this app): none:no user:no owner:no again:no
        pdf.js pages=3 ops=2 text=" |  | "
        draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 11× Invalid stream: "FormatError: Unknown compression method in flate stream
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 89 b7 4f a4 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-owner.pdf\"'s bookmarks across.","The source was protected (AES-128); the result opens without one."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -172,7 +172,7 @@ Warning: Please use the `legacy` build in Node.js environments.
        gate (this app): none:no user:no owner:no again:no
        pdf.js pages=2 ops=2 text=" | "
        draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 9× Invalid stream: "FormatError: Unknown compression method in flate stream
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 89 b7 4f a4 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["The source was protected (AES-128); the result opens without one."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -180,8 +180,8 @@ Warning: Please use the `legacy` build in Node.js environments.
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 16× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring invalid character: N · 1× Unknown command "ß­×þbnNá". · 1× Unknown command ">".
-       engine pages=3 annots=6/entries 6 fields=2 ["checked", "ı/TÀ[½Oﬂ'@_˚ßı)Ö£ˇ%kIå3I„Û^ı\u0000V\\ö"] bookmarks=1 attachments=[] · page 1: 82 42 59 2c /Filter /FlateDecode — ciphertext behind its own /Filter
+       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 13× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "}". · 1× Unknown command "¢èÏNm´TOÒmx".
+       engine pages=3 annots=6/entries 6 fields=2 ["\u000b÷«¶^2ï>oK−±•ƒ%×7B£ƒ˚˚$iÆ*Ã‰\nPTI", "checked"] bookmarks=1 attachments=[] · page 1: 89 b7 4f a4 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
@@ -198,7 +198,7 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\u0015$ÔQõÂ�„−Q\bþ]>‚ÍBªé¹ÛÌıR_žØ\nÔd9·", "checked"] bookmarks=1 attachments=[] · page 1: 37 d7 6c 63 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "⁄\u0005Ó*]¤XM“\u0000\u0001ÎhØbø‚•Î+�¶3h±+óKmèá\u0001"] bookmarks=1 attachments=[] · page 1: cd 71 22 5f /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: throws ToolInputError: "einp-q-r6-aes-256-owner.pdf" is password protected.
        at: preflightPdf (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:639:10) ← runPdfTool (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/runner.ts:340:23) ← run (/home/n
@@ -218,32 +218,29 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["@oò3ˆ¨ßF³s‰,", "checked"] bookmarks=1 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "î,q1]ø2Žµ¬\r³"] bookmarks=1 attachments=[] · page 1: 36 dd 7e de /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
-       pdf.js pages=3 ops=4 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       this probe throws UnknownErrorException: Invalid number: j (charCode 106)
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 36 dd 7e de /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-mu-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--rotate.pdf
   after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
-       pdf.js pages=2 ops=4 text=" | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
+       this probe throws UnknownErrorException: Invalid number: j (charCode 106)
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 36 dd 7e de /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--remove-pages.pdf
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
-       pdf.js pages=3 ops=4 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 3× Invalid stream: "FormatError: Bad FCHECK in flate stream: N, N" · 3× Unknown command "Î". · 3× Unknown command "Zªp_Ys¡yï_NÂN"|". · 3× Unknown command "]".
-       engine pages=3 annots=6/entries 6 fields=2 ["@oò3ˆ¨ßF³s‰,", "checked"] bookmarks=1 attachments=[] · page 1: a8 c0 95 e4 /Filter /FlateDecode — ciphertext behind its own /Filter
-       runner: pagesOut=3 warnings=[]
+       this probe throws UnknownErrorException: Invalid number: j (charCode 106)
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "î,q1]ø2Žµ¬\r³"] bookmarks=1 attachments=[] · page 1: 36 dd 7e de /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["No PDF reader could be started in this browser to re-check the saved file (Invalid number: j (charCode 106)), so only the built-in engine's own view of it was verified."]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--protect.pdf
@@ -259,32 +256,29 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "o¸Ï«Æ�¨%z0Fl`�ÑıJ\u0001Z\u0015\u0000R\u000eı‰⁄š?ùoR+"] bookmarks=1 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ýdAk½ﬂÃmYì‹¼§—¼s·µ5Ûûy²ıŠ\u000fÐ”(ãäI"] bookmarks=1 attachments=[] · page 1: 70 51 2d 99 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
-       pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 5× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       this probe throws UnknownErrorException: Illegal character: 41
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 70 51 2d 99 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=["\"einp-mu-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--rotate.pdf
   after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
        gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
-       pdf.js pages=2 ops=2 text=" | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 4× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
+       this probe throws UnknownErrorException: Illegal character: 41
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 70 51 2d 99 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--remove-pages.pdf
   after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
-       pdf.js pages=3 ops=2 text=" |  | "
-       draws fillRect 1, drawImage 1, clip 1 · pdf.js said: 15× getHexString - ignoring invalid character: N · 5× Invalid stream: "FormatError: Unknown compression method in flate stream · 3× getHexString - ignoring additional invalid characters. · 3× Unknown command "±þÑÙYUÍ".
-       engine pages=3 annots=6/entries 6 fields=2 ["checked", "o¸Ï«Æ�¨%z0Fl`�ÑıJ\u0001Z\u0015\u0000R\u000eı‰⁄š?ùoR+"] bookmarks=1 attachments=[] · page 1: c1 04 9a 39 /Filter /FlateDecode — ciphertext behind its own /Filter
-       runner: pagesOut=3 warnings=[]
+       this probe throws UnknownErrorException: Illegal character: 41
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "ýdAk½ﬂÃmYì‹¼§—¼s·µ5Ûûy²ıŠ\u000fÐ”(ãäI"] bookmarks=1 attachments=[] · page 1: 70 51 2d 99 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["No PDF reader could be started in this browser to re-check the saved file (Illegal character: 41), so only the built-in engine's own view of it was verified."]
        message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--protect.pdf
@@ -320,7 +314,7 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "¦ÙjŸ\u0001Æ×g!oL‘?—úÀêW\u0003$ÿ4àFÀg&å@þ•ò"] bookmarks=1 attachments=[] · page 1: f2 49 36 0f /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\u0004\u0015,iÈKBÀÏ»ßïUˇ4©9Càíy\\ç5ûéÌ¿\u0002kåL", "checked"] bookmarks=1 attachments=[] · page 1: 70 25 18 7f /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: throws ToolInputError: "einp-mu-r6-aes-256-owner.pdf" is password protected.
        at: openPdfInput (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/core/guard.ts:608:11) ← openInputs (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/src/lib/pdf/tools/helpers.ts:129:20) ← Object.run 
@@ -413,6 +407,6 @@ Warning: Please use the `legacy` build in Node.js environments.
 
  Test Files  1 passed (1)
       Tests  1 passed (1)
-   Start at  17:46:43
-   Duration  2.91s (transform 553ms, setup 29ms, import 721ms, tests 1.83s, environment 267ms)
+   Start at  17:48:36
+   Duration  2.83s (transform 611ms, setup 32ms, import 776ms, tests 1.69s, environment 267ms)
 
