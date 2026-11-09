@@ -20,8 +20,191 @@
  */
 import { StandardFonts, rgb } from '@/lib/pdf/core/doc';
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
+import type { SourceFont } from '@/lib/pdf/core/content';
 import { SCRIPT_FONTS, detectScript, getFont, isWinAnsiSafe } from '@/lib/pdf/core/fonts';
 import type { InlineStyle } from './model';
+
+/* ------------------------------------------------------------------ *
+ * The face a run is written in                                        *
+ * ------------------------------------------------------------------ */
+
+/**
+ * A face the editor can draw with — either **the document's own font**, reused
+ * from the file being edited, or one the editor embeds.
+ *
+ * In-place editing runs on the open document, so the producer's font dictionary
+ * is reachable: keeping it is what makes an edited heading look like the heading
+ * it replaced. Reuse is only honest when the face can really spell the new text,
+ * which `missingFor` answers from the font's own encoding, widths and embedded
+ * (possibly subsetted) file — see `SourceFont` in `core/content`.
+ */
+export interface EditFace {
+  /** `/BaseFont` for a source face, the family id otherwise: what a report names. */
+  label: string;
+  /** True when this is the font the page already used. */
+  fromSource: boolean;
+  /** Advance of `text` at `size`, in points, from this face's own metrics. */
+  widthOfText(text: string, size: number): number;
+  /** The bytes to show, or `null` when the face cannot spell `text`. */
+  codes(text: string): Uint8Array | null;
+  /** The characters of `text` this face cannot draw, in order. */
+  missingFor(text: string): string[];
+  /** Set for a face pdf-lib draws with (standard 14, bundled, script, local). */
+  pdf?: PDFFont;
+  /** Set for the document's own font dictionary. */
+  source?: SourceFont;
+}
+
+/** The document's own font, spelled through its own codes. */
+export function sourceFace(source: SourceFont): EditFace {
+  const width = new Map<string, number>();
+  return {
+    label: source.baseFont || source.subtype,
+    fromSource: true,
+    source,
+    widthOfText(text: string, size: number): number {
+      const known = width.get(`${text}|${size}`);
+      if (known !== undefined) return known;
+      let total = 0;
+      for (const character of text) {
+        const code = source.codeOf(character.codePointAt(0) as number);
+        total += ((code === undefined ? 0 : source.widthOf(code)) / 1000) * size;
+      }
+      width.set(`${text}|${size}`, total);
+      return total;
+    },
+    codes(text: string): Uint8Array | null {
+      const out: number[] = [];
+      for (const character of text) {
+        const code = source.codeOf(character.codePointAt(0) as number);
+        if (code === undefined) return null;
+        for (let shift = (source.codeSize - 1) * 8; shift >= 0; shift -= 8) out.push((code >> shift) & 0xff);
+      }
+      return new Uint8Array(out);
+    },
+    missingFor: (text: string) => source.missingFor(text),
+  };
+}
+
+/** A face pdf-lib embeds: its own encoder and metrics do the work. */
+export function pdfFace(label: string, font: PDFFont): EditFace {
+  return {
+    label,
+    fromSource: false,
+    pdf: font,
+    widthOfText: (text: string, size: number) => font.widthOfTextAtSize(text, size),
+    codes: (text: string) => {
+      try {
+        const encoded = font.encodeText(text);
+        const hex = encoded.toString();
+        const clean = hex.startsWith('<') ? hex.slice(1, -1) : '';
+        if (!/^[0-9A-Fa-f]*$/.test(clean)) return null;
+        const out = new Uint8Array(clean.length / 2);
+        for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+        return out;
+      } catch {
+        return null;
+      }
+    },
+    missingFor(text: string): string[] {
+      const missing: string[] = [];
+      for (const character of text) {
+        try {
+          font.encodeText(character);
+        } catch {
+          missing.push(character);
+        }
+      }
+      return missing;
+    },
+  };
+}
+
+/** Why the page's own face could not be kept, in one clause the user can read. */
+export type SubstitutionReason =
+  | { kind: 'missing'; characters: string }
+  | { kind: 'bold' }
+  | { kind: 'italic' }
+  | { kind: 'type3' };
+
+export interface FaceChoice {
+  face: EditFace;
+  /** The document's own face the block was set in, when there was one. */
+  kept?: SourceFont;
+  /** Set when the source face could not be used, with the reason to show. */
+  substitution?: { from: string; to: string; reason: SubstitutionReason };
+}
+
+/** A face's posture, read off the name the producer gave it. */
+function postureOf(baseFont: string): { bold: boolean; italic: boolean } {
+  const name = baseFont.toLowerCase();
+  return {
+    bold: /bold|black|heavy|semibold|demibold|extrabold|ultrabold/.test(name),
+    italic: /italic|oblique/.test(name),
+  };
+}
+
+/**
+ * The face to write `text` with: the block's own font whenever it can do the job.
+ *
+ * A source face is kept when it spells every character the user typed (its
+ * encoding, its widths and — the case that really bites — its **subsubset** of
+ * embedded glyphs), and when it already carries the weight and slant the block is
+ * showing. Otherwise the editor's normal tiers answer, and the caller reports the
+ * swap by name and reason rather than making it silently.
+ */
+export function chooseFace(
+  doc: PDFDocument,
+  style: InlineStyle,
+  text: string,
+  sources: SourceFont[],
+): Promise<FaceChoice> {
+  const wantedBold = Boolean(style.bold);
+  const wantedItalic = Boolean(style.italic);
+  for (const source of sources) {
+    if (source.subtype === '/Type3') continue;
+    if (style.fontFamily) break; // the user named a family; that is their choice
+    const missing = source.missingFor(text);
+    const posture = postureOf(source.baseFont);
+    if (missing.length === 0) {
+      if (wantedBold && !posture.bold) {
+        return substitute(doc, style, text, source, { kind: 'bold' });
+      }
+      if (wantedItalic && !posture.italic) {
+        return substitute(doc, style, text, source, { kind: 'italic' });
+      }
+      return Promise.resolve({ face: sourceFace(source), kept: source });
+    }
+    return substitute(doc, style, text, source, {
+      kind: 'missing',
+      characters: [...new Set(missing)].slice(0, 8).join(' '),
+    });
+  }
+  const type3 = sources.find((source) => source.subtype === '/Type3');
+  if (type3 && !style.fontFamily) {
+    return substitute(doc, style, text, type3, { kind: 'type3' });
+  }
+  return embeddedFace(doc, style, text);
+}
+
+function substitute(
+  doc: PDFDocument,
+  style: InlineStyle,
+  text: string,
+  source: SourceFont,
+  reason: SubstitutionReason,
+): Promise<FaceChoice> {
+  return embeddedFace(doc, style, text).then((choice) => ({
+    ...choice,
+    substitution: { from: source.baseFont || source.subtype, to: choice.face.label, reason },
+  }));
+}
+
+/** The tiers this module already implements: standard 14, Noto, script, local. */
+async function embeddedFace(doc: PDFDocument, style: InlineStyle, text: string): Promise<FaceChoice> {
+  const { font, familyUsed } = await resolveFace(doc, style, text);
+  return { face: pdfFace(familyUsed, font) };
+}
 
 export interface FontFamilyOption {
   id: string;

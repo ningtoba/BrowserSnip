@@ -151,7 +151,10 @@ def measure(outdir):
             if page_no > before.page_count or page_no > after.page_count:
                 continue
             bpage, apage = before[page_no - 1], after[page_no - 1]
-            region = union(entry["deletion"])
+            # Judged on the block's own box: the deletion rects are padded per
+            # line and their union spans the gutter between two columns, which
+            # counts a neighbour's words as this block's ink.
+            region = rect_of(entry["box"]) + (-1, -1, 1, 1)
             box = rect_of(entry["box"])
             old_words = words_in(bpage, region)
             # What the source set this block in, read off the source file.
@@ -159,6 +162,7 @@ def measure(outdir):
             source_faces = sorted({s["font"] for s in source_spans})
             replacement = entry.get("replacement", "")
             after_spans = spans_in(apage, box)
+            claimed = [e for e in plan.get("expected", []) if e.get("id") == entry.get("id")]
             on_pieces, off_pieces = pieces_placed(
                 apage, [e for e in plan.get("expected", []) if e.get("id") == entry.get("id")]
             )
@@ -190,6 +194,8 @@ def measure(outdir):
                 "sourceFaces": source_faces,
                 "afterFaces": after_faces,
                 "afterPieceFaces": sorted({(p["found"] or {}).get("face", "") for p in on_pieces} - {""}),
+                "writerClaimsSource": bool(claimed) and all(e.get("fromSource") for e in claimed),
+                "facesUsed": sorted({e.get("face", "") for e in claimed} - {""}),
                 "faceKept": bool(on_pieces) and bool(source_faces) and all(
                     (p["found"] or {})["face"] in source_faces
                     for p in on_pieces
@@ -351,11 +357,13 @@ def verdict(row):
         return "patched"
     if not row["faceKept"]:
         return "substituted"
+    if not row["writerClaimsSource"]:
+        return "claim-mismatch"
     return "clean"
 
 
 VERDICTS = ("clean", "substituted", "residual", "not-removed", "missing", "misplaced",
-            "wrong-size", "patched")
+            "wrong-size", "patched", "claim-mismatch")
 
 
 def report(rows):
@@ -369,7 +377,7 @@ def report(rows):
         for row in entries:
             counts[verdict(row)] += 1
         collateral = sum(1 for r in entries if r["engine"]["lostOutside"] > 0)
-        kept = sum(1 for r in entries if r["faceKept"])
+        kept = sum(1 for r in entries if r["faceKept"] and r["writerClaimsSource"])
         print(f"{stem:14} {len(entries):6} " + " ".join(f"{counts[v]:9}" for v in VERDICTS)
               + f" {collateral:7} {kept:10}")
     return by_file

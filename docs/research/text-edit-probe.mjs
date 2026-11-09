@@ -187,7 +187,7 @@ async function install() {
         const frame = mods.draw.frameOfPage(page);
         const boxes = mods.model.deletionBoxes(paragraph);
         const before = textInRects(mods, page, boxes);
-        const report = mods.draw.deleteOriginalText(page, boxes, frame);
+        const report = mods.draw.deleteOriginalText(page, [{ id: `probe-${perBlock.length}`, boxes }], frame);
         const after = textInRects(mods, page, boxes);
         perBlock.push({
           id: `probe-${perBlock.length}`,
@@ -250,27 +250,8 @@ async function install() {
         });
       }
     }
-    // Where each edited block is going to be written, line by line, from the
-    // same layout call the writer uses: the checker compares these against what
-    // the produced file really paints, so "at the right position and size" is a
-    // measured claim and not a restating of the model.
-    const expected = [];
-    for (const object of objects) {
-      const prepared = await mods.draw.prepareTextObject(doc, object);
-      for (const line of prepared.layout.lines) {
-        for (const piece of line.pieces) {
-          if (piece.text.trim().length === 0) continue;
-          expected.push({
-            id: object.id,
-            page: object.page,
-            text: piece.text.slice(0, 60),
-            x: round2(object.box.x + piece.x),
-            baseline: round2(object.box.y + line.baseline),
-            size: round2(piece.run.size),
-          });
-        }
-      }
-    }
+    // The writer reports where it put every piece (`outcome.placed`); the checker
+    // compares that claim with what the file really renders.
     const outcome = await mods.draw.applyEdits(doc, objects);
     const saved = await mods.doc.savePDF(doc);
     return {
@@ -282,7 +263,16 @@ async function install() {
         canvasSize: entry.canvasSize,
       })),
       perBlock,
-      expected,
+      expected: outcome.placed.map((piece) => ({
+        id: piece.id,
+        page: piece.page,
+        text: piece.text.slice(0, 60),
+        x: round2(piece.x),
+        baseline: round2(piece.baseline),
+        size: round2(piece.size),
+        face: piece.face,
+        fromSource: piece.fromSource,
+      })),
       outcome,
       bytes: toB64(saved),
     };

@@ -37,6 +37,7 @@ import {
   decodePDFRawStream,
 } from '@maxwbh/pdf-lib';
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
+import { fontkit } from './doc';
 
 // ── Geometry and colour helpers ────────────────────────────────────
 
@@ -1407,7 +1408,16 @@ export interface SourceFont {
   /** Every code the font can spell, and its width in 1/1000 em. */
   codeOf(unicode: number): number | undefined;
   widthOf(code: number): number;
-  /** Characters this font cannot write — see {@link codeOf}. */
+  /**
+   * Characters this font cannot write.
+   *
+   * Three ways a face fails, all measured against the file rather than assumed:
+   * its encoding has no code for the character (`codeOf`), the code it has was
+   * left without a width by a subsetter, or — the case a **subsubset** is — the
+   * embedded font file does not carry a glyph for it at all. The last check is
+   * skipped for a font that is not embedded, because there every viewer has the
+   * whole face.
+   */
   missingFor(text: string): string[];
 }
 
@@ -1862,15 +1872,133 @@ function buildSourceFont(info: FontInfo): SourceFont {
     widthOf: (code: number) => info.widthOf(code),
     missingFor: (text: string) => {
       const missing: string[] = [];
+      const covers = embeddedCoverage(info);
       for (const character of text) {
-        const code = info.codeOf(character.codePointAt(0) as number);
+        const codePoint = character.codePointAt(0) as number;
+        const code = info.codeOf(codePoint);
         // A code the font maps but gives no width to is a glyph the producer
         // dropped when it subsetted: the viewer would paint .notdef.
-        if (code === undefined || info.widthOf(code) <= 0) missing.push(character);
+        if (code === undefined || info.widthOf(code) <= 0) {
+          missing.push(character);
+          continue;
+        }
+        if (covers && !covers(codePoint, code)) missing.push(character);
       }
       return missing;
     },
   };
+}
+
+/** A fontkit face read off a font file stream. */
+type Face = ReturnType<typeof fontkit.create>;
+
+const coverageCache = new WeakMap<PDFDict, ((codePoint: number, code: number) => boolean) | null>();
+
+/**
+ * A predicate for “the file inside this font dictionary can draw the character”.
+ *
+ * `null` means the font is **not embedded** — a bare `/Helvetica` reference — so
+ * there is no file to consult and every viewer brings its own face. Otherwise the
+ * embedded file is the truth: a producer that subsetted keeps only the glyphs the
+ * document used, and writing a character the subset lacks paints .notdef — the
+ * tofu box the user reads as “the font changed and broke”.
+ *
+ * Checked two ways because a subsetting producer may keep the character map, the
+ * glyph, or only the glyph: the face's own cmap, then the `CIDToGIDMap` (or the
+ * identity mapping an Identity-H CID font uses) into the glyph list.
+ */
+function embeddedCoverage(
+  info: FontInfo,
+): ((codePoint: number, code: number) => boolean) | null {
+  const cached = coverageCache.get(info.dict);
+  if (cached !== undefined) return cached;
+  const made = buildCoverage(info);
+  coverageCache.set(info.dict, made);
+  return made;
+}
+
+function buildCoverage(
+  info: FontInfo,
+): ((codePoint: number, code: number) => boolean) | null {
+  const bytes = embeddedFontBytes(info.dict);
+  if (!bytes) return null;
+  let face: Face;
+  try {
+    face = fontkit.create(bytes) as Face;
+  } catch {
+    return null;
+  }
+  if (!face) return null;
+  const cidToGid = cidToGidMap(info.dict);
+  const identity = info.subtype === '/Type0';
+  return (codePoint: number, code: number) => {
+    try {
+      if (face.glyphForCodePoint(codePoint)?.id) return true;
+    } catch {
+      // A CFF or Type3-ish face with no cmap: fall through to the glyph index.
+    }
+    const gid = cidToGid ? (cidToGid.get(code) ?? (identity ? code : undefined)) : identity ? code : undefined;
+    if (gid === undefined) return false;
+    const total = (face as unknown as { numGlyphs?: number }).numGlyphs ?? 0;
+    return gid > 0 && (total === 0 || gid < total);
+  };
+}
+
+/** The bytes of `/FontFile`, `/FontFile2` or `/FontFile3`, through the descriptor. */
+function embeddedFontBytes(dict: PDFDict): Uint8Array | null {
+  const context = dict.context;
+  const descriptors = [
+    lookupDict(context, dict, 'FontDescriptor'),
+    descriptorOfDescendant(context, dict),
+  ].filter((entry): entry is PDFDict => entry !== undefined && entry instanceof PDFDict);
+  for (const descriptor of descriptors) {
+    for (const key of ['FontFile2', 'FontFile', 'FontFile3']) {
+      const stream = context.lookup(descriptor.get(PDFName.of(key)));
+      if (stream instanceof PDFStream) {
+        try {
+          return streamBytes(stream);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function lookupDict(context: PDFContext, dict: PDFDict, key: string): PDFDict | undefined {
+  const value = context.lookup(dict.get(PDFName.of(key)));
+  if (value instanceof PDFArray) {
+    const first = context.lookup(value.get(0));
+    return first instanceof PDFDict ? first : undefined;
+  }
+  return value instanceof PDFDict ? value : undefined;
+}
+
+/** A CID font keeps its `/FontDescriptor` (and so its font file) on the descendant. */
+function descriptorOfDescendant(context: PDFContext, dict: PDFDict): PDFDict | undefined {
+  const descendant = lookupDict(context, dict, 'DescendantFonts');
+  return descendant ? lookupDict(context, descendant, 'FontDescriptor') : undefined;
+}
+
+/** `/CIDToGIDMap` as a stream of 16-bit glyph ids, when the font carries one. */
+function cidToGidMap(dict: PDFDict): Map<number, number> | null {
+  const context = dict.context;
+  const descendant = lookupDict(context, dict, 'DescendantFonts');
+  const raw = descendant?.get(PDFName.of('CIDToGIDMap'));
+  if (!raw) return null;
+  if (raw instanceof PDFName) return null; // `/Identity`
+  const stream = context.lookup(raw);
+  if (!(stream instanceof PDFStream)) return null;
+  let bytes: Uint8Array;
+  try {
+    bytes = streamBytes(stream);
+  } catch {
+    return null;
+  }
+  const map = new Map<number, number>();
+  for (let i = 0; i + 1 < bytes.length; i += 2) map.set(i / 2, (bytes[i] << 8) | bytes[i + 1]);
+  return map;
 }
 
 /**
@@ -2546,6 +2674,23 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
 }
 
 /**
+ * The distinct faces a page's own text is set in, including inside forms.
+ *
+ * `edit-pdf-text` reads these to keep a block in the font the producer used:
+ * in-place editing runs on the document that is open, so its font dictionaries —
+ * encodings, widths, embedded (often subsetted) files — are all available, and a
+ * rewrite that consults them looks like the page instead of like the editor.
+ */
+export function pageTextFaces(page: PDFPage): SourceFont[] {
+  const out: SourceFont[] = [];
+  for (const glyph of walkText(page, pageContentOps(page), { forms: true }).glyphs) {
+    const source = glyph.fontSource;
+    if (source && !out.some((face) => face.dict === source.dict)) out.push(source);
+  }
+  return out;
+}
+
+/**
  * The runs a page paints **inside** `rects`, by the same rule a deletion uses:
  * a glyph belongs to a box when its baseline is in the box, not merely when its
  * em box grazes it. Exported because a leftover check and a deletion have to
@@ -2648,6 +2793,22 @@ export interface TextRemoval {
   /** True only when measured pixels overlap the region — see `RemovalReason`. */
   needsRasterFallback: boolean;
   reasons: RemovalReason[];
+  /**
+   * Rects of the glyphs still inside the target after the rewrite, per owner —
+   * the exact area a caller must cover when it cannot remove them. Sized to the
+   * glyphs, never to the block's box, so a patch hides the words and not the
+   * line around them.
+   */
+  leftoverRects: Record<string, ContentRect[]>;
+  /**
+   * The faces the deleted runs were set in, per owner.
+   *
+   * `owners` labels each rect (the text editor names a rect with the block it
+   * came from), and an in-place rewrite wants to continue in the document's own
+   * font rather than substituting one — the font object is right there in the
+   * file being edited, so this is how it reaches the writer.
+   */
+  faces: Record<string, SourceFont[]>;
 }
 
 const NO_REMOVAL: TextRemoval = {
@@ -2659,6 +2820,8 @@ const NO_REMOVAL: TextRemoval = {
   formsRewritten: 0,
   needsRasterFallback: false,
   reasons: [],
+  faces: {},
+  leftoverRects: {},
 };
 
 /**
@@ -2675,12 +2838,28 @@ const NO_REMOVAL: TextRemoval = {
  * A form that another page reaches as well is copied before it is rewritten, so
  * removing a word here does not remove it there.
  */
-export function removeTextInRects(page: PDFPage, rects: ContentRect[]): TextRemoval {
+export function removeTextInRects(
+  page: PDFPage,
+  rects: ContentRect[],
+  options: { owners?: string[] } = {},
+): TextRemoval {
   const targets = rects.filter((r) => r.width > 0 || r.height > 0);
+  const owners = rects
+    .map((rect, index) => ({ rect, owner: options.owners?.[index] ?? '' }))
+    .filter((entry) => entry.rect.width > 0 || entry.rect.height > 0);
   if (targets.length === 0) return { ...NO_REMOVAL };
   const walk = walkText(page, pageContentOps(page), { forms: true });
   const streams = new Map(walk.streams.map((stream) => [stream.key, stream]));
-  const hits = walk.glyphs.filter((glyph) => targets.some((rect) => ownsGlyph(glyph, rect)));
+  const hits = walk.glyphs.filter((glyph) => owners.some((entry) => ownsGlyph(glyph, entry.rect)));
+  // The face each owner's runs were drawn in, so a rewrite can keep it.
+  const faces: Record<string, SourceFont[]> = {};
+  for (const glyph of hits) {
+    const owner = owners.find((entry) => ownsGlyph(glyph, entry.rect))?.owner;
+    const source = glyph.fontSource;
+    if (!owner || !source) continue;
+    const list = faces[owner] ?? (faces[owner] = []);
+    if (!list.some((face) => face.dict === source.dict)) list.push(source);
+  }
   const reasons = new Set<RemovalReason>();
   if (walk.rasters.some((box) => targets.some((rect) => intersects(box, rect)))) {
     reasons.add('image-behind');
@@ -2697,6 +2876,8 @@ export function removeTextInRects(page: PDFPage, rects: ContentRect[]): TextRemo
       unmatchedRects,
       needsRasterFallback: reasons.has('image-behind'),
       reasons: [...reasons],
+      faces,
+      leftoverRects: rectsByOwner(hits, owners),
     };
   }
 
@@ -2753,7 +2934,7 @@ export function removeTextInRects(page: PDFPage, rects: ContentRect[]): TextRemo
   // a leftover count is the difference between "removed" and "claimed removed".
   const after = walkText(page, pageContentOps(page), { forms: true });
   const leftover = after.glyphs.filter(
-    (glyph) => glyph.text.trim().length > 0 && targets.some((rect) => ownsGlyph(glyph, rect)),
+    (glyph) => glyph.text.trim().length > 0 && owners.some((entry) => ownsGlyph(glyph, entry.rect)),
   ).length;
 
   return {
@@ -2765,7 +2946,46 @@ export function removeTextInRects(page: PDFPage, rects: ContentRect[]): TextRemo
     formsRewritten,
     needsRasterFallback: reasons.has('image-behind'),
     reasons: [...reasons],
+    faces,
+    leftoverRects: rectsByOwner(after.glyphs, owners),
   };
+}
+
+/** Union of each owner's leftover glyph rects, for a patch sized to the words. */
+function rectsByOwner(
+  glyphs: TextSegment[],
+  owners: { rect: ContentRect; owner: string }[],
+): Record<string, ContentRect[]> {
+  const out: Record<string, ContentRect[]> = {};
+  for (const glyph of glyphs) {
+    if (glyph.text.trim().length === 0) continue;
+    const owner = owners.find((entry) => ownsGlyph(glyph, entry.rect))?.owner;
+    if (!owner) continue;
+    const list = out[owner] ?? (out[owner] = []);
+    const rect = glyph.rect;
+    // Grow the owner's box when this glyph touches it: a line of leftover words
+    // is one patch, not twenty-two, and the patch still only covers glyphs.
+    const known = list.find((entry) => boxesTouch(entry, rect));
+    if (known) {
+      const x0 = Math.min(known.x, rect.x);
+      const y0 = Math.min(known.y, rect.y);
+      known.x = x0;
+      known.y = y0;
+      known.width = Math.max(known.x + known.width, rect.x + rect.width) - x0;
+      known.height = Math.max(known.y + known.height, rect.y + rect.height) - y0;
+      continue;
+    }
+    list.push({ ...rect });
+  }
+  return out;
+}
+
+/** Two glyph boxes on the same line, close enough to hide with one patch. */
+function boxesTouch(a: ContentRect, b: ContentRect): boolean {
+  const rowsOverlap = a.y < b.y + b.height && b.y < a.y + a.height;
+  if (!rowsOverlap) return false;
+  const gapX = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width));
+  return gapX < Math.max(2, Math.min(a.height, b.height) * 0.5);
 }
 
 /**
