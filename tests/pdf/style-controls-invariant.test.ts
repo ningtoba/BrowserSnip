@@ -130,6 +130,15 @@ const ALL_FIELDS = PDF_TOOLS.flatMap((tool) =>
 );
 
 describe('no rail field is wired to the form and not to the export', () => {
+  /**
+   * Both rules in this block walk every line of every tool-layer file once per
+   * declared field — 511 fields × ~90 files — which measured 6.2 s on a loaded CI
+   * runner against vitest's 5 s default. It failed two pushes in a row on commits
+   * that changed no field at all (`42590325472`, `42591669587`), so the ceiling is
+   * raised here rather than left to re-runs: the assertion is untouched.
+   */
+  const SCAN_TIMEOUT = 120_000;
+
   it('names every field it declares somewhere in the tool layer', () => {
     const unread: string[] = [];
     for (const { tool, field } of ALL_FIELDS) {
@@ -137,7 +146,7 @@ describe('no rail field is wired to the form and not to the export', () => {
       if (readersOf(field.key).length === 0) unread.push(`${tool.id}.${field.key} (${field.type})`);
     }
     expect(unread).toEqual([]);
-  });
+  }, SCAN_TIMEOUT);
 
   it('reads every field inside the module that declares the tool', () => {
     // Per-tool, not per-layer: a field declared in the same file as the code that
@@ -170,7 +179,7 @@ describe('no rail field is wired to the form and not to the export', () => {
       writeFileSync('/tmp/style-census.txt', `${unread.length}\n${unread.join('\n')}`);
     }
     expect(unread.length).toBeLessThanOrEqual(33);
-  });
+  }, SCAN_TIMEOUT);
 
   it('reports the fields whose read lives in a shared reader, not in the run', () => {
     const shared = ALL_FIELDS.filter(({ field }) => SHARED_READERS[field.key]);
