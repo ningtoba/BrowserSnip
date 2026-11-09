@@ -50,7 +50,8 @@ import {
 } from '@maxwbh/pdf-lib';
 import { organizeTools } from '@/lib/pdf/tools/organize';
 import { resolvePages } from '@/lib/pdf/core/pages';
-import { saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
+import { saveGateOnly } from './gate-harness';
 import { isToolInputError } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
@@ -247,7 +248,9 @@ async function zipEntries(blob: Blob): Promise<string[]> {
 /**
  * Lock a document the way this app's `protect` does: a password gate and the `/P`
  * flags over the crypt filter `/None` — "the data are not encrypted", so the page
- * streams are copied through in the clear.
+ * streams are copied through in the clear. Built by `tests/pdf/gate-harness.ts`
+ * rather than by `saveEncrypted`, which writes AES-128 now: this fixture is the
+ * shape, not the tool, and it has to keep meaning it.
  *
  * This helper used to be `doc.save({ encrypt: … })`, and that one fixture is why
  * the `encrypted-inputs` defect shipped. `@maxwbh/pdf-lib` writes an `/Encrypt`
@@ -260,7 +263,7 @@ async function zipEntries(blob: Blob): Promise<string[]> {
  */
 async function gateLock(bytes: Uint8Array, password = 'hunter2'): Promise<Uint8Array> {
   const doc = await open(bytes);
-  return saveEncrypted(doc, { userPassword: password, ownerPassword: 'owner' });
+  return saveGateOnly(doc, { userPassword: password, ownerPassword: 'owner' });
 }
 
 /** `tests/fixtures/encrypted/` — locked by libqpdf 12.3.2, never by this engine. */
@@ -890,13 +893,17 @@ describe('inputs are handled honestly', () => {
 
     const outcome = await run('rotate', { degrees: 90, pages: 'all' }, [locked], 'hunter2');
     const bytes = await bytesOf(outcome);
-    // Rotating a protected contract must not quietly un-protect it: the password
-    // is re-applied and the run says so. (The runner skips this for tools whose
-    // own job is removing protection — see `stripsProtection`.)
+    // Rotating a protected contract must not quietly un-protect it: the lock is
+    // carried over and the run says so. (The runner skips this for tools whose own
+    // job is removing protection — see `stripsProtection`.) Carried, not re-issued:
+    // a `/None` gate is not decrypted on the way in, so the copy keeps the source's
+    // dictionary and stays a gate rather than being upgraded by an edit that asked
+    // for a turn and nothing else.
     expect(text(bytes)).toMatch(/\/Encrypt/);
+    expect(text(bytes)).not.toMatch(/\/CFM/);
     const doc = await PDFDocument.load(bytes, { password: 'hunter2' });
     expect(doc.getPages()[0].getRotation().angle).toBe(90);
-    expect(warn(outcome)).toMatch(/re-applied/i);
+    expect(warn(outcome)).toMatch(/kept this file's own protection[\s\S]*no cipher/i);
     // …and the part the self-encrypted fixture could not claim, because it never
     // had a cipher to lose: the gate copies the page streams in the clear, so the
     // words are still on the sheet after the rewrite.
@@ -911,12 +918,17 @@ describe('inputs are handled honestly', () => {
     const ciphered = fileOf(encryptedFixture('aes-128-user.pdf'), 'aes-128.pdf');
     const outcome = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2');
     const bytes = await bytesOf(outcome);
-    // The gate is re-issued over the decrypted copy — this app's honest shape: a
-    // password and the /P flags with no crypt filter, rather than a foreign cipher
-    // claim laid on plaintext.
+    // The source's own AES-128 lock goes back on: same `/O`, `/U`, `/Perms`, `/P`
+    // and `/ID[0]`, so the password the user holds still opens the copy and no new
+    // key was minted by an edit that never mentioned one.
     expect(text(bytes)).toMatch(/\/Encrypt/);
-    expect(warn(outcome)).toMatch(/re-applied/i);
-    const produced = await PDFDocument.load(bytes, { password: 'hunter2', updateMetadata: false });
+    expect(text(bytes)).toMatch(/\/CFM \/AESV2/);
+    expect(warn(outcome)).toMatch(/kept this file's own protection/i);
+    // The words are not reachable without the read path any more: the copy is real
+    // ciphertext, which is the whole point of this row's write half.
+    const vendorView = await PDFDocument.load(bytes, { password: 'hunter2', updateMetadata: false });
+    expect(() => drawnText(vendorView, 0)).toThrow(/could not be decompressed/);
+    const produced = await openPDF(bytes, { password: 'hunter2' });
     expect(produced.getPageCount()).toBe(3);
     expect(produced.getPages().every((page) => page.getRotation().angle === 90)).toBe(true);
     expect(drawnText(produced, 0)).toMatch(/Lighthouse Inventory 1887 page 1/);

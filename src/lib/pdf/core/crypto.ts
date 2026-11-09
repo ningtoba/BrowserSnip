@@ -66,7 +66,8 @@ import {
   decodePDFRawStream,
   rc4Encrypt,
 } from '@maxwbh/pdf-lib';
-import type { PDFContext, PDFDocument, PDFObject } from '@maxwbh/pdf-lib';
+import { PDFDocument, PDFObject } from '@maxwbh/pdf-lib';
+import type { PDFContext } from '@maxwbh/pdf-lib';
 import { md } from 'node-forge';
 
 /** The strength names this app decrypts, and the guard reports as supported. */
@@ -344,7 +345,14 @@ function resolveFilter(dict: PDFDict, name: string | null): Filter {
   return { ok: false, reason: method === 'AESV3' ? 'aes-256' : 'unsupported-filter' };
 }
 
-interface Cipher {
+/**
+ * One file's cipher, in the shape both directions work in.
+ *
+ * Read off an `/Encrypt` dictionary by `readCipher`, or assembled by
+ * `encryptDocument` for the file it is about to write; `RetainedLock` carries one
+ * so an edit can be sealed with the key its source already used.
+ */
+export interface Cipher {
   strength: CipherStrength;
   revision: number;
   /** The method in force over streams, and over strings; `null` is plaintext. */
@@ -532,7 +540,7 @@ function userSecretsFromOwner(cipher: Cipher, ownerPassword: string): Uint8Array
 }
 
 /** Algorithm 1: the per-object key, salted by object number, generation and `/sAlT`. */
-function objectKey(cipher: Cipher, fileKey: Uint8Array, ref: PDFRef, method: Method): Uint8Array {
+function objectKey(fileKey: Uint8Array, ref: PDFRef, method: Method): Uint8Array {
   const seed = Uint8Array.from([
     ...fileKey,
     ref.objectNumber & 0xff,
@@ -753,7 +761,7 @@ function cryptBytes(
   data: Uint8Array,
   mode: CipherMode,
 ): Promise<Uint8Array> | Uint8Array {
-  const key = objectKey(cipher, fileKey, ref, method);
+  const key = objectKey(fileKey, ref, method);
   // RC4 is its own inverse; AES-CBC is not, and only the AES half needs Web
   // Crypto, which is why the pass is asynchronous whatever the strength.
   if (method === 'RC4') return rc4Encrypt(key, data);
@@ -986,11 +994,7 @@ export async function encryptDocument(
 
   const perms = await permsValue(cipher, fileKey);
   const dict = encryptDictionary(context, cipher, owner, user, perms);
-  // A document loaded with `ignoreEncryption` still carries its source's
-  // dictionary; leaving it registered would cipher a stale `/O` like any other
-  // string and describe the file twice.
-  const stale = context.trailerInfo.Encrypt;
-  if (stale instanceof PDFRef) context.delete(stale);
+  discardEncryptDicts(context);
   const ref = context.register(dict);
   context.trailerInfo.Encrypt = ref;
 
@@ -1002,14 +1006,59 @@ export async function encryptDocument(
 
   let streams = 0;
   let strings = 0;
+  ({ streams, strings } = await cipherIndirectObjects(context, cipher, fileKey, ref));
+
+  return { strength: cipher.strength, permissions: cipher.permissions, fileKey, streams, strings };
+}
+
+/**
+ * Remove every `/Encrypt` dictionary the context still holds.
+ *
+ * Both write paths need it. A document loaded with `ignoreEncryption` carries its
+ * source's dictionary, and one that `decryptDocument` opened keeps the object even
+ * though the pass dropped the trailer entry that pointed at it — and an orphaned
+ * dictionary is still an indirect object, so a cipher pass would run over its `/O`
+ * and `/U` like any other string and write the file twice.
+ */
+function discardEncryptDicts(context: PDFContext): void {
+  for (const [ref, object] of Array.from(context.enumerateIndirectObjects())) {
+    if (
+      object instanceof PDFDict
+      && object.lookupMaybe(PDFName.of('Filter'), PDFName)?.decodeText() === 'Standard'
+    ) {
+      context.delete(ref);
+    }
+  }
+}
+
+/**
+ * Cipher every indirect object of a context except the encryption dictionary.
+ *
+ * The one walk both write paths take, so a file this app ciphered and a file it
+ * re-sealed with its source's key cannot drift apart in what they leave in the
+ * clear.
+ */
+async function cipherIndirectObjects(
+  context: PDFContext,
+  cipher: Cipher,
+  fileKey: Uint8Array,
+  encryptRef: PDFRef,
+): Promise<{ streams: number; strings: number }> {
+  // The method the cipher carries, not the one this module prefers to write: a
+  // re-sealed RC4-128 file has to come back RC4-128, or its `/CFM` would be a
+  // claim the bytes do not honour — the exact defect `protect` was written up for.
+  const method = cipher.stream;
+  if (!method) return { streams: 0, strings: 0 };
+  let streams = 0;
+  let strings = 0;
   for (const [objectRef, object] of context.enumerateIndirectObjects()) {
     // The encryption dictionary is exempt from the cipher it describes (ISO
     // 32000-1 §7.3.2.1): ciphering `/O` or `/U` would make the file unopenable.
-    if (refKey(objectRef) === refKey(ref)) continue;
+    if (refKey(objectRef) === refKey(encryptRef)) continue;
     if (object instanceof PDFStream) {
       // `getContents()` is the *encoded* payload: a `PDFFlateStream` deflates on
       // demand, and the cipher belongs outside the flate, not inside it.
-      const payload = await cryptBytes(cipher, fileKey, objectRef, WRITE_METHOD, object.getContents(), 'seal');
+      const payload = await cryptBytes(cipher, fileKey, objectRef, method, object.getContents(), 'seal');
       context.assign(objectRef, PDFRawStream.of(object.dict, payload));
       streams += 1;
       strings += await rewriteStrings(object.dict, objectRef, cipher, fileKey, 'seal');
@@ -1017,8 +1066,123 @@ export async function encryptDocument(
     }
     strings += await rewriteStrings(object, objectRef, cipher, fileKey, 'seal');
   }
+  return { streams, strings };
+}
 
-  return { strength: cipher.strength, permissions: cipher.permissions, fileKey, streams, strings };
+/* ── keeping a lock the app did not issue ────────────────────────────────── */
+
+/**
+ * The protection of the file a document was read from, kept whole.
+ *
+ * `core/doc.ts:openPDF` undoes a cipher to hand a tool plaintext, and undoing it
+ * drops the `/Encrypt` entry — so an edit saved afterwards is an open file unless
+ * somebody puts the lock back. Re-deriving it from the password the user typed
+ * would change the owner password as a side effect (measured: MuPDF answers 0 and
+ * qpdf `PasswordError` to the original owner secret afterwards), so the lock is
+ * carried instead: the source's own dictionary, the file key that opened it, and
+ * the `/ID` element `/U` and `/Perms` were both derived over.
+ */
+export interface RetainedLock {
+  /** The cipher the source selects; `null` for a `/None` gate, whose bytes are plaintext. */
+  cipher: Cipher | null;
+  /** The file key the source's secret yields, or an empty array for a gate. */
+  fileKey: Uint8Array;
+  /** The source's `/Encrypt` dictionary, copied by value into the edited document. */
+  dict: PDFDict;
+  /** `/ID[0]`: the salt of `/U` and `/Perms`, which must not change. */
+  idFirst: Uint8Array;
+  /** Which secret opened the source, for the sentence the run reports. */
+  openedAs: 'user' | 'owner' | 'empty' | null;
+}
+
+/**
+ * Read the lock of a source file, with the key that opens it.
+ *
+ * `null` means there is nothing to carry forward: no dictionary, a cipher this
+ * module does not read, a shape it refuses outright (object streams, a cipher
+ * claim over plaintext), or a lock the secret on offer did not open. A `/None`
+ * gate is *not* a null: it is a lock the user has, and it comes back with
+ * `cipher: null` so the copy keeps the prompt and ciphers nothing.
+ */
+export async function retainedLock(
+  bytes: Uint8Array,
+  password?: string,
+): Promise<RetainedLock | null> {
+  let source: PDFDocument;
+  try {
+    source = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  } catch {
+    return null;
+  }
+  const dict = encryptionDict(source.context);
+  const idFirst = documentId(source.context);
+  if (!dict || !idFirst) return null;
+  const read = readCipher(source.context, dict);
+  if (!read.ok && read.reason !== 'no-cipher') return null;
+  if (read.ok && readObstacle(source)) return null;
+  // A gate has no key to hand back, and no secret to name: nothing was checked,
+  // because nothing needed checking to leave the bytes readable.
+  if (!read.ok) return { cipher: null, fileKey: new Uint8Array(0), dict, idFirst, openedAs: null };
+  const verdict = assessAccess(source, password);
+  if (verdict.kind !== 'opens') return null;
+  return { cipher: read.cipher, fileKey: verdict.fileKey, dict, idFirst, openedAs: verdict.openedAs };
+}
+
+/**
+ * Seal a document with a lock it did not create, and write the bytes' trailer.
+ *
+ * The dictionary is copied **by value** into the target context rather than moved,
+ * because the edited document is usually a different `PDFContext` (a page copy
+ * builds a fresh one), and a reference into the source's context would dangle.
+ * `/ID[1]` is given a fresh value while `/ID[0]` is kept, which is what the spec
+ * asks of a modified file and what leaves `/U` and `/Perms` standing.
+ */
+export async function resealDocument(
+  doc: PDFDocument,
+  lock: RetainedLock,
+): Promise<{ streams: number; strings: number }> {
+  const context = doc.context;
+  const dict = copyIntoContext(context, lock.dict, lock.dict.context);
+  if (!(dict instanceof PDFDict)) return { streams: 0, strings: 0 };
+  discardEncryptDicts(context);
+  const ref = context.register(dict);
+  context.trailerInfo.Encrypt = ref;
+
+  const ids = PDFArray.withContext(context);
+  ids.push(PDFHexString.fromBytes(lock.idFirst));
+  ids.push(PDFHexString.fromBytes(randomBytes(lock.idFirst.length || 16)));
+  context.trailerInfo.ID = ids;
+
+  if (!lock.cipher) return { streams: 0, strings: 0 };
+  return cipherIndirectObjects(context, lock.cipher, lock.fileKey, ref);
+}
+
+/** Copy a parsed value out of one context and into another, by value. */
+function copyIntoContext(context: PDFContext, value: unknown, from: PDFContext, depth = 0): PDFObject | undefined {
+  if (depth > 12) return undefined;
+  if (value instanceof PDFRef) return copyIntoContext(context, from.lookup(value), from, depth + 1);
+  if (value instanceof PDFDict) {
+    const copy = PDFDict.withContext(context);
+    for (const [key, item] of value.entries()) {
+      const carried = copyIntoContext(context, item, from, depth + 1);
+      if (carried) copy.set(key, carried);
+    }
+    return copy;
+  }
+  if (value instanceof PDFArray) {
+    const copy = PDFArray.withContext(context);
+    for (const item of value.asArray()) {
+      const carried = copyIntoContext(context, item, from, depth + 1);
+      if (carried) copy.push(carried);
+    }
+    return copy;
+  }
+  // The leaf types — names, numbers, booleans, `null` and the two string
+  // spellings — carry no context and no identity, so they are shared as they are.
+  // A stream is dropped rather than aliased across contexts: an encryption
+  // dictionary holds none, and moving one would move its bytes' owner too.
+  if (value instanceof PDFStream) return undefined;
+  return value instanceof PDFObject ? value : undefined;
 }
 
 /** Keep the type import honest: this module reads parsed values and builds dictionaries. */

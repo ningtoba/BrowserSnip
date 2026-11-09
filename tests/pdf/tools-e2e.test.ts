@@ -350,11 +350,17 @@ describe('pdf tools end to end', () => {
       allowAssembling: false,
     });
     const protectedBytes = await firstPdf(protectedOutcome);
-    // The gate is what this browser writes; a strength name here would be the
-    // claim the triage measured against the bytes and found absent.
+    // The strength this browser writes, named on the card and in the dictionary —
+    // and no other name, which is the claim the triage measured against the bytes
+    // and found absent.
+    const said = Buffer.from(protectedBytes).toString('latin1');
     expect(protectedOutcome.message).toMatch(/open password/);
-    expect(protectedOutcome.message).toMatch(/no crypt filter/);
-    expect(Buffer.from(protectedBytes).toString('latin1')).toMatch(/\/Encrypt/);
+    expect(protectedOutcome.message).toMatch(/ciphered in AES-128/);
+    expect(protectedOutcome.message).not.toMatch(/AES-256|RC4/);
+    expect(said).toMatch(/\/Encrypt/);
+    expect(said).toMatch(/\/CFM \/AESV2/);
+    // The words are not in the file for a tool that ignores the dictionary.
+    expect(said).not.toMatch(/Lighthouse|Inventory/);
 
     // Reading it without the password must fail, and the error must say why.
     await expect(

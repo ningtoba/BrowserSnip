@@ -22,7 +22,8 @@ import { join, resolve } from 'node:path';
 import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import { assessAccess, decryptDocument } from '@/lib/pdf/core/crypto';
-import { saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
+import { saveGateOnly } from './gate-harness';
 import { streamBytes } from '@/lib/pdf/core/content';
 
 const FIXTURES = resolve(process.cwd(), 'tests/fixtures/encrypted');
@@ -217,17 +218,36 @@ describe('the ciphers this module does not claim', () => {
     expect(() => streamBytes(firstContentStream(doc, doc.getPages()[0]))).toThrow();
   });
 
-  it('calls this app’s own password gate a gate, not a cipher', async () => {
-    const bytes = await saveEncrypted(await loadRaw('plain.pdf'), {
-      userPassword: PASSWORD,
-      ownerPassword: PASSWORD,
-    });
+  it('calls a password gate a gate, not a cipher — the shape this app used to write', async () => {
+    // Built by the gate harness rather than by `saveEncrypted`, because that writer
+    // runs AES-128 now: what has to keep being classified `gate-only` is a file
+    // somebody else left in the clear behind a prompt, including every copy this
+    // app protected before the cipher landed.
+    const bytes = await saveGateOnly(await loadRaw('plain.pdf'), { userPassword: PASSWORD, ownerPassword: PASSWORD });
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
     expect(assessAccess(doc, PASSWORD)).toEqual({ kind: 'gate-only' });
     expect(await decryptDocument(doc, PASSWORD))
       .toMatchObject({ kind: 'unsupported', reason: 'no-cipher' });
     // Its streams were never ciphered, so its words are readable untouched.
     expect(pageWords(doc)[0]).toContain(SHEET_TEXT[0]);
+  });
+
+  it('reads back the file this app now writes, at the strength it names', async () => {
+    const bytes = await saveEncrypted(await loadRaw('plain.pdf'), {
+      userPassword: PASSWORD,
+      ownerPassword: PASSWORD,
+    });
+    const sealed = () => PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    expect(assessAccess(await sealed(), PASSWORD))
+      .toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'user' });
+    // Before the pass its page will not even inflate, and after it the words are
+    // there: the two directions of this module, on bytes this module wrote.
+    const shut = await sealed();
+    expect(() => pageWords(shut)).toThrow(/could not be decompressed/);
+    expect(await decryptDocument(await sealed(), PASSWORD))
+      .toMatchObject({ kind: 'decrypted', strength: 'AES-128' });
+    const opened = await openPDF(bytes, { password: PASSWORD });
+    expect(pageWords(opened)[0]).toContain(SHEET_TEXT[0]);
   });
 });
 

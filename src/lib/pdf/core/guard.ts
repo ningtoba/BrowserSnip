@@ -212,13 +212,15 @@ export function decodePermissions(p: number): PdfPermissions {
  *   **effective crypt filter is `/None`**, "the data are not encrypted"
  *   (ISO 32000-1 §7.6.3.2, §7.4.4: `/StmF` and `/StrF` both default to it, and an
  *   empty `/CF` selects nothing else). Every stream is plaintext, so this app can
- *   read the page, copy it and write it back. This is what `protect` writes, and
- *   the `encrypted-inputs` rig confirms the round trip keeps its words.
+ *   read the page, copy it and write it back. This is the shape `protect` wrote
+ *   until `core/crypto.ts:encryptDocument` landed, and files in the wild still
+ *   carry it; the `encrypted-inputs` rig confirms the round trip keeps its words.
  * - `ciphered` — `/StmF` or `/StrF` resolves to `RC4`, `AESV2` or `AESV3` (or
  *   `/V` is 1-3, where RC4 is implied and there is no filter to opt out of). The
- *   bytes are ciphertext. `core/doc.ts:openPDF` never decrypts them, so a tool
- *   that copies pages hands back ciphertext that its writer then labels
- *   plaintext, and every reader that believes the label draws blank paper.
+ *   bytes are ciphertext. `core/doc.ts:openPDF` asks `core/crypto` to undo RC4-128
+ *   and AES-128 and refuses the rest by name; rewriting a refused one copies
+ *   ciphertext that the writer then labels plaintext, and every reader that
+ *   believes the label draws blank paper.
  *
  * Refusing both would be its own regression, so the guard asks which of these two
  * a file is — see `cipheredInputError`.
@@ -516,6 +518,12 @@ interface LoadOutcome {
   doc: PDFDocument | null;
   /** The source dictionary's own verdict, obstacles included. */
   encryption: PdfEncryption;
+  /**
+   * `/P` decoded from the source dictionary, on the same rule as `encryption`: a
+   * file this app wrote is now AES-128, so the document handed back has been
+   * decrypted and no longer carries the entry the flags were read from.
+   */
+  permissions: PdfPermissions | null;
   encrypted: boolean;
   passwordAccepted: boolean;
   /** Which secret opened a ciphered document, from the dictionary's own check. */
@@ -524,6 +532,18 @@ interface LoadOutcome {
   opensWithEmptyPassword: boolean;
   refused: ToolInputErrorCode | null;
   detail?: unknown;
+}
+
+/**
+ * `/P` decoded from an encryption dictionary, or `null` when there is none.
+ *
+ * Always read from the dictionary **as the file carries it**, never from the
+ * document a tool holds: undoing a cipher drops the `/Encrypt` entry, and the
+ * permissions a report quotes belong to the file the user was given.
+ */
+function permissionsOf(dict: PDFDict | undefined): PdfPermissions | null {
+  const raw = dict?.lookupMaybe(PDFName.of('P'), PDFNumber)?.asNumber();
+  return typeof raw === 'number' ? decodePermissions(raw) : null;
 }
 
 /**
@@ -542,6 +562,7 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     return {
       doc: null,
       encryption: UNREADABLE_ENCRYPTION,
+      permissions: null,
       encrypted: looksEncrypted(bytes),
       passwordAccepted: false,
       passwordLevel: null,
@@ -562,13 +583,14 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     : dict
       ? obstacles(classifyEncryption(dict), lenient)
       : UNREADABLE_ENCRYPTION;
+  const permissions = permissionsOf(dict);
   if (!encrypted) {
-    return { doc: lenient, encryption, encrypted: false, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: null };
+    return { doc: lenient, encryption, permissions, encrypted: false, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: null };
   }
   // A file whose crypt filter names a real cipher is answered by the module that
   // can undo it, not by a probe load: `core/crypto` checks `/U` at the revision
   // the file actually uses, keeps the two secrets apart, and hands back plaintext.
-  const ciphered = await cipheredOutcome(lenient, encryption, password);
+  const ciphered = await cipheredOutcome(lenient, encryption, password, permissions);
   if (ciphered) return ciphered;
   // An `/Encrypt` entry is not a lock. Two different passwords protect a PDF: the
   // **user** password gates opening, the owner password only gates permission
@@ -582,6 +604,7 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     return {
       doc: open,
       encryption,
+      permissions,
       encrypted: true,
       passwordAccepted: Boolean(password),
       passwordLevel: password ? null : 'empty',
@@ -592,17 +615,18 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
     /* the user password is real — fall through to it */
   }
   if (!password) {
-    return { doc: lenient, encryption, encrypted: true, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: 'PASSWORD_REQUIRED' };
+    return { doc: lenient, encryption, permissions, encrypted: true, passwordAccepted: false, passwordLevel: null, opensWithEmptyPassword: false, refused: 'PASSWORD_REQUIRED' };
   }
   try {
     const opened = await PDFDocument.load(bytes, { password, updateMetadata: false });
-    return { doc: opened, encryption, encrypted: true, passwordAccepted: true, passwordLevel: 'user', opensWithEmptyPassword: false, refused: null };
+    return { doc: opened, encryption, permissions, encrypted: true, passwordAccepted: true, passwordLevel: 'user', opensWithEmptyPassword: false, refused: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const crypto = /encrypt|password/i.test(message);
     return {
       doc: lenient,
       encryption,
+      permissions,
       encrypted: true,
       passwordAccepted: false,
       passwordLevel: null,
@@ -626,7 +650,8 @@ async function load(bytes: Uint8Array, password?: string): Promise<LoadOutcome> 
 async function cipheredOutcome(
   lenient: PDFDocument,
   encryption: PdfEncryption,
-  password?: string,
+  password: string | undefined,
+  permissions: PdfPermissions | null,
 ): Promise<LoadOutcome | null> {
   const verdict = assessAccess(lenient, password);
   if (verdict.kind === 'gate-only' || verdict.kind === 'unsupported') return null;
@@ -634,6 +659,7 @@ async function cipheredOutcome(
     return {
       doc: lenient,
       encryption,
+      permissions,
       encrypted: true,
       passwordAccepted: false,
       passwordLevel: null,
@@ -645,6 +671,7 @@ async function cipheredOutcome(
     return {
       doc: lenient,
       encryption,
+      permissions,
       encrypted: true,
       passwordAccepted: false,
       passwordLevel: null,
@@ -652,11 +679,17 @@ async function cipheredOutcome(
       refused: 'BAD_PASSWORD',
     };
   }
+  // Whether the file opens for nobody at all: its **user** secret is the empty
+  // string. That is a property of the dictionary, not of the secret the caller
+  // happened to type — typing an owner password into a permissions-only file opens
+  // it as the owner, and it still opens on a double-click.
+  const opensEmpty = assessAccess(lenient).kind === 'opens';
   const outcome = await decryptDocument(lenient, password);
   if (outcome.kind !== 'decrypted') {
     return {
       doc: lenient,
       encryption,
+      permissions,
       encrypted: true,
       passwordAccepted: false,
       passwordLevel: null,
@@ -667,10 +700,11 @@ async function cipheredOutcome(
   return {
     doc: lenient,
     encryption,
+    permissions,
     encrypted: true,
     passwordAccepted: outcome.suppliedMatched,
     passwordLevel: outcome.openedAs,
-    opensWithEmptyPassword: outcome.openedAs === 'empty',
+    opensWithEmptyPassword: opensEmpty,
     refused: null,
   };
 }
@@ -775,7 +809,7 @@ export function cipheredInputError(name: string, encryption: PdfEncryption): Too
     `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and ${why}.`,
     {
       fileName: name,
-      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was.',
+      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was.',
     },
   );
 }
@@ -849,10 +883,6 @@ async function probePdf(
 
   const outcome = await load(bytes, options.password);
   opened.doc = outcome.doc;
-  const dict = outcome.doc ? encryptDict(outcome.doc) : undefined;
-  const rawPermission = dict?.lookupMaybe(PDFName.of('P'), PDFNumber)?.asNumber();
-  const permissions =
-    typeof rawPermission === 'number' ? decodePermissions(rawPermission) : null;
   const encrypted = outcome.encrypted || (outcome.doc?.isEncrypted ?? false);
   // Classify the lock only when one was found. An `/Encrypt` entry the parser
   // could not resolve to a dictionary still claims a handler, so it counts as
@@ -875,7 +905,7 @@ async function probePdf(
     passwordAccepted: outcome.passwordAccepted,
     passwordLevel: outcome.passwordLevel,
     opensWithEmptyPassword: outcome.opensWithEmptyPassword,
-    permissions,
+    permissions: outcome.permissions,
     truncated,
     recovered,
   };

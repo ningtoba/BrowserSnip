@@ -45,7 +45,8 @@ import type {
   PDFPermissions,
 } from '@maxwbh/pdf-lib';
 import { cropBox } from './pages';
-import { decryptDocument, encryptDocument } from './crypto';
+import { decryptDocument, encryptDocument, resealDocument, retainedLock } from './crypto';
+import type { CipherStrength } from './crypto';
 import {
   countOutlineNodes,
   readOutline,
@@ -306,7 +307,7 @@ export async function saveEncrypted(
   // would be serialized in the clear behind a dictionary that says ciphertext.
   // Saving once and discarding the bytes is how that is guaranteed without
   // reaching into the vendor's private form cache; the second save is the file.
-  await doc.save({ useObjectStreams: false });
+  await sealWriterCreatures(doc);
 
   // `/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, `/O`, `/U`, `/Perms` and the
   // document `/ID` the three hashes are derived from are written there, along
@@ -317,12 +318,56 @@ export async function saveEncrypted(
     permissions: permissionsToFlags(opts.permissions),
   });
 
-  // `useObjectStreams: false` is not a size preference. `@maxwbh/pdf-lib` inflates
-  // object streams while it *parses*, before any decryptor is consulted, so a
-  // ciphered file that packs its dictionaries into one is a file this app writes
-  // and then cannot read — which `core/crypto.ts:objectStreamsUnreadable` refuses
-  // on sight, and would rightly refuse its own output.
   return doc.save({ useObjectStreams: false, updateFieldAppearances: false });
+}
+
+/**
+ * Put a source file's own protection back on the copy an edit produced.
+ *
+ * `protect` and `change-permissions` know the secret they were given; a routine
+ * edit does not — it holds a document whose cipher `openPDF` already undid, and
+ * the lock it undid. Re-deriving a lock from scratch there would replace the
+ * owner password with a new one, so renaming a title would quietly take away the
+ * secret that lifts a file's restrictions (measured: MuPDF answers 0 and qpdf
+ * `PasswordError` to the original owner password afterwards). Carrying the
+ * source's dictionary, file key and `/ID[0]` forward keeps every secret the user
+ * already holds working, and keeps the strength the source was written at — an
+ * RC4-128 file comes back RC4-128, a gate comes back a gate.
+ *
+ * `null` means there is no lock to carry: the source has none, its cipher is one
+ * this app refuses, or the secret on offer did not open it. The caller then says
+ * what the copy lost rather than pretending it kept it.
+ */
+export async function resealLikeSource(
+  doc: PDFDocument,
+  source: Bytes,
+  password?: string,
+): Promise<{ bytes: Bytes; strength: CipherStrength | null } | null> {
+  const lock = await retainedLock(source, password);
+  if (!lock) return null;
+  await sealWriterCreatures(doc);
+  await resealDocument(doc, lock);
+  return {
+    bytes: await doc.save({ useObjectStreams: false, updateFieldAppearances: false }),
+    strength: lock.cipher?.strength ?? null,
+  };
+}
+
+/**
+ * Serialize a document once and throw the bytes away.
+ *
+ * The rule both sealed saves need: everything `save()` would create while it
+ * writes — field appearances, pending page content, embedded assets — has to
+ * exist *before* a cipher pass walks the objects, or it lands in the clear
+ * behind a dictionary that says ciphertext. Both saves pass
+ * `useObjectStreams: false`, which is not a size preference either: the vendor
+ * inflates object streams while it *parses*, before any decryptor is consulted,
+ * so a ciphered file that packs its dictionaries into one is a file this app
+ * writes and cannot read back — the shape
+ * `core/crypto.ts:objectStreamsUnreadable` refuses on sight.
+ */
+async function sealWriterCreatures(doc: PDFDocument): Promise<void> {
+  await doc.save({ useObjectStreams: false });
 }
 
 function randomOwnerPassword(): string {

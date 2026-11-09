@@ -38,7 +38,8 @@ import {
   splitDuplicates,
   type OpenedInput,
 } from '@/lib/pdf/tools/helpers';
-import { PasswordRequiredError, saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF, PasswordRequiredError, saveEncrypted } from '@/lib/pdf/core/doc';
+import { saveGateOnly } from './gate-harness';
 import type { ToolField, ToolFile, ToolRunContext, ToolValues } from '@/lib/pdf/tools/types';
 import { PDF_TOOLS } from '@/lib/pdf/tools/registry';
 import { inspectFiles, runPdfTool } from '@/lib/pdf/tools/runner';
@@ -369,9 +370,9 @@ describe('E4 and E5 — encrypted documents', () => {
     const source = await locked(2);
     const seen = await inspectPdf(source, 'contract.pdf');
     expect(seen.encrypted).toBe(true);
-    // The engine writes a gate, not a cipher: `/V 4 /R 4` with the crypt filter
-    // /None, which is what the guard has to report whatever the form asked for.
-    expect(seen.algorithm).toBe('no cipher');
+    // What the engine writes, read off the file: `/V 4 /R 4` with the crypt filter
+    // /StdCF selected, i.e. a cipher and not merely a prompt.
+    expect(seen.algorithm).toBe('AES-128');
     expect(seen.needsPassword).toBe(true);
     expect(seen.passwordAccepted).toBe(false);
     expect(seen.pages).toBe(2);
@@ -400,10 +401,16 @@ describe('E4 and E5 — encrypted documents', () => {
     expect(opened.inspection.error).toBeNull();
     expect(opened.doc.getPageCount()).toBe(2);
 
-    // pdf-lib keeps the trailer /Encrypt entry on a plain save, so an unlock has
-    // to rebuild. Assert the guard sees the difference (E5).
+    // Two shapes, two answers, and both are the file's rather than the code's.
+    // A ciphered document reaches the tool already decrypted, so a plain save of
+    // it is an open file; a `/None` gate is never decrypted, the vendor keeps its
+    // trailer entry across a save, and only a rebuild drops it. That difference is
+    // why `unlock` rebuilds instead of re-saving (E5).
     const lazy = await inspectPdf(await saved(opened.doc), 'lazy.pdf');
-    expect(lazy.encrypted).toBe(true);
+    expect(lazy.encrypted, 'the decrypt pass dropped /Encrypt, so the plain save is open').toBe(false);
+    const gatedDoc = await openPDF(await saveGateOnly(await PDFDocument.create(), { userPassword: 'hunter2' }), { password: 'hunter2' });
+    const gatedLazy = await inspectPdf(await saved(gatedDoc), 'gate.pdf');
+    expect(gatedLazy.encrypted, 'a gate survives a plain save, so an unlock has to rebuild').toBe(true);
     const rebuilt = await inspectPdf(await saved(await rebuildDocument(opened.doc)), 'unlocked.pdf');
     expect(rebuilt.encrypted).toBe(false);
     expect(rebuilt.error).toBeNull();
@@ -419,7 +426,7 @@ describe('E4 and E5 — encrypted documents', () => {
       permissions: { printing: true, copying: false, modifying: true },
     });
     const seen = await inspectPdf(source, 'restricted.pdf');
-    expect(seen.algorithm).toBe('no cipher');
+    expect(seen.algorithm).toBe('AES-128');
     expect(seen.permissions).toMatchObject({
       printing: true,
       modifying: true,

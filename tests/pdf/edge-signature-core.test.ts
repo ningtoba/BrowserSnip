@@ -331,10 +331,11 @@ describe('the guard reports the user password, not the trailer (b4 #4)', () => {
     expect(seen.error).toBeNull();
     expect(seen.opensWithEmptyPassword).toBe(true);
     expect(seen.message).toMatch(/Restricted, not locked/);
-    // …while still telling the tools what the file really is: a gate whose crypt
-    // filter is /None, so no cipher is claimed for bytes that carry none.
+    // …while still telling the tools what the file really is: ciphered, at the
+    // strength its own filter names. A permissions-only file is not in the clear —
+    // its key just happens to be derivable by anybody who asks.
     expect(seen.encrypted).toBe(true);
-    expect(seen.algorithm).toBe('no cipher');
+    expect(seen.algorithm).toBe('AES-128');
     expect(seen.pages).toBe(2);
     expect(seen.permissions).toMatchObject({ printing: true, copying: false, modifying: false });
   }, 60_000);
@@ -352,7 +353,7 @@ describe('the guard reports the user password, not the trailer (b4 #4)', () => {
     expect(seen.error).toBe('PASSWORD_REQUIRED');
     expect(seen.opensWithEmptyPassword).toBe(false);
     expect(seen.encrypted).toBe(true);
-    expect(seen.algorithm).toBe('no cipher');
+    expect(seen.algorithm).toBe('AES-128');
     await expect(openPdfInput(await locked(), 'contract.pdf')).rejects.toMatchObject({
       code: 'PASSWORD_REQUIRED',
       fileName: 'contract.pdf',

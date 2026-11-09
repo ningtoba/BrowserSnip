@@ -17,6 +17,12 @@
  * tests/pdf/protect-spec.test.ts` writes the tool's own output for
  * `docs/research/protect-readers.py`, which asks MuPDF, poppler, qpdf, pypdf and
  * Ghostscript the same four questions of every file — opens, gates, text, `/P`.
+ *
+ * Since `core/crypto.ts:encryptDocument` the file being judged is AES-128
+ * ciphertext rather than the `/None` gate this app wrote while its vendor ran no
+ * cipher, so the dictionary assertions below read both halves of the claim: that
+ * a filter is named, that it is *selected*, and that the bytes behind it really
+ * are unreadable.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
@@ -36,6 +42,7 @@ import {
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { inspectPdf } from '@/lib/pdf/core/guard';
+import { openPDF } from '@/lib/pdf/core/doc';
 import { openRender } from '@/lib/pdf/core/render';
 import { annotationCount } from '@/lib/pdf/core/annotations';
 import { addAnnotation } from '@/lib/pdf/core/annotations';
@@ -128,10 +135,12 @@ function encryptDictBody(bytes: Uint8Array): string {
   const raw = latin1.decode(bytes);
   const start = raw.indexOf('/Filter /Standard');
   expect(start, 'the saved file carries no /Filter /Standard dictionary').toBeGreaterThan(-1);
-  // The dictionary ends at the `>>` that closes the object, not at the first
-  // nested one — `/CF << >>` is exactly the nested pair under test.
-  const body = raw.slice(start, raw.indexOf('>>', raw.indexOf('>>', start) + 2) + 2);
-  return body.replace(/\s+/g, ' ');
+  // The dictionary ends at the `>>` that closes the *object*, not at the first
+  // nested one: `/CF << /StdCF << /CFM /AESV2 /Length 16 >> >>` is two nested
+  // pairs, and the inner one is exactly what this file is here to check.
+  const endobj = raw.indexOf('endobj', start);
+  expect(endobj, 'the /Encrypt dictionary is never closed').toBeGreaterThan(start);
+  return raw.slice(start, raw.lastIndexOf('>>', endobj) + 2).replace(/\s+/g, ' ');
 }
 
 /** One key of the dictionary as the file writes it, or null when absent. */
@@ -146,9 +155,9 @@ function hexBytes(value: string | null): number {
 }
 
 /** The raw `/P` integer, read off the file rather than decoded by this app. */
-function rawPermissionValue(bytes: Uint8Array): number {
-  const found = /\/P\s+(-?\d+)/.exec(latin1.decode(bytes));
-  expect(found, 'the saved file has no /P value').not.toBeNull();
+function rawPermissionValue(body: string): number {
+  const found = /\/P\s+(-?\d+)/.exec(body);
+  expect(found, 'the encryption dictionary has no /P value').not.toBeNull();
   return Number(found![1]);
 }
 
@@ -173,9 +182,16 @@ async function inflatedStreams(bytes: Uint8Array): Promise<string> {
   return parts.join('\n');
 }
 
-/** The objects a copy silently drops, counted out of the saved bytes. */
-async function structureOf(bytes: Uint8Array) {
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+/**
+ * The objects a copy silently drops, counted out of the saved bytes.
+ *
+ * Read through `core/doc.ts:openPDF`, which is the path every tool takes and the
+ * only one that undoes a cipher: `PDFDocument.load` on this app's own protected
+ * file answers with the same 3 pages and the same field *names* while holding
+ * ciphertext, so a census taken there would count losses the file does not have.
+ */
+async function structureOf(bytes: Uint8Array, password?: string) {
+  const doc = await openPDF(bytes, password ? { password } : {});
   let annotsEntries = 0;
   for (const page of doc.getPages()) {
     const value = page.node.get(PDFName.of('Annots'));
@@ -221,7 +237,7 @@ async function readerSays(bytes: Uint8Array, password?: string): Promise<{ pages
 // ── the dictionary ──────────────────────────────────────────────────────────
 
 describe('the encryption dictionary agrees with itself and with the bytes', () => {
-  it('writes the /None gate: a revision-4 dictionary that names no cipher', async () => {
+  it('writes AES-128: a revision-4 dictionary whose filter is selected, and ciphertext behind it', async () => {
     const outcome = await run('protect', {
       mode: 'both', userPassword: USER, ownerPassword: OWNER,
       allowPrinting: false, printLevel: 'low', allowModifying: false, allowCopying: false,
@@ -231,12 +247,10 @@ describe('the encryption dictionary agrees with itself and with the bytes', () =
     dump('protect-gated.pdf', bytes);
     const body = encryptDictBody(bytes);
 
-    // What R6/AES-256 requires, field by field, and what is here instead. A
-    // `/V 5` dictionary needs `/O` and `/U` of 48 bytes plus `/OE`, `/UE` and
-    // `/Perms`; this engine has no R6 key schedule, so it writes none of them —
-    // and the file used to say `/V 5` anyway, which is why MuPDF refused it with
-    // "encryption dictionary missing owner encryption key" and qpdf with "some
-    // V=5 encryption dictionary parameters are missing or the wrong type".
+    // Revision 4 is the strength `/O`, `/U` and `/Perms` are genuinely computed at.
+    // An R6 dictionary would need 48-byte `/O` and `/U` plus `/OE` and `/UE`, which
+    // this engine neither derives nor reads; claiming `/V 5` without them is what
+    // made MuPDF and qpdf refuse the file outright (E5).
     expect(field(body, 'V'), body).toBe('4');
     expect(field(body, 'R'), body).toBe('4');
     expect(field(body, 'Length'), body).toBe('128');
@@ -244,44 +258,53 @@ describe('the encryption dictionary agrees with itself and with the bytes', () =
     expect(hexBytes(field(body, 'U')), 'the revision-4 /U is 32 bytes').toBe(32);
     expect(field(body, 'OE'), 'a file with no R6 key schedule must not carry /OE').toBeNull();
     expect(field(body, 'UE'), 'a file with no R6 key schedule must not carry /UE').toBeNull();
-    expect(field(body, 'Perms'), 'a file with no R6 key schedule must not carry /Perms').toBeNull();
-    expect(body).not.toMatch(/\/AESV2|\/AESV3|\/CFM|\/V 5|\/R 6|\/Length 256/);
+    // `/Perms` is revision 4's tamper check on `/P` and `/EncryptMetadata`: 16
+    // bytes, and the only one of the four R6 extras this dictionary may carry.
+    expect(hexBytes(field(body, 'Perms')), 'Algorithm 5 writes a 16-byte /Perms').toBe(16);
+    expect(body).not.toMatch(/\/AESV3|\/V 5|\/R 6|\/Length 256/);
 
-    // The claim the dictionary makes about the streams: `/StmF` and `/StrF` are
-    // absent, so both take the spec's default — the predefined `/None` filter,
-    // "the data are not encrypted". `/CF` is present and empty, which is the
-    // spelling all five readers in `protect-readers.py` accept; naming a filter
-    // of `/None` outright is what made pypdf and Ghostscript refuse the file.
-    expect(field(body, 'CF'), body).toMatch(/^<<\s*>>$/);
-    expect(field(body, 'StmF')).toBeNull();
-    expect(field(body, 'StrF')).toBeNull();
+    // The two halves of the claim have to agree: a filter is *defined* and the
+    // same filter is *selected* by both channels. A `/CF` that names AES and an
+    // absent `/StmF` would be a gate wearing a cipher's coat, and the reverse is
+    // the defect this row was written about — so both keys are read, not inferred.
+    expect(field(body, 'CF'), body).toMatch(/\/StdCF\s*<<\s*\/CFM\s+\/AESV2/);
+    expect(field(body, 'CF'), body).toMatch(/\/Length 16/);
+    expect(field(body, 'StmF'), body).toBe('/StdCF');
+    expect(field(body, 'StrF'), body).toBe('/StdCF');
     expect(field(body, 'EncryptMetadata'), 'the key the /U was derived with assumes metadata is not exempt')
       .toBe('true');
 
-    // And the bytes behind it agree: the page content inflates as it came in, so
-    // a reader that obeys `/None` shows the page and a reader that ignores the
-    // dictionary lifts the text. Either way nothing is being decrypted — which is
-    // what a ciphertext file looks like *not* being, and the shape the readers
-    // that mangled this file could not produce.
+    // And the bytes behind it agree: nothing inflates to the planted sentence,
+    // because each payload is IV + AES-128-CBC over the deflated stream. This is
+    // the assertion that used to prove the opposite — that a `/None` gate kept
+    // its pages in the clear — and it is the half a dictionary alone cannot make.
     const streams = await inflatedStreams(bytes);
-    // `drawText` writes the run as a hex string, so the phrase is either in the
-    // clear or in its hex spelling — both are plaintext, neither is ciphertext.
+    // `drawText` writes the run as a hex string, so plaintext would show the
+    // phrase in one of these two spellings. Neither is in a ciphered payload.
     const hexWords = Buffer.from(`${WORDS} on page 1`, 'utf8').toString('hex').toUpperCase();
-    expect(streams.includes(WORDS) || streams.includes(hexWords),
-      'the page content is plaintext, so it must not be labelled ciphertext').toBe(true);
+    expect(streams.includes(WORDS), 'the page content is ciphertext, so it must not read as plaintext').toBe(false);
+    expect(streams.includes(hexWords), 'and not as its hex spelling either').toBe(false);
+    expect(latin1.decode(bytes), 'no string of the document survives in the clear').not.toContain('Ada Lovelace');
+
+    // Object streams are off in a ciphered save, and not for tidiness: the vendor
+    // inflates them while *parsing*, before any decryptor runs, so a file that
+    // packs its dictionaries into one cannot be opened by the app that wrote it.
+    expect(latin1.decode(bytes)).not.toMatch(/\/Type\s*\/ObjStm/);
   }, 300_000);
 
   it('says in the result what the file is, and never names a strength it did not write', async () => {
     const outcome = await run('protect', { mode: 'both', userPassword: USER, ownerPassword: OWNER });
     const message = outcome.message ?? '';
     expect(message).toMatch(/Protected with an open password/);
-    expect(message).toMatch(/no crypt filter[^.]*copied through rather than ciphered/);
-    for (const name of ['AES-256', 'AES-128', 'RC4-128', 'RC4-40']) {
+    expect(message).toMatch(/ciphered in AES-128[^.]*\/StdCF/);
+    // AES-128 is named because the file is written at it; the other three are
+    // names this file does not carry, and saying them would be the old defect.
+    for (const name of ['AES-256', 'RC4-128', 'RC4-40', 'AESV3']) {
       expect(message, `the result still sells ${name}`).not.toContain(name);
     }
-    // No warning walks any of it back: the dictionary and the bytes agree, so
-    // there is nothing left to admit.
-    expect(outcome.warnings.join(' ')).not.toMatch(/does not carry|readers split|No PDF reader could be started/i);
+    // No warning walks any of it back: the dictionary, the bytes and the reader
+    // agree, so there is nothing left to admit.
+    expect(outcome.warnings.join(' ')).not.toMatch(/does not carry|readers split|No PDF reader could be started|names no crypt filter|read back different/i);
   }, 300_000);
 });
 
@@ -295,22 +318,38 @@ describe('the gate holds an independent reader and opens for the password', () =
     const gate = await inspectPdf(bytes, 'claim.pdf');
     expect(gate.encrypted).toBe(true);
     expect(gate.needsPassword).toBe(true);
-    expect(gate.algorithm, 'a gate whose crypt filter is /None is not a cipher').toBe('no cipher');
+    expect(gate.algorithm, 'the filter /StmF selects is the cipher the bytes carry').toBe('AES-128');
     const refused = await readerSays(bytes);
     expect('refused' in refused, `pdf.js opened a gated file with no password: ${JSON.stringify(refused)}`).toBe(true);
 
     // With it: pages and words, counted out of the reader rather than echoed
-    // from the run. This is the check the old `/V 5 /R 6` file could not pass —
-    // pdf.js threw on it with "Invalid argument for stringToBytes".
+    // from the run. pdf.js runs its own AES-128, so this is the saved file read
+    // back by an implementation that shares no code with the one that wrote it.
     const opened = await readerSays(bytes, USER);
     expect('pages' in opened, `pdf.js refused the password it was given: ${JSON.stringify(opened)}`).toBe(true);
     expect((opened as { pages: number }).pages).toBe(3);
     expect((opened as { text: string }).text).toContain('Secret Alice 42 Bravo on page 1');
     // A wrong one is refused, not waved through: the /O and /U are real revision-4
-    // hashes, and MuPDF, qpdf and pypdf refuse the same file the same way (the
-    // reader that ignores the gate entirely is poppler — see the row).
+    // hashes, and MuPDF, qpdf, poppler and pypdf refuse the same file the same way
+    // (measured in docs/research/protect-readers-after.log).
     const wrong = await readerSays(bytes, 'not-the-password');
     expect('refused' in wrong, `a wrong password got through: ${JSON.stringify(wrong)}`).toBe(true);
+  }, 300_000);
+
+  it('opens its own ciphertext again through this app\u2019s read path', async () => {
+    // Writer and reader are one module, so this cannot prove the format on its
+    // own — but it is the check that a user re-opening their download here gets
+    // the document back rather than blank pages, which is what the `protect`
+    // row names as the reason AES-256 stayed unwritten.
+    const bytes = await bytesOf(await run('protect', { mode: 'both', userPassword: USER, ownerPassword: OWNER }));
+    const words = await structureOf(bytes, USER);
+    expect(words).toMatchObject({ pages: 3, fields: 2, bookmarks: 2, attachments: ['source.csv'] });
+    // A field value is a string, and a string is what the cipher runs over: the
+    // value coming back character for character is the round trip, not a page
+    // count that merely agrees with itself.
+    expect(words.fieldValues).toContain('Ada Lovelace');
+    // The owner secret opens it too, and unwraps `/O` to do it.
+    await expect(structureOf(bytes, OWNER)).resolves.toMatchObject({ pages: 3 });
   }, 300_000);
 });
 
@@ -324,7 +363,7 @@ describe('the permissions are the file’s, not the form’s', () => {
       allowAnnotating: true, allowFillingForms: false, allowAccessibility: true, allowAssembling: true,
     });
     const bytes = await bytesOf(outcome);
-    const p = rawPermissionValue(bytes);
+    const p = rawPermissionValue(encryptDictBody(bytes));
     expect(permissionBit(p, 3), 'printing').toBe(true);
     expect(permissionBit(p, 12), 'high-resolution printing (the form asked for low)').toBe(false);
     expect(permissionBit(p, 4), 'modification').toBe(false);
@@ -349,7 +388,7 @@ describe('the permissions are the file’s, not the form’s', () => {
     const bytes = await bytesOf(outcome);
     dump('protect-permissions-only.pdf', bytes);
 
-    const p = rawPermissionValue(bytes);
+    const p = rawPermissionValue(encryptDictBody(bytes));
     expect(permissionBit(p, 3), 'printing is refused').toBe(false);
     expect(permissionBit(p, 5), 'copying is refused').toBe(false);
     expect(permissionBit(p, 10), 'screen readers are allowed').toBe(true);
@@ -360,11 +399,43 @@ describe('the permissions are the file’s, not the form’s', () => {
     expect(gate.needsPassword, 'an empty user password must not ask for one').toBe(false);
     expect(gate.opensWithEmptyPassword).toBe(true);
     expect(gate.pages).toBe(3);
+    // The dictionary is read, not the form: `/P` and the cipher are both the
+    // file's, and the sentence the tool speaks is built from these bits.
+    expect(gate.algorithm, 'a permissions-only file is ciphered with the empty user key, not left in the clear')
+      .toBe('AES-128');
+    expect(gate.permissions).toMatchObject({ printing: false, copying: false, contentAccessibility: true });
     await expect(PDFDocument.load(bytes)).resolves.toBeTruthy();
     const opened = await readerSays(bytes);
     expect('pages' in opened, `a reader refused a file with no open password: ${JSON.stringify(opened)}`).toBe(true);
+    expect((opened as { text: string }).text).toContain('Secret Alice 42 Bravo on page 1');
     expect(outcome.message).toMatch(/restrictions only — no open password was set/);
+    expect(outcome.message).toMatch(/empty open password, so it opens freely and is restricted rather than locked/);
     expect(outcome.message).toMatch(/with the restrictions above in force/);
+  }, 300_000);
+
+  it('changes the key when the permissions change, which is what /Perms is for', async () => {
+    // `/P` is an input to Algorithm 2, so a restricted file and an unrestricted
+    // one cannot share a file key — and a reader that rewrote `/P` without the
+    // owner password would find the pages it decrypts are not its own.
+    const wide = await bytesOf(await run('protect', {
+      mode: 'owner', ownerPassword: OWNER, allowPrinting: true, allowCopying: true,
+      allowModifying: true, allowAnnotating: true, allowFillingForms: true,
+      allowAccessibility: true, allowAssembling: true, printLevel: 'high',
+    }));
+    const tight = await bytesOf(await run('protect', {
+      mode: 'owner', ownerPassword: OWNER, allowPrinting: false, allowCopying: false,
+      allowModifying: false, allowAnnotating: false, allowFillingForms: false,
+      allowAccessibility: false, allowAssembling: false, printLevel: 'low',
+    }));
+    expect(rawPermissionValue(encryptDictBody(wide))).toBeGreaterThan(rawPermissionValue(encryptDictBody(tight)));
+    expect(field(encryptDictBody(wide), 'U')).not.toBe(field(encryptDictBody(tight), 'U'));
+    expect(field(encryptDictBody(wide), 'Perms')).not.toBe(field(encryptDictBody(tight), 'Perms'));
+    // Both still open for the empty user secret, and both say so in the file.
+    for (const bytes of [wide, tight]) {
+      const seen = await inspectPdf(bytes, 'claim.pdf');
+      expect(seen.opensWithEmptyPassword).toBe(true);
+      expect(await structureOf(bytes)).toMatchObject({ pages: 3 });
+    }
   }, 300_000);
 });
 
@@ -382,7 +453,7 @@ describe('protect → unlock hands back the same document', () => {
     expect('pages' in sourceText).toBe(true);
 
     const locked = await bytesOf(await run('protect', { mode: 'both', userPassword: USER, ownerPassword: OWNER }));
-    const gated = await structureOf(locked);
+    const gated = await structureOf(locked, USER);
     expect(gated, 'protect itself lost an object').toEqual(before);
 
     const unlocked = await run('unlock', { password: USER }, [pdfFile(locked, 'claim.pdf')]);

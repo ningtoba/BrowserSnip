@@ -20,9 +20,11 @@
  * - `ciphered` — `/StmF` or `/StrF` resolves to `RC4`, `AESV2` or `AESV3` (or
  *   `/V` is 1-3, where RC4 is implied with no filter to opt out of). Refused.
  * - `gate-only` — a password and the `/P` flags over the predefined `/None`
- *   filter: "the data are not encrypted". This is what `protect` writes, and the
- *   rig's own control shows the same three operations keep its words, so these
- *   keep working exactly as they did.
+ *   filter: "the data are not encrypted". This is the shape `protect` wrote while
+ *   the vendor ran no cipher, and files in the wild still carry it; the rig's own
+ *   control shows the same three operations keep its words, so those keep working
+ *   exactly as they did. `tests/pdf/gate-harness.ts` builds one, because
+ *   `saveEncrypted` does not write them any more.
  *
  * Every fixture is therefore locked **outside** this repo — by libqpdf and by
  * MuPDF, in both trailer spellings — and each assertion reads the classification,
@@ -58,6 +60,7 @@ import {
   type PdfEncryption,
 } from '@/lib/pdf/core/guard';
 import { openPDF, saveEncrypted, looksEncrypted } from '@/lib/pdf/core/doc';
+import { saveGateOnly } from './gate-harness';
 import { streamBytes } from '@/lib/pdf/core/content';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
@@ -79,6 +82,8 @@ beforeAll(() => {
     },
   });
 }, 120_000);
+
+const latin1 = new TextDecoder('latin1');
 
 /** `tests/fixtures/encrypted` — written by libqpdf and MuPDF, never by this app. */
 const fixtureBytes = (name: string): Uint8Array => new Uint8Array(readFileSync(join(FIXTURES, name)));
@@ -173,10 +178,29 @@ function decodeStrings(content: string): string {
   return out.join(' ');
 }
 
-/** Encrypt a document the way this app's own `protect` does: a gate, no cipher. */
+/**
+ * A gate-only file: a password, the `/P` flags, and the crypt filter `/None`.
+ *
+ * Built by `tests/pdf/gate-harness.ts` rather than by this app's writer, which
+ * runs AES-128 now — so the case that has to keep being classified `gate-only` is
+ * the shape of the file, not the shape of the tool that once made it.
+ */
 async function gateOnly(): Promise<Uint8Array> {
   const doc = await openPDF(fixtureBytes('plain.pdf'), { ignoreEncryption: true });
-  return saveEncrypted(doc, { userPassword: PASSWORD, ownerPassword: PASSWORD });
+  return saveGateOnly(doc, { userPassword: PASSWORD, ownerPassword: PASSWORD });
+}
+
+/**
+ * What the app's own read path sees, which is what a tool hands to its writer.
+ *
+ * `engineView` deliberately asks the vendor instead — the vendor's view is the
+ * before-picture the guard was written from. A file this app now *produces* is
+ * ciphered on the way out, so the measure of "the words survived the edit" has to
+ * open it the way the next run would.
+ */
+async function appView(bytes: Uint8Array, password?: string): Promise<{ words: string; undecoded: number }> {
+  const doc = await openPDF(bytes, password ? { password } : { ignoreEncryption: true });
+  return engineView(await doc.save({ useObjectStreams: false }));
 }
 
 /* ── 1. the classification ───────────────────────────────────────────────── */
@@ -189,7 +213,7 @@ describe('classifying what a lock does to the contents', () => {
     expect(seen.error).toBeNull();
   });
 
-  it('calls this app’s own gate gate-only, and keeps naming it "no cipher"', async () => {
+  it('calls a gate-only file gate-only, and keeps naming it "no cipher"', async () => {
     const seen = await inspectPdf(await gateOnly(), 'own-protected.pdf', { password: PASSWORD });
     expect(seen.encryption).toMatchObject({
       state: 'gate-only',
@@ -367,7 +391,7 @@ describe('the ciphertext the guard refuses', () => {
     expect(view.words).toContain('Sheet ALPHA body copy');
   });
 
-  it('reads the words through this app’s own gate', async () => {
+  it('reads the words through a gate-only file', async () => {
     const view = await engineView(await gateOnly(), PASSWORD);
     expect(view.undecoded).toBe(0);
     expect(view.words).toContain(PLANTED);
@@ -440,7 +464,7 @@ describe('the refusal says what the file is and what to do', () => {
     // Both halves of the new rule, in the sentence itself: the strengths that work
     // are named, and so is the gate that always worked.
     expect(error.hint).toMatch(/RC4-128 or AES-128 are decrypted and edited normally now/);
-    expect(error.hint).toMatch(/a password gate with no crypt filter[\s\S]*always was/);
+    expect(error.hint).toMatch(/a password gate with no cipher[\s\S]*always was/);
   });
 
   it('does not claim that every locked file is refused', async () => {
@@ -468,6 +492,39 @@ describe('the refusal says what the file is and what to do', () => {
 });
 
 /* ── 5. the guard on the tools that rewrite content ──────────────────────── */
+
+/**
+ * Which secret the file a tool produced answers to.
+ *
+ * `protect` issues a new one, the three tools whose job is removal issue none, and
+ * everything else carries the source's lock forward — which since
+ * `core/crypto.ts:retainedLock` means the *same* lock, not a re-derived one, so
+ * the owner password the user never typed still works on the copy.
+ */
+const SECRET_FOR: Record<string, string> = {
+  protect: 'new-open',
+  unlock: '',
+  'remove-restrictions': '',
+  'change-permissions': '',
+  split: '',
+};
+
+/**
+ * The tools that hand the copy back open, on purpose or by omission.
+ *
+ * `unlock` and `remove-restrictions` exist to do it. `split` does not: it returns
+ * several files, and `preserveProtection` seals a single `kind: 'pdf'` result, so
+ * a split of a locked file is a set of open ones. That is measured here rather
+ * than assumed, because "my split kept my password" is a sentence this campaign
+ * has already been wrong about once.
+ */
+const STILL_OPEN = new Set(['unlock', 'remove-restrictions', 'split']);
+
+/** Tools that keep the source's protection rather than issuing their own. */
+const PRESERVED = new Set(['rotate', 'remove-pages', 'split', 'pdf-compress', 'sanitize-pdf', 'flatten-pdf', 'remove-metadata']);
+
+const secretFor = (id: string, source: string | undefined): string =>
+  SECRET_FOR[id] ?? (source ?? '');
 
 /** Tools that hand back a PDF rebuilt from the source's own page streams. */
 const REWRITING: { id: string; values: ToolValues }[] = [
@@ -538,9 +595,29 @@ describe.each(CIPHERED_INPUTS)('a ciphered input read from $name', ({ name, decr
       // The words, in the bytes the user would download: what a page count cannot
       // tell us, and what the rig's 18 blank outputs were made of.
       const bytes = new Uint8Array(await produced.outputs[0].blob.arrayBuffer());
-      const view = await engineView(bytes);
-      expect(view.undecoded, `${id} left ciphertext in ${name}`).toBe(0);
+      const secret = secretFor(id, password);
+      const view = await appView(bytes, secret || undefined);
+      expect(view.undecoded, `${id} left a stream that will not inflate in ${name}`).toBe(0);
       expect(view.words, `${id} lost the planted sentence of ${name}`).toContain(PLANTED);
+
+      // …and the copy is protected the way the source was. A tool that hands back
+      // an open file where the user left a locked one is the other half of the
+      // same bug, and `preserveProtection` is the seam that decides it.
+      const after = await inspectPdf(bytes, name, secret ? { password: secret } : {});
+      if (STILL_OPEN.has(id)) {
+        // Removal is the tool's job, so an open file is the answer, not a loss.
+        expect(after.encrypted, `${id} left the lock on ${name}`).toBe(false);
+      } else {
+        expect(after.encrypted, `${id} unlocked ${name} on its own`).toBe(true);
+        if (PRESERVED.has(id) && password) {
+          // The strength is carried, not switched: an RC4-128 input edited here is
+          // still an RC4-128 file afterwards, dictionary and all.
+          expect(after.algorithm, `${id} re-wrote ${name} at a different strength`).toBe(cipher);
+        }
+        // And the words are only reachable with the secret, which is the half a
+        // gate-only carry-over could never claim.
+        expect(latin1.decode(bytes), `${id} wrote ${name}'s words in the clear`).not.toContain(PLANTED);
+      }
     },
   );
 
@@ -558,7 +635,7 @@ describe.each(CIPHERED_INPUTS)('a ciphered input read from $name', ({ name, decr
 /* ── 6. the direction that must not regress ─────────────────────────────── */
 
 describe('a gate-only file is edited exactly as it was before', () => {
-  it('rotates this app’s protected file, keeps its gate and keeps its words', async () => {
+  it('rotates a gated file, keeps its gate and keeps its words', async () => {
     const outcome = await runPdfTool({
       toolId: 'rotate',
       files: [fileOf(await gateOnly(), 'contract.pdf')],
@@ -569,11 +646,18 @@ describe('a gate-only file is edited exactly as it was before', () => {
     });
     const bytes = new Uint8Array(await outcome.outputs[0].blob.arrayBuffer());
     const text = Buffer.from(bytes).toString('latin1');
-    // The gate is re-issued, not silently lifted: the copy still carries
-    // `/Encrypt` and still answers to the password the user holds.
+    // The gate is carried, not re-issued: the copy still carries `/Encrypt`, and
+    // the same password opens it because it is the same `/O`, `/U` and `/ID`. A
+    // gate is not decrypted on the way in — there is nothing to undo — so this is
+    // the one case where the source's dictionary is copied rather than re-derived.
     expect(text).toMatch(/\/Encrypt/);
     await expect(PDFDocument.load(bytes, { password: PASSWORD })).resolves.toBeTruthy();
-    expect(outcome.warnings.join(' ')).toMatch(/re-applied/i);
+    expect(outcome.warnings.join(' ')).toMatch(/kept this file's own protection[\s\S]*no cipher/i);
+    // …and the copy is still a gate rather than a cipher: no `/CFM` anywhere, so
+    // nothing was silently upgraded on an edit that did not ask for one. The words
+    // being readable behind it is the `engineView` check below, not a grep — a gate
+    // this app wrote packs its dictionaries into object streams.
+    expect(latin1.decode(bytes)).not.toMatch(/\/CFM/);
 
     const produced = await PDFDocument.load(bytes, { password: PASSWORD, updateMetadata: false });
     expect(produced.getPageCount()).toBe(3);

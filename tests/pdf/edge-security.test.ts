@@ -184,8 +184,16 @@ async function bytesOf(outcome: RunOutcome, index = 0): Promise<Uint8Array> {
  * every stream object, so text parked inside a Form XObject is in the search
  * space even though it never appears in the page's own content stream.
  */
-async function readableText(bytes: Uint8Array): Promise<string> {
-  const doc = await openPDF(bytes, { ignoreEncryption: true });
+/**
+ * Everything a text extractor could lift out of the file: the raw bytes, every
+ * stream, and the pages' own content.
+ *
+ * A payload that will not decode is reported by its absence rather than as a
+ * crash — which since `protect` writes AES-128 is the normal answer for a file of
+ * this app's own. Hand it the secret to see the words instead.
+ */
+async function readableText(bytes: Uint8Array, password?: string): Promise<string> {
+  const doc = await openPDF(bytes, password === undefined ? { ignoreEncryption: true } : { password });
   const parts: string[] = [latin1.decode(bytes)];
   for (const [, object] of doc.context.enumerateIndirectObjects()) {
     // Every stream in the file: text parked in a Form XObject never shows up in
@@ -197,8 +205,12 @@ async function readableText(bytes: Uint8Array): Promise<string> {
       /* not a stream we can decode — the raw file above already covers it */
     }
   }
-  for (const page of doc.getPages()) {
-    for (const stream of pageContentStreams(page)) parts.push(latin1.decode(stream.bytes));
+  try {
+    for (const page of doc.getPages()) {
+      for (const stream of pageContentStreams(page)) parts.push(latin1.decode(stream.bytes));
+    }
+  } catch {
+    /* ciphertext under a /Filter: there is nothing here to read without the key */
   }
   return parts.join('\n');
 }
@@ -218,15 +230,17 @@ const PROTECTION_DEFAULTS: ToolValues = {
 };
 
 /**
- * The strengths the Cipher control used to offer.
+ * The strengths the Cipher control used to offer, minus the one the engine now
+ * writes.
  *
  * They stay as a table because the defect was per-strength: each name was a claim
  * about bytes the engine never ciphered, and each claimed dictionary was read a
- * different wrong way by a different reader. The control is gone, so what is left
- * to prove is that the name cannot come back — no field to pick it, and no sentence
- * this tool shows the user that says it.
+ * different wrong way by a different reader. `AES-128` is off the list because it
+ * is no longer a claim — `core/crypto.ts:encryptDocument` runs it and reads it
+ * back — so the surviving rule is that the *other* names cannot come back: no
+ * field to pick them, and no sentence this tool shows the user that sells them.
  */
-const CIPHER_NAMES = ['AES-256', 'AES-128', 'RC4-128', 'RC4-40'];
+const CIPHER_NAMES = ['AES-256', 'RC4-128', 'RC4-40'];
 
 let certificate: { certificatePem: string; privateKeyPem: string };
 const encoder = new TextEncoder();
@@ -251,14 +265,14 @@ beforeAll(async () => {
 }, 120_000);
 
 describe('protect and unlock round trip (E4, E5)', () => {
-  it('writes the gate the file declares, and reads it back as a gate', async () => {
+  it('writes the cipher the file declares, and reads it back as AES-128', async () => {
     const protectedRun = await run('protect', PROTECTION_DEFAULTS);
     const bytes = await bytesOf(protectedRun);
 
     // The guard the file queue uses — not the form — says what the dictionary is.
     const gate = await inspectPdf(bytes, 'out.pdf');
     expect(gate.encrypted, '/Encrypt missing').toBe(true);
-    expect(gate.algorithm, 'a gate whose crypt filter is /None must not be named a cipher').toBe('no cipher');
+    expect(gate.algorithm, 'the filter /StmF selects is the cipher the bytes carry').toBe('AES-128');
     // E4: no password means "ask", never a hang and never a silent success.
     expect(gate.error).toBe('PASSWORD_REQUIRED');
     expect(gate.needsPassword).toBe(true);
@@ -282,14 +296,33 @@ describe('protect and unlock round trip (E4, E5)', () => {
       ...(tool.fields ?? []).map((field) => field.help ?? ''),
     ].join(' ');
     expect(claims, `${name} is still being sold`).not.toContain(name);
-    // Where the retired name does appear — the note that explains the retirement —
-    // it appears as a capability the engine lacks, never as an output it produced.
+    // Where the retired name does appear — the note that explains why it is not
+    // offered — it appears as a capability the engine lacks, never as an output it
+    // produced.
     for (const note of tool.notes ?? []) {
       if (note.includes(name)) {
-        expect(note, `${name} is named without retiring it`).toMatch(/does not have one yet|were labels on a dictionary|no cipher/i);
+        expect(note, `${name} is named without retiring it`).toMatch(/the only strength offered|refused by name|cannot read back/i);
       }
     }
   });
+
+  it('names AES-128 where the file is written at it, and nowhere else', async () => {
+    const tool = getPdfTool('protect')!;
+    const claims = [tool.description, tool.promise ?? ''].join(' ');
+    expect(claims).toContain('AES-128');
+    // …and the saved dictionary agrees: the strength on the card is the `/CFM` the
+    // filter carries, read off the bytes rather than repeated from the form.
+    const bytes = await bytesOf(await run('protect', PROTECTION_DEFAULTS));
+    expect(latin1.decode(bytes)).toMatch(/\/CFM \/AESV2/);
+    expect(latin1.decode(bytes)).not.toMatch(/\/CFM \/AESV3/);
+    // The result card says the same thing the file does, and the retired names stay
+    // out of it.
+    const outcome = await run('protect', PROTECTION_DEFAULTS);
+    expect(outcome.message).toMatch(/AES-128/);
+    for (const name of CIPHER_NAMES) {
+      expect(outcome.message, `the card is selling ${name} again`).not.toContain(name);
+    }
+  }, 120_000);
 
   it('unlocks the gated file into one that opens with no password', async () => {
     const locked = await bytesOf(await run('protect', PROTECTION_DEFAULTS));
@@ -378,18 +411,21 @@ describe('protect and unlock round trip (E4, E5)', () => {
     expect(outcome.message).not.toContain('printing allowed');
   }, 120_000);
 
-  it('says in the result that the pages were copied through, not ciphered', async () => {
+  it('says in the result that the pages are ciphered, and the bytes agree', async () => {
     const source = await redactionFixture();
     const outcome = await run('protect', PROTECTION_DEFAULTS, [pdfFile(source, 'report.pdf')]);
     const bytes = await bytesOf(outcome);
-    // The claim under test is the sentence beside the file: the words are still in
-    // the saved bytes *and* the result says so, which is the pairing the old
-    // "Protected with AES-256" line got wrong in both directions.
-    expect(await readableText(bytes)).toContain('Zephyr Bravo Content');
-    expect(outcome.message).toMatch(/no crypt filter[^.]*copied through rather than ciphered/i);
-    // Nothing has to be walked back in a warning: the dictionary now says what the
-    // engine did, so a reader is not handed a cipher to undo over plaintext.
-    expect(outcome.warnings.join(' ')).not.toMatch(/does not carry|readers split|not rewritten as ciphertext/i);
+    // Sentence and bytes have to say one thing. The old pairing was the reverse:
+    // "Protected with AES-256" over streams that were still in the clear, so the
+    // words were findable and the claim was false; then a `/None` gate over the
+    // same findable words, which was honest and unhospitable to nothing.
+    expect(await readableText(bytes)).not.toContain('Zephyr Bravo Content');
+    expect(outcome.message).toMatch(/ciphered in AES-128/i);
+    // With the secret, the same bytes give the sentence back — the write path and
+    // the read path of this app agreeing, which the reader checks below supplement.
+    const opened = await openPDF(bytes, { password: 'hunter2' });
+    expect(opened.getPageCount()).toBe((await openPDF(source)).getPageCount());
+    expect(outcome.warnings.join(' ')).not.toMatch(/does not carry|readers split|names no crypt filter|read back different/i);
   }, 120_000);
 
   it('keeps a restrictions-only file opening on the empty password', async () => {
@@ -476,7 +512,7 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     const bytes = await bytesOf(outcome);
     const gate = await inspectPdf(bytes, 'out.pdf');
     expect(gate.encrypted).toBe(true);
-    expect(gate.algorithm).toBe('no cipher');
+    expect(gate.algorithm, 'a permissions-only file is ciphered under the empty user secret').toBe('AES-128');
     const recorded = gate.permissions;
     if (!recorded) throw new Error('the saved file carries no /P dictionary, so nothing was recorded');
     expect(recorded.printing).toBe(false);
@@ -533,18 +569,17 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     expect(protection, 'the report must have a Protection section').toBeTruthy();
     const rows = new Map(protection!.rows!.map((row) => [row.label, row.value]));
     expect(rows.get('Encrypted')).toBe('yes');
-    // The report reads the crypt filter back rather than naming a strength: this
-    // file is gated, not ciphered, and saying `AES-256` here is what contradicted
-    // the bytes the triage measured.
-    expect(rows.get('Cipher')).toMatch(/^no cipher/);
-    expect(rows.get('Cipher')).toMatch(/\/None/);
+    // The report reads the crypt filter back rather than naming a strength it
+    // liked: the filter, the revision and the method are the file's own, and saying
+    // `AES-256` here is what contradicted the bytes the triage measured.
+    expect(rows.get('Cipher')).toMatch(/^AES-128 \(crypt filter \/StdCF, revision 4\)/);
     expect(rows.get('Restrictions recorded')).toMatch(/copying blocked/);
     expect(rows.get('Restrictions recorded')).toMatch(/page assembly blocked/);
     expect(outputIsHonest(rows.get('Enforced by') ?? '')).toBe(true);
     // The warning the queue shows beside a protected file says the same thing the
-    // row above does — a gate, no cipher — instead of naming a strength.
-    expect(outcome.warnings.join(' ')).toMatch(/password gate and no cipher/);
-    expect(outcome.warnings.join(' ')).not.toMatch(/AES|RC4/);
+    // row above does — the cipher and its filter — and no other strength.
+    expect(outcome.warnings.join(' ')).toMatch(/protected with AES-128 \(crypt filter \/StdCF, revision 4\)/);
+    expect(outcome.warnings.join(' ')).not.toMatch(/AES-256|AESV3|RC4/);
   }, 120_000);
 });
 

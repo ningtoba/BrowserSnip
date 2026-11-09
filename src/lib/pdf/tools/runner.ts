@@ -7,7 +7,7 @@
  * `application/pdf` — so a `.docx` or `.xlsx` needed a special case list.
  */
 import { PDFDocument } from '@maxwbh/pdf-lib';
-import { saveEncrypted } from '../core/doc';
+import { resealLikeSource, saveEncrypted } from '../core/doc';
 import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolValues } from './types';
 import { downloadName } from './helpers';
 import { getPdfTool, hasCustomMainView } from './registry';
@@ -230,14 +230,22 @@ async function inputKindProblem(
  * Organize-style tools rebuild the page tree and save, and `pdf-lib` does not
  * carry `/Encrypt` across that — so rotating a password-protected contract used
  * to hand back an open file: the edit the user asked for, plus a loss of
- * protection nobody asked for. Re-applying the password they supplied is the
- * conservative default; tools whose job is removal say so with
+ * protection nobody asked for. Tools whose job is removal say so with
  * `stripsProtection`.
+ *
+ * The lock is *carried*, not rebuilt: `core/crypto.ts` kept the source's
+ * dictionary, file key and `/ID` when it undid the cipher on the way in, and
+ * `core/doc.ts:resealLikeSource` puts that same lock back on the copy. Rebuilding
+ * it from the typed password instead would also change the owner password, which
+ * is a second edit nobody asked for — and a permissions-only file has no typed
+ * password at all, so carrying the lock is the only way its restrictions survive
+ * an unrelated rename.
  */
 async function preserveProtection(
   result: ToolResult,
   source: PdfInspection | undefined,
   password: string | undefined,
+  sourceBytes: Uint8Array,
 ): Promise<{ result: ToolResult; note: string | null }> {
   if (result.kind !== 'pdf' || !source?.encrypted) return { result, note: null };
   // If the output carries protection already, the tool set it deliberately
@@ -250,19 +258,39 @@ async function preserveProtection(
   const recorded = source.algorithm && source.algorithm !== 'no cipher'
     ? `protected (${source.algorithm})`
     : 'protected by a password';
-  if (!password) {
+  if (!password && !source.opensWithEmptyPassword) {
     return { result, note: `The source was ${recorded}; the result opens without one.` };
   }
   try {
     const doc = await PDFDocument.load(result.bytes, { updateMetadata: false });
+    // First the copy keeps the lock it came with: the source's own dictionary, its
+    // file key and its `/ID`, so every secret the user holds still opens the edit
+    // and the strength does not change underneath them. This is the path a
+    // permissions-only file takes — it needs no password to be read, so there is
+    // no typed secret to re-derive a key from, and re-deriving one would swap the
+    // owner password for a new one (measured on a re-keyed copy: MuPDF answers 0
+    // and qpdf `PasswordError` to the owner password the file was locked with).
+    const resealed = await resealLikeSource(doc, sourceBytes, password);
+    if (resealed) {
+      const kept = resealed.strength ?? 'a password gate with no cipher';
+      return {
+        result: { ...result, bytes: resealed.bytes },
+        note: `Kept this file's own protection on the copy — ${kept}, the same /P flags and the same passwords that opened the source.`,
+      };
+    }
+    if (!password) {
+      return { result, note: `The source was ${recorded}; the result opens without one.` };
+    }
     const bytes = await saveEncrypted(doc, {
       userPassword: password,
       ownerPassword: password,
       ...(source.permissions ? { permissions: source.permissions } : {}),
     });
-    // The gate is re-issued, the cipher is not: what this browser writes carries
-    // the crypt filter /None, whatever the source carried.
-    return { result: { ...result, bytes }, note: `Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None.` };
+    // Reached when the source's lock cannot be carried — a gate this app wrote
+    // before it ran a cipher, or a file whose dictionary could not be read. The
+    // copy is then sealed with the password the user typed, at the one strength
+    // this browser both writes and reads.
+    return { result: { ...result, bytes }, note: `Re-applied the source's password and /P flags with the password you supplied, ciphering the copy in AES-128.` };
   } catch {
     return { result, note: 'Could not re-apply the source protection; the result opens without a password.' };
   }
@@ -371,16 +399,17 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
     // Read the source's protection only when it could matter: the pre-flight
     // keeps its inspection cheap (header and trailer) and throws it away.
     let source: PdfInspection | undefined;
+    let sourceBytes = new Uint8Array();
     if (!tool.stripsProtection && takesPdfInput(tool) && inputs.length > 0) {
       try {
-        const bytes = new Uint8Array(await inputs[0].blob().arrayBuffer());
-        source = await inspectPdf(bytes, inputs[0].name, { password: effectivePassword });
+        sourceBytes = new Uint8Array(await inputs[0].blob().arrayBuffer());
+        source = await inspectPdf(sourceBytes, inputs[0].name, { password: effectivePassword });
       } catch {
         source = undefined;
       }
     }
     const guarded = source
-      ? await preserveProtection(result, source, effectivePassword)
+      ? await preserveProtection(result, source, effectivePassword, sourceBytes)
       : { result, note: null as string | null };
     const produced = guarded.result;
     results.push(...collect(produced, inputs[0].name, tool.outputSuffix));

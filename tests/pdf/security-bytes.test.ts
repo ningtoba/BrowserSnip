@@ -50,7 +50,7 @@ import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { securityTools } from '@/lib/pdf/tools/security';
 import { inspectPdf } from '@/lib/pdf/core/guard';
-import { saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
 import { openRender } from '@/lib/pdf/core/render';
 import { pageContentStreams } from '@/lib/pdf/core/content';
 import { readInfo, readXmp, toLocalBytes, writeInfo, writeXmp } from '@/lib/pdf/core/metadata';
@@ -190,8 +190,17 @@ async function bytesOf(outcome: RunOutcome, index = 0): Promise<Uint8Array> {
 }
 
 /** Every stream in the file, inflated with `node:zlib` — no pdf-lib decoding. */
-async function inflatedStreams(bytes: Uint8Array): Promise<string> {
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+/**
+ * Every stream of the file, inflated: what a text extractor can reach.
+ *
+ * Read through `core/doc.ts:openPDF`, because that is the path which undoes a
+ * cipher — and since `protect` writes AES-128, a save of this app's own is
+ * ciphertext until something opens it with the secret. Ask without one and this
+ * answers with the bytes as they lie in the file, which is the honest outsider's
+ * view a redaction or a metadata strip is measured against.
+ */
+async function inflatedStreams(bytes: Uint8Array, password?: string): Promise<string> {
+  const doc = await openPDF(bytes, password === undefined ? { ignoreEncryption: true } : { password });
   const parts: string[] = [];
   for (const [, object] of doc.context.enumerateIndirectObjects()) {
     if (!(object instanceof PDFRawStream)) continue;
@@ -213,8 +222,8 @@ async function inflatedStreams(bytes: Uint8Array): Promise<string> {
  * a content stream — its hex spelling is the byte-level form of "is this text
  * still here", and a redaction that split the run can no longer satisfy it.
  */
-async function streamsHoldPhrase(bytes: Uint8Array, phrase: string): Promise<boolean> {
-  const all = await inflatedStreams(bytes);
+async function streamsHoldPhrase(bytes: Uint8Array, phrase: string, password?: string): Promise<boolean> {
+  const all = await inflatedStreams(bytes, password);
   const hex = Buffer.from(phrase, 'utf8').toString('hex').toUpperCase();
   return all.includes(phrase) || all.includes(hex) || latin1.decode(bytes).includes(phrase);
 }
@@ -230,8 +239,14 @@ async function pageContent(bytes: Uint8Array): Promise<string> {
 
 /** The raw `/P` integer from the encryption dictionary, read off the file. */
 function rawPermissionValue(bytes: Uint8Array): number {
-  const match = /\/P\s+(-?\d+)/.exec(latin1.decode(bytes));
-  expect(match, 'the saved file has no /P value').not.toBeNull();
+  // Inside the encryption dictionary only: past it sit ciphered streams whose
+  // arbitrary bytes can spell `/P 123` as easily as any plaintext can, and the
+  // first match in the file used to be the dictionary's by luck of ordering.
+  const raw = latin1.decode(bytes);
+  const start = raw.indexOf('/Filter /Standard');
+  expect(start, 'the saved file carries no /Filter /Standard dictionary').toBeGreaterThan(-1);
+  const match = /\/P\s+(-?\d+)/.exec(raw.slice(start, raw.indexOf('endobj', start)));
+  expect(match, 'the encryption dictionary has no /P value').not.toBeNull();
   return Number(match![1]);
 }
 
@@ -273,7 +288,7 @@ const RESTRICTIVE: ToolValues = {
 
 // ── protect ─────────────────────────────────────────────────────────────────
 
-describe('protect writes the gate it promises, and the bytes agree', () => {
+describe('protect writes the cipher it promises, and the bytes agree', () => {
   it('records /Encrypt, the hashes and the /P bits, then opens on the password with the page count read back', async () => {
     const outcome = await run('protect', {
       mode: 'both', userPassword: 'open-sesame', ownerPassword: 'owner-key', ...RESTRICTIVE,
@@ -284,23 +299,20 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     // The dictionary, found by hand rather than through the guard.
     expect(raw).toMatch(/\/Encrypt\s+\d+\s+\d+\s+R/);
     expect(raw).toMatch(/\/Filter\s*\/Standard/);
-    // Revision 4 at a 128-bit key — the strength `/O` and `/U` are genuinely
-    // computed at, and the only `/V` whose crypt filter can say `/None`.
+    // Revision 4 at a 128-bit key — the strength `/O`, `/U` and `/Perms` are
+    // genuinely computed at, and the one this app can also read back.
     expect(raw).toMatch(/\/V 4/);
     expect(raw).toMatch(/\/R 4/);
     expect(raw).toMatch(/\/Length 128/);
     expect(/\/O\s*<([0-9A-Fa-f]+)>/.exec(raw)![1].length / 2, 'the revision-4 /O is 32 bytes').toBe(32);
     expect(/\/U\s*<([0-9A-Fa-f]+)>/.exec(raw)![1].length / 2, 'the revision-4 /U is 32 bytes').toBe(32);
-    // And no cipher named anywhere in it. This is the assertion that goes red the
-    // moment a strength label comes back: `/CFM /AESV2` beside `/Length 256` is
-    // the dictionary MuPDF and qpdf refused and poppler read as unencrypted.
-    expect(raw).not.toMatch(/\/CFM/);
-    expect(raw).not.toMatch(/\/AESV2|\/AESV3/);
-    expect(raw).not.toMatch(/\/V 5|\/R 6|\/Length 256/);
-    // `/StmF` and `/StrF` are absent, so both take the spec's default: the
-    // predefined `/None` filter, "the data are not encrypted".
-    expect(raw).not.toMatch(/\/StmF|\/StrF/);
-    expect(raw).toMatch(/\/CF\s*<<\s*>>/);
+    // The cipher, named once and selected by both channels. A `/CFM` no `/StmF`
+    // points at is a gate dressed as a cipher, and `/AESV3` or `/Length 256` would
+    // be a strength this app cannot read back — so all of it is checked here.
+    expect(raw).toMatch(/\/CF\s*<<\s*\/StdCF\s*<<\s*\/CFM\s+\/AESV2/);
+    expect(raw).toMatch(/\/StmF \/StdCF/);
+    expect(raw).toMatch(/\/StrF \/StdCF/);
+    expect(raw).not.toMatch(/\/AESV3|\/V 5|\/R 6|\/Length 256|\/OE|\/UE/);
 
     // Table 25, bit by bit, out of the integer sitting in the file.
     const p = rawPermissionValue(bytes);
@@ -326,7 +338,10 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     expect(opened.pages).toBe(3);
     const decrypted = await PDFDocument.load(bytes, { password: 'open-sesame', updateMetadata: false });
     expect(decrypted.getPageCount()).toBe(3);
-    expect(await streamsHoldPhrase(bytes, 'Bravo on page 2')).toBe(true);
+    // In the clear they are not; with the secret they are. Both halves are the
+    // point of a cipher, and only the second one was true of the `/None` gate.
+    expect(await streamsHoldPhrase(bytes, 'Bravo on page 2')).toBe(false);
+    expect(await streamsHoldPhrase(bytes, 'Bravo on page 2', 'open-sesame')).toBe(true);
     // The gate is portable now, so the reader this app previews with is asked and
     // its answer is what the result repeats — the sentence the old dictionary
     // could never earn, because pdf.js threw on it.
@@ -336,31 +351,35 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     expect(outcome.message).not.toMatch(/no independent reader could confirm the gate/);
     expect(outcome.warnings.join(' ')).not.toMatch(/No PDF reader could be started|refused the password/i);
 
-    // The tool's sentence is about the file, and it says the one thing the bytes
-    // support: a gate with no crypt filter, so the pages came through as they went
-    // in — which is why the words are still in the file to be found.
+    // The tool's sentence is about the file: the strength the dictionary names, and
+    // nothing else. `AES-256` or `RC4` here would be a label the bytes refuse.
     expect(outcome.message).toMatch(/Protected with an open password/);
-    expect(outcome.message).toMatch(/no crypt filter/);
-    expect(outcome.message).not.toMatch(/AES|RC4/);
+    expect(outcome.message).toMatch(/ciphered in AES-128.*crypt filter \/StdCF/);
+    expect(outcome.message).not.toMatch(/AES-256|AESV3|RC4/);
     expect(outcome.message).toMatch(/printing blocked/);
     expect(outcome.message).toMatch(/screen readers allowed/);
-    expect(await streamsHoldPhrase(bytes, WORDS)).toBe(true);
+    expect(await streamsHoldPhrase(bytes, WORDS, 'open-sesame')).toBe(true);
   }, 300_000);
 
-  it('does not promise ciphertext it does not write', () => {
+  it('promises exactly the ciphertext it writes, and no more', () => {
     const tool = getPdfTool('protect')!;
     const help = tool.fields?.find((field) => field.key === 'userPassword')?.help ?? '';
-    expect(help).toMatch(/ignores \/Encrypt/);
-    expect(help).not.toMatch(/the bytes are encrypted/i);
-    expect(tool.description).not.toMatch(/real AES/i);
-    // No strength is offered, because none is written: the control that named four
-    // of them is gone, and no line the user reads keeps the claim.
+    const claims = `${tool.description} ${tool.promise ?? ''} ${help}`;
+    // The one strength the saved file carries is the one strength the sentences
+    // name: `/CFM /AESV2` in the dictionary, `AES-128` on the card.
+    expect(claims).toContain('AES-128');
+    expect(help).toMatch(/ciphered|ignores \/Encrypt/);
+    // The other names are ones this build does not write, so no line the user acts
+    // on may sell them — and the control that named four of them stays gone,
+    // because a choice between one working cipher and three claims is not a choice.
     expect((tool.fields ?? []).map((field) => field.key)).not.toContain('version');
-    expect(`${tool.description} ${tool.promise ?? ''} ${help}`).not.toMatch(/AES-\d+|RC4-\d+/);
+    for (const retired of ['AES-256', 'RC4-128', 'RC4-40', 'AESV3']) {
+      expect(claims, `${retired} is still being sold`).not.toContain(retired);
+    }
     const notes = tool.notes?.join(' ') ?? '';
-    expect(notes).toMatch(/copied through/i);
-    // The capability the engine does not have names a real alternative instead of
-    // quietly faking the output.
+    // The names the tool does not offer appear only where the notes say what this
+    // build cannot do with them, and the alternative it offers instead.
+    expect(notes).toMatch(/refused by name/i);
     expect(notes).toMatch(/PDF to Images/i);
   });
 
@@ -455,6 +474,9 @@ describe('a permissions-only file is restricted, not locked', () => {
     const reader = await PDFDocument.load(bytes);
     expect(reader.getPageCount()).toBe(3);
     expect(outcome.message).toMatch(/printing allowed \(low resolution only\)/);
+    // Ciphered — but under the *empty* user secret, which is no secret: opening the
+    // file asks for nothing and reads the words, exactly as a permissions-only file
+    // must. The cipher is what an open password buys, not what the flags do.
     expect(await streamsHoldPhrase(bytes, WORDS)).toBe(true);
 
     const cleared = await run('change-permissions', { action: 'clear', ownerPassword: 'owner-key' }, [pdfFile(bytes, 'restricted.pdf')]);
@@ -743,7 +765,9 @@ describe('edit-metadata changes the properties and nothing else', () => {
     expect(gate.opensWithEmptyPassword).toBe(true);
     expect(rawPermissionValue(bytes)).toBe(rawPermissionValue(locked));
     expect(outcome.warnings.join(' ')).not.toMatch(/without a password/i);
-    expect(readInfo(await PDFDocument.load(bytes, { updateMetadata: false })).title).toBe('Renamed');
+    // Through the app's own read path: the copy is AES-128 again, so a bare
+    // `PDFDocument.load` would still be holding ciphertext here.
+    expect(readInfo(await openPDF(bytes)).title).toBe('Renamed');
   }, 300_000);
 });
 
