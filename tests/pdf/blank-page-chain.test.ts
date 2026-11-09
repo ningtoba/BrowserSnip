@@ -36,7 +36,7 @@ import type { PDFPage } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, parseContentStream, streamBytes } from '@/lib/pdf/core/content';
-import { cropBox } from '@/lib/pdf/core/pages';
+import { cropBox, ensurePageContents, pageContentsState } from '@/lib/pdf/core/pages';
 
 /* ── the chain input: the product's own output ───────────────────────────── */
 
@@ -133,27 +133,6 @@ let chain: Promise<Uint8Array> | null = null;
 /** Operators that put marks on paper; a page drawing nothing has none of them. */
 const PAINTS = new Set(['Tj', 'TJ', "'", '"', 'f', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's']);
 
-/**
- * Whether a page has content, has none, or has something unreadable.
- *
- * Read straight off the page dictionary so the *before* picture is not written in
- * the vocabulary the fix introduces. `absent` is the case the seven tools refused.
- */
-function contentsStateOf(page: PDFPage): 'draws' | 'absent' | 'unreadable' {
-  const node = page.node as unknown as { get(key: PDFName): unknown };
-  const raw = node.get(PDFName.of('Contents'));
-  if (raw === undefined || raw === null) return 'absent';
-  const resolved = raw instanceof PDFRef ? page.doc.context.lookup(raw) : raw;
-  if (resolved instanceof PDFArray) {
-    return resolved.size() === 0
-      ? 'draws'
-      : resolved.asArray().every((item) => page.doc.context.lookup(item) instanceof PDFStream)
-        ? 'draws'
-        : 'unreadable';
-  }
-  return resolved instanceof PDFStream ? 'draws' : 'unreadable';
-}
-
 function paintsIn(bytes: Uint8Array): number {
   return parseContentStream(bytes).filter((op) => PAINTS.has(op.name)).length;
 }
@@ -223,7 +202,7 @@ describe('the predicate that refused blank pages', () => {
     const doc = await open(bytes);
     expect(doc.getPageCount(), 'the blank was inserted, so the file gained a page').toBe(5);
     const pages = doc.getPages();
-    expect(contentsStateOf(pages[BLANK_AT]), 'add-blank-page writes a page with no content stream').toBe('absent');
+    expect(pageContentsState(pages[BLANK_AT]), 'add-blank-page writes a page with no content stream').toBe('absent');
     // Byte level, with the object streams unpacked: four page dictionaries name a
     // `/Contents`, the fifth does not. Nothing about the file is a parse error.
     const flat = await (await open(bytes)).save({ useObjectStreams: false });
@@ -233,7 +212,7 @@ describe('the predicate that refused blank pages', () => {
     ).toBe(doc.getPageCount() - 1);
     // The four inked sheets keep their streams: the blank is the only page that
     // lost one, so the count below is about that page and not about the file.
-    expect(pages.filter((page) => contentsStateOf(page) === 'absent').length).toBe(1);
+    expect(pages.filter((page) => pageContentsState(page) === 'absent').length).toBe(1);
   });
 
   it('the fork refuses to embed exactly that page, and only that page', async () => {
@@ -312,8 +291,8 @@ async function undecodable(): Promise<Uint8Array> {
 describe('the line the fix draws', () => {
   it('a page with no /Contents is blank, not damaged', async () => {
     const pages = (await open(await withOwnBlank())).getPages();
-    expect(contentsStateOf(pages[BLANK_AT])).toBe('absent');
-    expect(contentsStateOf(pages[0])).toBe('draws');
+    expect(pageContentsState(pages[BLANK_AT])).toBe('absent');
+    expect(pageContentsState(pages[0])).toBe('draws');
   });
 
   it('a page whose content stream cannot be decoded is still damage', async () => {
@@ -321,10 +300,38 @@ describe('the line the fix draws', () => {
     // The key is there and points at a stream the filter cannot run, so nothing
     // about it reads as "blank": it is handed to the same decoder that refuses it
     // (see the run below, and the tool-level test that follows).
-    expect(contentsStateOf(pages[1])).toBe('draws');
+    expect(pageContentsState(pages[1])).toBe('draws');
     expect(() => pageContentStreams(pages[1]), 'the app reader still refuses it').toThrow(
       /could not be decompressed/,
     );
+  });
+
+  it('the repair writes the entry for a blank page and for nothing else', async () => {
+    const doc = await open(await withOwnBlank());
+    const pages = doc.getPages();
+    // An empty `/Contents` array: the shape the embedder already accepts, so the
+    // repair must leave it alone rather than writing a second entry.
+    const already = pages[0];
+    expect(ensurePageContents(already), 'an inked page is not rewritten').toBe(false);
+    const spare = doc.addPage([200, 200]);
+    (spare.node as unknown as { set(k: PDFName, v: unknown): void }).set(
+      PDFName.of('Contents'),
+      PDFArray.withContext(doc.context),
+    );
+    expect(pageContentsState(spare)).toBe('draws');
+    expect(ensurePageContents(spare), 'an empty content array stays an empty content array').toBe(false);
+    // The blank gains the same shape, and is then embeddable.
+    expect(ensurePageContents(pages[BLANK_AT]), 'the blank page is the one that needed it').toBe(true);
+    expect(pageContentsState(pages[BLANK_AT])).toBe('draws');
+    const target = await PDFDocument.create();
+    await target.embedPage(pages[BLANK_AT]);
+    await expect(target.save()).resolves.toBeInstanceOf(Uint8Array);
+    // And damage is still not repaired into silence.
+    const broken = await open(await undecodable());
+    expect(
+      ensurePageContents(broken.getPage(1)),
+      'a stream that exists but will not inflate is not given a fresh empty entry',
+    ).toBe(false);
   });
 
   it.each(SEVEN)('%s still reports an undecodable content stream instead of blanking it', async (toolId) => {
@@ -338,7 +345,7 @@ describe('the line the fix draws', () => {
       PDFRef.of(9999, 0),
     );
     const broken = await doc.save({ useObjectStreams: false });
-    expect(contentsStateOf((await open(broken)).getPage(1))).toBe('unreadable');
+    expect(pageContentsState((await open(broken)).getPage(1))).toBe('unreadable');
     await expect(run('n-up', broken, VALUES['n-up'])).rejects.toThrow(/Contents|read|damage/i);
   });
 
@@ -349,7 +356,7 @@ describe('the line the fix draws', () => {
       PDFNumber.of(12),
     );
     const broken = await doc.save({ useObjectStreams: false });
-    expect(contentsStateOf((await open(broken)).getPage(1))).toBe('unreadable');
+    expect(pageContentsState((await open(broken)).getPage(1))).toBe('unreadable');
     await expect(run('n-up', broken, VALUES['n-up'])).rejects.toThrow();
   });
 });
