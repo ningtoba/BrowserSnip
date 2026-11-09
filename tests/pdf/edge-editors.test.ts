@@ -154,14 +154,32 @@ describe('quick modes', () => {
   });
 
   it('hands the intent over exactly once', () => {
+    // This test was written while `edit-pdf-text` was its own tool, so the chip's
+    // trip was a move between two cards. There is one editor now: the chip lands on
+    // it and asks for the text mode, and the hand-off is still one-shot.
     const mode = quickModeById('editText')!;
-    requestQuickMode(mode, { currentToolId: 'edit-pdf' });
-    expect(peekEditorIntent()?.toolId).toBe('edit-pdf-text');
-    expect(window.location.hash).toBe('#/tool/edit-pdf-text');
+    requestQuickMode(mode, { currentToolId: 'redact' });
+    expect(peekEditorIntent()?.toolId).toBe('edit-pdf');
+    expect(window.location.hash).toBe('#/tool/edit-pdf?mode=text');
+    expect(toolIdFromLocation(window.location.hash)).toBe('edit-pdf');
     expect(takeEditorIntent('sign')).toBeNull();
-    const taken = takeEditorIntent('edit-pdf-text');
+    const taken = takeEditorIntent('edit-pdf');
     expect(taken?.panel).toBe('text');
-    expect(takeEditorIntent('edit-pdf-text')).toBeNull();
+    expect(takeEditorIntent('edit-pdf')).toBeNull();
+  });
+
+  it('does not move when the merged editor is already the page you are on', () => {
+    // A mode is a state of one tool, so "Edit text" from inside the editor must not
+    // route at all — routing is the thing that used to reload the document.
+    const plan = planQuickMode(quickModeById('editText')!, {
+      currentToolId: 'edit-pdf',
+      file: new File(['%PDF-1.4'], 'quote.pdf', { type: 'application/pdf' }),
+    });
+    expect(plan.navigate).toBe(false);
+    expect(plan.path).toBe('/tool/edit-pdf?mode=text');
+    expect(plan.intent.toolId).toBe('edit-pdf');
+    expect(plan.intent.file).toBeNull();
+    expect(plan.intent.note).toBeNull();
   });
 
   it('carries the document across exactly once (the store keeps a slot per tool)', () => {

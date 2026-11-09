@@ -91,6 +91,22 @@ export function getPdfTool(id: string | undefined | null): PdfToolDefinition | u
 const TOOL_ALIASES: Record<string, string> = {
   redact: 'redact-pdf',
   compare: 'compare-pdfs',
+  // `edit-pdf` and `edit-pdf-text` were two names for "change what is on this
+  // page", and picking one was a question about internals. One tool owns both
+  // jobs; the older id keeps its URL and lands on the mode it named.
+  'edit-pdf-text': 'edit-pdf',
+};
+
+/**
+ * The entry a folded route asks for, as an opaque token the surface interprets.
+ *
+ * `#/tool/edit-pdf-text` is a bookmark that means "the text half"; resolving the
+ * alias to `edit-pdf` without carrying that would land every old link on the
+ * annotating pen. Same division as `QuickMode.panel` in the editor's chooser:
+ * the registry names *which* tool, the tool decides what the token means.
+ */
+const TOOL_ALIAS_ENTRIES: Record<string, string> = {
+  'edit-pdf-text': 'text',
 };
 
 /** The id that owns this job: an alias answers with its canonical tool, all others with themselves. */
@@ -104,6 +120,14 @@ export function canonicalToolId(id: string): string {
 /** Whether `id` is a secondary spelling that the catalogue must not list twice. */
 export function isToolAlias(id: string): boolean {
   return Object.prototype.hasOwnProperty.call(TOOL_ALIASES, id);
+}
+
+/** The mode an aliased route asked for, or `undefined` when it asked for none. */
+export function aliasEntryFor(id: string): string | undefined {
+  const mode = Object.prototype.hasOwnProperty.call(TOOL_ALIAS_ENTRIES, id)
+    ? TOOL_ALIAS_ENTRIES[id]
+    : undefined;
+  return mode && isToolAlias(id) ? mode : undefined;
 }
 
 /**
@@ -231,9 +255,11 @@ const MAIN_VIEWS: Record<string, LazyExoticType> = {
   compare: lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'compare-pdfs': lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'scan-to-pdf': lazy(() => import('@/components/tools/pdf/scan/ScanMain').then(asDefault('ScanMain'))),
-  'edit-pdf': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
+  // One surface, three modes: the editor owns Annotate, Edit text and Sign, and
+  // answers both ids so a lookup by the folded id still finds a pane.
+  'edit-pdf': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
+  'edit-pdf-text': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
   'add-stamps': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
-  'edit-pdf-text': lazy(() => import('@/components/tools/pdf/text-editor/TextEditor').then(asDefault('TextEditor'))),
   'form-filler': lazy(() => import('@/components/tools/pdf/edit/FormFillMain')),
   'form-creator': lazy(() => import('@/components/tools/pdf/edit/FormCreatorMain')),
 };

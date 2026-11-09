@@ -142,7 +142,6 @@ export const TOOL_JOBS: ToolJob[] = [
     icon: '✏️',
     toolIds: [
       'edit-pdf',
-      'edit-pdf-text',
       'pdf-crop',
       'page-numbers',
       'watermark',

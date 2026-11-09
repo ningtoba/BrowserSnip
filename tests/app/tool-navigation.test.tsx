@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { AppRoot } from '@/AppRoot';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useFileStore } from '@/stores/file-store';
 
 afterEach(() => {
   cleanup();
@@ -70,6 +71,56 @@ async function clickCard(toolId: string) {
   return { root, logged };
 }
 
+/**
+ * Open the merged editor with a document and press a mode chip.
+ *
+ * The chip is the click that used to live on a second tool card: "Edit text" is a
+ * mode of `edit-pdf` now, so the text editor's chunk is fetched from inside a
+ * click handler on the editor page instead of from the dashboard.
+ */
+async function clickEditorMode(mode: string) {
+  const file = new File(['%PDF-1.4\n'], 'quarterly-report.pdf', { type: 'application/pdf' });
+  // The editor's own session slot, because `setActiveTool` swaps the visible file
+  // for whatever the tool it lands on was holding.
+  useFileStore.setState({
+    activeTool: null,
+    file: null,
+    files: [],
+    metadata: null,
+    sessions: {
+      'edit-pdf': {
+        file,
+        files: [file],
+        metadata: null,
+        isLargeFile: false,
+        params: {},
+        codecWarning: null,
+      },
+    } as never,
+  });
+  window.location.hash = '#/tool/edit-pdf';
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const root = document.createElement('div');
+  root.id = 'root';
+  document.body.appendChild(root);
+  render(<AppRoot />, { container: root });
+
+  const chip = await waitFor(() => {
+    const found = document.querySelector<HTMLButtonElement>(`[data-editor-mode="${mode}"]`);
+    if (!found) throw new Error('the merged editor never offered its mode chooser');
+    return found;
+  });
+  fireEvent.click(chip);
+  await waitFor(() => {
+    expect(window.location.hash).toContain('mode=text');
+  });
+  await new Promise((r) => setTimeout(r, 120));
+
+  const logged = spy.mock.calls.map((c) => c.join(' ')).join('\n');
+  spy.mockRestore();
+  return { root, logged };
+}
+
 describe('tool-card navigation', () => {
   it('keeps the router configured to navigate inside a transition', () => {
     // jsdom cannot reproduce React #426: the sync-input check depends on real
@@ -90,11 +141,20 @@ describe('tool-card navigation', () => {
     expect(root.textContent ?? '', 'the app unmounted to a blank page').not.toBe('');
   });
 
-  it('keeps the app mounted for the in-place text editor too', async () => {
-    const { root, logged } = await clickCard('edit-pdf-text');
+  it('keeps the app mounted when the merged editor switches to the text mode', async () => {
+    // This was "the in-place text editor too", proved by a second dashboard card.
+    // There is one card now, so the same React #426 exposure is reached the way a
+    // user reaches it: a chip inside the editor that fetches the text pane's chunk.
+    const { root, logged } = await clickEditorMode('text');
 
-    expect(SUSPENSE_ON_SYNC_INPUT.test(logged)).toBe(false);
+    expect(SUSPENSE_ON_SYNC_INPUT.test(logged), `React suspended on sync input:\n${logged.slice(0, 400)}`).toBe(false);
     expect(root.childElementCount).toBeGreaterThan(0);
+    expect(root.textContent ?? '').not.toBe('');
+    // The pane that answers is the text one, and the page is still the one tool.
+    const shown = document.querySelector('[data-editor-pane="text"]');
+    expect(shown, 'the text mode never mounted its pane').toBeTruthy();
+    expect(shown?.className).not.toContain('hidden');
+    expect(document.querySelector('[data-editor-pane="annotate"]')?.className).toContain('hidden');
   });
 
   it('shows a recoverable panel instead of a blank page when a view throws', async () => {

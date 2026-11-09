@@ -22,7 +22,9 @@
 ---
 
 > **✂ Snip, process, and secure your media — all inside your browser tab.**  
-> BrowserSnip is a collection of **130 focused micro-tools** (8 video + 122 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
+> BrowserSnip is a collection of **129 focused micro-tools** (8 video + 121 PDF) for media and document work. Every operation — trimming a video, merging PDFs, compressing to a target size, signing a document, or OCR-scanning a photo — runs locally on your machine through WebAssembly. Nothing touches a server. Nothing leaves your device.
+>
+> *Both numbers are the app's own: they come from `TOOL_CATALOGUE` (`src/lib/pdf/tools/registry.ts`), which counts one entry per job — an id folded into another tool as a route alias is not a second tool. If you add or fold a tool, edit the registry and these figures with it.*
 
 ---
 
@@ -35,7 +37,7 @@ BrowserSnip is **not** a timeline-based video editor like CapCut or Premiere. It
 | | | |
 |---|---|---|
 | 🎬 **Video Tools** | 8 FFmpeg-powered micro-tools | Trim, resize, crop, compress, GIF, audio, speed, metadata |
-| 📄 **PDF Tools** | 122 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
+| 📄 **PDF Tools** | 121 tools across 6 categories | Merge, split, convert, edit, annotate, sign, encrypt, OCR, redact, impose |
 | 🔒 **Privacy-first** | Runs entirely in your browser | WebAssembly + SharedArrayBuffer. Zero server footprint |
 | ⚡ **Instant results** | Stream-copy where possible | Lossless operations finish in seconds, not minutes |
 | 🌑 **Dark mode** | Developer-grade aesthetic | Indigo accent on zinc/slate, designed for long sessions |
@@ -64,7 +66,7 @@ Eight focused tools powered by [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpe
 
 ## 📄 PDF Tools
 
-122 tools across six categories — 116 of BentoPDF's 123 tool routes — all driven from one declarative registry
+121 tools across six categories — 116 of BentoPDF's 123 tool routes, one card per job (`edit-pdf-text` is a mode of `edit-pdf`, and its URL still answers) — all driven from one declarative registry
 (`src/lib/pdf/tools/`) — adding a tool means adding one module, not editing five files.
 
 The count is the catalogue (`TOOL_CATALOGUE`, exported as `PDF_TOOL_COUNT`), which lists one
@@ -341,7 +343,7 @@ npm run build
 ```
 /                    Landing page (hero, category cards, Blur promo)
 /video               Video Tools dashboard (8 tools)
-/pdf                 PDF Tools dashboard (122 tools in 6 categories)
+/pdf                 PDF Tools dashboard (121 tools in 6 categories)
 /tool/:toolId        Unified ToolWorkspace — dispatches video vs PDF by category
 ```
 

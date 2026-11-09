@@ -1,11 +1,13 @@
 /**
  * Quick modes — the routing the empty editors promise.
  *
- * The editors are three separate tools (`edit-pdf`, `edit-pdf-text`, `sign`), so
- * a user who arrives on "Edit PDF" and wants a signature has to know that the
- * signature tool lives elsewhere. The chips in the empty state say it out loud
- * and move the user there, with the right sub-panel already open and the current
- * document carried over — otherwise a chip would just mean re-picking the file.
+ * Marking up a page, rewriting its words and signing it are three jobs, but they
+ * are no longer three tools: `edit-pdf` owns all three as modes, and `sign` — the
+ * saved-signature workstation — is still somewhere else. A chip in a standalone
+ * editor route (`add-stamps`, `redact`) therefore either arms the pen this page
+ * already holds or moves the user to the editor, with the right mode asked for in
+ * the URL and the current document carried over — otherwise a chip would just mean
+ * re-picking the file.
  *
  * Two constraints shape the implementation:
  *
@@ -17,6 +19,7 @@
  *   It holds a `File` reference, never file contents, and lives only as long as
  *   the tab — same rule as the annotation workspaces.
  */
+import type { EditorModeId } from './editorModes';
 import type { EditorToolId } from './types';
 
 export type QuickModeId = 'sign' | 'editText' | 'annotate';
@@ -34,6 +37,11 @@ export interface QuickMode {
    * `'draw' | 'text' | 'image'`, the editors read `'markup' | 'text' | …`.
    */
   panel: string;
+  /**
+   * The mode of the merged editor this chip asks for, carried as `?mode=` so the
+   * arrival opens on the right half instead of the default one.
+   */
+  mode?: EditorModeId;
   /** Annotation palette entry to arm on arrival. */
   armTool?: EditorToolId;
 }
@@ -53,8 +61,11 @@ export const QUICK_MODES: QuickMode[] = [
     label: 'Edit text',
     blurb: 'Retype the words already in the page',
     icon: '🔤',
-    toolId: 'edit-pdf-text',
+    // One editor, one route: the text half is a mode of `edit-pdf` now, and the
+    // query names it so the surface opens there instead of on a pen.
+    toolId: 'edit-pdf',
     panel: 'text',
+    mode: 'text',
   },
   {
     id: 'annotate',
@@ -63,6 +74,7 @@ export const QUICK_MODES: QuickMode[] = [
     icon: '🖍️',
     toolId: 'edit-pdf',
     panel: 'markup',
+    mode: 'annotate',
     armTool: 'highlight',
   },
 ];
@@ -88,8 +100,8 @@ export function defaultToolForToolId(toolId: string | null | undefined): EditorT
   return ARM_BY_TOOL_ID[toolId] ?? null;
 }
 
-export function toolPath(toolId: string): string {
-  return `/tool/${toolId}`;
+export function toolPath(toolId: string, mode?: EditorModeId): string {
+  return mode ? `/tool/${toolId}?mode=${mode}` : `/tool/${toolId}`;
 }
 
 /** Route id currently in the address bar, or `null` when the hash is not a tool. */
@@ -135,6 +147,11 @@ export function peekEditorIntent(): EditorIntent | null {
   return pending;
 }
 
+/** Whether a hand-off is waiting for this route, before anything consumes it. */
+export function hasEditorIntent(toolId: string): boolean {
+  return pending?.toolId === toolId;
+}
+
 export function clearEditorIntent(): void {
   pending = null;
 }
@@ -159,7 +176,7 @@ export function planQuickMode(
   const navigate = current !== mode.toolId;
   return {
     navigate,
-    path: toolPath(mode.toolId),
+    path: toolPath(mode.toolId, mode.mode),
     intent: {
       toolId: mode.toolId,
       panel: mode.panel,
@@ -171,13 +188,17 @@ export function planQuickMode(
 }
 
 /** Assigning to `location.hash` is what a `HashRouter` link does. */
-export function navigateToTool(toolId: string): void {
-  const path = toolPath(toolId);
+export function navigateToPath(path: string): void {
   try {
     if (typeof window !== 'undefined') window.location.hash = `#${path}`;
   } catch {
     /* a non-browser caller (unit test of the pure half) simply does not move */
   }
+}
+
+/** Move to a tool's route, with nothing asked of it. */
+export function navigateToTool(toolId: string): void {
+  navigateToPath(toolPath(toolId));
 }
 
 /**
@@ -190,7 +211,9 @@ export function requestQuickMode(
 ): QuickModePlan {
   const plan = planQuickMode(mode, options);
   setEditorIntent(plan.intent);
-  if (plan.navigate) navigateToTool(mode.toolId);
+  // The path, not the id: a chip that asks the merged editor for a mode has to
+  // arrive with that ask still attached.
+  if (plan.navigate) navigateToPath(plan.path);
   return plan;
 }
 

@@ -240,7 +240,40 @@ function rasterHint(tool: EditorToolId, ready: boolean): string {
   return 'Click where it should go, then pick a PNG or JPEG: it lands on that spot.';
 }
 
-export function AnnotationEditor(): JSX.Element {
+/**
+ * How the editor is being hosted.
+ *
+ * The same component serves the route-level editors (`add-stamps`, `redact`) and
+ * the merged `edit-pdf` surface. A host that shows two editors at once has to
+ * take over two things this component cannot see for itself: who owns the
+ * keyboard, and who offers the choice of job.
+ */
+export interface AnnotationEditorProps {
+  /**
+   * False when another pane is showing. Both editors bind `window` `keydown`, and
+   * two listeners on the same target and phase cannot be arbitrated from a
+   * parent — `display:none` hides a pane, it does not unregister its handler — so
+   * a hidden pane has to be told not to bind at all. Otherwise one Ctrl+Z undoes
+   * in two surfaces and one Ctrl+S downloads two files.
+   */
+  active?: boolean;
+  /**
+   * The pen the host's mode chooser is asking for, or `null` to leave the palette
+   * alone. Applied whenever it changes, including on mount.
+   */
+  armedTool?: EditorToolId | null;
+  /** Reports the pen the palette actually holds, so a host's chip cannot lie. */
+  onToolChange?: (tool: EditorToolId) => void;
+  /** False when the host owns the mode chooser, so the chips are not offered twice. */
+  showModeChips?: boolean;
+}
+
+export function AnnotationEditor({
+  active = true,
+  armedTool = null,
+  onToolChange,
+  showModeChips = true,
+}: AnnotationEditorProps = {}): JSX.Element {
   /* ── documents ───────────────────────────────────────────────────── */
 
   const files = useFileStore((s) => s.files);
@@ -1437,6 +1470,7 @@ export function AnnotationEditor(): JSX.Element {
   }, [armTool, editingId, gesture, linkDraft, signOpen, tool, updateWork, work?.selection]);
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       const modifiers = {
@@ -1551,6 +1585,9 @@ export function AnnotationEditor(): JSX.Element {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    // A mode switch changes who owns the keyboard, so the binding has to be
+    // re-decided — not just re-run when something else happens to change.
+    active,
     annotations,
     armTool,
     duplicateSelected,
@@ -1818,6 +1855,20 @@ export function AnnotationEditor(): JSX.Element {
     }
   }, [addFile, armTool, files.length, routeToolId]);
 
+  /*
+     The host's mode chooser arms a pen here, and the palette's own pen is
+     reported back. Both directions are needed: a merged surface that pressed
+     `Sign` without reporting the pen would still read `Sign` after the mark
+     landed and the settled-tool rule handed the cursor back to Select.
+  */
+  useEffect(() => {
+    if (armedTool) armTool(armedTool);
+  }, [armedTool, armTool]);
+
+  useEffect(() => {
+    onToolChange?.(tool);
+  }, [onToolChange, tool]);
+
   /**
    * A chip that lands on the route already open does not navigate; it arms the
    * palette group the job lives in, which is the part the user asked for.
@@ -2074,7 +2125,7 @@ export function AnnotationEditor(): JSX.Element {
             {/* Once a document is open the chips carry it across, which is the
                 only reason a chip beats opening the other tool by hand. In the
                 empty state the chooser below is the single source of chips. */}
-            {phase !== 'empty' && (
+            {phase !== 'empty' && showModeChips && (
               <motion.div variants={fadeUp}>
                 <QuickModeChips
                   currentToolId={routeToolId}
@@ -2583,6 +2634,7 @@ export function AnnotationEditor(): JSX.Element {
                 currentToolId={routeToolId}
                 file={null}
                 onLocal={applyLocalQuickMode}
+                showChips={showModeChips}
               />
             )}
 
@@ -2978,11 +3030,14 @@ function EmptyState({
   currentToolId,
   file,
   onLocal,
+  showChips = true,
 }: {
   onPick: () => void;
   currentToolId: string | null;
   file: File | null;
   onLocal: (mode: QuickMode) => void;
+  /** False when the host already offers the choice of job above the canvas. */
+  showChips?: boolean;
 }) {
   return (
     <motion.div
@@ -3011,9 +3066,11 @@ function EmptyState({
         >
           Choose a PDF
         </motion.button>
-        <motion.div variants={fadeUp} className="mt-4">
-          <QuickModeChips currentToolId={currentToolId} file={file} onLocal={onLocal} />
-        </motion.div>
+        {showChips && (
+          <motion.div variants={fadeUp}>
+            <QuickModeChips currentToolId={currentToolId} file={file} onLocal={onLocal} />
+          </motion.div>
+        )}
         <motion.div variants={fadeUp} className="mt-4">
           <DropReassurance lines={DROP_REASSURANCE} />
         </motion.div>

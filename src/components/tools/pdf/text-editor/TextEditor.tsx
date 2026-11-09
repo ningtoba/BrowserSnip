@@ -181,7 +181,20 @@ interface SearchIndex {
   paragraphs: Map<string, ExtractedParagraph>;
 }
 
-export function TextEditor() {
+export interface TextEditorProps {
+  /**
+   * False when another pane of the merged editor is showing.
+   *
+   * This component's shortcuts live on `window`, and two listeners on the same
+   * target and phase cannot be arbitrated from a parent — hiding the pane does not
+   * unregister them — so a surface that keeps both editors mounted has to say which
+   * one owns the keyboard. Without it, Ctrl+Z in the annotation pane also undoes a
+   * text edit nobody can see.
+   */
+  active?: boolean;
+}
+
+export function TextEditor({ active = true }: TextEditorProps = {}) {
   const file = useFileStore((s) => s.file);
   const setFile = useFileStore((s) => s.setFile);
   const activeToolId = useFileStore((s) => s.activeTool);
@@ -459,7 +472,8 @@ export function TextEditor() {
   }, [activeSession, page, zoom, objects]);
 
   useEffect(() => {
-    if (!file) return;
+    // `active` gates the whole binding: see `TextEditorProps`.
+    if (!file || !active) return;
     const onKey = (event: KeyboardEvent) => {
       const meta = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();

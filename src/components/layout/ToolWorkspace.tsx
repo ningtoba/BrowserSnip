@@ -22,7 +22,7 @@ import type { ComponentType } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { TOOLS } from '@/lib/constants';
-import { canonicalToolId, getPdfTool, mainViewFor, hasCustomMainView } from '@/lib/pdf/tools/registry';
+import { aliasEntryFor, canonicalToolId, getPdfTool, mainViewFor, hasCustomMainView } from '@/lib/pdf/tools/registry';
 import { fadeUp, floatLoop, staggerParent } from '@/lib/motion';
 import { FileDropZone } from '@/components/ui/FileDropZone';
 import { VideoPreview } from '@/components/player/VideoPreview';
@@ -182,9 +182,13 @@ export function ToolWorkspace() {
   });
 
   // An alias URL is valid; it just is not the page. `replace` so the canonical
-  // address is what lands in history, then the same render continues there.
+  // address is what lands in history, then the same render continues there. A
+  // folded id may also name an entry of the tool that owns it — the old
+  // `#/tool/edit-pdf-text` means "the text half" — and the mode has to survive
+  // the hop or every bookmark written before the merge lands on the wrong pane.
   if (routeId !== toolId) {
-    return <Navigate to={`/tool/${routeId}`} replace />;
+    const entry = aliasEntryFor(toolId ?? '');
+    return <Navigate to={entry ? `/tool/${routeId}?mode=${entry}` : `/tool/${routeId}`} replace />;
   }
 
   if (!tool) {

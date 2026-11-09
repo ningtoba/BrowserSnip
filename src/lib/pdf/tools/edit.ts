@@ -501,21 +501,31 @@ export const editTools: PdfToolDefinition[] = [
   {
     id: 'edit-pdf',
     name: 'PDF Editor',
-    actionLabel: 'Save annotations',
-    description: 'Annotate, highlight, redact, comment, and add shapes or images on one canvas',
+    actionLabel: 'Save PDF',
+    description: 'Annotate, highlight, redact and comment, or rewrite the words already on the page',
     icon: '✏️',
     category: 'edit',
-    keywords: ['annotate', 'highlight', 'comment', 'draw', 'markup', 'pen', 'shapes'],
+    // `edit-pdf-text` is folded into this id, and the palette matches on keywords:
+    // someone who remembers the old page types its name, and must get this tool.
+    keywords: ['annotate', 'highlight', 'comment', 'draw', 'markup', 'pen', 'shapes', 'edit text', 'rewrite text', 'edit-pdf-text'],
     surface: 'custom',
     outputSuffix: '_edited.pdf',
-    promise: 'One canvas for highlights, notes, ink, shapes and stamps — saved as standard PDF annotations you can still edit elsewhere.',
+    promise: 'Mark up the page, or retype the words already in it — one editor, one export, and it stays a standard PDF.',
     notes: [
       'Annotations are written as standard PDF annotations, so other readers show and edit them.',
       'Marks follow the page as you see it: on a rotated page a box you drew stays where you put it.',
+      'The Edit text mode deletes the original glyph runs and redraws the block, so the old words are not left hiding underneath.',
+      'Changing mode keeps the open document, every mark, every unfinished rewrite and the page you were on; each mode has its own undo, and it survives the trip.',
     ],
   },
 
   {
+    /**
+     * A folded route, not a second tool: `TOOL_ALIASES` sends this id to
+     * `edit-pdf`, so it has no card, no palette row and no place in the count.
+     * The definition stays because the bookmarks name it, because the text
+     * editor's tests drive it by id, and because the pane lookup still answers it.
+     */
     id: 'edit-pdf-text',
     name: 'Edit PDF Text',
     actionLabel: 'Save text',

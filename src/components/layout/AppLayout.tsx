@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { easeOut, tapDown } from '@/lib/motion';
-import { PDF_CATEGORIES, getPdfTool } from '@/lib/pdf/tools/registry';
+import { PDF_CATEGORIES, canonicalToolId, getPdfTool } from '@/lib/pdf/tools/registry';
 import { TOOLS as ALL_TOOLS } from '@/lib/constants';
 import { useTheme } from '@/hooks/useTheme';
 import { useFileStore } from '@/stores/file-store';
@@ -201,16 +201,25 @@ function ThemeToggle() {
  * setting they never chose.
  */
 export function ToolPageHeader({ toolId }: { toolId: string }) {
-  const definition = getPdfTool(toolId);
+  /**
+   * The tool this strip is allowed to name.
+   *
+   * A folded id is a spelling, not a second tool, so the breadcrumb, the title and
+   * the star all resolve it first. Without that, `#/tool/edit-pdf-text` spent one
+   * frame under "Edit PDF Text" beside a page that is called "PDF Editor" — one
+   * job with two names is exactly what the merge removed.
+   */
+  const canonical = canonicalToolId(toolId);
+  const definition = getPdfTool(canonical);
   const { isStarred, toggle } = useStarredTools();
   // Video tools are not in the PDF registry. Left as it was, the header fell
   // back to the raw id ("trim") and pointed a video page's breadcrumb at /pdf.
-  const video = definition ? undefined : ALL_TOOLS.find((entry) => entry.id === toolId && entry.category === 'video');
+  const video = definition ? undefined : ALL_TOOLS.find((entry) => entry.id === canonical && entry.category === 'video');
   const isVideo = Boolean(video);
   const category = definition ? PDF_CATEGORIES.find((entry) => entry.id === definition.category) : undefined;
   const starred = definition ? isStarred(definition.id) : false;
 
-  const label = definition?.name ?? video?.name ?? toolId;
+  const label = definition?.name ?? video?.name ?? canonical;
 
   return (
     <header className="shell-header shrink-0 border-b px-4 py-2 sm:px-5">
