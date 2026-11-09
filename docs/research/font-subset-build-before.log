@@ -1,0 +1,34 @@
+faces:
+  noto-regular         TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 2e1ecf202614
+  noto-bold            TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.1 KB sha 5f0575392366
+  noto-italic          TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 2e1ecf202614
+  noto-pdflib-subset   TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.5 KB sha cb1cd21b77c0
+  noto-pdflib-full     TTF  rows 268 refused   0 face ? (4688 glyphs) file 298.6 KB sha b74486448870
+  standard-14          unknown rows 161 refused   0 face  file 7.7 KB sha 2c6467571946
+  app-arabic           TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.9 KB sha 7b0ff4bf2d82
+  pdflib-arabic        TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.7 KB sha 65e40dfba254
+  full-arabic          TTF  rows  32 refused   0 face ? (1637 glyphs) file 91.9 KB sha e7eac51c4b68
+  app-hebrew           TTF  rows  27 refused   0 face ? (485 glyphs) file 5.6 KB sha 30eeca46aece
+  app-devanagari       TTF  rows  43 refused   0 face ? (1238 glyphs) file 9.3 KB sha cf9aea4ecdfd
+  app-bengali          TTF  rows  42 refused   0 face ? (937 glyphs) file 9.8 KB sha 0fde7a7aba2e
+  app-tamil            TTF  rows  31 refused   0 face ? (534 glyphs) file 8.1 KB sha 3868e8fe7e70
+  app-telugu           TTF  rows  47 refused   0 face ? (1081 glyphs) file 10.0 KB sha b64ef6f90540
+  app-kannada          TTF  rows  47 refused   0 face ? (771 glyphs) file 10.9 KB sha 46a8cf14066f
+  app-malayalam        TTF  rows  47 refused   0 face ? (644 glyphs) file 11.5 KB sha e6291caf8570
+  app-thai             TTF  rows  44 refused   0 face ? (472 glyphs) file 8.5 KB sha 91ec2da720a3
+  pdflib-thai          TTF  rows  44 refused   0 face ? (472 glyphs) file 8.3 KB sha c885e06ca84f
+  app-lao              TTF  rows  27 refused   0 face ? (450 glyphs) file 6.2 KB sha 40ff4cff2928
+  app-khmer            TTF  rows  34 refused   0 face ? (678 glyphs) file 7.2 KB sha c076e7c4a2b9
+  app-myanmar          TTF  rows  28 refused   0 face ? (610 glyphs) file 10.4 KB sha d3aae42f0e85
+  app-georgian         TTF  rows  33 refused   0 face ? (554 glyphs) file 7.8 KB sha dca6df4d7870
+  app-armenian         TTF  rows  38 refused   0 face ? (440 glyphs) file 7.9 KB sha dde8fd4b18ae
+  app-ethiopic         TTF  rows  26 refused   0 face ? (924 glyphs) file 5.9 KB sha df4a04c1b923
+  app-jp               CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.1 KB sha ce926c1ca95b
+  pdflib-jp            CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.0 KB sha 1bfe662f1e9e
+  app-kr               CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.7 KB sha 18057d60529c
+  pdflib-kr            CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.5 KB sha 75954ff5b94c
+  full-kr              CFF  rows  64 refused   0 face ? (24869 glyphs) file 3928.2 KB sha ef733258b640
+  app-sc               CFF  rows  39 refused   0 face ? (30900 glyphs) file 45.5 KB sha c66d421cbe16
+  app-tc               CFF  rows  34 refused   0 face ? (20815 glyphs) file 8.8 KB sha 91d274dbdc0c
+
+31 probe PDFs in /tmp/fsb

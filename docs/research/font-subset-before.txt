@@ -1,0 +1,224 @@
+MuPDF error: library error: FT_New_Memory_Face(NotoSansJP-Regular-2015): unknown file format
+
+MuPDF error: library error: FT_New_Memory_Face(NotoSansJP-Regular-2015): unknown file format
+
+MuPDF error: library error: FT_New_Memory_Face(NotoSansKR-Regular-2867): unknown file format
+
+MuPDF error: library error: FT_New_Memory_Face(NotoSansKR-Regular-2867): unknown file format
+
+MuPDF error: library error: FT_New_Memory_Face(NotoSansSC-Regular-1316): unknown file format
+
+MuPDF error: library error: FT_New_Memory_Face(NotoSansTC-Regular-1733): unknown file format
+
+per-glyph ink, MuPDF at 150 dpi, reference = the same face drawn by MuPDF itself
+
+face                 flavour cff guard glyphs lost  program mupdf  pdf.js first lost      KB
+noto-regular         TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    30.0
+noto-bold            TTF     dead         267   216     129 FT_Load_Glyph(NotoSans    216      row 0    29.1
+noto-italic          TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    30.0
+noto-pdflib-subset   TTF     dead         267   216     124 FT_Load_Glyph(NotoSans    211      row 0    29.5
+noto-pdflib-full     TTF     dead         267     0       0  clean      2          -   298.6
+standard-14          unknown dead         160     0       0  clean      2          -     7.7
+app-arabic           TTF     dead          32     0       1  clean      0          -     6.9
+pdflib-arabic        TTF     dead          32     0       2  clean      0          -     6.7
+full-arabic          TTF     dead          32     0       1  clean      0          -    91.9
+app-hebrew           TTF     dead          27     0       0  clean      0          -     5.6
+app-devanagari       TTF     dead          43     0       0  clean      0          -     9.3
+app-bengali          TTF     dead          42     0       0  clean      0          -     9.8
+app-tamil            TTF     dead          30     0       0  clean      0          -     8.1
+app-telugu           TTF     dead          47     0       0  clean      0          -    10.0
+app-kannada          TTF     dead          47     0       0  clean      0          -    10.9
+app-malayalam        TTF     dead          47     0       0  clean      0          -    11.5
+app-thai             TTF     dead          44     0       0  clean      0          -     8.5
+pdflib-thai          TTF     dead          44     0       0  clean      0          -     8.3
+app-lao              TTF     dead          27     0       0  clean      0          -     6.2
+app-khmer            TTF     dead          33     0       0  clean      0          -     7.2
+app-myanmar          TTF     dead          28     0       0  clean      0          -    10.4
+app-georgian         TTF     dead          33     0       0  clean      0          -     7.8
+app-armenian         TTF     dead          38     0       0  clean      0          -     7.9
+app-ethiopic         TTF     dead          26     0       0  clean      0          -     5.9
+app-jp               CFF     dead          76    76       0 library error: FT_New_      0      row 0    20.1
+pdflib-jp            CFF     dead          76    76       0 library error: FT_New_      0      row 0    20.0
+app-kr               CFF     dead          53    53       0 library error: FT_New_      0      row 0    36.7
+pdflib-kr            CFF     dead          53    53       0 library error: FT_New_      0      row 0    36.5
+full-kr              CFF     dead          53    29       0 FT_Load_Glyph(NotoSans     44      row 2  3928.2
+app-sc               CFF     dead          38    38       0 library error: FT_New_      0      row 0    45.5
+app-tc               CFF     dead          34    34       0 library error: FT_New_      0      row 0     8.8
+
+## noto-regular — bundled Noto Sans regular (TTF face, via app)
+   /NotoSans-Regular-5311: FontFile2 holding a TTF program of 19208 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 268 code points, fontTools parses
+   MuPDF: FT_Load_Glyph(NotoSans-Regular-5311,2,FT_LOAD_NO_HINTING): invalid outline
+   loca: 146 of 276 glyph records do not start on a 4-byte boundary (glyph 7 at byte 530); 175 of 276 entries give a glyph a different number of bytes than its record occupies (glyph 2 at byte 40: loca says 56, the record is 57, and the same disagreement runs to glyph 275 at byte 17190)
+   lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
+   ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
+   lost ink with no MuPDF reference either (1 of 216 lost): /
+   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   ": IndexError reading the record at byte 96
+   %: IndexError reading the record at byte 384
+
+## noto-bold — bundled Noto Sans bold (TTF face, via app)
+   /NotoSans-Bold-5311: FontFile2 holding a TTF program of 19118 B from a 557380 B face, descendant /CIDFontType2, /ToUnicode covers 268 code points, fontTools parses
+   MuPDF: FT_Load_Glyph(NotoSans-Bold-5311,2,FT_LOAD_NO_HINTING): invalid outline
+   loca: 110 of 276 glyph records do not start on a 4-byte boundary (glyph 6 at byte 378); 187 of 276 entries give a glyph a different number of bytes than its record occupies (glyph 2 at byte 40: loca says 56, the record is 57, and the same disagreement runs to glyph 275 at byte 17104)
+   lost ink (216 of 267): !"%&)*+,./01234678:;<=>?@ABCDEFGHIJKLOPQRSTUVWXYZ]^bcdefghijklmnopqrtuvwxyz|}¢£¥§©®±¶ÀÂÄÇÈÉÊËÎÏÑÔÖÙÛÜßàâäçèéêëîïñôöùûüŒŠšŸŽž˜ΑΒΓΔΕΖΗΘΙΚΛΞΟΠΡ
+   ink produced/reference: ! 0/194, " 0/128, % 0/623, & 0/571, ) 0/235, * 0/234
+   lost ink with no MuPDF reference either (1 of 216 lost): /
+   glyph program differs from the source face (129): "&*,/123478;<=>@ABCDEFHIKLPRSUVXZ^cefghiklnpruwxyz}¢£§©®±àâäçèéêëîïñôöùûüŒ˜ΑΒΓΕΖΗΘΙΚΛΟΠΡΣαγεζθκλμοπσφωАБИКХЦЩЭЯабгежнопчшщяё”…‹›€
+   ": error reading the record at byte 96
+   &: error reading the record at byte 510
+
+## noto-italic — bundled Noto Sans, synthesised italic (TTF face, via app)
+   /NotoSans-Regular-5311: FontFile2 holding a TTF program of 19208 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 268 code points, fontTools parses
+   MuPDF: FT_Load_Glyph(NotoSans-Regular-5311,2,FT_LOAD_NO_HINTING): invalid outline
+   loca: 146 of 276 glyph records do not start on a 4-byte boundary (glyph 7 at byte 530); 175 of 276 entries give a glyph a different number of bytes than its record occupies (glyph 2 at byte 40: loca says 56, the record is 57, and the same disagreement runs to glyph 275 at byte 17190)
+   lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
+   ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
+   lost ink with no MuPDF reference either (1 of 216 lost): /
+   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   ": IndexError reading the record at byte 96
+   %: IndexError reading the record at byte 384
+
+## noto-pdflib-subset — pdf-lib own subsetter (TTF) (TTF face, via pdflib-subset)
+   /NotoSans-Regular-5311: FontFile2 holding a TTF program of 19208 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 268 code points, fontTools parses
+   MuPDF: FT_Load_Glyph(NotoSans-Regular-5311,2,FT_LOAD_NO_HINTING): invalid outline
+   loca: 146 of 276 glyph records do not start on a 4-byte boundary (glyph 7 at byte 530); 175 of 276 entries give a glyph a different number of bytes than its record occupies (glyph 2 at byte 40: loca says 56, the record is 57, and the same disagreement runs to glyph 275 at byte 17190)
+   lost ink (216 of 267): !"$%&'()*+,-./01234589:;<=>?@ABCDFGHILMOPQRTUVWXYZ]^_`abdefghijklopqrstuvwyz|}¢¥§®±µ¶·¿ÀÂÄÇÈÊÎÏÑÔÖÙÛÜàâäèêëîïñôöùûüœŠšŸŽžƒˆ˜ΑΒΔΕΖΗΘΙΛΜΝΞΟΡΣΤ
+   ink produced/reference: ! 0/128, " 0/90, $ 0/323, % 0/449, & 0/430, ' 0/45
+   lost ink with no MuPDF reference either (1 of 216 lost): /
+   glyph program differs from the source face (124): "%'()+-/12459;<=>@ABDGHIMPQRUVXZ^_`abefhjklpqsuvwz}¢§±¶·¿ñöŠšŸŽžƒˆ˜ΕΖΗΘΜΝΞΤΥΦΩβγζηινξοπρσЙКФХЦШЮабвгежиймнопрстуфхцчшщяё”‹›™
+   ": IndexError reading the record at byte 96
+   %: IndexError reading the record at byte 384
+
+## noto-pdflib-full — pdf-lib whole face, no subset (control) (TTF face, via pdflib-full)
+   /NotoSans-Regular-5311: FontFile2 holding a TTF program of 556216 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 3053 code points, fontTools parses
+   loca: 3313 of 4688 glyph records do not start on a 4-byte boundary (glyph 5 at byte 97)
+
+## app-arabic — on-demand Noto Sans Arabic (TTF face, via app)
+   /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 4222 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 32 code points, fontTools parses
+   loca: 22 of 42 glyph records do not start on a 4-byte boundary (glyph 7 at byte 558)
+   glyph program differs from the source face (1): ز
+
+## pdflib-arabic — pdf-lib own subsetter, Noto Sans Arabic (TTF face, via pdflib-subset)
+   /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 4244 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 32 code points, fontTools parses
+   loca: 22 of 43 glyph records do not start on a 4-byte boundary (glyph 7 at byte 558)
+   glyph program differs from the source face (2): زه
+
+## full-arabic — whole Noto Sans Arabic, unsubsetted (control) (TTF face, via pdflib-full)
+   /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 177004 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 1161 code points, fontTools parses
+   loca: 806 of 1637 glyph records do not start on a 4-byte boundary (glyph 9 at byte 578)
+   glyph program differs from the source face (1): ه
+
+## app-hebrew — on-demand Noto Sans Hebrew (TTF face, via app)
+   /NotoSansHebrew-Regular-578: FontFile2 holding a TTF program of 2281 B from a 42284 B face, descendant /CIDFontType2, /ToUnicode covers 27 code points, fontTools parses
+   loca: 12 of 28 glyph records do not start on a 4-byte boundary (glyph 4 at byte 278)
+
+## app-devanagari — on-demand Noto Sans Devanagari (TTF face, via app)
+   /NotoSansDevanagari-Regular-192: FontFile2 holding a TTF program of 6999 B from a 190960 B face, descendant /CIDFontType2, /ToUnicode covers 43 code points, fontTools parses
+   loca: 24 of 47 glyph records do not start on a 4-byte boundary (glyph 1 at byte 42)
+
+## app-bengali — on-demand Noto Sans Bengali (TTF face, via app)
+   /NotoSansBengali-Regular-2525: FontFile2 holding a TTF program of 8301 B from a 167796 B face, descendant /CIDFontType2, /ToUnicode covers 42 code points, fontTools parses
+   loca: 25 of 44 glyph records do not start on a 4-byte boundary (glyph 3 at byte 494)
+
+## app-tamil — on-demand Noto Sans Tamil (TTF face, via app)
+   /NotoSansTamil-Regular-2668: FontFile2 holding a TTF program of 7175 B from a 74456 B face, descendant /CIDFontType2, /ToUnicode covers 30 code points, fontTools parses
+   loca: 16 of 32 glyph records do not start on a 4-byte boundary (glyph 2 at byte 286)
+
+## app-telugu — on-demand Noto Sans Telugu (TTF face, via app)
+   /NotoSansTelugu-Regular-4533: FontFile2 holding a TTF program of 11217 B from a 172500 B face, descendant /CIDFontType2, /ToUnicode covers 47 code points, fontTools parses
+   loca: 36 of 68 glyph records do not start on a 4-byte boundary (glyph 3 at byte 482)
+
+## app-kannada — on-demand Noto Sans Kannada (TTF face, via app)
+   /NotoSansKannada-Regular-4533: FontFile2 holding a TTF program of 12797 B from a 141284 B face, descendant /CIDFontType2, /ToUnicode covers 47 code points, fontTools parses
+   loca: 24 of 48 glyph records do not start on a 4-byte boundary (glyph 1 at byte 42)
+
+## app-malayalam — on-demand Noto Sans Malayalam (TTF face, via app)
+   /NotoSansMalayalam-Regular-4533: FontFile2 holding a TTF program of 11281 B from a 102160 B face, descendant /CIDFontType2, /ToUnicode covers 47 code points, fontTools parses
+   loca: 27 of 51 glyph records do not start on a 4-byte boundary (glyph 2 at byte 462)
+
+## app-thai — on-demand Noto Sans Thai (TTF face, via app)
+   /NotoSansThai-Regular-352: FontFile2 holding a TTF program of 6149 B from a 47404 B face, descendant /CIDFontType2, /ToUnicode covers 44 code points, fontTools parses
+   loca: 21 of 45 glyph records do not start on a 4-byte boundary (glyph 4 at byte 406)
+
+## pdflib-thai — pdf-lib own subsetter, Noto Sans Thai (TTF face, via pdflib-subset)
+   /NotoSansThai-Regular-352: FontFile2 holding a TTF program of 6149 B from a 47404 B face, descendant /CIDFontType2, /ToUnicode covers 44 code points, fontTools parses
+   loca: 21 of 45 glyph records do not start on a 4-byte boundary (glyph 4 at byte 406)
+
+## app-lao — on-demand Noto Sans Lao (TTF face, via app)
+   /NotoSansLao-Regular-578: FontFile2 holding a TTF program of 3955 B from a 44640 B face, descendant /CIDFontType2, /ToUnicode covers 27 code points, fontTools parses
+   loca: 16 of 28 glyph records do not start on a 4-byte boundary (glyph 2 at byte 166)
+
+## app-khmer — on-demand Noto Sans Khmer (TTF face, via app)
+   /NotoSansKhmer-Regular-1733: FontFile2 holding a TTF program of 6017 B from a 101028 B face, descendant /CIDFontType2, /ToUnicode covers 33 code points, fontTools parses
+   loca: 20 of 34 glyph records do not start on a 4-byte boundary (glyph 2 at byte 114)
+
+## app-myanmar — on-demand Noto Sans Myanmar (TTF face, via app)
+   /NotoSansMyanmar-Regular-6611: FontFile2 holding a TTF program of 10807 B from a 196004 B face, descendant /CIDFontType2, /ToUnicode covers 28 code points, fontTools parses
+   loca: 12 of 30 glyph records do not start on a 4-byte boundary (glyph 2 at byte 298)
+
+## app-georgian — on-demand Noto Sans Georgian (TTF face, via app)
+   /NotoSansGeorgian-Regular-8268: FontFile2 holding a TTF program of 5729 B from a 66740 B face, descendant /CIDFontType2, /ToUnicode covers 33 code points, fontTools parses
+   loca: 12 of 34 glyph records do not start on a 4-byte boundary (glyph 5 at byte 682)
+
+## app-armenian — on-demand Noto Sans Armenian (TTF face, via app)
+   /NotoSansArmenian-Regular-9538: FontFile2 holding a TTF program of 4427 B from a 49556 B face, descendant /CIDFontType2, /ToUnicode covers 38 code points, fontTools parses
+   loca: 19 of 39 glyph records do not start on a 4-byte boundary (glyph 2 at byte 150)
+
+## app-ethiopic — on-demand Noto Sans Ethiopic (TTF face, via app)
+   /NotoSansEthiopic-Regular-7592: FontFile2 holding a TTF program of 2987 B from a 362896 B face, descendant /CIDFontType2, /ToUnicode covers 26 code points, fontTools parses
+   loca: 14 of 27 glyph records do not start on a 4-byte boundary (glyph 2 at byte 110)
+
+## app-jp — on-demand Noto Sans JP (CFF face, via app)
+   /NotoSansJP-Regular-2015: FontFile2 holding a CFF program of 15335 B from a 4548208 B face, descendant /CIDFontType2, /ToUnicode covers 76 code points, fontTools parses — a CFF program in the TrueType slot (FontFile2) of a /CIDFontType2 font
+   MuPDF: library error: FT_New_Memory_Face(NotoSansJP-Regular-2015): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (76 of 76): あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ
+   ink produced/reference: あ 0/235, い 0/343, う 0/774, え 0/1204, お 0/1677, か 0/1870
+
+## pdflib-jp — pdf-lib own subsetter, Noto Sans JP (CFF face, via pdflib-subset)
+   /NotoSansJP-Regular-2015: FontFile3 holding a CFF program of 15335 B from a 4548208 B face, descendant /CIDFontType0, /ToUnicode covers 76 code points, fontTools parses
+   MuPDF: library error: FT_New_Memory_Face(NotoSansJP-Regular-2015): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (76 of 76): あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ
+   ink produced/reference: あ 0/235, い 0/343, う 0/774, え 0/1204, お 0/1677, か 0/1870
+
+## app-kr — on-demand Noto Sans KR (CFF face, via app)
+   /NotoSansKR-Regular-2867: FontFile2 holding a CFF program of 51297 B from a 4744692 B face, descendant /CIDFontType2, /ToUnicode covers 53 code points, fontTools parses — a CFF program in the TrueType slot (FontFile2) of a /CIDFontType2 font
+   MuPDF: library error: FT_New_Memory_Face(NotoSansKR-Regular-2867): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (53 of 53): 가간거경고글나너년노다더도동라러로마머모목문바버번보사서소시아어오이자저적제조지차처카커타터파퍼페하한허호
+   ink produced/reference: 가 0/723, 나 0/0, 다 0/7, 라 0/864, 마 0/0, 바 0/0
+   lost ink with no MuPDF reference either (32 of 53 lost): 간고글나년노더도동러마모목바번사소아어오이자저적제조지처커타하한
+
+## pdflib-kr — pdf-lib own subsetter, Noto Sans KR (CFF face, via pdflib-subset)
+   /NotoSansKR-Regular-2867: FontFile3 holding a CFF program of 51297 B from a 4744692 B face, descendant /CIDFontType0, /ToUnicode covers 53 code points, fontTools parses
+   MuPDF: library error: FT_New_Memory_Face(NotoSansKR-Regular-2867): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (53 of 53): 가간거경고글나너년노다더도동라러로마머모목문바버번보사서소시아어오이자저적제조지차처카커타터파퍼페하한허호
+   ink produced/reference: 가 0/723, 나 0/0, 다 0/7, 라 0/864, 마 0/0, 바 0/0
+   lost ink with no MuPDF reference either (32 of 53 lost): 간고글나년노더도동러마모목바번사소아어오이자저적제조지처커타하한
+
+## full-kr — whole Noto Sans KR, unsubsetted (control) (CFF face, via pdflib-full)
+   /NotoSansKR-Regular-2867: FontFile2 holding a CFF program of 4744692 B from a 4744692 B face, descendant /CIDFontType2, /ToUnicode covers 22453 code points of them written as 287 surrogate pairs, fontTools parses — a CFF program in the TrueType slot (FontFile2) of a /CIDFontType2 font
+   MuPDF: FT_Load_Glyph(NotoSansKR-Regular-2867,11440,FT_LOAD_NO_HINTING): invalid argument
+   lost ink (29 of 53): 거경글년노다도동러모목문바버번사소아오자저적제조지처커터한
+   ink produced/reference: 거 0/5, 경 0/4, 글 0/0, 년 0/0, 노 0/0, 다 0/7
+   lost ink with no MuPDF reference either (23 of 29 lost): 글년노도동러모목바번사소아오자저적제조지처커한
+
+## app-sc — on-demand Noto Sans SC (CFF face, via app)
+   /NotoSansSC-Regular-1316: FontFile2 holding a CFF program of 67123 B from a 8482020 B face, descendant /CIDFontType2, /ToUnicode covers 38 code points, fontTools parses — a CFF program in the TrueType slot (FontFile2) of a /CIDFontType2 font
+   MuPDF: library error: FT_New_Memory_Face(NotoSansSC-Regular-1316): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (38 of 38): 上下东中书作你前北南印右号后国图多大好字小少左打文日时期本标版编者西间页题馆
+   ink produced/reference: 你 0/835, 好 0/839, 中 0/839, 国 0/717, 文 0/0, 字 0/0
+   lost ink with no MuPDF reference either (10 of 38 lost): 北南图大字小文标版西
+
+## app-tc — on-demand Noto Sans TC (CFF face, via app)
+   /NotoSansTC-Regular-1733: FontFile2 holding a CFF program of 6076 B from a 5766468 B face, descendant /CIDFontType2, /ToUnicode covers 34 code points, fontTools parses — a CFF program in the TrueType slot (FontFile2) of a /CIDFontType2 font
+   MuPDF: library error: FT_New_Memory_Face(NotoSansTC-Regular-1733): unknown file format
+   CFF header: the CFF header says the Name INDEX begins at byte 24, but it begins at byte 4 (hdrSize); FreeType/MuPDF read the header and reject the font
+   lost ink (34 of 34): ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏㄐㄑㄒㄓㄔㄕㄖㄗㄘㄙㄚㄛㄜㄝㄞㄟㄠㄡㄢㄣㄤㄥㄦ
+   ink produced/reference: ㄅ 0/320, ㄆ 0/314, ㄇ 0/371, ㄈ 0/320, ㄉ 0/320, ㄊ 0/317
+   lost ink with no MuPDF reference either (1 of 34 lost): ㄏ
+
+wrote /tmp/fsb/measured.json

@@ -126,10 +126,14 @@ function utf16Hex(codePoint: number): string {
  * A `/ToUnicode` CMap for the codes this module handed out.
  *
  * Blocks are capped at 100 pairs, the most a conforming CMap may put in one
- * `beginbfchar`.
+ * `beginbfchar`, and a code is entered once: a CFF face has no map of its own,
+ * so every character it cannot spell shares the `.notdef` code and only the first
+ * of them can claim it.
  */
 function toUnicodeCmap(codes: Map<number, number>): string {
-  const pairs = [...codes.entries()].map(([codePoint, code]) => `<${cmapHex(code)}> <${utf16Hex(codePoint)}>`);
+  const byCode = new Map<number, number>();
+  for (const [codePoint, code] of codes) if (!byCode.has(code)) byCode.set(code, codePoint);
+  const pairs = [...byCode.entries()].map(([code, codePoint]) => `<${cmapHex(code)}> <${utf16Hex(codePoint)}>`);
   const blocks: string[] = [];
   for (let i = 0; i < pairs.length; i += 100) {
     const block = pairs.slice(i, i + 100);
@@ -151,6 +155,206 @@ function toUnicodeCmap(codes: Map<number, number>): string {
     'end',
     'end',
   ].join('\n');
+}
+
+/**
+ * The face's outline flavour.
+ *
+ * pdf-lib and this module used to test `font.cff`, and that property does not
+ * exist on the fontkit build `@pdf-lib/fontkit` ships: a face's tables hang off
+ * their four-character tags, so the guard never fired and a CFF face was handed
+ * to the TrueType path — its charstrings written into `/FontFile2` under a
+ * `/CIDFontType2`, which MuPDF refuses outright (`FT_New_Memory_Face: unknown
+ * file format`) so a page of Japanese printed nothing while still extracting.
+ * All four faces the app fetches for CJK are CFF-flavoured (`OTTO`).
+ */
+function faceIsCff(font: Face): boolean {
+  // SAFETY: fontkit hangs a face's decoded tables off the instance under their
+  // four-character tags; pdf-lib's published `Font` type names none of them.
+  const tables = font as unknown as { 'CFF '?: unknown; loca?: unknown };
+  return Boolean(tables['CFF ']) && !tables.loca;
+}
+
+/**
+ * Point a subset's CFF header at the index that is really there.
+ *
+ * A CFF header is four bytes: major, minor, `hdrSize`, then `firstOffset` — the
+ * absolute position of the Name INDEX. fontkit's CFF encoder writes `hdrSize = 4`
+ * and then a `firstOffset` of 24, while its Name INDEX begins at byte 4: the
+ * subset of Noto Sans JP measured `01 00 04 18 00 01 01 01 13 4e 6f 74 6f …`, and
+ * the source face it was cut from reads `01 00 04 04` with the same nine bytes
+ * after it. FreeType believes the header and rejects the program; fontTools walks
+ * the indexes and never looks, which is why a fontTools-clean subset is still an
+ * invisible page. Only the fourth byte is touched.
+ */
+function repairCffHeader(program: Uint8Array): Uint8Array {
+  if (program.length < 8 || program[0] !== 1) return program;
+  const hdrSize = program[2];
+  const firstOffset = program[3];
+  if (hdrSize < 4 || hdrSize > 255 || firstOffset === hdrSize) return program;
+  // An INDEX is a 16-bit count, then a one-byte offset size in 1..4. The Name
+  // INDEX of a font holds at least one name, so that shape at `hdrSize` says
+  // where the data begins whatever the header claims.
+  const count = (program[hdrSize] << 8) | program[hdrSize + 1];
+  const offsetSize = program[hdrSize + 2];
+  if (count < 1 || offsetSize < 1 || offsetSize > 4) return program;
+  program[3] = hdrSize;
+  return program;
+}
+
+/** A table record from an sfnt's directory. */
+interface SfntTable {
+  tag: string;
+  offset: number;
+  length: number;
+}
+
+/** The directory of an uncompressed sfnt, or null when this is not one. */
+function sfntTables(bytes: Uint8Array): SfntTable[] | null {
+  if (bytes.length < 12) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint32(0);
+  // `ttcf`, `wOFF` and `wOF2` are their own layouts; leave them as they came.
+  if (version !== 0x00010000 && version !== 0x74727565 && version !== 0x4f54544f) return null;
+  const numTables = view.getUint16(4);
+  const tables: SfntTable[] = [];
+  for (let i = 0; i < numTables; i += 1) {
+    const at = 12 + i * 16;
+    if (at + 16 > bytes.length) return null;
+    tables.push({
+      tag: String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]),
+      offset: view.getUint32(at + 8),
+      length: view.getUint32(at + 12),
+    });
+  }
+  return tables;
+}
+
+/** The checksum an sfnt directory records for a run of bytes, padded to 32 bits. */
+function sfntChecksum(bytes: Uint8Array, offset: number, length: number): number {
+  let sum = 0;
+  for (let i = 0; i < length; i += 4) {
+    const at = offset + i;
+    const word =
+      ((bytes[at] ?? 0) << 24) | ((bytes[at + 1] ?? 0) << 16) | ((bytes[at + 2] ?? 0) << 8) | (bytes[at + 3] ?? 0);
+    sum = (sum + (word >>> 0)) >>> 0;
+  }
+  return sum >>> 0;
+}
+
+/**
+ * Move every glyph record of a TrueType face onto a 4-byte boundary.
+ *
+ * fontkit's TrueType subsetter copies glyph records verbatim and writes the
+ * subset's `loca` in the short form whenever the table fits under 64 KB, which is
+ * `loca.preEncode` doing `offsets[i] >>>= 1` — half the byte offset, rounded
+ * down. A face whose glyph records start at odd bytes therefore loses one at each
+ * of them, and every glyph after the first odd offset is read from the wrong
+ * place. Both bundled Noto Sans faces are such a font: `NotoSans-Regular.ttf`
+ * holds 2 149 odd glyph offsets (glyph 37 begins at byte 2 641), and its subset
+ * came out with `loca[3] = 216` where the `B` record begins at 217 — invisible in
+ * MuPDF, pdf.js and fontTools alike, while the text still extracted.
+ *
+ * Padding the records once, on the way in, is what makes the subsetter's halving
+ * exact: every copied length is then a multiple of four, so every subset offset
+ * is too. The work is per face and cached with its bytes, and a face that is
+ * already aligned — every face this app fetches on demand — is returned as it
+ * came.
+ */
+export function alignTrueTypeGlyphs(bytes: Uint8Array): Uint8Array {
+  const tables = sfntTables(bytes);
+  if (!tables) return bytes;
+  const find = (tag: string) => tables.find((t) => t.tag === tag);
+  const head = find('head');
+  const maxp = find('maxp');
+  const loca = find('loca');
+  const glyf = find('glyf');
+  if (!head || !maxp || !loca || !glyf) return bytes;
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const numGlyphs = view.getUint16(maxp.offset + 4);
+  const shortLoca = view.getInt16(head.offset + 50) === 0;
+  const entries = Math.min(numGlyphs + 1, Math.floor(loca.length / (shortLoca ? 2 : 4)));
+  const offsets: number[] = [];
+  for (let i = 0; i < entries; i += 1) {
+    offsets.push(shortLoca ? view.getUint16(loca.offset + i * 2) * 2 : view.getUint32(loca.offset + i * 4));
+  }
+  if (offsets.every((offset) => offset % 4 === 0)) return bytes;
+
+  // Rebuild `glyf` with each record padded out to a long word, and `loca` beside
+  // it in the long form, which can carry any offset without halving it.
+  const records: Uint8Array[] = [];
+  const newOffsets: number[] = [];
+  let at = 0;
+  for (let i = 0; i < numGlyphs; i += 1) {
+    const from = offsets[i] ?? glyf.length;
+    const to = offsets[i + 1] ?? glyf.length;
+    const record = bytes.subarray(glyf.offset + from, glyf.offset + Math.max(from, to));
+    newOffsets.push(at);
+    records.push(record);
+    at += record.length;
+    const pad = (4 - (at % 4)) % 4;
+    if (pad) {
+      records.push(new Uint8Array(pad));
+      at += pad;
+    }
+  }
+  newOffsets.push(at);
+  const newGlyf = new Uint8Array(at);
+  let write = 0;
+  for (const record of records) {
+    newGlyf.set(record, write);
+    write += record.length;
+  }
+  const newLoca = new Uint8Array(newOffsets.length * 4);
+  const locaView = new DataView(newLoca.buffer);
+  newOffsets.forEach((offset, i) => locaView.setUint32(i * 4, offset));
+  // `head` carries both `indexToLocFormat` (byte 50) and `checkSumAdjustment`
+  // (byte 8); the adjustment is recomputed over the whole font at the end.
+  const newHead = bytes.slice(head.offset, head.offset + head.length);
+  newDataView(newHead).setInt16(50, 1);
+  newDataView(newHead).setUint32(8, 0);
+
+  const replaced = new Map<string, Uint8Array>([
+    ['glyf', newGlyf],
+    ['loca', newLoca],
+    ['head', newHead],
+  ]);
+  const out: { tag: string; data: Uint8Array }[] = tables.map((table) => ({
+    tag: table.tag,
+    data: replaced.get(table.tag) ?? bytes.subarray(table.offset, table.offset + table.length),
+  }));
+
+  let size = 12 + out.length * 16;
+  const placed = out.map((entry) => {
+    const at = size;
+    size += entry.data.length + ((4 - (entry.data.length % 4)) % 4);
+    return { ...entry, offset: at };
+  });
+  const font = new Uint8Array(size);
+  const font32 = newDataView(font);
+  font32.setUint32(0, view.getUint32(0));
+  font32.setUint16(4, placed.length);
+  const power = Math.floor(Math.log2(placed.length));
+  font32.setUint16(6, 2 ** power * 16);
+  font32.setUint16(8, power);
+  font32.setUint16(10, placed.length * 16 - 2 ** power * 16);
+  placed.forEach((entry, i) => {
+    const at = 12 + i * 16;
+    for (let k = 0; k < 4; k += 1) font[at + k] = entry.tag.charCodeAt(k);
+    font32.setUint32(at + 4, sfntChecksum(entry.data, 0, entry.data.length));
+    font32.setUint32(at + 8, entry.offset);
+    font32.setUint32(at + 12, entry.data.length);
+    font.set(entry.data, entry.offset);
+  });
+  const head32 = newDataView(placed.find((e) => e.tag === 'head')!.data);
+  head32.setUint32(8, (0xb1b0afba - sfntChecksum(font, 0, font.length)) >>> 0);
+  return font;
+}
+
+/** A `DataView` over a whole `Uint8Array`. */
+function newDataView(bytes: Uint8Array): DataView {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 /** Read a subset out of fontkit's evented stream. */
@@ -188,14 +392,18 @@ function encodeSubset(subset: FaceSubset): Promise<Uint8Array> {
  * blank *and* a reader who selects or searches it gets a blank. That is the
  * failure this module exists to prevent, and nothing in the output reveals it.
  *
- * So each code point gets a code of its own (1, 2, 3 …), a `/CIDToGIDMap` stream
- * points that code at the real glyph in the subset — or at `.notdef` when the
- * face has none — and the `/ToUnicode` CMap says what every code means.
- * Extraction then returns the text that was drawn whatever the face happened to
- * cover, and the widths come from the same table the viewer paints with.
+ * So each code point gets a code of its own, the program goes into the slot its
+ * flavour belongs in — `/FontFile2` under a `/CIDToGIDMap`-equipped
+ * `/CIDFontType2` for TrueType glyph records, `/FontFile3` `/CIDFontType0C` under
+ * a `/CIDFontType0` for CFF charstrings — and the `/ToUnicode` CMap says what
+ * every code means. A TrueType code is this font's own number, pointed at the real
+ * glyph in the subset or at `.notdef` when the face has none; a CFF code has to be
+ * the glyph id itself, because a `/CIDFontType0` maps CIDs through its own charset
+ * and offers nothing to rewrite. Extraction then returns the text that was drawn
+ * whatever the face happened to cover, and the widths come from the same table the
+ * viewer paints with.
  */
 class UnicodeFaceEmbedder extends CustomFontEmbedder {
-  /** @param font a face fontkit read, which must not be CFF-flavoured */
   static create(font: Face, fontData: Uint8Array): UnicodeFaceEmbedder {
     return new UnicodeFaceEmbedder(font, fontData);
   }
@@ -211,8 +419,17 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
 
   private readonly subset: FaceSubset;
 
+  /**
+   * Whether the outlines are CFF charstrings rather than TrueType glyph records.
+   * It decides which slot the program goes into and what a code means: a
+   * `/CIDFontType2` is told by `/CIDToGIDMap`, a `/CIDFontType0` by its own
+   * charset, which a subset spells as an identity map.
+   */
+  private readonly cff: boolean;
+
   private constructor(font: Face, fontData: Uint8Array) {
     super(font, fontData);
+    this.cff = faceIsCff(font);
     this.subset = font.createSubset();
   }
 
@@ -227,9 +444,10 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
         // for the character; the code is allocated either way, which is the
         // point of the class.
         const glyph = this.font.glyphForCodePoint(codePoint);
-        code = this.glyphs.length;
-        this.glyphs.push(this.subset.includeGlyph(glyph));
-        this.advances.push(glyph.advanceWidth * this.scale);
+        const glyphId = this.subset.includeGlyph(glyph);
+        code = this.cff ? glyphId : this.glyphs.length;
+        this.glyphs[code] = glyphId;
+        this.advances[code] = glyph.advanceWidth * this.scale;
         this.codes.set(codePoint, code);
       }
       out.push(code);
@@ -250,16 +468,25 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
   override async embedIntoContext(context: PDFContext, ref?: PDFRef): Promise<PDFRef> {
     this.baseFontName = context.addRandomSuffix(this.fontName);
     const target = ref ?? context.nextRef();
-    const subsetBytes = await encodeSubset(this.subset);
+    const encoded = await encodeSubset(this.subset);
+    const subsetBytes = this.cff ? repairCffHeader(encoded) : encoded;
     const { bbox, ascent, descent, capHeight, xHeight, italicAngle } = this.font;
-    const fontFileRef = context.register(context.flateStream(subsetBytes, { Length1: subsetBytes.length }));
-    // Two bytes per code: the glyph id the viewer should paint for it.
-    const cidToGid = new Uint8Array(this.glyphs.length * 2);
-    this.glyphs.forEach((glyphId, code) => {
-      cidToGid[code * 2] = (glyphId >> 8) & 0xff;
-      cidToGid[code * 2 + 1] = glyphId & 0xff;
-    });
-    const cidToGidRef = context.register(context.flateStream(cidToGid));
+    const fontFileRef = context.register(context.flateStream(subsetBytes, {
+      Length1: subsetBytes.length,
+      // The program's own type, which is what tells a viewer how to read it.
+      ...(this.cff ? { Subtype: 'CIDFontType0C' } : {}),
+    }));
+    // Two bytes per code: the glyph id the viewer should paint for it. Only a
+    // TrueType subset has a map to write; a CFF one is read through its charset.
+    let cidToGidRef: PDFRef | undefined;
+    if (!this.cff) {
+      const cidToGid = new Uint8Array(this.glyphs.length * 2);
+      this.glyphs.forEach((glyphId, code) => {
+        cidToGid[code * 2] = (glyphId >> 8) & 0xff;
+        cidToGid[code * 2 + 1] = glyphId & 0xff;
+      });
+      cidToGidRef = context.register(context.flateStream(cidToGid));
+    }
     const descriptorRef = context.register(context.obj({
       Type: 'FontDescriptor',
       FontName: this.baseFontName,
@@ -272,11 +499,11 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
       XHeight: (xHeight || 0) * this.scale,
       // pdf-lib's own guess: nobody can derive it from the outlines cheaply.
       StemV: 0,
-      FontFile2: fontFileRef,
+      [this.cff ? 'FontFile3' : 'FontFile2']: fontFileRef,
     }));
     const descendantRef = context.register(context.obj({
       Type: 'Font',
-      Subtype: 'CIDFontType2',
+      Subtype: this.cff ? 'CIDFontType0' : 'CIDFontType2',
       BaseFont: this.baseFontName,
       CIDSystemInfo: {
         Registry: PDFString.of('Adobe'),
@@ -284,9 +511,12 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
         Supplement: 0,
       },
       FontDescriptor: descriptorRef,
-      CIDToGIDMap: cidToGidRef,
-      // Codes run from 1 to n without a gap, so one range covers them all.
-      W: [1, this.advances.slice(1).map((width) => Number(width.toFixed(3)))],
+      // A CFF carries its own CID-to-glyph charset; only TrueType takes the map.
+      ...(cidToGidRef ? { CIDToGIDMap: cidToGidRef } : {}),
+      // Codes run from the first one allocated to the last without a gap, so one
+      // range covers them all. A CFF uses its glyph ids as codes, so its
+      // `.notdef` at 0 is inside the run.
+      W: [this.cff ? 0 : 1, this.advances.slice(this.cff ? 0 : 1).map((width) => Number(width.toFixed(3)))],
     }));
     const toUnicodeRef = context.register(context.flateStream(toUnicodeCmap(this.codes)));
     context.assign(target, context.obj({
@@ -362,7 +592,10 @@ async function fetchFontBytes(url: string): Promise<Uint8Array> {
       if (!res.ok) {
         throw new Error(`Could not load the ${url} font file (HTTP ${res.status}).`);
       }
-      return new Uint8Array(await res.arrayBuffer());
+      // See `alignTrueTypeGlyphs`: the faces this module ships are not aligned the
+      // way fontkit's subsetter assumes, and the bytes it is handed are the only
+      // place left to say so before the damage is done.
+      return alignTrueTypeGlyphs(new Uint8Array(await res.arrayBuffer()));
     })();
     // Drop failures from the cache so a later retry can succeed.
     pending.catch(() => fontCache.delete(key));
@@ -432,10 +665,11 @@ export async function getFont(
     pending = (async () => {
       const bytes = await fetchFontBytes(scriptUrl);
       const face = fontkit.create(bytes) as Face;
-      // A CFF-flavoured face has no glyph-id map to rewrite — `CIDToGIDMap` must
-      // be Identity for a CIDFontType0 — so pdf-lib's own subsetter keeps it.
-      if (face.cff) return doc.embedFont(bytes, { subset: true });
-      const embedder = UnicodeFaceEmbedder.create(face, bytes);
+        // `alignTrueTypeGlyphs` already ran on the way into `fontCache`, so both
+        // flavours reach here ready to subset: the TrueType one with its glyph
+        // records long-word aligned, the CFF one untouched because it has no
+        // glyph table.
+        const embedder = UnicodeFaceEmbedder.create(face, bytes);
       const font = PDFFontClass.of(doc.context.nextRef(), doc, embedder);
       trackFont(doc, font);
       return font;
