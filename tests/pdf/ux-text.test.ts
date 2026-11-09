@@ -203,7 +203,17 @@ function imageObject(overrides: Partial<ImageObject> = {}): ImageObject {
 }
 
 function outcome(overrides: Partial<ApplyOutcome> = {}): ApplyOutcome {
-  return { written: 0, failed: [], partial: [], raster: [], ...overrides };
+  return {
+    written: 0,
+    failed: [],
+    partial: [],
+    raster: [],
+    covered: [],
+    substituted: [],
+    reflowed: [],
+    placed: [],
+    ...overrides,
+  };
 }
 
 function block(overrides: Partial<SearchableBlock> = {}): SearchableBlock {
@@ -431,15 +441,32 @@ describe('export report', () => {
   it('says the signed file is an appended revision, in the result too', () => {
     const kept = textObject();
     const report = exportReport(
-      outcome({ written: 1, partial: [{ id: kept.id, leftover: 3 }], raster: [kept.id] }),
+      outcome({
+        written: 1,
+        partial: [{ id: kept.id, leftover: 3 }],
+        raster: [kept.id],
+        covered: [
+          {
+            id: kept.id,
+            boxes: [
+              { x: 40, y: 100, width: 30, height: 11 },
+              { x: 74, y: 100, width: 22, height: 11 },
+            ],
+            color: '#ffffff',
+          },
+        ],
+      }),
       [kept],
       { signed: true },
     );
     const text = report.warnings.join(' ');
     expect(text).toMatch(/appended incremental revision/i);
     expect(text).toMatch(/signature still verifies/i);
-    expect(text).toMatch(/3 text operators survived the deletion/i);
-    expect(text).toMatch(/1 block sits on image content/i);
+    // The honest wording: words are *hidden*, and the tool says so instead of
+    // letting "Saved" stand over a patch.
+    expect(text).toMatch(/2 words could not be deleted and were covered/i);
+    expect(text).toMatch(/hidden, not removed/i);
+    expect(text).toMatch(/1 block sits on an image/i);
   });
 
   it('reports engine-repaired blocks as degraded, not as a clean save', () => {

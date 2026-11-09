@@ -1731,7 +1731,20 @@ function lookupFontDict(
   if (!fonts) return undefined;
   const value = fonts.get(PDFName.of(resourceName));
   if (!value) return undefined;
-  return page.doc.context.lookup(value as PDFRef, PDFDict);
+  // A name the page never resolved (a producer's dangling `/F7`): `lookup` with
+  // a type argument throws on that, and a page with one dead font entry is not
+  // a reason for the whole text walk to fail.
+  const found = context_lookup(page.doc.context, value);
+  return found instanceof PDFDict ? found : undefined;
+}
+
+/** `context.lookup` without the throw-on-wrong-type overload. */
+function context_lookup(context: PDFContext, value: unknown) {
+  try {
+    return context.lookup(value as PDFRef);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -1862,7 +1875,10 @@ function sourceFontOf(info: FontInfo): SourceFont {
 
 function buildSourceFont(info: FontInfo): SourceFont {
   return {
-    baseFont: info.baseFont,
+    // The name without its leading slash: this value is compared against other
+    // faces and printed in a report, and `/Foo` is how the file spells it, not
+    // how a person says it.
+    baseFont: info.baseFont.replace(/^\//, ''),
     subtype: info.subtype,
     codeSize: info.codeSize,
     dict: info.dict,
@@ -1921,14 +1937,19 @@ function buildCoverage(
   info: FontInfo,
 ): ((codePoint: number, code: number) => boolean) | null {
   const bytes = embeddedFontBytes(info.dict);
+  // No program at all: a bare reference to a standard face, which every viewer
+  // has in full, so `/Widths` is the only evidence there is and it is enough.
   if (!bytes) return null;
   let face: Face;
   try {
     face = fontkit.create(bytes) as Face;
   } catch {
-    return null;
+    // A program this reader cannot interpret, in a file the producer chose to
+    // embed (and therefore subset). Coverage is unknowable, and the safe answer
+    // to unknowable is no: reuse it and an absent character paints .notdef.
+    return () => false;
   }
-  if (!face) return null;
+  if (!face) return () => false;
   const cidToGid = cidToGidMap(info.dict);
   const identity = info.subtype === '/Type0';
   return (codePoint: number, code: number) => {
@@ -2200,6 +2221,13 @@ export interface TextSegment {
    * the one before it.
    */
   pen: { from: number; to: number };
+  /**
+   * True on the **first** glyph after a `TJ` number moved the pen. Two strings
+   * separated by such a move are not one run of text — `[(left) -3600 (right)]`
+   * is two columns that happen to share an operator — so merging them would
+   * hand a caller `leftright` where the page shows `left` and `right`.
+   */
+  moved: boolean;
 }
 
 interface TextWalk {
@@ -2373,7 +2401,7 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
      * with numbers that name the gaps between them. Both readings need one
      * coordinate for the whole operator, not one per string.
      */
-    const show = (bytes: Uint8Array, opIndex: number, kerned: boolean, penStart: number): number => {
+    const show = (bytes: Uint8Array, opIndex: number, kerned: boolean, penStart: number, movedBefore: boolean): number => {
       const codeSize = font?.codeSize ?? 1;
       if (!bytes.length) return penStart;
       const full = multiply(ctm, tm);
@@ -2401,6 +2429,7 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
         const top = Math.max(from[1], to[1]) + Math.max(ascender, 0);
         const bottom = Math.min(from[1], to[1]) + Math.min(descender, 0);
         const middle = apply(full, (pen - glyphAdvance + pen) / 2, rise);
+        const firstOfRun = i === 0;
         glyphs.push({
           text: character,
           rect: { x: left, y: bottom, width: right - left, height: top - bottom },
@@ -2417,6 +2446,9 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
           fontSource: font ? sourceFontOf(font) : null,
           type3: font?.isType3 ?? false,
           pen: { from: pen - glyphAdvance, to: pen },
+          // The move belongs to the start of the string, not to every glyph in
+          // it: the glyphs of one string are still neighbours.
+          moved: movedBefore && firstOfRun,
         });
         if (font?.isType3) usesType3 = true;
       }
@@ -2590,7 +2622,7 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
           tm = tlm;
         }
         const value = op.operands.find((o): o is StringOperand => o.kind === 'string');
-        if (value) movePen(show(value.bytes, index, false, 0));
+        if (value) movePen(show(value.bytes, index, false, 0, false));
         continue;
       }
       if (op.name === 'TJ') {
@@ -2601,13 +2633,16 @@ function walkText(page: PDFPage, ops: ContentOp[], options: { forms?: boolean } 
         // the pen. A number after the last string still moves the pen, so the
         // text that follows in the same block keeps its place.
         let pen = 0;
+        let moved = false;
         for (const item of array.items) {
           if (item.kind === 'number') {
+            if (item.value !== 0) moved = true;
             pen -= (item.value / 1000) * Math.abs(size) * horizontalScale;
             continue;
           }
           if (item.kind !== 'string') continue;
-          pen = show(item.bytes, index, kerned, pen);
+          pen = show(item.bytes, index, kerned, pen, moved);
+          moved = false;
         }
         movePen(pen);
       }
@@ -2641,6 +2676,7 @@ function mergeSegments(segments: TextSegment[]): TextSegment[] {
       previous.font === segment.font &&
       previous.size === segment.size &&
       previous.renderMode === segment.renderMode &&
+      !segment.moved &&
       Math.abs(previous.pen.to - segment.pen.from) < 0.01
     ) {
       // One operator, one line: the glyphs are neighbours by construction, so
@@ -2702,9 +2738,13 @@ export function textInRects(page: PDFPage, rects: ContentRect[]): { rect: Conten
   if (targets.length === 0) return [];
   const walk = walkText(page, pageContentOps(page), { forms: true });
   const byOp = new Map<string, { texts: string[]; rect: ContentRect }>();
+  // One group per contiguous run: a `TJ` number that moved the pen starts a new
+  // one, because those glyphs are a different column, not a longer word.
+  let runCounter = 0;
   for (const glyph of walk.glyphs) {
     if (!targets.some((rect) => ownsGlyph(glyph, rect))) continue;
-    const key = `${glyph.streamKey}|${glyph.opIndex}`;
+    if (glyph.moved) runCounter += 1;
+    const key = `${glyph.streamKey}|${glyph.opIndex}|${runCounter}`;
     const known = byOp.get(key);
     if (known) {
       known.texts.push(glyph.text);

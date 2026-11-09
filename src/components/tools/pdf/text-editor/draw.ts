@@ -697,13 +697,13 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
 }
 
 /** A named cause, in the words the result screen shows. */const REMOVAL_REASON_TEXT: Record<RemovalReason, string> = {
-  'type3-font': 'a Type3 (bitmap-drawn) font',
-  'unmeasured-widths': 'a font with no widths, so positions are estimated',
+  'type3-font': 'words drawn by a Type3 (bitmap-drawn) font',
+  'unmeasured-widths': 'a font with no widths, so the positions are estimated',
   'image-behind': 'an image behind the text',
   'form-reused': 'a form XObject this page draws more than once',
   'form-too-deep': 'a form nested deeper than the engine reads',
-  'nothing-at-rect': 'no text in the page content at that spot',
-  'form-not-copied': 'a form XObject shared with another page',
+  'nothing-at-rect': 'no text was found in the page content at that spot',
+  'form-not-copied': 'a form XObject shared with another page, which the engine will not rewrite in place',
 };
 
 function substitutionText(reason: SubstitutionReason): string {
