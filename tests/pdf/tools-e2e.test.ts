@@ -335,12 +335,11 @@ describe('pdf tools end to end', () => {
     ).rejects.toThrow(/watermark text/i);
   });
 
-  it('protects with AES-256 and a password, and unlocks again', async () => {
+  it('protects with a password and unlocks again', async () => {
     const protectedOutcome = await run('protect', {
       mode: 'both',
       userPassword: 'hunter2',
       ownerPassword: '',
-      version: '5',
       allowPrinting: true,
       printLevel: 'high',
       allowModifying: false,
@@ -351,7 +350,10 @@ describe('pdf tools end to end', () => {
       allowAssembling: false,
     });
     const protectedBytes = await firstPdf(protectedOutcome);
-    expect(protectedOutcome.message).toMatch(/AES-256/);
+    // The gate is what this browser writes; a strength name here would be the
+    // claim the triage measured against the bytes and found absent.
+    expect(protectedOutcome.message).toMatch(/open password/);
+    expect(protectedOutcome.message).toMatch(/no crypt filter/);
     expect(Buffer.from(protectedBytes).toString('latin1')).toMatch(/\/Encrypt/);
 
     // Reading it without the password must fail, and the error must say why.
@@ -369,7 +371,6 @@ describe('pdf tools end to end', () => {
       mode: 'user',
       userPassword: 'correct-horse',
       ownerPassword: '',
-      version: '4',
       allowPrinting: true,
       printLevel: 'high',
       allowModifying: true,
