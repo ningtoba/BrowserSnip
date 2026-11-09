@@ -15,13 +15,27 @@
  *    then embedded as a subset, so the exported file stays portable.
  *
  * A `fontFamily` id is always one of: `''` (auto), `noto`, `std:<name>`,
- * `script:<id>`, `local:<fullName>`. The editor stores ids, never display labels,
- * so a renamed label cannot orphan an existing object.
+ * `script:<id>`, `local:<family>`. The editor stores ids, never display labels,
+ * so a renamed label cannot orphan an existing object. The ids and the postures
+ * each family really holds come from `core/text-style`, which the rail tools and
+ * the annotation editor read too — one registry, not three.
  */
 import { StandardFonts, rgb } from '@/lib/pdf/core/doc';
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
 import type { SourceFont } from '@/lib/pdf/core/content';
 import { SCRIPT_FONTS, detectScript, getFont, isWinAnsiSafe, embedUnicodeFace } from '@/lib/pdf/core/fonts';
+import {
+  AUTO_FAMILY_ID,
+  BUNDLED_FAMILY_ID,
+  FACE_FAMILIES,
+  carriesPosture,
+  deviceFamily,
+  deviceFamilyId,
+  familyLabel as familyLabelOf,
+  familyPreview as coreFamilyPreview,
+  familySpec,
+  type FaceFamilySpec,
+} from '@/lib/pdf/core/text-style';
 import type { InlineStyle } from './model';
 
 /* ------------------------------------------------------------------ *
@@ -206,87 +220,70 @@ async function embeddedFace(doc: PDFDocument, style: InlineStyle, text: string):
   return { face: pdfFace(familyUsed, font) };
 }
 
-export interface FontFamilyOption {
+/**
+ * The four real faces behind each standard-14 family: regular, bold, oblique,
+ * bold-oblique. `italic` here is never a synthesised slant — the named face is a
+ * different font, which is why the inspector can offer italic for these families
+ * and not for the bundled one.
+ */
+const STANDARD_ENTRIES: {
   id: string;
   label: string;
-  group: 'auto' | 'standard' | 'bundled' | 'script' | 'local';
-  /** CSS stack used by the on-screen editor box, so the preview looks close. */
-  preview: string;
-}
-
-export const AUTO_FAMILY: FontFamilyOption = {
-  id: '',
-  label: 'Automatic (match the page)',
-  group: 'auto',
-  preview: 'system-ui, sans-serif',
-};
-
-export const BUNDLED_FAMILY: FontFamilyOption = {
-  id: 'noto',
-  label: 'Noto Sans (bundled)',
-  group: 'bundled',
-  preview: '"Noto Sans", system-ui, sans-serif',
-};
-
-const STANDARD_ENTRIES: { id: string; label: string; preview: string; faces: [StandardFonts, StandardFonts, StandardFonts, StandardFonts] }[] = [
+  faces: [StandardFonts, StandardFonts, StandardFonts, StandardFonts];
+}[] = [
   {
     id: 'std:helvetica',
     label: 'Helvetica / Arial',
-    preview: 'Helvetica, Arial, sans-serif',
     faces: [StandardFonts.Helvetica, StandardFonts.HelveticaBold, StandardFonts.HelveticaOblique, StandardFonts.HelveticaBoldOblique],
   },
   {
     id: 'std:times',
     label: 'Times New Roman',
-    preview: '"Times New Roman", Times, serif',
     faces: [StandardFonts.TimesRoman, StandardFonts.TimesRomanBold, StandardFonts.TimesRomanItalic, StandardFonts.TimesRomanBoldItalic],
   },
   {
     id: 'std:courier',
     label: 'Courier New (monospace)',
-    preview: '"Courier New", Courier, monospace',
     faces: [StandardFonts.Courier, StandardFonts.CourierBold, StandardFonts.CourierOblique, StandardFonts.CourierBoldOblique],
   },
 ];
 
-export const STANDARD_FAMILIES: FontFamilyOption[] = STANDARD_ENTRIES.map((entry) => ({
-  id: entry.id,
-  label: entry.label,
-  group: 'standard' as const,
-  preview: entry.preview,
-}));
+/** A `FontFamilyOption` is the registry's family spec, named for this module's callers. */
+export type FontFamilyOption = FaceFamilySpec;
 
-/** Script faces from `core/fonts`; fetched from a CDN the first time they are used. */
-export const SCRIPT_FAMILIES: FontFamilyOption[] = SCRIPT_FONTS.map((font) => ({
-  id: `script:${font.id}`,
-  label: font.label,
-  group: 'script' as const,
-  preview: `"${font.label}", system-ui, sans-serif`,
-}));
+/**
+ * The families, read from the one registry (`core/text-style`).
+ *
+ * This module used to own its own list and `tools/edit.ts` another; a family id
+ * that existed in one did not exist in the other, which is how a rail "Typeface"
+ * pick and an inspector "Font" pick came to mean different things. The registry is
+ * now the single source, and a `FontFamilyOption` *is* the registry's `FaceFamilySpec`.
+ */
+export const BUILT_IN_FAMILIES: FontFamilyOption[] = FACE_FAMILIES.map((spec) => ({ ...spec }));
 
-/** Everything that works with no permission prompt and no system font probe. */
-export const BUILT_IN_FAMILIES: FontFamilyOption[] = [
-  AUTO_FAMILY,
-  ...STANDARD_FAMILIES,
-  BUNDLED_FAMILY,
-  ...SCRIPT_FAMILIES,
-];
+/** The auto entry, for callers that need only its id or label. */
+export const AUTO_FAMILY: FontFamilyOption = { ...familySpec(AUTO_FAMILY_ID)! };
+
+/** The bundled Noto entry. */
+export const BUNDLED_FAMILY: FontFamilyOption = { ...familySpec(BUNDLED_FAMILY_ID)! };
+
+/** The standard-14 families, named by the ids the registry uses. */
+export const STANDARD_FAMILIES: FontFamilyOption[] = BUILT_IN_FAMILIES.filter(
+  (spec) => spec.group === 'standard',
+);
+
+/** The fetched single-weight faces. */
+export const SCRIPT_FAMILIES: FontFamilyOption[] = BUILT_IN_FAMILIES.filter(
+  (spec) => spec.group === 'script',
+);
 
 export function familyPreview(familyId: string): string {
-  const found =
-    BUILT_IN_FAMILIES.find((option) => option.id === familyId)?.preview ??
-    (familyId.startsWith('local:')
-      ? `"${familyId.slice('local:'.length)}", system-ui, sans-serif`
-      : AUTO_FAMILY.preview);
-  return found;
+  return coreFamilyPreview(familyId, deviceFamilies);
 }
 
 /** `familyId` as it should be shown in a select. */
 export function familyLabel(familyId: string, local: FontFamilyOption[] = []): string {
-  const option = [...BUILT_IN_FAMILIES, ...local].find((candidate) => candidate.id === familyId);
-  if (option) return option.label;
-  if (familyId.startsWith('local:')) return familyId.slice('local:'.length);
-  return AUTO_FAMILY.label;
+  return familyLabelOf(familyId, [...deviceFamilies, ...local]);
 }
 
 // ── Local Font Access API ───────────────────────────────────────────────────
@@ -324,8 +321,39 @@ export function localFontsNeedPermission(): boolean {
 let localFaces: LocalFontFace[] | null = null;
 
 /**
+ * The device families the last scan found, in registry shape.
+ *
+ * Held here because a family only exists once the user has agreed to the scan, and
+ * because `resolveFace`/`familyPreview` must be able to answer for a stored
+ * `local:…` id without the caller threading the list through every call.
+ */
+let deviceFamilies: FaceFamilySpec[] = [];
+
+/** The face a device family holds for one posture, keyed `local:<family>|<postures>`. */
+const deviceFaces = new Map<string, LocalFontFace>();
+
+/**
+ * A posture tag for the faces this module stores, so "Roboto Bold Italic" and the
+ * request `{bold: true, italic: true}` meet at the same key.
+ */
+function postureKey(family: string, bold: boolean, italic: boolean): string {
+  return `${deviceFamilyId(family)}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
+}
+
+/** The installed faces read once, in family order, with the postures each holds. */
+export function scannedDeviceFamilies(): FaceFamilySpec[] {
+  return deviceFamilies;
+}
+
+/**
  * Enumerate installed fonts. Must run inside a user gesture in Chromium; a
  * rejection is reported to the caller and simply leaves the list short.
+ *
+ * The list is grouped by **family**, not by face, because that is what a style
+ * model stores: the posture buttons then choose between the family's installed
+ * faces (`Roboto` vs `Roboto Bold`), which are real faces with real bytes. A family
+ * with no italic face installed does not offer italic — the alternative is the
+ * screen showing a slant the file cannot carry.
  */
 export async function loadLocalFamilies(): Promise<FontFamilyOption[]> {
   if (!supportsLocalFonts()) return [];
@@ -334,24 +362,60 @@ export async function loadLocalFamilies(): Promise<FontFamilyOption[]> {
     // read through the `LocalFontFace` fields the API documents.
     localFaces = await (window as unknown as LocalFontWindow).queryLocalFonts?.() ?? [];
   }
-  const seen = new Set<string>();
-  const options: FontFamilyOption[] = [];
+  deviceFaces.clear();
+  const byFamily = new Map<string, { bold: boolean; italic: boolean }>();
   for (const face of localFaces) {
-    if (seen.has(face.fullName)) continue;
-    seen.add(face.fullName);
-    options.push({
-      id: `local:${face.fullName}`,
-      label: `${face.family} ${face.style}`.trim(),
-      group: 'local',
-      preview: `"${face.family}", "${face.fullName}", system-ui, sans-serif`,
-    });
+    const posture = readPosture(face.style);
+    deviceFaces.set(postureKey(face.family, posture.bold, posture.italic), face);
+    // A family's "own" face is its roman one; a family that only ships styled
+    // faces still gets listed, from whatever it has.
+    if (!deviceFaces.has(postureKey(face.family, false, false))) {
+      deviceFaces.set(postureKey(face.family, false, false), face);
+    }
+    const seen = byFamily.get(face.family) ?? { bold: false, italic: false };
+    seen.bold = seen.bold || posture.bold;
+    seen.italic = seen.italic || posture.italic;
+    byFamily.set(face.family, seen);
   }
-  return options.sort((a, b) => a.label.localeCompare(b.label));
+  deviceFamilies = [...byFamily.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([family, postures]) => deviceFamily(deviceFamilyId(family), family, postures));
+  return deviceFamilies.map((spec) => ({ ...spec }));
 }
 
-function findLocalFace(fullName: string): LocalFontFace | undefined {
-  if (!localFaces) return undefined;
-  return localFaces.find((face) => face.fullName === fullName);
+/** Whether a face's own style string says bold / italic. */
+function readPosture(style: string): { bold: boolean; italic: boolean } {
+  const name = String(style ?? '').toLowerCase();
+  return {
+    bold: /bold|black|heavy|extrabold|ultrabold|semibold|demibold|medium/.test(name),
+    italic: /italic|oblique/.test(name),
+  };
+}
+
+/** The posture a style asked for, in the words a report uses. */
+const POSTURE_WORDS: Record<string, string> = {
+  b: 'bold',
+  i: 'italic',
+  bi: 'bold italic',
+};
+
+function postureAsked(style: InlineStyle): string {
+  return POSTURE_WORDS[`${style.bold ? 'b' : ''}${style.italic ? 'i' : ''}`] ?? 'italic';
+}
+
+/**
+ * The installed face for a family at a posture, falling back to the lightest face
+ * the family does hold. The fallback is *reported* by `resolveFace`, never silent.
+ */
+function findDeviceFace(
+  family: string,
+  bold: boolean,
+  italic: boolean,
+): { face: LocalFontFace; exact: boolean } | null {
+  const exact = deviceFaces.get(postureKey(family, bold, italic));
+  if (exact) return { face: exact, exact: true };
+  const plain = deviceFaces.get(postureKey(family, false, false));
+  return plain ? { face: plain, exact: false } : null;
 }
 
 // ── resolution ──────────────────────────────────────────────────────────────
@@ -407,11 +471,29 @@ export function faceCacheKey(style: InlineStyle, text: string): string {
 }
 
 /**
+ * The sentence a run gets when the face that will write it does not hold a
+ * posture the style asks for.
+ *
+ * The control set normally refuses the posture before it can be set, so this fires
+ * for a style that arrived from elsewhere — a block extracted under another family,
+ * a value restored from storage, a document edited on a machine that had a
+ * different font installed. Saying it beats writing upright text under a slanted
+ * preview.
+ */
+function postureRefusalNote(style: InlineStyle, text: string): string | undefined {
+  if (!style.italic) return undefined;
+  if (carriesPosture(style.fontFamily || '', 'italic', text, deviceFamilies)) return undefined;
+  const label = familyLabelOf(style.fontFamily, deviceFamilies);
+  return `${label} carries no italic face this app can embed, so the run is written upright.`;
+}
+
+/**
  * The embedded face that can draw `text` in `style`.
  *
  * `familyUsed` is what was actually chosen and may be lower in the tier list
  * than the request — the editor surfaces that so a Cyrillic run in "Courier
- * New" does not silently come out looking like something else.
+ * New" does not silently come out looking like something else. A posture the
+ * answering face does not hold is reported the same way (`note`).
  */
 export async function resolveFace(
   doc: PDFDocument,
@@ -437,7 +519,8 @@ export async function resolveFace(
     return { font, familyUsed: standard.id };
   }
   if (standard) {
-    const note = `This run contains characters ${standard.label} cannot encode, so it is written in a bundled Unicode face.`;
+    const slant = style.italic ? ', which carries no italic face: the run is written upright' : '';
+    const note = `This run contains characters ${standard.label} cannot encode, so it is written in a bundled Unicode face${slant}.`;
     const font = await cacheGet(cache, key, () =>
       getFont(doc, {
         text,
@@ -469,37 +552,53 @@ export async function resolveFace(
     }
   }
 
-  // A local system font: embed the bytes the OS hands back.
+  // A local system font: embed the bytes the OS hands back, at the posture asked
+  // for. A family installed without that face is reported, not silently flattened.
   if (family.startsWith('local:')) {
-    const fullName = family.slice('local:'.length);
-    const face = findLocalFace(fullName);
-    if (face) {
+    const name = family.slice('local:'.length);
+    const picked = findDeviceFace(name, Boolean(style.bold), Boolean(style.italic))
+      // An id written by an older build named a *face*, not a family.
+      ?? (localFaces?.find((face) => face.fullName === name)
+        ? { face: localFaces.find((face) => face.fullName === name)!, exact: true }
+        : null);
+    if (picked) {
+      const postureKept =
+        picked.exact || (!carriesPosture(family, 'bold', text, deviceFamilies) && !style.bold);
       try {
         const font = await cacheGet(cache, key, async () => {
-          const blob = await face.data();
+          const blob = await picked.face.data();
           return embedUnicodeFace(doc, new Uint8Array(await blob.arrayBuffer()));
         });
-        return { font, familyUsed: family };
+        return {
+          font,
+          familyUsed: family,
+          note: postureKept
+            ? undefined
+            : `${picked.face.family} has no ${postureAsked(style)} face installed here, so the run is written in ${picked.face.fullName}.`,
+        };
       } catch {
         return {
           font: await notoFace(doc, cache, key, style, text),
           familyUsed: 'noto',
-          note: `"${face.family}" could not be read from this system, so the text was written in Noto Sans instead.`,
+          note: `"${picked.face.family}" could not be read from this system, so the text was written in Noto Sans instead.`,
         };
       }
     }
     return {
       font: await notoFace(doc, cache, key, style, text),
       familyUsed: 'noto',
-      note: `"${fullName}" is not installed here, so the text was written in Noto Sans instead.`,
+      note: `"${name}" is not installed here, so the text was written in Noto Sans instead.`,
     };
   }
 
-  return { font: await notoFace(doc, cache, key, style, text), familyUsed: 'noto' };
+  return {
+    font: await notoFace(doc, cache, key, style, text),
+    familyUsed: 'noto',
+    note: postureRefusalNote(style, text),
+  };
 }
 
-function notoFace(
-  doc: PDFDocument,
+function notoFace(  doc: PDFDocument,
   cache: Map<string, Promise<PDFFont>>,
   key: string,
   style: InlineStyle,
