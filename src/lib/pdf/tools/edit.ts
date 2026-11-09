@@ -805,9 +805,19 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'footerLeft', label: 'Footer left', type: 'text', default: '{author}', group: 'Footer', help: 'The bottom-left slot. Anything that must appear on every page belongs here or in the centre.' },
       { key: 'footerCenter', label: 'Footer centre', type: 'text', group: 'Footer', help: 'The bottom-centre slot, which is where a folio usually goes.' },
       { key: 'footerRight', label: 'Footer right', type: 'text', default: 'Page {page} of {total}', group: 'Footer', help: 'The bottom-right slot, measured per page so a mixed-size document keeps it inside the edge.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'In points. Header and footer text is usually smaller than the body it labels.' },
+      ...textStyleFields({
+        surface: 'header-footer',
+        group: 'Type',
+        size: {
+          default: 9,
+          min: 5,
+          max: 36,
+          step: 0.5,
+          help: 'In points. Header and footer text is usually smaller than the body it labels.',
+        },
+        color: { default: '#55554e', help: 'Applied to the text and to the rule together.' },
+      }),
       { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, step: 1, unit: 'pt', half: true, group: 'Style', help: 'How far inside each page the text and its rule sit.' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#55554e', group: 'Style', help: 'Applied to the text and to the rule together.' },
       {
         key: 'rule',
         label: 'Draw a hairline rule',
