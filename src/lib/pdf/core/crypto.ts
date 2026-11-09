@@ -274,6 +274,20 @@ async function aesCbcEncrypt(key: Uint8Array, data: Uint8Array): Promise<Uint8Ar
   return concat(iv, new Uint8Array(sealed));
 }
 
+/**
+ * Fail before writing anything when this browser cannot run the cipher.
+ *
+ * Checked at the top of both write paths rather than inside the walk: half a
+ * document ciphered and half not would still be saved, and a dictionary that
+ * names `/AESV2` over streams nobody ran the filter on is the exact contradiction
+ * this module exists to refuse on the way in.
+ */
+function requireAes(method: Method | null): void {
+  if (method === 'AESV2' && !hasAesPrimitives()) {
+    throw new Error('This browser offers no AES-CBC, so nothing was ciphered and no file was written.');
+  }
+}
+
 /** `n` bytes from the platform CSPRNG; the `/ID` and the AES IVs both come from here. */
 function randomBytes(n: number): Uint8Array {
   const bytes = new Uint8Array(n);
@@ -965,6 +979,7 @@ export async function encryptDocument(
   doc: PDFDocument,
   request: CipherRequest,
 ): Promise<CipherWritten> {
+  requireAes(WRITE_METHOD);
   const context = doc.context;
   const documentId = randomBytes(16);
   // `/O` first: the file key is derived from the user password *and* the owner
@@ -1139,6 +1154,7 @@ export async function resealDocument(
   doc: PDFDocument,
   lock: RetainedLock,
 ): Promise<{ streams: number; strings: number }> {
+  requireAes(lock.cipher?.stream ?? null);
   const context = doc.context;
   const dict = copyIntoContext(context, lock.dict, lock.dict.context);
   if (!(dict instanceof PDFDict)) return { streams: 0, strings: 0 };

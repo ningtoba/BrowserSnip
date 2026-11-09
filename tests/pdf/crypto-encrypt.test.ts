@@ -379,6 +379,30 @@ describe('the ciphertext opens again, twice over', () => {
   }, 300_000);
 });
 
+/* ── a browser without the cipher ─────────────────────────────────────────── */
+
+describe('a browser with no AES-CBC writes nothing at all', () => {
+  it('refuses before half the document is ciphered', async () => {
+    // The whole point of checking the primitive up front: a dictionary that names
+    // `/CFM /AESV2` over streams nobody ran the filter on is the contradiction this
+    // module refuses to *read*, so it must not be allowed to write one either.
+    const host = globalThis as { crypto?: Crypto };
+    const real = host.crypto;
+    const subtle = real?.subtle;
+    try {
+      if (real && subtle) Object.defineProperty(real, 'subtle', { value: undefined, configurable: true });
+      await expect(
+        saveEncrypted(await sealed(await sample()), { userPassword: USER, ownerPassword: OWNER }),
+      ).rejects.toThrow(/no AES-CBC/);
+    } finally {
+      if (real && subtle) Object.defineProperty(real, 'subtle', { value: subtle, configurable: true });
+    }
+    // And with the primitive back, the same call writes a ciphered file.
+    const bytes = await saveEncrypted(await sealed(await sample()), { userPassword: USER, ownerPassword: OWNER });
+    expect(latin1.decode(bytes)).not.toContain(WORDS);
+  }, 300_000);
+});
+
 /* ── the permissions-only shape ──────────────────────────────────────────── */
 
 describe('a permissions-only save is ciphered and still opens freely', () => {
