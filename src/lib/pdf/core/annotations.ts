@@ -1456,19 +1456,15 @@ function stampOps(
   const shared = spec.textStyle?.style;
   const label = textForFace(font, spec.stampName ?? 'Stamp');
   ap.fonts = { [FONT_KEY]: font };
-  const box = Math.max(rect.width - 6, 1);
-  // The size the label fits at, and the size the style asked for. A stamp box is
-  // the rectangle the user dragged, so a label that would run past it is shrunk to
-  // fit — and `fitStampSize` is the same answer the overlay drew, so the shrink is
-  // on the screen before it is in the file rather than a surprise after.
-  const fitted = fitSize(font, label, box, Math.max(rect.height * 0.5, 1));
-  const size = shared ? fitStampSize(shared.size, fitted) : fitted;
-  const textWidth = font.widthOfTextAtSize(label, size);
-  const inset = round(freeTextInset(size));
+  // One placement for the file and the preview: the label is sized to the box the
+  // user dragged, and the annotation editor hands the same numbers down
+  // `textStyle.lines` so the shrink is on screen before it is in the file.
+  const placed = stampLabelPlacement(font, label, rect, shared);
   const first = spec.textStyle?.lines?.[0];
-  const x = first ? round(first.x) : round(stampLabelX(spec, rect, textWidth, inset));
-  const y = first ? round(first.baseline) : round(Math.max(rect.height / 2 - size / 2, 2));
-  const ink = shared?.color ? hexToRgb01(shared.color, 'text.style.color') : body;
+  const size = first?.size ? fitStampSize(first.size, placed.size) : placed.size;
+  const x = first ? round(first.x) : placed.x;
+  const y = first ? round(first.baseline) : placed.baseline;
+  const ink = shared?.color ? hexToRgb01(shared.color, 'textStyle.style.color') : body;
   return [
     'q',
     paint(edge, false),
@@ -1486,21 +1482,38 @@ function stampOps(
 }
 
 /**
- * Where a stamp label starts, horizontally, at the alignment the style carries.
+ * Where a stamp label sits, and how big it is — one answer for both surfaces.
  *
- * Centred is the format's own convention for a stamp, so that is what a mark with
- * no style on it gets; left and right keep the same inset the text box uses.
+ * A stamp box is the rectangle the user dragged, so a label that will not fit at the
+ * asked size is shrunk to fit. That decision used to live in the appearance writer
+ * *and* in the overlay's own guess at a font size, which is how a preview could show
+ * 40 pt words the file wrote at 21. Both now call this.
  */
-function stampLabelX(
-  spec: AnnotationSpec,
+export function stampLabelPlacement(
+  font: PDFFont,
+  label: string,
   rect: QuadRect,
-  textWidth: number,
-  inset: number,
-): number {
-  const align = spec.textStyle?.style?.align ?? 'center';
-  if (align === 'left') return Math.max(inset, 2);
-  if (align === 'right') return Math.max(rect.width - inset - textWidth, inset);
-  return Math.max((rect.width - textWidth) / 2, 2);
+  style?: FaceStyle | null,
+): { size: number; x: number; baseline: number; shrank: boolean } {
+  const fitted = fitSize(font, label, Math.max(rect.width - 6, 1), Math.max(rect.height * 0.5, 1));
+  const size = style ? fitStampSize(style.size, fitted) : fitted;
+  const textWidth = font.widthOfTextAtSize(label, size);
+  const inset = round(freeTextInset(size));
+  // Centred is the format's own convention for a stamp, so that is what a mark with
+  // no style on it gets; left and right keep the inset the text box uses.
+  const align = style?.align ?? 'center';
+  const x =
+    align === 'left'
+      ? Math.max(inset, 2)
+      : align === 'right'
+        ? Math.max(rect.width - inset - textWidth, inset)
+        : Math.max((rect.width - textWidth) / 2, 2);
+  return {
+    size: round(size),
+    x: round(x),
+    baseline: round(Math.max(rect.height / 2 - size / 2, 2)),
+    shrank: size < (style?.size ?? size),
+  };
 }
 
 /**

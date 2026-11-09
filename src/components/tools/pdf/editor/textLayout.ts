@@ -16,7 +16,7 @@
  * out through two documents must break in the same places.
  */
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
-import { fitStampSize, freeTextInset, type LaidOutLine, type StyledText } from '@/lib/pdf/core/annotations';
+import { freeTextInset, stampLabelPlacement, type LaidOutLine, type StyledText } from '@/lib/pdf/core/annotations';
 import { carriesPosture, type FaceStyle } from '@/lib/pdf/core/text-style';
 import { prepareTextObject } from '../text-editor/draw';
 import { resolveFace } from '../text-editor/faces';
@@ -124,11 +124,10 @@ export async function layoutMarkText(
   args: { kind: TextMarkKind; body: string; style: FaceStyle; width: number; height: number },
 ): Promise<MarkTextLayout> {
   const { kind, body, style, width, height } = args;
-  const inset = (size: number) => round(freeTextInset(size));
   const blockStyle = layoutStyle(style, kind === 'freetext');
   const prepared = await prepareTextObject(
     doc,
-    markTextObject(body, style, width - inset(style.size) * 2, kind),
+    markTextObject(body, style, width - textInset(style.size) * 2, kind),
   );
   // The face the layout measured with, looked up the same way `draw.ts` looked it
   // up — the per-document cache means this is the same embedded object, not a copy.
@@ -137,42 +136,33 @@ export async function layoutMarkText(
   const size = round(Math.max(style.size, 1));
 
   if (kind === 'stamp') {
-    const label = body;
-    const available = Math.max(width - 6, 1);
-    const natural = font.widthOfTextAtSize(label, size);
-    const fitted = natural > available ? shrinkToFit(font, label, size, available) : size;
-    const drawn = fitStampSize(size, fitted);
-    const textWidth = font.widthOfTextAtSize(label, drawn);
-    const pad = inset(drawn);
-    const align = style.align === 'right' ? 'right' : style.align === 'left' ? 'left' : 'center';
-    const x =
-      align === 'left'
-        ? round(pad)
-        : align === 'right'
-          ? round(Math.max(width - pad - textWidth, pad))
-          : round(Math.max((width - textWidth) / 2, 2));
+    // One placement for both surfaces: `stampOps` in `core/annotations` calls the
+    // same function, so the size and the baseline the screen drew are the ones the
+    // file writes. A label that will not fit the box the user dragged shrinks, and
+    // it shrinks the same number of points in both pictures.
+    const placed = stampLabelPlacement(font, body, { x: 0, y: 0, width, height }, style);
     return {
       lines:
-        label === ''
+        body === ''
           ? []
-          : [{ text: label, x, baseline: round(Math.max(height / 2 - drawn / 2, 2)), size: drawn }],
+          : [{ text: body, x: placed.x, baseline: placed.baseline, size: placed.size }],
       font,
       familyUsed: face.familyUsed,
-      size: drawn,
-      shrank: drawn < size,
-      contentHeight: drawn,
+      size: placed.size,
+      shrank: placed.shrank,
+      contentHeight: placed.size,
       note: face.note,
     };
   }
 
-  const top = Math.max(height - inset(size), 0);
+  const top = Math.max(height - textInset(size), 0);
   const lines: LaidOutLine[] = [];
   for (const line of prepared.layout.lines) {
     const first = line.pieces[0];
     const runSize = first?.run.size ?? size;
     lines.push({
       text: line.text,
-      x: round(inset(size) + (first?.x ?? 0)),
+      x: round(textInset(size) + (first?.x ?? 0)),
       baseline: round(top - line.baseline),
       size: round(runSize),
     });
@@ -188,14 +178,8 @@ export async function layoutMarkText(
   };
 }
 
-/** The largest size at or below `from` at which `label` still fits `width`. */
-function shrinkToFit(font: PDFFont, label: string, from: number, width: number): number {
-  let size = Math.max(from, 1);
-  while (size > 1 && font.widthOfTextAtSize(label, size) > width) {
-    size -= Math.max(0.25, size * 0.05);
-  }
-  return round(Math.max(size, 1));
-}
+/** The inset a mark keeps its type clear of the box edge by, at this size. */
+const textInset = (size: number): number => round(freeTextInset(size));
 
 /** What `addAnnotation` needs on the spec for this mark. */
 export function styledText(layout: MarkTextLayout, style: FaceStyle): StyledText {
