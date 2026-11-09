@@ -1,34 +1,51 @@
-faces:
-  noto-regular         TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 2e1ecf202614
-  noto-bold            TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.1 KB sha 5f0575392366
-  noto-italic          TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 2e1ecf202614
-  noto-pdflib-subset   TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.5 KB sha cb1cd21b77c0
-  noto-pdflib-full     TTF  rows 268 refused   0 face ? (4688 glyphs) file 298.6 KB sha b74486448870
-  standard-14          unknown rows 161 refused   0 face  file 7.7 KB sha 2c6467571946
-  app-arabic           TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.9 KB sha 7b0ff4bf2d82
-  pdflib-arabic        TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.7 KB sha 65e40dfba254
-  full-arabic          TTF  rows  32 refused   0 face ? (1637 glyphs) file 91.9 KB sha e7eac51c4b68
-  app-hebrew           TTF  rows  27 refused   0 face ? (485 glyphs) file 5.6 KB sha 30eeca46aece
-  app-devanagari       TTF  rows  43 refused   0 face ? (1238 glyphs) file 9.3 KB sha cf9aea4ecdfd
-  app-bengali          TTF  rows  42 refused   0 face ? (937 glyphs) file 9.8 KB sha 0fde7a7aba2e
-  app-tamil            TTF  rows  31 refused   0 face ? (534 glyphs) file 8.1 KB sha 3868e8fe7e70
-  app-telugu           TTF  rows  47 refused   0 face ? (1081 glyphs) file 10.0 KB sha b64ef6f90540
-  app-kannada          TTF  rows  47 refused   0 face ? (771 glyphs) file 10.9 KB sha 46a8cf14066f
-  app-malayalam        TTF  rows  47 refused   0 face ? (644 glyphs) file 11.5 KB sha e6291caf8570
-  app-thai             TTF  rows  44 refused   0 face ? (472 glyphs) file 8.5 KB sha 91ec2da720a3
-  pdflib-thai          TTF  rows  44 refused   0 face ? (472 glyphs) file 8.3 KB sha c885e06ca84f
-  app-lao              TTF  rows  27 refused   0 face ? (450 glyphs) file 6.2 KB sha 40ff4cff2928
-  app-khmer            TTF  rows  34 refused   0 face ? (678 glyphs) file 7.2 KB sha c076e7c4a2b9
-  app-myanmar          TTF  rows  28 refused   0 face ? (610 glyphs) file 10.4 KB sha d3aae42f0e85
-  app-georgian         TTF  rows  33 refused   0 face ? (554 glyphs) file 7.8 KB sha dca6df4d7870
-  app-armenian         TTF  rows  38 refused   0 face ? (440 glyphs) file 7.9 KB sha dde8fd4b18ae
-  app-ethiopic         TTF  rows  26 refused   0 face ? (924 glyphs) file 5.9 KB sha df4a04c1b923
-  app-jp               CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.1 KB sha ce926c1ca95b
-  pdflib-jp            CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.0 KB sha 1bfe662f1e9e
-  app-kr               CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.7 KB sha 18057d60529c
-  pdflib-kr            CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.5 KB sha 75954ff5b94c
-  full-kr              CFF  rows  64 refused   0 face ? (24869 glyphs) file 3928.2 KB sha ef733258b640
-  app-sc               CFF  rows  39 refused   0 face ? (30900 glyphs) file 45.5 KB sha c66d421cbe16
-  app-tc               CFF  rows  34 refused   0 face ? (20815 glyphs) file 8.8 KB sha 91d274dbdc0c
+▲ [WARNING] Import "embedUnicodeFace" will always be undefined because there is no matching export in "src/lib/pdf/core/fonts.ts" [import-is-undefined]
 
-31 probe PDFs in /tmp/fsb
+    docs/research/font-subset-entry.ts:19:66:
+      19 │ ...ace = (fontsModule as Record<string, unknown>).embedUnicodeFace as
+         ╵                                                   ~~~~~~~~~~~~~~~~
+
+faces:
+  noto-regular         TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 650353c3bde2
+  noto-bold            TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.1 KB sha c8312e2c73b8
+  noto-italic          TTF  rows 268 refused   0 face ? (4688 glyphs) file 30.0 KB sha 650353c3bde2
+  noto-pdflib-subset   TTF  rows 268 refused   0 face ? (4688 glyphs) file 29.5 KB sha e4b2c94d15bf
+  noto-pdflib-full     TTF  rows 268 refused   0 face ? (4688 glyphs) file 298.6 KB sha 87cd742988c7
+  noto-ledger-set      TTF  rows   6 refused   0 face ? (4688 glyphs) file 3.2 KB sha ff1619da7da6
+  standard-14          unknown rows 161 refused   0 face  file 7.7 KB sha b14ff2817535
+  mono-face: FAILED Error: this build has no embedUnicodeFace
+    at Module.runProbe (file:///tmp/fsb/probe.mjs?v=1794203074069:60721:39)
+    at async file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/docs/research/font-subset-build.mjs:148:17
+  mono-pdflib          TTF  rows 161 refused   0 face ? (1167 glyphs) file 19.3 KB sha 1584309c0a3c
+  app-arabic           TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.9 KB sha acbcd914906a
+  pdflib-arabic        TTF  rows  32 refused   0 face ? (1637 glyphs) file 6.7 KB sha b9c1efe82b1e
+  face-arabic: FAILED Error: this build has no embedUnicodeFace
+    at Module.runProbe (file:///tmp/fsb/probe.mjs?v=1794203074069:60721:39)
+    at async file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/docs/research/font-subset-build.mjs:148:17
+  full-arabic          TTF  rows  32 refused   0 face ? (1637 glyphs) file 91.9 KB sha 40e18e2af69d
+  app-hebrew           TTF  rows  27 refused   0 face ? (485 glyphs) file 5.6 KB sha 07b4a2c6ef1a
+  app-devanagari       TTF  rows  43 refused   0 face ? (1238 glyphs) file 9.3 KB sha 3f7ab2685ca8
+  app-bengali          TTF  rows  42 refused   0 face ? (937 glyphs) file 9.8 KB sha ff466a765a8e
+  app-tamil            TTF  rows  31 refused   0 face ? (534 glyphs) file 8.1 KB sha 38711ecbae8a
+  app-telugu           TTF  rows  47 refused   0 face ? (1081 glyphs) file 10.0 KB sha cfe1841ceece
+  app-kannada          TTF  rows  47 refused   0 face ? (771 glyphs) file 10.9 KB sha 27464a532fcd
+  app-malayalam        TTF  rows  47 refused   0 face ? (644 glyphs) file 11.5 KB sha 539ff68d7d2d
+  app-thai             TTF  rows  44 refused   0 face ? (472 glyphs) file 8.5 KB sha 1bc79f43234d
+  pdflib-thai          TTF  rows  44 refused   0 face ? (472 glyphs) file 8.3 KB sha 310a44df1be7
+  app-lao              TTF  rows  27 refused   0 face ? (450 glyphs) file 6.2 KB sha ab643dc61057
+  app-khmer            TTF  rows  34 refused   0 face ? (678 glyphs) file 7.2 KB sha 5052a23ecf32
+  app-myanmar          TTF  rows  28 refused   0 face ? (610 glyphs) file 10.4 KB sha 426e85a7b5a0
+  app-georgian         TTF  rows  33 refused   0 face ? (554 glyphs) file 7.8 KB sha cbe7f1de337b
+  app-armenian         TTF  rows  38 refused   0 face ? (440 glyphs) file 7.9 KB sha 9bb45c848da5
+  app-ethiopic         TTF  rows  26 refused   0 face ? (924 glyphs) file 5.9 KB sha 0630722e562a
+  app-jp               CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.1 KB sha 4cd73c1a5fcc
+  pdflib-jp            CFF  rows  76 refused   0 face ? (17810 glyphs) file 20.0 KB sha 7603fb76148c
+  face-jp: FAILED Error: this build has no embedUnicodeFace
+    at Module.runProbe (file:///tmp/fsb/probe.mjs?v=1794203074069:60721:39)
+    at async file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/docs/research/font-subset-build.mjs:148:17
+  app-kr               CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.7 KB sha 67a4fa0b9e17
+  pdflib-kr            CFF  rows  64 refused   0 face ? (24869 glyphs) file 36.5 KB sha 87cd2a6cb0a5
+  full-kr              CFF  rows  64 refused   0 face ? (24869 glyphs) file 3928.2 KB sha e5f5e74ebf4b
+  app-sc               CFF  rows  39 refused   0 face ? (30900 glyphs) file 45.5 KB sha 63acb2d0dd93
+  app-tc               CFF  rows  34 refused   0 face ? (20815 glyphs) file 8.8 KB sha ef61227551ac
+
+33 probe PDFs in /tmp/fsb (layout-prefix.json)
