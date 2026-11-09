@@ -30,9 +30,17 @@
  * `tests/fixtures/encrypted/README.md` for why a file this engine encrypted is no
  * evidence about a cipher.
  *
- * `reads the no words out of an AES-128 file` below measures the cause rather than
- * the guard. When a decrypt pass lands in `core/doc.ts:openPDF` it is that test
- * which says this refusal can come down.
+ * `reads no words out of an AES-128 file, and cannot even inflate its streams`
+ * below measures the cause rather than the guard. When a decrypt pass lands in
+ * `core/doc.ts:openPDF` it is that test which says this refusal can come down.
+ *
+ * **Red before the guard, measured:** with `rejectCiphered` forced off in
+ * `tools/runner.ts` — one line, the guard lifted and nothing else changed — 66 of
+ * the 111 tests here go red (11 rewriting tools × the 6 ciphered fixtures), plus
+ * one in `edge-organize.test.ts`: 67 across the two files. Every rewriting tool
+ * produces a file again, and those files are the 18-of-18 blank ones the rig
+ * judged. The gate-only tests are green in both states, which is the point of the
+ * split: nothing that works today is refused by this guard.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
