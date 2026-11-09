@@ -400,7 +400,7 @@ describe('page-numbers writes real folios', () => {
   });
 
   it('draws roman and letter styles as text, in the face the picker chose', async () => {
-    const outcome = await runPdf('page-numbers', { pages: 'all', style: 'roman-upper', prefix: '', suffix: '', font: 'times' }, [
+    const outcome = await runPdf('page-numbers', { pages: 'all', style: 'roman-upper', prefix: '', suffix: '', font: 'std:times' }, [
       { text: 'a' },
       { text: 'b' },
       { text: 'c' },
@@ -414,7 +414,7 @@ describe('page-numbers writes real folios', () => {
   });
 
   it('keeps CJK folios as embedded glyphs instead of blanks', async () => {
-    const outcome = await runPdf('page-numbers', { pages: '1', prefix: '第 ', suffix: ' 頁', font: 'helvetica' });
+    const outcome = await runPdf('page-numbers', { pages: '1', prefix: '第 ', suffix: ' 頁', font: 'std:helvetica' });
     const doc = await reopen(outcome);
     const text = await pageText(doc.getPages()[0]);
     expect(text).toContain('第 1 頁');

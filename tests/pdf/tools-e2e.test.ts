@@ -259,7 +259,7 @@ describe('pdf tools end to end', () => {
       margin: 24,
       color: '#1b1b18',
       bold: false,
-      font: 'helvetica',
+      font: 'std:helvetica',
     });
     const streams = await pageStreams(await firstPdf(outcome));
     // Every page gained exactly one extra content stream that shows text.

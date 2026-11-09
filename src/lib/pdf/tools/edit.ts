@@ -20,8 +20,10 @@
  * as `result.warnings`, never buried in a success message.
  */
 import type { PDFDocument, PDFPage, PDFFont } from '../core/doc';
-import { PDFArray, PDFName, PDFRef, StandardFonts, degrees, rgb, savePDF } from '../core/doc';
-import { drawTextU, isWinAnsiSafe, measureText, wrapText } from '../core/fonts';
+import { PDFArray, PDFName, PDFRef, degrees, rgb, savePDF } from '../core/doc';
+import { drawTextU, measureText, wrapText } from '../core/fonts';
+import { mergeFaceStyle, standardFamilyFace, standardFacesSpell, type FaceStyle } from '../core/text-style';
+import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './textStyleFields';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
 import { addPageLabels, readPageLabels, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
@@ -172,53 +174,6 @@ function note(notes: string[], message: string): void {
 }
 
 /** Latin-only standard faces, keyed the way the `font` picker names them. */
-const STANDARD_FACES: Record<string, [StandardFonts, StandardFonts, StandardFonts, StandardFonts]> = {
-  helvetica: [
-    StandardFonts.Helvetica,
-    StandardFonts.HelveticaBold,
-    StandardFonts.HelveticaOblique,
-    StandardFonts.HelveticaBoldOblique,
-  ],
-  times: [
-    StandardFonts.TimesRoman,
-    StandardFonts.TimesRomanBold,
-    StandardFonts.TimesRomanItalic,
-    StandardFonts.TimesRomanBoldItalic,
-  ],
-  courier: [
-    StandardFonts.Courier,
-    StandardFonts.CourierBold,
-    StandardFonts.CourierOblique,
-    StandardFonts.CourierBoldOblique,
-  ],
-};
-
-/**
- * Resolve the typeface picker to a standard face, or `null` for the Unicode path.
- *
- * A standard-14 face is only used after `isWinAnsiSafe` says the string fits it:
- * `page.drawText` with a WinAnsi font throws on CJK, Cyrillic and emoji, so the
- * fallback embeds the Noto face and says what happened (E11).
- */
-async function standardFace(
-  doc: PDFDocument,
-  text: string,
-  family: string | undefined,
-  bold: boolean,
-  italic: boolean,
-  notes: string[],
-): Promise<PDFFont | null> {
-  const key = (family ?? 'auto').toLowerCase();
-  const faces = STANDARD_FACES[key];
-  if (!faces) return null;
-  if (!isWinAnsiSafe(text)) {
-    const sample = [...text].slice(0, 12).join('');
-    note(notes, `"${key}" cannot render “${sample}” — it is a Latin-only face, so an embedded Unicode font was used instead.`);
-    return null;
-  }
-  return doc.embedFont(faces[(bold ? 1 : 0) + (italic ? 2 : 0)]);
-}
-
 /**
  * Position text inside the page as the reader sees it, honouring /Rotate (E9),
  * measuring that page alone (E8) and never drawing unsupported glyphs with a
@@ -230,32 +185,28 @@ async function stamp(
   text: string,
   options: {
     anchor: Anchor;
-    size: number;
-    color: string;
-    bold?: boolean;
-    italic?: boolean;
+    /** The shared style model: family, weight, slant, size and colour. */
+    style: FaceStyle;
     rotation?: number;
     opacity?: number;
     margin?: number;
-    family?: string;
     notes?: string[];
   },
 ): Promise<number> {
   const notes = options.notes ?? [];
+  const style = options.style;
+  const size = style.size;
   const frame = frameOf(page);
   const angle = options.rotation ?? 0;
-  const face = await standardFace(doc, text, options.family, Boolean(options.bold), Boolean(options.italic), notes);
+  // The face is chosen the way every other writer chooses it: a standard-14 family
+  // answers with its own named face at the asked posture (a real oblique, not a
+  // slanted regular), and anything past that goes through `core/fonts`, which embeds
+  // a subset and is reported. A posture the answering face cannot carry is said.
+  const face = await railFace(doc, style, text, notes);
   const width = face
-    ? face.widthOfTextAtSize(text, options.size)
-    : (await measureText(doc, {
-        text,
-        x: 0,
-        y: 0,
-        size: options.size,
-        bold: options.bold,
-        italic: options.italic,
-      })).width;
-  const run = placeRun(frame, width, options.size, angle, options.anchor, options.margin ?? 24);
+    ? face.widthOfTextAtSize(text, size)
+    : (await measureText(doc, { text, x: 0, y: 0, size, bold: style.bold, italic: style.italic })).width;
+  const run = placeRun(frame, width, size, angle, options.anchor, options.margin ?? 24);
   if (run.overflow) {
     note(notes, `“${[...text].slice(0, 18).join('')}” does not fit inside a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so it runs past the edges.`);
   }
@@ -267,9 +218,9 @@ async function stamp(
     page.drawText(text, {
       x: origin.x,
       y: origin.y,
-      size: options.size,
+      size,
       font: face,
-      color: rgbColor(options.color),
+      color: faceColor(style.color),
       opacity: options.opacity,
       rotate: degrees(pageAngle),
     });
@@ -278,15 +229,70 @@ async function stamp(
       text,
       x: origin.x,
       y: origin.y,
-      size: options.size,
-      color: rgbColor(options.color),
-      bold: options.bold,
-      italic: options.italic,
+      size,
+      color: faceColor(style.color),
+      bold: style.bold,
+      italic: style.italic,
       opacity: options.opacity,
       rotation: pageAngle,
     });
   }
   return width;
+}
+
+/**
+ * The named face for a rail style, or `null` when the embedded path must answer.
+ *
+ * `null` is not a failure: it is the case where the family has no face for the run
+ * (a Latin-only pick past WinAnsi, or a pick this tab has no bytes for), and
+ * `drawTextU` then embeds one. The caller reports which happened, so a substituted
+ * folio never looks like the family that was chosen.
+ *
+ * A standard-14 family answers from its **own named faces** at the asked posture —
+ * `Helvetica-Bold`, `Times-Italic`, `Courier-BoldOblique` — which is the whole reason
+ * italic is offered for those three and nowhere else: the app has no italic file for
+ * the bundled Noto, and a slant the file cannot carry is a preview that lies.
+ */
+async function railFace(
+  doc: PDFDocument,
+  style: FaceStyle,
+  text: string,
+  notes: string[],
+): Promise<PDFFont | null> {
+  const face = standardFamilyFace(style.fontFamily, style.bold, style.italic);
+  if (!face) return null;
+  if (!standardFacesSpell(text)) {
+    const sample = [...text].slice(0, 12).join('');
+    note(notes, `“${style.fontFamily.replace(/^std:/, '')}” cannot render “${sample}” — it is a Latin-only face, so an embedded Unicode font was used instead${style.italic ? ', and the slant with it: the bundled faces hold no italic' : ''}.`);
+    return null;
+  }
+  return doc.embedFont(face);
+}
+
+/**
+ * The face a stamp label is drawn with, embedded if need be.
+ *
+ * `addAnnotations` is synchronous (contract §2), so a stamp whose family is not one
+ * of the three named ones cannot have its face fetched by the annotation writer. The
+ * tool embeds it here and the appearance stream writes exactly that. `null` means the
+ * writer's own standard-14 answer is already the right one.
+ */
+async function stampLabelFace(
+  doc: PDFDocument,
+  style: FaceStyle,
+  label: string,
+  notes: string[],
+): Promise<PDFFont | null> {
+  const named = await railFace(doc, style, label, notes);
+  if (named) return named;
+  const { getFont } = await import('../core/fonts');
+  return getFont(doc, {
+    text: label,
+    size: style.size,
+    bold: style.bold,
+    italic: style.italic,
+    fontFamily: style.fontFamily || undefined,
+  });
 }
 
 /** Numeric option bounds, mirroring what the rail declared for the same field (E15). */
@@ -386,11 +392,6 @@ async function drawBehind(page: PDFPage, paint: () => Promise<void> | void): Pro
   setContentStreams(page, [mark, first]);
 }
 
-function rgbColor(hex: string) {
-  const { r, g, b } = parseHexColor(hex);
-  return rgb(r, g, b);
-}
-
 /**
  * True when the page writes `/CropBox` as an empty array.
  *
@@ -414,14 +415,6 @@ const ANCHOR_OPTIONS = [
   { value: 'bottom-left', label: 'Bottom left' },
   { value: 'bottom-center', label: 'Bottom centre' },
   { value: 'bottom-right', label: 'Bottom right' },
-];
-
-const FONT_OPTIONS = [
-  { value: 'auto', label: 'Automatic (matches the text)', hint: 'Embedded Noto Sans; loads a script face for CJK, Arabic, Hebrew, Thai or Indic text.' },
-  { value: 'noto', label: 'Noto Sans' },
-  { value: 'helvetica', label: 'Helvetica (Latin only)' },
-  { value: 'times', label: 'Times (Latin only)' },
-  { value: 'courier', label: 'Courier (Latin only)' },
 ];
 
 const ANNOTATION_SURFACE_FIELDS = [
@@ -568,10 +561,18 @@ export const editTools: PdfToolDefinition[] = [
       ], group: 'Format', help: 'Roman and letter styles restart at the first number you set; padded keeps the width you would type by hand.' },
       { key: 'prefix', label: 'Prefix', type: 'text', default: 'Page ', half: true, group: 'Format', help: 'Written before the number, so "Page " turns 3 into "Page 3".' },
       { key: 'suffix', label: 'Suffix', type: 'text', default: ' of {total}', half: true, group: 'Format', help: 'Written after the number. {total} and {page} are replaced.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 11, min: 5, max: 72, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'The size of the drawn number, in points: 12 pt is ordinary body text.' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#1b1b18', group: 'Style', help: 'Applied to the number and to any prefix or suffix around it.' },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: false, group: 'Style', help: 'Heavier strokes survive a duplex printer better; on a thin folio it can look like a smudge.' },
-      { key: 'font', label: 'Typeface', type: 'select', default: 'auto', options: FONT_OPTIONS, group: 'Style', help: 'A Latin-only face is swapped for the embedded Unicode font — and the run says so — when the text needs characters it cannot encode.' },
+      ...textStyleFields({
+        surface: 'page-numbers',
+        group: 'Style',
+        size: {
+          default: 11,
+          min: 5,
+          max: 72,
+          step: 0.5,
+          help: 'The size of the drawn number, in points: 12 pt is ordinary body text.',
+        },
+        color: { default: '#1b1b18', help: 'Applied to the number and to any prefix or suffix around it.' },
+      }),
     ],
     notes: [
       'Numbers are drawn into the page, not stored as metadata, so they print and appear in every viewer.',
@@ -586,9 +587,13 @@ export const editTools: PdfToolDefinition[] = [
       const skip = bounded(notes, 'Skip first N pages', numberValue(context.values, 'skip', 0), { min: 0, max: all.length, integer: true });
       const style = stringValue(context.values, 'style', 'decimal');
       const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 5, max: 72, unit: 'pt' });
+      // The family, weight, slant and colour come from the shared model; the size is
+      // read through the tool's own clamp so a `fontSize: 0` is still reported
+      // before it reaches a writer.
+      const textStyle = mergeFaceStyle(readTextStyle(context.values, 'page-numbers'), { size });
+      rememberTextStyle('page-numbers', textStyle);
       const margin = readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 24, min: 0, max: 200, unit: 'pt' });
       const anchor = stringValue(context.values, 'position', 'bottom-center');
-      const family = stringValue(context.values, 'font', 'auto');
       const pages = input.doc.getPages();
       // Numbering restarts at `startAt` on the first page that is actually
       // numbered, and the step counts from there — previously the step was
@@ -622,11 +627,8 @@ export const editTools: PdfToolDefinition[] = [
             .replace('{page}', formatNumber(number, style));
         await stamp(input.doc, pages[page], text, {
           anchor: anchor as Anchor,
-          size,
-          color: stringValue(context.values, 'color', '#1b1b18'),
-          bold: booleanValue(context.values, 'bold'),
+          style: textStyle,
           margin,
-          family,
           notes,
         });
         context.progress((i + 1) / targets.length, `Numbered page ${page + 1}`);
@@ -657,9 +659,20 @@ export const editTools: PdfToolDefinition[] = [
       },
       { key: 'text', label: 'Text', type: 'text', default: 'DRAFT', when: (v) => v.type === 'text', group: 'Mark', help: 'Drawn into the page, not stored as a comment, so it prints and cannot be hidden by a reader.' },
       { key: 'image', label: 'Watermark image', type: 'file', accept: 'image/*', when: (v) => v.type === 'image', group: 'Mark', help: 'PNG, JPEG or WebP — converted in this tab, never uploaded.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 64, min: 6, max: 400, step: 1, unit: 'pt', half: true, when: (v) => v.type === 'text', group: 'Mark', help: 'Points, on a page scaled to its own size — a watermark sized for A4 lands differently on a Letter scan.' },
-      { key: 'bold', label: 'Bold', type: 'toggle', default: true, when: (v) => v.type === 'text', group: 'Mark', help: 'Heavier strokes survive a low-ink printout and read across a room.' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#888888', when: (v) => v.type === 'text', group: 'Mark', help: 'Only used for a text mark; an image keeps its own colours.' },
+      ...textStyleFields({
+        surface: 'watermark',
+        group: 'Mark',
+        when: (values) => values.type === 'text',
+        boldDefault: true,
+        size: {
+          default: 64,
+          min: 6,
+          max: 400,
+          step: 1,
+          help: 'Points, on a page scaled to its own size — a watermark sized for A4 lands differently on a Letter scan.',
+        },
+        color: { default: '#888888', help: 'Only used for a text mark; an image keeps its own colours.' },
+      }),
       { key: 'scale', label: 'Image scale', type: 'slider', default: 0.35, min: 0.02, max: 2, step: 0.01, when: (v) => v.type === 'image', group: 'Mark', help: 'Fraction of each page\'s own width — measured per page, so mixed sizes stay proportional.' },
       { key: 'opacity', label: 'Opacity', type: 'slider', default: 0.25, min: 0.02, max: 1, step: 0.01, group: 'Look', help: 'Low enough that the words underneath stay readable, high enough that the mark survives a printer.' },
       { key: 'rotation', label: 'Angle', type: 'slider', default: 45, min: -180, max: 180, step: 1, unit: '°', group: 'Look', help: 'Measured as the page is displayed, so it is the same angle on a rotated page.' },
@@ -706,13 +719,24 @@ export const editTools: PdfToolDefinition[] = [
         : null;
       const text = stringValue(context.values, 'text', 'DRAFT');
       const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 64, min: 6, max: 400, unit: 'pt' });
-      const bold = booleanValue(context.values, 'bold', true);
-      const color = stringValue(context.values, 'color', '#888888');
+      // Family, weight, slant and colour come from the shared model; the size is read
+      // through the tool's own clamp so a `fontSize: 0` is still reported before it
+      // reaches a writer.
+      const style = mergeFaceStyle(readTextStyle(context.values, 'watermark'), { size });
+      rememberTextStyle('watermark', style);
       const scale = readNumber(context, notes, { key: 'scale', label: 'Image scale', fallback: 0.35, min: 0.02, max: 2 });
       // Measured once: the face is cached, and a 500-page document must not
       // re-measure the same string five hundred times (E7).
       const textWidth = type === 'image' || !tile
-        ? (await measureText(input.doc, { text, x: 0, y: 0, size, bold })).width
+        ? (await measureText(input.doc, {
+            text,
+            x: 0,
+            y: 0,
+            size,
+            bold: style.bold,
+            italic: style.italic,
+            fontFamily: style.fontFamily || undefined,
+          })).width
         : 0;
 
       for (let i = 0; i < pages.length; i++) {
@@ -739,16 +763,14 @@ export const editTools: PdfToolDefinition[] = [
             }
           } else if (tile) {
             for (const spot of tilePoints(frame, textWidth * gap, size * gap * 2, notes)) {
-              await stampText(page, text, spot, { size, opacity, rotation, bold, color });
+              await stampText(page, text, spot, { style, opacity, rotation });
             }
           } else {
             await stamp(input.doc, page, text, {
               anchor,
-              size,
+              style,
               opacity,
               rotation,
-              bold,
-              color,
               margin: 0,
               notes,
             });
@@ -786,7 +808,14 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, step: 0.5, unit: 'pt', half: true, group: 'Style', help: 'In points. Header and footer text is usually smaller than the body it labels.' },
       { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, step: 1, unit: 'pt', half: true, group: 'Style', help: 'How far inside each page the text and its rule sit.' },
       { key: 'color', label: 'Colour', type: 'color', default: '#55554e', group: 'Style', help: 'Applied to the text and to the rule together.' },
-      { key: 'rule', label: 'Draw a hairline rule', type: 'toggle', default: true, group: 'Style', help: 'A hairline under the header and above the footer, drawn to the same margins.' },
+      {
+        key: 'rule',
+        label: 'Draw a hairline rule',
+        type: 'toggle',
+        default: true,
+        group: 'Style',
+        help: 'A hairline under the header and above the footer, drawn to the same margins.',
+      },
       pagesField({ group: 'Style' }),
     ],
     notes: [
@@ -802,8 +831,10 @@ export const editTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 9, min: 5, max: 36, unit: 'pt' });
+      const style = mergeFaceStyle(readTextStyle(context.values, 'header-footer'), { size });
+      rememberTextStyle('header-footer', style);
       const margin = readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 28, min: 4, max: 120, unit: 'pt' });
-      const color = stringValue(context.values, 'color', '#55554e');
+      const color = style.color;
       const rule = booleanValue(context.values, 'rule', true);
       const meta = {
         title: input.doc.getTitle() ?? input.name,
@@ -825,7 +856,15 @@ export const editTools: PdfToolDefinition[] = [
         for (const row of rows) {
           const texts = row.keys.map((key) => expand(stringValue(context.values, key), values).trim());
           const widths = await Promise.all(texts.map((text) => (text
-            ? measureText(input.doc, { text, x: 0, y: 0, size }).then((m) => m.width)
+            ? measureText(input.doc, {
+                text,
+                x: 0,
+                y: 0,
+                size,
+                bold: style.bold,
+                italic: style.italic,
+                fontFamily: style.fontFamily || undefined,
+              }).then((m) => m.width)
             : Promise.resolve(0))));
           const used = widths.reduce((sum, width) => sum + width, 0);
           if (texts.filter(Boolean).length > 1 && used + margin * 2 > frame.width) {
@@ -833,7 +872,7 @@ export const editTools: PdfToolDefinition[] = [
           }
           for (let s = 0; s < row.anchors.length; s++) {
             if (!texts[s]) continue;
-            await stamp(input.doc, page, texts[s], { anchor: row.anchors[s], size, color, margin, notes });
+            await stamp(input.doc, page, texts[s], { anchor: row.anchors[s], style, margin, notes });
           }
           if (rule) {
             // The rule is drawn where the reader sees it, then turned with the
@@ -874,9 +913,20 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'start', label: 'Start at', type: 'number', default: 1, min: 0, max: 1000000, step: 1, integer: true, half: true, group: 'Number', help: 'Where the first page of the first file is numbered from — continue an existing production rather than restart it.' },
       { key: 'perFile', label: 'Restart numbering for each file', type: 'toggle', default: false, group: 'Number', help: 'Off runs one sequence across the whole batch, which is what a production set expects; on restarts at the start value inside every file.' },
       { key: 'position', label: 'Position', type: 'select', default: 'bottom-right', options: ANCHOR_OPTIONS, group: 'Marking', help: 'Where on each page the number is drawn. Discovery productions conventionally use bottom-right.' },
-      { key: 'fontSize', label: 'Font size', type: 'number', default: 9, min: 5, max: 36, step: 0.5, unit: 'pt', half: true, group: 'Marking', help: 'Small enough not to cover anything, large enough to read off a photocopy.' },
+      ...textStyleFields({
+        surface: 'bates-numbering',
+        group: 'Marking',
+        family: false,
+        size: {
+          default: 9,
+          min: 5,
+          max: 36,
+          step: 0.5,
+          help: 'Small enough not to cover anything, large enough to read off a photocopy.',
+        },
+        color: { default: '#000000', help: 'Black is the convention; anything else risks disappearing on a photocopier.' },
+      }),
       { key: 'margin', label: 'Margin', type: 'number', default: 18, min: 0, max: 120, step: 1, unit: 'pt', half: true, group: 'Marking', help: 'Distance from the chosen corner of each page, measured per page.' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#000000', group: 'Marking', help: 'Black is the convention; anything else risks disappearing on a photocopier.' },
     ],
     async run(context) {
       const notes: string[] = [];
@@ -886,6 +936,11 @@ export const editTools: PdfToolDefinition[] = [
       const perFile = booleanValue(context.values, 'perFile');
       const format = stringValue(context.values, 'format', '{prefix}-{n}');
       const prefix = stringValue(context.values, 'prefix', 'DOC');
+      // The size is read through the tool's own clamp so an out-of-range value is
+      // still admitted before it reaches a writer.
+      const batesSize = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 9, min: 5, max: 36, unit: 'pt' });
+      const batesStyle = mergeFaceStyle(readTextStyle(context.values, 'bates-numbering'), { size: batesSize });
+      rememberTextStyle('bates-numbering', batesStyle);
       let counter = start;
       let stamped = 0;
       // The literal last number painted, so the admission cannot disagree with
@@ -915,8 +970,7 @@ export const editTools: PdfToolDefinition[] = [
           });
           await stamp(input.doc, input.doc.getPage(index), text, {
             anchor: stringValue(context.values, 'position', 'bottom-right') as Anchor,
-            size: readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 9, min: 5, max: 36, unit: 'pt' }),
-            color: stringValue(context.values, 'color', '#000000'),
+            style: batesStyle,
             margin: readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 18, min: 0, max: 120, unit: 'pt' }),
             notes,
           });
@@ -1129,7 +1183,24 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'position', label: 'Position', type: 'select', default: 'top-right', options: ANCHOR_OPTIONS, group: 'Mark', help: 'The corner of each page as it is displayed, so a rotated page stamps where you can see it.' },
       { key: 'width', label: 'Width', type: 'number', default: 140, min: 20, max: 600, step: 1, unit: 'pt', half: true, group: 'Mark', help: 'The stamp is scaled to this width and keeps its own proportion. On a rotated page it is measured against the page as displayed.' },
       { key: 'opacity', label: 'Opacity', type: 'slider', default: 1, min: 0.1, max: 1, step: 0.05, half: true, group: 'Mark', help: 'Below 1 the page shows through, which is what you want over a signature.' },
-      { key: 'color', label: 'Colour', type: 'color', default: '#dc2626', when: (v) => v.stamp !== 'custom', group: 'Stamp', help: 'The stamp’s text colour, for the standard stamps. A custom image keeps its own colours.' },
+      ...textStyleFields({
+        surface: 'add-stamps',
+        group: 'Stamp',
+        when: (values) => values.stamp !== 'custom',
+        boldDefault: true,
+        size: {
+          default: 22,
+          min: 6,
+          max: 72,
+          step: 1,
+          half: true,
+          help: 'The label is drawn this size and shrunk to fit the stamp box if it will not go — the same answer the preview shows.',
+        },
+        color: {
+          default: '#dc2626',
+          help: 'The stamp’s text colour, for the standard stamps. A custom image keeps its own colours.',
+        },
+      }),
       { key: 'regions', label: 'Placements', type: 'text', default: '', help: 'Filled in by clicking the page. Format page:x,y,w,h.', group: 'Placement' },
       pagesField({ default: '1', group: 'Placement' }),
     ],
@@ -1159,6 +1230,15 @@ export const editTools: PdfToolDefinition[] = [
       if (targets.some((region) => frameOf(input.doc.getPage(region.page)).rotation !== 0)) {
         note(notes, 'Some stamps landed on rotated pages: they sit in the corner as you see it, but the label follows the page orientation.');
       }
+      // The label is type, so it takes the shared style model. A family past the
+      // three named ones has its face embedded here — `addAnnotations` is
+      // synchronous, so it cannot fetch one itself — and the appearance stream writes
+      // exactly that face rather than falling back to Helvetica quietly.
+      const labelStyle = mergeFaceStyle(readTextStyle(context.values, 'add-stamps'), {
+        size: readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 22, min: 6, max: 72, unit: 'pt' }),
+      });
+      rememberTextStyle('add-stamps', labelStyle);
+      const labelFace = embedded ? null : await stampLabelFace(input.doc, labelStyle, name, notes);
       addAnnotations(
         input.doc,
         targets.map((region) => ({
@@ -1173,7 +1253,10 @@ export const editTools: PdfToolDefinition[] = [
             ? { ref: embedded.ref, width: embedded.width, height: embedded.height }
             : undefined,
           opacity: readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 1, min: 0.1, max: 1 }),
-          color: stringValue(context.values, 'color', '#dc2626'),
+          color: labelStyle.color,
+          // A labelled stamp is type set into a box, so it carries the model and the
+          // face the model answered with.
+          textStyle: embedded ? undefined : { style: labelStyle, ...(labelFace ? { font: labelFace } : {}) },
           contents: name,
         })),
       );
@@ -2229,7 +2312,7 @@ async function stampText(
   page: PDFPage,
   text: string,
   at: { x: number; y: number },
-  options: { size: number; opacity: number; rotation: number; bold: boolean; color: string },
+  options: { style: FaceStyle; opacity: number; rotation: number },
 ): Promise<void> {
   const frame = frameOf(page);
   const origin = toUserSpace(frame, at.x, at.y);
@@ -2237,9 +2320,13 @@ async function stampText(
     text,
     x: origin.x,
     y: origin.y,
-    size: options.size,
-    color: rgbColor(options.color),
-    bold: options.bold,
+    size: options.style.size,
+    color: faceColor(options.style.color),
+    bold: options.style.bold,
+    italic: options.style.italic,
+    // The family the model names, so a tiled watermark in the bundled face is the
+    // same face a single watermark gets — not whichever one WinAnsi happened to allow.
+    fontFamily: options.style.fontFamily || undefined,
     opacity: options.opacity,
     rotation: options.rotation + frame.rotation,
   });

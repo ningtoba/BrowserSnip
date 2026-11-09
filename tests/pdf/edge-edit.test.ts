@@ -531,14 +531,14 @@ describe('page numbers (E6, E7, E8, E9, E11, E13, E15)', () => {
   });
 
   it('substitutes a Unicode face when a Latin-only typeface cannot encode the text (E11)', async () => {
-    const outcome = await run('page-numbers', { font: 'helvetica', prefix: '承认 ' });
+    const outcome = await run('page-numbers', { font: 'std:helvetica', prefix: '承认 ' });
     expect(outcome.warnings.join('\n')).toMatch(/cannot render/i);
     const doc = await openPDF(await outputBytes(outcome));
     expect(stampedRun(doc.getPage(0)).text.length).toBeGreaterThan(0);
   });
 
   it('keeps a Latin folio in the standard face that was asked for (E11)', async () => {
-    const outcome = await run('page-numbers', { font: 'helvetica', prefix: 'Page ' });
+    const outcome = await run('page-numbers', { font: 'std:helvetica', prefix: 'Page ' });
     expect(outcome.warnings).toEqual([]);
     const doc = await openPDF(await outputBytes(outcome));
     expect(stampedRun(doc.getPage(0)).text).toBe('Page 1 of 1');

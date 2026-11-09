@@ -21,6 +21,7 @@
  * Nothing in here touches a PDF or the DOM: it is the vocabulary the writers and
  * the inspector both speak.
  */
+import { StandardFonts } from './doc';
 import { SCRIPT_FONTS, isWinAnsiSafe, detectScript } from './fonts';
 
 /** How a run is lined up inside its box. */
@@ -175,6 +176,51 @@ export const FACE_FAMILIES: FaceFamilySpec[] = [
     claim: `${script.label} ships one weight, so bold and italic are not offered for it. The face is downloaded once and subsetted into the file; offline, the run is refused by name.`,
   })),
 ];
+
+/**
+ * The four real faces behind each standard-14 family: regular, bold, italic/oblique,
+ * bold-italic/oblique.
+ *
+ * `core/annotations`, `text-editor/faces` and the rail tools each kept their own copy
+ * of this table, which is how the same three families could carry different answers
+ * in three places. The ids are the registry's; the order of the tuple is the posture
+ * index `(bold ? 1 : 0) + (italic ? 2 : 0)`.
+ */
+export const STANDARD_FAMILY_FACES: Record<string, readonly StandardFonts[]> = {
+  'std:helvetica': [
+    StandardFonts.Helvetica,
+    StandardFonts.HelveticaBold,
+    StandardFonts.HelveticaOblique,
+    StandardFonts.HelveticaBoldOblique,
+  ],
+  'std:times': [
+    StandardFonts.TimesRoman,
+    StandardFonts.TimesRomanBold,
+    StandardFonts.TimesRomanItalic,
+    StandardFonts.TimesRomanBoldItalic,
+  ],
+  'std:courier': [
+    StandardFonts.Courier,
+    StandardFonts.CourierBold,
+    StandardFonts.CourierOblique,
+    StandardFonts.CourierBoldOblique,
+  ],
+};
+
+/**
+ * The named face for a family at a posture, or `null` when the family is not one of
+ * the standard-14 — which is the caller's signal to take the embedded path.
+ */
+export function standardFamilyFace(familyId: string, bold: boolean, italic: boolean): StandardFonts | null {
+  const faces = STANDARD_FAMILY_FACES[familyId];
+  if (!faces) return null;
+  return faces[(bold ? 1 : 0) + (italic ? 2 : 0)] ?? faces[0] ?? null;
+}
+
+/** True when the standard-14 faces can spell `text` — the only case they are used. */
+export function standardFacesSpell(text: string): boolean {
+  return isWinAnsiSafe(text) && detectScript(text) === null;
+}
 
 /** The standard-14 ids, for callers that map a rail `font` value onto a family. */
 export const STANDARD_FAMILY_IDS: readonly string[] = ['std:helvetica', 'std:times', 'std:courier'];
@@ -344,7 +390,14 @@ export const DEFAULT_FACE_STYLE: FaceStyle = {
  * style per surface for exactly that reason.
  */
 export type FaceSurfaceId =
-  'text-editor' | 'freetext' | 'stamp' | 'header-footer' | 'page-numbers' | 'watermark' | 'add-stamps';
+  | 'text-editor'
+  | 'freetext'
+  | 'stamp'
+  | 'header-footer'
+  | 'page-numbers'
+  | 'watermark'
+  | 'add-stamps'
+  | 'bates-numbering';
 
 const SURFACE_DEFAULTS: Record<FaceSurfaceId, FaceStyle> = {
   'text-editor': DEFAULT_FACE_STYLE,
@@ -357,10 +410,13 @@ const SURFACE_DEFAULTS: Record<FaceSurfaceId, FaceStyle> = {
   watermark: { ...DEFAULT_FACE_STYLE, size: 64, color: '#888888', bold: true },
   'add-stamps': {
     ...DEFAULT_FACE_STYLE,
-    size: 14,
+    size: 22,
     color: '#DC2626',
     bold: true,
   },
+  // A production number: no typeface picker, because a Bates stamp is read off a
+  // photocopy and the convention is the reader's own sans face.
+  'bates-numbering': { ...DEFAULT_FACE_STYLE, size: 9, color: '#000000' },
 };
 
 /** The style a surface starts from: its own default, overlaid with what is stored. */
@@ -419,6 +475,11 @@ const SURFACE_SUPPORT: Record<FaceSurfaceId, FaceSurfaceSupport> = {
     keepPageFace: false,
   },
   'add-stamps': {
+    aligns: ['left', 'center', 'right'],
+    lineSpacing: false,
+    keepPageFace: false,
+  },
+  'bates-numbering': {
     aligns: ['left', 'center', 'right'],
     lineSpacing: false,
     keepPageFace: false,
