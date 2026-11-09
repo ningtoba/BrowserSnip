@@ -49,6 +49,10 @@
  * counted out loud. `rotate` and `overlay-pdf` stay in place on an unencrypted
  * file, so they lose nothing. The redraw tools still cannot take page furniture
  * with them — now they say so, with counts.
+ *
+ * **Red without the fix: 17 of the 19 tests here.** The two that pass are the
+ * fixture census and `rotate` — the first measures the input, the second runs in
+ * place and never had the bug.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PDFDocument } from '@maxwbh/pdf-lib';
