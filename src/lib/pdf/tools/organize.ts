@@ -1897,7 +1897,13 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const cells: { sheet: number; cell: number; page: number }[] = [];
       source.forEach((page, index) => {
-        const cell = across ? index : (index % rows) * columns + Math.floor(index / rows);
+        // Both numbers are relative to the **sheet this page lands on**: `gridBox`
+        // derives `row = floor(cell / columns)` from a cell of that sheet's grid,
+        // so counting from the start of the run drew every sheet after the first a
+        // row below the paper — in the file, off the page (`n-up` of 8 at 4 per
+        // sheet: sheet 2's cells 4…7 became rows 2 and 3 of a 2-row grid).
+        const slot = index % perSheet;
+        const cell = across ? slot : (slot % rows) * columns + Math.floor(slot / rows);
         cells.push({ sheet: Math.floor(index / perSheet), cell, page });
       });
       const target = await sheetDocument(input.doc, sheet, cells, perSheet, box, notes);
@@ -2803,7 +2809,14 @@ function axisParts(axis: string, parts: number, along: 'vertical' | 'horizontal'
   return axis === along ? parts : 1;
 }
 
-/** Rebuild a document as `count` blank sheets of `size`, then stamp sources. */
+/**
+ * Rebuild a document as `count` blank sheets of `size`, then stamp sources.
+ *
+ * `cell` is a cell **of `item.sheet`'s own grid** (`0 … cellsPerSheet-1`, or of the
+ * `columns × rows` the caller's `cellBox` closes over), never an index into the
+ * whole run: `n-up` once fed it the run index and every sheet after the first was
+ * placed below the media box.
+ */
 async function sheetDocument(
   source: PDFDocument,
   size: [number, number],

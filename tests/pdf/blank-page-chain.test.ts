@@ -368,8 +368,8 @@ describe('the blank survives the chain, in the right place', () => {
     const doc = await open(await bytesOf(await run('n-up', await withOwnBlank(), VALUES['n-up'])));
     expect(doc.getPageCount()).toBe(3);
     // Five pages, two per sheet: sheet 2 holds the blank (source 3) then source 4.
-    // That they land *on* the paper is a separate question, pinned at the end of
-    // this file; what matters to the blank page is that its cell exists, in order.
+    // That they land *on* the paper is the rule at the end of this file; what
+    // matters to the blank page is that its cell exists, in order.
     const second = formsOf(doc, 1);
     expect(second.map((form) => Math.round(form.bbox[2])), 'both cells of sheet 2 are filled').toHaveLength(2);
     expect(Math.round(second[0].bbox[2])).toBe(Math.round(BLANK_SIZE[0]));
@@ -565,7 +565,7 @@ describe('the same mistake, elsewhere in the page dictionary', () => {
   });
 });
 
-/* ── what this file does NOT fix, pinned with the numbers ────────────────── */
+/* ── the sheet placement this chain ran into, now fixed and re-measured ───── */
 
 /**
  * The translation each `Do` runs under, in draw order.
@@ -585,34 +585,46 @@ function cellOffsets(doc: PDFDocument, index: number): { x: number; y: number }[
   return out;
 }
 
-describe('the neighbouring defect, measured and left alone', () => {
+describe('the neighbouring defect, measured and fixed', () => {
   /**
-   * `n-up` numbers its cells across the whole run instead of within a sheet, so
-   * every sheet after the first is placed below the paper.
+   * `n-up` used to number its cells across the whole run instead of within a sheet.
    *
    * `gridBox`'s function takes a cell of the grid (`0 … perSheet-1`) and derives
-   * `row = floor(cell / columns)`, but `n-up` hands it the global index: with
-   * 2 per sheet, sheet 2 asks for cells 2 and 3 and gets row 1, sheet 3 asks for
-   * cell 4 and gets row 2. The content is in the file — it is simply off the page,
-   * which is why the run prints "Placed 5 pages on 3 sheets" over a file whose
-   * sheets 2 and 3 rasterise at 0.000 % ink (measured with `pymupdf` on the deployed
-   * site by `scripts/live-blank-chain-proof.mjs`). The case below uses a document
-   * with **no blank pages at all** — four sheets, 100 to 400 pt wide — so it is not
-   * this branch's doing and it is not in the class the predicate fixes; the repair is
-   * to pass the within-sheet cell (`cell % perSheet`), and this pin flips when
-   * somebody makes it.
+   * `row = floor(cell / columns)`, but `n-up` handed it the global index: with
+   * 2 per sheet, sheet 2 asked for cells 2 and 3 and got row 1, sheet 3 asked for
+   * cell 4 and got row 2. The content was in the file — simply off the page, which
+   * is why the run printed "Placed 5 pages on 3 sheets" over a file whose sheets 2
+   * and 3 rasterised at 0.000 % ink (measured with `pymupdf` on the deployed site
+   * by `scripts/live-blank-chain-proof.mjs`). The case below holds a document with
+   * **no blank pages at all** — four sheets, 100 to 400 pt wide — so it was never
+   * this branch's doing; the repair was the within-sheet cell (`index % perSheet`),
+   * and this is that pin flipping, with the general rule now owned by
+   * `tests/pdf/grid-placement.test.ts`.
    */
-  it('puts every sheet after the first below the paper', async () => {
+  it('puts every sheet on the paper, at the same cells as sheet 1', async () => {
     const doc = await open(await bytesOf(await run('n-up', await inkedFour(), VALUES['n-up'])));
-    // Four sheets, two per page of output: the second output sheet is cells 2 and
-    // 3 of the run, which `gridBox` reads as rows 1 of a one-row grid.
+    // Four sheets, two per printed side: the second side is cells 0 and 1 of its
+    // own grid, not cells 2 and 3 of the run one row below the paper.
     expect(doc.getPageCount()).toBe(2);
-    const first = cellOffsets(doc, 0);
-    const second = cellOffsets(doc, 1);
-    expect(first.every((cell) => cell.y >= 0), 'sheet 1 is on the paper').toBe(true);
-    expect(second.every((cell) => cell.y < 0), 'sheet 2 was placed under it').toBe(true);
-    // The columns are right, and so is the sheet count — only the row is counted
-    // from the start of the run, which is what pushes the second sheet off it.
-    expect(second.map((cell) => cell.x >= 0), 'the halves are still left and right').toEqual([true, true]);
+    const sheetOne = cellOffsets(doc, 0);
+    const sheetTwo = cellOffsets(doc, 1);
+    // Each sheet's own two cells, left and right, on the paper: the y of a centred
+    // page depends on that page's width, so the claim is about the row, which is
+    // what the run-wide cell index used to get wrong (sheet 2 sat at y < 0).
+    expect(sheetOne.length, 'sheet 1 holds two pages').toBe(2);
+    expect(sheetTwo.length, 'sheet 2 holds two pages').toBe(2);
+    expect(
+      [...sheetOne, ...sheetTwo].every((cell) => cell.y >= 0),
+      `every cell is on the paper: ${JSON.stringify({ sheetOne, sheetTwo })}`,
+    ).toBe(true);
+    const pageWidth = mediaBox(doc.getPages()[1]).width;
+    expect(
+      sheetTwo.map((cell) => cell.x >= 0 && cell.x < pageWidth),
+      `both cells of sheet 2 are within its width ${pageWidth}: ${JSON.stringify(sheetTwo)}`,
+    ).toEqual([true, true]);
+    expect(new Set(sheetTwo.map((cell) => Math.round(cell.x))).size, 'and they are two different columns').toBe(2);
+    // The pages still identify themselves: sheet 2 holds source 3 then source 4,
+    // which is what the cell numbers are for.
+    expect(formsOf(doc, 1).map((form) => Math.round(form.bbox[2])), 'sheet 2, in order').toEqual([300, 400]);
   });
 });

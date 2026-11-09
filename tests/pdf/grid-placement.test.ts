@@ -334,8 +334,11 @@ const clamp = (value: number, low: number, high: number): number => Math.min(hig
  * live in a font program this does not open and no glyph of a legible run sits at
  * zero width. A path is measured as the box its points enclose. Neither shortcut
  * can put ink where the file drew none.
+ *
+ * `ownStreamsOnly` stops at the page's own operators, which is how a tool's rules
+ * and its page placements are told apart.
  */
-function paintedRects(doc: PDFDocument, index: number): Rect[] {
+function paintedRects(doc: PDFDocument, index: number, ownStreamsOnly = false): Rect[] {
   const marks: Rect[] = [];
   const walk = (
     streams: { bytes: Uint8Array }[],
@@ -454,6 +457,7 @@ function paintedRects(doc: PDFDocument, index: number): Rect[] {
               plot(device);
               break;
             }
+            if (ownStreamsOnly) break;
             const nested = xobjectsOf(doc, object);
             const parentClip = clip ? overlap(clip, device) : device;
             if (parentClip) walk([{ bytes: streamBytes(object) }], inner, nested, parentClip, depth + 1);
@@ -493,23 +497,14 @@ function glyphsOf(operands: { kind: string; bytes?: Uint8Array; items?: { kind: 
   return total;
 }
 
-/** The `re` rectangles a page's own stream draws, in user space. */
+/**
+ * The `re` rectangles a page's own stream draws, in user space.
+ *
+ * A stroke path counts as the box its points enclose, because `pdf-lib` writes
+ * `drawRectangle` as `m`/`l`/`h` and a stroke rather than as `re`.
+ */
 function drawnRules(doc: PDFDocument, index: number): Rect[] {
-  const out: Rect[] = [];
-  for (const stream of pageContentStreams(doc.getPages()[index])) {
-    let state: Matrix = IDENTITY;
-    const stack: Matrix[] = [];
-    for (const op of parseContentStream(stream.bytes)) {
-      if (op.name === 'q') stack.push(state);
-      else if (op.name === 'Q') state = stack.pop() ?? IDENTITY;
-      else if (op.name === 'cm') state = compose(state, numbersOf(op.operands) as Matrix);
-      else if (op.name === 're') {
-        const [x, y, w, h] = numbersOf(op.operands);
-        out.push(mapRect(state, { x, y, width: w, height: h }));
-      }
-    }
-  }
-  return out;
+  return paintedRects(doc, index, true);
 }
 
 /* ── the rule every sheet of every grid tool has to satisfy ──────────────── */
@@ -595,9 +590,8 @@ describe('n-up keeps every sheet on its own paper', () => {
     const doc = await produce('n-up', await inkedSheets(8), { ...FOUR_UP, order: 'down' }, 2);
     expectOnThePaper(doc, 'n-up');
     // Column-first fill, restarted on every sheet: cells 0, 2, 1, 3 of the grid.
-    const cells = [0, 2, 1, 3].map((c) => fmtRect(cellOf(A4_LANDSCAPE, 2, 2, c)));
-    expect(placedOn(doc, 0).map((form) => fmtRect(centre(form.rect)))).toEqual(cells);
-    expect(placedOn(doc, 1).map((form) => fmtRect(centre(form.rect)))).toEqual(cells);
+    expect(placedOn(doc, 0).map((form) => cellHolding(form.rect))).toEqual([0, 2, 1, 3]);
+    expect(placedOn(doc, 1).map((form) => cellHolding(form.rect))).toEqual([0, 2, 1, 3]);
   });
 
   it('holds every sheet of a run that overflows by one page', async () => {
@@ -632,7 +626,19 @@ describe('n-up keeps every sheet on its own paper', () => {
   });
 });
 
-const centre = (rect: Rect): Rect => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: 0, height: 0 });
+/** Which cell of a full-bleed 2 × 2 A4-landscape grid a placed page sits in. */
+function cellHolding(rect: Rect): number {
+  const found = [0, 1, 2, 3].find((cell) => {
+    const box = cellOf(A4_LANDSCAPE, 2, 2, cell);
+    return (
+      rect.x >= box.x - 0.01 &&
+      rect.x + rect.width <= box.x + box.width + 0.01 &&
+      rect.y >= box.y - 0.01 &&
+      rect.y + rect.height <= box.y + box.height + 0.01
+    );
+  });
+  return found ?? -1;
+}
 
 /* ── the neighbours, measured by the same predicate ──────────────────────── */
 
