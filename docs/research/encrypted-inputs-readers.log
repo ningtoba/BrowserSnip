@@ -1,4 +1,4 @@
-# independent readers over /tmp/einp
+# independent readers over /tmp/einp-after
 # planted 'Lighthouse Inventory 1887', sheet words ['ALPHA', 'BRAVO', 'CHARLIE'], secrets ['again-owner', 'again-pass', 'not-the-password', 'owner-pass', 'reader-pass']
 # qpdf dictionary claims, per fixture:
 #   einp-q-r3-rc4-128-user.pdf: {"Filter": "/Standard", "Length": "128", "O": "32-byte string", "P": "-3376", "R": "3", "U": "32-byte string", "V": "2"}
@@ -123,14 +123,14 @@
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/base--protect.pdf   [made from base.pdf (unencrypted control)]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
@@ -138,13 +138,13 @@
     qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
     qpdf --check: exit 0
     MuPDF: {"annots_entries": 5, "cipher": null, "needs_pass": false, "opens_with": ["empty", "user", "owner", "again", "again-owner"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
     poppler: {"again": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "user": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "
     pypdf: {"again": "raised PdfReadError", "again-owner": "raised PdfReadError", "empty": "raised PdfReadError", "encrypted": false, "owner": "raised PdfReadError", "pages": 2, "planted": true, "user": "raised PdfReadError"}
     ghostscript: 2 page(s) written
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/base--rotate.pdf   [made from base.pdf (unencrypted control)]
     qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
@@ -159,295 +159,295 @@
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-mu-r3-rc4-128-user--protect.pdf   [made from einp-mu-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-mu-r3-rc4-128-user--remove-pages.pdf   [made from einp-mu-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true,
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 2, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-mu-r3-rc4-128-user--rotate.pdf   [made from einp-mu-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/einp-mu-r4-aes-128-user--protect.pdf   [made from einp-mu-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-mu-r4-aes-128-user--remove-pages.pdf   [made from einp-mu-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true,
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 2, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-mu-r4-aes-128-user--rotate.pdf   [made from einp-mu-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/einp-q-r3-rc4-128-owner--protect.pdf   [made from einp-q-r3-rc4-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-q-r3-rc4-128-owner--remove-pages.pdf   [made from einp-q-r3-rc4-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": false}, "opens_with": "empty"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": null, "needs_pass": false, "opens_with": ["empty", "user", "owner", "again", "again-owner"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "user": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "
-    pypdf: {"again": "raised PdfReadError", "again-owner": "raised PdfReadError", "empty": "raised PdfReadError", "encrypted": false, "owner": "raised PdfReadError", "pages": 2, "planted": true, "user": "raised PdfReadError"}
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": false, "opens_with": ["empty", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 138, "cipher": "yes (print:no copy:yes change:no addNotes:no algorithm:RC4)", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false
+    pypdf: {"again": "0", "again-owner": "0", "empty": "1", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "0"}
     ghostscript: 2 page(s) written
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-q-r3-rc4-128-owner--rotate.pdf   [made from einp-q-r3-rc4-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": false}, "opens_with": "empty"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": null, "needs_pass": false, "opens_with": ["empty", "user", "owner", "again", "again-owner"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "owner": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "user": {"chars": 185, "cipher": "no", "err": "", "page
-    pypdf: {"again": "raised PdfReadError", "again-owner": "raised PdfReadError", "empty": "raised PdfReadError", "encrypted": false, "owner": "raised PdfReadError", "pages": 3, "planted": true, "user": "raised PdfReadError"}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": false, "opens_with": ["empty", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 185, "cipher": "yes (print:no copy:yes change:no addNotes:no algorithm:RC4)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "plante
+    pypdf: {"again": "0", "again-owner": "0", "empty": "1", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "0"}
     ghostscript: 3 page(s) written
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/einp-q-r3-rc4-128-user--protect.pdf   [made from einp-q-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-q-r3-rc4-128-user--remove-pages.pdf   [made from einp-q-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true,
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 2, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-q-r3-rc4-128-user--rotate.pdf   [made from einp-q-r3-rc4-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "pre-filter RC4", "Length": "128", "P": "-3376", "R": "3", "StmF": "None", "StrF": "None", "V": 2}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V2 R3 128-bit RC4", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/einp-q-r4-aes-128-owner--protect.pdf   [made from einp-q-r4-aes-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-q-r4-aes-128-owner--remove-pages.pdf   [made from einp-q-r4-aes-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": false}, "opens_with": "empty"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": null, "needs_pass": false, "opens_with": ["empty", "user", "owner", "again", "again-owner"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "owner": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "user": {"chars": 138, "cipher": "no", "err": "", "pages": "2", "planted": true, "rc": 0, "
-    pypdf: {"again": "raised PdfReadError", "again-owner": "raised PdfReadError", "empty": "raised PdfReadError", "encrypted": false, "owner": "raised PdfReadError", "pages": 2, "planted": true, "user": "raised PdfReadError"}
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": false, "opens_with": ["empty", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 138, "cipher": "yes (print:no copy:yes change:no addNotes:no algorithm:AES)", "err": "", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false
+    pypdf: {"again": "0", "again-owner": "0", "empty": "1", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "0"}
     ghostscript: 2 page(s) written
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-q-r4-aes-128-owner--rotate.pdf   [made from einp-q-r4-aes-128-owner.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": "no /Encrypt", "is_encrypted": {"encrypted": false, "exit": 2, "password_incorrect": false}, "opens_with": "empty"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": false}, "opens_with": "empty"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": null, "needs_pass": false, "opens_with": ["empty", "user", "owner", "again", "again-owner"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "owner": {"chars": 185, "cipher": "no", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "user": {"chars": 185, "cipher": "no", "err": "", "page
-    pypdf: {"again": "raised PdfReadError", "again-owner": "raised PdfReadError", "empty": "raised PdfReadError", "encrypted": false, "owner": "raised PdfReadError", "pages": 3, "planted": true, "user": "raised PdfReadError"}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": false, "opens_with": ["empty", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 185, "cipher": "yes (print:no copy:yes change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "plante
+    pypdf: {"again": "0", "again-owner": "0", "empty": "1", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "0"}
     ghostscript: 3 page(s) written
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/einp-q-r4-aes-128-user--protect.pdf   [made from einp-q-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/einp-q-r4-aes-128-user--remove-pages.pdf   [made from einp-q-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true,
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 2, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/einp-q-r4-aes-128-user--rotate.pdf   [made from einp-q-r4-aes-128-user.pdf]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "4294963392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3376}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/own-protected--protect.pdf   [made from base.pdf (unencrypted control)]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "again"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["again", "again-owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 196, "cipher": "yes (print:no copy:no change:no addNotes:no algorithm:AES)", "err": "", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted
     pypdf: {"again": "1", "again-owner": "2", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "0"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
 --- out/own-protected--remove-pages.pdf   [made from base.pdf (unencrypted control)]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
-    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
-    poppler: {"again": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "again-owner": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true, "rc": 0, "sheets": ["ALPHA", "CHARLIE"]}, "no password": {"chars": 138, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "2", "planted": true,
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 2, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 5, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3392}
+    census: {"annots": 1, "annots_entries": 5, "attachments": [], "bookmarks": 1, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 2, "planted_pages": 2, "sheet_words": ["ALPHA", "CHARLIE"], "text_chars": 127, "text_unreadable": "no"}
+    deltas: {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1", "pages": "3→2", "planted_pages": "3→2", "sheet_words": "['ALPHA', 'BRAVO', 'CHARLIE']→['ALPHA', 'CHARLIE']", "text_chars": "182→127"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 2, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→[]", "bookmarks": "2→1"}
 
 --- out/own-protected--rotate.pdf   [made from base.pdf (unencrypted control)]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user"], "permissions": -4}
-    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 0, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
-    deltas: {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-    poppler: {"again": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 185, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
-    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "0", "pages": 3, "planted": true, "user": "2"}
-    ghostscript: 1 page(s) written
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3392}
+    census: {"annots": 2, "annots_entries": 6, "attachments": [], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
+    deltas: {"attachments": "['source.csv']→[]"}
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
+    pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
-    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
+    VERDICT: partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
 
 --- out/own-protected.pdf   [made from base.pdf (unencrypted control)]
-    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": "/None (no filter named)", "Length": "128", "P": "-3392", "R": "4", "StmF": "None", "StrF": "None", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
+    qpdf gate: {"check_warnings": false, "dictionary": {"CFM": {"/StdCF": "/AESV2"}, "Length": "128", "P": "-3392", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "V": 4}, "is_encrypted": {"encrypted": true, "exit": 0, "password_incorrect": true}, "opens_with": "user"}
     qpdf --check: exit 0
-    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit None", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3392}
+    MuPDF: {"annots_entries": 6, "cipher": "Standard V4 R4 128-bit AES", "needs_pass": true, "opens_with": ["user", "owner"], "permissions": -3392}
     census: {"annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "text_unreadable": "no"}
     deltas: none
-    poppler: {"again": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "again-owner": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3", "planted": true, "rc": 0, "sheets": ["ALPHA", "BRAVO", "CHARLIE"]}, "no password": {"chars": 196, "cipher": "no", "err": "Unimplemented Feature: Unsupported version/revision (4/4) of Standard security handler", "pages": "3"
+    poppler: {"again": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "again-owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "no password": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "owner": {"chars": 0, "cipher": null, "err": "Command Line Error: Incorrect password", "pages": null, "planted": false, "rc": 1, "sheets": []}, "user": {"c
     pypdf: {"again": "0", "again-owner": "0", "empty": "0", "encrypted": true, "owner": "2", "pages": 3, "planted": true, "user": "1"}
-    ghostscript: 1 page(s) written
+    ghostscript: 1 page(s) written; stderr: GPL Ghostscript 10.08.0: **** This file requires a password for access.
     complaints: (none)
     VERDICT: reads: every page it carries has its words and its ink
 
-# readers.json written to /tmp/einp/readers.json
+# readers.json written to /tmp/einp-after/readers.json
 
 # produced files, judged by readers that did not write them
 file | opens with | cipher the file claims | pages | planted | ink % | fields | bookmarks | attachments | verdict
-out/base--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/base--remove-pages.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/base--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/base--remove-pages.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
 out/base--rotate.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-mu-r3-rc4-128-user--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-mu-r3-rc4-128-user--remove-pages.pdf | user | "/None (no filter named)" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-mu-r3-rc4-128-user--rotate.pdf | user | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/einp-mu-r4-aes-128-user--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-mu-r4-aes-128-user--remove-pages.pdf | user | "/None (no filter named)" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-mu-r4-aes-128-user--rotate.pdf | user | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/einp-q-r3-rc4-128-owner--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-q-r3-rc4-128-owner--remove-pages.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-q-r3-rc4-128-owner--rotate.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/einp-q-r3-rc4-128-user--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-q-r3-rc4-128-user--remove-pages.pdf | user | "/None (no filter named)" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-q-r3-rc4-128-user--rotate.pdf | user | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/einp-q-r4-aes-128-owner--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-q-r4-aes-128-owner--remove-pages.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-q-r4-aes-128-owner--rotate.pdf | empty,user,owner,again,again-owner | "no /Encrypt" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/einp-q-r4-aes-128-user--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/einp-q-r4-aes-128-user--remove-pages.pdf | user | "/None (no filter named)" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/einp-q-r4-aes-128-user--rotate.pdf | user | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/own-protected--protect.pdf | again,again-owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
-out/own-protected--remove-pages.pdf | user | "/None (no filter named)" | 2 | 2 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
-out/own-protected--rotate.pdf | user | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 0 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]", "bookmarks": "2→0"}
-out/own-protected.pdf | user,owner | "/None (no filter named)" | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-mu-r3-rc4-128-user--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-mu-r3-rc4-128-user--remove-pages.pdf | user,owner | "pre-filter RC4" | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-mu-r3-rc4-128-user--rotate.pdf | user,owner | "pre-filter RC4" | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/einp-mu-r4-aes-128-user--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-mu-r4-aes-128-user--remove-pages.pdf | user,owner | {"/StdCF": "/AESV2"} | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-mu-r4-aes-128-user--rotate.pdf | user,owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/einp-q-r3-rc4-128-owner--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-q-r3-rc4-128-owner--remove-pages.pdf | empty,owner | "pre-filter RC4" | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-q-r3-rc4-128-owner--rotate.pdf | empty,owner | "pre-filter RC4" | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/einp-q-r3-rc4-128-user--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-q-r3-rc4-128-user--remove-pages.pdf | user,owner | "pre-filter RC4" | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-q-r3-rc4-128-user--rotate.pdf | user,owner | "pre-filter RC4" | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/einp-q-r4-aes-128-owner--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-q-r4-aes-128-owner--remove-pages.pdf | empty,owner | {"/StdCF": "/AESV2"} | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-q-r4-aes-128-owner--rotate.pdf | empty,owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/einp-q-r4-aes-128-user--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/einp-q-r4-aes-128-user--remove-pages.pdf | user,owner | {"/StdCF": "/AESV2"} | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/einp-q-r4-aes-128-user--rotate.pdf | user,owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/own-protected--protect.pdf | again,again-owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink
+out/own-protected--remove-pages.pdf | user,owner | {"/StdCF": "/AESV2"} | 2 | 2 | 0.46 | 2 | 1 | 0 | partial-loss: every remaining page reads, but {"annots": "2→1", "annots_entries": "6→5", "attachments": "['source.csv']→
+out/own-protected--rotate.pdf | user,owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 0 | partial-loss: every remaining page reads, but {"attachments": "['source.csv']→[]"}
+out/own-protected.pdf | user,owner | {"/StdCF": "/AESV2"} | 3 | 3 | 0.46 | 2 | 2 | 1 | reads: every page it carries has its words and its ink

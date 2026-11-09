@@ -1,8 +1,8 @@
-# fixtures in /tmp/einp — libqpdf 12.3.2, MuPDF 1.28.2
+# fixtures in /tmp/einp-after — libqpdf 12.3.2, MuPDF 1.28.2
 --- base.pdf (unencrypted control)
     census: {"annot_kinds": ["Highlight", "Text"], "annots": 2, "annots_entries": 6, "attachments": ["source.csv"], "bookmarks": 2, "field_values": ["Ada Lovelace", "Yes"], "fields": 2, "ink_page1_percent": 0.46, "links": 1, "page1_excerpt": "Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy", "pages": 3, "planted_pages": 3, "sheet_words": ["ALPHA", "BRAVO", "CHARLIE"], "text_chars": 182, "title": "Lighthouse Inventory 1887"}
 --- einp-q-r3-rc4-128-user.pdf  [qpdf · user-password]
-    command: qpdf --allow-weak-crypto --encrypt reader-pass owner-pass 128 --use-aes=n --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r3-rc4-128-user.pdf
+    command: qpdf --allow-weak-crypto --encrypt reader-pass owner-pass 128 --use-aes=n --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r3-rc4-128-user.pdf
     dictionary: {"Filter": "/Standard", "Length": "128", "O": "32-byte string", "P": "-3376", "R": "3", "U": "32-byte string", "V": "2"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": true}   opens: yes, 3 page(s)   wrong password refused: yes
     MuPDF: needs_pass=True empty-opens=False user-opens=True cipher='Standard V2 R3 128-bit RC4' /P=-3376
@@ -12,7 +12,7 @@
     poppler (user pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:RC4)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
 --- einp-q-r4-aes-128-user.pdf  [qpdf · user-password]
-    command: qpdf --encrypt reader-pass owner-pass 128 --use-aes=y --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r4-aes-128-user.pdf
+    command: qpdf --encrypt reader-pass owner-pass 128 --use-aes=y --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r4-aes-128-user.pdf
     dictionary: {"CF": "dict(/StdCF:CFM=/AESV2/Length=16)", "Filter": "/Standard", "Length": "128", "O": "32-byte string", "OE": "0-byte string", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "U": "32-byte string", "UE": "0-byte string", "V": "4"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": true}   opens: yes, 3 page(s)   wrong password refused: yes
     MuPDF: needs_pass=True empty-opens=False user-opens=True cipher='Standard V4 R4 128-bit AES' /P=-3376
@@ -22,7 +22,7 @@
     poppler (user pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:AES)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
 --- einp-q-r6-aes-256-user.pdf  [qpdf · user-password]
-    command: qpdf --encrypt reader-pass owner-pass 256 --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r6-aes-256-user.pdf
+    command: qpdf --encrypt reader-pass owner-pass 256 --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r6-aes-256-user.pdf
     dictionary: {"CF": "dict(/StdCF:CFM=/AESV3/Length=32)", "Filter": "/Standard", "Length": "256", "O": "48-byte string", "OE": "32-byte string", "P": "-3376", "Perms": "16-byte string", "R": "6", "StmF": "/StdCF", "StrF": "/StdCF", "U": "48-byte string", "UE": "32-byte string", "V": "5"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": true}   opens: yes, 3 page(s)   wrong password refused: yes
     MuPDF: needs_pass=True empty-opens=False user-opens=True cipher='Standard V5 R6 256-bit AES' /P=-3376
@@ -32,7 +32,7 @@
     poppler (user pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:AES-256)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
 --- einp-q-r3-rc4-128-owner.pdf  [qpdf · owner-password-only]
-    command: qpdf --allow-weak-crypto --encrypt  owner-pass 128 --use-aes=n --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r3-rc4-128-owner.pdf
+    command: qpdf --allow-weak-crypto --encrypt  owner-pass 128 --use-aes=n --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r3-rc4-128-owner.pdf
     dictionary: {"Filter": "/Standard", "Length": "128", "O": "32-byte string", "P": "-3376", "R": "3", "U": "32-byte string", "V": "2"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": false}   opens: yes, 3 page(s)   wrong password refused: n/a (no user secret set)
     MuPDF: needs_pass=False empty-opens=True user-opens=True cipher='Standard V2 R3 128-bit RC4' /P=-3376
@@ -41,7 +41,7 @@
     poppler (no pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:RC4)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
 --- einp-q-r4-aes-128-owner.pdf  [qpdf · owner-password-only]
-    command: qpdf --encrypt  owner-pass 128 --use-aes=y --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r4-aes-128-owner.pdf
+    command: qpdf --encrypt  owner-pass 128 --use-aes=y --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r4-aes-128-owner.pdf
     dictionary: {"CF": "dict(/StdCF:CFM=/AESV2/Length=16)", "Filter": "/Standard", "Length": "128", "O": "32-byte string", "OE": "0-byte string", "P": "-3376", "R": "4", "StmF": "/StdCF", "StrF": "/StdCF", "U": "32-byte string", "UE": "0-byte string", "V": "4"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": false}   opens: yes, 3 page(s)   wrong password refused: n/a (no user secret set)
     MuPDF: needs_pass=False empty-opens=True user-opens=True cipher='Standard V4 R4 128-bit AES' /P=-3376
@@ -50,7 +50,7 @@
     poppler (no pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:AES)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
 --- einp-q-r6-aes-256-owner.pdf  [qpdf · owner-password-only]
-    command: qpdf --encrypt  owner-pass 256 --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp/base.pdf /tmp/einp/einp-q-r6-aes-256-owner.pdf
+    command: qpdf --encrypt  owner-pass 256 --print=none --modify=none --annotate=n --form=n --assemble=n --extract=y --accessibility=y -- /tmp/einp-after/base.pdf /tmp/einp-after/einp-q-r6-aes-256-owner.pdf
     dictionary: {"CF": "dict(/StdCF:CFM=/AESV3/Length=32)", "Filter": "/Standard", "Length": "256", "O": "48-byte string", "OE": "32-byte string", "P": "-3376", "Perms": "16-byte string", "R": "6", "StmF": "/StdCF", "StrF": "/StdCF", "U": "48-byte string", "UE": "32-byte string", "V": "5"}
     qpdf --is-encrypted: {"encrypted": true, "exit": 0, "password_incorrect": false}   opens: yes, 3 page(s)   wrong password refused: n/a (no user secret set)
     MuPDF: needs_pass=False empty-opens=True user-opens=True cipher='Standard V5 R6 256-bit AES' /P=-3376
@@ -97,4 +97,4 @@
     encryptor changed nothing: True
     poppler (no pw): {"encrypted": "yes (print:no copy:yes change:no addNotes:no algorithm:AES-256)", "pages": "3", "pdfinfo_err": "", "pdfinfo_rc": 0, "text_chars": 196, "text_err": "", "text_planted": true, "text_rc": 0}
     pypdf: {"decrypt": "1", "encrypted": true, "pages": 3, "planted": true, "text_chars": 164}
---- manifest: /tmp/einp/manifest.json
+--- manifest: /tmp/einp-after/manifest.json

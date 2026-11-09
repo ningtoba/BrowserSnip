@@ -14,33 +14,33 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["\"I-@Ú„KÄ;Îˇq", "checked"] bookmarks=1 attachments=[] · page 1: ae be c5 e2 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "“ŽM}�p +˛hîÝ"] bookmarks=1 attachments=[] · page 1: 3d ef 18 c0 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=4294963392 accepted=true error=— · ""rotate": 3 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after rotate: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: 89 81 36 72 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-user--rotate.pdf
-  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=4294963392 accepted=true error=— · ""remove-pages": 2 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after delete page 2: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: 89 81 36 72 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-user--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "…\u0017½„§¥@[”]\"…Ë©xê>\rmm\u0002¿L°;{Łﬁ\u0004‘eA"] bookmarks=1 attachments=[] · page 1: 4d 14 cc 27 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-user--protect.pdf
 
@@ -55,33 +55,33 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "˚—ýÙm‚j\nwu8BC>ˆòÉZkâ™„>\b1qê%i\u0010·A"] bookmarks=1 attachments=[] · page 1: 94 c5 13 01 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "—€\u0015ÈÖ÷s×łqžÄqı�Œÿ^iÞËÕ@\u0000ø|—ıPþ±\u0000"] bookmarks=1 attachments=[] · page 1: 3d 2b d0 8c /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=4294963392 accepted=true error=— · ""rotate": 3 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after rotate: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: c9 f4 68 02 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-user--rotate.pdf
-  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=4294963392 accepted=true error=— · ""remove-pages": 2 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after delete page 2: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: 56 21 e5 b2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-user--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "•8¨‰ü A¢ÕR(ì[~]’0F¹˜Þ—\u000bO˝ÄŠ‰Ł<$("] bookmarks=1 attachments=[] · page 1: 46 d6 a8 14 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-user--protect.pdf
 
@@ -99,91 +99,91 @@ Warning: Please use the `legacy` build in Node.js environments.
   census (engine): throws Error: Input document to `PDFDocument.load` is encrypted. You can use `PDFDocument.load(..., { ignoreEncryption: true })` if you wish to load the document anyways.
        at: new PDFDocument (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@maxwbh/pdf-lib/src/api/PDFDocument.ts:250:15) ← PDFDocument.load (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@m
   after rotate: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after delete page 2: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after protect again: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
 
 ### einp-q-r3-rc4-128-owner.pdf  [qpdf (outside) · owner-password-only]
-  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=RC4-128 pages=3 /P=— error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=RC4-128 pages=3 /P=-3376 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
   gate: user password: accepted=true pages=3 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
   gate: owner password: accepted=true pages=3 error=—
   gate: wrong password: accepted=false pages=3 error=— · ""einp-q-r3-rc4-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
-  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-owner.pdf\"'s bookmarks across.","The source was protected (RC4-128); the result opens without one."]
+  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
   page count: app=3 MuPDF=3
   preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "¨â¸~qEŠ\u0010Y8�q"] bookmarks=1 attachments=[] · page 1: 25 0c 66 dc /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "²S¹Ïoïf+Ã\u0004à%"] bookmarks=1 attachments=[] · page 1: 89 a4 ba 2b /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
-       gate (this app): none:no user:no owner:no again:no
+  after rotate: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=true pages=3 /P=-3376 accepted=false error=— · ""rotate": 3 pages. Restricted, not locked — it opens without a password."
+       gate (this app): none:no user:no owner:opens again:no
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r3-rc4-128-owner.pdf\"'s bookmarks across.","The source was protected (RC4-128); the result opens without one."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: f2 0e 5a de /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r3-rc4-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-owner--rotate.pdf
-  after delete page 2: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=2 /P=— accepted=false error=— · ""remove-pages": 2 pages."
-       gate (this app): none:no user:no owner:no again:no
+  after delete page 2: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=true pages=2 /P=-3376 accepted=false error=— · ""remove-pages": 2 pages. Restricted, not locked — it opens without a password."
+       gate (this app): none:no user:no owner:opens again:no
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["The source was protected (RC4-128); the result opens without one."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: f2 0e 5a de /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-owner--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "çoÃû\u0005›yx4Ú�0ŸÑ1ﬁž@=v–'&×hÉí7\u0007ÞÖP"] bookmarks=1 attachments=[] · page 1: 43 0f dd a9 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r3-rc4-128-owner--protect.pdf
 
 ### einp-q-r4-aes-128-owner.pdf  [qpdf (outside) · owner-password-only]
-  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=AES-128 pages=3 /P=— error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
+  gate: no password: encrypted=true needsPassword=false opensEmpty=true algorithm=AES-128 pages=3 /P=-3376 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
   gate: user password: accepted=true pages=3 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
   gate: owner password: accepted=true pages=3 error=—
   gate: wrong password: accepted=false pages=3 error=— · ""einp-q-r4-aes-128-owner.pdf": 3 pages. Restricted, not locked — it opens without a password."
-  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-owner.pdf\"'s bookmarks across.","The source was protected (AES-128); the result opens without one."]
+  tool asks without one: ran with no password at all (nothing was asked); warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
   page count: app=3 MuPDF=3
   preview (pdf.js): pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse Inventory "
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["EÕlýOwÁ\\öNW9ü¶ÈQÏÑW#˚!\u000b{°dóÿV4è\u0004", "checked"] bookmarks=1 attachments=[] · page 1: 0c 80 11 9f /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÊðW½+ÄMK�ÀbQE˛\rs¤[»\u0003,bá®¾9³èŽ¥ªü"] bookmarks=1 attachments=[] · page 1: be fb ea e8 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=3 /P=— accepted=false error=— · ""rotate": 3 pages."
-       gate (this app): none:no user:no owner:no again:no
+  after rotate: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=true pages=3 /P=-3376 accepted=false error=— · ""rotate": 3 pages. Restricted, not locked — it opens without a password."
+       gate (this app): none:no user:no owner:opens again:no
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-q-r4-aes-128-owner.pdf\"'s bookmarks across.","The source was protected (AES-128); the result opens without one."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: af 18 7c a5 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-q-r4-aes-128-owner.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-owner--rotate.pdf
-  after delete page 2: claims encrypted=false algorithm=— needsPassword=false opensEmpty=false pages=2 /P=— accepted=false error=— · ""remove-pages": 2 pages."
-       gate (this app): none:no user:no owner:no again:no
+  after delete page 2: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=true pages=2 /P=-3376 accepted=false error=— · ""remove-pages": 2 pages. Restricted, not locked — it opens without a password."
+       gate (this app): none:no user:no owner:opens again:no
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["The source was protected (AES-128); the result opens without one."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: d8 2b f7 b2 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-owner--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["_ìT‡Ł†È/#7Âñoø\u0013Éç©®™þŽ<Ä\u0000˚÷−o\u0015ÜV", "checked"] bookmarks=1 attachments=[] · page 1: ca a7 ec 4b /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-q-r4-aes-128-owner--protect.pdf
 
@@ -198,14 +198,14 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ﬂïÌÔ¯K=œÄ³ÈC²G¥D“\u00178AëÉ\"˜X—ía³ö\u0017Ø"] bookmarks=1 attachments=[] · page 1: 5b 75 e4 45 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ª2ìô«—1<Ú.®\u0003Æà˚À¿#h£ƒ—Ô™\u0006¢4“~¹X˜"] bookmarks=1 attachments=[] · page 1: 31 c7 c4 f4 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after delete page 2: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after protect again: refused: UNSUPPORTED isPasswordRequired=false · ""einp-q-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
 
 ### einp-mu-r3-rc4-128-user.pdf  [mupdf (outside) · user-password · user password supplied]
   gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=RC4-128 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r3-rc4-128-user.pdf" is password protected."
@@ -218,33 +218,33 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "î,q1]ø2Žµ¬\r³"] bookmarks=1 attachments=[] · page 1: 36 dd 7e de /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "oﬂj{Áç5’èÇ\u0015×"] bookmarks=1 attachments=[] · page 1: 0e 90 4e f0 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=4294963392 accepted=true error=— · ""rotate": 3 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after rotate: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-mu-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r3-rc4-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: 0e 90 4e f0 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-mu-r3-rc4-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--rotate.pdf
-  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=4294963392 accepted=true error=— · ""remove-pages": 2 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after delete page 2: claims encrypted=true algorithm=RC4-128 needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: 0e 90 4e f0 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — RC4-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["Gc:TÖ’\u0001Î(‰ñ‡\u0017ftï‰ŒXÂ¿\u0004ä²¬ª\u0017‘ð§\n®", "checked"] bookmarks=1 attachments=[] · page 1: a3 e1 08 e9 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r3-rc4-128-user--protect.pdf
 
@@ -259,33 +259,33 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "Æ/¸@\u0003¶Æ.eBﬁ2\u0014@V\u0017§¿ÔyüFˇnÓ“ß'É'–·"] bookmarks=1 attachments=[] · page 1: a8 fb 35 31 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["checked", "ÿ\bß{Vï¸õ\n•V<ðÏájé~e0Ã´GG�˙·¢ÄŠ\u000e:"] bookmarks=1 attachments=[] · page 1: 51 54 aa 09 /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=4294963392 accepted=true error=— · ""rotate": 3 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after rotate: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3376 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"einp-mu-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"einp-mu-r4-aes-128-user.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: 42 eb 6b 5a /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"einp-mu-r4-aes-128-user.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--rotate.pdf
-  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=4294963392 accepted=true error=— · ""remove-pages": 2 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after delete page 2: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=2 /P=-3376 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: 57 c9 06 0c /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["OôÜ§�ƒÌk\"Þ°’§ZúŒßh9−Œ±“Þ¿Hœ\u0006;P�½", "checked"] bookmarks=1 attachments=[] · page 1: 74 1d 51 44 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/einp-mu-r4-aes-128-user--protect.pdf
 
@@ -303,11 +303,11 @@ Warning: Please use the `legacy` build in Node.js environments.
   census (engine): throws Error: Input document to `PDFDocument.load` is encrypted. You can use `PDFDocument.load(..., { ignoreEncryption: true })` if you wish to load the document anyways.
        at: new PDFDocument (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@maxwbh/pdf-lib/src/api/PDFDocument.ts:250:15) ← PDFDocument.load (/home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/@m
   after rotate: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after delete page 2: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after protect again: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-user.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
 
 ### einp-mu-r6-aes-256-owner.pdf  [mupdf (outside) · owner-password-only]
   gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-256 pages=3 /P=-3376 error=PASSWORD_REQUIRED · ""einp-mu-r6-aes-256-owner.pdf" is password protected."
@@ -320,14 +320,14 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["1CÍQﬁÙvø'48�Ú=±⁄wçØ¦'icâ`·C˚Ç”}Ð", "checked"] bookmarks=1 attachments=[] · page 1: 44 d4 0e 68 /Filter /FlateDecode — ciphertext behind its own /Filter
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["6)zh‚\u0017ç7±¿\\_ÏÔ\n’,\u0014ð@öÌˇ×qÇîÕ‰´\u0000\b", "checked"] bookmarks=1 attachments=[] · page 1: 82 99 46 df /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
   after rotate: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after delete page 2: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
   after protect again: refused: UNSUPPORTED isPasswordRequired=false · ""einp-mu-r6-aes-256-owner.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet."
-       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file locked the way this app’s own Protect locks it — a password gate with no crypt filter — always was."
+       hint: "Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was."
 
 ### base.pdf  [MuPDF (unencrypted control) · no-password]
   gate: no password: encrypted=false needsPassword=false opensEmpty=false algorithm=— pages=3 /P=— error=— · ""base.pdf": 3 pages."
@@ -355,23 +355,23 @@ Warning: Please use the `legacy` build in Node.js environments.
        gate (this app): none:no user:no owner:no again:no
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=[]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/base--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["^šE\u0005É)Q)tê[Ã9q÷êÌŒl;CžÖZú¢’\u0000−I[ı", "checked"] bookmarks=1 attachments=[] · page 1: 79 83 8d e5 /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/base--protect.pdf
 
 ### own-protected.pdf  [this app (protect) · user-password · user password supplied]
-  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=no cipher pages=3 /P=-3392 error=PASSWORD_REQUIRED · ""own-protected.pdf" is password protected."
+  gate: no password: encrypted=true needsPassword=true opensEmpty=false algorithm=AES-128 pages=3 /P=-3392 error=PASSWORD_REQUIRED · ""own-protected.pdf" is password protected."
   gate: user password: accepted=true pages=3 error=— · ""own-protected.pdf": 3 pages."
   gate: owner password: accepted=true pages=3 error=—
   gate: wrong password: accepted=false pages=3 error=BAD_PASSWORD · "That password is not correct for "own-protected.pdf"."
@@ -381,38 +381,38 @@ Warning: Please use the `legacy` build in Node.js environments.
        draws: fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27
        pdf.js said: (none)
   thumbnail (core/render): pages=3 url=55 bytes image/jpeg 68x96 dark=0 draws: fill 55, stroke 1, fillRect 1, clip 1, path2d 27
-  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+  census (engine): engine pages=3 annots=6/entries 6 fields=2 ["b1Ä.\u0003¹,ªmáÛkSÙU\u0017ÎîÖÜ{ÏUé±Ł¯2ä|r9", "checked"] bookmarks=1 attachments=[] · page 1: 4f 9a 27 fa /Filter /FlateDecode — ciphertext behind its own /Filter
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv]
-  after rotate: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""rotate": 3 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after rotate: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""rotate": 3 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=3 warnings=["\"own-protected.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","The copy does not carry \"own-protected.pdf\"'s bookmarks across.","Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=3 annots=6/entries 6 fields=0 [] bookmarks=1 attachments=[] · page 1: c9 9a 55 a3 /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=3 warnings=["\"own-protected.pdf\" is password protected, so the pages were copied into a new file — the output opens without a password.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Rotated 3 pages by 90°."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/own-protected--rotate.pdf
-  after delete page 2: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=2 /P=-3392 accepted=true error=— · ""remove-pages": 2 pages."
-       gate (this app): none:PASSWORD_REQUIRED user:opens owner:BAD_PASSWORD again:BAD_PASSWORD
+  after delete page 2: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=2 /P=-3392 accepted=true error=— · ""remove-pages": 2 pages."
+       gate (this app): none:PASSWORD_REQUIRED user:opens owner:opens again:BAD_PASSWORD
        pdf.js pages=2 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=0 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
-       runner: pagesOut=2 warnings=["Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None."]
+       engine pages=2 annots=5/entries 5 fields=0 [] bookmarks=1 attachments=[] · page 1: b0 a7 5b 5c /Filter /FlateDecode — ciphertext behind its own /Filter
+       runner: pagesOut=2 warnings=["1 of this document's 2 bookmarks pointed at a page that is not in this output, so it was dropped; 1 came with the pages.","This document has 2 form fields: the copied pages keep their boxes, but a page copy cannot carry the field list, so they are no longer editable in the output. Flatten the form first if the values have to survive.","Kept this file's own protection on the copy — AES-128, the same /P flags and the same passwords that opened the source."]
        message: "Removed 1 page, kept 2 pages."
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/own-protected--remove-pages.pdf
-  after protect again: claims encrypted=true algorithm=no cipher needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
+  after protect again: claims encrypted=true algorithm=AES-128 needsPassword=false opensEmpty=false pages=3 /P=-3392 accepted=true error=— · ""protect": 3 pages."
        gate (this app): none:PASSWORD_REQUIRED user:BAD_PASSWORD owner:BAD_PASSWORD again:opens
        pdf.js pages=3 ops=25 text="Lighthouse Inventory 1887 page 1 Sheet ALPHA body copy | Lighthouse In"
        draws fill 55, stroke 1, fillRect 1, drawImage 1, clip 1, path2d 27 · pdf.js said: (none)
-       engine pages=3 annots=6/entries 6 fields=2 ["Ada Lovelace", "checked"] bookmarks=1 attachments=[] · page 1: 78 da 15 8b /Filter /FlateDecode — flate, so the engine holds plaintext
+       engine pages=3 annots=6/entries 6 fields=2 ["checked", "−#�[ÔˇR÷º€Èw\u000f–Qëš\u0017/{“æ−ÜÇ®Ł#V\tÎ)"] bookmarks=1 attachments=[] · page 1: 25 01 4f 7f /Filter /FlateDecode — ciphertext behind its own /Filter
        runner: pagesOut=3 warnings=[]
-       message: "Protected with an open password. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied "
+       message: "Protected with an open password. The file is ciphered in AES-128 (/V 4 /R 4, crypt filter /StdCF) and carries the /P flags. As wri"
        MuPDF   pages=3 annots=2/entries 6 fields=2 [Ada Lovelace, Yes] bookmarks=2 attachments=[source.csv] (the file the operation started from)
        dumped: out/own-protected--protect.pdf
 
  Test Files  1 passed (1)
       Tests  1 passed (1)
-   Start at  23:07:02
-   Duration  3.00s (transform 578ms, setup 34ms, import 746ms, tests 1.89s, environment 269ms)
+   Start at  01:17:29
+   Duration  8.55s (transform 1.60s, setup 87ms, import 2.19s, tests 2.19s, environment 3.79s)
 
