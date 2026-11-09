@@ -276,7 +276,7 @@ const RESTRICTIVE: ToolValues = {
 describe('protect writes the gate it promises, and the bytes agree', () => {
   it('records /Encrypt, the hashes and the /P bits, then opens on the password with the page count read back', async () => {
     const outcome = await run('protect', {
-      mode: 'both', userPassword: 'open-sesame', ownerPassword: 'owner-key', version: '5', ...RESTRICTIVE,
+      mode: 'both', userPassword: 'open-sesame', ownerPassword: 'owner-key', ...RESTRICTIVE,
     });
     const bytes = await bytesOf(outcome);
     const raw = latin1.decode(bytes);
@@ -284,15 +284,23 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     // The dictionary, found by hand rather than through the guard.
     expect(raw).toMatch(/\/Encrypt\s+\d+\s+\d+\s+R/);
     expect(raw).toMatch(/\/Filter\s*\/Standard/);
-    expect(raw).toMatch(/\/O\s*<[0-9A-Fa-f]+>/);
-    expect(raw).toMatch(/\/U\s*<[0-9A-Fa-f]+>/);
-    // …and what it really writes for the AES-256 option: a 256-bit /V and /R
-    // beside a 128-bit crypt filter. The mismatch is the defect named in
-    // docs/tasks/security2-request.md; the tool has to say it out loud.
-    expect(raw).toMatch(/\/V 5/);
-    expect(raw).toMatch(/\/R 6/);
-    expect(raw).toMatch(/\/Length 256/);
-    expect(raw).toMatch(/\/CFM\s*\/AESV2/);
+    // Revision 4 at a 128-bit key — the strength `/O` and `/U` are genuinely
+    // computed at, and the only `/V` whose crypt filter can say `/None`.
+    expect(raw).toMatch(/\/V 4/);
+    expect(raw).toMatch(/\/R 4/);
+    expect(raw).toMatch(/\/Length 128/);
+    expect(/\/O\s*<([0-9A-Fa-f]+)>/.exec(raw)![1].length / 2, 'the revision-4 /O is 32 bytes').toBe(32);
+    expect(/\/U\s*<([0-9A-Fa-f]+)>/.exec(raw)![1].length / 2, 'the revision-4 /U is 32 bytes').toBe(32);
+    // And no cipher named anywhere in it. This is the assertion that goes red the
+    // moment a strength label comes back: `/CFM /AESV2` beside `/Length 256` is
+    // the dictionary MuPDF and qpdf refused and poppler read as unencrypted.
+    expect(raw).not.toMatch(/\/CFM/);
+    expect(raw).not.toMatch(/\/AESV2|\/AESV3/);
+    expect(raw).not.toMatch(/\/V 5|\/R 6|\/Length 256/);
+    // `/StmF` and `/StrF` are absent, so both take the spec's default: the
+    // predefined `/None` filter, "the data are not encrypted".
+    expect(raw).not.toMatch(/\/StmF|\/StrF/);
+    expect(raw).toMatch(/\/CF\s*<<\s*>>/);
 
     // Table 25, bit by bit, out of the integer sitting in the file.
     const p = rawPermissionValue(bytes);
@@ -319,24 +327,23 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     const decrypted = await PDFDocument.load(bytes, { password: 'open-sesame', updateMetadata: false });
     expect(decrypted.getPageCount()).toBe(3);
     expect(await streamsHoldPhrase(bytes, 'Bravo on page 2')).toBe(true);
-    // A second reader is asked too, and whichever answer it gave the result says
-    // that and not the other: this browser's engine writes the gate but cannot
-    // hand the cipher back to pdf.js, which is the defect the warning carries.
-    const readerOpens = await readerPageCount(bytes, 'open-sesame').then(() => true, () => false);
-    if (readerOpens) {
-      expect(outcome.message).toMatch(/A PDF reader opened the copy with that password and read 3 page\(s\)/);
-    } else {
-      expect(outcome.warnings.join(' ')).toMatch(/A PDF reader refused the password|No PDF reader could be started/i);
-      expect(outcome.message).toMatch(/no independent reader could confirm the gate/);
-    }
+    // The gate is portable now, so the reader this app previews with is asked and
+    // its answer is what the result repeats — the sentence the old dictionary
+    // could never earn, because pdf.js threw on it.
+    const readerPages = await readerPageCount(bytes, 'open-sesame');
+    expect(readerPages, 'pdf.js must open the gated copy with the password').toBe(3);
+    expect(outcome.message).toMatch(/A PDF reader opened the copy with that password and read 3 page\(s\)/);
+    expect(outcome.message).not.toMatch(/no independent reader could confirm the gate/);
+    expect(outcome.warnings.join(' ')).not.toMatch(/No PDF reader could be started|refused the password/i);
 
-    // The tool's sentence is about the file, and it admits the one thing the
-    // bytes will not support: that the page streams came out as they went in.
-    expect(outcome.message).toMatch(/AES-256 and an open password/);
+    // The tool's sentence is about the file, and it says the one thing the bytes
+    // support: a gate with no crypt filter, so the pages came through as they went
+    // in — which is why the words are still in the file to be found.
+    expect(outcome.message).toMatch(/Protected with an open password/);
+    expect(outcome.message).toMatch(/no crypt filter/);
+    expect(outcome.message).not.toMatch(/AES|RC4/);
     expect(outcome.message).toMatch(/printing blocked/);
     expect(outcome.message).toMatch(/screen readers allowed/);
-    expect(outcome.warnings.join(' ')).toMatch(/not rewritten as ciphertext|ignores \/Encrypt/i);
-    expect(outcome.warnings.join(' ')).toMatch(/crypt filter declares \/AESV2/i);
     expect(await streamsHoldPhrase(bytes, WORDS)).toBe(true);
   }, 300_000);
 
@@ -346,8 +353,12 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
     expect(help).toMatch(/ignores \/Encrypt/);
     expect(help).not.toMatch(/the bytes are encrypted/i);
     expect(tool.description).not.toMatch(/real AES/i);
+    // No strength is offered, because none is written: the control that named four
+    // of them is gone, and no line the user reads keeps the claim.
+    expect((tool.fields ?? []).map((field) => field.key)).not.toContain('version');
+    expect(`${tool.description} ${tool.promise ?? ''} ${help}`).not.toMatch(/AES-\d+|RC4-\d+/);
     const notes = tool.notes?.join(' ') ?? '';
-    expect(notes).toMatch(/copied through as they are/i);
+    expect(notes).toMatch(/copied through/i);
     // The capability the engine does not have names a real alternative instead of
     // quietly faking the output.
     expect(notes).toMatch(/PDF to Images/i);
@@ -356,7 +367,7 @@ describe('protect writes the gate it promises, and the bytes agree', () => {
   it('leaves the owner password the user typed alone, rather than re-encrypting over it', async () => {
     const outcome = await run(
       'protect',
-      { mode: 'both', userPassword: 'open-sesame', ownerPassword: 'owner-key', version: '4', ...RESTRICTIVE },
+      { mode: 'both', userPassword: 'open-sesame', ownerPassword: 'owner-key', ...RESTRICTIVE },
       undefined,
       'open-sesame',
     );
@@ -562,7 +573,7 @@ describe('the protect → unlock round trip keeps everything it was not asked to
   it('remove-restrictions clears the dictionary without touching the pages', async () => {
     const source = await richFixture();
     const locked = await saveEncrypted(await PDFDocument.load(source), {
-      userPassword: '', ownerPassword: 'owner-key', version: 4,
+      userPassword: '', ownerPassword: 'owner-key',
       permissions: { printing: false, copying: false },
     });
     const outcome = await run('remove-restrictions', {}, [pdfFile(locked, 'claim.pdf')], 'owner-key');

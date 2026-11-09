@@ -42,7 +42,9 @@ def fixture():
 
 
 def encryption(revision: int, use_aes: bool):
-    shared = {"owner": OWNER, "user": USER, "allow": PERMISSIONS, "metadata": True, "aes": use_aes}
+    # qpdf refuses to encrypt the metadata below R4, so an R3 file says so.
+    metadata = revision >= 4
+    shared = {"owner": OWNER, "user": USER, "allow": PERMISSIONS, "metadata": metadata, "aes": use_aes}
     if revision == 6:
         return pikepdf.Encryption(R=6, **shared)
     if revision == 5:

@@ -224,14 +224,6 @@ async function inputKindProblem(
   return null;
 }
 
-const PROTECTION_VERSION: Record<string, 1 | 2 | 4 | 5> = {
-  'RC4-40': 1,
-  RC4: 1,
-  'RC4-128': 2,
-  'AES-128': 4,
-  'AES-256': 5,
-};
-
 /**
  * Keep a protected document protected.
  *
@@ -253,19 +245,24 @@ async function preserveProtection(
   // we never saw. Layering the reader's password over that would overwrite it.
   const produced = await inspectPdf(result.bytes, source.name, { cheap: true });
   if (produced.encrypted) return { result, note: null };
-  const algorithm = source.algorithm ?? 'password';
+  // Named from the file's own dictionary, so a gate with no cipher is not
+  // reported as one (and a foreign AES-256 source still says AES-256).
+  const recorded = source.algorithm && source.algorithm !== 'no cipher'
+    ? `protected (${source.algorithm})`
+    : 'protected by a password';
   if (!password) {
-    return { result, note: `The source was protected (${algorithm}); the result opens without a password.` };
+    return { result, note: `The source was ${recorded}; the result opens without one.` };
   }
   try {
     const doc = await PDFDocument.load(result.bytes, { updateMetadata: false });
     const bytes = await saveEncrypted(doc, {
       userPassword: password,
       ownerPassword: password,
-      version: PROTECTION_VERSION[algorithm.toUpperCase()] ?? 4,
       ...(source.permissions ? { permissions: source.permissions } : {}),
     });
-    return { result: { ...result, bytes }, note: `Re-applied the source’s ${algorithm} protection with the password you supplied.` };
+    // The gate is re-issued, the cipher is not: what this browser writes carries
+    // the crypt filter /None, whatever the source carried.
+    return { result: { ...result, bytes }, note: `Re-applied the source's password and /P flags with the password you supplied — a gate, not a cipher: the copy is written with the crypt filter /None.` };
   } catch {
     return { result, note: 'Could not re-apply the source protection; the result opens without a password.' };
   }

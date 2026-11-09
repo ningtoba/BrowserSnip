@@ -307,7 +307,6 @@ async function restrictionsOnly(): Promise<Uint8Array> {
   doc.addPage([300, 200]);
   return saveEncrypted(doc, {
     ownerPassword: 'owner-only',
-    version: 4,
     permissions: { printing: true, copying: false, modifying: false },
   });
 }
@@ -316,7 +315,7 @@ async function restrictionsOnly(): Promise<Uint8Array> {
 async function locked(password = 'hunter2'): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.addPage([300, 200]);
-  return saveEncrypted(doc, { userPassword: password, ownerPassword: password, version: 5 });
+  return saveEncrypted(doc, { userPassword: password, ownerPassword: password });
 }
 
 const asSource = (bytes: Uint8Array, name: string) => ({
@@ -332,9 +331,10 @@ describe('the guard reports the user password, not the trailer (b4 #4)', () => {
     expect(seen.error).toBeNull();
     expect(seen.opensWithEmptyPassword).toBe(true);
     expect(seen.message).toMatch(/Restricted, not locked/);
-    // …while still telling the tools what the file really is.
+    // …while still telling the tools what the file really is: a gate whose crypt
+    // filter is /None, so no cipher is claimed for bytes that carry none.
     expect(seen.encrypted).toBe(true);
-    expect(seen.algorithm).toBe('AES-128');
+    expect(seen.algorithm).toBe('no cipher');
     expect(seen.pages).toBe(2);
     expect(seen.permissions).toMatchObject({ printing: true, copying: false, modifying: false });
   }, 60_000);
@@ -352,7 +352,7 @@ describe('the guard reports the user password, not the trailer (b4 #4)', () => {
     expect(seen.error).toBe('PASSWORD_REQUIRED');
     expect(seen.opensWithEmptyPassword).toBe(false);
     expect(seen.encrypted).toBe(true);
-    expect(seen.algorithm).toBe('AES-256');
+    expect(seen.algorithm).toBe('no cipher');
     await expect(openPdfInput(await locked(), 'contract.pdf')).rejects.toMatchObject({
       code: 'PASSWORD_REQUIRED',
       fileName: 'contract.pdf',

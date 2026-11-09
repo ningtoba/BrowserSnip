@@ -26,6 +26,7 @@ import {
   PDFBool,
   PDFNull,
   PDFObject,
+  PDFSecurity,
   PDFString,
   PDFStream,
   StandardFonts,
@@ -164,16 +165,35 @@ export async function savePDF(
 export interface PasswordOptions {
   userPassword?: string;
   ownerPassword?: string;
-  /** 1 = RC4-40, 2 = RC4-128, 4 = AES-128, 5 = AES-256. */
-  version?: 1 | 2 | 4 | 5;
   permissions?: PDFPermissions;
 }
 
 /**
- * Real encryption. The legacy code path built seven permission booleans and
- * then dropped them on the floor because `@pdfsmaller/pdf-encrypt-lite` is
- * RC4-128 only; this uses the fork's crypto so AES-256 and the `/P` flag
- * dictionary actually reach the file.
+ * The password gate and the `/P` flags, written as the crypt filter `/None`.
+ *
+ * `@maxwbh/pdf-lib`'s `save({ encrypt })` registers an `/Encrypt` dictionary and
+ * a document `/ID`, and its `PDFSecurity` computes `/O` and `/U` by the
+ * revision-4 algorithm — but nothing ever calls `PDFSecurity.encryptStream` or
+ * `encryptString`, so the strings and streams are serialized exactly as this app
+ * holds them. The fork therefore has no strength to select: `version` chose the
+ * label on a dictionary, not a cipher, and `/V 5 /R 6` with `/CFM /AESV2` was a
+ * 256-bit label beside a 128-bit filter over plaintext bytes. Measured against
+ * MuPDF, poppler, qpdf, pypdf and Ghostscript, that file opened nowhere: MuPDF
+ * refused it outright, qpdf reported `some V=5 encryption dictionary parameters
+ * are missing or the wrong type`, and where a reader did get in it decrypted
+ * plaintext and lost the page.
+ *
+ * What the bytes *are* is expressible, and it is what this writes: `/V 4 /R 4`
+ * with a 128-bit key (the strength `/O` and `/U` are genuinely computed at), an
+ * empty `/CF`, and no `/StmF` or `/StrF` — whose spec default is the predefined
+ * crypt filter `/None`, "the data are not encrypted". Every reader asked here
+ * opens that file, keeps its text, and — in MuPDF, qpdf and pypdf — refuses it
+ * without the password. poppler reads it and reports it as unencrypted, because
+ * a gate with no cipher is nothing for it to undo.
+ *
+ * The dictionary is assembled here rather than by `save({ encrypt })` for one
+ * reason: `setupEncryption` writes the cipher claim itself, and this file must
+ * not serialize the document twice to take one key back out.
  */
 export async function saveEncrypted(
   doc: PDFDocument,
@@ -188,13 +208,33 @@ export async function saveEncrypted(
     throw new Error('Enter an owner or a user password to protect this PDF.');
   }
 
-  const encrypt: EncryptOptions = {
+  const security = new PDFSecurity(doc.context);
+  // Revision 4 is not a preference: it is the only `/O` and `/U` this engine
+  // actually computes to spec, and the only `/V` whose crypt filters can name
+  // `/None`. Ask for 256-bit here and the answer is still a 128-bit hash.
+  security.setupEncryption({
     ownerPassword: owner,
     userPassword: opts.userPassword ?? '',
-    version: opts.version ?? 5,
     permissions: opts.permissions,
-  };
-  return doc.save({ encrypt });
+    version: 4,
+  });
+
+  const dict = security.createEncryptDict();
+  dict.set(PDFName.of('CF'), PDFDict.withContext(doc.context));
+  dict.delete(PDFName.of('StmF'));
+  dict.delete(PDFName.of('StrF'));
+  dict.set(PDFName.of('EncryptMetadata'), PDFBool.True);
+  doc.context.trailerInfo.Encrypt = doc.context.register(dict);
+
+  // `/U` is computed over the `/ID`, so the pair is written from the same id the
+  // hashes were derived with; `save()` without `encrypt` leaves both alone.
+  const id = PDFArray.withContext(doc.context);
+  const documentId = PDFHexString.fromBytes(security.getDocumentId());
+  id.push(documentId);
+  id.push(documentId);
+  doc.context.trailerInfo.ID = id;
+
+  return doc.save({ useObjectStreams: true });
 }
 
 function randomOwnerPassword(): string {
@@ -364,6 +404,7 @@ export {
   PDFBool,
   PDFNull,
   PDFObject,
+  PDFSecurity,
   PDFString,
   PDFStream,
   StandardFonts,

@@ -1,0 +1,38 @@
+=== 00-source.pdf (5140 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password
+=== 90-round-trip.pdf (2832 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password
+=== protect-gated.pdf (3152 bytes)
+  mupdf   : does not open: FileDataError: Failed to open file '/tmp/pb2/protect-gated.pdf' as type pdf.
+           planted text extracted: False
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+           reader's own complaint: Syntax Error: Invalid encryption key length. version: 5 - revision: 6 - ownerKeyLength: 32 - userKeyLength: 32 - ownerEncIsString: 0 - ownerEncLength: 18446744073709551615 - userEncIsString: 0 - userE
+  qpdf    : does not open: PdfError: /tmp/pb2/protect-gated.pdf (encryption dictionary, offset 1687): some V=5 encryption dictionary parameters are missing or the wrong type
+  pypdf   : encrypted, and neither the empty nor the planted password is accepted
+           planted text extracted: False
+  gs      : renders with no password
+=== protect-permissions-only.pdf (3151 bytes)
+  mupdf   : does not open: FileDataError: Failed to open file '/tmp/pb2/protect-permissions-only.pdf' as type pdf.
+           planted text extracted: False
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+           reader's own complaint: Syntax Error: Invalid encryption key length. version: 5 - revision: 6 - ownerKeyLength: 32 - userKeyLength: 32 - ownerEncIsString: 0 - ownerEncLength: 18446744073709551615 - userEncIsString: 0 - userE
+  qpdf    : does not open: PdfError: /tmp/pb2/protect-permissions-only.pdf (encryption dictionary, offset 1687): some V=5 encryption dictionary parameters are missing or the wrong type
+  pypdf   : encrypted, and neither the empty nor the planted password is accepted
+           planted text extracted: False
+  gs      : renders with no password

@@ -98,13 +98,6 @@ function permissionsObject(input: {
   };
 }
 
-const CIPHER_OPTIONS = [
-  { value: '5', label: 'AES-256', hint: 'PDF 2.0. Strongest; needs a modern reader.' },
-  { value: '4', label: 'AES-128', hint: 'PDF 1.6. The widest compatible choice.' },
-  { value: '2', label: 'RC4-128', hint: 'PDF 1.4. Legacy compatibility only.' },
-  { value: '1', label: 'RC4-40', hint: 'PDF 1.1. Export-restricted-era compatibility.' },
-];
-
 const PERMISSION_NOTES = [
   'Permissions are a request, not encryption of what you can see: the PDF standard lets a reader ignore the /P flags, and a tool that ignores the format (or a print-to-PDF pass) removes them entirely.',
   'The owner password is what unlocks the restrictions. Leave it blank and a random one is generated, so the limits hold but nobody can lift them by name later.',
@@ -113,16 +106,19 @@ const PERMISSION_NOTES = [
 /**
  * What this browser's engine does and does not do to the bytes.
  *
- * `saveEncrypted` records the cipher, the two password hashes and the `/P`
- * dictionary, and `@maxwbh/pdf-lib`'s writer never calls its own
- * `PDFSecurity.encryptStream`, so the page streams leave this tab exactly as
- * they arrived. Any wording about protection has to live inside that fact (E5).
+ * `saveEncrypted` writes the password hashes, the `/P` flags and a crypt filter
+ * of `/None`, because `@maxwbh/pdf-lib`'s writer never calls its own
+ * `PDFSecurity.encryptStream` — no stream or string leaves this tab other than
+ * exactly as it arrived. Until it does, this tool offers no cipher: the strengths
+ * it used to list (AES-256, AES-128, RC4-128, RC4-40) were labels on a dictionary,
+ * and MuPDF, qpdf and pypdf each answered the AES-256 file with a refusal while
+ * the readers that got through decrypted plaintext and lost the page (E5).
  */
 const CIPHERTEXT_NOTE =
-  'The password prompt and the /P flags are written into the file; the page streams themselves are copied through as they are, so a tool that ignores /Encrypt can still lift the text out. Every run of this tool re-reads the output and says which of the two it got.';
+  'What lands in the file is a password gate and the /P flags, with the crypt filter /None: the page streams are copied through, so a tool that ignores /Encrypt can still lift the text out. Ciphered output — AES-128 first, then AES-256 — needs an engine that runs the filter in both directions, and this browser does not have one yet.';
 
 const SCAN_ALTERNATIVE_NOTE =
-  'When the bytes themselves must be unreadable, turn the pages into pictures first — PDF to Images, then Images to PDF — and protect the result. A scan holds no extractable text to recover.';
+  'When the bytes themselves must be unreadable, turn the pages into pictures first — PDF to Images, then Images to PDF — and protect the result. A scan holds no extractable text to recover, and a picture answers a text extractor whatever the dictionary says.';
 
 /**
  * One spelling of the /P permission checkboxes, shared by both panels.
@@ -165,11 +161,12 @@ export const securityTools: PdfToolDefinition[] = [
     description: 'Open password, owner password and the /P permissions, recorded in the file',
     icon: '🔐',
     category: 'security',
-    // The cipher names are searchable because the cipher is a choice this tool
-    // writes into `/Encrypt`; people look for a locked PDF by the algorithm.
+    // `aes`, `aes-256` and `rc4` stay searchable because that is what people type
+    // when they have a locked PDF to make; the promise and the result say what the
+    // file actually carries, which is a gate and not a cipher.
     keywords: ['encrypt', 'encryption', 'aes', 'aes-256', 'rc4', 'cipher', 'password', 'restrict', 'lock'],
     outputSuffix: '_protected.pdf',
-    promise: 'A copy that asks for your password before it opens, with the permissions you ticked written in and read back from the output to prove they landed.',
+    promise: 'A copy that asks for your password before it opens, with the permissions you ticked written in and read back from the file.',
     actionLabel: 'Protect',
     notes: [CIPHERTEXT_NOTE, SCAN_ALTERNATIVE_NOTE, ...PERMISSION_NOTES],
     fields: [
@@ -219,7 +216,6 @@ export const securityTools: PdfToolDefinition[] = [
         missing: 'Enter an owner password — it is what unlocks the restrictions.',
         help: 'Leave empty to reuse the open password. A random one is generated if both are blank.',
       },
-      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
       ...permissionFields(),
     ],
     validate(values) {
@@ -236,7 +232,6 @@ export const securityTools: PdfToolDefinition[] = [
       const mode = stringValue(context.values, 'mode', 'both');
       const user = mode === 'owner' ? '' : stringValue(context.values, 'userPassword');
       const owner = mode === 'user' ? '' : stringValue(context.values, 'ownerPassword') || user;
-      const version = Number(stringValue(context.values, 'version', '5')) as 1 | 2 | 4 | 5;
       const flags = permissionsObject({
         printing: booleanValue(context.values, 'allowPrinting', true),
         printLevel: stringValue(context.values, 'printLevel', 'high'),
@@ -253,11 +248,9 @@ export const securityTools: PdfToolDefinition[] = [
       const bytes = await saveEncrypted(input.doc, {
         userPassword: user,
         ownerPassword: owner || user,
-        version,
         permissions: flags,
       });
-      const cipherName = CIPHER_OPTIONS.find((c) => c.value === String(version))?.label ?? `v${version}`;
-      const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, cipherName, source, user === '');
+      const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, source, user === '');
       // E5: the password that was just written has to be the one that opens it.
       const reopened = await inspectPdf(bytes, input.name, { password: user || owner });
       if (!reopened.passwordAccepted) {
@@ -285,15 +278,15 @@ export const securityTools: PdfToolDefinition[] = [
         warnings.push(`The saved file shows ${reader.pages} page(s) to a PDF reader but ${input.doc.getPageCount()} to the engine that wrote it.`);
       }
       const how = user
-        ? `${cipherName} and an open password`
-        : `${cipherName}, restrictions only — no open password was set`;
+        ? 'an open password'
+        : 'restrictions only — no open password was set';
       return {
         kind: 'pdf',
         bytes,
         // The bytes were saved from `input.doc` a moment ago, so its page count
         // is the output's — the only moment this number is free.
         pages: input.doc.getPageCount(),
-        message: `Protected with ${how}. As written to the file: ${permissionSentence(inspection.permissions ?? flags)}. ${
+        message: `Protected with ${how}. The file carries the gate and the /P flags and no crypt filter, which means the pages are copied through rather than ciphered. As written to the file: ${permissionSentence(inspection.permissions ?? flags)}. ${
           gateOpens && user
             ? `A PDF reader opened the copy with that password and read ${reader.pages} page(s).`
             : gateOpens
@@ -383,7 +376,9 @@ export const securityTools: PdfToolDefinition[] = [
         ],
         help: 'Remove all restrictions drops the encryption dictionary, which is the only edit that clears a permissions-only file from inside this tool.',
       },
-      { key: 'version', label: 'Cipher', type: 'select', default: '5', options: CIPHER_OPTIONS, group: 'Password', when: (v) => v.action === 'set', help: 'AES-256 for anything current. Older options exist for readers from before PDF 1.7: RC4-40 is breakable in seconds on a laptop.' },
+      // No cipher control: the strongest dictionary this app can write declares
+      // the crypt filter /None, so a choice of strength here would be a choice
+      // between four names for the same bytes.
       ...permissionFields((v) => v.action === 'set'),
     ],
     async run(context) {
@@ -423,16 +418,13 @@ export const securityTools: PdfToolDefinition[] = [
         contentAccessibility: booleanValue(context.values, 'allowAccessibility', true),
         assembling: booleanValue(context.values, 'allowAssembling'),
       });
-      const version = Number(stringValue(context.values, 'version', '5')) as 1 | 2 | 4 | 5;
-      const cipherName = CIPHER_OPTIONS.find((c) => c.value === String(version))?.label ?? `v${version}`;
       const source = contentFingerprint(doc);
       const bytes = await saveEncrypted(doc, {
         ownerPassword: owner || 'browsersnip',
         userPassword: '',
-        version,
         permissions: flags,
       });
-      const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, cipherName, source, true);
+      const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, source, true);
       if (wasProtected) {
         warnings.push('This replaced any protection the file already had. The copy opens without a password; only the owner password set here unlocks its restrictions.');
       }
@@ -451,7 +443,7 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes,
         pages: doc.getPageCount(),
-        message: `Restrictions as recorded in the file (${cipherName}): ${permissionSentence(inspection.permissions ?? flags)}. ${
+        message: `Restrictions as recorded in the file: ${permissionSentence(inspection.permissions ?? flags)}. ${
           reader.verdict === 'opens'
             ? `A PDF reader opens it with no password: ${reader.pages} page(s) readable.`
             : 'The document is written to open without a password.'
@@ -905,11 +897,19 @@ export const securityTools: PdfToolDefinition[] = [
       const { metadataReport } = await import('../core/metadata');
       const sections = metadataReport(input.doc, input.bytes);
       const inspection = input.inspection;
+      // A file can be gated without being ciphered, and the two answers mean
+      // different things to the person reading the report (E5).
+      const gateOnly = inspection?.algorithm === 'no cipher';
       const protection: { label: string; value: string }[] = [
         { label: 'Encrypted', value: inspection?.encrypted ? 'yes' : 'no' },
       ];
       if (inspection?.encrypted) {
-        protection.push({ label: 'Cipher', value: inspection.algorithm ?? 'declared, but not readable from /V and /R' });
+        protection.push({
+          label: 'Cipher',
+          value: gateOnly
+            ? 'no cipher — the file’s crypt filter is /None, so the pages are stored in the clear behind the password'
+            : inspection.algorithm ?? 'declared, but not readable from /V and /R',
+        });
         protection.push({
           label: 'Open password',
           // `/Encrypt` alone does not mean a password is asked for: a
@@ -944,7 +944,11 @@ export const securityTools: PdfToolDefinition[] = [
         sections,
         message: `Read ${sections.length} section(s) of document metadata.`,
         warnings: inspection?.encrypted
-          ? [`This PDF is protected with ${inspection.algorithm ?? 'an unreadable cipher'}; the restrictions above are what its /P dictionary records, not a guarantee about a given reader.`]
+          ? [`This PDF is protected with ${
+            gateOnly
+              ? 'a password gate and no cipher'
+              : inspection.algorithm ?? 'an unreadable cipher'
+          }; the restrictions above are what its /P dictionary records, not a guarantee about a given reader.`]
           : [],
       };
     },
@@ -2128,15 +2132,24 @@ function timestampFailure(error: unknown, tsaUrl: string, signatureCount: number
 }
 
 /**
- * The crypt filter an encryption revision requires (ISO 32000-1 §7.6.2, Table 30).
+ * The cipher an encryption dictionary actually declares.
  *
- * RC4 needs no `/CF` entry at all — `/V 1` and `/V 2` mean RC4 with the key length
- * read from `/Length` — which is why the older revisions answer `undefined`.
+ * `/V` and `/R` only name a strength through the crypt filter: `/V 4` with no
+ * `/CF` entry, or one whose every filter is `/CFM /None`, means "there is a
+ * password and no cipher" — `/StmF` and `/StrF` default to the predefined
+ * `/None` filter (ISO 32000-1 §7.6.3.1, Table 20). This app's writer can only
+ * produce that shape, so a dictionary claiming otherwise is a regression, and
+ * the file — not the form — is where the truth lives (E5).
  */
-function requiredCryptFilter(revision: number): 'AESV3' | 'AESV2' | undefined {
-  if (revision >= 5) return 'AESV3';
-  if (revision === 4) return 'AESV2';
-  return undefined;
+function declaredCipher(doc: PDFDocument): string | null {
+  const dict = encryptDictOf(doc);
+  if (!dict) return null;
+  const version = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber();
+  if (version === undefined) return null;
+  // `/V 1` and `/V 2` have no crypt-filter dictionary at all: RC4 is implied.
+  if (version < 4) return 'RC4';
+  const ciphers = [...new Set(cryptFilterNames(doc))].filter((name) => name !== 'None');
+  return ciphers.length > 0 ? ciphers.join(' and ') : null;
 }
 
 /** The encryption dictionary itself, whether the trailer inlines it or points at it. */
@@ -2161,48 +2174,17 @@ function cryptFilterNames(doc: PDFDocument): string[] {
 }
 
 /**
- * Where the encryption dictionary disagrees with itself about the cipher.
- *
- * `/V` and `/R` are what this app's guard reads to name a cipher, while a reader
- * that follows the crypt filter dictionary obeys `/CFM` instead — and the engine
- * in this browser writes `/V 5 /R 6 /Length 256` beside `/CFM /AESV2`, a 128-bit
- * AES filter. One label, two strengths, and the file is the only place the truth
- * can be checked (E5, E13).
- */
-function cryptFilterMismatch(doc: PDFDocument, cipherLabel: string): string | null {
-  const dict = encryptDictOf(doc);
-  if (!dict) return null;
-  const revision = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber();
-  if (revision === undefined) return null;
-  const expected = requiredCryptFilter(revision);
-  const names = [...new Set(cryptFilterNames(doc))];
-  const quoted = names.map((name) => `/${name}`).join(', ');
-  if (expected === undefined) {
-    return names.length > 0 && names.some((name) => name !== 'RC4')
-      ? `/V ${revision} means RC4, but the file also declares a crypt filter of ${quoted}; a reader that follows /CFM will not use RC4.`
-      : null;
-  }
-  if (names.length === 0) {
-    return `/V ${revision} declares ${expected === 'AESV3' ? 'AES-256' : 'AES-128'}, but the file carries no /CF crypt filter, so a reader that needs /CFM has nothing to obey.`;
-  }
-  const wrong = names.filter((name) => name !== expected);
-  if (wrong.length === 0) return null;
-  return `/V and /R record ${cipherLabel}, but the file's own crypt filter declares ${wrong.map((name) => `/${name}`).join(', ')} — ${wrong.length === 1 && wrong[0] === 'AESV2' ? 'a 128-bit AES filter' : 'a different cipher'}. Readers split on which half they obey, so this copy does not carry ${cipherLabel} everywhere.`;
-}
-
-/**
  * Re-read the bytes a protection tool just wrote, and describe what they say.
  *
- * Returns the recorded permissions plus the warnings the tool must carry: wrong
- * cipher, permissions that did not reach the file, and page content that came
- * out byte-identical — which means the password gate was written but the text
- * itself was not re-encrypted by the built-in engine.
+ * Returns the recorded permissions plus the warnings the tool must carry: a gate
+ * that did not reach the trailer, permissions the file does not record, a file
+ * that opens on the empty password when one was set (and the other way round),
+ * and a dictionary claiming a cipher this engine does not run.
  */
 async function verifyProtection(
   bytes: Uint8Array,
   name: string,
   requested: PDFPermissions,
-  cipherLabel: string,
   sourceFingerprint: string,
   opensFreely: boolean,
 ): Promise<{ inspection: PdfInspection; warnings: string[] }> {
@@ -2210,9 +2192,7 @@ async function verifyProtection(
   const inspection = await inspectPdf(bytes, name);
   const warnings: string[] = [];
   if (!inspection.encrypted) {
-    warnings.push(`The saved file carries no /Encrypt entry, so a reader will open it without asking for ${cipherLabel} protection.`);
-  } else if (inspection.algorithm && inspection.algorithm !== cipherLabel) {
-    warnings.push(`The file records ${inspection.algorithm}, not the ${cipherLabel} cipher that was selected.`);
+    warnings.push('The saved file carries no /Encrypt entry, so a reader will open it without asking for the password.');
   }
   warnings.push(...permissionMismatches(requested, inspection.permissions));
   if (!inspection.encrypted) return { inspection, warnings };
@@ -2235,16 +2215,19 @@ async function verifyProtection(
   }
   try {
     const written = await openPDF(bytes, { ignoreEncryption: true });
-    if (contentFingerprint(written) === sourceFingerprint) {
-      warnings.push(opensFreely
-        ? 'The page content came out of the engine unchanged, so the restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. This file opens on the empty password and a tool that ignores /Encrypt can read the page just as easily.'
-        : 'The page content came out of the engine unchanged, so the password and restrictions are recorded in the file but the text inside it was not rewritten as ciphertext. Readers will prompt for the password; a tool that ignores /Encrypt can still read the page.');
+    const cipher = declaredCipher(written);
+    if (cipher) {
+      // The engine has no cipher to run, so a dictionary naming one is a file
+      // whose bytes contradict its own label — which is what three readers
+      // refused, and what the /None filter now says out loud instead.
+      warnings.push(`The saved file declares a crypt filter of /${cipher}, but this browser's engine writes no cipher, so readers that obey it will decrypt plaintext and lose the page.`);
+    } else if (contentFingerprint(written) !== sourceFingerprint) {
+      // Unreachable while no cipher runs; the claim is checked either way, so a
+      // future engine that does cipher cannot lose a page quietly (E5).
+      warnings.push('The page content read back different from the source, so check the copy before relying on it.');
     }
-    const filterMismatch = cryptFilterMismatch(written, cipherLabel);
-    if (filterMismatch) warnings.push(filterMismatch);
   } catch {
-    // Nothing to admit: the streams could not be re-read, which is what a file
-    // whose content really was encrypted looks like from this side.
+    warnings.push('The saved file could not be re-read to check its crypt filter and page content.');
   }
   return { inspection, warnings };
 }

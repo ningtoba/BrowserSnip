@@ -192,15 +192,42 @@ export function decodePermissions(p: number): PdfPermissions {
   };
 }
 
-/** `AES-256`, `AES-128`, `RC4-128`, `RC4-40` or `unknown`, from `/V` + `/R`. */
+/**
+ * The cipher a file declares: `AES-256`, `AES-128`, `RC4-128`, `RC4-40`,
+ * `no cipher` or `unknown`.
+ *
+ * `/V` and `/R` name the *handler revision*; the cipher is the crypt filter
+ * (`/CFM`) that `/StmF` and `/StrF` point at, and both of those default to the
+ * predefined `/None` filter — "the data are not encrypted" (ISO 32000-1
+ * §7.6.3.1). Reading `/V` alone reported this app's own `/None` gate as
+ * `AES-128`, which is a cipher claim the bytes do not carry.
+ */
 function algorithmOf(dict: PDFDict | undefined): string | null {
   if (!dict) return null;
   const version = dict.lookupMaybe(PDFName.of('V'), PDFNumber)?.asNumber();
-  const revision = dict.lookupMaybe(PDFName.of('R'), PDFNumber)?.asNumber();
-  if (version === 5 || version === 6 || version === 7 || (version === 4 && revision === 5)) {
-    return 'AES-256';
+  if (version === undefined) return null;
+  if (version >= 4) {
+    const filters = dict.lookupMaybe(PDFName.of('CF'), PDFDict);
+    const declared = new Set<string>();
+    if (filters) {
+      for (const [, value] of filters.entries()) {
+        const filter = value instanceof PDFRef ? dict.context.lookupMaybe(value, PDFDict) : value;
+        if (!(filter instanceof PDFDict)) continue;
+        const method = filter.lookupMaybe(PDFName.of('CFM'), PDFName)?.decodeText();
+        if (method && method !== 'None') declared.add(method);
+      }
+    }
+    // No filter, or only `/None` filters: the dictionary says the data are not
+    // encrypted, and that is the whole answer whatever `/V` and `/R` say.
+    if (declared.size === 0) return 'no cipher';
+    if (declared.has('AESV3')) return 'AES-256';
+    if (declared.has('AESV2')) return 'AES-128';
+    if (declared.has('V2') || declared.has('RC4')) {
+      return (dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40) > 40 ? 'RC4-128' : 'RC4-40';
+    }
+    return 'unknown';
   }
-  if (version === 4) return 'AES-128';
+  // `/V 1` and `/V 2` predate crypt filters: RC4 with the key length in `/Length`.
   const length = dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber() ?? 40;
   if (version === 2 || (version === 1 && length > 40)) return 'RC4-128';
   if (version === 1) return 'RC4-40';

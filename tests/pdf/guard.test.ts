@@ -124,7 +124,7 @@ function missingLastPage(source: Uint8Array): Uint8Array {
 async function locked(pages = 1, password = 'hunter2'): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   for (let i = 0; i < pages; i++) doc.addPage([300, 200]);
-  return saveEncrypted(doc, { userPassword: password, ownerPassword: password, version: 5 });
+  return saveEncrypted(doc, { userPassword: password, ownerPassword: password });
 }
 
 const field = (over: Partial<ToolField> & { key: string; label: string; type: ToolField['type'] }): ToolField => over;
@@ -369,7 +369,9 @@ describe('E4 and E5 — encrypted documents', () => {
     const source = await locked(2);
     const seen = await inspectPdf(source, 'contract.pdf');
     expect(seen.encrypted).toBe(true);
-    expect(seen.algorithm).toBe('AES-256');
+    // The engine writes a gate, not a cipher: `/V 4 /R 4` with the crypt filter
+    // /None, which is what the guard has to report whatever the form asked for.
+    expect(seen.algorithm).toBe('no cipher');
     expect(seen.needsPassword).toBe(true);
     expect(seen.passwordAccepted).toBe(false);
     expect(seen.pages).toBe(2);
@@ -414,11 +416,10 @@ describe('E4 and E5 — encrypted documents', () => {
     const source = await saveEncrypted(doc, {
       userPassword: 'pw',
       ownerPassword: 'pw',
-      version: 4,
       permissions: { printing: true, copying: false, modifying: true },
     });
     const seen = await inspectPdf(source, 'restricted.pdf');
-    expect(seen.algorithm).toBe('AES-128');
+    expect(seen.algorithm).toBe('no cipher');
     expect(seen.permissions).toMatchObject({
       printing: true,
       modifying: true,

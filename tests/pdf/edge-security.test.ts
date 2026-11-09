@@ -207,7 +207,6 @@ const PROTECTION_DEFAULTS: ToolValues = {
   mode: 'user',
   userPassword: 'hunter2',
   ownerPassword: '',
-  version: '4',
   allowPrinting: true,
   printLevel: 'high',
   allowModifying: true,
@@ -218,12 +217,16 @@ const PROTECTION_DEFAULTS: ToolValues = {
   allowAssembling: false,
 };
 
-const CIPHERS = [
-  { version: '5', label: 'AES-256' },
-  { version: '4', label: 'AES-128' },
-  { version: '2', label: 'RC4-128' },
-  { version: '1', label: 'RC4-40' },
-];
+/**
+ * The strengths the Cipher control used to offer.
+ *
+ * They stay as a table because the defect was per-strength: each name was a claim
+ * about bytes the engine never ciphered, and each claimed dictionary was read a
+ * different wrong way by a different reader. The control is gone, so what is left
+ * to prove is that the name cannot come back — no field to pick it, and no sentence
+ * this tool shows the user that says it.
+ */
+const CIPHER_NAMES = ['AES-256', 'AES-128', 'RC4-128', 'RC4-40'];
 
 let certificate: { certificatePem: string; privateKeyPem: string };
 const encoder = new TextEncoder();
@@ -248,37 +251,58 @@ beforeAll(async () => {
 }, 120_000);
 
 describe('protect and unlock round trip (E4, E5)', () => {
-  it.each(CIPHERS)('writes $label and reads it back as $label', async ({ version, label }) => {
-    const protectedRun = await run('protect', { ...PROTECTION_DEFAULTS, version });
+  it('writes the gate the file declares, and reads it back as a gate', async () => {
+    const protectedRun = await run('protect', PROTECTION_DEFAULTS);
     const bytes = await bytesOf(protectedRun);
 
-    // The file declares the cipher that was asked for, and it declares it in a
-    // way the shared guard — the code the file queue uses — agrees with.
+    // The guard the file queue uses — not the form — says what the dictionary is.
     const gate = await inspectPdf(bytes, 'out.pdf');
-    expect(gate.encrypted, `${label}: /Encrypt missing`).toBe(true);
-    expect(gate.algorithm).toBe(label);
+    expect(gate.encrypted, '/Encrypt missing').toBe(true);
+    expect(gate.algorithm, 'a gate whose crypt filter is /None must not be named a cipher').toBe('no cipher');
     // E4: no password means "ask", never a hang and never a silent success.
     expect(gate.error).toBe('PASSWORD_REQUIRED');
     expect(gate.needsPassword).toBe(true);
-    // E5: the right password gets in, and the tool says so out loud.
+    // E5: the right password gets in, and the tool reports that from a reader of
+    // the saved bytes rather than from the writer that made them.
     const opened = await inspectPdf(bytes, 'out.pdf', { password: 'hunter2' });
     expect(opened.error).toBeNull();
     expect(opened.passwordAccepted).toBe(true);
-    expect(protectedRun.message).toContain(label);
+    expect(protectedRun.message).toMatch(/A PDF reader opened the copy with that password and read 2 page\(s\)/);
   }, 120_000);
 
-  it.each(CIPHERS)('unlocks a $label file into one that opens with no password', async ({ version, label }) => {
-    const locked = await bytesOf(await run('protect', { ...PROTECTION_DEFAULTS, version }));
+  it.each(CIPHER_NAMES)('sells no %s output, and says so where the name still appears', (name) => {
+    const tool = getPdfTool('protect')!;
+    // No field picks a strength, and no line the user acts on — the description
+    // under the title, the promise, the password help, and what a run prints —
+    // names one.
+    expect((tool.fields ?? []).map((field) => field.key)).not.toContain('version');
+    const claims = [
+      tool.description,
+      tool.promise ?? '',
+      ...(tool.fields ?? []).map((field) => field.help ?? ''),
+    ].join(' ');
+    expect(claims, `${name} is still being sold`).not.toContain(name);
+    // Where the retired name does appear — the note that explains the retirement —
+    // it appears as a capability the engine lacks, never as an output it produced.
+    for (const note of tool.notes ?? []) {
+      if (note.includes(name)) {
+        expect(note, `${name} is named without retiring it`).toMatch(/does not have one yet|were labels on a dictionary|no cipher/i);
+      }
+    }
+  });
+
+  it('unlocks the gated file into one that opens with no password', async () => {
+    const locked = await bytesOf(await run('protect', PROTECTION_DEFAULTS));
     // E4 again, from the other side: the wrong password has to be refused for
-    // this cipher, not accepted or left hanging.
+    // this gate, not accepted or left hanging.
     let wrong: { code?: string; message?: string } | null = null;
     try {
       await run('unlock', { password: 'nope-not-it' }, [pdfFile(locked, 'locked.pdf')]);
     } catch (error) {
       wrong = error as { code?: string; message?: string };
     }
-    expect(wrong, `${label}: a wrong password was not refused`).not.toBeNull();
-    expect(wrong!.code, `${label}: wrong password must re-prompt, not crash`).toBe('BAD_PASSWORD');
+    expect(wrong, 'a wrong password was not refused').not.toBeNull();
+    expect(wrong!.code, 'a wrong password must re-prompt, not crash').toBe('BAD_PASSWORD');
     expect(wrong!.message).toMatch(/not correct/i);
 
     const unlocked = await run('unlock', { password: 'hunter2' }, [pdfFile(locked, 'locked.pdf')]);
@@ -354,14 +378,18 @@ describe('protect and unlock round trip (E4, E5)', () => {
     expect(outcome.message).not.toContain('printing allowed');
   }, 120_000);
 
-  it('admits when the engine recorded protection without rewriting the page content', async () => {
+  it('says in the result that the pages were copied through, not ciphered', async () => {
     const source = await redactionFixture();
     const outcome = await run('protect', PROTECTION_DEFAULTS, [pdfFile(source, 'report.pdf')]);
     const bytes = await bytesOf(outcome);
-    // The claim under test is the warning itself: the words are still in the
-    // saved file, so a tool that ignores `/Encrypt` can still read them.
+    // The claim under test is the sentence beside the file: the words are still in
+    // the saved bytes *and* the result says so, which is the pairing the old
+    // "Protected with AES-256" line got wrong in both directions.
     expect(await readableText(bytes)).toContain('Zephyr Bravo Content');
-    expect(outcome.warnings.join(' ')).toMatch(/not rewritten as ciphertext|ignores \/Encrypt/i);
+    expect(outcome.message).toMatch(/no crypt filter[^.]*copied through rather than ciphered/i);
+    // Nothing has to be walked back in a warning: the dictionary now says what the
+    // engine did, so a reader is not handed a cipher to undo over plaintext.
+    expect(outcome.warnings.join(' ')).not.toMatch(/does not carry|readers split|not rewritten as ciphertext/i);
   }, 120_000);
 
   it('keeps a restrictions-only file opening on the empty password', async () => {
@@ -418,7 +446,6 @@ describe('protect and unlock round trip (E4, E5)', () => {
     const locked = await saveEncrypted(await PDFDocument.load(source), {
       userPassword: 'gate',
       ownerPassword: 'gate',
-      version: 4,
     });
     const outcome = await run('unlock', { password: 'gate' }, [pdfFile(locked, 'form.pdf')]);
     const bytes = await bytesOf(outcome);
@@ -439,7 +466,6 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     const outcome = await run('change-permissions', {
       action: 'set',
       ownerPassword: 'owner',
-      version: '4',
       allowPrinting: false,
       allowModifying: true,
       allowCopying: false,
@@ -450,7 +476,7 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     const bytes = await bytesOf(outcome);
     const gate = await inspectPdf(bytes, 'out.pdf');
     expect(gate.encrypted).toBe(true);
-    expect(gate.algorithm).toBe('AES-128');
+    expect(gate.algorithm).toBe('no cipher');
     const recorded = gate.permissions;
     if (!recorded) throw new Error('the saved file carries no /P dictionary, so nothing was recorded');
     expect(recorded.printing).toBe(false);
@@ -501,17 +527,24 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
   }, 120_000);
 
   it('reports the restrictions a file really carries in View Metadata', async () => {
-    const locked = await bytesOf(await run('protect', { ...PROTECTION_DEFAULTS, version: '5', allowCopying: false, allowAssembling: false }));
+    const locked = await bytesOf(await run('protect', { ...PROTECTION_DEFAULTS, allowCopying: false, allowAssembling: false }));
     const outcome = await run('view-metadata', {}, [pdfFile(locked, 'locked.pdf')], 'hunter2');
     const protection = outcome.report?.sections.find((section) => section.title === 'Protection');
     expect(protection, 'the report must have a Protection section').toBeTruthy();
     const rows = new Map(protection!.rows!.map((row) => [row.label, row.value]));
     expect(rows.get('Encrypted')).toBe('yes');
-    expect(rows.get('Cipher')).toBe('AES-256');
+    // The report reads the crypt filter back rather than naming a strength: this
+    // file is gated, not ciphered, and saying `AES-256` here is what contradicted
+    // the bytes the triage measured.
+    expect(rows.get('Cipher')).toMatch(/^no cipher/);
+    expect(rows.get('Cipher')).toMatch(/\/None/);
     expect(rows.get('Restrictions recorded')).toMatch(/copying blocked/);
     expect(rows.get('Restrictions recorded')).toMatch(/page assembly blocked/);
     expect(outputIsHonest(rows.get('Enforced by') ?? '')).toBe(true);
-    expect(outcome.warnings.join(' ')).toMatch(/AES-256/);
+    // The warning the queue shows beside a protected file says the same thing the
+    // row above does — a gate, no cipher — instead of naming a strength.
+    expect(outcome.warnings.join(' ')).toMatch(/password gate and no cipher/);
+    expect(outcome.warnings.join(' ')).not.toMatch(/AES|RC4/);
   }, 120_000);
 });
 
