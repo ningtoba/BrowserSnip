@@ -152,7 +152,19 @@ const STYLE_LABELS: Record<string, string> = {
   opacity: 'opacity',
   strokeWidth: 'stroke width',
   fontSize: 'text size',
+  textStyle: 'text style',
 };
+
+/**
+ * The property in the words the panel uses for it.
+ *
+ * A selection card that says `strokeWidth differ between these marks` is asking the
+ * user to translate a field name; the label is the same string the live region
+ * speaks, so the panel and the announcement cannot disagree.
+ */
+export function sharedStyleLabel(key: string): string {
+  return STYLE_LABELS[key] ?? key;
+}
 
 /** What a style edit did to the set. */
 export function sharedStyleNotice(changed: string[], count: number): string {

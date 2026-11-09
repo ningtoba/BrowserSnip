@@ -23,6 +23,8 @@ import {
   quadRing,
 } from '@/lib/pdf/core/annotations';
 import { TOOL_BY_ID } from './tools';
+import { familyPreview } from '../text-editor/faces';
+import type { MarkPreview } from './textLayout';
 import {
   HANDLE_HIT_PX,
   HANDLE_SIZE_PX,
@@ -66,6 +68,14 @@ export interface OverlayProps {
   onFinishVertices: () => void;
   onTextDraft: (id: string, text: string) => void;
   onTextCommit: (id: string) => void;
+  /**
+   * Laid-out lines per styled mark, from `layoutMarkText` — the same call the export
+   * makes, against a document that holds the same face bytes. A mark with an entry
+   * is painted from it, so the line breaks on screen are the line breaks in the
+   * file; a mark without one (still measuring, or being typed into) keeps the
+   * type-in surface.
+   */
+  textPreviews?: Record<string, MarkPreview>;
 }
 
 /** Where a sticky note's body is shown next to its icon. */
@@ -125,6 +135,7 @@ export function AnnotationOverlay({
   onFinishVertices,
   onTextDraft,
   onTextCommit,
+  textPreviews = {},
 }: OverlayProps) {
   const host = useRef<HTMLDivElement>(null);
 
@@ -150,7 +161,15 @@ export function AnnotationOverlay({
   const chromeMarks = selectedMarks.filter((annotation) => annotation.id !== editingId);
   const handleMark = chromeMarks.length === 1 ? chromeMarks[0] : null;
   const group = chromeMarks.length > 1 ? selectionScreenBounds(chromeMarks, geom) : null;
-  const textLayers = annotations.filter((a) => a.kind === 'FreeText');
+  // A FreeText mark with a layout is painted from it, in the SVG below, on the
+  // baselines the file will use. Only the one being typed into, and any mark whose
+  // lines have not arrived yet, still needs the DOM surface.
+  const textLayers = annotations.filter(
+    (a) => a.kind === 'FreeText' && (a.id === editingId || !textPreviews[a.id]),
+  );
+  const laidOut = annotations.filter(
+    (a) => a.textStyle && textPreviews[a.id] && a.id !== editingId,
+  );
 
   return (
     <div
@@ -175,7 +194,7 @@ export function AnnotationOverlay({
       >
         {annotations.map((annotation) => (
           <g key={annotation.id} data-mark={annotation.id} {...turn(annotation, geom)}>
-            <Mark annotation={annotation} geom={geom} />
+            <Mark annotation={annotation} geom={geom} laidOut={Boolean(textPreviews[annotation.id])} />
           </g>
         ))}
         {draft ? (
@@ -183,6 +202,54 @@ export function AnnotationOverlay({
             <Mark annotation={draft} geom={geom} draft />
           </g>
         ) : null}
+
+        {/*
+           Styled type, drawn on the baselines the appearance stream writes. An SVG
+           `<text>`'s `y` *is* the baseline, and the layout reports its lines as
+           `x` from the box's left and `baseline` up from its bottom — the same space
+           the stream uses — so there is no CSS line box in between to reinterpret
+           where a line ends up.
+        */}
+        {laidOut.map((annotation) => {
+          const preview = textPreviews[annotation.id];
+          const style = annotation.textStyle;
+          if (!preview || !style) return null;
+          return (
+            <g
+              key={`layout-${annotation.id}`}
+              data-text-layout={annotation.id}
+              data-text-family={style.fontFamily || 'auto'}
+              data-text-size={preview.size}
+              data-text-shrank={preview.shrank ? 'true' : 'false'}
+              opacity={annotation.opacity}
+              {...turn(annotation, geom)}
+            >
+              {preview.lines.map((line, index) =>
+                line.text === '' ? null : (
+                  <text
+                    key={`${annotation.id}-${index}`}
+                    x={round(pdfToScreenPoint({ x: annotation.rect.x + line.x, y: annotation.rect.y + line.baseline }, geom).x)}
+                    y={round(pdfToScreenPoint({ x: annotation.rect.x + line.x, y: annotation.rect.y + line.baseline }, geom).y)}
+                    fontFamily={familyPreview(style.fontFamily)}
+                    fontSize={Math.max(round(line.size * geom.zoom), 1)}
+                    fontWeight={style.bold ? 700 : 400}
+                    // Only a family the browser can actually show is slanted here:
+                    // the layout refused the posture anywhere else, so slanting the
+                    // preview would be the screen lying about the file.
+                    fontStyle={style.italic ? 'italic' : 'normal'}
+                    fill={style.color}
+                    // `start`: the layout already moved the line for its alignment,
+                    // and anchoring it again would shift it a second time.
+                    textAnchor="start"
+                    xmlSpace="preserve"
+                  >
+                    {line.text}
+                  </text>
+                ),
+              )}
+            </g>
+          );
+        })}
 
         {vertices && vertices.points.length > 0 ? (
           <g>
@@ -407,7 +474,8 @@ export function AnnotationOverlay({
       */}
       {textLayers.map((annotation) => {
         const box = pdfToScreenRect(annotation.rect, geom);
-        const size = annotation.fontSize ?? 12;
+        const style = annotation.textStyle;
+        const size = style?.size ?? annotation.fontSize ?? 12;
         const surface: React.CSSProperties = {
           left: box.x,
           top: box.y,
@@ -415,9 +483,16 @@ export function AnnotationOverlay({
           height: Math.max(box.height, 1),
           boxSizing: 'border-box',
           padding: freeTextInset(size) * geom.zoom,
-          color: annotation.color,
+          color: style?.color ?? annotation.color,
+          fontFamily: style ? familyPreview(style.fontFamily) : undefined,
+          fontWeight: style?.bold ? 700 : 400,
+          // The slant is only worn when the style carries it, because the writer
+          // refuses it otherwise — and a caret leaning where the glyphs will not is
+          // the preview lying.
+          fontStyle: style?.italic ? 'italic' : 'normal',
           fontSize: Math.max(size * geom.zoom, 6),
-          lineHeight: FREE_TEXT_LINE_EM,
+          lineHeight: style ? style.lineSpacing : FREE_TEXT_LINE_EM,
+          textAlign: style && style.align !== 'justify' ? style.align : undefined,
         };
         const editing = annotation.id === editingId;
         if (editing) {
@@ -535,10 +610,18 @@ function Mark({
   annotation,
   geom,
   draft = false,
+  laidOut = false,
 }: {
   annotation: EditorAnnotation;
   geom: PageGeom;
   draft?: boolean;
+  /**
+   * True when the styled-text layer already paints this mark's words, at the size
+   * and on the baseline the file will use. The heuristic label below is then not
+   * drawn: two spellings of the same word, at two sizes, is exactly the drift the
+   * campaign keeps finding.
+   */
+  laidOut?: boolean;
 }) {
   const box = pdfToScreenRect(annotation.rect, geom);
   const opacity = draft ? Math.min(annotation.opacity, 0.7) : annotation.opacity;
@@ -754,6 +837,22 @@ function Mark({
       }
       const label = annotation.stampName ?? 'Stamp';
       const size = Math.max(Math.min(box.height * 0.55, (box.width / Math.max(label.length, 1)) * 1.6, 28), 7);
+      if (laidOut && annotation.textStyle) {
+        // Box and border only; the words come from the layout.
+        return (
+          <g opacity={opacity}>
+            <rect
+              x={box.x}
+              y={box.y}
+              width={box.width}
+              height={box.height}
+              fill="none"
+              stroke={annotation.color}
+              strokeWidth={Math.max(strokeWidth, 1)}
+            />
+          </g>
+        );
+      }
       return (
         <g opacity={opacity}>
           <rect

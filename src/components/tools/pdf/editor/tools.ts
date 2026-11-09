@@ -7,6 +7,7 @@
  * resolves to exactly one description.
  */
 import type { EditorToolId, ToolMeta, ToolStyle } from './types';
+import { DEFAULT_FACE_STYLE, defaultFaceStyle, type FaceSurfaceId } from '@/lib/pdf/core/text-style';
 
 /** Built-in stamp names. Written verbatim to `/S`, so no spaces (PDF names). */
 export const BUILT_IN_STAMPS: { value: string; label: string }[] = [
@@ -43,13 +44,38 @@ const style = (over: Partial<ToolStyle> = {}): ToolStyle => ({
   filled: false,
   strokeWidth: 1.5,
   opacity: 1,
-  fontSize: 12,
   stampName: 'Approved',
+  text: { ...DEFAULT_FACE_STYLE },
   ...over,
 });
 
-/** Default appearance per tool — the starting point of the per-style state. */
+/**
+ * The tools that set type, and the surface whose stored style they open with.
+ *
+ * A sticky note is deliberately absent: its body reaches the file as a plain
+ * `/Contents` string and every reader paints the popup in its own UI font, so a
+ * family or a size chosen here would be a control that changes no glyph. Its
+ * colour and opacity are real because the format carries them (`/C`, `/CA`).
+ */
+export const TEXT_STYLE_SURFACE: Partial<Record<EditorToolId, FaceSurfaceId>> = {
+  freetext: 'freetext',
+  stamp: 'stamp',
+};
+
+/** Tools whose marks carry text the editor styles. */
+export const TEXT_TOOLS: EditorToolId[] = Object.keys(TEXT_STYLE_SURFACE) as EditorToolId[];
+
+/**
+ * Default appearance per tool — the starting point of the per-style state.
+ *
+ * The text style comes from the shared model's per-surface default (a text box is
+ * 12 pt ink, a stamp is 14 pt bold red), so switching tools preserves what each one
+ * has always started with while the seven properties mean the same thing in every
+ * rail.
+ */
 export function defaultStyleFor(tool: EditorToolId): ToolStyle {
+  const surface = TEXT_STYLE_SURFACE[tool];
+  const text = surface ? defaultFaceStyle(surface) : { ...DEFAULT_FACE_STYLE };
   switch (tool) {
     case 'highlight':
       return style({ color: '#FFEB3B', opacity: 0.4 });
@@ -60,7 +86,13 @@ export function defaultStyleFor(tool: EditorToolId): ToolStyle {
     case 'note':
       return style({ color: '#FFF3A3', opacity: 1 });
     case 'freetext':
-      return style({ color: '#1B1B18', fillColor: '#FFFFFF', filled: true, strokeWidth: 0.8, fontSize: 12 });
+      return style({
+        color: text.color,
+        fillColor: '#FFFFFF',
+        filled: true,
+        strokeWidth: 0.8,
+        text: { ...text, color: text.color },
+      });
     case 'ink':
       return style({ color: '#DC2626', strokeWidth: 2.25 });
     case 'square':
@@ -74,7 +106,7 @@ export function defaultStyleFor(tool: EditorToolId): ToolStyle {
     case 'polyline':
       return style({ color: '#059669', fillColor: '#059669', filled: false, strokeWidth: 2 });
     case 'stamp':
-      return style({ color: '#AA0000', opacity: 0.85, stampName: 'Approved' });
+      return style({ color: text.color, opacity: 0.85, stampName: 'Approved', text });
     case 'image':
     case 'signature':
       return style({ color: '#1B1B18', opacity: 1 });
@@ -338,9 +370,6 @@ export const STROKED_TOOLS: EditorToolId[] = [
   'polyline',
   'freetext',
 ];
-
-/** Tools that expose a font size. */
-export const TEXT_TOOLS: EditorToolId[] = ['freetext', 'note'];
 
 /** Tools whose marks carry editable text and can be re-opened by double-click. */
 export const EDITABLE_TEXT_TOOLS: EditorToolId[] = ['freetext', 'note'];

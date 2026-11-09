@@ -121,6 +121,7 @@ import {
   MARKUP_TOOLS,
   STROKED_TOOLS,
   SWATCHES,
+  TEXT_STYLE_SURFACE,
   TEXT_TOOLS,
   TOOLS,
   TOOL_BY_ID,
@@ -132,6 +133,9 @@ import {
   toolGroupById,
   toolsOfGroup,
 } from './tools';
+import { TextStylingControls } from '../shared/TextStylingControls';
+import { prepareSpecTexts, previewMarkTexts, type MarkPreview } from './textLayout';
+import { loadLocalFamilies, supportsLocalFonts } from '../text-editor/faces';
 import { InspectorSection, SHORTCUT_COUNT, ShortcutList } from './inspector';
 import {
   DROP_REASSURANCE,
@@ -161,13 +165,23 @@ import {
   selectAllNotice,
   selectOnly,
   selectionNotice,
+  sharedStyleLabel,
   sharedStyleNotice,
   switchNotice,
   toggleSelected,
   transferSelectionToPage,
   type DocWork,
 } from './workspace';
-import { MAX_DOCUMENTS, type EditorAnnotation, type EditorToolId, type PlacedRaster, type ToolStyle } from './types';
+import { MAX_DOCUMENTS, type EditorAnnotation, type EditorToolId, type PlacedRaster, type ToolStyle, type ToolStylePatch } from './types';
+import {
+  familyOptions,
+  loadFaceStyle,
+  mergeFaceStyle,
+  saveFaceStyle,
+  type FaceFamilySpec,
+  type FaceStyle,
+  type FaceSurfaceId,
+} from '@/lib/pdf/core/text-style';
 
 type Phase = 'empty' | 'loading' | 'ready' | 'locked' | 'error';
 
@@ -550,16 +564,64 @@ export function AnnotationEditor({
    * the palette they are looking at.
    */
   const [focusedGroup, setFocusedGroup] = useState<string>('markup');
+  /**
+   * One pen per tool, opened from the shared style model's stored choice.
+   *
+   * `defaultStyleFor` is the starting point; `loadFaceStyle` is what this tab — or
+   * a tab opened last week — left behind for that surface. The colour of a text tool
+   * mirrors the style's, because for a box of words the ink and the type are one
+   * setting and the mark cannot have two.
+   */
   const [styles, setStyles] = useState<Record<EditorToolId, ToolStyle>>(() =>
     TOOLS.reduce(
       (acc, meta) => {
-        acc[meta.id] = defaultStyleFor(meta.id);
+        const base = defaultStyleFor(meta.id);
+        const surface = TEXT_STYLE_SURFACE[meta.id];
+        if (!surface) {
+          acc[meta.id] = base;
+          return acc;
+        }
+        const text = loadFaceStyle(surface);
+        acc[meta.id] = { ...base, text, color: text.color };
         return acc;
       },
       {} as Record<EditorToolId, ToolStyle>,
     ),
   );
   const style = styles[tool] ?? defaultStyleFor(tool);
+
+  /**
+   * The device families the font scan found, if the user ran one.
+   *
+   * Local Font Access is Chromium-only, so this stays empty and the family list
+   * stays at the bundled and named faces everywhere else — the control degrades, it
+   * does not lie about a family the tab cannot get the bytes for.
+   */
+  const [deviceFamilies, setDeviceFamilies] = useState<FaceFamilySpec[]>([]);
+  const families = useMemo(() => familyOptions(deviceFamilies), [deviceFamilies]);
+  const scanDeviceFonts = useCallback(() => {
+    loadLocalFamilies()
+      .then((found) => {
+        setDeviceFamilies(found);
+        setStatus(
+          found.length > 0
+            ? `Read ${found.length} font ${found.length === 1 ? 'family' : 'families'} from this device; their real bytes go into the file.`
+            : 'The font scan returned nothing this browser is willing to share.',
+        );
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : 'The font scan was refused by this browser.');
+      });
+  }, []);
+
+  /**
+   * The words the posture buttons are judged against.
+   *
+   * A family can hold an italic face and still not be the face that answers: a run
+   * past WinAnsi is written in the bundled Unicode face, which has no slant. So the
+   * sample is the selected marks' text (or the box being typed into), and an
+   * unavailable posture is refused for that text rather than for nothing.
+   */
 
   /**
    * Change the pen, and whatever the pen is standing on.
@@ -569,19 +631,38 @@ export function AnnotationEditor({
    * remembers it too, because the next mark should match the last one. With
    * nothing picked this is exactly what it always was: the pen's appearance.
    *
-   * Fill and stamp face stay pen-only. "Fill these four marks" is a question
-   * about shapes the group did not agree to be asked, and the panel says so.
+   * A text-style patch is merged through the shared model, so changing the family
+   * leaves the colour, the size and the alignment where they were. Fill stays
+   * pen-only: "fill these four marks" is a question about shapes the group did not
+   * agree to be asked.
    */
   const patchStyle = useCallback(
-    (patch: Partial<ToolStyle>) => {
-      setStyles((current) => ({ ...current, [tool]: { ...current[tool], ...patch } }));
+    (patch: ToolStylePatch) => {
+      const surface = TEXT_STYLE_SURFACE[tool];
+      const pen = styles[tool] ?? defaultStyleFor(tool);
+      // One merged style, used for the pen, the selection and storage alike, so the
+      // three cannot drift by a field.
+      const merged = patch.text ? mergeFaceStyle(pen.text, patch.text) : pen.text;
+      const styled = patch.color !== undefined && patch.color !== merged.color
+        ? mergeFaceStyle(merged, { color: patch.color })
+        : merged;
+      setStyles((current) => {
+        const before = current[tool] ?? defaultStyleFor(tool);
+        const { text: _textPatch, ...geometry } = patch;
+        const next: ToolStyle = { ...before, ...geometry, text: styled };
+        // For a text tool the pen's ink is the text's colour: one control, one value.
+        if (surface && patch.color === undefined) next.color = styled.color;
+        if (surface) saveFaceStyle(surface, styled);
+        return { ...current, [tool]: next };
+      });
       const ids = work?.selection ?? [];
       if (ids.length === 0) return;
+      const textStyle = styled === pen.text && !patch.text ? undefined : styled;
       const shared: SharedStyle = {
         ...(patch.color !== undefined ? { color: patch.color } : {}),
         ...(patch.opacity !== undefined ? { opacity: patch.opacity } : {}),
         ...(patch.strokeWidth !== undefined ? { strokeWidth: patch.strokeWidth } : {}),
-        ...(patch.fontSize !== undefined ? { fontSize: patch.fontSize } : {}),
+        ...(textStyle ? { textStyle } : {}),
       };
       const changed = Object.keys(shared) as (keyof SharedStyle)[];
       if (changed.length === 0) return;
@@ -591,7 +672,7 @@ export function AnnotationEditor({
       }));
       setStatus(sharedStyleNotice(changed, ids.length));
     },
-    [tool, updateWork, work?.selection],
+    [styles, tool, updateWork, work?.selection],
   );
 
   /**
@@ -623,6 +704,15 @@ export function AnnotationEditor({
   const [signOpen, setSignOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState<{ drag: CssRect; kind: 'page' | 'uri'; page: number; uri: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const stylingSample = useMemo(() => {
+    const present = work?.history.present ?? [];
+    const marks = work ? selectedMarks(present, work.selection) : [];
+    const typed = editingId ? present.filter((mark) => mark.id === editingId) : [];
+    return [...marks, ...typed]
+      .map((mark) => mark.text ?? mark.stampName ?? '')
+      .filter((body) => body.length > 0)
+      .join(' ');
+  }, [editingId, work]);
   const [exporting, setExporting] = useState(false);
   const moveRef = useRef<MoveState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
@@ -1755,6 +1845,16 @@ export function AnnotationEditor({
       }
 
       store.setPercent(70, `Writing ${plan.counts.total} annotation${plan.counts.total === 1 ? '' : 's'}…`);
+      /*
+         The type is laid out and its face embedded here, against the document that
+         is about to be written. `addAnnotation` is synchronous by contract, so it
+         cannot fetch a font itself; and the lines come from `layoutBlock` with the
+         same face, which is what makes the exported breaks the breaks the overlay
+         drew. Anything the answering face could not keep comes back as a sentence
+         and is printed beside the result rather than left for the user to spot.
+      */
+      const styleNotes = await prepareSpecTexts(copy, plan.specs);
+      for (const line of styleNotes) store.appendLog(line);
       addAnnotations(copy, plan.specs);
       store.setPercent(90, 'Saving…');
       const output = await savePDF(copy);
@@ -1763,9 +1863,9 @@ export function AnnotationEditor({
       const signature = workSignature(list);
       updateWork((current) => ({ ...current, exportedSignature: signature }));
       setNotice({
-        tone: warning || burnedNotice ? 'warn' : 'success',
+        tone: warning || burnedNotice || styleNotes.length > 0 ? 'warn' : 'success',
         text:
-          [warning, burnedNotice].filter(Boolean).join(' ') ||
+          [warning, burnedNotice, styleNotes.join(' ')].filter(Boolean).join(' ') ||
           `Exported ${plan.counts.total} annotation(s)${plan.counts.redactions ? `, including ${plan.counts.redactions} redaction(s)` : ''}.`,
       });
     } catch (error) {
@@ -1919,6 +2019,46 @@ export function AnnotationEditor({
   /* ── derived render data ─────────────────────────────────────────── */
 
   const pageAnnotations = annotations.filter((a) => a.page === page);
+
+  /*
+     The laid-out lines the overlay paints, for the marks on this page.
+
+     Computed through the same `layoutMarkText` the export uses, against a document
+     that exists only to measure. It is state because face fetching is async; a mark
+     without an entry yet falls back to the plain type-in surface, and repaints when
+     its lines arrive.
+  */
+  const [previews, setPreviews] = useState<Record<string, MarkPreview>>({});
+  const styledSignature = pageAnnotations
+    .filter((mark) => mark.textStyle)
+    .map((mark) => `${mark.id}:${mark.text ?? mark.stampName ?? ''}:${Math.round(mark.rect.width)}x${Math.round(mark.rect.height)}:${JSON.stringify(mark.textStyle)}`)
+    .join('|');
+  useEffect(() => {
+    let cancelled = false;
+    const styled = pageAnnotations.filter((mark) => mark.textStyle);
+    if (styled.length === 0) {
+      setPreviews((current) => (Object.keys(current).length === 0 ? current : {}));
+      return () => {
+        cancelled = true;
+      };
+    }
+    previewMarkTexts(styled, (mark) => ({
+      kind: mark.kind === 'FreeText' ? 'freetext' : 'stamp',
+      body: mark.text ?? mark.stampName ?? '',
+      style: mark.textStyle!,
+      width: mark.rect.width,
+      height: mark.rect.height,
+    })).then((map) => {
+      if (!cancelled) setPreviews(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // The signature, not the array: a new array identity per render would refetch
+    // on every keystroke, and the lines only change when a mark's words, box or
+    // style do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styledSignature]);
   /**
    * The selection, in the order it was built. `primary` is the newest id and is
    * what the corner handles, the rotate handle and the inspector's angle field
@@ -2114,6 +2254,17 @@ export function AnnotationEditor({
                           : null
                       }
                       refusedKind={primary.kind === 'Text' ? 'Text' : 'Link'}
+                      styling={
+                        selectionView.shared.textStyle
+                          ? {
+                              surface: TEXT_STYLE_SURFACE[primary.tool] ?? 'freetext',
+                              style: selectionView.shared.textStyle,
+                              mixed: selectionView.mixedStyle,
+                              families,
+                              sample: stylingSample,
+                            }
+                          : null
+                      }
                       onStyle={(shared) => patchStyle(shared)}
                       onAngle={rotateSelectedTo}
                       onTurn={(delta) => turnSelected(delta)}
@@ -2214,15 +2365,28 @@ export function AnnotationEditor({
               )}
 
               {TEXT_TOOLS.includes(tool) && (
-                <Slider
-                  label="Text size"
-                  value={style.fontSize}
-                  min={6}
-                  max={72}
-                  step={1}
-                  unit="pt"
-                  onChange={(fontSize) => patchStyle({ fontSize })}
+                <TextStylingControls
+                  surface={TEXT_STYLE_SURFACE[tool] ?? 'freetext'}
+                  style={style.text}
+                  text={stylingSample}
+                  families={families}
+                  onChange={(patch) => patchStyle({ text: patch })}
+                  onScanLocalFonts={scanDeviceFonts}
+                  localFontsSupported={supportsLocalFonts()}
+                  localFontsLoaded={deviceFamilies.length > 0}
                 />
+              )}
+
+              {tool === 'note' && (
+                // Decision, stated where the control used to be: a sticky note's body
+                // reaches the file as a plain `/Contents` string and every reader
+                // paints its popup in its own UI font, so a family or a size chosen
+                // here would change no glyph. Colour and opacity stay, because the
+                // format carries those.
+                <p className="text-[10px] leading-relaxed text-ink-muted">
+                  A note keeps its words as plain text, so a reader chooses the font it paints them
+                  in. Colour and opacity are written into the file.
+                </p>
               )}
 
               {tool === 'stamp' && (
@@ -2604,6 +2768,7 @@ export function AnnotationEditor({
                 <AnnotationOverlay
                   geom={geom}
                   annotations={pageAnnotations}
+                  textPreviews={previews}
                   draft={draft}
                   vertices={verticesPreview}
                   tool={tool}
@@ -2899,6 +3064,7 @@ function SelectionPanel({
   turnable,
   refusedLabel,
   refusedKind,
+  styling,
   onStyle,
   onAngle,
   onTurn,
@@ -2909,12 +3075,20 @@ function SelectionPanel({
   refusedLabel: string | null;
   /** The subtype that refused, because the reason differs between the two. */
   refusedKind: 'Link' | 'Text';
+  /** Present when the set holds marks whose type the editor styles. */
+  styling: {
+    surface: FaceSurfaceId;
+    style: FaceStyle;
+    mixed: readonly (keyof FaceStyle)[];
+    families: FaceFamilySpec[];
+    sample: string;
+  } | null;
   onStyle: (shared: SharedStyle) => void;
   onAngle: (degrees: number) => void;
   onTurn: (delta: number) => void;
 }): JSX.Element {
   const group = summary.count > 1;
-  const mixed = new Set(summary.mixed);
+  const mixed = new Set(summary.mixed.map(sharedStyleLabel));
   const what = summary.kinds.map((kind) => `${kind.label} ×${kind.count}`).join(', ');
   return (
     <div className="space-y-2" data-selection-panel={group ? 'group' : 'single'}>
@@ -2962,16 +3136,16 @@ function SelectionPanel({
         display={mixed.has('strokeWidth') ? 'mixed' : undefined}
         onChange={(strokeWidth) => onStyle({ strokeWidth })}
       />
-      {summary.shared.fontSize !== undefined || mixed.has('fontSize') ? (
-        <Slider
-          label="Text size"
-          value={summary.shared.fontSize ?? 12}
-          min={6}
-          max={72}
-          step={1}
-          unit="pt"
-          display={mixed.has('fontSize') ? 'mixed' : undefined}
-          onChange={(fontSize) => onStyle({ fontSize })}
+      {styling ? (
+        // The same control set the pen uses, so a group is styled exactly as one
+        // mark is — and one change lands on every mark in one undo step.
+        <TextStylingControls
+          surface={styling.surface}
+          style={styling.style}
+          text={styling.sample}
+          families={styling.families}
+          mixed={styling.mixed}
+          onChange={(patch) => onStyle({ textStyle: patch })}
         />
       ) : null}
 

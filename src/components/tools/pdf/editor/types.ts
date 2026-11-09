@@ -11,6 +11,8 @@
  *   geometry here and `geometry.ts` converts on the way in and out.
  */
 import type { AnnotationKind, QuadRect } from '@/lib/pdf/core/annotations';
+import type { LaidOutLine } from '@/lib/pdf/core/annotations';
+import type { FaceStyle, FaceStylePatch } from '@/lib/pdf/core/text-style';
 
 /** Every palette entry. `select` edits existing marks; the rest create them. */
 export type EditorToolId =
@@ -56,7 +58,14 @@ export interface ToolMeta {
   kind: AnnotationKind;
 }
 
-/** Per-tool appearance, kept so switching tools does not reset a user's pen. */
+/**
+ * Per-tool appearance, kept so switching tools does not reset a user's pen.
+ *
+ * `text` is the shared style model (`core/text-style`) for the tools that set
+ * type; every other field is the pen's own geometry. The two overlap on purpose
+ * only in colour — for a text mark the ink *is* the text colour, and one control
+ * writes both so they cannot disagree.
+ */
 export interface ToolStyle {
   /** Ink / text colour, `#rrggbb`. For redactions this is the burn-in fill. */
   color: string;
@@ -67,11 +76,18 @@ export interface ToolStyle {
   strokeWidth: number;
   /** 0..1, written to `/CA`. */
   opacity: number;
-  /** FreeText size in points. */
-  fontSize: number;
   /** Built-in stamp `/S` value for the Stamp tool. */
   stampName: string;
+  /** Family, weight, slant, size, colour, alignment and line height. */
+  text: FaceStyle;
 }
+
+/**
+ * A patch to the pen: the geometry fields stay partial, and the text style is a
+ * patch of the shared model rather than a whole style, so one control cannot reset
+ * the six properties it does not own.
+ */
+export type ToolStylePatch = Partial<Omit<ToolStyle, 'text'>> & { text?: FaceStylePatch };
 
 /**
  * One annotation as the editor holds it. `rect` and every point list are in PDF
@@ -104,6 +120,22 @@ export interface EditorAnnotation {
   contents?: string;
   /** FreeText body. */
   text?: string;
+  /**
+   * The mark's own text style: what the appearance stream writes and the overlay
+   * paints. `fontSize` and `color` mirror the two fields the rest of the editor
+   * already reads, so a mark cannot have one size in the inspector and another in
+   * the file.
+   */
+  textStyle?: FaceStyle;
+  /**
+   * The lines the mark's text was laid out into, in the mark's own PDF space
+   * (origin at the box's lower-left, y up). Produced by `layoutMarkText` from
+   * `layoutBlock` with the faces the file carries; the overlay paints these and
+   * `core/annotations` writes them, so a line break seen on screen is a line break
+   * in the export. Absent means "not laid out yet" — a mark being typed into, or
+   * one a caller built without a style.
+   */
+  textLines?: LaidOutLine[];
   fontSize?: number;
   /** Strokes of `[x, y]` pairs for Ink / Polygon / PolyLine. */
   inkPath?: number[][][];

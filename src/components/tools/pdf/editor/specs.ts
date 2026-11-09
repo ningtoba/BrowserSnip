@@ -41,6 +41,13 @@ import {
 import { joinSnappedText, type SnappedLine } from './quads';
 import { TOOL_BY_ID } from './tools';
 import type { EditorAnnotation, EditorToolId, PlacedRaster, ToolStyle } from './types';
+import {
+  defaultFaceStyle,
+  mergeFaceStyle,
+  type FaceStyle,
+  type FaceStylePatch,
+  type FaceSurfaceId,
+} from '@/lib/pdf/core/text-style';
 
 /** Fallback sizes, in PDF points, for a tool used as a single click. */
 const DEFAULT_BOX: Partial<Record<EditorToolId, { width: number; height: number }>> = {
@@ -159,16 +166,21 @@ function buildBox(base: EditorAnnotation, input: BuildInput): EditorAnnotation |
         contents: input.text ?? '',
         fillColor: style.color,
       };
-    case 'FreeText':
+    case 'FreeText': {
+      // The text style is the mark's; `color` mirrors its colour because for a box
+      // of words the ink and the type are one thing the user sets once.
+      const textStyle = { ...style.text };
       return {
         ...base,
         rect: roundRect(rect),
-        color: style.color,
-        borderColor: style.strokeWidth > 0 ? style.color : undefined,
+        color: textStyle.color,
+        borderColor: style.strokeWidth > 0 ? textStyle.color : undefined,
         ...(fill ? { fillColor: fill } : {}),
         text: input.text ?? '',
-        fontSize: style.fontSize,
+        textStyle,
+        fontSize: textStyle.size,
       };
+    }
     case 'Square':
     case 'Circle':
       return {
@@ -249,18 +261,27 @@ function buildPlaced(base: EditorAnnotation, input: BuildInput): EditorAnnotatio
   const wanted = rectFromDrag(input);
   if (!wanted) return null;
   const rect = raster ? fitRectInBox({ width: raster.width, height: raster.height }, wanted) : wanted;
+  if (raster) {
+    return {
+      ...base,
+      rect: roundRect(rect),
+      color: input.style.color,
+      imageBytes: raster.bytes,
+      imageUrl: raster.url,
+      imageWidth: raster.width,
+      imageHeight: raster.height,
+    };
+  }
+  // A labelled stamp is type set into a box, so it carries the style model too —
+  // and its border keeps the pen colour while the words take the style's.
+  const textStyle = { ...input.style.text };
   return {
     ...base,
     rect: roundRect(rect),
     color: input.style.color,
-    ...(raster
-      ? {
-          imageBytes: raster.bytes,
-          imageUrl: raster.url,
-          imageWidth: raster.width,
-          imageHeight: raster.height,
-        }
-      : { stampName: input.style.stampName || 'Approved' }),
+    stampName: input.style.stampName || 'Approved',
+    textStyle,
+    fontSize: textStyle.size,
   };
 }
 
@@ -293,6 +314,36 @@ export function withText(
     ? { ...annotation, contents: text }
     : { ...annotation, text };
 }
+
+/**
+ * Set the text style of a mark, keeping the derived fields in step.
+ *
+ * `fontSize` and `color` are what the rest of the editor already reads — the
+ * overlay's inset, the layer list, the appearance's `/C`. They are written from the
+ * style here and nowhere else, so a mark cannot show one size in the inspector and
+ * paint another.
+ */
+export function withTextStyle(
+  annotation: EditorAnnotation,
+  patch: FaceStylePatch,
+): EditorAnnotation {
+  if (annotation.kind !== 'FreeText' && !annotation.stampName) return annotation;
+  const base = annotation.textStyle ?? defaultFaceStyle(STYLE_SURFACE_FOR_KIND[annotation.kind] ?? 'freetext');
+  const textStyle = mergeFaceStyle(base, patch);
+  return {
+    ...annotation,
+    textStyle,
+    fontSize: textStyle.size,
+    // A box of words paints in its text colour; a stamp keeps its border colour and
+    // paints its words in the style's.
+    ...(annotation.kind === 'FreeText' ? { color: textStyle.color } : {}),
+  };
+}
+
+const STYLE_SURFACE_FOR_KIND: Partial<Record<AnnotationKind, FaceSurfaceId>> = {
+  FreeText: 'freetext',
+  Stamp: 'stamp',
+};
 
 /* ------------------------------------------------------------------ *
  * Rotation                                                            *
@@ -501,6 +552,11 @@ export interface SharedStyle {
   opacity?: number;
   strokeWidth?: number;
   fontSize?: number;
+  /**
+   * The shared text style, patched rather than replaced: setting the family must
+   * not move the colour, and setting the size must not clear the alignment.
+   */
+  textStyle?: FaceStylePatch;
 }
 
 /**
@@ -540,6 +596,16 @@ export function styleMarks(
     }
     if (style.fontSize !== undefined && annotation.fontSize !== undefined) {
       next.fontSize = style.fontSize;
+    }
+    if (style.textStyle !== undefined && (annotation.kind === 'FreeText' || annotation.stampName)) {
+      // One merge for the whole model, so a patch cannot reset a field the control
+      // set never showed, and the derived `fontSize` / `color` stay in step.
+      next.textStyle = mergeFaceStyle(
+        annotation.textStyle ?? defaultFaceStyle(STYLE_SURFACE_FOR_KIND[annotation.kind] ?? 'freetext'),
+        style.textStyle,
+      );
+      next.fontSize = next.textStyle.size;
+      if (annotation.kind === 'FreeText') next.color = next.textStyle.color;
     }
     return next;
   });
@@ -593,9 +659,13 @@ export interface SelectionSummary {
   shared: Required<Pick<SharedStyle, 'opacity' | 'strokeWidth'>> & {
     color?: string;
     fontSize?: number;
+    /** The style every selected text mark shares, for the control set to show. */
+    textStyle?: FaceStyle;
   };
   /** Property names the set disagrees about. */
   mixed: (keyof SharedStyle)[];
+  /** Which of the seven style fields the set disagrees about, by name. */
+  mixedStyle: (keyof FaceStyle)[];
   /** True when the set holds a text mark whose body the panel will not show. */
   hasText: boolean;
   /** One line for the panel heading and the live region. */
@@ -638,6 +708,22 @@ export function selectionSummary(
   const fontSize = sized.length > 0 ? agrees(sized.map((mark) => mark.fontSize as number)) : { same: false as const };
   if (fontSize.same) shared.fontSize = fontSize.value;
   else if (sized.length > 0) mixed.push('fontSize');
+  // The text style, field by field: a group of three boxes that differ only in
+  // alignment must show the alignment as mixed, not silently pick one.
+  const styled = marks.filter((mark) => mark.textStyle !== undefined);
+  const mixedStyle: (keyof FaceStyle)[] = [];
+  if (styled.length > 0) {
+    const textStyle: FaceStyle = {
+      ...styled[0]!.textStyle!,
+    };
+    for (const key of ['fontFamily', 'size', 'color', 'bold', 'italic', 'align', 'lineSpacing'] as const) {
+      const agreed = agrees(styled.map((mark) => mark.textStyle?.[key]));
+      if (agreed.same) (textStyle as unknown as Record<string, unknown>)[key] = agreed.value;
+      else mixedStyle.push(key);
+    }
+    shared.textStyle = textStyle;
+    if (mixedStyle.length > 0) mixed.push('textStyle');
+  }
 
   const hasText = marks.some((mark) => EDITABLE_TEXT_KINDS.has(mark.kind));
   const where = pages.length === 1 ? `page ${pages[0] + 1}` : `${pages.length} pages`;
@@ -646,7 +732,7 @@ export function selectionSummary(
     marks.length === 0
       ? 'Nothing selected.'
       : `${marks.length} marks selected on ${where}${what ? ` — ${what}` : ''}`;
-  return { count: marks.length, pages, kinds, shared, mixed, hasText, text };
+  return { count: marks.length, pages, kinds, shared, mixed, mixedStyle, hasText, text };
 }
 
 const EDITABLE_TEXT_KINDS = new Set<AnnotationKind>(['Text', 'FreeText']);
@@ -1069,6 +1155,13 @@ export function annotationToSpec(annotation: EditorAnnotation): AnnotationSpec {
       border: Boolean(annotation.borderColor),
     };
   }
+  // The style a text-bearing mark carries. The face and the laid-out lines are
+  // attached at export (`prepareSpecTexts`), because embedding a face needs the
+  // document, which this function has never seen.
+  if (annotation.textStyle) {
+    spec.textStyle = { style: annotation.textStyle };
+    if (annotation.textLines) spec.textStyle.lines = annotation.textLines;
+  }
   if (annotation.stampName) spec.stampName = annotation.stampName;
   if (annotation.imageBytes) spec.stampImage = annotation.imageBytes;
   if (annotation.link) spec.link = annotation.link;
@@ -1269,6 +1362,19 @@ export function workSignature(annotations: EditorAnnotation[]): string {
         a.borderWidth,
         a.opacity,
         a.fontSize ?? '',
+        // The style is part of the mark's identity for the unsaved check: changing
+        // a family or a colour must not look like nothing happened.
+        a.textStyle
+          ? [
+              a.textStyle.fontFamily,
+              a.textStyle.size,
+              a.textStyle.color,
+              a.textStyle.bold ? 'b' : '',
+              a.textStyle.italic ? 'i' : '',
+              a.textStyle.align,
+              a.textStyle.lineSpacing,
+            ].join('\u0000')
+          : '',
         a.text ?? '',
         a.contents ?? '',
         a.stampName ?? '',

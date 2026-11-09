@@ -1471,13 +1471,53 @@ describe('a mark wears one boundary at a time', () => {
     expect(px(style.top)).toBeCloseTo(rect.y, 3);
     expect(px(style.width)).toBeCloseTo(rect.width, 3);
     expect(px(style.height)).toBeCloseTo(rect.height, 3);
-    // The inset and the leading come from the writer, so what is typed wraps the
-    // way the page will print — and there is no border of its own to read as a
-    // second rectangle around the box.
+    // The inset comes from the writer and the leading from the mark's own style, so
+    // what is typed wraps the way the page will print — and there is no border of
+    // its own to read as a second rectangle around the box.
     expect(px(style.padding)).toBeCloseTo(freeTextInset(mark.fontSize ?? 12) * overlayGeom.zoom, 3);
-    expect(px(style.lineHeight)).toBeCloseTo(FREE_TEXT_LINE_EM, 6);
+    expect(px(style.lineHeight)).toBeCloseTo(mark.textStyle?.lineSpacing ?? 0, 6);
     expect(style.boxSizing).toBe('border-box');
     expect(style.border).toBe('');
+  });
+
+  /**
+   * The type-in surface wears the style model, not a guess at it.
+   *
+   * A box typed into at 24 pt bold centred Times has to look like that while the
+   * caret is in it. `FREE_TEXT_LINE_EM` survives only as the fallback for a mark
+   * that carries no style.
+   */
+  it('wears the mark’s family, weight, alignment and line height while it is typed into', () => {
+    const mark = {
+      ...box(),
+      textStyle: {
+        fontFamily: 'std:times',
+        size: 24,
+        color: '#8B5CF6',
+        bold: true,
+        italic: false,
+        align: 'center' as const,
+        lineSpacing: 2,
+      },
+      fontSize: 24,
+      color: '#8B5CF6',
+    };
+    renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });
+    const style = (document.querySelector('textarea') as HTMLTextAreaElement).style;
+    expect(style.fontFamily).toContain('Times New Roman');
+    expect(style.fontWeight).toBe('700');
+    expect(style.fontStyle).toBe('normal');
+    expect(style.textAlign).toBe('center');
+    expect(parseFloat(style.fontSize)).toBeCloseTo(24 * overlayGeom.zoom, 3);
+    expect(parseFloat(style.lineHeight)).toBeCloseTo(2, 6);
+    expect(parseFloat(style.padding)).toBeCloseTo(freeTextInset(24) * overlayGeom.zoom, 3);
+  });
+
+  it('falls back to the writer’s leading for a mark with no style of its own', () => {
+    const mark = { ...box(), textStyle: undefined };
+    renderOverlay({ annotations: [mark], selection: [mark.id], editingId: mark.id });
+    const style = (document.querySelector('textarea') as HTMLTextAreaElement).style;
+    expect(parseFloat(style.lineHeight)).toBeCloseTo(FREE_TEXT_LINE_EM, 6);
   });
 
   it('turns the text about the middle of its own box, so the mark stays put', () => {

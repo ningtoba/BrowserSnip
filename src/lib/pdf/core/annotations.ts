@@ -299,6 +299,45 @@ export function rotateQuadPoints(quads: number[], about: QuadRect, degrees: numb
   return out;
 }
 
+import type { FaceStyle } from './text-style';
+
+/**
+ * One line of a laid-out text mark, in the mark's own appearance space.
+ *
+ * The annotation editor lays a mark's text out with `model.layoutBlock` and the
+ * faces the file will really carry, then hands the result here — so the lines on
+ * screen are the lines in the file rather than two wrap implementations that
+ * happen to agree.
+ */
+export interface LaidOutLine {
+  /** The line's text, exactly as the file shows it. */
+  text: string;
+  /** Left edge, points from the left of the mark's own box. */
+  x: number;
+  /** Baseline, points up from the bottom of the mark's own box. */
+  baseline: number;
+  /** Points; the size the line was measured and drawn at. */
+  size: number;
+}
+
+/**
+ * The shared text style, with the face and the line breaks resolved for it.
+ *
+ * `addAnnotation` is synchronous (contract §2), so it cannot fetch and embed a
+ * Unicode face itself. A caller that wants a family past the standard-14 names
+ * embeds it first (`faces.resolveFace`) and passes it in `font`; a caller that has
+ * also laid the text out passes `lines`, and the appearance draws exactly those.
+ * With neither, this module answers from the standard-14 faces and wraps the text
+ * itself — still with the face it writes, never a guess.
+ */
+export interface StyledText {
+  style: FaceStyle;
+  /** A face the caller embedded for `style`, in the document being written. */
+  font?: PDFFont;
+  /** Lines the caller laid out; when absent this module wraps the text. */
+  lines?: LaidOutLine[];
+}
+
 export interface AnnotationSpec {
   kind: AnnotationKind;
   /** 0-based page index. */
@@ -313,6 +352,13 @@ export interface AnnotationSpec {
   contents?: string;
   author?: string;
   createdAt?: Date;
+  /**
+   * The text style, face and laid-out lines for a mark that draws words —
+   * `FreeText` and a labelled `Stamp`. `freeText.text` / `stampName` stay the body;
+   * this is how it is set. Named apart from a spec's loose `text` string, which
+   * some callers already use for the body.
+   */
+  textStyle?: StyledText;
   freeText?: {
     text: string;
     fontSize: number;
@@ -1406,27 +1452,67 @@ function stampOps(
       'Q',
     ].join('\n');
   }
-  const label = toWinAnsi(spec.stampName ?? 'Stamp');
-  const font = standardFont(doc, { bold: true });
+  const font = textFace(doc, spec);
+  const shared = spec.textStyle?.style;
+  const label = textForFace(font, spec.stampName ?? 'Stamp');
   ap.fonts = { [FONT_KEY]: font };
-  const size = fitSize(font, label, Math.max(rect.width - 6, 1), Math.max(rect.height * 0.5, 1));
+  const box = Math.max(rect.width - 6, 1);
+  // The size the label fits at, and the size the style asked for. A stamp box is
+  // the rectangle the user dragged, so a label that would run past it is shrunk to
+  // fit — and `fitStampSize` is the same answer the overlay drew, so the shrink is
+  // on the screen before it is in the file rather than a surprise after.
+  const fitted = fitSize(font, label, box, Math.max(rect.height * 0.5, 1));
+  const size = shared ? fitStampSize(shared.size, fitted) : fitted;
   const textWidth = font.widthOfTextAtSize(label, size);
-  const x = round(Math.max((rect.width - textWidth) / 2, 2));
-  const y = round(Math.max(rect.height / 2 - size / 2, 2));
+  const inset = round(freeTextInset(size));
+  const first = spec.textStyle?.lines?.[0];
+  const x = first ? round(first.x) : round(stampLabelX(spec, rect, textWidth, inset));
+  const y = first ? round(first.baseline) : round(Math.max(rect.height / 2 - size / 2, 2));
+  const ink = shared?.color ? hexToRgb01(shared.color, 'text.style.color') : body;
   return [
     'q',
     paint(edge, false),
     '1 w',
     rectPath(0.5, 0.5, Math.max(rect.width - 1, 0.5), Math.max(rect.height - 1, 0.5)),
     'S',
-    paint(body, true),
+    paint(ink, true),
     'BT',
     `/${FONT_KEY} ${round(size)} Tf`,
-    `${x} ${y} Td`,
+    `1 0 0 1 ${x} ${y} Tm`,
     `${showOperand(font, label)} Tj`,
     'ET',
     'Q',
   ].join('\n');
+}
+
+/**
+ * Where a stamp label starts, horizontally, at the alignment the style carries.
+ *
+ * Centred is the format's own convention for a stamp, so that is what a mark with
+ * no style on it gets; left and right keep the same inset the text box uses.
+ */
+function stampLabelX(
+  spec: AnnotationSpec,
+  rect: QuadRect,
+  textWidth: number,
+  inset: number,
+): number {
+  const align = spec.textStyle?.style?.align ?? 'center';
+  if (align === 'left') return Math.max(inset, 2);
+  if (align === 'right') return Math.max(rect.width - inset - textWidth, inset);
+  return Math.max((rect.width - textWidth) / 2, 2);
+}
+
+/**
+ * The size a stamp label is drawn at: what the style asked for, never more than
+ * the box holds.
+ *
+ * Exported because the overlay and the appearance stream must shrink the same way;
+ * a preview that shows 24 pt and a file that writes 14 pt is the drift this
+ * campaign keeps calling out.
+ */
+export function fitStampSize(wanted: number, fitted: number): number {
+  return round(Math.max(Math.min(wanted, fitted), 1));
 }
 
 /* ------------------------------------------------------------------ *
@@ -1437,7 +1523,14 @@ interface TextLayout {
   font: PDFFont;
   resourceKey: string;
   size: number;
+  /** Lines this module wrapped itself, in text order, top line first. */
   lines: string[];
+  /**
+   * Lines the caller laid out with the faces the file gets, already in this
+   * appearance's own space. When present they win over `lines`, because they are
+   * the same line breaks the overlay drew.
+   */
+  prepared?: LaidOutLine[];
   ascent: number;
   lineHeight: number;
   inset: number;
@@ -1445,20 +1538,23 @@ interface TextLayout {
   align: 'left' | 'center' | 'right';
 }
 
-const STANDARD_FACES: Record<'helvetica' | 'times' | 'courier', Record<string, StandardFonts>> = {
-  helvetica: {
+/**
+ * The standard-14 faces, keyed by the family ids `core/text-style` registers.
+ */
+const STANDARD_FACES: Record<string, Record<string, StandardFonts>> = {
+  'std:helvetica': {
     '': StandardFonts.Helvetica,
     b: StandardFonts.HelveticaBold,
     i: StandardFonts.HelveticaOblique,
     bi: StandardFonts.HelveticaBoldOblique,
   },
-  times: {
+  'std:times': {
     '': StandardFonts.TimesRoman,
     b: StandardFonts.TimesRomanBold,
     i: StandardFonts.TimesRomanItalic,
     bi: StandardFonts.TimesRomanBoldItalic,
   },
-  courier: {
+  'std:courier': {
     '': StandardFonts.Courier,
     b: StandardFonts.CourierBold,
     i: StandardFonts.CourierOblique,
@@ -1466,12 +1562,25 @@ const STANDARD_FACES: Record<'helvetica' | 'times' | 'courier', Record<string, S
   },
 };
 
+/** The bare spellings older callers and stored parameters used for the same three. */
+const LEGACY_STANDARD_IDS: Record<string, string> = {
+  helvetica: 'std:helvetica',
+  times: 'std:times',
+  courier: 'std:courier',
+};
+
 const embeddedFonts = new WeakMap<PDFDocument, Map<string, PDFFont>>();
 
 /**
+ * The standard-14 face for a style: **the real face for each posture**, never a
+ * synthesised one. `Helvetica-Bold` and `Helvetica-Oblique` are separate fonts a
+ * reader owns, so a slant named here is a slant in the file.
+ *
  * Standard-14 faces only: `addAnnotation` is synchronous (contract §2), so the
  * script-font path in `core/fonts.ts` — which fetches a Unicode face — is not
- * reachable from here. Characters Helvetica/Times/Courier cannot encode are
+ * reachable from here. A caller that wants the bundled Noto, a fetched script face
+ * or a device font embeds it first and passes it on `spec.textStyle.font`; what it
+ * passes is what this module writes, and characters the face cannot encode are
  * replaced by a close WinAnsi lookalike, then `?`.
  */
 function standardFont(
@@ -1494,11 +1603,30 @@ function standardFont(
   return font;
 }
 
-function pickFamily(style: { fontFamily?: string; monospace?: boolean }): 'helvetica' | 'times' | 'courier' {
-  const name = String(style.fontFamily ?? '').toLowerCase();
-  if (style.monospace || /courier|mono|consol/.test(name)) return 'courier';
-  if (/times|serif|georgia|garamond/.test(name)) return 'times';
-  return 'helvetica';
+function pickFamily(style: { fontFamily?: string; monospace?: boolean }): string {
+  const name = String(style.fontFamily ?? '').trim().toLowerCase();
+  const id = LEGACY_STANDARD_IDS[name] ?? (name.startsWith('std:') ? name : '');
+  if (id && STANDARD_FACES[id]) return id;
+  // A family the synchronous writer has no face for lands on the sans default,
+  // and on the monospace one where the caller asked for a field's fixed-pitch
+  // caption. `auto`, `noto`, `script:…` and `local:…` all arrive here when the
+  // caller did not embed a face — the caller is responsible for saying so.
+  if (style.monospace) return 'std:courier';
+  return 'std:helvetica';
+}
+
+/** The face the mark writes with: the caller's embedded one, else a named face. */
+function textFace(
+  doc: PDFDocument,
+  spec: AnnotationSpec,
+  monospace = false,
+): PDFFont {
+  return spec.textStyle?.font ?? standardFont(doc, {
+    fontFamily: spec.textStyle?.style.fontFamily ?? spec.freeText?.fontFamily,
+    bold: spec.textStyle?.style.bold ?? spec.freeText?.bold,
+    italic: spec.textStyle?.style.italic ?? spec.freeText?.italic,
+    monospace,
+  });
 }
 
 const LITERAL_FALLBACKS: Record<string, string> = {
@@ -1519,6 +1647,37 @@ function toWinAnsi(text: string): string {
   return Array.from(String(text ?? ''))
     .map((char) => (isWinAnsiSafe(char) ? char : winAnsiFallback(char)))
     .join('');
+}
+
+/**
+ * `text` as this face can show it.
+ *
+ * A standard-14 face throws on a character outside WinAnsi, so the mark folds
+ * (accent stripped, then a close lookalike, then `?`). An embedded Unicode face —
+ * the bundled Noto, a fetched script face, a device font's bytes — encodes the
+ * text it was chosen for, and folding it here is what turned a Japanese text box
+ * into a row of question marks.
+ */
+function textForFace(font: PDFFont, text: string): string {
+  try {
+    font.encodeText(text);
+    return text;
+  } catch {
+    // The fold below is the per-character version of the same question.
+  }
+  let out = '';
+  for (const char of String(text ?? '')) {
+    if (isWinAnsiSafe(char)) out += char;
+    else {
+      try {
+        font.encodeText(char);
+        out += char;
+      } catch {
+        out += winAnsiFallback(char);
+      }
+    }
+  }
+  return out;
 }
 
 function wrapLines(font: PDFFont, text: string, size: number, maxWidth: number): string[] {
@@ -1563,14 +1722,9 @@ function freeTextStyle(
   spec: AnnotationSpec,
 ): { font: PDFFont; resourceKey: string; da: string } {
   const style = spec.freeText;
-  const font = standardFont(doc, {
-    fontFamily: style?.fontFamily,
-    bold: style?.bold,
-    italic: style?.italic,
-    monospace: spec.kind === 'Widget',
-  });
-  const size = round(Math.max(style?.fontSize ?? 12, 1));
-  const color = colorOf(spec.color, spec.kind);
+  const font = textFace(doc, spec, spec.kind === 'Widget');
+  const size = round(Math.max(spec.textStyle?.style.size ?? style?.fontSize ?? 12, 1));
+  const color = spec.textStyle?.style.color ? hexToRgb01(spec.textStyle.style.color, 'textStyle.style.color') : colorOf(spec.color, spec.kind);
   return {
     font,
     resourceKey: FONT_KEY,
@@ -1587,25 +1741,34 @@ function textLayout(
   monospace: boolean,
 ): TextLayout {
   const style = spec.freeText;
-  const font = standardFont(doc, {
-    fontFamily: style?.fontFamily,
-    bold: style?.bold,
-    italic: style?.italic,
-    monospace,
-  });
-  const size = round(Math.max(style?.fontSize ?? 12, 1));
+  const shared = spec.textStyle?.style;
+  const font = textFace(doc, spec, monospace);
+  const size = round(Math.max(shared?.size ?? style?.fontSize ?? 12, 1));
   const inset = round(freeTextInset(size));
   const text = style?.text ?? spec.contents ?? '';
+  const prepared = spec.textStyle?.lines;
   return {
     font,
     resourceKey: FONT_KEY,
     size,
-    lines: wrapLines(font, text, size, Math.max(rect.width - inset * 2, 1)),
+    // A caller that laid the block out has already decided where the lines break;
+    // this module wraps only for the callers that did not.
+    lines: prepared
+      ? []
+      : wrapLines(font, textForFace(font, text), size, Math.max(rect.width - inset * 2, 1)),
+    prepared,
     ascent: round(font.heightAtSize(size, { descender: false })),
-    lineHeight: round(font.heightAtSize(size) + size * FREE_TEXT_INSET_EM),
+    // The shared model's line height is a multiple of the size, which is also what
+    // the overlay sets in CSS — one number, both places. With no model on the spec
+    // the mark keeps the leading the standard faces were measured at.
+    lineHeight: shared
+      ? round(size * shared.lineSpacing)
+      : round(font.heightAtSize(size) + size * FREE_TEXT_INSET_EM),
     inset,
-    textColor,
-    align,
+    textColor: shared?.color ? hexToRgb01(shared.color, 'text.style.color') : textColor,
+    // `justify` belongs to the block editor, which stretches a line across a
+    // measure; a single-run mark falls back to flush-left rather than lying.
+    align: shared && shared.align !== 'justify' ? shared.align : align,
   };
 }
 
@@ -1664,6 +1827,19 @@ function textBlockOps(
   }
   const { font, size, inset, ascent, lineHeight } = layout;
   parts.push('BT', `/${layout.resourceKey} ${round(size)} Tf`, paint(layout.textColor, true));
+  if (layout.prepared) {
+    // Every line is at the place the layout put it: the same coordinates the
+    // overlay painted, in the mark's own space.
+    for (const line of layout.prepared) {
+      if (line.text === '') continue;
+      parts.push(
+        `1 0 0 1 ${round(line.x)} ${round(line.baseline)} Tm`,
+        `${showOperand(font, textForFace(font, line.text))} Tj`,
+      );
+    }
+    parts.push('ET', 'Q');
+    return parts.join('\n');
+  }
   let baseline = round(h - inset - ascent);
   for (const line of layout.lines) {
     // Stop rather than draw a half line below the box.
