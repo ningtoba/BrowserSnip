@@ -240,6 +240,7 @@ def check(
     text: str,
     drawings: list[dict[str, Any]],
     ink: list[dict[str, Any]],
+    declared: list[str] | None = None,
 ) -> list[str]:
     spec = EXPECT.get(name) or {}
     bad: list[str] = []
@@ -273,7 +274,7 @@ def check(
         # PDF holds a note's body as a plain `/Contents` string; there is no font for
         # it to name. Asserting the absence is the proof that the deleted control was
         # deleting a promise, not a feature.
-        da = [d for d in defaults(doc) if d.startswith("Text:") and "(no /DA)" not in d]
+        da = [d for d in (declared or []) if d.startswith("Text:") and "(no /DA)" not in d]
         if da:
             bad.append(f"a note should declare no text appearance; it declares {da}")
     if "noteColor" in spec:
@@ -286,6 +287,19 @@ def check(
         elif all(row["ink_px"] <= 0 for row in ink):
             bad.append(f"every mark measured 0 ink: {ink}")
     return bad
+
+
+def defaults(doc: pymupdf.Document) -> list[str]:
+    """Every `/DA` an annotation declares, with the subtype that carries it."""
+    out = []
+    for xref in range(1, doc.xref_length()):
+        obj = doc.xref_object(xref, compressed=True) or ""
+        kind = re.search(r"/Subtype\s*/(Text|FreeText|Stamp|Widget|Popup|Link)\b", obj)
+        if not kind:
+            continue
+        declared = re.search(r"/DA\s*\(([^)]*)\)", obj)
+        out.append(f"{kind.group(1)}: {declared.group(1) if declared else '(no /DA)'}")
+    return out
 
 
 def note_colours(doc: pymupdf.Document) -> list[tuple[float, float, float]]:
@@ -326,7 +340,7 @@ def report(path: Path, source_faces: set[str], directory: Path) -> list[str]:
     print(f"  screen claim   : {json.dumps(screen_claim(path.stem, directory))}")
     print(f"  extracted      : {text.strip()[:120]!r}")
     print(f"  all spans      : {[(s['text'][:24], s['font'], s['size'], s['color']) for s in found][:8]}")
-    return check(path.stem, added, found, text, drawings, ink)
+    return check(path.stem, added, found, text, drawings, ink, defaults(doc))
 
 
 def main() -> int:
