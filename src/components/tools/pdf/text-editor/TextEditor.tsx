@@ -67,6 +67,7 @@ import {
   type EngineLine,
 } from './engine';
 import { planHandoff } from './handoff';
+import { loadFaceStyle, saveFaceStyle } from '@/lib/pdf/core/text-style';
 import {
   BUILT_IN_FAMILIES,
   familyPreview,
@@ -573,6 +574,38 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
   const editing = objects.find((object) => object.id === editingId);
   const styleTarget = selected.find((object) => object.kind === 'text') as TextObject | undefined;
   const currentStyle: EditorStyle = styleTarget?.style ?? DEFAULT_STYLE;
+  /**
+   * The words the selection holds, which is what the posture buttons are judged
+   * against: past WinAnsi the writer substitutes the bundled face, and that face has
+   * no italic to embed, so a slant asked for here would be dropped in the file.
+   */
+  const selectedText = selected
+    .filter((object): object is TextObject => object.kind === 'text')
+    .map((object) => textOfParagraphs(object.paragraphs))
+    .join(' ');
+
+  /**
+   * Apply a style patch to the selection **and remember it**.
+   *
+   * The seven shared properties are stored per surface, so the family and size a
+   * user settled on survive switching to another tool and reopening the tab — while
+   * each surface keeps its own starting point (a folio is 11 pt, a watermark 64 pt
+   * bold). The block editor's extra fields (lists, tracking, indents) are not part of
+   * the stored style: they belong to a block, not to a pen.
+   */
+  function applyStyle(ids: string[], patch: Partial<EditorStyle>, kind: 'style' | 'inline'): void {
+    apply(kind === 'style' ? { type: 'style', ids, patch } : { type: 'inline-style', ids, patch });
+    const merged = { ...currentStyle, ...patch };
+    saveFaceStyle('text-editor', {
+      fontFamily: merged.fontFamily,
+      size: merged.size,
+      color: merged.color,
+      bold: merged.bold,
+      italic: merged.italic,
+      align: merged.align,
+      lineSpacing: merged.lineSpacing,
+    });
+  }
 
   /** Undo can delete the object a selection pointed at; never keep a dangling id. */
   useEffect(() => {
@@ -995,7 +1028,7 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
       alt: '',
       state: 'draft',
       paragraphs: paragraphsFromText(''),
-      style: { ...DEFAULT_STYLE, size: 12, color: '#000000' },
+      style: { ...DEFAULT_STYLE, ...loadFaceStyle('text-editor') },
       deletion: [],
       paperColor: readPalette(canvasRef.current, box, zoom).background,
       sourceId: '',
@@ -1862,13 +1895,14 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
                 )}
                 <FormatPanel
                   style={currentStyle}
+                  text={selectedText}
                   hasSelection={Boolean(styleTarget)}
                   families={families}
                   localFontsSupported={supportsLocalFonts()}
                   localFontsLoaded={localScanned}
                   onScanLocalFonts={scanLocalFonts}
-                  onStyle={(patch) => selection.length > 0 && apply({ type: 'style', ids: selection, patch })}
-                  onInline={(patch) => selection.length > 0 && apply({ type: 'inline-style', ids: selection, patch })}
+                  onStyle={(patch) => selection.length > 0 && applyStyle(selection, patch, 'style')}
+                  onInline={(patch) => selection.length > 0 && applyStyle(selection, patch, 'inline')}
                   onList={(list: ListKind) => apply({ type: 'list', ids: selection, list })}
                   notes={selected.map((object) => object.note).filter((note): note is string => Boolean(note))}
                 />

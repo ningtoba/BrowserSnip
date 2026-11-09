@@ -535,8 +535,6 @@ export function FormatPanel({
         <div className="flex flex-wrap gap-1">
           {(
             [
-              ['bold', 'B', 'Bold'],
-              ['italic', 'I', 'Italic'],
               ['underline', 'U̲', 'Underline'],
               ['strike', 'S̶', 'Strikethrough'],
               ['superscript', 'x²', 'Superscript'],
@@ -590,7 +588,8 @@ export function FormatPanel({
           />
         )}
       </div>
-      <SliderField label="Line spacing" value={style.lineSpacing} min={0.5} max={4} step={0.05} suffix="×" onChange={(lineSpacing) => onStyle({ lineSpacing })} />
+      {/* Line spacing moved into `TextStylingControls`, where the surface's support
+          table decides whether the mark has lines to space at all. */}
       <div className="grid grid-cols-2 gap-2">
         <Labeled label="Space before">
           <NumberField value={style.spaceBefore} min={0} max={200} step={0.5} suffix="pt" onChange={(spaceBefore) => onStyle({ spaceBefore })} />
