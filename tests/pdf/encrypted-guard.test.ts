@@ -322,9 +322,11 @@ describe('the trailer scan in front of the parse', () => {
     // The MuPDF fixtures are the proof; this line is why they were ever refused.
     // A scan matching only `/Encrypt 12 0 R` — the reference spelling qpdf uses,
     // and the one `looksEncrypted` knew — called every MuPDF-locked file
-    // unencrypted, so the pre-flight never parsed it, no cipher was classified
-    // and the rewrite went ahead. The audit rig's `einp-mu-*` rows measured
-    // exactly that: they are the six fixtures this scan used to wave through.
+    // unencrypted, so the pre-flight never parsed it, no cipher was classified and
+    // the rewrite went ahead. The audit rig measured it: 6 produced files, all of
+    // them from the two MuPDF RC4-128 / AES-128 fixtures, and the two MuPDF
+    // AES-256 ones refused as `BAD_PASSWORD` / `PASSWORD_REQUIRED` — an
+    // unnameable cipher, because the dictionary was never read.
     const inlined = new TextEncoder().encode(
       '%PDF-1.7\ntrailer<</Size 14/Root 1 0 R/Encrypt<</Filter/Standard/R 3/V 2/Length 128/P -3376>>>>\nstartxref\n4964\n%%EOF\n',
     );
