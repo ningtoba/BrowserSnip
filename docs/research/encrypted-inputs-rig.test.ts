@@ -525,18 +525,35 @@ describe.skipIf(!DIR)('what this app believes about files a real encryptor locke
     expect(rows.length).toBe(source.fixtures.length + 2);
 
     /**
-     * The guard's acceptance criterion, counted on the files rather than read out
-     * of a message: every fixture locked by an outside tool with a real crypt
-     * filter produced **no** rewritten file (it was refused), and both controls —
-     * the unlocked document and this app's own `/None` gate — still produced all
-     * three. Before the guard this was 18 produced files, 18 of them judged
-     * `silent-loss` by five readers; see `encrypted-inputs-findings.md` §3 for the
-     * pre-guard logs, kept beside this file as `*-pre-guard.log`.
+     * The decrypt pass's acceptance criterion, counted on the files.
+     *
+     * Six of the ten outside-locked fixtures are locked at the two strengths
+     * `core/crypto` proves with content — RC4-128 (`/V 2 /R 3`) and AES-128
+     * (`/V 4 /R 4`) — and each must now produce all three operations rather than
+     * the guard's refusal. The four AES-256 ones (`/V 5 /R 6`) are still refused by
+     * name and must produce nothing at all. Both controls still produce all three.
+     *
+     * What the produced files are *made of* is the readers' job
+     * (`encrypted-inputs-readers.py`: `planted_pages`, sheet-1 ink, `qpdf --check`),
+     * not this assertion's. That distinction is the whole lesson of this row: before
+     * the pass there were 18 produced files and 18 judged `silent-loss`, and before
+     * the guard there were 18 produced files whose page counts all matched. See
+     * `encrypted-inputs-findings.md` §3 and §8.
      */
     const dumped = readdirSync(OUT_DIR).filter((entry) => entry.endsWith('.pdf'));
     for (const fixture of source.fixtures) {
       const stem = fixture.file.replace(/\.pdf$/, '');
-      expect(dumped.filter((entry) => entry.startsWith(`${stem}--`)), `${fixture.file} was rewritten`).toEqual([]);
+      const refused = /V\s*5|R\s*6/.test(fixture.mupdf_cipher ?? '');
+      const produced = dumped.filter((entry) => entry.startsWith(`${stem}--`)).sort();
+      if (refused) {
+        expect(produced, `${fixture.file} (${fixture.mupdf_cipher}) was rewritten, not refused`).toEqual([]);
+      } else {
+        expect(produced, `${fixture.file} did not produce all three operations`).toEqual([
+          `${stem}--protect.pdf`,
+          `${stem}--remove-pages.pdf`,
+          `${stem}--rotate.pdf`,
+        ]);
+      }
     }
     for (const control of ['base', 'own-protected']) {
       for (const op of OPS) {

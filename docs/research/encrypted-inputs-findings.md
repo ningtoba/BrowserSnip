@@ -359,3 +359,71 @@ open a document themselves (`PageOrganizer`, `CropTool`, `FormFillMain`,
 `core/doc.ts:openPDF` without it — a ciphered file dropped on the Organize, Crop,
 Sign, Redact, Form or Text pane can still come back empty. Measured? No: those
 paths have no rig of their own, which is stated as an absence rather than a result.
+
+## 9. The decrypt pass, re-measured with this rig
+
+`6e914fc` and `9b7eba1` put the read half in: `core/crypto.ts` derives the key and
+undoes the cipher, `core/doc.ts:openPDF` runs it before any tool sees the document,
+and `core/guard.ts` refuses on `PdfEncryption.supported` instead of on the presence
+of a cipher. Nothing else about the harness moved: same twelve documents, same twelve
+probes, same five readers, same `bash docs/research/encrypted-inputs-run.sh`.
+
+**Words, counted on the files rather than read out of a message.** Every one of the
+six fixtures locked at the two strengths `core/crypto` claims — RC4-128 (`/V 2 /R 3`)
+and AES-128 (`/V 4 /R 4 /CFM /AESV2`), qpdf-written and MuPDF-written, user-password
+and owner-only — produced all three operations this time, and the readers judged them:
+
+| | §3, before (`…-pre-guard.log`) | §8, the guard | now |
+| --- | --- | --- | --- |
+| files produced from the 10 outside-locked fixtures | 18 | 0 (30 refusals) | **18** (16 AES-256 refusals remain) |
+| judged `silent-loss` | **18 of 18** | — | **0** |
+| judged `reads` / `partial-loss` | 0 / 18 | — | 6 / 12 |
+| `planted_pages` (rotate, protect) | `3 → 0` | no file | **3 → 3** |
+| `planted_pages` (delete page 2) | `3 → 2` files, `0` with words | no file | **2 → 2** |
+| extracted characters | `182 → 0` | no file | **182** (127 on the 2-page file) |
+| sheet-1 ink | `0.46 % → 0.0 %` | no file | **0.46 %** |
+| form values, MuPDF | `UnicodeDecodeError` | no file | **`Ada Lovelace`, `Yes`** |
+| `qpdf --check` errors on produced files | 18 of 18 | — | **0 of 25** |
+
+The AES-256 half is unchanged in behaviour and sharper in wording: 16 sentences name
+`AES-256 (crypt filter /StdCF, revision 6)` and say this app reads RC4-128 and
+AES-128 and cannot undo a 256-bit one *yet*; none of the four R6 fixtures produced a
+file; the blanket `cannot decrypt them yet` that used to cover AES-128 too is gone,
+because for AES-128 it is now false.
+
+**What the copy is.** `preserveProtection` re-issues this app's own gate over the
+decrypted bytes, so `einp-q-r4-aes-128-user--rotate.pdf` reports
+`encrypted=true algorithm=no cipher` to this app and `opens_with: user`,
+`is_encrypted: {encrypted: true, password_incorrect: true}`, `planted: true` to MuPDF
+and pypdf — a password a reader honours, over bytes that are plaintext, which is the
+shape the `protect` row proved. Run with nothing typed (the owner-only fixtures) the
+copy opens unlocked and the runner says so: `The source was protected (AES-128); the
+result opens without one.`
+
+**Two belief errors this closes, and one it does not.** The owner-only files at the
+two readable strengths now answer `needsPassword=false opensEmpty=true` — they were
+reported locked because "restricted, not locked" was *inferred from a failed load*.
+And a deliberately wrong password on such a file answers `accepted=false`, where
+`Boolean(password)` used to answer `accepted=true`; the check is against `/U`, and
+`passwordLevel` says which of the two secrets actually opened the file. The R6 user
+check is untouched and still says `PASSWORD_REQUIRED` / `BAD_PASSWORD` for the right
+secret on all four AES-256 fixtures, including the owner-only ones that every outside
+reader opens with nothing typed. That is the AES-256 task, not this one.
+
+**The pre-existing losses, confirmed pre-existing.** `bookmarks 1 / 2` and
+`attachments [] / ['source.csv']` in the engine census reproduce *identically on the
+unlocked control* `base.pdf` in this same run, so they are `readOutline`'s and
+`listAttachments'` treatment of a MuPDF-written name tree, not cipher damage — handed
+on with those numbers. The page-copy losses are likewise unchanged and unrelated:
+rotate and delete-a-page still take `bookmarks 2 → 0` and the enclosure with them
+(`partial-loss`, words intact), which is what the `organize` row already carries.
+
+**One hole the pass found on its way in, and how it is shut.** A dictionary can claim
+a cipher its producer never ran — that is pdf-lib's own `save({ encrypt })`, `/CFM
+/AESV2` over plaintext. Decrypting *that* would invent garbage out of readable bytes,
+the same mistake pointed the other way, so `core/crypto:readObstacle` names it
+(`plaintext-claim`) and the guard refuses it; the other obstacle it names is
+`object-streams`, where `@maxwbh/pdf-lib` inflates an object stream while it parses,
+before any decryptor exists, so a ciphered file's page tree is simply absent. Neither
+is a return to the blanket refusal: both are answered by name, and 18 of 18 real
+ciphers now read.
