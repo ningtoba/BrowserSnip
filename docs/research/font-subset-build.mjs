@@ -52,6 +52,8 @@ const probe = await import(`${pathToFileURL(bundle).href}?v=${Date.now()}`);
 const LOCAL = {
   'NotoSans-Regular.ttf': join(ROOT, 'public', 'fonts', 'NotoSans-Regular.ttf'),
   'NotoSans-Bold.ttf': join(ROOT, 'public', 'fonts', 'NotoSans-Bold.ttf'),
+  // The third face the app embeds itself: code blocks in text/markdown to PDF.
+  'jetbrains-mono-400.ttf': join(ROOT, 'public', 'fonts', 'jetbrains-mono-400.ttf'),
 };
 
 function cachedPath(url) {
@@ -115,6 +117,8 @@ const jobs = [
   { id: 'noto-pdflib-subset', label: 'pdf-lib own subsetter (TTF)', url: LOCAL['NotoSans-Regular.ttf'], via: 'pdflib-subset', chars: LATIN },
   { id: 'noto-pdflib-full', label: 'pdf-lib whole face, no subset (control)', url: LOCAL['NotoSans-Regular.ttf'], via: 'pdflib-full', chars: LATIN },
   { id: 'standard-14', label: 'pdf-lib standard 14 (Helvetica)', url: null, via: 'standard14', chars: SCRIPT_CHARS.winAnsi },
+  { id: 'mono-face', label: 'bundled JetBrains Mono, module writer (code blocks)', url: LOCAL['jetbrains-mono-400.ttf'], via: 'unicode-face', chars: SCRIPT_CHARS.winAnsi },
+  { id: 'mono-pdflib', label: 'bundled JetBrains Mono, pdf-lib subsetter (before)', url: LOCAL['jetbrains-mono-400.ttf'], via: 'pdflib-subset', chars: SCRIPT_CHARS.winAnsi },
 ];
 for (const face of urls) {
   const chars = SCRIPT_CHARS[face.id];
@@ -124,6 +128,10 @@ for (const face of urls) {
   // pdf-lib's subsetter, so measure that path on the faces it really uses.
   if (['jp', 'arabic', 'kr', 'thai'].includes(face.id)) {
     jobs.push({ id: `pdflib-${face.id}`, label: `pdf-lib own subsetter, ${face.label}`, url: face.url, via: 'pdflib-subset', chars });
+  }
+  if (['jp', 'arabic'].includes(face.id)) {
+    // What the text editor's font picker does with the same bytes now.
+    jobs.push({ id: `face-${face.id}`, label: `module writer, ${face.label} (font picker)`, url: face.url, via: 'unicode-face', chars });
   }
   // Whole-face controls: what the same face looks like when nobody subsets it.
   // One TrueType-flavour and one CFF-flavour face, so both slots are covered.

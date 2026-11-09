@@ -664,20 +664,35 @@ export async function getFont(
   if (!pending) {
     pending = (async () => {
       const bytes = await fetchFontBytes(scriptUrl);
-      const face = fontkit.create(bytes) as Face;
-        // `alignTrueTypeGlyphs` already ran on the way into `fontCache`, so both
-        // flavours reach here ready to subset: the TrueType one with its glyph
-        // records long-word aligned, the CFF one untouched because it has no
-        // glyph table.
-        const embedder = UnicodeFaceEmbedder.create(face, bytes);
-      const font = PDFFontClass.of(doc.context.nextRef(), doc, embedder);
-      trackFont(doc, font);
-      return font;
+      return embedUnicodeFace(doc, bytes);
     })();
     pending.catch(() => perDoc?.delete(faceKey));
     perDoc.set(faceKey, pending);
   }
   return pending;
+}
+
+/**
+ * Embed a face from its bytes through this module's writer, not pdf-lib's.
+ *
+ * pdf-lib's own embedder asks fontkit to lay the string out (so a character the
+ * face lacks silently becomes `.notdef` with nothing in `/ToUnicode`), and
+ * `CustomFontEmbedder.isCFF()` tests the same `font.cff` property that does not
+ * exist here — hand it a CFF face and it writes one into the TrueType slot. Any
+ * caller holding face bytes of unknown flavour should come through this function
+ * instead of `doc.embedFont(bytes, { subset: true })`.
+ *
+ * @param bytes the face as it was fetched; a TrueType face is aligned on the way
+ * in, so the subsetter's halved `loca` cannot land a glyph inside the wrong record
+ */
+export function embedUnicodeFace(doc: PDFDocument, bytes: Uint8Array): Promise<PDFFont> {
+  withFontkit(doc);
+  const faceBytes = alignTrueTypeGlyphs(bytes);
+  const face = fontkit.create(faceBytes) as Face;
+  const embedder = UnicodeFaceEmbedder.create(face, faceBytes);
+  const font = PDFFontClass.of(doc.context.nextRef(), doc, embedder);
+  trackFont(doc, font);
+  return Promise.resolve(font);
 }
 
 /**

@@ -8,7 +8,8 @@
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import type { PDFFont } from '@maxwbh/pdf-lib';
 import { fontkit, withFontkit } from '../../src/lib/pdf/core/doc';
-import { clearFontCache, drawTextU, SCRIPT_FONTS } from '../../src/lib/pdf/core/fonts';
+import { clearFontCache, drawTextU, embedUnicodeFace, SCRIPT_FONTS } from '../../src/lib/pdf/core/fonts';
+import type { DrawTextOptions } from '../../src/lib/pdf/core/fonts';
 
 export type FaceFlavour = 'TTF' | 'CFF' | 'unknown';
 
@@ -19,8 +20,12 @@ export interface FaceJob {
   label: string;
   /** the face's URL, served by the host's fetch stub (local file or cached CDN) */
   url: string | null;
-  /** which embedding path to exercise */
-  via: 'app' | 'pdflib-subset' | 'pdflib-full' | 'standard14';
+  /**
+   * Which embedding path to exercise. `unicode-face` is what the callers outside
+   * `getFont` do since the fix: hand the fetched bytes to the module's own writer
+   * (`text-editor/faces.ts`, `core/layout.ts`).
+   */
+  via: 'app' | 'unicode-face' | 'pdflib-subset' | 'pdflib-full' | 'standard14';
   /** force the bundled Noto path for text the standard 14 could also spell */
   forceNoto?: boolean;
   bold?: boolean;
@@ -131,7 +136,11 @@ export async function runProbe(jobs: FaceJob[]): Promise<JobReport[]> {
         report.appSeesCff = described.appSeesCff;
       }
       let drawn: PDFFont | null = null;
-      if (job.via === 'standard14') {
+      if (job.via === 'unicode-face') {
+        const url = job.url;
+        if (typeof url !== 'string') throw new Error(`${job.id}: no face url`);
+        drawn = await embedUnicodeFace(doc, await fetchBytes(url));
+      } else if (job.via === 'standard14') {
         drawn = await doc.embedFont(StandardFonts.Helvetica);
       } else if (job.via === 'pdflib-subset' || job.via === 'pdflib-full') {
         const url = job.url;
@@ -147,15 +156,16 @@ export async function runProbe(jobs: FaceJob[]): Promise<JobReport[]> {
           if (drawn) {
             page.drawText(ch, { x: MARGIN, y, size: SIZE, font: drawn, color: rgb(0, 0, 0) });
           } else {
-            await drawTextU(page, {
+            const style: DrawTextOptions = {
               text: ch,
               x: MARGIN,
               y,
               size: SIZE,
-              bold: job.bold,
-              italic: job.italic,
               fontFamily: job.forceNoto ? (script ? script.label : 'noto-sans') : undefined,
-            });
+            };
+            if (job.bold) style.bold = true;
+            if (job.italic) style.italic = true;
+            await drawTextU(page, style);
           }
           report.drawn.push(ch);
         } catch (error) {

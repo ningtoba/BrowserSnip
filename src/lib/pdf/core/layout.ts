@@ -13,7 +13,7 @@
  */
 import type { PDFDocument, PDFPage } from './doc';
 import { newPDF, rgb } from './doc';
-import { getFont, drawTextU, measureText } from './fonts';
+import { getFont, drawTextU, measureText, embedUnicodeFace } from './fonts';
 import { decodeImage } from './images';
 import { displayedSize, pageSize as resolvePageSize } from './pages';
 
@@ -721,7 +721,10 @@ async function monoFont(doc: PDFDocument) {
   try {
     const response = await fetch(MONO_URL);
     if (!response.ok) throw new Error('missing');
-    return doc.embedFont(new Uint8Array(await response.arrayBuffer()), { subset: true });
+    // `embedUnicodeFace` rather than `doc.embedFont`: pdf-lib reads a face's
+    // flavour off a property this fontkit never sets, so bytes handed to it can
+    // land in the wrong slot and paint nothing while still extracting.
+    return await embedUnicodeFace(doc, new Uint8Array(await response.arrayBuffer()));
   } catch {
     return getFont(doc, { text: 'code', size: 10 });
   }

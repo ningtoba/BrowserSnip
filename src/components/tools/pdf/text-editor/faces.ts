@@ -21,7 +21,7 @@
 import { StandardFonts, rgb } from '@/lib/pdf/core/doc';
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
 import type { SourceFont } from '@/lib/pdf/core/content';
-import { SCRIPT_FONTS, detectScript, getFont, isWinAnsiSafe } from '@/lib/pdf/core/fonts';
+import { SCRIPT_FONTS, detectScript, getFont, isWinAnsiSafe, embedUnicodeFace } from '@/lib/pdf/core/fonts';
 import type { InlineStyle } from './model';
 
 /* ------------------------------------------------------------------ *
@@ -455,8 +455,11 @@ export async function resolveFace(
     const id = family.slice('script:'.length);
     const script = SCRIPT_FONTS.find((entry) => entry.id === id);
     if (script) {
+      // `embedUnicodeFace` rather than `doc.embedFont`: pdf-lib reads a face's
+      // flavour off a property this fontkit never sets, so a CFF face like Noto
+      // Sans JP went out as a TrueType program and painted nothing in MuPDF.
       const font = await cacheGet(cache, key, async () =>
-        doc.embedFont(await fetchBytes(script.url), { subset: true }),
+        embedUnicodeFace(doc, await fetchBytes(script.url)),
       );
       const note =
         style.bold || style.italic
@@ -474,7 +477,7 @@ export async function resolveFace(
       try {
         const font = await cacheGet(cache, key, async () => {
           const blob = await face.data();
-          return doc.embedFont(new Uint8Array(await blob.arrayBuffer()), { subset: true });
+          return embedUnicodeFace(doc, new Uint8Array(await blob.arrayBuffer()));
         });
         return { font, familyUsed: family };
       } catch {

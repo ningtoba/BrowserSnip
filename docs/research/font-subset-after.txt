@@ -11,8 +11,11 @@ noto-italic          TTF     dead         267     0       0  clean      2       
 noto-pdflib-subset   TTF     dead         267   216     122 FT_Load_Glyph(NotoSans    211      row 0    29.5
 noto-pdflib-full     TTF     dead         267     0       0  clean      2          -   298.6
 standard-14          unknown dead         160     0       0  clean      2          -     7.7
+mono-face            TTF     dead         160     0       0  clean      1          -    19.6
+mono-pdflib          TTF     dead         160     0       0  clean      1          -    19.3
 app-arabic           TTF     dead          32     0       0  clean      0          -     6.9
 pdflib-arabic        TTF     dead          32     0       1  clean      0          -     6.7
+face-arabic          TTF     dead          32     0       0  clean      0          -     6.9
 full-arabic          TTF     dead          32     0       1  clean      0          -    91.9
 app-hebrew           TTF     dead          27     0       0  clean      0          -     5.6
 app-devanagari       TTF     dead          43     0       0  clean      0          -     9.4
@@ -31,6 +34,7 @@ app-armenian         TTF     dead          38     0       0  clean      0       
 app-ethiopic         TTF     dead          26     0       0  clean      0          -     5.9
 app-jp               CFF     dead          76     0       0  clean      0          -    19.9
 pdflib-jp            CFF     dead          76    76       0 library error: FT_New_      0      row 0    20.0
+face-jp              CFF     dead          76     0       0  clean      0          -    19.9
 app-kr               CFF     dead          53     0       0  clean      0          -    36.5
 pdflib-kr            CFF     dead          53    53       0 library error: FT_New_      0      row 0    36.5
 full-kr              CFF     dead          53    29       0 FT_Load_Glyph(NotoSans     44      row 2  3928.2
@@ -51,6 +55,10 @@ app-tc               CFF     dead          34     0       0  clean      0       
 ## noto-pdflib-full — pdf-lib whole face, no subset (control) (TTF face, via pdflib-full)
    /NotoSans-Regular-5311: FontFile2 holding a TTF program of 556216 B from a 556216 B face, descendant /CIDFontType2, /ToUnicode covers 3053 code points, fontTools parses
    loca: 3313 of 4688 glyph records do not start on a 4-byte boundary (glyph 5 at byte 97)
+
+## mono-pdflib — bundled JetBrains Mono, pdf-lib subsetter (before) (TTF face, via pdflib-subset)
+   /JetBrainsMono-Regular-4964: FontFile2 holding a TTF program of 12601 B from a 112172 B face, descendant /CIDFontType2, /ToUnicode covers 161 code points, fontTools parses
+   loca: 89 of 177 glyph records do not start on a 4-byte boundary (glyph 5 at byte 262)
 
 ## pdflib-arabic — pdf-lib own subsetter, Noto Sans Arabic (TTF face, via pdflib-subset)
    /NotoSansArabic-Regular-1186: FontFile2 holding a TTF program of 4244 B from a 177004 B face, descendant /CIDFontType2, /ToUnicode covers 32 code points, fontTools parses
