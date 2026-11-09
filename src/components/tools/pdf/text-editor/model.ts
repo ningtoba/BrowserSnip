@@ -2042,9 +2042,30 @@ export function resetObjectIds(): void {
   idCounter = 0;
 }
 
-/** Deletion boxes for a source paragraph: one padded box per line. */
+/**
+ * Deletion boxes for a source paragraph: one padded box per **run**, not per row.
+ *
+ * A row box is the union of the runs on a baseline, and a two-column line — a
+ * label at the left margin, its value half a page away, which is how forms, CVs
+ * and tables are set — unions across the gutter. Deleting by the row took the
+ * neighbour's characters with it: measured on the kerned and distilled fixtures,
+ * 150 of 734 blocks lost text that was not theirs. Per-run boxes leave the gutter
+ * alone; the space glyphs in it survive, and they are invisible anyway. A line
+ * with no runs to name (a synthetic paragraph) still gets its box.
+ */
 export function deletionBoxes(paragraph: ExtractedParagraph, padding = 0.6): TopLeftBox[] {
-  return paragraph.lines.map((line) => padBox(line.box, padding, padding * 0.6));
+  const boxes: TopLeftBox[] = [];
+  for (const line of paragraph.lines) {
+    const runs = line.items.filter((item) => item.str.trim().length > 0);
+    if (runs.length === 0) {
+      boxes.push(padBox(line.box, padding, padding * 0.6));
+      continue;
+    }
+    for (const item of runs) {
+      boxes.push(padBox({ x: item.x, y: item.y, width: item.w, height: item.h }, padding, padding * 0.6));
+    }
+  }
+  return boxes;
 }
 
 /** Page-level boxes for an object list header / status line. */

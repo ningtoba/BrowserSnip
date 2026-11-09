@@ -121,11 +121,12 @@ async function install() {
     const frame = mods.draw.frameOfPage(page);
     const rects = boxes.map((box) => mods.model.viewerBoxToUserSpace(box, frame));
     const inside = owned(page, rects).filter((e) => e.text.trim().length > 0);
-    const all = mods.content.textRects(page);
-    const chars = (list) => list.reduce((n, entry) => n + entry.text.length, 0);
-    // Every character once: `all` is the page's text, `inside` the owned subset,
-    // so the difference is what the block does not own.
-    return { inside, outsideChars: Math.max(0, chars(all) - chars(inside)), totalChars: chars(all) };
+    // Non-space characters: deleting a word's trailing space is not losing text,
+    // and counting it made a clean run look like it had eaten a neighbour.
+    const chars = (list) => list.reduce((n, entry) => n + entry.text.replace(/\s/g, '').length, 0);
+    // Character counts, never run counts: an excision re-splits runs, so a
+    // per-run classification moves on its own and reads as a loss that is not one.
+    return { inside, totalChars: chars(mods.content.textRects(page)) };
   }
 
   /**
@@ -137,6 +138,10 @@ async function install() {
   function owned(page, rects) {
     if (mods.content.textInRects) return mods.content.textInRects(page, rects);
     return mods.content.textRects(page).filter((entry) => rects.some((r) => overlaps(r, entry.rect)));
+  }
+
+  function chars(list) {
+    return list.reduce((n, entry) => n + entry.text.length, 0);
   }
 
   function round2(value) {
@@ -186,8 +191,19 @@ async function install() {
         const page = fresh.getPage(entry.page - 1);
         const frame = mods.draw.frameOfPage(page);
         const boxes = mods.model.deletionBoxes(paragraph);
+        const id = `probe-${perBlock.length}`;
         const before = textInRects(mods, page, boxes);
-        const report = mods.draw.deleteOriginalText(page, [{ id: `probe-${perBlock.length}`, boxes }], frame);
+        let report = mods.draw.deleteOriginalText(page, [{ id, boxes }], frame);
+        if (report.leftoverRects === undefined) {
+          // The build before this row took a flat box list and reported neither a
+          // leftover count nor faces; call it its way so one rig measures both.
+          report = {
+            ...mods.draw.deleteOriginalText(page, boxes, frame),
+            leftoverRects: {},
+            faces: {},
+            reasons: [],
+          };
+        }
         const after = textInRects(mods, page, boxes);
         perBlock.push({
           id: `probe-${perBlock.length}`,
@@ -208,7 +224,8 @@ async function install() {
           // Collateral damage: characters the deletion took from outside the
           // block's own boxes. Total page text, minus what the box accounted for,
           // so a run that merely re-splits on rebuild does not read as a loss.
-          lostOutside: before.outsideChars - after.outsideChars,
+          lostOutside:
+            before.totalChars - after.totalChars - chars(before.inside) + chars(after.inside),
           leftover: report.leftover,
           // When the engine finds nothing at the box, what it *does* find nearby
           // is the difference between a coordinate bug and a run drawn elsewhere.

@@ -2800,9 +2800,10 @@ function intersects(a: ContentRect, b: ContentRect): boolean {
  */
 function ownsGlyph(glyph: TextSegment, rect: ContentRect): boolean {
   const eps = 0.5;
-  const inX =
-    glyph.rect.x + glyph.rect.width > rect.x &&
-    glyph.rect.x < rect.x + rect.width;
+  // Where the glyph **starts**, not where its box reaches: a neighbour grazing the
+  // edge of a padded box is not the box's text, and taking it is how editing one
+  // column ate the first letter of the next.
+  const inX = glyph.rect.x >= rect.x - eps && glyph.rect.x < rect.x + rect.width;
   const inY =
     glyph.baseline.y >= rect.y - eps &&
     glyph.baseline.y <= rect.y + rect.height + eps;
