@@ -25,6 +25,7 @@ import {
 } from './model';
 import type { TopLeftBox } from '@/lib/pdf/core/tables';
 import type { FontFamilyOption } from './faces';
+import { TextStylingControls } from '../shared/TextStylingControls';
 import { MODE_AFTER_CREATE, keyForMode } from './keys';
 
 // ── primitives ──────────────────────────────────────────────────────────────
@@ -458,6 +459,12 @@ export interface FormatPanelProps {
   style: EditorStyle;
   hasSelection: boolean;
   families: FontFamilyOption[];
+  /**
+   * The words the selection holds. The posture buttons are judged against them:
+   * a Latin-only family loses italic exactly when the run passes what it can
+   * encode, because that run is written in the bundled face instead.
+   */
+  text?: string;
   localFontsSupported: boolean;
   localFontsLoaded: boolean;
   onScanLocalFonts: () => void;
@@ -471,6 +478,7 @@ export function FormatPanel({
   style,
   hasSelection,
   families,
+  text = '',
   localFontsSupported,
   localFontsLoaded,
   onScanLocalFonts,
@@ -488,69 +496,40 @@ export function FormatPanel({
           Nothing selected — these controls need a text block. Click a paragraph on the page, or press Enter on one that is already selected.
         </p>
       )}
-      <Labeled
-        label="Font"
-        hint={
-          localFontsSupported
-            ? localFontsLoaded
-              ? 'System fonts are embedded into the file, so the result looks the same everywhere.'
-              : 'Local Font Access is available — scan to add your installed fonts.'
-            : 'This browser has no Local Font Access, so the list is bundled and script faces.'
-        }
-      >
-        <div className="flex items-center gap-1">
-          <select
-            value={style.fontFamily}
-            disabled={disabled}
-            onChange={(event) => onInline({ fontFamily: event.target.value })}
-            className="doodle-input !px-2 !py-1 !text-[11px]"
-          >
-            {families.map((family) => (
-              <option key={family.id} value={family.id}>
-                {family.label}
-              </option>
-            ))}
-          </select>
-          {localFontsSupported && !localFontsLoaded && (
-            <ToolButton label="Scan" onClick={onScanLocalFonts} title="List the fonts installed on this device" />
-          )}
-        </div>
-      </Labeled>
-      <div className="grid grid-cols-2 gap-2">
-        <Labeled label="Size">
-          <NumberField
-            value={style.size}
-            min={1}
-            max={400}
-            step={0.5}
-            onChange={(size) => onInline({ size })}
-          />
-        </Labeled>
-        <Labeled label="Direction">
-          <SelectField
-            label=""
-            value={style.direction}
-            onChange={(direction: TextDirection) => onStyle({ direction })}
-            options={[
-              { value: 'auto', label: 'Auto' },
-              { value: 'ltr', label: 'LTR' },
-              { value: 'rtl', label: 'RTL' },
-            ]}
-          />
-        </Labeled>
-      </div>
-      <ColorField label="Colour" value={style.color} onChange={(color) => onInline({ color })} />
-      <SegmentedField
-        label="Align"
-        value={style.align}
-        onChange={(align) => onStyle({ align })}
-        options={[
-          { value: 'left', label: '⬅', title: 'Left' },
-          { value: 'center', label: '⬌', title: 'Centre' },
-          { value: 'right', label: '➡', title: 'Right' },
-          { value: 'justify', label: '☰', title: 'Justify' },
-        ]}
+      {/*
+         Family, weight, slant, size, colour, alignment and line height are the one
+         control set every surface mounts, so this editor cannot offer a posture the
+         file would drop while the annotation editor refuses it. The patch splits on
+         the way out: the face fields belong to the runs, alignment and leading to the
+         block, which is how the editor's own undo history is shaped.
+      */}
+      <TextStylingControls
+        surface="text-editor"
+        style={style}
+        text={text}
+        families={families}
+        disabled={disabled}
+        onChange={(patch) => {
+          const { align, lineSpacing, ...inline } = patch;
+          if (Object.keys(inline).length > 0) onInline(inline);
+          if (align !== undefined || lineSpacing !== undefined) onStyle({ align, lineSpacing });
+        }}
+        onScanLocalFonts={onScanLocalFonts}
+        localFontsSupported={localFontsSupported}
+        localFontsLoaded={localFontsLoaded}
       />
+      <Labeled label="Direction">
+        <SelectField
+          label=""
+          value={style.direction}
+          onChange={(direction: TextDirection) => onStyle({ direction })}
+          options={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'ltr', label: 'LTR' },
+            { value: 'rtl', label: 'RTL' },
+          ]}
+        />
+      </Labeled>
       <div className="space-y-1">
         <PanelHeading>Style</PanelHeading>
         <div className="flex flex-wrap gap-1">

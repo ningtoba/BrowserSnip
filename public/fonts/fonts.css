@@ -1,3 +1,16 @@
+/*
+ * The faces this app ships.
+
+ * JetBrains Mono is the app's own UI face. Noto Sans is the face `core/fonts.ts`
+ * embeds (subsetted) into an exported PDF, so declaring it here as well is what
+ * makes an on-screen text surface paint the *same* face the file will carry rather
+ * than a system approximation of it. A declared `@font-face` is only fetched when
+ * something on the page asks for it, so a document with no Noto text pays nothing.
+ *
+ * There is deliberately no italic entry, because there is no italic file: that is
+ * why no surface in this app offers italic for Noto Sans. A slant the tab cannot put
+ * into the bytes is a slant the preview must not show.
+ */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
@@ -12,4 +25,20 @@
   font-weight: 500;
   font-display: swap;
   src: url('/fonts/jetbrains-mono-500.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoSans-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoSans-Bold.ttf') format('truetype');
 }
