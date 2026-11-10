@@ -1,7 +1,8 @@
 # `remove-restrictions` on the deployed site, and what other people's readers said about the download
 
 Two runs of `scripts/live-remove-restrictions-proof.mjs` against
-`https://www.browsersnip.com` (the build deployed from this branch), each driven the
+`https://www.browsersnip.com`, redeployed against the build this branch pushed
+(`gh api …/deployments` → `sha a35d6d5`, `env github-pages`), each driven the
 way a person drives it: open the tool, drop the file, read what the file's card says
 about the lock, type the open password into the box on that card, press
 **Remove restrictions**, press **Download**. Then the downloaded bytes are judged by
@@ -35,11 +36,11 @@ result: Restrictions cleared — 3 page(s) verified readable with no /Encrypt en
 notes : Page 1 of 3 of aes-256-user_unrestricted.pdf, drawn in this tab — a picture of the file, not the file itself. / aes-256-user_unrestricted.pdf / Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
 down  : clicked <button> Download
 name  : aes-256-user_unrestricted.pdf
-file  : /tmp/live-restrictions-r3BPit/deployed-unrestricted.pdf 2816 bytes
+file  : /tmp/live-restrictions-CHdtNG/deployed-unrestricted.pdf 2816 bytes
 errors: []
 # outside readers, on the file the deployed site downloaded
 {"bytes": 2816, "has_encrypt_key": false, "has_P_key": false, "has_CFM_key": false, "secret_in_bytes": false, "qpdf_opens_with_no_password": true, "qpdf_encrypted": false, "qpdf_pages": 3, "qpdf_check_exit": 0, "mupdf_needs_pass": false, "mupdf_opens_with_empty": true, "mupdf_permissions": -4, "mupdf_planted_pages": 3, "mupdf_pages": 3, "mupdf_toc_entries": 2, "mupdf_ink_page1_percent": 1.51, "pypdf_is_encrypted": false, "pypdf_pages": 3, "pypdf_chars": 164, "poppler_rc": 0, "poppler_has_planted": true}
-workdir: /tmp/live-restrictions-r3BPit
+workdir: /tmp/live-restrictions-CHdtNG
 
 
 ## the owner-only run (nothing typed)
@@ -53,8 +54,8 @@ result: Restrictions cleared — 3 page(s) verified readable with no /Encrypt en
 notes : Page 1 of 3 of aes-256-owner_unrestricted.pdf, drawn in this tab — a picture of the file, not the file itself. / aes-256-owner_unrestricted.pdf / Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
 down  : clicked <button> Download
 name  : aes-256-owner_unrestricted.pdf
-file  : /tmp/live-restrictions-KCzbzM/deployed-unrestricted.pdf 2701 bytes
+file  : /tmp/live-restrictions-3XjGoi/deployed-unrestricted.pdf 2701 bytes
 errors: []
 # outside readers, on the file the deployed site downloaded
 {"bytes": 2701, "has_encrypt_key": false, "has_P_key": false, "has_CFM_key": false, "secret_in_bytes": false, "qpdf_opens_with_no_password": true, "qpdf_encrypted": false, "qpdf_pages": 3, "qpdf_check_exit": 0, "mupdf_needs_pass": false, "mupdf_opens_with_empty": true, "mupdf_permissions": -4, "mupdf_planted_pages": 3, "mupdf_pages": 3, "mupdf_toc_entries": 2, "mupdf_ink_page1_percent": 1.51, "pypdf_is_encrypted": false, "pypdf_pages": 3, "pypdf_chars": 164, "poppler_rc": 0, "poppler_has_planted": true}
-workdir: /tmp/live-restrictions-KCzbzM
+workdir: /tmp/live-restrictions-3XjGoi
