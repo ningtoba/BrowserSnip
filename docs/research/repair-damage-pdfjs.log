@@ -1,0 +1,18 @@
+# step 4: pdf.js — the engine this app renders with — over both sides. `P` marks a
+# sheet whose display list holds a painting operator, `W` one whose text holds a
+# planted word, so `.-` is a sheet that counts and prints nothing.
+
+case                     pdf.js reads the input    pdf.js reads the repaired file
+base-objstm              4p [PW PW PW PW]           4p [PW PW PW PW]
+base-plain               4p [PW PW PW PW]           4p [PW PW PW PW]
+base                     4p [PW PW PW PW]           4p [PW PW PW PW]
+duplicate-endobj         4p [PW PW PW PW]           4p [PW PW PW PW]
+garbage-dict-midstream   4p [PW PW PW PW]           4p [PW PW PW PW]
+ledger-32-input          refused (Invalid PDF structure.) 4p [P- P- .- P-]
+lying-xref               4p [PW PW PW PW]           4p [PW PW PW PW]
+missing-endobj           4p [PW PW PW PW]           4p [PW PW PW PW]
+missing-startxref        4p [PW PW PW PW]           4p [PW PW PW PW]
+objstm-wrong-offsets     refused (Invalid Root reference.) 4p [PW PW PW PW]
+plain-content-tailcut    refused (Invalid PDF structure.) 4p [PW PW PW PW]
+triage-report            refused (Invalid PDF structure.) 4p [PW PW PW PW]
+truncated-tail           refused (Invalid PDF structure.) 2p [PW .-]

@@ -1,0 +1,91 @@
+# step 3 with the fix reverted. Same corpus, same readers: three cases produce no
+# file at all, and `ledger-32-input` produces 1 sheet at 0.0 % ink — the row's
+# headline, re-measured rather than quoted.
+
+case                     input still holds                                    output reads as                                      ink % per sheet        verdict
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None             no file                                              -                      refused a 4-page file
+lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None                mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None             no file                                              -                      refused a 4-page file
+duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
+garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.0/5.3/5.3        preserved
+triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None             no file                                              -                      refused a 4-page file
+plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.4/5.3        preserved
+ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 1 · qpdf 1 · pop 1 · pypdf 1                   0.0                    lost-pages 4->1
+
+### base: Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### base-objstm: Repaired base-objstm.pdf: 4 page(s) readable. 2.0 KB → 2.0 KB (-3%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### truncated-tail: truncated-tail.pdf could not be repaired: This PDF is too damaged to recover. The internal catalog and page tree are corrupted beyond what the browser can repair. Try a desktop PDF editor. Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+    readers, input: pdfinfo: Syntax Error: Invalid XRef entry 0
+    input characters per sheet: [78, 19, 0, 0]
+    input planted words: [['Alpha'], ['Beta'], [], []]
+### lying-xref: Repaired lying-xref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### missing-startxref: Repaired missing-startxref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### objstm-wrong-offsets: objstm-wrong-offsets.pdf could not be repaired: this.catalog.Pages is not a function Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+    input characters per sheet: []
+    input planted words: []
+### duplicate-endobj: Repaired duplicate-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### missing-endobj: Repaired missing-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### garbage-dict-midstream: Repaired garbage-dict-midstream.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    input characters per sheet: [78, 19, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 19, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### triage-report: triage-report.pdf could not be repaired: This PDF is too damaged to recover. The internal catalog and page tree are corrupted beyond what the browser can repair. Try a desktop PDF editor. Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+    readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### plain-content-tailcut: Repaired plain-content-tailcut.pdf: 4 page(s) readable. 3.6 KB → 1.7 KB (-54%).
+    ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    readers, output: gs: GPL Ghostscript 10.08.0: Unrecoverable error, exit code 1
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### ledger-32-input: Repaired ledger-32-input.pdf: 1 page(s) readable. 3.8 KB → 1.6 KB (-57%).
+    ! The input would not open ("ledger-32-input.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    readers, output: gs: GPL Ghostscript 10.08.0: Unrecoverable error, exit code 1
+    input characters per sheet: [1778, 12, 0, 0]
+    input planted words: [[], [], [], []]
+    output characters per sheet: [0]
+    output planted words: [[]]
+
+4 case(s) not preserved, of which 3 were refused outright
+1 case(s) whose produced file contradicts the sentence printed for it

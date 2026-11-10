@@ -1,0 +1,53 @@
+# step 2 over the same corpus with the fix reverted: the same tool, the same bytes.
+# Five of the twelve blocks below are refusals, and `ledger-32-input` — the input
+# docs/TOOL-TRIAGE.md §2 was measured with — answers 1 sheet for a file MuPDF, qpdf
+# and poppler each open as 4.
+
+base-objstm.pdf            in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 0 · /Count null · streams 6
+  Repaired base-objstm.pdf: 4 page(s) readable. 2.0 KB → 2.0 KB (-3%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+base-plain.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 1865 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 8
+  Repaired base-plain.pdf: 4 page(s) readable. 3.6 KB → 1.8 KB (-50%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+base.pdf                   in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+duplicate-endobj.pdf       in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired duplicate-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+garbage-dict-midstream.pdf in 4/4 → 4 page(s) claimed · parsed 4 · 2057 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired garbage-dict-midstream.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+ledger-32-input.pdf        in 0 → 1 page(s) claimed · parsed 1 · 1658 B
+  loader Failed to parse PDF document (line:190 col:0 offset=3891): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:190 col:0 offset=3891): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 3
+  Repaired ledger-32-input.pdf: 1 page(s) readable. 3.8 KB → 1.6 KB (-57%).
+  ! The input would not open ("ledger-32-input.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+lying-xref.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired lying-xref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+missing-endobj.pdf         in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired missing-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+missing-startxref.pdf      in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+  loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
+  Repaired missing-startxref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+  ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+objstm-wrong-offsets.pdf   in 0 → refused: objstm-wrong-offsets.pdf could not be repaired: this.catalog.Pages is
+  loader this.catalog.Pages is not a function / fork: this.catalog.Pages is not a function · pdf.js Invalid Root reference. · page objects 0 · /Count null · streams 6
+plain-content-tailcut.pdf  in 0 → 4 page(s) claimed · parsed 4 · 1722 B
+  loader Failed to parse PDF document (line:240 col:0 offset=3707): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:240 col:0 offset=3707): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 8
+  Repaired plain-content-tailcut.pdf: 4 page(s) readable. 3.6 KB → 1.7 KB (-54%).
+  ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+triage-report.pdf          in 0 → refused: triage-report.pdf could not be repaired: This PDF is too damaged to re
+  loader Failed to parse PDF document (line:193 col:0 offset=3343): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:193 col:0 offset=3343): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 4
+truncated-tail.pdf         in 0 → refused: truncated-tail.pdf could not be repaired: This PDF is too damaged to r
+  loader Failed to parse PDF document (line:100 col:829 offset=1653): Failed to parse invalid PDF o / fork: Failed to parse PDF document (line:100 col:829 offset=1653): Failed to · pdf.js Invalid PDF structure. · page objects 2 · /Count 4 · streams 2
+
+wrote /tmp/rd4/out (10/13 produced files) and /tmp/rd4/app.json

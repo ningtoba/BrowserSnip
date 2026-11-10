@@ -1,0 +1,20 @@
+# step 4 with the fix reverted.
+
+case                     pdf.js reads the input    pdf.js reads the repaired file
+base-objstm              4p [PW PW PW PW]           4p [PW PW PW PW]
+base-plain               4p [PW PW PW PW]           4p [PW PW PW PW]
+base                     4p [PW PW PW PW]           4p [PW PW PW PW]
+duplicate-endobj         4p [PW PW PW PW]           4p [PW PW PW PW]
+garbage-dict-midstream   4p [PW PW PW PW]           4p [PW PW PW PW]
+â¦F19ÃÃ±Ã¤Ã¢Âªm:ÃÃ¾:ÃÃÃ±ËÃ³Ã¦k".
+Ã*Â¹Ãº`Ãµ\ÃÂ©Â³â¹Â©4Å¸Â®Â¶".
+â¦F19ÃÃ±Ã¤Ã¢Âªm:ÃÃ¾:ÃÃÃ±ËÃ³Ã¦k".
+Ã*Â¹Ãº`Ãµ\ÃÂ©Â³â¹Â©4Å¸Â®Â¶".
+ledger-32-input          refused (Invalid PDF structure.) 1p [.-]
+lying-xref               4p [PW PW PW PW]           4p [PW PW PW PW]
+missing-endobj           4p [PW PW PW PW]           4p [PW PW PW PW]
+missing-startxref        4p [PW PW PW PW]           4p [PW PW PW PW]
+objstm-wrong-offsets     refused (Invalid Root reference.) refused (ENOENT: no such file or dire)
+plain-content-tailcut    refused (Invalid PDF structure.) 4p [PW PW PW PW]
+triage-report            refused (Invalid PDF structure.) refused (ENOENT: no such file or dire)
+truncated-tail           refused (Invalid PDF structure.) refused (ENOENT: no such file or dire)
