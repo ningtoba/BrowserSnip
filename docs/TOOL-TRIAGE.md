@@ -1,8 +1,8 @@
 # TOOL TRIAGE — every tool in the catalogue, driven and measured
 
-**Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (1 closed: `repair`,
-`2ca815b`) · 4 FALSE CLAIM ·
-3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT · 81 CLEAN (MEASURED) · 26 NOT REACHED.**
+**Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (1 closed since
+`2ca815b`: `repair`) · 4 FALSE CLAIM · 3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT ·
+81 CLEAN (MEASURED) · 26 NOT REACHED.**
 Coverage: every one of the 130 ids was driven in real Chromium against the deployed site, and
 **all 427 field flips of the PDF catalogue were run** (288 of them produced a file to compare,
 139 stopped at a required input or a bespoke pane). ~750 runs in total across
