@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { FFmpegProgress, ToolId } from '@/types';
+import type { PdfEncryption } from '@/lib/pdf/core/guard';
 
 /** A structured result from a PDF tool that reports rather than produces a file. */
 export interface ToolReportSection {
@@ -21,6 +22,25 @@ export interface ToolReport {
  */
 export type ToolPhase = 'idle' | 'inspecting' | 'ready' | 'running' | 'done' | 'error';
 
+/**
+ * What the pre-flight's password check answered for one loaded file.
+ *
+ * The point of the split is that the two password failures are different asks:
+ * `needs-password` is "I need something from you", `wrong-password` is "try
+ * again". `unsupported` is neither — the cipher is one this app cannot undo, so
+ * typing any secret changes nothing and the row must not offer a box that lies.
+ * `opened` is the state in which a run will actually read the pages.
+ */
+export type FileLockState =
+  /** No `/Encrypt` entry at all. */
+  | 'none'
+  /** Locked, but the **user** password is empty: it opens with nothing typed. */
+  | 'opens-empty'
+  | 'needs-password'
+  | 'wrong-password'
+  | 'opened'
+  | 'unsupported';
+
 /** Per-input state: progress for this file, and why it failed if it did. */
 export interface FileRunState {
   /** 0..100 for this file only. */
@@ -32,6 +52,16 @@ export interface FileRunState {
   pages?: number | null;
   /** Bytes, kept so a queue can show a size without holding the File. */
   size?: number;
+  /**
+   * The lock this file carries, read from its own encryption dictionary by
+   * `inspectPdf`, and `null` while the file has not been inspected.
+   *
+   * Carried here rather than re-read by the row: the fact about the file and the
+   * secret that opens it belong on the same card, and one parse answers both.
+   */
+  encryption?: PdfEncryption | null;
+  /** Whether that lock needs a secret, and what the secret typed so far did. */
+  lock?: FileLockState;
 }
 
 interface ProcessSlot {

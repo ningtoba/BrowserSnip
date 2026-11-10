@@ -13,11 +13,17 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
-import { useProcessStore, type ToolPhase } from '@/stores/process-store';
+import { useProcessStore, type FileLockState, type ToolPhase } from '@/stores/process-store';
 import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { engineReady } from '@/lib/pdf/core/engine-ops';
 import { ENGINE_LABELS } from '@/lib/pdf/engines/provider';
-import { inspectPdf, isPasswordRequired, isToolInputError } from '@/lib/pdf/core/guard';
+import {
+  inspectPdf,
+  isPasswordRequired,
+  isToolInputError,
+  type PdfEncryption,
+  type PdfInspection,
+} from '@/lib/pdf/core/guard';
 import {
   defaultValues,
   type PdfToolDefinition,
@@ -40,14 +46,31 @@ export interface UsePdfTool {
   setValue: (key: string, value: unknown) => void;
   setValues: (values: ToolValues) => void;
   reset: () => void;
+  /**
+   * The secret for this job, typed on the file that needs it (see `FileLockRow`).
+   *
+   * One secret per job, held in this hook and passed to the runner as
+   * `RunRequest.password` — the channel `openInputs` and every tool already read.
+   */
   password: string;
   setPassword: (value: string) => void;
+  /** True when the tool declares a password field of its own; then that field is the only box. */
   needsPassword: boolean;
   isRunning: boolean;
   run: (overrides?: ToolValues) => Promise<RunOutcome | null>;
   cancel: () => void;
   /** Present when the loaded PDF is encrypted and no password has worked yet. */
   locked: boolean;
+  /**
+   * Which password failure the last run hit, or `null`.
+   *
+   * `needed` is "I need something from you" and `wrong` is "try again". They are
+   * different asks, so a notice that cannot tell them apart sends the user off to
+   * hunt for a secret they just typed.
+   */
+  lockProblem: 'needed' | 'wrong' | null;
+  /** True while a re-read of the inputs, prompted by the secret, is outstanding. */
+  lockChecking: boolean;
   /** Lifecycle of the current tool, mirrored into the process store. */
   phase: ToolPhase;
   /** Page count of the loaded document when it is known (E6/E7). */
@@ -90,6 +113,57 @@ export interface UsePdfToolOptions {
   pageCount?: number | null;
 }
 
+/**
+ * How long a typed secret settles before the inputs are read again.
+ *
+ * Reading a locked file means parsing it, and a parse of a few-hundred-page
+ * document is not free; re-running one on every keystroke would make the box feel
+ * broken. Long enough to cover typing, short enough that the card's verdict lands
+ * before the user has moved on.
+ */
+const PASSWORD_SETTLE_MS = 300;
+
+/** `value`, once it has stopped changing. */
+function useSettledValue(value: string, delay: number): string {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    if (settled === value) return;
+    const timer = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, settled, delay]);
+  return settled;
+}
+
+/**
+ * What the pre-flight answered about this file's lock, in the row's vocabulary.
+ *
+ * The cipher verdict comes first, deliberately, because it outranks the password
+ * one: when the cipher is a shape this app cannot undo, the secret changes nothing
+ * and a box that offered to help would be lying. Same order `preflightPdf` uses.
+ */
+function lockVerdict(inspection: PdfInspection): FileLockState {
+  if (!inspection.encrypted) return 'none';
+  const encryption = inspection.encryption;
+  if (!encryption) return 'none';
+  if (encryption.state !== 'none' && !encryption.supported) return 'unsupported';
+  if (inspection.error === 'BAD_PASSWORD') return 'wrong-password';
+  if (inspection.needsPassword) return 'needs-password';
+  // Some other refusal (a truncated file, no pages): the card shows the failure
+  // it names, and does not start talking about passwords over it.
+  if (inspection.error) return 'none';
+  if (inspection.opensWithEmptyPassword || inspection.passwordLevel === 'empty') return 'opens-empty';
+  return 'opened';
+}
+
+/** What one read of one input learned, and the secret it was read with. */
+interface FileProbe {
+  /** The `api.password` value this reading answers, so a new secret re-reads. */
+  password: string;
+  pages: number | null;
+  encryption: PdfEncryption | null;
+  lock: FileLockState;
+}
+
 /** Log lines that describe a compromise rather than a step. */
 
 export function usePdfTool(
@@ -104,44 +178,67 @@ export function usePdfTool(
   // read from the file. Without it every page-range field validates against
   // `null`: the rail never says "this document has 3 pages" (E6) and the panel
   // sits on "Reading file" forever while the preview next to it shows page 10.
-  const [pagesByFile, setPagesByFile] = useState<Record<string, number | null>>({});
+  const [values, setValues] = useState<ToolValues>(() => defaultValues(tool?.fields));
+  const [password, setPassword] = useState('');
+  const [locked, setLocked] = useState(false);
+  const [lockProblem, setLockProblem] = useState<'needed' | 'wrong' | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  // What the lock of each input is, and what the secret typed on its card did
+  // about it. One probe per file: the page count and the lock verdict come from
+  // the same parse, and a new secret re-runs it (see `PASSWORD_SETTLE_MS`) rather
+  // than paying for a second pass just to tell the row something changed.
+  const [probes, setProbes] = useState<Record<string, FileProbe>>({});
+  const settledPassword = useSettledValue(password, PASSWORD_SETTLE_MS);
+  /** True while a re-read prompted by the secret is still outstanding. */
+  const lockChecking = settledPassword !== password;
+  const pagesByFile = useMemo(() => {
+    const out: Record<string, number | null> = {};
+    for (const [key, probe] of Object.entries(probes)) {
+      if (probe.password === settledPassword) out[key] = probe.pages;
+    }
+    return out;
+  }, [probes, settledPassword]);
   useEffect(() => {
     let alive = true;
     for (const file of files) {
       const key = `${file.name}:${file.size}`;
-      if (pagesByFile[key] !== undefined) continue;
+      if (probes[key]?.password === settledPassword) continue;
       void (async () => {
         let pages: number | null = null;
+        let encryption: PdfEncryption | null = null;
+        let lock: FileLockState = 'none';
         try {
-          const inspection = await inspectPdf(new Uint8Array(await file.arrayBuffer()), file.name);
+          const inspection = await inspectPdf(new Uint8Array(await file.arrayBuffer()), file.name, {
+            password: settledPassword || undefined,
+          });
           const known = inspection.pages ?? inspection.declaredPages ?? 0;
           // Zero is not a page count. A header-only or damaged file reports 0,
           // and treating that as "known" would flip the rail to ready and let a
           // range field validate against nothing (E3, E6).
           pages = known > 0 ? known : null;
+          encryption = inspection.encryption;
+          lock = lockVerdict(inspection);
         } catch {
           pages = null;
         }
         if (!alive) return;
         // The queue row is the only place a user reads "how big is this job"
         // for the second, third and fourth file, so the count has to reach the
-        // store as well as the range validator.
-        useProcessStore.getState().setFileState(file.name, { pages, size: file.size });
-        setPagesByFile((prev) => (key in prev ? prev : { ...prev, [key]: pages }));
+        // store as well as the range validator — and the lock travels with it,
+        // because the card that shows the count is the card that asks for the
+        // secret.
+        useProcessStore.getState().setFileState(file.name, { pages, size: file.size, encryption, lock });
+        setProbes((prev) => ({ ...prev, [key]: { password: settledPassword, pages, encryption, lock } }));
       })();
     }
     return () => {
       alive = false;
     };
-  }, [files, pagesByFile]);
+  }, [files, probes, settledPassword]);
 
   const primary = files[0];
   const pageCount = options.pageCount ?? (primary ? pagesByFile[`${primary.name}:${primary.size}`] ?? null : null);
 
-  const [values, setValues] = useState<ToolValues>(() => defaultValues(tool?.fields));
-  const [password, setPassword] = useState('');
-  const [locked, setLocked] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const ranSignature = useRef<string | null>(null);
   // Which inputs the in-flight run is actually working on. When the selection
@@ -157,6 +254,7 @@ export function usePdfTool(
     setValues(defaultValues(tool.fields));
     setPassword('');
     setLocked(false);
+    setLockProblem(null);
   }, [tool]);
 
   const setValue = useCallback((key: string, value: unknown) => {
@@ -294,6 +392,7 @@ export function usePdfTool(
       for (const file of activeFiles) state.setFileState(file.name, { percent: 0, error: null, size: file.size });
       setIsRunning(true);
       setLocked(false);
+      setLockProblem(null);
 
       const lines: string[] = [];
       try {
@@ -372,7 +471,14 @@ export function usePdfTool(
         // and said so, so it must not come back as a red panel with a Retry.
         if (local.signal.aborted) return null;
         const message = error instanceof Error ? error.message : 'Processing failed.';
-        if (isPasswordRequired(error)) setLocked(true);
+        if (isPasswordRequired(error)) {
+          setLocked(true);
+          // "I need something from you" and "that was not it" are different asks,
+          // so the notice has to keep them apart. A failure that reaches here as
+          // prose rather than as a coded `ToolInputError` is reported as the ask,
+          // which is what the box on the card can answer.
+          setLockProblem(isToolInputError(error) && error.code === 'BAD_PASSWORD' ? 'wrong' : 'needed');
+        }
         const failed = store.getState();
         failed.setError(message, isToolInputError(error) ? error.hint : null);
         // Name the file that broke (E1/E2/E4): the message when it quotes one,
@@ -420,6 +526,8 @@ export function usePdfTool(
     run,
     cancel,
     locked,
+    lockProblem,
+    lockChecking,
     phase,
     pageCount,
     pagesByFile,

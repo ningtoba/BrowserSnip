@@ -788,6 +788,18 @@ const REFUSAL_CLAUSE: Record<UnsupportedReason, string> = {
 };
 
 /**
+ * The clause naming why this cipher is left alone, or `null` when nothing is
+ * refused.
+ *
+ * Exported so the file card can say the same reason the run gives: one vocabulary
+ * for "why this lock stays shut", never a second sentence written next to the
+ * first one.
+ */
+export function refusalReason(encryption: PdfEncryption): string | null {
+  return encryption.refusal ? REFUSAL_CLAUSE[encryption.refusal] : null;
+}
+
+/**
  * The refusal a content-rewriting tool gives a file whose streams are ciphertext
  * this app cannot undo.
  *
@@ -806,7 +818,7 @@ const REFUSAL_CLAUSE: Record<UnsupportedReason, string> = {
  * `protect` writes, keeps being edited normally because its streams are plaintext.
  */
 export function cipheredInputError(name: string, encryption: PdfEncryption): ToolInputError {
-  const why = encryption.refusal ? REFUSAL_CLAUSE[encryption.refusal] : 'this app cannot undo it';
+  const why = refusalReason(encryption) ?? 'this app cannot undo it';
   return new ToolInputError(
     'UNSUPPORTED',
     `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and ${why}.`,
