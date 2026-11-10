@@ -239,6 +239,18 @@ const STANDS: Record<string, PdfToolDefinition> = {
     fields: [ownerField, stampField, dpiField],
     run: heldRun({ size: 100, message: 'Marked.' }),
   },
+  /** A tool that asks for a password in its own form, like `unlock` does. */
+  'shell-unlock': {
+    id: 'shell-unlock',
+    name: 'Unlock Shell',
+    description: 'Remove the password',
+    icon: '🔓',
+    category: 'security',
+    actionLabel: 'Unlock',
+    outputSuffix: '_unlocked.pdf',
+    fields: [{ key: 'password', label: 'Current password', type: 'password', group: 'Password' }],
+    run: heldRun({ size: 100, message: 'Open now.' }),
+  },
   /** A real container: the result screen has to open it and list its entries. */
   'shell-archive': {
     id: 'shell-archive',
@@ -347,6 +359,22 @@ async function realPdf(name = 'shell.pdf', pages = 2): Promise<File> {
   for (let index = 0; index < pages; index += 1) doc.addPage([300, 200]);
   const saved = await doc.save();
   return new File([saved as unknown as BlobPart], name, { type: 'application/pdf' });
+}
+
+/**
+ * A PDF whose pages are real ciphertext, sealed by this app's own AES-128 writer.
+ *
+ * The lock row is only as honest as the file under it, so the surface tests read a
+ * document the guard classifies `ciphered` rather than a hand-written `fileStates`
+ * entry — the same bytes `tests/pdf/password-anywhere.test.ts` rotates.
+ */
+async function lockedPdf(name = 'locked.pdf', password = 'hunter2'): Promise<File> {
+  const { PDFDocument } = await import('@maxwbh/pdf-lib');
+  const { saveEncrypted } = await import('@/lib/pdf/core/doc');
+  const doc = await PDFDocument.create();
+  for (let index = 0; index < 2; index += 1) doc.addPage([300, 200]);
+  const bytes = await saveEncrypted(doc, { userPassword: password, ownerPassword: `${password}-owner` });
+  return new File([bytes as unknown as BlobPart], name, { type: 'application/pdf' });
 }
 
 function loadFiles(files: File[]): void {
@@ -828,6 +856,58 @@ describe('the loaded page', () => {
     expect(useFileStore.getState().files).toHaveLength(0);
     expect(surface()).toHaveAttribute('data-surface', 'intake');
   });
+});
+
+/**
+ * The locked file on the loaded page.
+ *
+ * A secret can only be typed where a tool declared a password field — four tools out
+ * of the catalogue — while `core/crypto` reads RC4-128, AES-128 and AES-256 back as
+ * words. So the row that states the cipher is the row that asks for the secret, and a
+ * tool that already asks for itself must not grow a second box beside it.
+ */
+describe('a file that needs a password', () => {
+  it('states the lock on the card and holds the only password box the tool has', async () => {
+    // A tool with no password field of its own (`shell-compress`) still has to be
+    // able to reach a ciphered file, so the secret is asked where the file is shown.
+    loadFiles([await lockedPdf('locked.pdf')]);
+    render(<PdfToolPanel toolId="shell-compress" />);
+    const box = await screen.findByLabelText('Open password for locked.pdf', undefined, { timeout: 10_000 });
+    const card = box.closest('[data-card="0"]') as HTMLElement;
+    expect(card.textContent).toContain('Encrypted with AES-128 (crypt filter /StdCF, revision 4)');
+    expect(card.textContent).toMatch(/This file needs its password/i);
+    // The stage word says what the ready screen means here: not "Ready", because a
+    // run right now would stop at the password.
+    expect(card.textContent).toContain('Locked');
+    expect(card.querySelector('[data-file-lock]')).toHaveAttribute('data-file-lock', 'needs-password');
+
+    fireEvent.change(box, { target: { value: 'wrong-on-purpose' } });
+    await waitFor(() => expect(card.querySelector('[data-file-lock]')?.getAttribute('data-file-lock')).toBe('wrong-password'));
+    expect(card.textContent).toMatch(/not the password for this file/i);
+
+    fireEvent.change(box, { target: { value: 'hunter2' } });
+    await waitFor(() => expect(card.querySelector('[data-file-lock]')?.getAttribute('data-file-lock')).toBe('opened'), { timeout: 10_000 });
+    expect(card.textContent).toMatch(/Password accepted/i);
+    // Accepted, so the box has nothing left to ask — and the card now reads Ready.
+    expect(card.querySelector('input[type=password]')).toBeNull();
+    await waitFor(() => expect(card.textContent).toContain('Ready'));
+  }, 20_000);
+
+  it('adds no second box for a tool that asks for a password itself', async () => {
+    loadFiles([await lockedPdf('locked.pdf')]);
+    render(<PdfToolPanel toolId="shell-unlock" />);
+    const row = await waitFor(() => {
+      const node = document.querySelector('[data-file-lock="needs-password"]');
+      if (!node) throw new Error('the row has not arrived yet');
+      return node;
+    });
+    expect(row.textContent).toContain('Encrypted with AES-128');
+    expect(row.textContent).toMatch(/this tool asks for it in its own options/i);
+    // Exactly one place on the page can hold the secret: the tool's own field.
+    expect(document.querySelectorAll('input[type=password]')).toHaveLength(1);
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Open password for locked.pdf')).toBeNull();
+  }, 20_000);
 });
 
 // ── a run, and what it leaves behind ────────────────────────────────────────

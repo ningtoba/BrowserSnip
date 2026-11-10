@@ -25,6 +25,7 @@ import { createElement as h } from 'react';
 import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import { usePdfTool } from '@/hooks/usePdfTool';
+import { ToolInputError } from '@/lib/pdf/core/guard';
 import * as renderLib from '@/lib/pdf/core/render';
 import type { PdfSession } from '@/lib/pdf/core/render';
 import {
@@ -79,6 +80,9 @@ const qualityField: ToolField = {
 };
 
 const ownerField: ToolField = { key: 'owner', label: 'Owner name', type: 'text', required: true, group: 'Marks' };
+
+/** The password field a security tool declares for itself. */
+const passwordField: ToolField = { key: 'password', label: 'Current password', type: 'password', group: 'Password' };
 
 const presetField: ToolField = {
   key: 'preset',
@@ -157,6 +161,36 @@ const STANDS: Record<string, PdfToolDefinition> = {
     outputSuffix: '_deskewed.pdf',
     engines: ['ghostscript'],
     run: async () => ({ kind: 'pdf', bytes: pdfBytes(10), message: 'Straight.' }),
+  },
+  /**
+   * A tool that asks for the password in its own form, and stops at the guard.
+   *
+   * The two password failures are raised by the fake run so the rail's answer to each
+   * can be read without a locked fixture: which ask the notice makes is a property of
+   * the chrome, not of the cipher.
+   */
+  'rail-locked': {
+    id: 'rail-locked',
+    name: 'Unlock Rail',
+    description: 'Remove the password',
+    icon: '🔓',
+    category: 'security',
+    actionLabel: 'Unlock',
+    outputSuffix: '_unlocked.pdf',
+    fields: [passwordField],
+    async run(context: { values: Record<string, unknown> }) {
+      const asked = String(context.values.password ?? '');
+      throw new ToolInputError(
+        asked ? 'BAD_PASSWORD' : 'PASSWORD_REQUIRED',
+        asked ? 'That password is not correct for "doc.pdf".' : '"doc.pdf" is password protected.',
+        {
+          fileName: 'doc.pdf',
+          hint: asked
+            ? 'Check the password (it is case-sensitive) and try again.'
+            : 'Enter the password for "doc.pdf" and run again.',
+        },
+      );
+    },
   },
 };
 
@@ -874,6 +908,51 @@ describe('PdfToolPanel as the whole chrome', () => {
     const button = await screen.findByRole('button', { name: 'Run' });
     expect(button).toBeDisabled();
     expect(document.getElementById('tool-run-reason')?.textContent).toContain('Wait for this tool to finish loading.');
+  });
+});
+
+describe('the rail’s one password box', () => {
+  /**
+   * The generic "PDF password" field used to sit in the options bar for every tool
+   * that declared a password field of its own — two inputs writing one secret, with
+   * nothing on the page saying which one `unlock` reads. The bar holds none now, and
+   * the only box left is the tool's own.
+   */
+  it('holds no second box beside a tool that asks for a password itself', async () => {
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    await screen.findByLabelText('Current password');
+    expect(document.querySelectorAll('input[type=password]')).toHaveLength(1);
+    expect(screen.queryByText('PDF password')).toBeNull();
+  });
+
+  it('answers a missing secret and a wrong secret with two different asks', async () => {
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Unlock' }));
+    const needed = await waitFor(() => {
+      const node = document.querySelector('[data-password-notice]');
+      if (!node) throw new Error('the notice has not arrived');
+      return node;
+    });
+    expect(needed).toHaveAttribute('data-password-notice', 'needed');
+    expect(needed.textContent).toMatch(/needs its password before it can be opened/i);
+    expect(needed.textContent).not.toMatch(/did not open/i);
+
+    cleanup();
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    fireEvent.change(await screen.findByLabelText('Current password'), { target: { value: 'hunter2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    const wrong = await waitFor(() => {
+      const node = document.querySelector('[data-password-notice="wrong"]');
+      if (!node) throw new Error('the wrong-secret notice has not arrived');
+      return node;
+    });
+    expect(wrong.textContent).toMatch(/did not open this PDF/i);
+    expect(wrong.textContent).not.toMatch(/needs its password before/i);
+    // The two sentences are not interchangeable, and neither echoes the other.
+    expect(wrong.textContent).not.toBe(needed.textContent);
   });
 });
 
