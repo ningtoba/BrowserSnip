@@ -651,7 +651,7 @@ describe('rasterize-pdf keeps the geometry it promises (E9, E10, E12, E15)', () 
 /* ── repair ──────────────────────────────────────────────────────────────── */
 
 describe('repair opens the files the normal gate refuses (E3)', () => {
-  it('recovers the pages that survived a truncation', async () => {
+  it('recovers the pages that survived a truncation, and says which did not', async () => {
     const full = await rawContentPdf(3);
     const cut = full.subarray(0, Math.floor(full.byteLength * 0.7));
     // The premise: the shared guard will not open this file at all.
@@ -659,10 +659,27 @@ describe('repair opens the files the normal gate refuses (E3)', () => {
     const outcome = await run('repair', {}, [pdfFile(cut, 'cut.pdf')]);
     const after = await inspectPdf(outcome.bytes, 'repaired.pdf');
     expect(after.error).toBeNull();
-    expect(after.pages).toBeGreaterThan(0);
-    expect(after.pages).toBeLessThan(3);
-    expect(outcome.message).toMatch(new RegExp(`${after.pages} page\\(s\\) readable`));
-    expect(outcome.warnings.join(' ')).toMatch(/would not open/i);
+    // Three page objects are whole in the surviving bytes, so three sheets come
+    // back — the third empty, because its content stream is what the cut took.
+    // Losing the first two was the old defect; calling the third one "readable"
+    // is the one this row exists for.
+    expect(after.pages).toBe(3);
+    expect(outcome.message).toContain('3 page(s) recovered: 2 still hold content, 1 is blank');
+    expect(outcome.message).not.toMatch(/3 page\(s\) readable/);
+    const warnings = outcome.warnings.join(' ');
+    expect(warnings).toMatch(/would not open/i);
+    expect(warnings).toMatch(/index could not be read/i);
+    expect(warnings).toMatch(/1 of the 3 page\(s\) in the output is blank/);
+  });
+
+  it('names the sheets a deeper truncation takes with it', async () => {
+    const full = await rawContentPdf(3);
+    const cut = full.subarray(0, Math.floor(full.byteLength * 0.55));
+    const outcome = await run('repair', {}, [pdfFile(cut, 'cut.pdf')]);
+    const after = await inspectPdf(outcome.bytes, 'repaired.pdf');
+    expect(after.pages).toBe(2);
+    expect(outcome.message).toContain('2 of 3 page(s) recovered');
+    expect(outcome.warnings.join(' ')).toMatch(/1 page\(s\) could not be recovered/);
   });
 
   it('re-writes a file that already opens, and admits that is all it did', async () => {

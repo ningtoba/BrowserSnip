@@ -42,7 +42,7 @@ import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { listLayers, removeHiddenLayerContent } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
 import { EngineUnavailable } from '../engines/provider';
-import { repairPDF } from '@/lib/pdf-engine/commands';
+import { repairPDF, sheetsWithoutContent, type RepairFacts } from '@/lib/pdf-engine/commands';
 import {
   ToolInputError,
   clampFields,
@@ -1143,7 +1143,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     promise: 'A rebuilt file from whatever bytes are still readable, with the pages it could not save named.',
     notes: [
       'This tool opens files the normal reader refuses, which is the point of it.',
-      'A file whose page content itself was cut off cannot be recreated; the report says how many pages survived.',
+      'A file whose page content itself was cut off cannot be recreated; the report names the pages it lost and the sheets that came back blank.',
     ],
     async run(context) {
       const file = context.inputs[0];
@@ -1157,8 +1157,14 @@ export const optimizeTools: PdfToolDefinition[] = [
       context.progress(0.2, 'Rebuilding the cross-reference table');
       let repaired: Uint8Array;
       let engine: 'pdf-lib' | 'ghostscript' = 'pdf-lib';
+      // What the local rebuild read: how many sheets the input claims, how many the
+      // output holds, and how many of those hold a drawing operator at all. The
+      // Ghostscript branch has none of that, so the blank count is taken off the
+      // produced bytes instead — the sentence must be measured either way.
+      let rebuilt: RepairFacts | null = null;
       try {
-        repaired = await repairPDF(toArrayBuffer(bytes));
+        rebuilt = await repairPDF(toArrayBuffer(bytes));
+        repaired = rebuilt.bytes;
       } catch (error) {
         const local = error instanceof Error ? error.message : String(error);
         const { rebuildWithGhostscript } = await import('../core/engine-ops');
@@ -1197,21 +1203,48 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
       if (before.error) warnings.push(`The input would not open (${before.message})${before.truncated ? ' — it has no end-of-file marker' : ''}.`);
       if (engine === 'ghostscript') warnings.push('Ghostscript rebuilt this file; the local parser could not read it at all.');
-      const declared = before.declaredPages ?? before.pages;
-      const lost = declared > after.pages ? declared - after.pages : 0;
+      if (rebuilt?.path === 'rebuilt-index') {
+        warnings.push(
+          `The file's own index could not be read: a fresh one was written over the ${rebuilt.pages} page object(s) still in the bytes.`,
+        );
+      }
+      if (rebuilt?.path === 'content-streams') {
+        warnings.push(
+          'No page tree survived, so each sheet was rebuilt around a content stream: page size and order are a guess here, not the document’s own.',
+        );
+      }
+
+      // What the input states it holds — its page tree's `/Count` where one could be
+      // read, otherwise the page objects still in the file. `repair` may not claim a
+      // recovery larger than this without naming the difference (TOOL-TRIAGE §2:
+      // "1 page(s) readable" for a file three readers open as four).
+      const held = rebuilt?.claimed ?? before.declaredPages ?? before.pages;
+      const lost = held > after.pages ? held - after.pages : 0;
+      const blank = rebuilt?.blank ?? (await sheetsWithoutContent(repaired)) ?? 0;
       // Only after both counts are read: "without losing pages" used to be
       // printed from the *input*'s health, so a run that lost three pages said it
       // lost none two lines above admitting it did.
       if (!before.error && !before.recovered) {
         warnings.push(lost > 0
-          ? `The input already opened with ${declared} page(s); the rebuild reads ${after.pages}.`
+          ? `The input already opened with ${held} page(s); the rebuild reads ${after.pages}.`
           : `The input already opened; this run re-wrote its structure without losing pages (${after.pages} in, ${after.pages} out).`);
       }
       if (lost > 0) {
-        warnings.push(`${lost} page(s) could not be recovered${before.recovered ? ` (${declared} were listed in the page tree)` : ''}.`);
+        warnings.push(`${lost} page(s) could not be recovered${before.recovered ? ` (${held} were listed in the page tree)` : ''}.`);
+      }
+      if (blank > 0) {
+        warnings.push(
+          `${blank} of the ${after.pages} page(s) in the output ${blank === 1 ? 'is' : 'are'} blank: `
+          + `${blank === 1 ? 'its content stream holds' : 'their content streams hold'} no drawing operator, `
+          + 'so the sheet opens and nothing appears on it.',
+        );
       }
       const change = sizeChange(bytes.byteLength, repaired.byteLength);
       context.progress(1, 'Repaired');
+      // One count phrase for both shapes: "N page(s)" when nothing was given up,
+      // "N of M page(s)" when the file named more sheets than the rebuild holds.
+      const listed = held > after.pages ? `${after.pages} of ${held} page(s)` : `${after.pages} page(s)`;
+      const carried = after.pages - blank;
       return {
         kind: 'pdf',
         bytes: repaired,
@@ -1220,7 +1253,17 @@ export const optimizeTools: PdfToolDefinition[] = [
         // guessed, and printing "out not counted" beside "7 page(s) readable" was
         // the same screen contradicting itself.
         pages: after.pages,
-        message: `Repaired ${file.name}: ${after.pages} page(s) readable${declared > after.pages ? ` of ${declared} listed` : ''}. ${sizeSentence(change)}.`,
+        // "readable" is only printed when every recovered sheet holds a drawing
+        // operator. A page count that is right over paper is the failure this
+        // campaign keeps meeting, and a bare count is exactly what §2 reported —
+        // "1 page(s) readable" for a file three readers still open as four inked
+        // sheets. Where something was given up, the sentence says what.
+        message: `Repaired ${file.name}: ${
+          blank > 0
+            ? `${listed} recovered: ${carried} still ${carried === 1 ? 'holds' : 'hold'} content, `
+              + `${blank} ${blank === 1 ? 'is' : 'are'} blank`
+            : `${listed} readable`
+        }. ${sizeSentence(change)}.`,
         warnings,
       };
     },

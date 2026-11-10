@@ -524,7 +524,16 @@ function installCanvas(): void {
 
 /* ── fixtures ─────────────────────────────────────────────────────────────── */
 
-const latin1 = new TextDecoder('latin1');
+/**
+ * Byte-exact latin-1. `new TextDecoder('latin1')` is windows-1252 in Node and in the
+ * browser alike, so a file decoded that way and re-encoded with
+ * `Buffer.from(…, 'latin1')` comes back with **different bytes** wherever a
+ * compressed stream held 0x80-0x9F. A fixture written through that round trip
+ * breaks every stream in it while setting out to break one number — which is how
+ * this file's `repair` case came to hold three blank sheets under a sentence that
+ * called them readable.
+ */
+const latin1 = { decode: (bytes: Uint8Array) => Buffer.from(bytes).toString('latin1') };
 
 function pdfFile(bytes: Uint8Array, name: string): File {
   return new File([new Uint8Array(bytes)], name, { type: 'application/pdf' });
@@ -1520,7 +1529,7 @@ describe('optimize tools print numbers the output bytes agree with', () => {
     const pages = (await openPDF(outcome.bytes)).getPageCount();
     expect(pages).toBe(3);
     expect(outcome.pagesOut).toBe(pages);
-    expect(outcome.message).toContain('3 page(s) readable of 5 listed');
+    expect(outcome.message).toContain('3 of 5 page(s) readable');
     expect(outcome.warnings.join(' ')).toContain('2 page(s) could not be recovered');
     expect(outcome.warnings.join(' ')).not.toMatch(/without losing pages/);
   });
