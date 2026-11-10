@@ -1,18 +1,24 @@
 # `remove-restrictions` / `unlock` / `change-permissions`, judged by other people's readers
 
-Run of `docs/research/remove-restrictions-readers.py` over the files a scratch
-harness produced with the shipped `runPdfTool` — four settings (`remove-restrictions`,
-`unlock`, `change-permissions action: set`, `change-permissions action: clear`) over
-the nine outside-locked fixtures in `tests/fixtures/encrypted/` plus `plain.pdf`:
-40 files. The harness is deleted after the run, like the flatten probe before it; the
-rows below are what it left, and `tests/pdf/remove-restrictions.test.ts` is what
-pins them.
+Four tool settings — `remove-restrictions`, `unlock`, `change-permissions action: set`,
+`change-permissions action: clear` — were run over the nine outside-locked fixtures in
+`tests/fixtures/encrypted/` plus `plain.pdf` through the shipped `runPdfTool`, and the
+40 PDFs they produced are committed in `docs/research/remove-restrictions-produced/`.
+Everything below is what the readers make of those files:
 
-Nothing in this file is this app's opinion. pypdf 6.14.2, MuPDF 1.28.2, libqpdf
-10.9.1 (through pikepdf) and poppler 26.10.0 each open the produced file with **no
-secret typed** — "the password was removed" is only evidence when nothing is typed —
-and the fixtures at the bottom are then opened with their own secret, so the
-before-picture is measured on the same terms.
+    python3 docs/research/remove-restrictions-readers.py \
+      docs/research/remove-restrictions-produced tests/fixtures/encrypted
+
+so this log is the committed bytes' own output and can be re-derived, not a
+transcription of a temp directory. The harness that pressed the buttons was a scratch
+vitest file, deleted after the run like the flatten probe before it; the pin that
+replaces it is `tests/pdf/remove-restrictions.test.ts`.
+
+Nothing in this file is this app's opinion. pypdf 6.14.2, MuPDF 1.28.2, libqpdf 10.9.1
+(through pikepdf) and poppler 26.10.0 each open the produced file with **no secret
+typed** — "the password was removed" is only evidence when nothing is typed — and the
+fixtures at the bottom are then opened with their own secret, so the before-picture is
+measured on the same terms.
 
 Columns: `MuPDF asks` is whether a reader has to be given anything to open the file;
 `MuPDF /P` is its view of the permission flags, and **-4 means every bit set, i.e.

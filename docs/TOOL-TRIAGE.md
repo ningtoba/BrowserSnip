@@ -399,7 +399,7 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   tool: `core/crypto.ts` undoes all three strengths on load and the file's own card has
   held a password box for every tool with no field of its own since the password-anywhere
   pass. Judged by other people's readers on the produced bytes, with **nothing typed**
-  (`docs/research/remove-restrictions-readers.py` → `-readers.log`): no `/Encrypt` key and
+  (`docs/research/remove-restrictions-readers.py` → `-readers.log`, with the 40 files it judged committed in `docs/research/remove-restrictions-produced/`): no `/Encrypt` key and
   no `/P` survive, MuPDF answers `needs_pass=False` and `permissions=-4` — every
   restriction bit set — the planted sentence is still on 3 of 3 sheets, sheet-1 ink is the
   fixture's own 1.51 %, `qpdf --check` is clean on 40 of 40, and `hunter2` appears in
