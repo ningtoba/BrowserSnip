@@ -191,6 +191,31 @@ export function usePdfTool(
   const settledPassword = useSettledValue(password, PASSWORD_SETTLE_MS);
   /** True while a re-read prompted by the secret is still outstanding. */
   const lockChecking = settledPassword !== password;
+  /**
+   * Which `(file, secret)` pairs already have a read running or recorded.
+   *
+   * The effect below re-runs whenever a read lands, and a page that re-renders
+   * faster than a parse finishes was starting the same parse again and again —
+   * which is how a real browser sat on "counting pages…" with a locked file loaded.
+   * One flag per pair, cleared only when the pair itself changes.
+   */
+  const reading = useRef(new Set<string>());
+  /**
+   * Whether *this* mount is still on the page.
+   *
+   * The probe must not write into a component that has gone away, but it must not be
+   * cancelled by a re-render either: an earlier draft keyed this to the effect run,
+   * and a theme toggle (or any re-render) during a parse threw the finished read
+   * away while `reading` still held the pair — which is how a real browser sat on
+   * "counting pages…" forever with a locked file loaded, with no row and no verdict.
+   */
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const pagesByFile = useMemo(() => {
     const out: Record<string, number | null> = {};
     for (const [key, probe] of Object.entries(probes)) {
@@ -199,10 +224,11 @@ export function usePdfTool(
     return out;
   }, [probes, settledPassword]);
   useEffect(() => {
-    let alive = true;
     for (const file of files) {
       const key = `${file.name}:${file.size}`;
-      if (probes[key]?.password === settledPassword) continue;
+      const seen = `${key}#${settledPassword}`;
+      if (reading.current.has(seen)) continue;
+      reading.current.add(seen);
       void (async () => {
         let pages: number | null = null;
         let encryption: PdfEncryption | null = null;
@@ -221,7 +247,12 @@ export function usePdfTool(
         } catch {
           pages = null;
         }
-        if (!alive) return;
+        if (!mounted.current) {
+          // Gone, and the pair is released so whichever instance is on screen re-reads
+          // it instead of inheriting a verdict nobody asked for.
+          reading.current.delete(seen);
+          return;
+        }
         // The queue row is the only place a user reads "how big is this job"
         // for the second, third and fourth file, so the count has to reach the
         // store as well as the range validator — and the lock travels with it,
@@ -231,9 +262,6 @@ export function usePdfTool(
         setProbes((prev) => ({ ...prev, [key]: { password: settledPassword, pages, encryption, lock } }));
       })();
     }
-    return () => {
-      alive = false;
-    };
   }, [files, probes, settledPassword]);
 
   const primary = files[0];
