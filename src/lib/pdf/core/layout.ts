@@ -217,12 +217,33 @@ export async function renderBlocks(
         maxWidth: columnWidth - indent - (quote ? 12 : 0),
         fontFamily: options.fontFamily,
       });
-      const height = lines.length * fontSize * settings.lineHeight + spaceBefore;
+      const lineHeight = fontSize * settings.lineHeight;
+      const height = lines.length * lineHeight + spaceBefore;
+      // A block that could fit on a fresh page is moved whole to one, which is what
+      // keeps a paragraph from starting on the last three lines of a sheet. One
+      // that is taller than any page cannot be moved, so it continues across the
+      // break: painting every line from wherever the block began ran the tail
+      // below the bottom edge, where the bytes hold it and no reader shows it.
       if (needs(height)) await turn();
       surface.y -= spaceBefore;
-      const barTop = surface.y;
+      let barTop = surface.y;
+      const paintBar = (from: number): void => {
+        if (!quote || from - surface.y <= 0) return;
+        surface.page.drawRectangle({
+          x: surface.columnX + 2,
+          y: surface.y,
+          width: 2.5,
+          height: from - surface.y,
+          color: rgb(0.72, 0.72, 0.68),
+        });
+      };
       for (const line of lines) {
-        surface.y -= fontSize * settings.lineHeight;
+        if (needs(lineHeight)) {
+          paintBar(barTop);
+          await turn();
+          barTop = surface.y;
+        }
+        surface.y -= lineHeight;
         await drawLine(surface, line, {
           size: fontSize,
           color: quote ? '#55554e' : settings.color,
@@ -233,15 +254,7 @@ export async function renderBlocks(
           fontFamily: options.fontFamily,
         });
       }
-      if (quote && barTop - surface.y > 0) {
-        surface.page.drawRectangle({
-          x: surface.columnX + 2,
-          y: surface.y,
-          width: 2.5,
-          height: barTop - surface.y,
-          color: rgb(0.72, 0.72, 0.68),
-        });
-      }
+      paintBar(barTop);
       surface.y -= spaceAfter;
       continue;
     }
@@ -775,7 +788,10 @@ export function textToBlocks(
         : {
             kind: 'paragraph' as const,
             inlines: chunk.split('\n').map((line, index) => ({
-              text: index === 0 ? line : `\n${line}`,
+              // Spaces, the same expansion the code branch gets in `renderBlocks`:
+              // a tab has no WinAnsi code, so one anywhere in the source made the
+              // standard face throw and the whole run produced no file.
+              text: (index === 0 ? line : `\n${line}`).replace(/\t/g, '    '),
             })),
           },
     );
