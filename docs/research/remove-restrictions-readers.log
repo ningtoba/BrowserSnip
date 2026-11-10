@@ -1,0 +1,416 @@
+# `remove-restrictions` / `unlock` / `change-permissions`, judged by other people's readers
+
+Run of `docs/research/remove-restrictions-readers.py` over the files a scratch
+harness produced with the shipped `runPdfTool` — four settings (`remove-restrictions`,
+`unlock`, `change-permissions action: set`, `change-permissions action: clear`) over
+the nine outside-locked fixtures in `tests/fixtures/encrypted/` plus `plain.pdf`:
+40 files. The harness is deleted after the run, like the flatten probe before it; the
+rows below are what it left, and `tests/pdf/remove-restrictions.test.ts` is what
+pins them.
+
+Nothing in this file is this app's opinion. pypdf 6.14.2, MuPDF 1.28.2, libqpdf
+10.9.1 (through pikepdf) and poppler 26.10.0 each open the produced file with **no
+secret typed** — "the password was removed" is only evidence when nothing is typed —
+and the fixtures at the bottom are then opened with their own secret, so the
+before-picture is measured on the same terms.
+
+Columns: `MuPDF asks` is whether a reader has to be given anything to open the file;
+`MuPDF /P` is its view of the permission flags, and **-4 means every bit set, i.e.
+nothing restricted**; `planted` counts the sheets still carrying
+`Lighthouse Inventory 1887`; `sheet-1 ink` is the non-white share of a 72 dpi raster,
+against the fixture's own 1.51 %; `libqpdf check` is qpdf's own syntax check;
+`/Encrypt in bytes` and `hunter2 in bytes` are greps of the downloaded file for the
+trailer entry and for the typed secret in the clear.
+
+## the table
+
+| produced file | MuPDF asks | MuPDF `/P` | MuPDF planted | sheet-1 ink | libqpdf `/P` | libqpdf check | poppler chars | `/Encrypt` in bytes | `hunter2` in bytes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `change-permissions-clear__aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__mu-aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__mu-aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__mu-aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__mu-rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__plain.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__rc4-128-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions-clear__rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `change-permissions__aes-128-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__aes-256-owner.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__aes-256-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__mu-aes-128-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__mu-aes-256-owner.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__mu-aes-256-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__mu-rc4-128-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__plain.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__rc4-128-owner.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `change-permissions__rc4-128-user.pdf` | False | -3104 | 3/3 | 1.51 % | -3104 | clean | 176 | True | False |
+| `remove-restrictions__aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__mu-aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__mu-aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__mu-aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__mu-rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__plain.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__rc4-128-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `remove-restrictions__rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__mu-aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__mu-aes-256-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__mu-aes-256-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__mu-rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__plain.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__rc4-128-owner.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+| `unlock__rc4-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
+
+The 20 `remove-restrictions` and `unlock` rows share one shape: no dictionary left,
+nothing asked, 3 of 3 sheets still saying what they said, `qpdf --check` clean, no
+secret in the bytes. That answers the ledger row — the tool no longer refuses a
+password-protected file, and what it hands back is fully open rather than "restricted
+but readable".
+
+The 10 `change-permissions action: set` rows keep `/Encrypt` and carry `/P = -3104`
+where every fixture arrived at `-3376`: that sibling changes the restrictions and
+leaves a dictionary standing, which is the difference its name rests on. Its
+10 `action: clear` rows drop the dictionary the way `remove-restrictions` does.
+
+## the run, per file
+
+# produced by the app, opened with no secret typed
+
+## change-permissions-clear__aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2636, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2821, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2816, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__mu-aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__mu-aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__mu-aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__mu-rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__plain.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2975, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__rc4-128-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2580, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions-clear__rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2580, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## change-permissions__aes-128-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4844, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__aes-256-owner.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4910, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__aes-256-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4910, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__mu-aes-128-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4716, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__mu-aes-256-owner.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4716, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__mu-aes-256-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4716, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__mu-rc4-128-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4716, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__plain.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4716, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__rc4-128-owner.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4844, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## change-permissions__rc4-128-user.pdf
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3104, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3104, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 4844, "hasEncryptKey": true, "typedSecretInBytes": false}
+
+## remove-restrictions__aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2636, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2701, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2816, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__mu-aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__mu-aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2189, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__mu-aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__mu-rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__plain.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2975, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__rc4-128-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2462, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2580, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2636, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2701, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2816, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__mu-aes-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__mu-aes-256-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2189, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__mu-aes-256-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__mu-rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2302, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__plain.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2975, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__rc4-128-owner.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2462, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## unlock__rc4-128-user.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
+   bytes   {"size": 2580, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+
+# the fixtures themselves, opened with their own secret
+
+## aes-128-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3376, "stream_method": "aes", "string_method": "aes", "user_password": "hunter2"}
+
+## aes-256-owner.pdf (secret '')
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3376, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 5, "R": 6, "P": -3376, "stream_method": "aesv3", "string_method": "aesv3", "user_password": ""}
+
+## aes-256-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 5, "R": 6, "P": -3376, "stream_method": "aesv3", "string_method": "aesv3", "user_password": "hunter2"}
+
+## mu-aes-128-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 4, "R": 4, "P": -3376, "stream_method": "aes", "string_method": "aes", "user_password": "hunter2"}
+
+## mu-aes-256-owner.pdf (secret '')
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3376, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 5, "R": 6, "P": -3376, "stream_method": "aesv3", "string_method": "aesv3", "user_password": ""}
+
+## mu-aes-256-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 5, "R": 6, "P": -3376, "stream_method": "aesv3", "string_method": "aesv3", "user_password": "hunter2"}
+
+## mu-rc4-128-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 2, "R": 3, "P": -3376, "stream_method": "none", "string_method": "none", "user_password": "hunter2"}
+
+## plain.pdf (secret '')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+
+## rc4-128-owner.pdf (secret '')
+   pypdf   {"encrypted": true, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 2, "encrypted": false, "permissions": -3376, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 2, "R": 3, "P": -3376, "stream_method": "none", "string_method": "none", "user_password": ""}
+
+## rc4-128-user.pdf (secret 'hunter2')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": true, "opens": true, "auth_bits": 6, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": true, "pages": 3, "syntax": "clean", "V": 2, "R": 3, "P": -3376, "stream_method": "none", "string_method": "none", "user_password": "hunter2"}
