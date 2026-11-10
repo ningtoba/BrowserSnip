@@ -112,6 +112,7 @@ const TEXT_NOTES = [
   'Text is drawn as real, selectable PDF text through embedded fonts, so it stays searchable and copyable.',
   'Author styling is structural, not pixel-exact: no CSS box model, no widow/orphan control, no kerning or hyphenation, and the standard 14 faces plus Noto Sans are used instead of the document’s own fonts.',
   'Chinese, Japanese, Korean, Arabic, Hebrew, Thai and Indic faces are fetched from the CDN the first time they are needed. Offline, the run is refused with the script named rather than printed as empty boxes.',
+  'A single word longer than the column has no space to break at: it starts at the left margin and whatever does not fit falls past the right edge of the sheet. Break up minified code, base64 blobs and unspaced URLs into lines yourself.',
 ];
 
 /* ------------------------------------------------------------ input guard */

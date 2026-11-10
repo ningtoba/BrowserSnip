@@ -1,0 +1,21 @@
+## before-fix — /tmp/txttail, judged by MuPDF outside this app
+fixture       src_bytes mupdf_chars sheets runs_stream runs_in_box  first_missing   byte_in_src  message
+csv                9045        7144      7         372         372  -                -1/7360    Tabulated 1 file(s) into 7 page(s).
+html-flat          8800         818      2         422          49  MK25           1770/7116    Laid out 1 HTML source(s) into 2 page(s).
+json-cell          8930          16      3         510           4  MKSTART          10/7365    Reported 1 JSON file(s) into 3 page(s).
+json               9042       14962     23        1200        1200  -                -1/7477    Reported 1 JSON file(s) into 23 page(s).
+md-flat            8800         724      2         482          51  MK25           1770/7116    Rendered 1 Markdown source(s) into 2 page(s).
+md-item            8802         818      2         426          52  MK25           1771/7117    Rendered 1 Markdown source(s) into 2 page(s).
+txt-crlf           8800         724      2         482          51  MK25           1770/7116    Typeset 1 text source(s) into 2 page(s).
+txt-flat           8800         724      2         482          51  MK25           1770/7116    Typeset 1 text source(s) into 2 page(s).
+txt-huge         298921         724      2       16002          51  MK25          59904/242917  Typeset 1 text source(s) into 2 page(s).
+txt-mono           8800        7119      3         123         123  -                -1/7116    Typeset 1 text source(s) into 3 page(s).
+txt-notrail        8919        7131     12         492         492  -                -1/7116    Typeset 1 text source(s) into 12 page(s).
+txt-partial        8869        7091     12         490         490  -                -1/7076    Typeset 1 text source(s) into 12 page(s).
+txt-spaced         8919        7131     12         492         492  -                -1/7116    Typeset 1 text source(s) into 12 page(s).
+txt-unicode          18        7005     12         484         484  -                -1/16      Typeset 1 text source(s) into 12 page(s).
+word-flat          8800         818      2         422          49  MK25           1770/7116    Converted 1 document(s) via mammoth (bundled, offline) into 2 page(s).
+word              12641        7116     12         480         480  -                -1/11076   Converted 1 document(s) via mammoth (bundled, offline) into 12 page(s).
+xml-tall           8800         715      2         483          51  MK25           1770/7116    Printed 1 XML file(s) into 2 page(s).
+xml               10254        7840     13         603         603  -                -1/8689    Printed 1 XML file(s) into 13 page(s).
+every marker on a sheet: 9 of 18 fixtures; nothing hanging outside a page box: 9 of 18
