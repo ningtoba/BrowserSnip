@@ -1,0 +1,405 @@
+{
+  "before": {
+    "path": "docs/research/flatten-input.pdf",
+    "pages": 1,
+    "annots": [
+      {
+        "page": 1,
+        "kind": "Text",
+        "rect": [
+          480.0,
+          82.0,
+          500.0,
+          102.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Highlight",
+        "rect": [
+          60.0,
+          116.0,
+          180.0,
+          130.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Ink",
+        "rect": [
+          200.0,
+          182.0,
+          340.0,
+          242.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Square",
+        "rect": [
+          60.0,
+          282.0,
+          180.0,
+          342.0
+        ]
+      }
+    ],
+    "annot_count": 4,
+    "links": 0,
+    "widgets": [
+      {
+        "page": 1,
+        "obj": "<<   /Type /Annot   /Subtype /Widget   /Rect [ 60 420 260 442 ]   /Parent 17 0 R   /P 5 0 R   /MK <<     /BG [ 1 1 1 ]     /R 0     /BC [ .4 .4 .4 ]   >>   /BS <<     /W .5   >>   /F 4   /AP <<     /N 30 0 R   >> >>"
+      },
+      {
+        "page": 1,
+        "obj": "<<   /Type /Annot   /Subtype /Widget   /Rect [ 60 380 76 396 ]   /Parent 21 0 R   /P 5 0 R   /MK <<     /BG [ 1 1 1 ]     /R 0     /BC [ .4 .4 .4 ]   >>   /BS <<     /W .5   >>   /F 4   /AS /Off   /AP <<     /N <<       /Yes 23 0 R       /O"
+      },
+      {
+        "page": 1,
+        "obj": "<<   /Type /Annot   /Subtype /Widget   /FT /Sig   /T (Signature1)   /Rect [ 360 300 460 360 ]   /P 5 0 R   /V 28 0 R   /AP <<     /N 27 0 R   >>   /F 4 >>"
+      }
+    ],
+    "mark_boxes": [
+      {
+        "page": 0,
+        "kind": "Text",
+        "rect": [
+          480.0,
+          740.0,
+          500.0,
+          760.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Highlight",
+        "rect": [
+          60.0,
+          712.0,
+          180.0,
+          726.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Ink",
+        "rect": [
+          200.0,
+          600.0,
+          340.0,
+          660.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Square",
+        "rect": [
+          60.0,
+          500.0,
+          180.0,
+          560.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          60.0,
+          420.0,
+          260.0,
+          442.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          60.0,
+          380.0,
+          76.0,
+          396.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          360.0,
+          300.0,
+          460.0,
+          360.0
+        ]
+      }
+    ],
+    "ink_at_marks": [
+      {
+        "kind": "Text",
+        "page": 0,
+        "displayed": 97.01,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Highlight",
+        "page": 0,
+        "displayed": 98.51,
+        "content_only": 21.49
+      },
+      {
+        "kind": "Ink",
+        "page": 0,
+        "displayed": 0.02,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Square",
+        "page": 0,
+        "displayed": 99.99,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 20.23,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 19.55,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 8.73,
+        "content_only": 0.0
+      }
+    ],
+    "xobjects": [
+      []
+    ],
+    "ink_pct": [
+      2.53
+    ],
+    "ink_pct_content_only": [
+      0.42
+    ],
+    "has_acroform": true,
+    "acroform_obj": "<</Fields[17 0 R 21 0 R 29 0 R]>>",
+    "need_appearances": "null",
+    "text": [
+      "Contract body line one The quick brown fox jumps over the lazy dog Ada Lovelace"
+    ],
+    "pypdf_fields": [
+      "Signature1",
+      "answer",
+      "tick"
+    ],
+    "pypdf_acroform_fields": [
+      {
+        "name": "answer",
+        "FT": "/Tx",
+        "Ff": "0",
+        "kids": 1,
+        "value": "Ada Lovelace"
+      },
+      {
+        "name": "tick",
+        "FT": "/Btn",
+        "Ff": "None",
+        "kids": 1,
+        "value": "/Yes"
+      },
+      {
+        "name": "Signature1",
+        "FT": "/Sig",
+        "Ff": "None",
+        "kids": 0,
+        "value": "{'/Type': '/Sig', '/FT': '/Sig', '/Name': '/Signature1'}"
+      }
+    ]
+  },
+  "after": {
+    "path": "docs/research/flatten-before-fix.pdf",
+    "pages": 1,
+    "annots": [
+      {
+        "page": 1,
+        "kind": "Text",
+        "rect": [
+          480.0,
+          82.0,
+          500.0,
+          102.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Highlight",
+        "rect": [
+          60.0,
+          116.0,
+          180.0,
+          130.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Ink",
+        "rect": [
+          200.0,
+          182.0,
+          340.0,
+          242.0
+        ]
+      },
+      {
+        "page": 1,
+        "kind": "Square",
+        "rect": [
+          60.0,
+          282.0,
+          180.0,
+          342.0
+        ]
+      }
+    ],
+    "annot_count": 4,
+    "links": 0,
+    "widgets": [],
+    "mark_boxes": [
+      {
+        "page": 0,
+        "kind": "Text",
+        "rect": [
+          480.0,
+          740.0,
+          500.0,
+          760.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Highlight",
+        "rect": [
+          60.0,
+          712.0,
+          180.0,
+          726.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Ink",
+        "rect": [
+          200.0,
+          600.0,
+          340.0,
+          660.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Square",
+        "rect": [
+          60.0,
+          500.0,
+          180.0,
+          560.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          60.0,
+          420.0,
+          260.0,
+          442.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          60.0,
+          380.0,
+          76.0,
+          396.0
+        ]
+      },
+      {
+        "page": 0,
+        "kind": "Widget",
+        "rect": [
+          360.0,
+          300.0,
+          460.0,
+          360.0
+        ]
+      }
+    ],
+    "ink_at_marks": [
+      {
+        "kind": "Text",
+        "page": 0,
+        "displayed": 97.01,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Highlight",
+        "page": 0,
+        "displayed": 98.51,
+        "content_only": 21.49
+      },
+      {
+        "kind": "Ink",
+        "page": 0,
+        "displayed": 0.02,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Square",
+        "page": 0,
+        "displayed": 99.99,
+        "content_only": 0.0
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 20.23,
+        "content_only": 20.23
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 31.75,
+        "content_only": 31.75
+      },
+      {
+        "kind": "Widget",
+        "page": 0,
+        "displayed": 8.73,
+        "content_only": 8.73
+      }
+    ],
+    "xobjects": [
+      []
+    ],
+    "ink_pct": [
+      2.54
+    ],
+    "ink_pct_content_only": [
+      0.78
+    ],
+    "has_acroform": true,
+    "acroform_obj": "<</Fields[]>>",
+    "need_appearances": "null",
+    "text": [
+      "Contract body line one The quick brown fox jumps over the lazy dog Ada Lovelace"
+    ],
+    "pypdf_fields": [],
+    "pypdf_acroform_fields": []
+  }
+}
