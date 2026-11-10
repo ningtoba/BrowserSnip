@@ -12,15 +12,21 @@
  * `planted_pages 3 → 0`, sheet-1 ink `0.46 % → 0.0 %`, text `182 → 0` characters,
  * and `qpdf --check` reporting errors on all 18.
  *
- * This module undoes that, for the two strengths it can **prove** with content:
+ * This module undoes that, for the three strengths it can **prove** with content:
  *
  *   * **RC4-128** — `/V 2 /R 3`, the pre-crypt-filter handler (ISO 32000-1 §7.3.3,
  *     revision 3).
  *   * **AES-128** — `/V 4 /R 4` whose effective crypt filter is `/CFM /AESV2`
  *     (§7.4.4, revision 4).
+ *   * **AES-256** — `/V 5 /R 6` whose effective crypt filter is `/CFM /AESV3`
+ *     (ISO 32000-2 §7.11.5, revision 6): Algorithm 2.B's SHA-256/384/512 ladder
+ *     verifies `/U` and `/O`, the file key comes out of `/UE` or `/OE` under
+ *     AES-256-CBC **with no padding**, and `/Perms` is checked before a byte of
+ *     the result is trusted.
  *
- * Everything else is refused by name rather than by silence: AES-256 (`/R 5`,
- * `/R 6`, `/CFM /AESV3` and its `/OE`/`/UE`/`/Perms` derivations), 40-bit RC4 (no
+ * Everything else is refused by name rather than by silence: AES-256 at a handler
+ * revision other than 6 (`/R 5` hashes without the ladder and `/R 7` drops the
+ * padding, and no outside fixture here carries either), 40-bit RC4 (no
  * outside fixture, so no claim to make), public-key handlers (`/Filter` other than
  * `/Standard`), a crypt filter that is named but not defined, and any file whose
  * objects live in **object streams** — `@maxwbh/pdf-lib` expands those while it
@@ -33,15 +39,19 @@
  * **AES-128** (`/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, selected by
  * `/StmF` and `/StrF`) with the `/O`, `/U`, `/P` and `/Perms` values revision 4
  * defines, running the *same* key schedule over the *same* primitives as the read
- * path — Algorithms 1-5 in one module, so the writer and the reader cannot drift
- * apart, and so a file this app protects is a file this app can read back. RC4
- * stays read-only: it is what the outside fixtures were measured with, and a
- * strength nobody has to choose is a strength nobody is sold.
+ * path — Algorithms 1-5 and 2.B in one module, so the writer and the reader cannot
+ * drift apart, and so a file this app protects is a file this app can read back.
+ * RC4 and AES-256 stay read-only: RC4 is what the outside fixtures were measured
+ * with, AES-256 is read from this change onwards and its writer has to prove its
+ * own round trip next, and a strength nobody has to choose is a strength nobody
+ * is sold. An AES-256 file this app *edits* is still re-sealed with the source's
+ * own key and dictionary, so it leaves as AES-256 as it arrived.
  *
  * The primitives, in the order the constraints arrive: **MD5** comes from
  * `node-forge`, already a dependency and already how `core/attachments.ts`
  * computes a file's `/CheckSum` (Web Crypto does not implement MD5).
- * **AES-128-CBC** is native Web Crypto, which is why both passes are
+ * **AES-CBC** (128- and 256-bit) and **SHA-256/384/512** are native Web Crypto,
+ * which is why both passes — and the revision-6 password check — are
  * asynchronous. **RC4** has no Web Crypto name, so it is delegated to the fork's
  * own `rc4Encrypt`, which this module's fixture test exercises end to end.
  * Nothing leaves the tab and nothing new is installed.
@@ -71,12 +81,14 @@ import type { PDFContext } from '@maxwbh/pdf-lib';
 import { md } from 'node-forge';
 
 /** The strength names this app decrypts, and the guard reports as supported. */
-export type CipherStrength = 'RC4-128' | 'AES-128';
+export type CipherStrength = 'RC4-128' | 'AES-128' | 'AES-256';
 
 /** Why a cipher is left alone, in the vocabulary `core/guard.ts` renders. */
 export type UnsupportedReason =
-  /** `/CFM /AESV3`, `/R 5` or `/R 6`: needs `/OE`/`/UE`/`/Perms`. */
+  /** AES-256 under a handler revision other than 6 (`/R 5`, `/R 7`, `/AESV3` at `/V 4`). */
   | 'aes-256'
+  /** Revision 6's `/Perms` does not decrypt to its own `adb` marker under the derived key. */
+  | 'perms-mismatch'
   /** 40-bit RC4 (`/V 1 /R 2`): no outside fixture, so no claim to make. */
   | 'rc4-40'
   /** `/Filter` is not `/Standard`: a public-key (certificate) handler. */
@@ -183,7 +195,19 @@ function padSecret(text: string): Uint8Array {
   return concat(bytes, PASSWORD_PADDING.subarray(0, 32 - bytes.length));
 }
 
-/* ── AES-128-CBC through Web Crypto ──────────────────────────────────────── */
+/**
+ * A password as revision 6 takes it: the UTF-8 bytes, cut at 127 and never padded.
+ *
+ * The padding is a revision-2 idea and the 127-byte cut is the one place the two
+ * families disagree about what a long secret means; a 128-byte secret therefore
+ * opens a revision-4 file and not a revision-6 one, which is the files' rule, not
+ * this app's.
+ */
+function secret127(text: string): Uint8Array {
+  return utf8.encode(text).subarray(0, 127);
+}
+
+/* ── AES-CBC, 128 and 256 bit, through Web Crypto ────────────────────────── */
 
 function subtle(): SubtleCrypto | null {
   const host = (globalThis as { crypto?: Crypto }).crypto;
@@ -246,25 +270,57 @@ async function aesCbcDecrypt(key: Uint8Array, payload: Uint8Array): Promise<Uint
     return stripPadding(new Uint8Array(await api.decrypt({ name: 'AES-CBC', iv }, cryptoKey, cipher)));
   } catch {
     const last = cipher.subarray(cipher.length - 16);
-    const filler = await aesEncryptBlock(key, xorOnes(last, 16));
+    const filler = await aesEncryptBlock(key, xorWithRepeat(last, 16));
     const loosened = await api.decrypt({ name: 'AES-CBC', iv }, cryptoKey, concat(cipher, filler));
     const whole = new Uint8Array(loosened, 0, loosened.byteLength - 16);
     return stripPadding(whole);
   }
 }
 
-/** XOR every byte with `value`. */
-function xorOnes(bytes: Uint8Array, value: number): Uint8Array {
-  return Uint8Array.from(bytes, (byte) => byte ^ value);
+/**
+ * Whole AES-CBC blocks with **no** padding: `/OE`, `/UE` and `/Perms`.
+ *
+ * The revision-6 key wrap is exactly 32 bytes of file key and `/Perms` exactly 16,
+ * and neither carries a PKCS#5 pad — unlike the crypt filter over streams, which
+ * does. Web Crypto cannot be told that, so one synthetic padding block is appended
+ * (`E(k, pad ⊕ last)`, which decrypts to sixteen `0x10` bytes) and its output is
+ * dropped. Getting this wrong is the quiet failure of the whole revision: unpadding
+ * a 32-byte key yields a 16- to 31-byte "key" that still decrypts the page streams
+ * into plausible-looking garbage.
+ */
+async function aesCbcUnpadless(key: Uint8Array, iv: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+  const api = subtle();
+  if (!api) throw new Error('Web Crypto AES is unavailable');
+  if (data.length === 0 || data.length % 16 !== 0) {
+    throw new Error(`an unpadded AES value of ${data.length} bytes is not block-aligned`);
+  }
+  const cryptoKey = await aesKey(key);
+  const tail = data.length > 16 ? data.subarray(data.length - 16) : iv;
+  const filler = await aesEncryptBlock(key, xorWithRepeat(tail, 16));
+  const opened = await api.decrypt({ name: 'AES-CBC', iv }, cryptoKey, concat(data, filler));
+  return new Uint8Array(opened, 0, data.length);
+}
+
+/**
+ * CBC over whole blocks with the padding block Web Crypto adds thrown away: the
+ * one-way step of Algorithm 2.B, which runs AES-128-CBC over a 64-fold copy of its
+ * own input and keeps every byte of it.
+ */
+async function aesCbcSealRaw(key: Uint8Array, iv: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+  const api = subtle();
+  if (!api) throw new Error('Web Crypto AES is unavailable');
+  const sealed = await api.encrypt({ name: 'AES-CBC', iv }, await aesKey(key), data);
+  return new Uint8Array(sealed, 0, data.length);
 }
 
 /**
  * Encrypt one string or payload: a fresh IV in front, then CBC over whole blocks.
  *
- * Web Crypto's AES-CBC applies the PKCS#5 padding the spec's AES crypt filter
- * asks for, so the payload is always `16 + 16·n` bytes and an empty stream still
- * yields a 32-byte payload — which is the shape `aesCbcDecrypt` insists on, so a
- * file this app writes is a file the read path accepts without the pad repair.
+ * Web Crypto's AES-CBC applies the PKCS#5 padding the spec's AES crypt filter asks
+ * for — at 128 **and** at 256 bits — so the payload is always `16 + 16·n` bytes and
+ * an empty stream still yields a 32-byte payload, which is the shape
+ * `aesCbcDecrypt` insists on. A file this app writes is therefore a file the read
+ * path accepts without the pad repair.
  */
 async function aesCbcEncrypt(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
   const api = subtle();
@@ -283,7 +339,7 @@ async function aesCbcEncrypt(key: Uint8Array, data: Uint8Array): Promise<Uint8Ar
  * this module exists to refuse on the way in.
  */
 function requireAes(method: Method | null): void {
-  if (method === 'AESV2' && !hasAesPrimitives()) {
+  if ((method === 'AESV2' || method === 'AESV3') && !hasAesPrimitives()) {
     throw new Error('This browser offers no AES-CBC, so nothing was ciphered and no file was written.');
   }
 }
@@ -327,7 +383,7 @@ function documentId(context: PDFContext): Uint8Array | null {
   return null;
 }
 
-type Method = 'RC4' | 'AESV2';
+type Method = 'RC4' | 'AESV2' | 'AESV3';
 
 /** The predefined filters: named in `/StmF`, never listed in `/CF`. */
 const PLAINTEXT_FILTERS = new Set(['None', 'Identity']);
@@ -354,9 +410,11 @@ function resolveFilter(dict: PDFDict, name: string | null): Filter {
   if (method === 'None' || method === 'Identity') return { ok: true, method: null, keyBytes: null };
   if (method === 'V2') return { ok: true, method: 'RC4', keyBytes: (declaredLength ?? 128) / 8 };
   if (method === 'AESV2') return { ok: true, method: 'AESV2', keyBytes: declaredLength ?? 16 };
-  // `/AESV3` and anything else (`/Crypt` with a sub-filter, RFC 3164 mail
-  // encryption) is a cipher this seam does not implement: named, never guessed.
-  return { ok: false, reason: method === 'AESV3' ? 'aes-256' : 'unsupported-filter' };
+  if (method === 'AESV3') return { ok: true, method: 'AESV3', keyBytes: declaredLength ?? 32 };
+  // Anything else (`/Crypt` with a sub-filter, RFC 3164 mail encryption) is a
+  // cipher this seam does not implement: named, never guessed. Whether an AESV3
+  // filter is readable is the *revision*’s question, which `readCipher` answers.
+  return { ok: false, reason: 'unsupported-filter' };
 }
 
 /**
@@ -375,6 +433,12 @@ export interface Cipher {
   keyBytes: number;
   owner: Uint8Array;
   user: Uint8Array;
+  /** `/OE`: the file key wrapped by the owner secret. Revision 6 only. */
+  ownerWrap: Uint8Array | null;
+  /** `/UE`: the file key wrapped by the user secret. Revision 6 only. */
+  userWrap: Uint8Array | null;
+  /** `/Perms`: the 16-byte check value. Revision 6 only; revision 4 may carry one. */
+  perms: Uint8Array | null;
   permissions: number;
   /** `/EncryptMetadata false`: the user metadata and `/Info` stay in the clear. */
   metadataEncrypted: boolean;
@@ -389,9 +453,9 @@ type CipherRead = { ok: true; cipher: Cipher } | { ok: false; reason: Unsupporte
  * This asks the same question `core/guard.ts:classifyEncryption` asks — the
  * **effective** filter, not the strongest name in the file, because a dictionary
  * can define a filter it never selects — and answers it narrowly: only RC4 at a
- * 16-byte key and `/CFM /AESV2` come back as a cipher. `/V 3` without a `/CF`
- * dictionary is the revision that could mean either, so it is refused rather than
- * assumed.
+ * 16-byte key, `/CFM /AESV2`, and `/CFM /AESV3` under the revision-6 handler come
+ * back as a cipher. `/V 3` without a `/CF` dictionary is the revision that could
+ * mean either, so it is refused rather than assumed.
  */
 function readCipher(context: PDFContext, dict: PDFDict): CipherRead {
   const handler = dict.lookupMaybe(PDFName.of('Filter'), PDFName)?.decodeText();
@@ -400,6 +464,11 @@ function readCipher(context: PDFContext, dict: PDFDict): CipherRead {
   const version = integer(dict, 'V') ?? 1;
   const revision = integer(dict, 'R');
   if (revision === null) return { ok: false, reason: 'missing-parameters' };
+  // Revision 6 is the AES-256 handler this module undoes. Revision 5 hashes the
+  // password without the ladder and revision 7 runs the crypt filter without the
+  // padding; neither has an outside fixture here, so both stay refused by name
+  // rather than by a key that happens to look right.
+  if (revision === 6) return readAes256(context, dict, revision);
   if (revision >= 5 || version >= 5) return { ok: false, reason: 'aes-256' };
 
   const owner = secretBytes(dict, 'O');
@@ -420,6 +489,12 @@ function readCipher(context: PDFContext, dict: PDFDict): CipherRead {
     const stringFilter = resolveFilter(dict, dict.lookupMaybe(PDFName.of('StrF'), PDFName)?.decodeText() ?? null);
     if (!streamFilter.ok) return { ok: false, reason: streamFilter.reason };
     if (!stringFilter.ok) return { ok: false, reason: stringFilter.reason };
+    // An AES-256 filter selected by a revision-4 handler is still AES-256: the
+    // key derivation that unwraps it belongs to revision 6, so the strength is
+    // the honest reason rather than “filter not implemented”.
+    if (streamFilter.method === 'AESV3' || stringFilter.method === 'AESV3') {
+      return { ok: false, reason: 'aes-256' };
+    }
     if (streamFilter.method === null && stringFilter.method === null) {
       // The `/None` filter is in force over both channels: a gate, not a cipher.
       return { ok: false, reason: 'no-cipher' };
@@ -453,6 +528,73 @@ function readCipher(context: PDFContext, dict: PDFDict): CipherRead {
       keyBytes,
       owner,
       user,
+      ownerWrap: null,
+      userWrap: null,
+      perms: null,
+      permissions,
+      metadataEncrypted: metadata ? metadata === PDFBool.True : true,
+      documentId: id,
+    },
+  };
+}
+
+/**
+ * The revision-6 (AES-256) half of `readCipher`.
+ *
+ * Revision 6 spells the lock differently at every point the older ones do: `/O`
+ * and `/U` are **48** bytes (32-byte hash, 8-byte validation salt, 8-byte key
+ * salt) instead of 32, the file key is not derived from the password at all but
+ * *unwrapped* out of `/UE` (user) or `/OE` (owner), and the crypt filter carries
+ * the 32-byte file key itself rather than a per-object hash of it. A dictionary
+ * that claims the revision without carrying those values is refused rather than
+ * opened with a key that might be somebody else's.
+ */
+function readAes256(context: PDFContext, dict: PDFDict, revision: number): CipherRead {
+  const owner = secretBytes(dict, 'O');
+  const user = secretBytes(dict, 'U');
+  const ownerWrap = secretBytes(dict, 'OE');
+  const userWrap = secretBytes(dict, 'UE');
+  const permissions = integer(dict, 'P');
+  const id = documentId(context);
+  const tooShort = (value: Uint8Array | null, bytes: number) => !value || value.length < bytes;
+  if (tooShort(owner, 48) || tooShort(user, 48)) return { ok: false, reason: 'missing-parameters' };
+  if (tooShort(ownerWrap, 32) || tooShort(userWrap, 32)) return { ok: false, reason: 'missing-parameters' };
+  if (permissions === null || !id) return { ok: false, reason: 'missing-parameters' };
+
+  const streamFilter = resolveFilter(dict, dict.lookupMaybe(PDFName.of('StmF'), PDFName)?.decodeText() ?? null);
+  const stringFilter = resolveFilter(dict, dict.lookupMaybe(PDFName.of('StrF'), PDFName)?.decodeText() ?? null);
+  if (!streamFilter.ok) return { ok: false, reason: streamFilter.reason };
+  if (!stringFilter.ok) return { ok: false, reason: stringFilter.reason };
+  if (streamFilter.method === null && stringFilter.method === null) {
+    return { ok: false, reason: 'no-cipher' };
+  }
+  // `/AESV3` at 32 bytes over both channels, which is what revision 6 selects.
+  // A mixed pair, or an AES-256 filter declared at another length, would need two
+  // key schedules at once, and half a document ciphered is a blank page.
+  if (streamFilter.method !== 'AESV3' || stringFilter.method !== 'AESV3') {
+    return { ok: false, reason: 'unsupported-filter' };
+  }
+  if (streamFilter.keyBytes !== 32 || stringFilter.keyBytes !== 32) {
+    return { ok: false, reason: 'unsupported-filter' };
+  }
+  if (!hasAesPrimitives()) return { ok: false, reason: 'no-aes-primitives' };
+
+  const metadata = dict.lookupMaybe(PDFName.of('EncryptMetadata'), PDFBool);
+  return {
+    ok: true,
+    cipher: {
+      strength: 'AES-256',
+      revision,
+      stream: 'AESV3',
+      string: 'AESV3',
+      keyBytes: 32,
+      // The derivations use the first 32 bytes of each value and the 48-byte
+      // `/O`/`/U` in full; the tails a producer may append are not the file key.
+      owner: owner!.subarray(0, 48),
+      user: user!.subarray(0, 48),
+      ownerWrap: ownerWrap!.subarray(0, 32),
+      userWrap: userWrap!.subarray(0, 32),
+      perms: secretBytes(dict, 'Perms'),
       permissions,
       metadataEncrypted: metadata ? metadata === PDFBool.True : true,
       documentId: id,
@@ -573,6 +715,197 @@ function opensWith(cipher: Cipher, padded: Uint8Array): Uint8Array | null {
   return equalBytes(computed.subarray(0, 16), cipher.user.subarray(0, 16)) ? fileKey : null;
 }
 
+/* ── key derivation (ISO 32000-2 §7.11.5, revision 6) ──────────────────── */
+
+/** The SHA-2 family members Algorithm 2.B rotates between, chosen per round. */
+const SHA_FAMILY = ['SHA-256', 'SHA-384', 'SHA-512'] as const;
+
+/** The three bytes `/Perms` carries at 9-11, spelled `adb`. */
+const PERMS_MARKER = Uint8Array.from([0x61, 0x64, 0x62]);
+
+/** The refusal one authentic-looking key earns when `/Perms` denies it. */
+function permsRefusal(): AccessVerdict {
+  return { kind: 'unsupported', reason: 'perms-mismatch', strength: 'AES-256' };
+}
+
+/** An all-zero IV: the three revision-6 key values are wrapped under one. */
+const ZERO_IV = new Uint8Array(16);
+
+function sha2(name: (typeof SHA_FAMILY)[number], data: Uint8Array): Promise<Uint8Array> {
+  const api = subtle();
+  if (!api) return Promise.reject(new Error('Web Crypto SHA-2 is unavailable'));
+  return api.digest({ name }, data).then((buffer) => new Uint8Array(buffer));
+}
+
+/**
+ * Algorithm 2.B, the revision-6 password hash.
+ *
+ * A SHA-256 of `password ‖ salt ‖ userData` seeds a loop that encrypts 64 copies of
+ * `password ‖ K ‖ userData` under the previous `K` and re-hashes the result with
+ * SHA-256, SHA-384 or SHA-512 — which one is decided per round by the first 16
+ * bytes of the ciphertext, so the hash function is data, not a parameter. The loop
+ * runs at least 64 rounds and stops when the ciphertext's last byte falls behind
+ * the round counter, which the fixtures measure at 64 to 79 rounds.
+ *
+ * `userData` is empty for the user secret and the whole 48-byte `/U` for the owner
+ * one — the only place the two secrets share a derivation, and the reason an owner
+ * password cannot be checked without the file's `/U` in hand.
+ */
+async function revision6Hash(secret: Uint8Array, salt: Uint8Array, userData: Uint8Array): Promise<Uint8Array> {
+  let k = await sha2('SHA-256', concat(secret, salt, userData));
+  for (let round = 1; ; round++) {
+    const seed = concat(secret, k, userData);
+    const buffer = new Uint8Array(seed.length * 64);
+    for (let copy = 0; copy < 64; copy++) buffer.set(seed, copy * seed.length);
+    const e = await aesCbcSealRaw(k.subarray(0, 16), k.subarray(16, 32), buffer);
+    k = await sha2(SHA_FAMILY[e.subarray(0, 16).reduce((total, byte) => total + byte, 0) % 3], e);
+    if (round >= 64 && (e[e.length - 1] ?? 0) <= round - 32) return k.subarray(0, 32);
+    // The stop condition is data-driven, so a hand-edited salt could in principle
+    // keep it false. 4096 rounds is fifty times what a legal file measures, and
+    // past that a secret is refused rather than the tab hung on one hash.
+    if (round > 4096) throw new Error('the revision-6 password hash did not settle');
+  }
+}
+
+/** The four values revision 6 reads off the dictionary and revision 4 does not have. */
+interface Aes256Lock {
+  owner: Uint8Array;
+  user: Uint8Array;
+  ownerWrap: Uint8Array;
+  userWrap: Uint8Array;
+  perms: Uint8Array | null;
+}
+
+/** The revision-6 values, narrowed from the dictionary this cipher came out of. */
+function aes256Lock(cipher: Cipher): Aes256Lock | null {
+  if (!cipher.ownerWrap || !cipher.userWrap) return null;
+  return {
+    owner: cipher.owner,
+    user: cipher.user,
+    ownerWrap: cipher.ownerWrap,
+    userWrap: cipher.userWrap,
+    perms: cipher.perms,
+  };
+}
+
+/**
+ * The file key one secret unwraps, or `null` when the secret is not this lock's.
+ *
+ * The first 32 bytes of `/U` (and of `/O`) are `revision6Hash` over the secret and
+ * the **validation salt** in bytes 32-40; the 32-byte file key is what the
+ * **key salt** in bytes 40-48 hashes to, used as an AES-256-CBC key over the first
+ * 32 bytes of `/UE` (or `/OE`) with a zero IV and no padding.
+ */
+async function unwrapFileKey(
+  lock: Aes256Lock,
+  secret: Uint8Array,
+  as: 'user' | 'owner',
+): Promise<Uint8Array | null> {
+  const validation = as === 'user' ? lock.user.subarray(32, 40) : lock.owner.subarray(32, 40);
+  const wrapKey = as === 'user' ? lock.user.subarray(40, 48) : lock.owner.subarray(40, 48);
+  const wrapped = as === 'user' ? lock.userWrap : lock.ownerWrap;
+  // The owner hash runs over the whole 48-byte `/U`; the user hash over nothing.
+  const userData = as === 'user' ? new Uint8Array(0) : lock.user;
+  const checked = as === 'user' ? lock.user.subarray(0, 32) : lock.owner.subarray(0, 32);
+  if (!equalBytes(await revision6Hash(secret, validation, userData), checked)) return null;
+  return aesCbcUnpadless(await revision6Hash(secret, wrapKey, userData), ZERO_IV, wrapped);
+}
+
+/**
+ * Whether `/Perms` agrees with the key that just opened the file.
+ *
+ * The value is one AES-256-CBC block under a zero IV holding `/P` little-endian,
+ * four bytes saying whether the metadata is ciphered, four random bytes, the
+ * marker `adb` at bytes 9-11 and four more random bytes. The marker is what proves
+ * *this* key produced it, and it is what this module insists on: `/U` or `/O` has
+ * already authenticated the secret, so a value that does not carry the marker means
+ * the file's own dictionary and its own key contradict each other — the shape that
+ * turns a wrong key into mojibake with a page count that looks fine. **Refused**
+ * in that case, not trusted.
+ *
+ * A `/Perms` that is absent is **trusted** and opened: revision 6 permits it, the
+ * password check above is what gates access, and every outside reader here opens
+ * such a file. Bytes 0-7 of a value that does carry its marker are deliberately not
+ * compared with `/P` and `/EncryptMetadata`: that comparison exists to tell a reader
+ * the permissions were edited, not to say the content is unreadable, and refusing
+ * here would lock a user out of a file qpdf, MuPDF, poppler and pypdf all open.
+ */
+async function permsAgrees(lock: Aes256Lock, fileKey: Uint8Array): Promise<boolean> {
+  if (!lock.perms || lock.perms.length < 16) return true;
+  const opened = await aesCbcUnpadless(fileKey, ZERO_IV, lock.perms.subarray(0, 16));
+  return equalBytes(opened.subarray(9, 12), PERMS_MARKER);
+}
+
+/** What one secret did against one revision-6 lock. */
+type Aes256Opening =
+  | { kind: 'opened'; fileKey: Uint8Array; openedAs: 'user' | 'owner' }
+  /** The secret unwrapped a key, and `/Perms` denies it: the file contradicts itself. */
+  | { kind: 'perms' }
+  | { kind: 'wrong' };
+
+async function openWithSecret(lock: Aes256Lock, secret: string): Promise<Aes256Opening> {
+  const bytes = secret127(secret);
+  let fileKey: Uint8Array | null = null;
+  let openedAs: 'user' | 'owner' = 'user';
+  try {
+    fileKey = await unwrapFileKey(lock, bytes, 'user');
+    if (!fileKey) {
+      fileKey = await unwrapFileKey(lock, bytes, 'owner');
+      openedAs = 'owner';
+    }
+    if (!fileKey) return { kind: 'wrong' };
+    return (await permsAgrees(lock, fileKey)) ? { kind: 'opened', fileKey, openedAs } : { kind: 'perms' };
+  } catch {
+    // Either this browser stopped offering AES-CBC mid-derivation or a hand-edited
+    // salt kept the ladder from settling. Both answers are "this secret is not the
+    // file's", which the guard renders; an exception here would reach the user.
+    return { kind: 'wrong' };
+  }
+}
+
+/**
+ * The four answers revision 6 gives about one secret, in the same shape as
+ * `verdictFor`'s: typed user secret, typed owner secret, then the empty password,
+ * which is a permissions-only lock's user secret and opens with nothing typed.
+ *
+ * A `/Perms` that does not carry its marker comes back `unsupported` rather than
+ * `bad-password`, because the password was right and the file is the contradiction.
+ */
+async function aes256Verdict(cipher: Cipher, password: string | undefined): Promise<AccessVerdict> {
+  const lock = aes256Lock(cipher);
+  if (!lock) return { kind: 'unsupported', reason: 'missing-parameters', strength: cipher.strength };
+  if (password) {
+    const typed = await openWithSecret(lock, password);
+    if (typed.kind === 'perms') return permsRefusal();
+    if (typed.kind === 'opened') {
+      return {
+        kind: 'opens',
+        strength: 'AES-256',
+        fileKey: typed.fileKey,
+        openedAs: typed.openedAs,
+        suppliedMatched: true,
+      };
+    }
+  }
+  const empty = await openWithSecret(lock, '');
+  if (empty.kind === 'perms') return permsRefusal();
+  if (empty.kind === 'opened') {
+    return {
+      kind: 'opens',
+      strength: 'AES-256',
+      fileKey: empty.fileKey,
+      openedAs: 'empty',
+      suppliedMatched: password === '',
+    };
+  }
+  return password
+    ? { kind: 'bad-password', strength: 'AES-256' }
+    : { kind: 'needs-password', strength: 'AES-256' };
+}
+
+/** The sentinel that tells "the key opened it and `/Perms` denied it" from "wrong password". */
+const PERMS_REFUSED = 'perms-refused' as const;
+
 /**
  * Which secret this is, and the file key it yields.
  *
@@ -581,9 +914,12 @@ function opensWith(cipher: Cipher, padded: Uint8Array): Uint8Array | null {
  * password — the whole of a permissions-only lock. A password that is none of
  * those is `bad-password`, never an "accepted" file that then decrypts to
  * mojibake; on a permissions-only file it still opens, and `suppliedMatched: false`
- * is what says the typed secret was not the one it opened with.
+ * is what says the typed secret was not the one it opened with. Revision 6 answers
+ * the same four questions through its own derivations, and this chooses between the
+ * two families once, from the cipher the dictionary selected.
  */
-function verdictFor(cipher: Cipher, password: string | undefined): AccessVerdict {
+async function verdictFor(cipher: Cipher, password: string | undefined): Promise<AccessVerdict> {
+  if (cipher.strength === 'AES-256') return aes256Verdict(cipher, password);
   if (password) {
     const asUser = opensWith(cipher, padSecret(password));
     if (asUser) return { kind: 'opens', strength: cipher.strength, fileKey: asUser, openedAs: 'user', suppliedMatched: true };
@@ -606,9 +942,12 @@ function verdictFor(cipher: Cipher, password: string | undefined): AccessVerdict
  *
  * This is the whole of what `core/guard.ts` asks before refusing a rewrite, and
  * the same answer `decryptDocument` acts on, so the refusal and the decryption
- * cannot drift apart.
+ * cannot drift apart. It is asynchronous because the revision-6 password check is:
+ * SHA-256/384/512 and AES-CBC are native Web Crypto calls, and this module runs
+ * every cipher through one API rather than keeping a second, synchronous copy of
+ * each primitive in the bundle.
  */
-export function assessAccess(doc: PDFDocument, password?: string): AccessVerdict {
+export async function assessAccess(doc: PDFDocument, password?: string): Promise<AccessVerdict> {
   const dict = encryptionDict(doc.context);
   if (!dict) return { kind: 'unsupported', reason: 'missing-parameters', strength: null };
   const read = readCipher(doc.context, dict);
@@ -724,7 +1063,7 @@ export function objectStreamsUnreadable(doc: PDFDocument): boolean {
  */
 export async function decryptDocument(doc: PDFDocument, password?: string): Promise<DecryptOutcome> {
   const context = doc.context;
-  const verdict = assessAccess(doc, password);
+  const verdict = await assessAccess(doc, password);
   if (verdict.kind === 'gate-only') return { kind: 'unsupported', reason: 'no-cipher', strength: null };
   if (verdict.kind !== 'opens') return verdict;
   const { fileKey, openedAs, suppliedMatched, strength } = verdict;
@@ -775,7 +1114,10 @@ function cryptBytes(
   data: Uint8Array,
   mode: CipherMode,
 ): Promise<Uint8Array> | Uint8Array {
-  const key = objectKey(fileKey, ref, method);
+  // The `/AESV3` crypt filter runs over the file encryption key itself: revision 6
+  // defines no per-object key, so hashing one here would decrypt every stream with
+  // a key the producer never used.
+  const key = method === 'AESV3' ? fileKey : objectKey(fileKey, ref, method);
   // RC4 is its own inverse; AES-CBC is not, and only the AES half needs Web
   // Crypto, which is why the pass is asynchronous whatever the strength.
   if (method === 'RC4') return rc4Encrypt(key, data);
@@ -992,6 +1334,11 @@ export async function encryptDocument(
     string: WRITE_METHOD,
     keyBytes: WRITE_KEY_BYTES,
     owner,
+    // The revision-6 derivations: this strength unwraps nothing and carries its
+    // `/Perms` value in the dictionary it writes.
+    ownerWrap: null,
+    userWrap: null,
+    perms: null,
     // `/U` is written below and read back by `opensWith`; the derivation of the
     // file key does not look at it.
     user: new Uint8Array(32),
@@ -1136,7 +1483,7 @@ export async function retainedLock(
   // A gate has no key to hand back, and no secret to name: nothing was checked,
   // because nothing needed checking to leave the bytes readable.
   if (!read.ok) return { cipher: null, fileKey: new Uint8Array(0), dict, idFirst, openedAs: null };
-  const verdict = assessAccess(source, password);
+  const verdict = await assessAccess(source, password);
   if (verdict.kind !== 'opens') return null;
   return { cipher: read.cipher, fileKey: verdict.fileKey, dict, idFirst, openedAs: verdict.openedAs };
 }

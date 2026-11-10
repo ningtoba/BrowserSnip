@@ -653,7 +653,7 @@ async function cipheredOutcome(
   password: string | undefined,
   permissions: PdfPermissions | null,
 ): Promise<LoadOutcome | null> {
-  const verdict = assessAccess(lenient, password);
+  const verdict = await assessAccess(lenient, password);
   if (verdict.kind === 'gate-only' || verdict.kind === 'unsupported') return null;
   if (verdict.kind === 'needs-password') {
     return {
@@ -683,7 +683,7 @@ async function cipheredOutcome(
   // string. That is a property of the dictionary, not of the secret the caller
   // happened to type — typing an owner password into a permissions-only file opens
   // it as the owner, and it still opens on a double-click.
-  const opensEmpty = assessAccess(lenient).kind === 'opens';
+  const opensEmpty = (await assessAccess(lenient)).kind === 'opens';
   const outcome = await decryptDocument(lenient, password);
   if (outcome.kind !== 'decrypted') {
     return {
@@ -771,7 +771,8 @@ function obstacles(encryption: PdfEncryption, doc: PDFDocument | null): PdfEncry
 
 /** What a refusal is actually about, in the sentence's own words. */
 const REFUSAL_CLAUSE: Record<UnsupportedReason, string> = {
-  'aes-256': 'this app reads RC4-128 and AES-128 files, and cannot undo a 256-bit one yet',
+  'aes-256': 'this app undoes AES-256 written by the revision-6 handler, and this file selects that cipher under another revision',
+  'perms-mismatch': 'its /Perms check value does not decrypt to its own marker under the key its /U verifies, so the dictionary and the key disagree',
   'rc4-40': 'this app reads RC4 at 128 bits and above, and has no fixture for 40-bit RC4 to claim it',
   'public-key': 'it is locked by a certificate handler rather than a password this app can check',
   'unsupported-filter': 'the crypt filter it selects is one this app does not implement',
