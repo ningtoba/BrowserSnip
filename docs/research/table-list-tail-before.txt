@@ -11,6 +11,7 @@ html-table         18017          36     11        1022          12     0/5  MKS
 json-cell           8811          16      3         500           4     0/5  MKSTART          10/7127    Reported 1 JSON file(s) into 3 page(s).
 json-item          17845       22900     34        2047        1673     5/5  -                -1/14596   Reported 1 JSON file(s) into 34 page(s).
 md-heading          8808         235      2         723          25     1/5  MK25           1771/7122    Rendered 1 Markdown source(s) into 2 page(s).
+md-image            8929         919      2         424          56     1/5  MK25           1772/7244    Rendered 1 Markdown source(s) into 2 page(s).
 md-item             8808         818      2         426          52     1/5  MK25           1771/7122    Rendered 1 Markdown source(s) into 2 page(s).
 md-items            9040        7249     11         611         611     5/5  -                -1/7236    Rendered 1 Markdown source(s) into 11 page(s).
 md-tab                54           0      0           0           0     0/5  MKSTART           0/43      THROWS: WinAnsi cannot encode "	" (0x0009)
@@ -18,4 +19,4 @@ md-table           17871          49     11        1033          23     0/5  MKS
 word-table         18455           6     11        1012           2     0/5  MKSTART         195/15050   Converted 1 document(s) via mammoth (bundled, offline) into 11 page(s).
 xml-tab               21           0      0           0           0     0/5  MKSTART           0/16      THROWS: WinAnsi cannot encode "	" (0x0009)
 xml-tree           10254        7840     13         603         603     5/5  -                -1/8689    Printed 1 XML file(s) into 13 page(s).
-every marker on a sheet: 6 of 18 fixtures; nothing hanging outside a page box: 6 of 18; produced no file at all: 3 (csv-tab, md-tab, xml-tab)
+every marker on a sheet: 6 of 19 fixtures; nothing hanging outside a page box: 6 of 19; produced no file at all: 3 (csv-tab, md-tab, xml-tab)

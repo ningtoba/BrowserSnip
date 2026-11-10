@@ -32,6 +32,7 @@ import {
   firstPdf,
   installConvertToEnv,
   pageSizes,
+  PNG_1PX,
   restoreConvertToEnv,
   run,
   textRuns,
@@ -190,6 +191,11 @@ describe('marker table', () => {
     // ── the paragraph path, unchanged by this pass, kept as a control ────────
     const xmlTree = `<root>${lines.map((l) => `<item>${l}</item>`).join('')}</root>`;
     await emit('xml-tree', 'xml-to-pdf', {}, fileFrom(xmlTree, 'a.xml', 'application/xml'), xmlTree);
+
+    // ── the image branch's caption: the same shape, one step further down ────
+    const dataUrl = `data:image/png;base64,${Buffer.from(PNG_1PX).toString('base64')}`;
+    const mdImage = `![${flat} MKEND](${dataUrl})`;
+    await emit('md-image', 'markdown-to-pdf', {}, fileFrom(mdImage, 'a.md', 'text/markdown'), mdImage);
 
     // ── a tab in each route, which the prose branch already expands ──────────
     await emit('xml-tab', 'xml-to-pdf', {},

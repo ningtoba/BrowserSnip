@@ -673,6 +673,21 @@ describe('csv-to-pdf keeps the grid and repeats the header', () => {
     expect(squash(await extractText(bytes))).not.toContain('large"');
   });
 
+  it('steps a wrapping cell down its own baselines instead of overwriting itself', async () => {
+    // The row's paint loop used to decrement a local `y` that `drawLine` never
+    // read, so every wrapped line of every cell landed on the row's bottom
+    // baseline — 73 of them sharing one y on a sheet of the wide CSV in
+    // `docs/research/table-list-tail-before.txt`.
+    const long = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma';
+    const outcome = await run('csv-to-pdf', {}, [fileFrom(`name,qty\n${long},3`, 'wrap.csv', 'text/csv')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const cell = runs.filter((run) => !['name', 'qty', '3'].includes(run.text));
+    expect(cell.length, 'the cell wraps to several lines').toBeGreaterThan(1);
+    expect(baselines(cell).length, 'one baseline per wrapped line').toBe(cell.length);
+    // The short cell of the same row stays on the row's first line, not its last.
+    expect(find(runs, '3')[0]!.y).toBeCloseTo(Math.max(...cell.map((run) => run.y)), 1);
+  });
+
   it('repeats the header row on every sheet the table spills onto', async () => {
     const outcome = await run('csv-to-pdf', { pageSize: 'a5', fontSize: 12 }, [
       fileFrom(rows(60), 'long.csv', 'text/csv'),

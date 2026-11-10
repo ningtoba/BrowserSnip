@@ -360,35 +360,44 @@ describe('the sibling routes share the fix', () => {
 });
 
 /**
- * Measured on this build and left for their owners: the same page-edge cut
- * survives in two branches the text route never reaches. Passing of these means
- * someone fixed them — retire the row here and log it in `docs/TOOL-CAMPAIGN.md`.
+ * The three rows this file pinned as OPEN are closed: `renderList`, `renderTable`
+ * and the Markdown tab now behave, on the same fixtures, asserted by
+ * `tests/pdf/table-list-tail.test.ts` and counted by
+ * `docs/research/table-list-tail-{before,after}.txt`. They stay here in the
+ * opposite direction, because the number that made them news is the number a
+ * regression has to break.
  */
-describe('OPEN: two sibling variants still cut a block at the page edge', () => {
-  it('a Markdown list item taller than a sheet loses its tail', async () => {
+describe('CLOSED: the sibling variants that used to cut a block at the page edge', () => {
+  it('a Markdown list item taller than a sheet keeps its tail', async () => {
     const source = `- ${rows(120).join(' ')}`;
     const outcome = await run('markdown-to-pdf', { source: 'paste', paste: source });
     const sheet = await sheets(await firstPdf(outcome));
-    expect(sheet.offSheet.length).toBeGreaterThan(100);
-    expect(compact(sheet.onSheet)).toContain('MKSTART');
-    expect(compact(sheet.onSheet)).not.toContain('MKEND');
+    // Was 818 characters of 8 802 with 52 of 426 runs inside a page box, reported
+    // as "2 page(s)".
+    expect(sheet.offSheet).toEqual([]);
+    expect(tailGap(sheet, source)).toBe('');
+    expect(sheet.pages).toBeGreaterThan(2);
   });
 
-  it('a table cell taller than a sheet loses its tail', async () => {
+  it('a table cell taller than a sheet keeps its tail', async () => {
     const source = JSON.stringify({ note: rows(120).join('\n') });
     const outcome = await run('json-to-pdf', { source: 'paste', paste: source }, [
       fileFrom(source, 'a.json', 'application/json'),
     ]);
     const sheet = await sheets(await firstPdf(outcome));
-    expect(sheet.offSheet.length).toBeGreaterThan(100);
-    expect(compact(sheet.onSheet)).not.toContain('MKEND');
+    // Was 16 characters of 7 365, 4 of 510 runs in a box, over 3 sheets.
+    expect(sheet.offSheet).toEqual([]);
+    expect(tailGap(sheet, source)).toBe('');
+    expect(sheet.pages).toBeGreaterThan(2);
   });
 
-  it('a Markdown source with one tab in it produces no file at all', async () => {
-    // The text route expands tabs; `marked` keeps them inside the run, so the
-    // standard face still throws and the whole source is lost — over an
-    // `alpha\tbeta` file, not a truncated one.
-    const error = await run('markdown-to-pdf', { source: 'paste', paste: 'alpha\tbeta MKEND' }).catch((err) => err);
-    expect((error as Error).message).toMatch(/WinAnsi cannot encode/);
+  it('a Markdown source with one tab in it produces a file, and keeps its tail', async () => {
+    // The text route expanded tabs; `marked` kept one inside the run, so an
+    // `alpha\tbeta` file lost all 9 040 bytes to `WinAnsi cannot encode`. The
+    // Markdown lexer is now fed the same four-column expansion CommonMark defines.
+    const outcome = await run('markdown-to-pdf', { source: 'paste', paste: 'alpha\tbeta MKEND' });
+    const sheet = await sheets(await firstPdf(outcome));
+    expect(compact(sheet.onSheet).toLowerCase()).toContain('alphabetamkend');
+    expect(sheet.offSheet).toEqual([]);
   });
 });

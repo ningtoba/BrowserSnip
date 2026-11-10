@@ -1,0 +1,22 @@
+## after-fix — /tmp/tablelist, judged by MuPDF outside this app
+fixture        src_bytes mupdf_chars sheets runs_stream runs_in_box   marks  first_missing   byte_in_src  message
+csv-rows           10398        8210     10         870         870     5/5  -                -1/8593    Tabulated 1 file(s) into 10 page(s).
+csv-tab               21           0      0           0           0     0/5  MKSTART           0/16      THROWS: WinAnsi cannot encode "	" (0x0009)
+csv-tallcell       17847       14635     21        1203        1203     5/5  -                -1/14437   Tabulated 1 file(s) into 21 page(s).
+csv-wide           15396       12240      4        2977        2977     5/5  -                -1/12036   Tabulated 1 file(s) into 4 page(s).
+html-items          9770        7236     11         600         600     5/5  -                -1/8205    Laid out 1 HTML source(s) into 11 page(s).
+html-list          17833       14384     21         900         900     5/5  -                -1/14433   Laid out 1 HTML source(s) into 21 page(s).
+html-tab              21          17      1           3           3     2/5  MK25             -1/16      Laid out 1 HTML source(s) into 1 page(s).
+html-table         18017       14525     21        1052        1052     5/5  -                -1/14612   Laid out 1 HTML source(s) into 21 page(s).
+json-cell           8811        7200     10         516         516     5/5  -                -1/7127    Reported 1 JSON file(s) into 10 page(s).
+json-item          17845       29201     43        2047        2047     5/5  -                -1/14596   Reported 1 JSON file(s) into 43 page(s).
+md-heading          8808        7180     34         755         755     5/5  -                -1/7122    Rendered 1 Markdown source(s) into 34 page(s).
+md-image            8929        7132     10         432         432     5/5  -                -1/7244    Rendered 1 Markdown source(s) into 10 page(s).
+md-item             8808        7135     11         435         435     5/5  -                -1/7122    Rendered 1 Markdown source(s) into 11 page(s).
+md-items            9040        7249     11         611         611     5/5  -                -1/7236    Rendered 1 Markdown source(s) into 11 page(s).
+md-tab                54          44      1           5           5     3/5  MK25             -1/43      Rendered 1 Markdown source(s) into 1 page(s).
+md-table           17871       14558     21        1073        1073     5/5  -                -1/14432   Rendered 1 Markdown source(s) into 21 page(s).
+word-table         18455       14405     21        1012        1012     5/5  -                -1/15050   Converted 1 document(s) via mammoth (bundled, offline) into 21 page(s).
+xml-tab               21           0      0           0           0     0/5  MKSTART           0/16      THROWS: WinAnsi cannot encode "	" (0x0009)
+xml-tree           10254        7840     13         603         603     5/5  -                -1/8689    Printed 1 XML file(s) into 13 page(s).
+every marker on a sheet: 15 of 19 fixtures; nothing hanging outside a page box: 17 of 19; produced no file at all: 2 (csv-tab, xml-tab)

@@ -178,9 +178,12 @@ export async function renderBlocks(
         fontFamily: options.fontFamily,
       });
       const height = lines.length * fontSize * settings.lineHeight + fontSize * 0.5;
+      // A heading is a block like any other: moved whole to a fresh sheet when it
+      // could fit on one, continued line by line when it is taller than one.
       if (needs(height)) await turn();
       surface.y -= fontSize * 0.5;
       for (const line of lines) {
+        if (needs(fontSize * settings.lineHeight)) await turn();
         surface.y -= fontSize * settings.lineHeight;
         await drawLine(surface, line, {
           size: fontSize,
@@ -323,6 +326,9 @@ export async function renderBlocks(
         height: drawHeight,
       });
       for (const line of caption) {
+        // The caption is the picture's text, not a decoration: a long one used to
+        // run off the bottom edge of the sheet the picture left no room for.
+        if (needs(settings.baseFontSize * 1.3)) await turn();
         surface.y -= settings.baseFontSize * 1.3;
         await drawLine(surface, [{ text: line.text, italic: true }], {
           size: settings.baseFontSize * 0.9,
@@ -472,6 +478,7 @@ async function renderList(
   pages: PDFPage[],
 ): Promise<number> {
   const size = settings.baseFontSize;
+  const lineHeight = size * settings.lineHeight;
   let orderedCounter = 0;
   let previousLevel = -1;
   for (const item of block.items) {
@@ -485,18 +492,29 @@ async function renderList(
       maxWidth: Math.max(40, columnWidth - indent),
       fontFamily: settings.fontFamily,
     });
-    const height = lines.length * size * settings.lineHeight + 2;
+    const height = lines.length * lineHeight + 2;
+    // An item that could fit on a fresh sheet starts on one. One taller than any
+    // sheet cannot be moved, so it continues across the break line by line: paint
+    // every line from where the item began and the tail falls below `y = 0`, which
+    // is where 650 of the 900 runs of the HTML list in
+    // `docs/research/table-list-tail-before.txt` used to sit, unseen and unreported.
     if (needs(height)) await turn();
-    await drawTextU(surface.page, {
-      text: marker,
-      x: surface.columnX + 2,
-      y: surface.y - size,
-      size,
-      color: hex(settings.color),
-    });
-    let first = true;
+    let marked = false;
     for (const line of lines) {
-      surface.y -= size * settings.lineHeight;
+      if (needs(lineHeight)) await turn();
+      if (!marked) {
+        // The bullet marks the sheet the item starts on, wherever that turned out
+        // to be, and is not repeated on the continuation.
+        marked = true;
+        await drawTextU(surface.page, {
+          text: marker,
+          x: surface.columnX + 2,
+          y: surface.y - size,
+          size,
+          color: hex(settings.color),
+        });
+      }
+      surface.y -= lineHeight;
       await drawLine(surface, line, {
         size,
         color: settings.color,
@@ -504,9 +522,7 @@ async function renderList(
         indent,
         width: Math.max(40, columnWidth - indent),
       });
-      first = false;
     }
-    void first;
     surface.y -= 2;
   }
   void pages;
@@ -532,58 +548,28 @@ async function renderTable(
   if (rows.length === 0 && !block.header) return;
   const size = Math.max(6.5, settings.baseFontSize * 0.86);
   const cellPadding = 4;
+  const bandHeight = size * 1.28;
   const widths = await columnWidths(doc, block, columns, columnWidth, size, settings);
 
-  const renderRow = async (
-    cells: Inline[][],
-    bold: boolean,
-    afterTurn?: () => Promise<void>,
-  ): Promise<void> => {
+  /** One row wrapped: `bands` is how many lines of every cell it will need. */
+  interface Laid {
+    cells: Awaited<ReturnType<typeof wrapInlines>>[];
+    bands: number;
+    height: number;
+  }
+
+  const layoutRow = async (cells: Inline[][]): Promise<Laid> => {
     const wrapped = await Promise.all(
       cells.map((cell, index) =>
         wrapInlines(doc, normalizeCells(cell), { size, maxWidth: Math.max(16, widths[index] - cellPadding * 2) }),
       ),
     );
-    const lineCount = Math.max(1, ...wrapped.map((lines) => lines.length));
-    const height = lineCount * size * 1.28 + cellPadding * 2;
-    if (needs(height)) {
-      await turn();
-      // Moving to a fresh sheet neither cancels this row nor loses the header:
-      // `afterTurn` re-draws it, and the row follows underneath. Every sheet a
-      // table spills onto therefore repeats the header, which is what the CSV
-      // and Excel routes promise.
-      if (afterTurn) await afterTurn();
-      if (needs(height)) await turn();
-    }
-    const top = surface.y;
-    surface.y -= height;
-    if (bold) {
-      surface.page.drawRectangle({
-        x: surface.columnX,
-        y: surface.y,
-        width: columnWidth,
-        height,
-        color: rgb(0.945, 0.945, 0.925),
-      });
-    }
-    let x = surface.columnX;
-    for (let index = 0; index < columns; index++) {
-      const cellWidth = widths[index] ?? columnWidth / columns;
-      let y = top - cellPadding - size;
-      for (const line of wrapped[index] ?? []) {
-        await drawLine(surface, line, {
-          size,
-          color: settings.color,
-          align: 'left',
-          indent: x - surface.columnX + cellPadding,
-          width: cellWidth - cellPadding * 2,
-          italic: false,
-        });
-        y -= size * 1.28;
-      }
-      x += cellWidth;
-    }
-    // Cell rules are drawn after the text so they sit underneath nothing.
+    const bands = Math.max(1, ...wrapped.map((lines) => lines.length));
+    return { cells: wrapped, bands, height: bands * bandHeight + cellPadding * 2 };
+  };
+
+  /** The rule closing whatever of this table is above the cursor on this sheet. */
+  const rule = (): void => {
     surface.page.drawLine({
       start: { x: surface.columnX, y: surface.y },
       end: { x: surface.columnX + columnWidth, y: surface.y },
@@ -592,17 +578,69 @@ async function renderTable(
     });
   };
 
-  if (settings.header) void settings.header;
-  const drawHeader = async (): Promise<void> => {
-    if (block.header) await renderRow(block.header, true);
+  const paintRow = async (row: Laid, bold: boolean, repeat: Laid | null): Promise<void> => {
+    const startSheet = async (): Promise<void> => {
+      await turn();
+      // Moving to a fresh sheet neither cancels this row nor loses the header:
+      // every sheet a table spills onto repeats it, which is what the CSV and
+      // Excel routes promise.
+      if (repeat) await paintRow(repeat, true, null);
+    };
+    // A row that could fit on a fresh sheet starts on one, so a short row is never
+    // orphaned at the bottom edge.
+    if (needs(row.height)) await startSheet();
+    surface.y -= cellPadding;
+    for (let band = 0; band < row.bands; band++) {
+      // A row taller than a sheet is continued, not amputated: one band is one
+      // wrapped line of every cell, drawn on one baseline, so the columns stay
+      // aligned across the break and no glyph is left below `y = 0`. Painting the
+      // whole row from wherever it began is what kept 2 of the 1 012 runs of the
+      // Word table in `docs/research/table-list-tail-before.txt` on a page.
+      if (band > 0 && needs(bandHeight)) {
+        rule();
+        await startSheet();
+      }
+      surface.y -= bandHeight;
+      if (bold) {
+        surface.page.drawRectangle({
+          x: surface.columnX,
+          y: surface.y,
+          width: columnWidth,
+          height: bandHeight,
+          color: rgb(0.945, 0.945, 0.925),
+        });
+      }
+      let x = surface.columnX;
+      for (let index = 0; index < columns; index++) {
+        const cellWidth = widths[index] ?? columnWidth / columns;
+        const line = row.cells[index]?.[band];
+        if (line) {
+          await drawLine(surface, line, {
+            size,
+            color: settings.color,
+            align: 'left',
+            indent: x - surface.columnX + cellPadding,
+            width: cellWidth - cellPadding * 2,
+            italic: false,
+          });
+        }
+        x += cellWidth;
+      }
+    }
+    surface.y -= cellPadding;
+    // Rules are drawn after the text so they sit underneath nothing.
+    rule();
   };
-  await drawHeader();
-  for (const row of rows) await renderRow(row, false, block.header ? drawHeader : undefined);
+
+  const header = block.header ? await layoutRow(block.header) : null;
+  if (header) await paintRow(header, true, null);
+  for (const row of rows) await paintRow(await layoutRow(row), false, header);
 
   if (block.caption) {
     surface.y -= 4;
     const lines = await wrapTextSimple(doc, block.caption, { size: settings.baseFontSize * 0.9, maxWidth: columnWidth });
     for (const line of lines) {
+      if (needs(settings.baseFontSize * 1.3)) await turn();
       surface.y -= settings.baseFontSize * 1.3;
       await drawTextU(surface.page, {
         text: line.text,
@@ -963,10 +1001,15 @@ export async function markdownToBlocks(
   options: { images?: (src: string) => Promise<Uint8Array | null> } = {},
 ): Promise<Block[]> {
   const { marked } = await import('marked');
+  // A tab has no WinAnsi code, and unlike plain text `marked` keeps one inside the
+  // run it lexed, so a single `\t` in a Markdown source threw and the whole file
+  // was lost. CommonMark's tab stop is four columns, which is the expansion the
+  // text route applies and the code branch draws with.
+  const lexed = markdown.replace(/\t/g, '    ');
   // SAFETY: `marked` types its lexer output as a wide `TokensList` union whose
   // members carry the fields read below; `MdToken` is that shared shape narrowed
   // to what this renderer consumes, so no field is invented by the cast.
-  const tokens = marked.lexer(markdown) as unknown as MdToken[];
+  const tokens = marked.lexer(lexed) as unknown as MdToken[];
   const inlineOf = (tokens: MdToken[] | undefined): Inline[] => walkInline(tokens ?? []);
   const blocks: Block[] = [];
 
