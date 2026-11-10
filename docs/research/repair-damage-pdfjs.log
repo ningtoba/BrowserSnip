@@ -1,18 +1,103 @@
-# step 4: pdf.js — the engine this app renders with — over both sides. `P` marks a
-# sheet whose display list holds a painting operator, `W` one whose extracted text
-# holds a planted word, so `.-` is a sheet that counts and prints nothing.
-
 case                     pdf.js reads the input    pdf.js reads the repaired file
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 base-objstm              4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 base-plain               4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 base                     4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 duplicate-endobj         4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 47
+Warning: getHexString - ignoring invalid character: 114
+Warning: getHexString - ignoring invalid character: 40
+Warning: getHexString - ignoring additional invalid characters.
+Warning: Unknown command ">".
+Warning: Unknown command "z".
+Warning: Unknown command "C65646765722062792068616E642E".
+Warning: Unknown command ">".
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 47
+Warning: getHexString - ignoring invalid character: 114
+Warning: getHexString - ignoring invalid character: 40
+Warning: getHexString - ignoring additional invalid characters.
+Warning: Unknown command ">".
+Warning: Unknown command "z".
+Warning: Unknown command "C65646765722062792068616E642E".
+Warning: Unknown command ">".
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 47
+Warning: getHexString - ignoring invalid character: 114
+Warning: getHexString - ignoring invalid character: 40
+Warning: getHexString - ignoring additional invalid characters.
+Warning: Unknown command ">".
+Warning: Unknown command "z".
+Warning: Unknown command "C65646765722062792068616E642E".
+Warning: Unknown command ">".
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 47
+Warning: getHexString - ignoring invalid character: 114
+Warning: getHexString - ignoring invalid character: 40
+Warning: getHexString - ignoring additional invalid characters.
+Warning: Unknown command ">".
+Warning: Unknown command "z".
+Warning: Unknown command "C65646765722062792068616E642E".
+Warning: Unknown command ">".
 garbage-dict-midstream   4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 ledger-32-input          refused (Invalid PDF structure.) 4p [P- P- .- P-]
+Warning: XRef.parse - Invalid "Root" reference: "XRefEntryException: Bad (uncompressed) XRef entry: 2R".
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 lying-xref               4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: indexObjects: Found "2 0 obj" inside of another "obj", caused by missing "endobj" -- trying to recover.
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 missing-endobj           4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 missing-startxref        4p [PW PW PW PW]           4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: Font "Helvetica-7098480789" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-7098480789" is not available -- attempting to fallback to a default font.
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: Font "Helvetica-9742682568" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-9742682568" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-2000805986" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-2000805986" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-9750469207" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-9750469207" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-7572533686" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-7572533686" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-8450180107" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-8450180107" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-8659871878" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-8659871878" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-5824662338" is not available -- attempting to fallback to a default font.
+Warning: Font "Helvetica-5824662338" is not available -- attempting to fallback to a default font.
 objstm-wrong-offsets     refused (Invalid Root reference.) 4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 plain-content-tailcut    refused (Invalid PDF structure.) 4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 triage-report            refused (Invalid PDF structure.) 4p [PW PW PW PW]
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
 truncated-tail           refused (Invalid PDF structure.) 2p [PW .-]

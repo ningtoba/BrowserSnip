@@ -28,11 +28,14 @@
  * keeps that true.
  */
 import {
+  PDFArray,
   PDFContext,
   PDFDict,
   PDFDocument,
   PDFName,
   PDFRawStream,
+  PDFRef,
+  PDFStream,
   decodePDFRawStream,
   newPDF,
   openPDF,
@@ -175,6 +178,7 @@ export async function repairPDF(pdfBuffer: ArrayBuffer): Promise<RepairFacts> {
   for (const page of copied) {
     repaired.addPage(page);
   }
+  dropDanglingContent(repaired);
 
   // Copy metadata if readable
   try { const title = srcDoc.getTitle(); if (title) repaired.setTitle(title); } catch { /* metadata is optional */ }
@@ -357,6 +361,42 @@ function rebuiltIndexBytes(bytes: Uint8Array, objects: PdfObject[]): Uint8Array 
   }
   table += `trailer\n<< /Size ${size} /Root ${root.number} ${root.generation} R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
   return latin1Bytes(table);
+}
+
+/**
+ * Take out any `/Contents` entry that does not reach a stream.
+ *
+ * A page recovered through a rebuilt index can name a content stream that the cut
+ * bytes no longer hold, and `copyPages` carries the dangling reference across. The
+ * sheet is blank either way, but a file that points at nothing where a stream
+ * should be draws a warning from libqpdf on open (`ignoring non-stream item`) —
+ * so the rebuild says "this sheet is empty" by having no content, not by leaving a
+ * reference to a hole.
+ */
+function dropDanglingContent(doc: PDFDocument): void {
+  const { context } = doc;
+  for (const page of doc.getPages()) {
+    const contents = page.node.get(PDFName.of('Contents'));
+    if (contents === undefined) continue;
+    const resolves = (value: unknown): boolean => {
+      try {
+        const found = value instanceof PDFRef ? context.lookup(value) : value;
+        return found instanceof PDFStream;
+      } catch {
+        // A reference to an object the file does not hold — the truncated tail's
+        // case — which is what this pass is looking for.
+        return false;
+      }
+    };
+    if (contents instanceof PDFArray) {
+      const kept = (contents as PDFArray).asArray().filter(resolves);
+      if (kept.length === (contents as PDFArray).size()) continue;
+      if (kept.length === 0) page.node.delete(PDFName.of('Contents'));
+      else page.node.set(PDFName.of('Contents'), context.obj(kept));
+    } else if (!resolves(contents)) {
+      page.node.delete(PDFName.of('Contents'));
+    }
+  }
 }
 
 /**

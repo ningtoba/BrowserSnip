@@ -1,62 +1,93 @@
-# repair-damage-run.sh step 2, at the fixed head: the shipped `repair` tool over
-# docs/research/repair-damage-corpus.mjs's output. One block per file: what the guard
-# read from the input (`in <pages>/<declared>`), what the tool claimed, what a fresh
-# parse of its bytes says (`parsed`), and the sentences it printed. Reproduced byte for
-# byte across two runs of the rig; the pre-fix pair is `repair-damage-app-before.log`.
-
-base-objstm.pdf            in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: Please use the `legacy` build in Node.js environments.
+Warning: Cannot load "@napi-rs/canvas" package: "Error: Cannot find module '@napi-rs/canvas'
+Require stack:
+- /tmp/rdC/probe/repair-damage-internals.js".
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken.
+Warning: Cannot polyfill `ImageData`, rendering may be broken.
+Warning: Cannot polyfill `Path2D`, rendering may be broken.
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+base-objstm.pdf            in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 0 · /Count null · streams 6
   Repaired base-objstm.pdf: 4 page(s) readable. 2.0 KB → 2.0 KB (-3%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-base-plain.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 1865 B
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+base-plain.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 1866 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 8
   Repaired base-plain.pdf: 4 page(s) readable. 3.6 KB → 1.8 KB (-50%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-base.pdf                   in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+base.pdf                   in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-duplicate-endobj.pdf       in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+duplicate-endobj.pdf       in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired duplicate-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-garbage-dict-midstream.pdf in 4/4 → 4 page(s) claimed · parsed 4 · 2057 B
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 60
+Warning: getHexString - ignoring invalid character: 47
+Warning: getHexString - ignoring invalid character: 114
+Warning: getHexString - ignoring invalid character: 40
+Warning: getHexString - ignoring additional invalid characters.
+Warning: Unknown command ">".
+Warning: Unknown command "z".
+Warning: Unknown command "C65646765722062792068616E642E".
+Warning: Unknown command ">".
+garbage-dict-midstream.pdf in 4/4 → 4 page(s) claimed · parsed 4 · 2058 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired garbage-dict-midstream.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-ledger-32-input.pdf        in 0 → 4 page(s) claimed · parsed 4 · 2172 B
+Warning: Indexing all PDF objects
+ledger-32-input.pdf        in 0 → 4 page(s) claimed · parsed 4 · 2174 B
   loader Failed to parse PDF document (line:190 col:0 offset=3891): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:190 col:0 offset=3891): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 3
   Repaired ledger-32-input.pdf: 4 page(s) recovered: 3 still hold content, 1 is blank. 3.8 KB → 2.1 KB (-44%).
   ! The input would not open ("ledger-32-input.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
   ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
   ! 1 of the 4 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
-lying-xref.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: XRef.parse - Invalid "Root" reference: "XRefEntryException: Bad (uncompressed) XRef entry: 2R".
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+lying-xref.pdf             in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired lying-xref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-missing-endobj.pdf         in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: Indexing all PDF objects
+Warning: indexObjects: Found "2 0 obj" inside of another "obj", caused by missing "endobj" -- trying to recover.
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+missing-endobj.pdf         in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired missing-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
-missing-startxref.pdf      in 4/4 → 4 page(s) claimed · parsed 4 · 2035 B
+Warning: Indexing all PDF objects
+Warning: UnknownErrorException: Unable to load font data at: file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf
+missing-startxref.pdf      in 4/4 → 4 page(s) claimed · parsed 4 · 2037 B
   loader 4 · pdf.js 4 · page objects 4 · /Count 4 · streams 4
   Repaired missing-startxref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
   ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+Warning: Indexing all PDF objects
 objstm-wrong-offsets.pdf   in 0 → 4 page(s) claimed · parsed 4 · 2547 B
   loader this.catalog.Pages is not a function / fork: this.catalog.Pages is not a function · pdf.js Invalid Root reference. · page objects 0 · /Count null · streams 6
   Repaired objstm-wrong-offsets.pdf: 4 page(s) readable. 2.0 KB → 2.5 KB (+22%).
   ! The input would not open ("objstm-wrong-offsets.pdf" has no pages.).
   ! No page tree survived, so each sheet was rebuilt around a content stream: page size and order are a guess here, not the document’s own.
+Warning: Indexing all PDF objects
 plain-content-tailcut.pdf  in 0 → 4 page(s) claimed · parsed 4 · 1825 B
   loader Failed to parse PDF document (line:240 col:0 offset=3707): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:240 col:0 offset=3707): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 8
   Repaired plain-content-tailcut.pdf: 4 page(s) readable. 3.6 KB → 1.8 KB (-51%).
   ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
   ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
-triage-report.pdf          in 0 → 4 page(s) claimed · parsed 4 · 1983 B
+Warning: Indexing all PDF objects
+triage-report.pdf          in 0 → 4 page(s) claimed · parsed 4 · 1985 B
   loader Failed to parse PDF document (line:193 col:0 offset=3343): Expected next byte to be 62 but / fork: Failed to parse PDF document (line:193 col:0 offset=3343): Expected ne · pdf.js Invalid PDF structure. · page objects 4 · /Count 4 · streams 4
   Repaired triage-report.pdf: 4 page(s) readable. 3.3 KB → 1.9 KB (-41%).
   ! The input would not open ("triage-report.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
   ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
+Warning: Indexing all PDF objects
 truncated-tail.pdf         in 0 → 2 page(s) claimed · parsed 2 · 1079 B
   loader Failed to parse PDF document (line:100 col:829 offset=1653): Failed to parse invalid PDF o / fork: Failed to parse PDF document (line:100 col:829 offset=1653): Failed to · pdf.js Invalid PDF structure. · page objects 2 · /Count 4 · streams 2
   Repaired truncated-tail.pdf: 2 of 4 page(s) recovered: 1 still holds content, 1 is blank. 1.8 KB → 1.1 KB (-42%).
@@ -65,4 +96,4 @@ truncated-tail.pdf         in 0 → 2 page(s) claimed · parsed 2 · 1079 B
   ! 2 page(s) could not be recovered.
   ! 1 of the 2 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
 
-wrote /tmp/rd6/out (13/13 produced files) and /tmp/rd6/app.json
+wrote /tmp/rdC/out (13/13 produced files) and /tmp/rdC/app.json

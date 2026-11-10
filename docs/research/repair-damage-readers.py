@@ -139,6 +139,30 @@ def poppler_pages(path: str) -> int | None:
     return count_with(load)
 
 
+def qpdf_check(path: str) -> str:
+    """libqpdf's own structural verdict, which is the question a rebuilt index begs.
+
+    `repair` now writes a cross-reference table of its own over the objects it found,
+    so "it opens" is not enough: qpdf is the reader that reports a table that is
+    structurally wrong even when a lenient reader still gets the pages out of it.
+    """
+    try:
+        with quiet_stderr():
+            pdf = pikepdf.open(path)
+    except Exception as err:  # noqa: BLE001 — a refusal is the measurement
+        return f"refuses: {str(err)[:52]}"
+    try:
+        errors = pdf.check_pdf_syntax()
+    except Exception as err:  # noqa: BLE001
+        return f"check errored: {str(err)[:52]}"
+    finally:
+        pdf.close()
+    if not errors:
+        return "clean"
+    names = [str(getattr(item, "name", item)) for item in errors]
+    return "; ".join(names)[:70]
+
+
 def reader_noise(path: str) -> str:
     """poppler's and Ghostscript's own words about one file, one line."""
     notes = []
@@ -161,6 +185,7 @@ def reading_of(path: str) -> dict:
         "pypdf": pypdf_pages(path),
         "poppler": poppler_pages(path),
         "bytes": os.path.getsize(path),
+        "qpdf_check": qpdf_check(path),
         "noise": reader_noise(path),
     }
 
@@ -243,10 +268,10 @@ def main() -> int:
         if reading is None:
             return "no file"
         pages = reading["mupdf"]["pages"]
-        return f"mupdf {pages} · qpdf {reading['qpdf']} · pop {reading['poppler']} · pypdf {reading['pypdf']}"
+        return f"mupdf {pages} · qpdf {reading['qpdf']} · pop {reading['poppler']} · pypdf {reading['pypdf']} · check {reading['qpdf_check']}"
 
-    print(f"{'case':24} {'input still holds':52} {'output reads as':52} ink % per sheet        verdict")
-    print("-" * 190)
+    print(f"{'case':24} {'input still holds':80} {'output reads as':80} ink % per sheet        verdict")
+    print("-" * 250)
     for row in rows:
         inks = "/".join(f"{value:.1f}" for value in (row["after"]["mupdf"]["ink"] if row["after"] else [])) or "-"
         print(f"{row['case']:24} {cells(row['before']):52} {cells(row['after']):52} {inks:22} {row['verdict']}")

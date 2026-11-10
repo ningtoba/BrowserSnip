@@ -1,23 +1,55 @@
-# step 3: MuPDF, qpdf (libqpdf), poppler and pypdf over the same files, before and
-# after. The table is `input still holds` against `output reads as`, with non-white
-# pixels per produced sheet; the detail blocks quote the tool's own sentence beside
-# the characters and planted words the readers found. `preserved` needs the sheet
-# count to agree across the readers AND the sheets to hold ink and words.
+MuPDF error: format error: non-page object in page tree
 
-case                     input still holds                                    output reads as                                      ink % per sheet        verdict
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None             mupdf 2 · qpdf 2 · pop 2 · pypdf 2                   5.3/0.0                lost-pages 4->2
-lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None                mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.4/5.3        preserved
-duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.0/5.3/5.3        preserved
-triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   24.5/19.8/0.0/57.0     preserved
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+case                     input still holds                                                                output reads as                                                                  ink % per sheet        verdict
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None · check WARNING: /tmp/rdC/corpus/truncated-tail.pdf: file is damaged; WARNING: mupdf 2 · qpdf 2 · pop 2 · pypdf 2 · check clean     5.3/0.0                lost-pages 4->2
+lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdC/corpus/lying-xref.pdf: file is damaged; WARNING: /tm mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None · check WARNING: /tmp/rdC/corpus/missing-startxref.pdf: file is damaged; WARNI mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None · check refuses: /tmp/rdC/corpus/objstm-wrong-offsets.pdf: unable to  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.4/5.3        preserved
+duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdC/corpus/duplicate-endobj.pdf: file is damaged; WARNIN mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdC/corpus/missing-endobj.pdf: file is damaged; WARNING: mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdC/corpus/garbage-dict-midstream.pdf: file is damaged;  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: page object 8 0 stream 7 0 (content, offset 184): invalid cha 5.3/5.0/5.3/5.3        preserved
+triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdC/corpus/triage-report.pdf: file is damaged; WARNING:  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdC/corpus/plain-content-tailcut.pdf: file is damaged; W mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdC/corpus/ledger-32-input.pdf: file is damaged; WARNING mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     24.5/19.8/0.0/57.0     preserved
 
 ### base: Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).

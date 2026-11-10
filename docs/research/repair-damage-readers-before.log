@@ -1,22 +1,28 @@
-# step 3 with the fix reverted. Same corpus, same readers: three cases produce no
-# file at all, and `ledger-32-input` produces 1 sheet at 0.0 % ink — the row's
-# headline, re-measured rather than quoted.
+# step 3 — MuPDF, qpdf (libqpdf), poppler and pypdf over the same files, before and
+# after. `input still holds` is what the damaged file gives each reader, `output
+# reads as` is what `repair`'s file gives them, `check` is libqpdf's structural
+# verdict (the question a rebuilt index begs), `ink` is non-white pixels per
+# produced sheet at 72 dpi, and the detail blocks quote the tool's own sentence
+# beside the characters and planted words the readers found.
+# With `src/lib/pdf-engine/{commands,tools/optimize}.ts` reverted at the same commit
+# as the after pair, on the same corpus bytes: three cases produce no file at all,
+# one refuses while quoting the engine's own TypeError, and `ledger-32-input` — the
+# input docs/TOOL-TRIAGE.md §2 was measured with — returns 1 sheet at 0.0 % ink.
 
-case                     input still holds                                    output reads as                                      ink % per sheet        verdict
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None             no file                                              -                      refused a 4-page file
-lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None                mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None             no file                                              -                      refused a 4-page file
-duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.3/5.3        preserved
-garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.0/5.3/5.3        preserved
-triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None             no file                                              -                      refused a 4-page file
-plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 4 · qpdf 4 · pop 4 · pypdf 4                   5.3/5.3/5.4/5.3        preserved
-ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None             mupdf 1 · qpdf 1 · pop 1 · pypdf 1                   0.0                    lost-pages 4->1
-
+case                     input still holds                                                                output reads as                                                                  ink % per sheet        verdict
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None · check WARNING: /tmp/rdB/corpus/truncated-tail.pdf: file is damaged; WARNING: mupdf 2 · qpdf 2 · pop 2 · pypdf 2 · check WARNING: page object 8 0: item index 0 (from 0): ignoring non-stream i 5.3/0.0                lost-pages 4->2
+lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdB/corpus/lying-xref.pdf: file is damaged; WARNING: /tm mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None · check WARNING: /tmp/rdB/corpus/missing-startxref.pdf: file is damaged; WARNI mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None · check refuses: /tmp/rdB/corpus/objstm-wrong-offsets.pdf: unable to  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.4/5.3        preserved
+duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdB/corpus/duplicate-endobj.pdf: file is damaged; WARNIN mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdB/corpus/missing-endobj.pdf: file is damaged; WARNING: mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rdB/corpus/garbage-dict-midstream.pdf: file is damaged;  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: page object 8 0 stream 7 0 (content, offset 184): invalid cha 5.3/5.0/5.3/5.3        preserved
+triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdB/corpus/triage-report.pdf: file is damaged; WARNING:  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdB/corpus/plain-content-tailcut.pdf: file is damaged; W mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rdB/corpus/ledger-32-input.pdf: file is damaged; WARNING mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     24.5/19.8/0.0/57.0     preserved
 ### base: Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
     input characters per sheet: [78, 77, 78, 78]
@@ -29,10 +35,16 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None            
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### truncated-tail: truncated-tail.pdf could not be repaired: This PDF is too damaged to recover. The internal catalog and page tree are corrupted beyond what the browser can repair. Try a desktop PDF editor. Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+### truncated-tail: Repaired truncated-tail.pdf: 2 of 4 page(s) recovered: 1 still holds content, 1 is blank. 1.8 KB → 1.1 KB (-42%).
+    ! The input would not open ("truncated-tail.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    ! The file's own index could not be read: a fresh one was written over the 2 page object(s) still in the bytes.
+    ! 2 page(s) could not be recovered.
+    ! 1 of the 2 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
     readers, input: pdfinfo: Syntax Error: Invalid XRef entry 0
     input characters per sheet: [78, 19, 0, 0]
     input planted words: [['Alpha'], ['Beta'], [], []]
+    output characters per sheet: [78, 0]
+    output planted words: [['Alpha'], []]
 ### lying-xref: Repaired lying-xref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
     input characters per sheet: [78, 77, 78, 78]
@@ -45,9 +57,13 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None            
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### objstm-wrong-offsets: objstm-wrong-offsets.pdf could not be repaired: this.catalog.Pages is not a function Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+### objstm-wrong-offsets: Repaired objstm-wrong-offsets.pdf: 4 page(s) readable. 2.0 KB → 2.5 KB (+22%).
+    ! The input would not open ("objstm-wrong-offsets.pdf" has no pages.).
+    ! No page tree survived, so each sheet was rebuilt around a content stream: page size and order are a guess here, not the document’s own.
     input characters per sheet: []
     input planted words: []
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### duplicate-endobj: Repaired duplicate-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
     input characters per sheet: [78, 77, 78, 78]
@@ -66,26 +82,30 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None            
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 19, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### triage-report: triage-report.pdf could not be repaired: This PDF is too damaged to recover. The internal catalog and page tree are corrupted beyond what the browser can repair. Try a desktop PDF editor. Ghostscript could not be fetched from cdn.jsdelivr.net (Failed to load Ghostscript from https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'blob:'). It is downloaded once, when a tool needs it, and cached by your browser; nothing was uploaded.
+### triage-report: Repaired triage-report.pdf: 4 page(s) readable. 3.3 KB → 1.9 KB (-41%).
+    ! The input would not open ("triage-report.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
     readers, input: pdfinfo: Syntax Error: End of file inside dictionary
-    input characters per sheet: [78, 77, 78, 78]
-    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### plain-content-tailcut: Repaired plain-content-tailcut.pdf: 4 page(s) readable. 3.6 KB → 1.7 KB (-54%).
-    ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
-    readers, input: pdfinfo: Syntax Error: End of file inside dictionary
-    readers, output: gs: GPL Ghostscript 10.08.0: Unrecoverable error, exit code 1
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### ledger-32-input: Repaired ledger-32-input.pdf: 1 page(s) readable. 3.8 KB → 1.6 KB (-57%).
-    ! The input would not open ("ledger-32-input.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+### plain-content-tailcut: Repaired plain-content-tailcut.pdf: 4 page(s) readable. 3.6 KB → 1.8 KB (-51%).
+    ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
     readers, input: pdfinfo: Syntax Error: End of file inside dictionary
-    readers, output: gs: GPL Ghostscript 10.08.0: Unrecoverable error, exit code 1
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### ledger-32-input: Repaired ledger-32-input.pdf: 4 page(s) recovered: 3 still hold content, 1 is blank. 3.8 KB → 2.1 KB (-44%).
+    ! The input would not open ("ledger-32-input.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
+    ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
+    ! 1 of the 4 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
+    readers, input: pdfinfo: Syntax Error: End of file inside dictionary
     input characters per sheet: [1778, 12, 0, 0]
     input planted words: [[], [], [], []]
-    output characters per sheet: [0]
-    output planted words: [[]]
-
-4 case(s) not preserved, of which 3 were refused outright
+    output characters per sheet: [1778, 12, 0, 0]
+    output planted words: [[], [], [], []]
+1 case(s) not preserved, of which 0 were refused outright
 1 case(s) whose produced file contradicts the sentence printed for it
