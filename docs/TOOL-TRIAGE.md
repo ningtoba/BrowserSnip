@@ -1,7 +1,8 @@
 # TOOL TRIAGE — every tool in the catalogue, driven and measured
 
-**Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (1 closed since
-`2ca815b`: `repair`) · 4 FALSE CLAIM · 3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT ·
+**Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (2 closed — `repair`
+since `2ca815b`, and `txt-to-pdf` by `c2226b5` with its marker rig in `abdbbd5`) · 4 FALSE CLAIM ·
+3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT ·
 81 CLEAN (MEASURED) · 26 NOT REACHED.**
 Coverage: every one of the 130 ids was driven in real Chromium against the deployed site, and
 **all 427 field flips of the PDF catalogue were run** (288 of them produced a file to compare,
@@ -149,6 +150,34 @@ silently wrong.*
 * App's line: *"Typeset 1 text source(s) into 2 page(s)."* — true of the page count, and the
   page count is what hides the loss (`PAGES 2`, with no in-side to compare to).
 * Family check on the same sheet: `markdown-to-pdf` wrote 168 chars from a 221-byte source, `html-to-pdf` 102 of 419, `rtf-to-pdf` 130 of 239, `xml-to-pdf` 106 of 170, `word-to-pdf` 95 from a 1 520-byte DOCX — those are markup doing what markup should. `doc.txt` has no markup to lose, which is why the truncation is pinned to this tool alone.
+* **Closed by the `txt-to-pdf` row of `docs/TOOL-CAMPAIGN.md` (`c2226b5`, rig `abdbbd5`).** Not a
+  size cap: one missing page turn. `core/layout.ts` `renderBlocks` asks once whether a paragraph
+  or quote block fits the space left — `if (needs(height)) await turn()` — and then paints every
+  wrapped line from wherever the block began, so a block taller than a sheet continues below
+  `y = 0`, where the content stream holds the words and no reader shows them. On a source built to
+  be counted (120 numbered rows, 8 800 bytes, markers at 0/25/50/75/100 %), MuPDF reads
+  **724 characters off 2 sheets with 51 of 482 text runs inside a page box**, the first missing
+  marker at byte 1 770; the same fixture after the fix is **7 131 characters off 12 sheets,
+  492 of 492 runs in a box**, ending on row 120, and the sentence's page count is the file's.
+  Both tables are committed: `docs/research/text-tail-{before,after}.txt`, produced by
+  `docs/research/text-tail-rig.test.ts` and judged by `text-tail-measure.py`.
+* The branch is shared, so the truncation was never unique to plain text: markdown, HTML, XML and
+  Word showed the same 724/818-of-8 800 shape on one tall block and now land every marker.
+  `csv`, `json` as a list, `xml` as items, `word` as paragraphs, monospace and one-paragraph-per-line
+  sources were unaffected before and after — measured, not assumed.
+* Two findings measured and left for their own branches, with the numbers: **a Markdown list item
+  taller than a sheet** (818 characters of 8 802, 2 sheets, 52 of 426 runs in a box, first missing
+  `MK25` at byte 1 771) and **a table cell taller than a sheet** (`json-to-pdf` over
+  `{"note": "<one 8 800-byte string>"}`: **16 characters of 7 365**, 3 sheets, 4 of 510 runs in a
+  box). Both are the same missing per-line turn in `renderList` / `renderTable`.
+* A tab was costing the whole file on the text route — one `\t` in a proportional run threw
+  `WinAnsi cannot encode "\t"` and produced **no PDF at all** — and is now expanded to spaces the
+  way the code branch already expands them at draw time. Markdown keeps its throw (`marked` holds
+  the tab inside the run) and is reported, not fixed, here.
+* The one limit that survives is now in the tool's own notes instead of being found by the user: a
+  single word longer than the column is not broken, so of a 7 980-character word **99 characters**
+  are inside the page box. The page count is not capped: a 298 921-byte source reaches 349 sheets
+  with its last line on the last one.
 
 ### 5. `flatten-pdf` — annotation flattening does nothing to the annotations, and says it did
 

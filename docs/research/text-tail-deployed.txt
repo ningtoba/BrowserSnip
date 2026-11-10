@@ -1,0 +1,11 @@
+deployed run — https://www.browsersnip.com/#/tool/txt-to-pdf, doc.txt 10481 bytes (8676 non-whitespace chars), 120 numbered rows, markers at 0/25/50/75/100 %
+
+dev server (localhost:5291): 65637 bytes, sha256 93afd1de0b941640, 12 sheets, 8691 characters a reader can extract (8676 in the source, plus one footer digit per sheet)
+  markers: all present
+  last three lines of the last sheet: ['wrap before the right', 'margin', '12']
+  final source row on a sheet: True
+
+deployed site: 65637 bytes, sha256 8fb79b135b5b89d2, 12 sheets, 8691 characters a reader can extract (8676 in the source, plus one footer digit per sheet)
+  markers: all present
+  last three lines of the last sheet: ['wrap before the right', 'margin', '12']
+  final source row on a sheet: True
