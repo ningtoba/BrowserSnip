@@ -36,8 +36,8 @@ import {
   prependContentOps,
   streamBytes,
   stripEmbeddedFiles,
-  stripJavaScript,
 } from '../core/content';
+import { inspectScript, stripScript } from '../core/sanitize';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { listLayers, removeHiddenLayerContent } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
@@ -719,25 +719,6 @@ function countFormFields(doc: PDFDocument): number {
 }
 
 /** How many script hooks a document still carries. */
-function countScriptReferences(doc: PDFDocument): number {
-  let found = 0;
-  const keys = [PDFName.of('JS'), PDFName.of('JavaScript')];
-  const countIn = (dict: PDFDict): void => {
-    for (const key of keys) if (dict.get(key) !== undefined) found += 1;
-    const action = dict.get(PDFName.of('A'));
-    const actionDict = action instanceof PDFRef ? doc.context.lookupMaybe(action, PDFDict) : action;
-    if (actionDict instanceof PDFDict) {
-      const subtype = actionDict.get(PDFName.of('S'));
-      if (String(subtype) === '/JavaScript') found += 1;
-    }
-  };
-  countIn(doc.catalog);
-  for (const [, object] of doc.context.enumerateIndirectObjects()) {
-    if (object instanceof PDFDict) countIn(object);
-    else if (object instanceof PDFRawStream) countIn(object.dict);
-  }
-  return found;
-}
 
 export const optimizeTools: PdfToolDefinition[] = [
   {
@@ -1280,7 +1261,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Sanitize',
     promise: 'Scripts, attachments and optional metadata removed, with a count of everything actually taken out.',
     fields: [
-      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes the /OpenAction and /JS entries a document runs when it opens. Some forms stop calculating.' },
+      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes what a document runs by itself: the /OpenAction it runs when it opens, the /A and /AA actions on annotations and form fields, and named scripts. Some forms stop calculating.' },
       { key: 'attachments', label: 'Remove embedded files', type: 'toggle', default: true, group: 'What to remove', help: 'Deletion is final in the output copy; extract them first if the file is the payload.' },
       { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove', help: 'XMP is what desktop search indexes. Without it the document stops describing itself to those tools.' },
       { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove', help: 'The info dictionary holds title, author and dates — most readers show it as blank afterwards.' },
@@ -1297,6 +1278,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'Everything runs on the document structure in this tab; no engine download is needed.',
       'This hides and removes optional parts, it does not redact: text under a removed annotation is still in the file.',
+      'Script inside an XFA form packet stays where it is — it lives in the packet’s own XML, which this tool does not read — and a run that finds one says so on the card.',
       'Hidden layer content is off by default because it changes what the document can show, not only what it shows: a layer another view or an export intent switches back on is left alone and named.',
     ],
     async run(context) {
@@ -1306,25 +1288,34 @@ export const optimizeTools: PdfToolDefinition[] = [
       const warnings: string[] = [];
       const actions: string[] = [];
       const removed: string[] = [];
+      /** What the file carries that a switch left off this run declined to touch. */
+      const leftAlone: string[] = [];
 
+      const script = inspectScript(doc);
       if (booleanValue(values, 'javascript', true)) {
-        const present = countScriptReferences(doc);
-        const stripped = stripJavaScript(doc);
-        const left = countScriptReferences(doc);
-        // What the bytes actually lost, not what was in there: counting the
-        // references found *before* the pass as "removed" let a document whose
-        // scripts hang off widget actions report 3 removed and 3 survived in the
-        // same sentence.
-        const gone = Math.max(stripped, present - left);
+        const stripped = stripScript(doc);
+        const left = inspectScript(doc).present;
+        // What the bytes actually lost, not what the pass intended: an entry whose
+        // removal changed nothing is not something the output is without.
+        const gone = Math.min(stripped.removed, script.present - left);
         actions.push(
           gone > 0
             ? `${gone} script reference(s) removed`
-            : present > 0
+            : script.present > 0
               ? 'no script reference this tool could remove'
               : 'no script references were present',
         );
         if (gone > 0) removed.push('scripts');
         if (left > 0) warnings.push(`${left} script reference(s) survived in a place this tool does not look.`);
+      } else if (script.present > 0) {
+        // The switch was off, so whatever the file runs is still in the output.
+        // Saying nothing — or worse, "nothing to remove" — is what read as a clean
+        // bill of health for a document that runs code when it opens.
+        leftAlone.push(`${script.present} script reference(s) left in place`);
+        warnings.push(`${script.places.join(', ')} ${script.present === 1 ? 'runs' : 'run'} in the output too: "Remove JavaScript and automatic actions" is off.`);
+      }
+      if (script.unreachable) {
+        warnings.push(`This tool did not read ${script.unreachable}, so it is still in the file.`);
       }
       if (booleanValue(values, 'attachments', true)) {
         const stripped = stripEmbeddedFiles(doc);
@@ -1427,9 +1418,15 @@ export const optimizeTools: PdfToolDefinition[] = [
         });
       }
       const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
+      const clauses = [...actions, ...leftAlone];
+      // Three endings, because there are three different things that happened:
+      // something was taken out, nothing was taken out but the file still carries
+      // what a switch left alone, or the file had nothing any switch asks about.
       const message = removed.length > 0
-        ? `Sanitized: ${actions.join(', ')}. ${sizeSentence(change)}.`
-        : `Nothing to remove: ${actions.join(', ')}. ${sizeSentence(change)}.`;
+        ? `Sanitized: ${clauses.join(', ')}. ${sizeSentence(change)}.`
+        : leftAlone.length > 0
+          ? `Nothing was removed: ${clauses.join(', ')}. ${sizeSentence(change)}.`
+          : `Nothing to remove: ${clauses.length > 0 ? clauses.join(', ') : 'no switch was on'}. ${sizeSentence(change)}.`;
       return { kind: 'pdf', bytes, pages: doc.getPageCount(), message, warnings };
     },
   },

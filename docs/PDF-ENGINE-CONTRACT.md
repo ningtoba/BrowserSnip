@@ -143,7 +143,7 @@ their own resources (`/XObject`, `/Font`) — use `doc.context.register(...)`.
 content stream (§3 `removeTextInRects`) and, when the region contains an image,
 falls back to a blackout + `rasterised: true` so the caller can warn.
 
-## 3. Owner: content + layout — `src/lib/pdf/core/content.ts`, `src/lib/pdf/core/layout.ts`
+## 3. Owner: content + layout — `src/lib/pdf/core/content.ts`, `src/lib/pdf/core/layout.ts`, `src/lib/pdf/core/sanitize.ts`
 
 ```ts
 // content.ts — a real tokenizer over PDF content streams (no regex hacks).
@@ -158,10 +158,18 @@ export function removeTextInRects(page: PDFPage, rects: QuadRect[]): { removedGl
 export function textRects(page: PDFPage): { rect: QuadRect; text: string }[];      // from Tm/Td/TD/Tz/TL + TJ arrays
 export function pageUsesColor(page: PDFPage): boolean;
 export function greyscalePage(page: PDFPage): number;   // convert rg/k colour ops to grey
-export function stripJavaScript(doc: PDFDocument): number;      // /JavaScript, /JS actions, /AA
 export function stripEmbeddedFiles(doc: PDFDocument): number;
 export function setViewerPreferences(doc: PDFDocument, prefs: Record<string, unknown>): void;
 export function objectAudit(doc: PDFDocument): { objects: number; streams: number; images: number; fonts: number; uncompressedBytes: number };
+
+// sanitize.ts — the script a document runs by itself, and its removal.
+// An entry is a place that RUNS an action (`/OpenAction`, `/A`, one `/AA` trigger,
+// `/JavaScript` in the catalogue or the name tree), inline or behind a reference;
+// the action dictionary it reaches is emptied with it and is never a second entry.
+export interface ScriptEntry { where: string; remove: () => void }
+export interface ScriptReport { present: number; places: string[]; unreachable: string | null }
+export function inspectScript(doc: PDFDocument): ScriptReport;
+export function stripScript(doc: PDFDocument): { removed: number; where: string[] };
 
 // layout.ts — a rich-text block model rendered to real, selectable PDF text.
 export interface Inline { text: string; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; color?: string; link?: string; code?: boolean; size?: number; superscript?: boolean; subscript?: boolean; font?: string }

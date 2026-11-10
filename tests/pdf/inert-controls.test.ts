@@ -25,7 +25,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createElement } from 'react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef } from '@maxwbh/pdf-lib';
 import { cropBox, mediaBox, PAGE_SIZES } from '@/lib/pdf/core/pages';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
@@ -231,19 +231,25 @@ describe('scan-to-pdf Page size reaches the page boxes', () => {
  * not indirect objects of their own. The shapes:
  *
  *  - `/OpenAction << /S /JavaScript /JS (…) >>` in the catalogue,
- *  - an annotation `/A << /S /JavaScript /JS (…) >>`,
+ *  - an annotation `/A << /S /JavaScript /JS (…) >>`, written inline,
  *  - a form field `/A` pointing at a JavaScript action through a reference,
- *  - a `/Names » /JavaScript` entry, which the tool has always seen.
+ *  - a page `/AA` trigger and a `/Names » /JavaScript` entry, which the tool has
+ *    always seen and which must keep being seen.
  */
 function scriptFixture(): Uint8Array {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R /OpenAction << /S /JavaScript /JS (app.alert(\'on open\')) >> '
-    + '/Names << /JavaScript << /Names [ (boot) 6 0 R ] >> >> >>',
+    + '/AcroForm 8 0 R /Names << /JavaScript << /Names [ (boot) 6 0 R ] >> >> >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Annots [4 0 R] /AA << /O << /S /JavaScript /JS (on page) >> >> >>',
-    '<< /Type /Annot /Subtype /Widget /Rect [10 10 90 30] /FT /Tx /T (amount) /V (12) /A 5 0 R >>',
-    '<< /S /JavaScript /JS (field calc) >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Annots [4 0 R 5 0 R] '
+    + '/AA << /O << /S /JavaScript /JS (on page) >> >> >>',
+    // An annotation whose action is written inline, the shape the ledger's fixture used.
+    '<< /Type /Annot /Subtype /Link /Rect [10 150 90 170] /A << /S /JavaScript /JS (annotation clicked) >> >>',
+    // A form field whose action is a dictionary of its own, reached by reference.
+    '<< /Type /Annot /Subtype /Widget /Rect [10 10 90 30] /FT /Tx /T (amount) /V (12) /A 7 0 R >>',
     '<< /S /JavaScript /JS (named boot) >>',
+    '<< /S /JavaScript /JS (field calc) >>',
+    '<< /Fields [5 0 R] >>',
   ];
   let body = '%PDF-1.7\n';
   const offsets: number[] = [];
@@ -268,41 +274,39 @@ function scriptPlaces(bytes: Uint8Array): Promise<string[]> {
       const target = value instanceof PDFRef ? doc.context.lookupMaybe(value, PDFDict) : value;
       return target instanceof PDFDict ? target : null;
     };
-    const scan = (dict: PDFDict, label: string) => {
-      for (const key of ['OpenAction', 'A', 'AA']) {
-        const raw = dict.get(PDFName.of(key));
-        if (raw === undefined) continue;
-        if (key === 'AA' && raw instanceof PDFDict) {
-          for (const [, trigger] of raw.entries()) {
-            const action = follow(trigger);
-            if (action && isJavaScriptAction(action)) found.push(`${label} /AA`);
-          }
-        } else {
-          const action = follow(raw);
-          if (action && isJavaScriptAction(action)) found.push(`${label} /${key}`);
-        }
-      }
-      if (dict.get(PDFName.of('JS')) !== undefined || dict.get(PDFName.of('JavaScript')) !== undefined) {
-        found.push(`${label} /JS`);
-      }
-    };
-    scan(doc.catalog, 'catalogue');
+    // One label per dictionary, so a widget that is both an annotation and a
+    // form field is one place that runs script, not two.
+    const hosts = new Map<PDFDict, string>([[doc.catalog, 'catalogue']]);
     for (const page of doc.getPages()) {
-      scan(page.node as unknown as PDFDict, 'page');
+      hosts.set(page.node, 'page');
       const annots = page.node.Annots();
       for (let index = 0; annots && index < annots.size(); index++) {
         const annot = doc.context.lookupMaybe(annots.get(index), PDFDict);
-        if (annot) scan(annot, 'annotation');
+        if (annot && !hosts.has(annot)) hosts.set(annot, 'annotation');
       }
     }
-    for (const [ref, object] of doc.context.enumerateIndirectObjects()) {
-      const dict = object instanceof PDFRawStream ? object.dict : object;
-      if (dict instanceof PDFDict && (dict.get(PDFName.of('Fields')) || dict.get(PDFName.of('FT')))) {
-        scan(dict, ref === undefined ? 'form' : `form ${ref.toString()}`);
+    const fields = doc.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict)?.lookupMaybe(PDFName.of('Fields'), PDFArray);
+    for (let index = 0; fields && index < fields.size(); index++) {
+      const field = doc.context.lookupMaybe(fields.get(index), PDFDict);
+      if (field && !hosts.has(field)) hosts.set(field, 'form field');
+    }
+    for (const [dict, label] of hosts) {
+      for (const key of ['OpenAction', 'A']) {
+        const action = follow(dict.get(PDFName.of(key)));
+        if (action && isJavaScriptAction(action)) found.push(`${label} /${key}`);
+      }
+      const auto = follow(dict.get(PDFName.of('AA')));
+      if (auto) {
+        for (const [, trigger] of auto.entries()) {
+          const action = follow(trigger);
+          if (action && isJavaScriptAction(action)) found.push(`${label} /AA`);
+        }
+      }
+      if (label !== 'catalogue' && (dict.get(PDFName.of('JS')) !== undefined || dict.get(PDFName.of('JavaScript')) !== undefined)) {
+        found.push(`${label} /JS`);
       }
     }
-    const javascript = (doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict) ?? undefined)
-      ?.lookupMaybe(PDFName.of('JavaScript'), PDFDict);
+    const javascript = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('JavaScript'), PDFDict);
     const names = javascript?.lookupMaybe(PDFName.of('Names'), PDFArray);
     if (names && names.size() > 0) found.push('names tree');
     return found;
@@ -312,7 +316,13 @@ function scriptPlaces(bytes: Uint8Array): Promise<string[]> {
 describe('sanitize-pdf Remove JavaScript does what the switch says', () => {
   it('takes every action out with the switch on, and says how many', async () => {
     const source = scriptFixture();
-    expect((await scriptPlaces(source)).length).toBeGreaterThan(3);
+    expect((await scriptPlaces(source)).sort()).toEqual([
+      'annotation /A',
+      'annotation /A',
+      'catalogue /OpenAction',
+      'names tree',
+      'page /AA',
+    ].sort());
     const outcome = await run(
       'sanitize-pdf',
       { javascript: true, attachments: false, metadata: false, info: false, annotations: false },
@@ -373,7 +383,8 @@ describe('sanitize-pdf Remove JavaScript does what the switch says', () => {
       [fileFrom(scriptFixture(), 'js.pdf', 'application/pdf')],
     );
     const removed = Number(/(\d+) script reference\(s\) removed/.exec(outcome.message ?? '')?.[1] ?? 0);
-    // OpenAction, the page /AA, the annotation's field action and the named entry.
-    expect(removed).toBeGreaterThanOrEqual(4);
+    // OpenAction, the page /AA, the annotation's inline action, the field's
+    // referenced action and the named entry.
+    expect(removed).toBe(5);
   });
 });
