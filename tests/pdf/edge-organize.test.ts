@@ -952,9 +952,17 @@ describe('inputs are handled honestly', () => {
   });
 
   it('still refuses a cipher core/crypto does not read, and names it (E5)', async () => {
-    // The direction that must not quietly open: AES-256 stays refused, and the
-    // sentence says which strength it is rather than "encrypted".
-    const ciphered = fileOf(encryptedFixture('aes-256-user.pdf'), 'aes-256.pdf');
+    // The direction that must not quietly open. AES-256 at revision 6 is read now,
+    // so the case is a handler this module cannot undo at any revision: the
+    // fixture's own dictionary with `/Filter` moved to a public-key (certificate)
+    // handler, which needs an issuer key this app does not have. The sentence names
+    // the strength and the reason, never a bare "encrypted".
+    const locked = await PDFDocument.load(encryptedFixture('aes-256-user.pdf'), { ignoreEncryption: true, updateMetadata: false });
+    const entry = locked.context.trailerInfo.Encrypt;
+    const dict = entry instanceof PDFRef ? locked.context.lookupMaybe(entry, PDFDict) : entry;
+    if (!(dict instanceof PDFDict)) throw new Error('the fixture carries no /Encrypt dictionary');
+    dict.set(PDFName.of('Filter'), PDFName.of('Adobe.PubSec'));
+    const ciphered = fileOf(await locked.save({ useObjectStreams: false }), 'aes-256.pdf');
     const failure = await run('rotate', { degrees: 90, pages: 'all' }, [ciphered], 'hunter2').then(
       () => null,
       (error: unknown) => error,
@@ -962,7 +970,22 @@ describe('inputs are handled honestly', () => {
     expect(isToolInputError(failure), 'the refusal is a bare Error').toBe(true);
     expect((failure as Error).message)
       .toMatch(/"aes-256\.pdf" is encrypted with AES-256 \(crypt filter \/StdCF, revision 6\)/);
-    expect((failure as Error).message).toMatch(/reads RC4-128 and AES-128 files/);
+    expect((failure as Error).message).toMatch(/locked by a certificate handler/);
+  });
+
+  it('rotates an AES-256 file and the sentence is still on the sheet (E5)', async () => {
+    // The same seam, the other way: this input produced no file at all until the
+    // revision-6 read path landed, and the failure the `encrypted-inputs` row
+    // measured was a rebuild that kept its page count and lost its words.
+    const outcome = await run('rotate', { degrees: 90, pages: 'all' },
+      [fileOf(encryptedFixture('aes-256-user.pdf'), 'aes-256.pdf')], 'hunter2');
+    const bytes = await bytesOf(outcome);
+    const doc = await openPDF(bytes, { password: 'hunter2' });
+    expect(doc.getPageCount()).toBe(3);
+    expect(drawnText(doc, 0)).toContain('Lighthouse Inventory 1887 page 1');
+    // And the copy is still locked at the strength the source carried.
+    expect(text(bytes)).toMatch(/\/Encrypt/);
+    expect(text(bytes)).toMatch(/\/AESV3/);
   });
 
   it('says when a file was added twice instead of merging it silently (E16)', async () => {

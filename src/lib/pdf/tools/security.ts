@@ -130,7 +130,7 @@ const CIPHERTEXT_NOTE =
   'What lands in the file is AES-128 ciphertext: every page stream and every string is ciphered with the password you set (AES-128-CBC, `/V 4 /R 4`, crypt filter `/StdCF`), and MuPDF, qpdf, pypdf, poppler and Ghostscript all refuse the copy until it is typed. The strength is named because the file is written at it and read back at it — this app opens what this app protects.';
 
 const CIPHER_STRENGTH_NOTE =
-  'AES-128 is the only strength offered, because it is the only one this build can both write and undo: RC4-128 and AES-128 files are decrypted when you open them, and AES-256 (`/R 5`, `/R 6`, with `/OE`, `/UE` and `/Perms` to derive) is still refused by name. Shipping ciphertext this app cannot read back would turn a protected download into blank paper the moment you re-opened it here.';
+  'AES-128 is the only strength offered, because it is the only one this build has written and read back against an outside tool. What it opens is wider: RC4-128, AES-128 and AES-256 (`/R 6`, whose `/OE`, `/UE` and `/Perms` are derived here rather than refused) are decrypted when you open them and re-sealed at the strength they arrived at, so an AES-256 file edited here leaves as AES-256. AES-256 under another handler revision (`/R 5`, `/R 7`) is still refused by name. Offering a strength this app cannot prove it round-trips would turn a protected download into blank paper the moment you re-opened it here.';
 
 const SCAN_ALTERNATIVE_NOTE =
   'A cipher hides the bytes, not the fact that a document exists: the page count, the object structure and any owner password remain readable. Where the pages themselves must carry no text layer at all, rasterise them first — PDF to Images, then Images to PDF — and protect the result; a scan is unreadable to a tool that never looks at a dictionary.';
@@ -2006,7 +2006,10 @@ async function stripProtectionFrom(
   } else if (reader.pages !== inspection.pages) {
     warnings.push(`A PDF reader counts ${reader.pages} page(s) in the saved copy where the engine that wrote it counts ${inspection.pages}.`);
   } else if (sourceText && sourceText.join('\n') !== reader.text.join('\n')) {
-    warnings.push('A PDF reader extracts different text from the unlocked copy than it could read from the protected one: the page content was stored as ciphertext this browser cannot decrypt, so check the copy before relying on it.');
+    // The observation, without a cause this build can no longer claim: the reader
+    // undoes every cipher `core/crypto` refuses as well, so a difference here is
+    // the rebuild talking, not a browser that could not read the page.
+    warnings.push('A PDF reader extracts different text from the unlocked copy than it read from the protected one, so check the copy before relying on it.');
   }
   return { bytes, pages: inspection.pages, kept, contentKept, rebuilt, warnings };
 }

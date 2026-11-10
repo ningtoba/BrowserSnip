@@ -217,10 +217,10 @@ export function decodePermissions(p: number): PdfPermissions {
  *   carry it; the `encrypted-inputs` rig confirms the round trip keeps its words.
  * - `ciphered` — `/StmF` or `/StrF` resolves to `RC4`, `AESV2` or `AESV3` (or
  *   `/V` is 1-3, where RC4 is implied and there is no filter to opt out of). The
- *   bytes are ciphertext. `core/doc.ts:openPDF` asks `core/crypto` to undo RC4-128
- *   and AES-128 and refuses the rest by name; rewriting a refused one copies
- *   ciphertext that the writer then labels plaintext, and every reader that
- *   believes the label draws blank paper.
+ *   bytes are ciphertext. `core/doc.ts:openPDF` asks `core/crypto` to undo RC4-128,
+ *   AES-128 and AES-256 at the revision-6 handler, and refuses the rest by name;
+ *   rewriting a refused one copies ciphertext that the writer then labels plaintext,
+ *   and every reader that believes the label draws blank paper.
  *
  * Refusing both would be its own regression, so the guard asks which of these two
  * a file is — see `cipheredInputError`.
@@ -423,7 +423,9 @@ export interface PdfInspection {
   algorithm: string | null;
   /**
    * What the lock *does*: `none`, `gate-only` (a password and `/P` flags over
-   * plaintext streams) or `ciphered` (ciphertext this app cannot undo). `null`
+   * plaintext streams) or `ciphered` (ciphertext; `supported` says whether this app
+   * can undo it, and today RC4-128, AES-128 and AES-256 at revision 6 can be).
+   * `null`
    * only in `cheap` mode, where there is no parsed dictionary to read — an entry
    * in the trailer cannot tell a gate from a cipher, so a caller that needs to
    * know pays for the parse (see `preflightPdf`).

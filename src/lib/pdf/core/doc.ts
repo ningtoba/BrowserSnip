@@ -169,10 +169,11 @@ const LOADED_PRODUCER = 'pdf-lib (https://github.com/Hopding/pdf-lib)';
  * `null` means "this is not the path for this file", and every caller's existing
  * behaviour then applies untouched: no `/Encrypt` entry at all; a gate whose
  * effective crypt filter is `/None` (what this app's own `protect` writes, whose
- * streams were never ciphered); a cipher this app refuses by name, such as
- * AES-256, a public-key handler or a file whose objects live in object streams; a
- * lock whose secret did not open it; and a file too damaged to parse, whose error
- * the ordinary path reports. Keeping the exception list on the returning-null side
+ * streams were never ciphered); a cipher this app refuses by name, such as a
+ * public-key handler, a file whose objects live in object streams, or AES-256 under
+ * a handler revision other than 6; a lock whose secret did not open it; and a file
+ * too damaged to parse, whose error the ordinary path reports. Keeping the
+ * exception list on the returning-null side
  * is what limits this to the case that was actually broken — a file with
  * ciphertext behind its dictionary, and the password to open it.
  */
@@ -277,11 +278,14 @@ export function permissionsToFlags(permissions: PDFPermissions | undefined): num
  * shape for an engine that ran no cipher.
  *
  * The cipher exists now, in `core/crypto.ts:encryptDocument`, at the one strength
- * the read path can also undo — `/V 4 /R 4` with `/CF /StdCF /CFM /AESV2
- * /Length 16`, selected by `/StmF` and `/StrF`, and every stream and string
- * ciphered on the way out. Writing a strength this app cannot read back would
- * turn a protected download into blank paper the moment the user re-opened it
- * here, so AES-256 (`/R 5`, `/R 6`) stays unwritten until it is also read.
+ * this module has both written and read back against an outside tool — `/V 4 /R 4`
+ * with `/CF /StdCF /CFM /AESV2 /Length 16`, selected by `/StmF` and `/StrF`, and
+ * every stream and string ciphered on the way out. The read path is wider than the
+ * write path: AES-256 (`/V 5 /R 6`) is undone on the way in since the revision-6
+ * derivations landed, and a file that arrives at 256 bits leaves at 256 bits
+ * because an edit carries the source's lock rather than this writer's, but writing
+ * a strength this app has never round-tripped outside itself would turn a protected
+ * download into blank paper the moment the user re-opened it here.
  *
  * The dictionary is assembled there rather than by `save({ encrypt })` for the
  * same reason the `/None` gate was: `setupEncryption` writes a cipher claim it
