@@ -44,11 +44,16 @@ const PORT = Number(process.env.PORT ?? 9443);
 /**
  * Which rewriting tool drives the edit, and what its downloaded file owes.
  *
- * `unlock` carries its own password field, so the rail shows the gate; `rotate`
- * does not — the organize surface only asks for a secret when its preview cannot
- * read the file, and pdf.js reads AES-256 — so a rotate run on a locked file comes
- * back `PASSWORD_REQUIRED` with nothing to type into. Both are measured, and the
- * `rotate` outcome is reported rather than hidden.
+ * `unlock` carries a password field of its own, so its gate has always been on the
+ * page. `rotate` does not, and until the file's own card began asking, that decided
+ * the outcome: a rotate run on a locked file came back `PASSWORD_REQUIRED` with
+ * nowhere to type the answer. `TOOL=rotate` is therefore the run that proves the
+ * reach, and it was measured on the deployed site that way — the card read
+ * "ENCRYPTED WITH AES-256 (CRYPT FILTER /STDCF, REVISION 6)", the download was 5,047
+ * bytes that qpdf opens with the typed password and refuses the wrong one for
+ * (`--check` exit 0), whose MuPDF text comes back on 3 of 3 sheets at `rotation 90`,
+ * still `/V 5 /R 6 /CFM /AESV3`. Both tools are driven here because the difference
+ * between them is the thing that changed.
  */
 const TOOL = process.env.TOOL ?? 'unlock';
 const ACTION = process.env.ACTION ?? 'Unlock';

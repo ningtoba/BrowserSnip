@@ -598,7 +598,7 @@ describe('OutputPreview as a bounded job', () => {
   }
 
   /** A produced file, as the result screen holds it. */
-  function produced(name = 'merged.pdf'): Blob {
+  function produced(): Blob {
     return new Blob([pdfBytes(80)], { type: 'application/pdf' });
   }
 
@@ -644,14 +644,14 @@ describe('OutputPreview as a bounded job', () => {
     const second = documentOf(4);
     open.mockResolvedValueOnce(first.session).mockResolvedValueOnce(second.session);
     const { rerender, unmount } = render(
-      h(OutputPreview, { items: [{ name: 'a.pdf', blob: produced('a.pdf') }] }),
+      h(OutputPreview, { items: [{ name: 'a.pdf', blob: produced() }] }),
     );
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     expect(first.destroy).not.toHaveBeenCalled();
 
     // A new run publishes a different blob: the old document is nobody's business
     // now, and leaving it open is how a preview turns into a memory leak.
-    rerender(h(OutputPreview, { items: [{ name: 'b.pdf', blob: produced('b.pdf') }] }));
+    rerender(h(OutputPreview, { items: [{ name: 'b.pdf', blob: produced() }] }));
     await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(first.destroy).toHaveBeenCalledTimes(1));
     expect(second.destroy).not.toHaveBeenCalled();
