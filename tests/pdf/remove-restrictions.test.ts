@@ -319,6 +319,14 @@ describe('the sibling entries still do what their names say', () => {
     const after = await inspectPdf(bytes, fixture.name);
     expect(after.encrypted, 'the dictionary the tool just wrote is not in the file').toBe(true);
     expect(after.permissions).toMatchObject({ printing: true, printingHighQuality: true, copying: false });
+    // And the secret it set is the one that lifts them: the copy has an empty **user**
+    // password, so the owner secret is answered as an owner secret. Measured here
+    // because MuPDF measures it in `docs/research/remove-restrictions-readers.log`
+    // (`auth=4 permissions=-4` for `hunter2`, `auth=2` with the flags in force for
+    // nothing), and the card's warning claims exactly that.
+    const withOwner = await inspectPdf(bytes, fixture.name, { password: PASSWORD });
+    expect(withOwner.passwordAccepted, 'the owner password this run set does not open the copy').toBe(true);
+    expect(withOwner.passwordLevel, 'the copy takes the typed secret as a user password').toBe('owner');
     // The words surviving the re-seal is the half no `/P` comparison can show.
     const seen = await readerView(bytes);
     expect(seen.count).toBe(PAGES);
