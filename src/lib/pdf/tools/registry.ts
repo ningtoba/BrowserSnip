@@ -245,23 +245,37 @@ export function visibleFields(
  * and content editors — the two heaviest components — never block the first
  * paint of a simple tool like Rotate. Each adapter names the exact export so a
  * renamed component fails loudly here instead of rendering a blank pane.
+ *
+ * **Keys are canonical ids, and the lookups below fold before they read.** A
+ * folded id (`redact`, `compare`, `edit-pdf-text`) is a spelling rather than a
+ * tool: the route resolves it to its canonical tool before any surface is chosen,
+ * so a key written only in the old spelling is a pane that can never mount. That is
+ * how `8bb1c49` left `#/tool/redact-pdf` with a redaction canvas and no apply
+ * button. The folded keys kept below are the ids the *definition* is looked up by
+ * elsewhere (the text editor's tests, the bookmarks), and each one has its
+ * canonical twin beside it — which is the difference between a duplicate and a
+ * stranding.
  */
 const MAIN_VIEWS: Record<string, LazyExoticType> = {
   organize: lazy(() => import('@/components/tools/pdf/organize/PageOrganizer')),
   'pdf-crop': lazy(() => import('@/components/tools/pdf/edit/CropMain').then(asDefault('CropMain'))),
   sign: lazy(() => import('@/components/tools/pdf/security/SignMain').then(asDefault('SignMain'))),
-  redact: lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
   'redact-pdf': lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
-  compare: lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'compare-pdfs': lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'scan-to-pdf': lazy(() => import('@/components/tools/pdf/scan/ScanMain').then(asDefault('ScanMain'))),
   // One surface, three modes: the editor owns Annotate, Edit text and Sign, and
-  // answers both ids so a lookup by the folded id still finds a pane.
+  // the folded text id resolves here as well.
   'edit-pdf': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
-  'edit-pdf-text': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
   'add-stamps': lazy(() => import('@/components/tools/pdf/editor/AnnotationEditor').then(asDefault('AnnotationEditor'))),
   'form-filler': lazy(() => import('@/components/tools/pdf/edit/FormFillMain')),
   'form-creator': lazy(() => import('@/components/tools/pdf/edit/FormCreatorMain')),
+  // The folded spellings, each with its canonical twin above. `tests/pdf/parity-surface`
+  // reads this map to divide the registry into generated and hand-written pages, and
+  // `edit-pdf-text` has no `run` of its own, so dropping its key there would call it
+  // a generated tool that cannot run.
+  redact: lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
+  compare: lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
+  'edit-pdf-text': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
 };
 
 /** The component type produced by `lazy()`, without re-importing React's internals. */
@@ -281,12 +295,14 @@ function asDefault<K extends string>(name: K) {
 export function mainViewFor(
   id: string,
 ): ComponentType<Record<string, unknown>> | undefined {
-  return MAIN_VIEWS[id];
+  return MAIN_VIEWS[canonicalToolId(id)];
 }
 
 /** Tools whose pane replaces the generic preview entirely. */
 export function hasCustomMainView(id: string): boolean {
-  return id in MAIN_VIEWS;
+  // Folded first, exactly as the router does: one id has to mean one surface in
+  // both places, or a pane is keyed by a spelling no route answers.
+  return canonicalToolId(id) in MAIN_VIEWS;
 }
 
 /** Filename suffix, resolved from the tool definition rather than a switch. */

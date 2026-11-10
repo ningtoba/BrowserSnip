@@ -69,15 +69,27 @@ type PanelMap = Record<string, ComponentType>;
  * Keyed by PDF tool id and nothing else: the video tools have their own ids and
  * their own components, and a key that happens to collide with one (there used to
  * be a `crop` entry here) mounts a PDF control set inside the video page's sidebar.
+ *
+ * Canonical ids only, and `panelFor` folds before it reads — the same resolution
+ * the route uses. `redact` and `compare` were keyed in the old spelling after
+ * `8bb1c49` folded them into `redact-pdf` / `compare-pdfs`, which silently took
+ * those panels off their pages: the route had already become the canonical id, so
+ * the map answered nothing and `/tool/redact-pdf` showed a redaction canvas with
+ * no way to apply it.
  */
 const PDF_PANELS: PanelMap = {
   'scan-to-pdf': lazyPanel(() => import('@/components/tools/pdf/scan/ScanTool').then(named('ScanTool'))),
   'pdf-crop': lazyPanel(() => import('@/components/tools/pdf/edit/CropTool').then(named('CropTool'))),
   sign: lazyPanel(() => import('@/components/tools/pdf/security/SignTool').then(named('SignTool'))),
-  redact: lazyPanel(() => import('@/components/tools/pdf/security/RedactTool').then(named('RedactTool'))),
-  compare: lazyPanel(() => import('@/components/tools/pdf/security/CompareTool').then(named('CompareTool'))),
+  'redact-pdf': lazyPanel(() => import('@/components/tools/pdf/security/RedactTool').then(named('RedactTool'))),
   'compare-pdfs': lazyPanel(() => import('@/components/tools/pdf/security/CompareTool').then(named('CompareTool'))),
 };
+
+/** The panel this tool's page mounts beside its pane, folded like the route is. */
+function panelFor(id: string | undefined): ComponentType | null {
+  if (!id) return null;
+  return PDF_PANELS[canonicalToolId(id)] ?? null;
+}
 
 function lazyPanel(factory: () => Promise<{ default: ComponentType }>): ComponentType {
   const Panel = lazy(factory);
@@ -150,7 +162,7 @@ export function ToolWorkspace() {
   const isNoFileTool = routeId === 'html-to-pdf' && definition?.accept?.includes('html') === false;
   const VideoComponent = routeId ? VIDEO_COMPONENTS[routeId] : null;
   /** PDF panels only, so a video page can never grow a second set of controls. */
-  const PanelComponent = routeId && !isVideo ? PDF_PANELS[routeId] : null;
+  const PanelComponent = isVideo ? null : panelFor(routeId);
   const MainComponent = routeId && hasCustomMainView(routeId) ? mainViewFor(routeId) : null;
   /** The generated page owns its own states; nothing is laid around it. */
   const isSchemaTool = isPDF && Boolean(definition) && !MainComponent && !PanelComponent;

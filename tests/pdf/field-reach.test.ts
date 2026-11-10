@@ -36,7 +36,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
-import { TOOL_CATALOGUE, getPdfTool, isToolAlias } from '@/lib/pdf/tools/registry';
+import { TOOL_CATALOGUE, canonicalToolId, getPdfTool, isToolAlias } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { writeOutline } from '@/lib/pdf/core/bookmarks';
 import { ToolWorkspace } from '@/components/layout/ToolWorkspace';
@@ -309,16 +309,22 @@ const MAIN_KEYS = paneMapKeys('src/lib/pdf/tools/registry.ts', 'MAIN_VIEWS');
 const PANE_OWNED_ACTION = ['organize', 'edit-pdf', 'add-stamps', 'form-filler', 'form-creator'];
 
 describe('a route reaches a control that runs its tool', () => {
-  it('keys every pane with an id its own route answers', () => {
-    // A pane keyed by a folded id can never mount: `ToolWorkspace` resolves the
-    // route through `canonicalToolId` before it looks a pane up, so under the
-    // canonical key the map is empty and the page loses its only apply button.
-    // This is what `8bb1c49` did to `redact`, and every count-based check on the
-    // catalogue stayed green while it did.
-    const folded = [...new Set([...PANEL_KEYS, ...MAIN_KEYS])].filter((key) => isToolAlias(key)).sort();
-    expect(folded, 'pane maps are keyed by the id the route answers').toEqual([]);
-    const stranded = [...new Set([...PANEL_KEYS, ...MAIN_KEYS])].filter((key) => !getPdfTool(key));
-    expect(stranded).toEqual([]);
+  it('never strands a pane behind a folded id', () => {
+    // `ToolWorkspace` resolves the route through `canonicalToolId` before it looks
+    // a pane up, so a key written in a folded spelling only works when the
+    // canonical id is keyed in the same map. `8bb1c49` folded `redact` into
+    // `redact-pdf` and left the panel behind: every count on the catalogue stayed
+    // green while the page lost its only apply button.
+    const stranded = (keys: string[], map: string) => keys
+      .filter((key) => isToolAlias(key) && !keys.includes(canonicalToolId(key)))
+      .map((key) => `${map}: ${key} → ${canonicalToolId(key)} is not keyed`)
+      .sort();
+    expect([
+      ...stranded(PANEL_KEYS, 'PDF_PANELS'),
+      ...stranded(MAIN_KEYS, 'MAIN_VIEWS'),
+    ]).toEqual([]);
+    const notATool = [...new Set([...PANEL_KEYS, ...MAIN_KEYS])].filter((key) => !getPdfTool(key));
+    expect(notATool).toEqual([]);
   });
 
   it('mounts the panel beside every canvas that needs one', async () => {
@@ -345,6 +351,15 @@ describe('a route reaches a control that runs its tool', () => {
         );
         act(() => {
           useFileStore.setState({ file: inputs[0]!, files: inputs });
+          // A finished run, so the main area shows the result screen rather than the
+          // editor pane. jsdom has no 2-D raster, and a pane that hands a page to
+          // pdf.js rejects inside the library's own task queue — an unhandled error
+          // that would be attributed to this test. The claim under test is the
+          // sidebar: whether the route mounted the panel that runs the tool.
+          const store = useProcessStore.getState();
+          store.setOutput(new Blob(['%PDF-1.7 out'], { type: 'application/pdf' }), 'blob:reach', 'out.pdf');
+          store.complete('Done.');
+          store.setPhase('done');
         });
         await waitFor(
           () => {
