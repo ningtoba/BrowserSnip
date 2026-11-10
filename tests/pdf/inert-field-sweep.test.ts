@@ -92,19 +92,6 @@ function definitions(files: Map<string, string>): Map<string, string> {
   return out;
 }
 
-/** Text from an opening brace to its match. */
-function sliceBraced(text: string, open: number): string {
-  let depth = 0;
-  for (let at = open; at < text.length; at++) {
-    if (text[at] === '{') depth++;
-    else if (text[at] === '}') {
-      depth--;
-      if (depth === 0) return text.slice(open, at + 1);
-    }
-  }
-  return text.slice(open, open + 2000);
-}
-
 /** A run body plus every function it reaches, transitively. */
 function closure(run: string, defs: Map<string, string>): string {
   const seen = new Set<string>();
@@ -186,10 +173,15 @@ describe('inert-field sweep', () => {
       'pdf-to-json.tables (toggle, "Detect tables")',
     ]);
     expect(paneOwned.sort()).toEqual([]);
+    // The walk is over every source file twice, so it is seconds on a warm machine
+    // and slower on a shared runner; the census is not worth a false red.
     process.stdout.write(`\nUNREACHED ON A GENERATED RAIL:\n${dead.map((l) => '  ' + l).join('\n')}\n`);
     process.stdout.write(`\nPANE-OWNED SURFACE (the rail is not rendered; the pane's own state runs):\n${paneOwned.map((l) => '  ' + l).join('\n')}\n`);
     expect(valueFields).toBeGreaterThan(100);
-  });
+    // The walk reads every source file and then closes over the call graph, which is
+    // seconds on a warm machine and slower on a shared runner — the census is not
+    // worth a false red.
+  }, 120_000);
 });
 
 /**
@@ -231,6 +223,10 @@ describe('pane-owned surface class', () => {
     }
     process.stdout.write(`\nPANE-OWNED IDS WITH DECLARED FIELDS: ${rows.length}, declaring ${total} fields\n${rows.join('\n')}\n`);
     process.stdout.write(`\nSTUCK AT THE DECLARED DEFAULT ON A PANE SURFACE: ${stuck.length}\n${stuck.join('\n')}\n`);
+    // Same census, same cost: it re-reads every source file.
+    expect(stuck.sort()).toEqual([
+      '  redact-pdf.alsoMetadata (toggle, "Also clear matching text from metadata and bookmarks") — pane RedactTool.tsx never writes it',
+    ]);
     expect(total).toBeGreaterThan(0);
-  });
+  }, 120_000);
 });
