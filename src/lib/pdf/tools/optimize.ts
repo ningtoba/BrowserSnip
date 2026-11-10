@@ -718,8 +718,6 @@ function countFormFields(doc: PDFDocument): number {
   return array ? array.size() : 0;
 }
 
-/** How many script hooks a document still carries. */
-
 export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'pdf-compress',
