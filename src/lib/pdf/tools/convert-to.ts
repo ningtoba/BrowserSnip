@@ -53,6 +53,29 @@ type LayoutOptions = import('../core/layout').LayoutOptions;
 
 const PAGE_FIELD = pageSizeField();
 
+/** The named sheets, so a tool that adds its own first choice does not re-spell them. */
+const SHEET_OPTIONS = PAGE_FIELD.options ?? [];
+
+/**
+ * CBZ's `Page size`, which includes the hug this tool has always produced.
+ *
+ * The field used to offer six sheets while `run` hardcoded `pageSize: 'original'`,
+ * so A4, Letter and A5 wrote byte-identical page boxes
+ * (`docs/TOOL-TRIAGE.md` CONTROL INERT 1). Hugging each panel is what a comic
+ * archive wants and what the promise says, so it is now a named choice — the
+ * first one, and the default — rather than an invisible answer behind the select.
+ */
+const CBZ_PAGE_FIELD = pageSizeField({
+  default: 'fit',
+  help: 'Match each image leaves every page the size of its own artwork. A named sheet puts every page on that paper and scales the artwork into it.',
+  options: [{ value: 'fit', label: 'Match each image' }, ...SHEET_OPTIONS],
+});
+
+/** The word the result card uses for a chosen sheet, taken from the field itself. */
+function sheetLabel(value: string): string {
+  return SHEET_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 const MARGIN_FIELD = marginField();
 
 const ORIENTATION_FIELD = orientationField();
@@ -675,13 +698,14 @@ export const convertToTools: PdfToolDefinition[] = [
     accept: '.cbz,.zip',
     outputSuffix: '_from_cbz.pdf',
     actionLabel: 'Create PDF',
-    promise: 'Every page image inside the ZIP, in reading order, on a page that matches its own size.',
+    promise: 'Every page image inside the ZIP, in reading order, on a page that matches its own size — or on the sheet you choose.',
     notes: [
       'Only ZIP containers are read. CBR is a RAR archive renamed, and BrowserSnip does not bundle a RAR decompressor.',
+      'A chosen sheet is turned sideways for artwork wider than it is tall, and the picture is scaled down to fit inside it rather than cropped.',
       'Pages are the pictures themselves: lettering is not extracted as text, so the result is not searchable.',
       'Entry names are sorted naturally, so page 2 sorts after page 1 rather than after page 10.',
     ],
-    fields: [PAGE_FIELD],
+    fields: [CBZ_PAGE_FIELD],
     async run(context) {
       const [input] = await sourceBatches(context, {
         kinds: ['zip'],
@@ -707,13 +731,19 @@ export const convertToTools: PdfToolDefinition[] = [
         });
       }
       files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const size = stringValue(context.values, 'pageSize', 'fit');
       const packed = await pdfFromImages(
         files.map((file) => ({ data: file.bytes, mime: file.mime })),
-        { pageSize: 'original', margin: 0 },
+        { pageSize: size, margin: 0 },
       );
       return {
         ...(await pdfResult(packed.doc, {
-          message: `${files.length} comic pages → ${packed.pages} PDF page(s).`,
+          // The card names the sheet the bytes carry: hugging and a chosen paper
+          // are different answers now, and a sentence that hid which one ran is
+          // what made this control look alive when it was not.
+          message: size === 'fit'
+            ? `${files.length} comic pages → ${packed.pages} PDF page(s), each page its own artwork's size.`
+            : `${files.length} comic pages → ${packed.pages} PDF page(s) on ${sheetLabel(size)} paper.`,
         })),
         warnings: [
           RASTER_LOSS,
