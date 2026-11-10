@@ -2,31 +2,70 @@
  * RedactTool — Sidebar for Redact PDF.
  *
  * Drag on the preview to draw redaction rectangles, then apply: the boxes go to
- * the registry's `redact` tool as `regions`, so the guard pre-flight, the
+ * the registry's `redact-pdf` tool as `regions`, so the guard pre-flight, the
  * warnings and the progress rail are the same ones every other tool uses. The
  * text under each box is deleted from the page's content stream — not painted
  * over — and a box that caught nothing is reported instead of counted as a win.
+ *
+ * The two options the tool declares are shown as the tool declares them:
+ * `RedactMain` keeps the fill colour in its own mark state because the overlay
+ * has to paint with it live, while the metadata switch is written straight into
+ * the runner's value bag, which is where `redact-pdf` reads it from.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { usePdfTool } from '@/hooks/usePdfTool';
 import { useProcessStore } from '@/stores/process-store';
+import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fadeUp, scaleIn, staggerParent } from '@/lib/motion';
 import { reportMarks } from '@/components/tools/pdf/editor/placement';
+import { FieldControl } from '../shared/FieldControls';
 import {
   getRedactState, setRedactColor,
   removeRedaction, selectRedaction, getRedactPageSize, subscribeRedact,
   redactionRegions,
 } from './RedactMain';
 
+/** The tool this panel belongs to, by id — the field list is its own, not a copy. */
+const REDACT_TOOL = getPdfTool('redact-pdf');
+
+/**
+ * Turn a region from the frame the marks are stored in to the frame the tool wants.
+ *
+ * `redactionRegions` reports a box in the engine's own space: points from the
+ * bottom of the displayed page, which is what `redact` (typed `page:x,y,w,h`
+ * regions) and the annotation editor both speak. `redact-pdf` takes the mark as
+ * the user sees it — origin top-left — and turns it back through `frameOf` itself,
+ * because a box drawn over the mirrored band redacts the wrong line. The flip is
+ * the difference, and one page height of it: the words survive, the bar lands.
+ */
+function displayedRegions(
+  regions: { page: number; x: number; y: number; width: number; height: number }[],
+  pageHeightPt: number,
+) {
+  return regions.map((region) => ({
+    ...region,
+    y: Math.max(0, Math.round(pageHeightPt - (region.y + region.height))),
+  }));
+}
+
 export function RedactTool() {
-  const { run, isRunning } = usePdfTool('redact');
+  const { run, isRunning, values, setValue } = usePdfTool('redact-pdf');
   const warnings = useProcessStore((s) => s.warnings);
   const [st, setSt] = useState(getRedactState());
 
   useEffect(() => subscribeRedact(() => setSt(getRedactState())), []);
 
   const selected = st.redactions.find((r) => r.id === st.selectedId) ?? null;
+
+  /**
+   * The declared metadata switch, rendered from the definition that honours it.
+   *
+   * Reusing the rail's own control is what keeps the panel's wording, help line
+   * and default tied to `redact-pdf.fields`; a bespoke checkbox here is a second
+   * place to spell the same promise, and the first thing to drift from it.
+   */
+  const metadataField = (REDACT_TOOL?.fields ?? []).find((field) => field.key === 'alsoMetadata');
 
   /**
    * E13 and E19, before the click: a box the size of a stray mouse-twitch covers no
@@ -49,7 +88,13 @@ export function RedactTool() {
     const pageSize = getRedactPageSize();
     // One region per snapped line, so the engine deletes the words and leaves the
     // leading between them alone. An area mark (Shift-drag) is its own one region.
-    const regions = report.usable.flatMap((r) => redactionRegions(r, pageSize));
+    const regions = displayedRegions(
+      report.usable.flatMap((r) => redactionRegions(r, pageSize)),
+      pageSize.height,
+    );
+    // `alsoMetadata` rides in the runner's value bag, written by the switch below;
+    // the fill comes from the overlay's live state, which is what the marks on
+    // screen are painted with, so the file cannot disagree with the canvas.
     void run({ regions, fill: st.color });
   }, [report.usable, run, st.color]);
 
@@ -86,6 +131,21 @@ export function RedactTool() {
           onChange={(e) => setRedactColor(e.target.value)}
           className="w-full h-6 rounded-[10px] bg-cream border border-cream-border mt-1 cursor-pointer" />
       </motion.div>
+
+      {/*
+        The tool's other option, from the tool. Writing it through `setValue` is
+        the point: `redact-pdf` reads `alsoMetadata` out of the value bag, and a
+        panel that only *displayed* the switch is how it ended up inert.
+      */}
+      {metadataField && (
+        <motion.div variants={fadeUp} data-redact-metadata-switch>
+          <FieldControl
+            field={metadataField}
+            values={values}
+            onChange={(key, value) => setValue(key, Boolean(value))}
+          />
+        </motion.div>
+      )}
 
       {/* Instructions */}
       <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">

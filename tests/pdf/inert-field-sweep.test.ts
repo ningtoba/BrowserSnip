@@ -169,9 +169,12 @@ describe('inert-field sweep', () => {
     // Pin the census: a NEW key here is a control whose value never reaches the
     // bytes, which is the defect class this sweep exists to catch. Each entry is a
     // scheduled item, not a fixed one — see docs/research/inert-field-sweep.md.
-    expect(dead.sort()).toEqual([
-      'pdf-to-json.tables (toggle, "Detect tables")',
-    ]);
+    //
+    // Both rows this census carried are now closed, and the list being empty is the
+    // claim: `pdf-to-json.tables` was measured (both values wrote the same bytes) and
+    // deleted, `redact-pdf.alsoMetadata` is reached by the run and now written by the
+    // panel that owns that route. The measurements are in tests/pdf/field-reach.test.ts.
+    expect(dead.sort()).toEqual([]);
     expect(paneOwned.sort()).toEqual([]);
     // The walk is over every source file twice, so it is seconds on a warm machine
     // and slower on a shared runner; the census is not worth a false red.
@@ -224,9 +227,13 @@ describe('pane-owned surface class', () => {
     process.stdout.write(`\nPANE-OWNED IDS WITH DECLARED FIELDS: ${rows.length}, declaring ${total} fields\n${rows.join('\n')}\n`);
     process.stdout.write(`\nSTUCK AT THE DECLARED DEFAULT ON A PANE SURFACE: ${stuck.length}\n${stuck.join('\n')}\n`);
     // Same census, same cost: it re-reads every source file.
-    expect(stuck.sort()).toEqual([
-      '  redact-pdf.alsoMetadata (toggle, "Also clear matching text from metadata and bookmarks") — pane RedactTool.tsx never writes it',
-    ]);
+    //
+    // Empty, and that is the point: `alsoMetadata` used to be the one key a pane
+    // owned without ever writing it, which left the switch at its declared default
+    // on `/tool/redact-pdf`. The panel now renders the definition's own field and
+    // writes it into the runner's bag — measured on the bytes both ways in
+    // `tests/pdf/field-reach.test.ts`.
+    expect(stuck.sort()).toEqual([]);
     expect(total).toBeGreaterThan(0);
   }, 120_000);
 });

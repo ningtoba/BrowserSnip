@@ -150,19 +150,24 @@ function textStreams(bytes: Uint8Array): string {
 /**
  * Whether a word is anywhere in the file, in whichever form PDF stores a string.
  *
- * A writer may put it in the page content as a literal, in `/Info` as a
- * big-endian UTF-16 string, or as the hex spelling of that — so all three are
- * looked for, and "the redacted word is gone" is a claim about the bytes rather
- * than about one encoding.
+ * A writer may put it in the page content as a literal or as hex bytes, and in
+ * `/Info` as big-endian UTF-16, literal or hex — so all four spellings are looked
+ * for. Checking one of them is how "the word is gone" becomes a claim about an
+ * encoding rather than about the bytes.
  */
-function holdsWord(bytes: Uint8Array, word: string): boolean {
-  const haystack = readableBytes(bytes);
+function holdsWordIn(haystack: string, word: string): boolean {
+  const upper = haystack.toUpperCase();
   const utf16 = Buffer.from(word, 'utf16le').swap16();
   return (
-    haystack.includes(word)
-    || haystack.includes(utf16.toString('latin1'))
-    || haystack.toUpperCase().includes(utf16.toString('hex').toUpperCase())
+    upper.includes(word.toUpperCase())
+    || upper.includes(utf16.toString('latin1').toUpperCase())
+    || upper.includes(utf16.toString('hex').toUpperCase())
+    || upper.includes(Buffer.from(word, 'latin1').toString('hex').toUpperCase())
   );
+}
+
+function holdsWord(bytes: Uint8Array, word: string): boolean {
+  return holdsWordIn(readableBytes(bytes), word);
 }
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -415,7 +420,8 @@ describe('redact-pdf alsoMetadata is reachable from its own surface', () => {
     expect(box.checked, 'the switch keeps its default-on').toBe(true);
     expect(document.body.textContent).toMatch(/Also clear matching text from metadata and bookmarks/);
 
-    const produced = async (): Promise<Uint8Array> => {
+    /** One apply, and whatever the panel's tool wrote. */
+    const produced = async (): Promise<{ bytes: Uint8Array; message: string }> => {
       const button = document.getElementById('tool-process-btn') as HTMLButtonElement;
       expect(button, 'the panel that owns this route has an apply button').toBeTruthy();
       expect(button.disabled, `regions: ${JSON.stringify(panelRegions())}`).toBe(false);
@@ -423,9 +429,12 @@ describe('redact-pdf alsoMetadata is reachable from its own surface', () => {
         fireEvent.click(button);
         await new Promise((resolveRun) => setTimeout(resolveRun, 3000));
       });
-      const blob = useProcessStore.getState().outputBlob;
-      expect(blob, useProcessStore.getState().error ?? 'the run produced no file').toBeTruthy();
-      return new Uint8Array(await blob!.arrayBuffer());
+      const store = useProcessStore.getState();
+      expect(store.outputBlob, store.error ?? 'the run produced no file').toBeTruthy();
+      return {
+        bytes: new Uint8Array(await store.outputBlob!.arrayBuffer()),
+        message: store.statusMessage,
+      };
     };
 
     const scrubbed = await produced();
@@ -437,28 +446,41 @@ describe('redact-pdf alsoMetadata is reachable from its own surface', () => {
     const kept = await produced();
 
     // The mark deleted the words in both runs, so the only difference between the
-    // two files is the store the switch is about — and the geometry is right: a
-    // mark handed to the tool in the wrong frame leaves the line selectable.
-    for (const [label, bytes] of [['on', scrubbed], ['off', kept]] as const) {
-      const page = textStreams(bytes);
-      expect(holdsWord(bytes, 'Ordinary surviving line'), `the "${label}" run deleted the line it was not aiming at`).toBe(true);
+    // two files is the store the switch is about. It also landed on the right
+    // line: `redact-pdf` reads a mark in the frame the page is displayed in, and a
+    // box handed to it in the engine's bottom-origin space covers blank paper and
+    // says so — which is what the message below would have been.
+    const runs: readonly ['on' | 'off', { bytes: Uint8Array; message: string }][] = [
+      ['on', scrubbed],
+      ['off', kept],
+    ];
+    for (const [label, run] of runs) {
+      expect(run.message, `the "${label}" run redacted nothing`).toMatch(
+        /redacted \d+ text run|deleting the glyphs/i,
+      );
+      expect(run.message).not.toMatch(/none of them held text/i);
+      const page = textStreams(run.bytes);
+      expect(holdsWordIn(page, 'Ordinary surviving line'), `the "${label}" run deleted the line it was not aiming at`).toBe(true);
       expect(
-        page.includes('Ordinary surviving line') || /Ordinary/.test(page),
-        `the unmarked line is not in the page text of the "${label}" run`,
-      ).toBe(true);
-      expect(holdsWord(bytes, 'Zephyr Bravo Content'), `the mark covered nothing on the "${label}" run`).toBe(label === 'off');
-      expect((await PDFDocument.load(bytes, { updateMetadata: false })).getPageCount()).toBe(1);
+        holdsWordIn(page, 'Zephyr Bravo Content'),
+        `the mark covered nothing in the page content of the "${label}" run`,
+      ).toBe(false);
+      expect((await PDFDocument.load(run.bytes, { updateMetadata: false })).getPageCount()).toBe(1);
     }
-    expect(sha(scrubbed)).not.toBe(sha(kept));
-    const on = await PDFDocument.load(scrubbed, { updateMetadata: false });
-    const off = await PDFDocument.load(kept, { updateMetadata: false });
+    // The phrase survives the "off" run because the properties still hold it, and
+    // the "on" run because the mark was drawn over the page, not the /Info dict.
+    expect(holdsWord(kept.bytes, 'Zephyr Bravo Content')).toBe(true);
+    expect(holdsWord(scrubbed.bytes, 'Zephyr Bravo Content')).toBe(false);
+    expect(sha(scrubbed.bytes)).not.toBe(sha(kept.bytes));
+    const on = await PDFDocument.load(scrubbed.bytes, { updateMetadata: false });
+    const off = await PDFDocument.load(kept.bytes, { updateMetadata: false });
     expect(on.getTitle() ?? '', 'the switch was on, so /Title lost the word').not.toMatch(/Zephyr/);
     expect(off.getTitle(), 'the switch was off, so /Title kept it').toBe('Zephyr Bravo Content');
     expect(off.getAuthor()).toBe('Zephyr');
     // Outside this app's parser as well: the property string survives in the off
     // file's bytes and is gone from the on file's, in either page of neither.
-    expect(holdsWord(kept, 'Zephyr')).toBe(true);
-    expect(holdsWord(scrubbed, 'Zephyr')).toBe(false);
+    expect(holdsWord(kept.bytes, 'Zephyr')).toBe(true);
+    expect(holdsWord(scrubbed.bytes, 'Zephyr')).toBe(false);
     clearMarks();
   }, 240_000);
 
