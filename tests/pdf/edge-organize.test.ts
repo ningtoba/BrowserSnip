@@ -1179,6 +1179,19 @@ describe('compromises reach the result card', () => {
     const rotated = await run('rotate', { degrees: 180, pages: '1,4' });
     expect(rotated.message).toBe('Rotated 2 pages by 180°, left 2 pages alone.');
   });
+
+  it('says "copied" when every page was selected (the extract-pages FALSE CLAIM row)', async () => {
+    // "Extracted 4 pages of 4 pages" beside "you selected every page" was the
+    // contradiction: with the whole sheet list nothing was extracted *out of*
+    // anything, and the file the run writes is a copy.
+    const whole = await run('extract-pages', { pages: 'all', mergeIntoOne: true });
+    expect(whole.message).toBe('Copied all 4 pages into a new file.');
+    expect(whole.warnings.join(' ')).toMatch(/every page/i);
+    expect((await openPDF(await bytesOf(whole))).getPageCount()).toBe(4);
+    const some = await run('extract-pages', { pages: '1-3', mergeIntoOne: true });
+    expect(some.message).toBe('Extracted 3 pages of 4 pages.');
+    expect(some.warnings.join(' ')).not.toMatch(/every page/i);
+  });
 });
 
 /* ── every tool measured on the bytes it wrote ────────────────────────────── */

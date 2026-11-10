@@ -31,7 +31,7 @@ import type { OcrPageResult } from '../core/ocr';
 import { canvasToBlob } from '../core/render';
 import { embedImageBytes } from '../core/pack';
 import { newPDF } from '../core/doc';
-import { clampNumber, openInputs, pagesField, parseHexColor, pdfResult, reportResult, throwIfAborted, withRender, downloadStem, type OpenedInput } from './helpers';
+import { clampNumber, openInputs, pagesField, pdfResult, reportResult, throwIfAborted, withRender, downloadStem, type OpenedInput } from './helpers';
 import {
   booleanValue,
   numberValue,
@@ -994,19 +994,29 @@ export const editTools: PdfToolDefinition[] = [
         note(notes, `The last number written was ${lastNumber}.`);
       }
       const files = [];
+      const written: string[] = [];
       for (const input of inputs) {
+        const bytes = await savePDF(input.doc);
+        const name = `${downloadStem(input.name)}_bates.pdf`;
         files.push({
-          blob: new Blob([await savePDF(input.doc) as BlobPart], { type: 'application/pdf' }),
-          name: `${downloadStem(input.name)}_bates.pdf`,
+          blob: new Blob([bytes as BlobPart], { type: 'application/pdf' }),
+          name,
         });
+        written.push(`${name} ${countLabel(input.doc.getPageCount(), 'page')}`);
       }
       const result: ToolResult = {
         kind: 'files',
         files,
         // One output per input, in the same order, so the first document's page
-        // count describes the file the card calls primary.
+        // count describes the file the card calls primary. That is what
+        // `RunOutcome.pagesOut` means for a multi-file run (pinned by
+        // `tests/pdf/pages-out.test.ts`), and it is why the sentence names every
+        // file's own count: a row reading `9 → 4` beside "9 numbers" otherwise
+        // looks like five pages went missing.
         pages: inputs[0].doc.getPageCount(),
-        message: `Applied ${countLabel(stamped, 'Bates number')} across ${countLabel(inputs.length, 'file')}${perFile ? ', restarting at each file' : ''}.`,
+        message: `Applied ${countLabel(stamped, 'Bates number')} across ${countLabel(inputs.length, 'file')}`
+          + `${inputs.length > 1 ? ` (${written.join(', ')})` : ''}`
+          + `${perFile ? ', restarting at each file' : ''}.`,
       };
       return admit(result, notes);
     },
@@ -1951,7 +1961,8 @@ export const editTools: PdfToolDefinition[] = [
       const { listAnnotations } = await import('../core/annotations');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const scope = new Set(pages);
-      const outside = listAnnotations(input.doc).filter((mark) => !scope.has(mark.page)).length;
+      const before = listAnnotations(input.doc);
+      const outside = before.filter((mark) => !scope.has(mark.page)).length;
       const removed = removeAnnotations(input.doc, { pages });
       if (removed === 0) {
         // E13: an unchanged file is not a result. Say what is actually there.
@@ -1971,7 +1982,22 @@ export const editTools: PdfToolDefinition[] = [
       if (outside > 0) {
         note(notes, `${countLabel(outside, 'annotation')} on the pages you did not select is still there.`);
       }
-      return pdfOutput(input.doc, notes, `Removed ${countLabel(removed, 'annotation')} from ${countLabel(pages.length, 'page')}.`);
+      // Two numbers the written file has to back up. A note's `/Popup` is an entry
+      // in `/Annots` but not a mark a reader lists as a comment, so it is counted
+      // and named apart; and the page count is the pages whose array actually
+      // shrank, not the pages this run was asked to look at.
+      const after = new Set(listAnnotations(input.doc).map((mark) => mark.ref.toString()));
+      const gone = before.filter((mark) => !after.has(mark.ref.toString()));
+      const popups = gone.filter((mark) => mark.kind === 'Popup').length;
+      const marks = gone.length - popups;
+      const changed = new Set(gone.map((mark) => mark.page)).size;
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Removed ${countLabel(marks, 'annotation')}`
+        + `${popups > 0 ? ` and ${countLabel(popups, 'note pop-up', 'note pop-ups')}` : ''}`
+        + ` from ${countLabel(Math.max(changed, 1), 'page')}.`,
+      );
     },
   },
 

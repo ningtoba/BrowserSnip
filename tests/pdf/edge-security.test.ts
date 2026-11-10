@@ -536,6 +536,37 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     expect(outcome.warnings.join(' ')).not.toMatch(/not what was asked for/i);
   }, 120_000);
 
+  it('names no cipher the saved file does not carry (the change-permissions FALSE CLAIM row)', async () => {
+    // The triage ran an AES-128 file through this tool and got "Restrictions as
+    // recorded in the file (AES-256)": the one word the sentence added was the one
+    // the bytes denied. `9d064f5` took the cipher out of the line rather than
+    // guessing at it, so this pins that it stays out — and that the strength the
+    // entry's own note offers is the strength the dictionary holds.
+    const outcome = await run('change-permissions', {
+      action: 'set',
+      ownerPassword: 'owner',
+      allowPrinting: false,
+      allowModifying: false,
+      allowCopying: true,
+      allowAnnotating: true,
+      allowFillingForms: true,
+      allowAccessibility: true,
+      allowAssembling: true,
+    });
+    const bytes = await bytesOf(outcome);
+    const gate = await inspectPdf(bytes, 'permissions.pdf');
+    expect(gate.algorithm, 'this build writes AES-128 here').toBe('AES-128');
+    expect(outcome.message).not.toMatch(/AES|RC4|\b256\b|\b128\b/);
+    expect(outcome.message).toMatch(/as recorded in the file/i);
+    expect(outcome.message).toMatch(/printing blocked/i);
+    // The promise is that the sentence is read off the file, so the bits it names
+    // have to be the bits the dictionary holds.
+    expect(gate.permissions?.printing).toBe(false);
+    expect(gate.permissions?.modifying).toBe(false);
+    expect(gate.permissions?.copying).toBe(true);
+    expect(gate.permissions?.documentAssembly).toBe(true);
+  }, 120_000);
+
   it('clears restrictions for real, and says so when there were none', async () => {
     const locked = await bytesOf(await run('protect', PROTECTION_DEFAULTS));
     const cleared = await run('change-permissions', { action: 'clear', ownerPassword: 'hunter2' }, [pdfFile(locked, 'locked.pdf')]);

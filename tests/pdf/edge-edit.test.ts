@@ -775,6 +775,27 @@ describe('Bates numbering (E9, E15, E16)', () => {
     expect(drawnRuns(second.getPage(0)).map((run) => run.text)).toEqual(['001']);
   });
 
+  it('names both files beside a count that only describes the first (the multi-file card row)', async () => {
+    // The `bates-numbering` FALSE CLAIM row: with 4 + 5 pages the card printed
+    // `PAGES 9 → 4`, and the `→ 4` is the *primary* output's count — what
+    // `RunOutcome.pagesOut` means for a multi-file run. The number is the runner's
+    // contract; what this run owns is a sentence that cannot be misread as five
+    // pages missing.
+    const four = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'colour');
+    const five = await fixture(
+      [{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'sheets');
+    const outcome = await runPdfTool({
+      toolId: 'bates-numbering',
+      files: [pdfFile(four, 'colour.pdf'), pdfFile(five, 'sheets.pdf')],
+      values: { format: '{n}', digits: 6, start: 1 },
+    });
+    expect(outcome!.message).toMatch(/Applied 9 Bates numbers across 2 files/i);
+    expect(outcome!.message).toMatch(/colour_bates\.pdf 4 pages, sheets_bates\.pdf 5 pages/i);
+    expect(outcome!.outputs).toHaveLength(2);
+    expect(outcome!.pagesOut).toBe(4);
+    expect((await openPDF(await outputBytes(outcome!, 1))).getPageCount()).toBe(5);
+  });
+
   it('clamps a number width of zero and stamps a rotated page upright (E9, E15)', async () => {
     const bytes = await fixture([{ size: A4, rotation: 90 }], 'turn');
     const outcome = await run('bates-numbering', { format: '{prefix}-{n}', digits: 0, start: 5 }, [bytes]);
@@ -940,6 +961,38 @@ describe('stamps, annotations and redaction (E9, E13, E15)', () => {
     expect(outcome.warnings.join('\n')).toMatch(/1 annotation on the pages you did not select is still there/i);
     const after = await openPDF(await outputBytes(outcome));
     expect(listAnnotations(after).map((entry) => entry.kind)).toEqual(['Text']);
+  });
+
+  it('counts a cleared sheet by what the file gave up, not by what it looked at', async () => {
+    // The `remove-annotations` FALSE CLAIM row: a card reading "Removed 5
+    // annotations from 2 pages" over a file that holds four marks on one sheet.
+    // The fifth entry is the note's own `/Popup` — inside `/Annots`, but not a mark
+    // any reader lists as a comment — and the second page was only looked at.
+    const doc = await openPDF(await fixture([{ size: A4 }, { size: A4 }, { size: A4 }], 'marked'));
+    const { addAnnotations } = await import('@/lib/pdf/core/annotations');
+    addAnnotations(doc, [
+      { kind: 'Text', page: 0, rect: { x: 40, y: 700, width: 20, height: 20 }, contents: 'a note' },
+      { kind: 'Highlight', page: 0, rect: { x: 40, y: 660, width: 120, height: 14 } },
+      { kind: 'Ink', page: 0, rect: { x: 40, y: 600, width: 80, height: 40 }, inkPath: [[[40, 600], [80, 640], [120, 605]]] },
+      { kind: 'Link', page: 0, rect: { x: 40, y: 560, width: 100, height: 14 }, link: { type: 'uri', uri: 'https://example.test' } },
+    ] as never);
+    const note = listAnnotations(doc).find((mark) => mark.kind === 'Text')!;
+    addAnnotations(doc, [
+      { kind: 'Popup', page: 0, rect: { x: 62, y: 690, width: 120, height: 70 } },
+    ] as never);
+    const context = doc.context;
+    const popup = listAnnotations(doc).find((mark) => mark.kind === 'Popup')!;
+    (context.lookup(popup.ref, PDFDict) as PDFDict).set(PDFName.of('Parent'), note.ref);
+    (context.lookup(note.ref, PDFDict) as PDFDict).set(PDFName.of('Popup'), popup.ref);
+    const bytes = await doc.save({ useObjectStreams: false });
+    expect(listAnnotations(await openPDF(bytes)).map((mark) => mark.kind).sort())
+      .toEqual(['Highlight', 'Ink', 'Link', 'Popup', 'Text']);
+
+    const outcome = await run('remove-annotations', { pages: '1-2' }, [bytes]);
+    expect(outcome.message).toMatch(/Removed 4 annotations and 1 note pop-up from 1 page/i);
+    const cleared = await openPDF(await outputBytes(outcome));
+    expect(listAnnotations(cleared)).toHaveLength(0);
+    expect(cleared.getPageCount()).toBe(3);
   });
 
   it('says when no text matched a recolour instead of claiming success (E13)', async () => {

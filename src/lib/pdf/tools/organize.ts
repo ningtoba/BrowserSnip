@@ -1138,8 +1138,14 @@ export const organizeTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const notes = createNotes();
       const pages = selection(context.values, input.pageCount, { verb: 'extract' });
-      if (pages.length === input.pageCount && pages.every((p, i) => p === i)) {
-        notes.add(`You selected every page, so the extracted file matches the original's content (${pageCountLabel(pages.length)}).`);
+      // Every sheet, in order: nothing was taken out of anything, so the sentence
+      // says what happened rather than "Extracted 4 pages of 4 pages" beside its
+      // own contradiction. The note keeps to the page order and page count, which
+      // is what this run does hold — `notePageCopy` below names whatever else the
+      // rebuild left behind.
+      const whole = pages.length === input.pageCount && pages.every((entry, index) => entry === index);
+      if (whole) {
+        notes.add(`You selected every page, so the new file holds ${pageCountLabel(pages.length)} in the original order.`);
       }
       if (booleanValue(context.values, 'mergeIntoOne', true)) {
         const built = await collectPages([{ doc: input.doc, pages }]);
@@ -1147,7 +1153,9 @@ export const organizeTools: PdfToolDefinition[] = [
         return pdfOut(
           built.doc,
           notes,
-          `Extracted ${pageCountLabel(pages.length)} of ${pageCountLabel(input.pageCount)}.`,
+          whole
+            ? `Copied all ${pageCountLabel(pages.length)} into a new file.`
+            : `Extracted ${pageCountLabel(pages.length)} of ${pageCountLabel(input.pageCount)}.`,
         );
       }
       const stem = safeStem(input.name);

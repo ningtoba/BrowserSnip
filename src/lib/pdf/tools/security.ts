@@ -533,10 +533,10 @@ export const securityTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const { flattenAnnotations } = await import('../core/flatten');
       const { flattenForm } = await import('../core/forms');
-      const needsRender = booleanValue(context.values, 'annotations', true);
+      const bakeMarks = booleanValue(context.values, 'annotations', true);
       const bakeFields = booleanValue(context.values, 'forms', true);
       const keepLinks = booleanValue(context.values, 'keepLinks', true);
-      const session = needsRender ? await openRender(input.bytes, { password: context.password }) : null;
+      const session = bakeMarks ? await openRender(input.bytes, { password: context.password }) : null;
       const warnings: string[] = [];
       // What the file carried before this run touched it. The counters say what
       // was baked; only the input says whether there was anything to bake.
@@ -556,7 +556,7 @@ export const securityTools: PdfToolDefinition[] = [
         }
         try {
           const outcome = await flattenAnnotations(input.doc, {
-            kinds: needsRender ? undefined : ['Link'],
+            kinds: bakeMarks ? undefined : ['Link'],
             keepLinks,
             onProgress: context.progress,
           });
@@ -595,13 +595,13 @@ export const securityTools: PdfToolDefinition[] = [
       }
       const liveMarksLeft = commentCount(saved, keepLinks);
       const liveLinksLeft = keepLinks ? 0 : saved.links;
-      if (needsRender && liveMarksLeft > 0) {
+      if (bakeMarks && liveMarksLeft > 0) {
         warnings.push(`${liveMarksLeft} comment(s) are still live annotations in the saved file rather than page content.`);
       }
-      if (needsRender && liveLinksLeft > 0) {
+      if (bakeMarks && liveLinksLeft > 0) {
         warnings.push(`${liveLinksLeft} link(s) carry no appearance of their own, so they were left clickable rather than baked.`);
       }
-      if (!needsRender) {
+      if (!bakeMarks) {
         warnings.push(keepLinks
           ? 'Annotation flattening was off, so every comment was left live in the saved file.'
           : 'Annotation flattening was off, so comments were left live; only the links were baked into the page.');
@@ -609,7 +609,7 @@ export const securityTools: PdfToolDefinition[] = [
       // What the run was actually asked to bake, read off the input rather than
       // out of the counters: a file that carries nothing of the selected kind is a
       // different sentence from a file whose marks could not be drawn.
-      const askedFor = (needsRender ? commentCount(had, keepLinks) : 0) + (bakeFields ? had.fields : 0);
+      const askedFor = (bakeMarks ? commentCount(had, keepLinks) : 0) + (bakeFields ? had.fields : 0);
       if (bakedAnnotations === 0 && fieldsBaked === 0) {
         warnings.push(askedFor === 0
           ? 'This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.'
@@ -628,7 +628,7 @@ export const securityTools: PdfToolDefinition[] = [
         // reports pages: `flattenForm` answers with a field count, and a run whose
         // comments could not be drawn would otherwise read "into the content of
         // 0 page(s)" while two field values were in fact painted.
-        message: needsRender
+        message: bakeMarks
           ? `${bakedAnnotations} annotation(s) drawn into the content of ${pagesTouched} page(s) and ${fieldsBaked} form field(s) removed from the form${
               stillLive.length > 0 ? `; ${andList(stillLive)} in the saved file` : '; nothing of the selected kind is left live'
             }.`

@@ -61,8 +61,8 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
-  PDFRawStream,
   PDFRef,
+  PDFStream,
   PDFString,
   StandardFonts,
   degrees,
@@ -219,9 +219,9 @@ async function pageContent(bytes: Uint8Array, pageIndex: number): Promise<string
     : contents === undefined ? [] : [contents];
   return entries
     .map((entry) => {
-      const stream = entry instanceof PDFRawStream
+      const stream = entry instanceof PDFStream
         ? entry
-        : doc.context.lookupMaybe(entry as PDFRef, PDFRawStream);
+        : doc.context.lookupMaybe(entry as PDFRef, PDFStream);
       if (!stream) return '';
       const flate = stream.dict.lookupMaybe(PDFName.of('Filter'), PDFName)?.asString() === '/FlateDecode';
       const raw = stream.getContents();
@@ -372,8 +372,17 @@ describe('flatten-pdf puts each mark in the page and takes it out of the comment
     const baked = await bytesOf(await runFlatten(source, { forms: false, annotations: true, keepLinks: false }));
     expect(await liveKinds(baked)).not.toContain('Link');
     // The dashes this app stores in the link's appearance are what a print-ready
-    // copy gains; the target is what it loses.
-    expect(await pageContent(baked, 1)).toMatch(/\b(d|S)\b/);
+    // copy gains and the target is what it loses. Measured bytes, not a guess:
+    // the box is painted at the link's own `/Rect` with the `[5 3]` dash.
+    const dashes = await pageContent(baked, 1);
+    expect(dashes).toMatch(/\[\s*5\s+3\s*\]\s*0\s+d/);
+    expect(dashes).toMatch(/0 0 180 18 re/);
+    expect(placedAt(dashes, LINK.x, LINK.y)).toBe(true);
+    // A reader paints link annotations itself, so the *input* page holds no link
+    // ink of its own: this is the one kind where the bake adds what the viewer
+    // had been drawing, which is why the copy says "a link drawn by the reader
+    // rather than stored in the file leaves no mark behind".
+    expect(await pageContent(source, 1)).not.toMatch(/\]\s*0\s+d/);
   });
 
   it('bakes a signature-like appearance and stops the field being fillable', async () => {
