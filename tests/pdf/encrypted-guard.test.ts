@@ -255,7 +255,7 @@ describe('classifying what a lock does to the contents', () => {
     expect(describeEncryption(seen.encryption as PdfEncryption)).toBe('AES-128 (crypt filter /StdCF, revision 4)');
   });
 
-  it('names AES-256 (revision 6) even though the password check still fails on it', async () => {
+  it('names AES-256 (revision 6) and opens it with the password', async () => {
     const seen = await inspectPdf(fixtureBytes('aes-256-user.pdf'), 'aes-256-user.pdf', { password: PASSWORD });
     expect(seen.encryption).toMatchObject({
       state: 'ciphered',
@@ -264,11 +264,34 @@ describe('classifying what a lock does to the contents', () => {
       method: 'AESV3',
       version: 5,
       revision: 6,
+      supported: true,
+      refusal: null,
     });
-    // The R6 verification defect is its own task. It must not hide the cipher:
-    // "that password is not correct" is the wrong instruction for a file no
-    // password will ever make editable here.
-    expect(seen.error).toBe('BAD_PASSWORD');
+    // The revision-6 `/U` check is this module's own now, so the right secret is
+    // accepted and the page count arrives with the words behind it.
+    expect(seen.error).toBeNull();
+    expect(seen.passwordAccepted).toBe(true);
+    expect(seen.passwordLevel).toBe('user');
+    expect(seen.pages).toBe(3);
+  });
+
+  it('does not report an owner-only AES-256 file as locked', async () => {
+    // The second half of the same measurement. qpdf answers `password_incorrect:
+    // false` for this file, MuPDF says `needs_pass=False` and poppler prints its
+    // pages with nothing typed, because its **user** secret is the empty string.
+    // Until the R6 check existed this probe was `PDFDocument.load('')`, which threw
+    // on the revision rather than on the password, and a file anybody can read was
+    // withheld from every tool.
+    const seen = await inspectPdf(fixtureBytes('aes-256-owner.pdf'), 'aes-256-owner.pdf');
+    expect(seen.encrypted).toBe(true);
+    expect(seen.needsPassword).toBe(false);
+    expect(seen.opensWithEmptyPassword).toBe(true);
+    expect(seen.error).toBeNull();
+    expect(seen.pages).toBe(3);
+    // And the owner secret is answered as the owner, not as the user it is not.
+    const withOwner = await inspectPdf(fixtureBytes('aes-256-owner.pdf'), 'aes-256-owner.pdf', { password: PASSWORD });
+    expect(withOwner.passwordAccepted).toBe(true);
+    expect(withOwner.passwordLevel).toBe('owner');
   });
 
   it('calls an owner-only ciphered file ciphered, though anyone can open it', async () => {
@@ -430,13 +453,19 @@ describe('the ciphertext the guard refuses', () => {
     expect(view.words).toContain(PLANTED);
   });
 
-  it('still reads no words out of an AES-256 file, which is still refused by name', async () => {
-    // Read leniently, without the secret: `@maxwbh/pdf-lib`'s own revision-6
-    // password check is the separate defect the `encrypted-inputs` row records, so
-    // handing it the right password only proves that check throws.
-    const view = await engineView(fixtureBytes('aes-256-user.pdf'));
-    expect(view.words).not.toContain(PLANTED);
-    expect(view.undecoded).toBeGreaterThan(0);
+  it('reads the words out of an AES-256 file once the pass has run', async () => {
+    // The measurement this refusal existed to make, taken the other way round. Read
+    // leniently and without the secret, the revision-6 page streams are still
+    // ciphertext and will not inflate; through `openPDF` with the password they
+    // hold the sentence the file was written with.
+    const shut = await PDFDocument.load(fixtureBytes('aes-256-user.pdf'), { ignoreEncryption: true, updateMetadata: false });
+    const before = await engineView(await shut.save({ useObjectStreams: false }));
+    expect(before.words).not.toContain(PLANTED);
+    expect(before.undecoded).toBeGreaterThan(0);
+    const opened = await openPDF(fixtureBytes('aes-256-user.pdf'), { password: PASSWORD });
+    const after = await engineView(await opened.save({ useObjectStreams: false }));
+    expect(after.words).toContain(PLANTED);
+    expect(after.undecoded).toBe(0);
   });
 });
 
@@ -444,26 +473,36 @@ describe('the ciphertext the guard refuses', () => {
 
 describe('the refusal says what the file is and what to do', () => {
   it('names the cipher, the filter and the revision it cannot undo', async () => {
-    const seen = await inspectPdf(fixtureBytes('aes-256-user.pdf'), 'contract.pdf', { password: PASSWORD });
-    expect(seen.encryption).toMatchObject({
-      state: 'ciphered', algorithm: 'AES-256', supported: false, refusal: 'aes-256',
+    // The refusal still has to be sayable, so it is asked of a file it still
+    // refuses: the revision-6 fixture's own dictionary with `/R` moved to 5, the
+    // AES-256 handler that hashes the password without the ladder and has no
+    // outside fixture here. AES-256 at revision 6 is edited normally now, and the
+    // sentence may not claim otherwise.
+    const doc = await PDFDocument.load(fixtureBytes('aes-256-user.pdf'), { ignoreEncryption: true, updateMetadata: false });
+    const entry = doc.context.trailerInfo.Encrypt;
+    const dict = entry instanceof PDFRef ? doc.context.lookupMaybe(entry, PDFDict) : entry;
+    if (!(dict instanceof PDFDict)) throw new Error('the fixture carries no /Encrypt dictionary');
+    dict.set(PDFName.of('R'), PDFNumber.of(5));
+    const encryption = classifyEncryption(dict);
+    expect(encryption).toMatchObject({
+      state: 'ciphered', algorithm: 'AES-256', supported: false, refusal: 'aes-256', revision: 5,
     });
-    const error = cipheredInputError('contract.pdf', seen.encryption as PdfEncryption);
+    const error = cipheredInputError('contract.pdf', encryption);
     expect(error.code).toBe('UNSUPPORTED');
     expect(error.fileName).toBe('contract.pdf');
     expect(error.passwordRequired).toBe(false);
     expect(error.message).toBe(
-      '"contract.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 6): '
-      + 'its pages are stored as ciphertext, and this app reads RC4-128 and AES-128 files, '
-      + 'and cannot undo a 256-bit one yet.',
+      '"contract.pdf" is encrypted with AES-256 (crypt filter /StdCF, revision 5): '
+      + 'its pages are stored as ciphertext, and this app undoes AES-256 written by the '
+      + 'revision-6 handler, and this file selects that cipher under another revision.',
     );
     expect(error.hint).toMatch(/Decrypt the file in the program that locked it/);
     expect(error.hint).toMatch(/password alone does not help/);
     expect(error.hint).toMatch(/open and preview/);
     expect(error.hint).toMatch(/blank pages/);
-    // Both halves of the new rule, in the sentence itself: the strengths that work
-    // are named, and so is the gate that always worked.
-    expect(error.hint).toMatch(/RC4-128 or AES-128 are decrypted and edited normally now/);
+    // Both halves of the rule, in the sentence itself: the strengths that work are
+    // named, and so is the gate that always worked.
+    expect(error.hint).toMatch(/RC4-128, AES-128 or AES-256 \(revision 6\) are decrypted and edited normally now/);
     expect(error.hint).toMatch(/a password gate with no cipher[\s\S]*always was/);
   });
 
@@ -554,7 +593,7 @@ const READING: { id: string; values: ToolValues }[] = [
  *
  * `decrypts` is not a hope: for the five at the two proven strengths every
  * rewriting tool must hand back a file whose planted sentence is still in it, and
- * for the sixth (AES-256) it must still refuse, by name. Both directions are
+ * for the three at AES-256 it must hand back the words as well. Both directions are
  * asserted per tool, because the bug this row measured was one-sided — a page
  * count that matched while the text was gone.
  */
@@ -565,7 +604,9 @@ const CIPHERED_INPUTS = [
   { name: 'mu-rc4-128-user.pdf', decrypts: true, cipher: 'RC4-128' },
   // The owner-only file's user password is empty, so it is run with nothing.
   { name: 'rc4-128-owner.pdf', decrypts: true, cipher: 'RC4-128' },
-  { name: 'aes-256-user.pdf', decrypts: false, cipher: 'AES-256' },
+  { name: 'aes-256-user.pdf', decrypts: true, cipher: 'AES-256' },
+  { name: 'mu-aes-256-user.pdf', decrypts: true, cipher: 'AES-256' },
+  { name: 'aes-256-owner.pdf', decrypts: true, cipher: 'AES-256' },
 ] as const;
 
 describe.each(CIPHERED_INPUTS)('a ciphered input read from $name', ({ name, decrypts, cipher }) => {

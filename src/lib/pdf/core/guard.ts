@@ -810,7 +810,7 @@ export function cipheredInputError(name: string, encryption: PdfEncryption): Too
     `${quote(name)} is encrypted with ${describeEncryption(encryption)}: its pages are stored as ciphertext, and ${why}.`,
     {
       fileName: name,
-      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128 or AES-128 are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was.',
+      hint: 'Decrypt the file in the program that locked it, then run it again. Its password alone does not help here: the right one lets this app open and preview the file, but the editing path would copy the page streams without decrypting them, and the copy opens as blank pages. Files locked with RC4-128, AES-128 or AES-256 (revision 6) are decrypted and edited normally now, and a file whose effective filter is /None — a password gate with no cipher, the shape this app’s own Protect wrote until it ran one — always was.',
     },
   );
 }
