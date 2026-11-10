@@ -239,6 +239,20 @@ silently wrong.*
   content streams back with `node:zlib`. Nine reverts, each run: the `PDFDict` lookup restored
   turns **10** red, the missing-`/Annots` guard **5**, the unpainted-flag guard 2, and the popup
   carry, the `/CA` state, the widget guard and the `getForm()` side effect 1 each.
+* **Re-measured on the deployed site** after CI `42762230426`, through the rail's own `Flatten`
+  button with the default toggles: *"5 annotation(s) drawn into the content of 3 page(s) and 3
+  form field(s) removed from the form; nothing of the selected kind is left live."* with no console
+  error, and the download read back by MuPDF and pypdf answers annotations `5 → 0`, widgets
+  `3 → 0`, fields `['Signature1','answer','tick'] → []`, page ink unchanged, the form's answer
+  still extractable from the sheet. The one entry pypdf still counts — `[0, 1, 0, 0]` per page — is
+  the `/Link` the "keep clickable links" toggle was asked to leave live.
+* **Re-measured on the deployed site** after CI `42762230426`, through the rail's own `Flatten`
+  button with default toggles: the card prints *"5 annotation(s) drawn into the content of 3
+  page(s) and 3 form field(s) removed from the form; nothing of the selected kind is left live."*
+  with no console error, and the download read back by MuPDF and pypdf answers annotations
+  `5 → 0`, widgets `3 → 0`, fields `['Signature1','answer','tick'] → []`, page ink unchanged, the
+  form's answer still extractable from the sheet. The one entry pypdf still counts — `[0, 1, 0, 0]`
+  per page — is the `/Link` the "keep clickable links" toggle was asked to leave live.
 
 ---
 
