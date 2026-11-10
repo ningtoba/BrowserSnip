@@ -190,11 +190,7 @@ export function CropTool() {
 
   /** What the box shows while the field is not being typed in. */
   const shownMargin = useCallback(
-    (edge: CropEdge): string => {
-      const points = displayedMarginPt(edge);
-      const value = unit === 'pt' ? points : fromPoints(points, unit);
-      return String(Number(value.toFixed(unit === 'pt' ? 1 : 4)));
-    },
+    (edge: CropEdge): string => String(marginInUnit(displayedMarginPt(edge), unit)),
     [displayedMarginPt, unit],
   );
 
@@ -218,8 +214,7 @@ export function CropTool() {
   const outbound = useMemo(() => {
     const out: Record<string, number> = {};
     for (const edge of CROP_EDGES) {
-      const points = report.marginsPt[edge];
-      out[edge] = unit === 'pt' ? round(points) : Math.round(fromPoints(points, unit) * 10000) / 10000;
+      out[edge] = marginInUnit(report.marginsPt[edge], unit);
     }
     return out;
   }, [report.marginsPt, unit]);
@@ -447,8 +442,16 @@ function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, index) => from + index);
 }
 
-function round(value: number): number {
-  return Math.round(value * 10) / 10;
+/**
+ * One point measurement, expressed in the unit the panel types in.
+ *
+ * Points keep a decimal because that is what the file rounds to; the other units keep
+ * four, finer than the tenth of a point `marginPoints` writes. The same rule covers what
+ * is shown and what is sent, so the number in the box is the number the tool converts.
+ */
+function marginInUnit(points: number, unit: LengthUnit): number {
+  const value = unit === 'pt' ? points : fromPoints(points, unit);
+  return Number(value.toFixed(unit === 'pt' ? 1 : 4));
 }
 
 export default CropTool;
