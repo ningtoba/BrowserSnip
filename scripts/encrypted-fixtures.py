@@ -59,12 +59,16 @@ QPDF_PERMISSIONS = [
 ]
 
 # name -> (bits, use-aes, user password). `owner-only` means an empty user
-# secret: anyone can open the file, and the streams are still ciphertext.
+# secret: anyone can open the file, and the streams are still ciphertext. Each
+# strength this app reads carries both kinds of secret, because the two behave
+# differently to a reader — the AES-256 owner-only file is the one five outside
+# readers open with nothing typed and this app reported as locked.
 FIXTURES = {
     "rc4-128-user.pdf": (128, False, USER),
     "rc4-128-owner.pdf": (128, False, ""),
     "aes-128-user.pdf": (128, True, USER),
     "aes-256-user.pdf": (256, False, USER),
+    "aes-256-owner.pdf": (256, False, ""),
 }
 
 # The same locks by the other outside producer on this box. MuPDF also *spells*
@@ -72,8 +76,10 @@ FIXTURES = {
 # (`/Encrypt<<…>>`) where qpdf writes a reference (`/Encrypt 12 0 R`), which is
 # what the cheap trailer scan has to recognise.
 MUPDF_FIXTURES = {
-    "mu-rc4-128-user.pdf": "PDF_ENCRYPT_RC4_128",
-    "mu-aes-128-user.pdf": "PDF_ENCRYPT_AES_128",
+    "mu-rc4-128-user.pdf": ("PDF_ENCRYPT_RC4_128", USER),
+    "mu-aes-128-user.pdf": ("PDF_ENCRYPT_AES_128", USER),
+    "mu-aes-256-user.pdf": ("PDF_ENCRYPT_AES_256", USER),
+    "mu-aes-256-owner.pdf": ("PDF_ENCRYPT_AES_256", ""),
 }
 
 
@@ -142,17 +148,17 @@ def dictionary(path: str, password: str) -> dict:
         return flat
 
 
-def mupdf_lock(out: str, constant: str) -> str:
+def mupdf_lock(out: str, constant: str, user: str) -> str:
     """Lock the base document with MuPDF, the second independent encryptor."""
     permissions = py_constant("PDF_PERM_ACCESSIBILITY") | py_constant("PDF_PERM_COPY")
     doc = pymupdf.open(BASE)
-    doc.save(out, encryption=py_constant(constant), owner_pw=OWNER, user_pw=USER, permissions=permissions)
+    doc.save(out, encryption=py_constant(constant), owner_pw=OWNER, user_pw=user, permissions=permissions)
     doc.close()
     if not os.path.exists(out):
         raise RuntimeError(f"MuPDF reported success but wrote no {out}")
     return (
         f"python3 -c \"import pymupdf; d = pymupdf.open('plain.pdf'); d.save('{os.path.basename(out)}', "
-        f"encryption=pymupdf.{constant}, owner_pw={OWNER!r}, user_pw={USER!r}, "
+        f"encryption=pymupdf.{constant}, owner_pw={OWNER!r}, user_pw={user!r}, "
         "permissions=PDF_PERM_ACCESSIBILITY|PDF_PERM_COPY)\""
     )
 
@@ -222,10 +228,10 @@ def main() -> None:
         path = os.path.join(TARGET, name)
         command = qpdf_lock(path, bits=bits, aes=aes, user=user)
         report(name, path, user, "libqpdf", command)
-    for name, constant in MUPDF_FIXTURES.items():
+    for name, (constant, user) in MUPDF_FIXTURES.items():
         path = os.path.join(TARGET, name)
-        command = mupdf_lock(path, constant)
-        report(name, path, USER, "MuPDF", command)
+        command = mupdf_lock(path, constant, user)
+        report(name, path, user, "MuPDF", command)
     total = len(FIXTURES) + len(MUPDF_FIXTURES) + 1
     print(f"\nwrote {total} files to {TARGET}")
 

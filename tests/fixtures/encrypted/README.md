@@ -38,8 +38,18 @@ that keeps its page count while losing its text is visible.
 | `rc4-128-owner.pdf` | `/V 2 /R 3 /Length 128` | reference | RC4-128 with an **empty user password**: anyone can open it, the streams are still ciphertext | owner `hunter2` |
 | `aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 /Length 16 >> /StmF /StdCF /StrF /StdCF` | reference | AES-128 | user `hunter2` |
 | `aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 /Length 32 >> /StmF /StdCF /StrF /StdCF` | reference | AES-256 | user `hunter2` |
+| `aes-256-owner.pdf` | same `/V 5 /R 6` dictionary | reference | AES-256 with an **empty user password**: five outside readers open it with nothing typed | owner `hunter2` |
 | `mu-rc4-128-user.pdf` | `/V 2 /R 3 /Length 128` | **inlined** (`/Encrypt<<…>>`) | RC4-128 by the second producer | user `hunter2` |
 | `mu-aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 >> /StmF /StdCF /StrF /StdCF` | **inlined** | AES-128 by the second producer | user `hunter2` |
+| `mu-aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 >> /StmF /StdCF /StrF /StdCF` | **inlined** | AES-256 by the second producer | user `hunter2` |
+| `mu-aes-256-owner.pdf` | same `/V 5 /R 6` dictionary | **inlined** | AES-256, empty user password, second producer | owner `hunter2` |
+
+The two AES-256 rows carry the revision-6 spellings the read path has to handle:
+`/O` and `/U` are **48** bytes (32-byte hash, 8-byte validation salt, 8-byte key
+salt) rather than 32, `/OE` and `/UE` hold the file key wrapped by the owner and
+user secrets, and `/Perms` is a 16-byte check value. Both producers write all of
+them, and `scripts/encrypted-fixtures.py` prints each file's own dictionary when
+it rebuilds the corpus.
 
 The two trailer spellings are not decoration: `core/doc.ts:looksEncrypted` is the
 cheap pre-parse scan, and a version of it that recognised only `/Encrypt <ref>`
