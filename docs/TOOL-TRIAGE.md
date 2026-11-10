@@ -469,6 +469,13 @@ described here so the blocked first run is not mistaken for an entry in this buc
 value, reading it back out of the DOM, and diffing the produced file's content digest (which
 ignores pdf-lib's timestamp, so "identical" means identical and not "same size").*
 
+**Re-measured against this tree (post-`d3d32e3`), row by row:** row 1 was real and is
+fixed (`1941921`); row 2 does not reproduce — the choice reaches the bytes, and what is
+actually unreachable on that surface is the entry's `Fit` select, which the pane pins to
+`contain`; row 3 was real and is fixed (`ff66110`). The census that asked *how big the
+class is* is `docs/research/inert-field-sweep.md`, with its numbers, pinned as
+`tests/pdf/inert-field-sweep.test.ts`.
+
 ### 1. `cbz-to-pdf` — `Page size` never reaches the page boxes
 
 | run | rail value, read back out of the DOM | page boxes in the produced file |
@@ -487,6 +494,14 @@ ignores pdf-lib's timestamp, so "identical" means identical and not "same size")
 
 ### 2. `scan-to-pdf` — the rail's `Page size` is overridden by the pane's own state
 
+*Does not reproduce on this tree (`f4cb8f5`'s re-measurement): `scan-to-pdf` answers on a
+bespoke surface, so no generated rail is mounted at all — the `Page size` select a
+visitor touches *is* the pane's, and driving it writes `letter` 612 × 792 pt,
+`a4` 595.28 × 841.89 pt and `fit` the capture plus the margin. Pinned by
+`tests/pdf/inert-controls.test.ts`, which mounts `ScanTool` and reads the boxes back. The
+ residue this row was reaching for: the entry declares a three-way `Fit` select that no
+ surface renders while the pane sends `fit: 'contain'` on every run.*
+
 * Default run (rail reads `select=a4`, the field's own default): page box **612 × 792 pt** —
   US Letter, not A4 (595 × 842).
 * Run with `Page size` set to `letter` and read back (`select=letter of a4/letter/fit/original`):
@@ -498,6 +513,18 @@ ignores pdf-lib's timestamp, so "identical" means identical and not "same size")
   (75 428 vs 75 429), which is the timestamp, not the geometry.
 
 ### 3. `sanitize-pdf` — `Remove JavaScript and automatic actions` cannot see the document's action
+
+*Real, and worse than "cannot see the document's action": the pass deleted `JS`,
+`JavaScript` and `AA` keys **on** each dictionary it enumerated, so every inline action —
+`/OpenAction << /S /JavaScript /JS (…) >>` written inside the catalogue, an annotation or
+field `/A` written inside its owner — was invisible to both the counter and the stripper,
+and the tool reported "no script references were present" over a file that runs code on
+open. Turning the switch off said nothing at all, and with every switch off the card
+printed the empty sentence "Nothing to remove: ." Fixed in `ff66110` (`core/sanitize.ts`
+walks the entries that *run* actions and counts the same set it removes); the five shapes
+— catalogue `/OpenAction`, page `/AA`, annotation `/A`, referenced field `/A`, named
+script — are proved gone with the switch on, proved present with it off, and named in the
+sentence either way by `tests/pdf/inert-controls.test.ts`.*
 
 * Input `js.pdf`: `/OpenAction << /S /JavaScript /JS (app.alert('triage')) >>` in the catalogue,
   confirmed out of the file (`xref_get_key(catalog,'OpenAction')` before and after).
@@ -526,7 +553,7 @@ what the digest flagged and the follow-up run cleared — not members of this bu
 | Flate-compress, Object streams, Drop orphans (`optimize-pdf`) | the tool returns the **original bytes** and says so: *"Already tight: a rebuild would give 79.8 KB from 79.6 KB, so the original is returned."* Identical output is the designed answer, not an inert switch — but it also means this fixture cannot discriminate them; a file with a large raw stream would |
 | File format (`pdf-to-cbz`, `pdf-to-image`) | the sweep's chip value was wrong for these two fields (`<PREFIX>-<PAGE:4>` — a `bates-numbering` format string leaking through a shared key name, since fixed in `triage-spec.mjs`), so no chip was pressed and the readback proves it: `group: JPG*|PNG` before **and** after. Re-pressed properly: PNG → **801 KB**, JPG → **944 KB** |
 | Pages (`extract-images`) | the only embedded image in `ink.pdf` is on page 2, which both selections include. Selecting **3-4**, where there is no image, produced no file and a report-only answer |
-| Page size look-alikes (`cbz-to-pdf`, `scan-to-pdf`, `pdf-to-cbz`) | see the three findings above; those are real |
+| Page size look-alikes (`cbz-to-pdf`, `scan-to-pdf`, `pdf-to-cbz`) | see the three findings above: `cbz-to-pdf` and `sanitize-pdf` were real and are fixed; the `scan-to-pdf` row does not reproduce, and what that surface really leaves unreachable is its `Fit` select |
 
 ---
 
