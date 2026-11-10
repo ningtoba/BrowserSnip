@@ -72,22 +72,31 @@ property (`values.font` in `readTextStyle`).
     behaviour the editor already ships, which is why they can drift without a test noticing.
   * `pdf-crop.unit` — **closed**, by giving the control a surface. `run` honoured the
     unit all along (measured again here, on bytes: one region declared as
-    21.6/14.4/28.8/36 pt, 7.62/5.08/10.16/12.7 mm, 0.762/0.508/1.016/1.27 cm and
-    0.3/0.2/0.4/0.5 in wrote the *same* `/MediaBox` and `/CropBox` on all three sheets
-    of a document whose pages are non-square, mixed-size, and one of them offset —
-    `tests/pdf/crop-units.test.ts`, read back out of the same files by
-    `docs/research/crop-units-read.py` through `pypdf`). What was missing was a place
-    to choose it: `CropTool` sent `unit: 'pt'` in its own override and showed the four
-    margins as read-only numbers, so the select and the margin boxes described a rail
-    that never mounts while the card said "Drag a crop rectangle **or type exact
-    margins in points, mm or inches**". The panel now renders the definition's own
-    `unit` field, takes typed margins in whatever unit it holds, and forwards both —
-    the tool converts, so 15 typed into the bottom box with `mm` selected takes 42.5 pt
-    off the bottom, and 42.5 is what the panel printed as the points the file would
-    hold. Both halves of that are pinned: typing a margin means what it says in the
-    chosen unit, and switching unit re-states the same rectangle without moving it (a
+    21.6/28.8/43.2/57.6 pt, 7.62/10.16/15.24/20.32 mm, 0.762/1.016/1.524/2.032 cm and
+    0.3/0.4/0.6/0.8 in wrote the *same* `/MediaBox` and the same `/CropBox` on all four
+    sheets of a document built to catch the usual lies — an offset origin, a non-square
+    page, A4 beside US Letter, and a 400×700 sheet carrying `/Rotate 90`, with four
+    pairwise-distinct margins so an edge swap cannot cancel out; `tests/pdf/crop-units.test.ts`,
+    read back out of the same files by `docs/research/crop-units-read.py` through
+    `pypdf`). What was missing was a place to choose it: `CropTool` sent `unit: 'pt'` in
+    its own override and showed the four margins as read-only numbers, so the select and
+    the margin boxes described a rail that never mounts while the card said "Drag a crop
+    rectangle **or type exact margins in points, mm or inches**". The panel now renders
+    the definition's own `unit` field, takes typed margins in whatever unit it holds, and
+    forwards both — the tool converts, so 15 typed into the bottom box with `mm` selected
+    takes 42.5 pt off the bottom, and 42.5 is what the panel printed as the points the
+    file would hold. Both halves of that are pinned: typing a margin means what it says in
+    the chosen unit, and switching unit re-states the same rectangle without moving it (a
     crop dragged to 20 / 10 / 30 / 40 pt still writes 20 / 10 / 30 / 40 pt with
     `Millimetres` showing 7.0556 / 3.5278 / 10.5833 / 14.1111 in its boxes).
+    *On the deployed site too* (`docs/research/crop-units-run.mjs`, one run per unit, the
+    downloads read by the same `pypdf` checker into
+    `docs/research/crop-units-deployed.log`): all four files are byte-identical
+    (sha256 `6abdf5b4…`) and each holds `[75.6, 67.2, 489.2, 972.4]`,
+    `[57.6, 43.2, 566.48, 820.29]`, `[57.6, 43.2, 583.2, 770.4]`,
+    `[57.6, 43.2, 371.2, 678.4]` — zero corner drift, `/CropBox` equal to `/MediaBox`,
+    no console error — with the panel printing
+    `writes 21.6/28.8/43.2/57.6 pt` for every one of them.
     Same shape as `scan-to-pdf.fit` — a pinned value outranks a declared field — and
     fixed the way `redact-pdf.alsoMetadata` was, by wiring the pane to the field.
 
@@ -126,7 +135,14 @@ property (`values.font` in `readTextStyle`).
   (`tests/pdf/parity-surface.test.ts`). The id itself stays in
   `TOOL_ALIASES`, in `ToolId` and in the download-suffix switch beside `compare`,
   because those three spell out *ids a bookmark or a stored session can carry*, not
-  tools the app offers.
+  tools the app offers. Asked of the deployed build (`docs/research/folded-id-check.mjs`,
+  output in `folded-id-check-deployed.log`): `#/tool/redact` folds to
+  `#/tool/redact-pdf` and mounts the panel whose apply button reads `Apply 0
+  Redactions` beside the permanent-redaction warning and the metadata switch, the words
+  "Redact Regions" appear nowhere on the page, and the copy and the catalogue agree —
+  the dashboard prints 121, renders 121 cards, and its six shelves count
+  20 + 36 + 18 + 20 + 11 + 16 = 121, while the landing says "121 PDF tools" and
+  "121 tools · 6 categories" (8 video tools, 129 site-wide).
   *What it cost: nothing a user could reach.* The retired entry's own note offered
   "type page:x,y,w,h entries", but its `regions` field belonged to a rail that never
   mounted beside the pane — `redact-pdf` takes its regions from the marks on the canvas,
