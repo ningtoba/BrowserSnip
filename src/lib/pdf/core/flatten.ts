@@ -129,9 +129,8 @@ export async function flattenAnnotations(
       if (drawAppearance(doc, page, annotation)) {
         outcome.flattened += 1;
         drew = true;
-        baked.add(entryKey(doc, ref));
-        const popup = annotation.get(PDFName.of('Popup'));
-        if (popup) baked.add(entryKey(doc, popup));
+        remember(baked, doc, ref);
+        if (annotation.get(PDFName.of('Popup'))) remember(baked, doc, annotation.get(PDFName.of('Popup')));
       } else {
         outcome.skippedNoAppearance += 1;
         (remaining as PDFArray).push(ref);
@@ -146,10 +145,9 @@ export async function flattenAnnotations(
         const entry = remaining.get(i);
         const annotation = doc.context.lookupMaybe(entry, PDFDict);
         const isPopup = annotation && nameOf(annotation.get(PDFName.of('Subtype'))) === 'Popup';
-        const parentGone =
-          isPopup && annotation && baked.has(entryKey(doc, annotation.get(PDFName.of('Parent'))));
-        if (parentGone) {
-          baked.add(entryKey(doc, entry));
+        const parent = annotation ? entryKey(doc, annotation.get(PDFName.of('Parent'))) : '';
+        if (isPopup && parent !== '' && baked.has(parent)) {
+          remember(baked, doc, entry);
         } else {
           (kept as PDFArray).push(entry);
         }
@@ -178,12 +176,19 @@ function nameOf(value: unknown): string {
  * The identity of one `/Annots` entry: the object number of the annotation, whether
  * the array holds a reference or a direct dictionary. `/Parent` and `/Popup` point
  * with a reference, so an entry written inline has no key to match and simply
- * stays where it is.
+ * stays where it is — which is why an unmatched key is the empty string and never
+ * `undefined`: two entries with no identity must not be read as each other's.
  */
 function entryKey(doc: PDFDocument, value: unknown): string {
   if (value instanceof PDFRef) return value.toString();
   const ref = value instanceof PDFDict ? doc.context.getObjectRef(value) : undefined;
   return ref ? ref.toString() : '';
+}
+
+/** Record an entry's identity, ignoring one that has none. */
+function remember(into: Set<string>, doc: PDFDocument, value: unknown): void {
+  const key = entryKey(doc, value);
+  if (key !== '') into.add(key);
 }
 
 function resolveRef(doc: PDFDocument, value: unknown): PDFObject | undefined {
