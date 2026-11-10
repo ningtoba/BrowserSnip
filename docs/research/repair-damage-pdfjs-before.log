@@ -1,10 +1,13 @@
 # step 4 — pdf.js, the engine this app renders with, over both sides. `P` marks a
 # sheet whose display list holds a painting operator, `W` one whose extracted text
 # holds a planted word, so `.-` is a sheet that counts and prints nothing.
-# With `src/lib/pdf-engine/{commands,tools/optimize}.ts` reverted at the same commit
-# as the after pair, on the same corpus bytes: three cases produce no file at all,
-# one refuses while quoting the engine's own TypeError, and `ledger-32-input` — the
-# input docs/TOOL-TRIAGE.md §2 was measured with — returns 1 sheet at 0.0 % ink.
+# With `src/lib/pdf-engine/commands.ts` and the `repair` entry of
+# `src/lib/pdf/tools/optimize.ts` at `045db17` — before this row's fix — over the SAME
+# corpus bytes the after pair was made from: `truncated-tail`, `triage-report` and
+# `objstm-wrong-offsets` produce no file at all (the last refusing while quoting
+# `this.catalog.Pages is not a function`), and `ledger-32-input` — the input
+# docs/TOOL-TRIAGE.md §2 was measured with — returns 1 sheet, 1 658 bytes, under
+# "1 page(s) readable".
 
 case                     pdf.js reads the input    pdf.js reads the repaired file
 base-objstm              4p [PW PW PW PW]           4p [PW PW PW PW]
@@ -12,11 +15,15 @@ base-plain               4p [PW PW PW PW]           4p [PW PW PW PW]
 base                     4p [PW PW PW PW]           4p [PW PW PW PW]
 duplicate-endobj         4p [PW PW PW PW]           4p [PW PW PW PW]
 garbage-dict-midstream   4p [PW PW PW PW]           4p [PW PW PW PW]
-ledger-32-input          refused (Invalid PDF structure.) 4p [P- P- .- P-]
+â¦F19ÃÃ±Ã¤Ã¢Âªm:ÃÃ¾:ÃÃÃ±ËÃ³Ã¦k".
+Ã*Â¹Ãº`Ãµ\ÃÂ©Â³â¹Â©4Å¸Â®Â¶".
+â¦F19ÃÃ±Ã¤Ã¢Âªm:ÃÃ¾:ÃÃÃ±ËÃ³Ã¦k".
+Ã*Â¹Ãº`Ãµ\ÃÂ©Â³â¹Â©4Å¸Â®Â¶".
+ledger-32-input          refused (Invalid PDF structure.) 1p [.-]
 lying-xref               4p [PW PW PW PW]           4p [PW PW PW PW]
 missing-endobj           4p [PW PW PW PW]           4p [PW PW PW PW]
 missing-startxref        4p [PW PW PW PW]           4p [PW PW PW PW]
-objstm-wrong-offsets     refused (Invalid Root reference.) 4p [PW PW PW PW]
+objstm-wrong-offsets     refused (Invalid Root reference.) refused (ENOENT: no such file or dire)
 plain-content-tailcut    refused (Invalid PDF structure.) 4p [PW PW PW PW]
-triage-report            refused (Invalid PDF structure.) 4p [PW PW PW PW]
-truncated-tail           refused (Invalid PDF structure.) 2p [PW .-]
+triage-report            refused (Invalid PDF structure.) refused (ENOENT: no such file or dire)
+truncated-tail           refused (Invalid PDF structure.) refused (ENOENT: no such file or dire)
