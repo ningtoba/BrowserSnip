@@ -1,0 +1,20 @@
+pt:
+  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
+  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
+  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
+mm:
+  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
+  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
+  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
+cm:
+  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
+  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
+  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
+in:
+  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
+  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
+  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
+panel (unit=mm, typed 5/10/15/20):
+  /MediaBox [56.7, 42.5, 471.7, 885.8]  /CropBox [56.7, 42.5, 471.7, 885.8]
+
+OK: one region declared in pt, mm, cm and in wrote the same /MediaBox and /CropBox on all three sheets, and the panel's millimetre entry wrote the same region in points.

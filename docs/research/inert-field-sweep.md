@@ -70,14 +70,24 @@ property (`values.font` in `readTextStyle`).
     mounts `AnnotationEditor`, whose own Opacity slider reaches the same `/CA` through
     `editor/specs.ts`. Nothing is dead; the 12 declared fields are a second vocabulary for
     behaviour the editor already ships, which is why they can drift without a test noticing.
-  * `pdf-crop.unit` — a **real backlog item**, five fields deep. `run` honours the unit
-    (measured: `top: 20` crops to a 595×822 page in `pt` and 595×785.3 in `mm`, different
-    bytes), but `CropTool` sends `unit: 'pt'` in its own override and shows the four margins
-    as read-only numbers — dragging is the only way to crop on that page. So the select and
-    the four margin boxes describe a rail that never mounts, while the tool's own card line
-    still reads "Drag a crop rectangle **or type exact margins in points, mm or inches**".
-    Same shape as `scan-to-pdf.fit`: a pinned value outranks a declared field, and the only
-    witness is the sentence on the card.
+  * `pdf-crop.unit` — **closed**, by giving the control a surface. `run` honoured the
+    unit all along (measured again here, on bytes: one region declared as
+    21.6/14.4/28.8/36 pt, 7.62/5.08/10.16/12.7 mm, 0.762/0.508/1.016/1.27 cm and
+    0.3/0.2/0.4/0.5 in wrote the *same* `/MediaBox` and `/CropBox` on all three sheets
+    of a document whose pages are non-square, mixed-size, and one of them offset —
+    `tests/pdf/crop-units.test.ts`, read back out of the same files by
+    `docs/research/crop-units-read.py` through `pypdf`). What was missing was a place
+    to choose it: `CropTool` sent `unit: 'pt'` in its own override and showed the four
+    margins as read-only numbers, so the select and the margin boxes described a rail
+    that never mounts while the card said "Drag a crop rectangle **or type exact
+    margins in points, mm or inches**". The panel now renders the definition's own
+    `unit` field, takes typed margins in whatever unit it holds, and forwards both —
+    the tool converts, so 15 typed into the bottom box with `mm` selected takes
+    42.5 pt off the bottom and 42.5 is what the panel printed as the points the file
+    would hold. Choosing a unit therefore *does* change the produced box, which is the
+    only reading of "the margins are in …" that the byte diff can support.
+    Same shape as `scan-to-pdf.fit` — a pinned value outranks a declared field — and
+    fixed the way `redact-pdf.alsoMetadata` was, by wiring the pane to the field.
 
 ## What the census cannot see
 

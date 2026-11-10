@@ -16,6 +16,10 @@
  * * E13/E18 — a crop that removes everything (or nothing) is reported and the
  *   primary action is disabled before the click, not after a broken file.
  * * E15 — out-of-range target pages and inverted ranges are refused by name.
+ * * The unit — the margins are typed in the unit the definition's own `unit` select
+ *   holds, and the panel prints the points that will be written beside them. The
+ *   select used to exist only on a rail this page never mounts, while the card said
+ *   "type exact margins in points, mm or inches": see `tests/pdf/crop-units.test.ts`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
@@ -24,19 +28,31 @@ import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
 import { usePdfTool } from '@/hooks/usePdfTool';
 import { openPDF } from '@/lib/pdf/core/doc';
-import { displayedSize, mediaBox } from '@/lib/pdf/core/pages';
-import { getCropRect, getPageSizePt, subscribeCrop } from './CropMain';
+import { describeUnit, displayedSize, fromPoints, mediaBox } from '@/lib/pdf/core/pages';
+import type { LengthUnit } from '@/lib/pdf/core/pages';
+import { getPdfTool } from '@/lib/pdf/tools/registry';
+import { marginPoints } from '@/lib/pdf/tools/legacy';
+import { FieldControl } from '../shared/FieldControls';
+import { getCropRect, getPageSizePt, setCropRect, subscribeCrop } from './CropMain';
 import {
   describeCrop,
   distinctBoxes,
+  edgeExtentPt,
   resolveTargets,
+  setEdgeMargin,
   targetPage,
+  type CropEdge,
   type CropFractions,
   type CropTargetPage,
 } from './cropModel';
 
 /** Geometry is read for at most this many pages; a 500-page scan need not wait. */
 const GEOMETRY_LIMIT = 60;
+
+const CROP_EDGES: CropEdge[] = ['top', 'right', 'bottom', 'left'];
+
+/** The margins are typed, so the unit is whatever the definition's select holds. */
+const DEFAULT_UNIT: LengthUnit = 'pt';
 
 interface DocumentGeometry {
   name: string;
@@ -47,10 +63,19 @@ interface DocumentGeometry {
 
 export function CropTool() {
   const file = useFileStore((s) => s.file);
-  const { run, isRunning } = usePdfTool('pdf-crop');
+  const { run, isRunning, values, setValue } = usePdfTool('pdf-crop');
   const warnings = useProcessStore((s) => s.warnings);
 
   const [rect, setRect] = useState<CropFractions>(getCropRect());
+  /**
+   * What the boxes hold while a person is typing.
+   *
+   * The displayed value is derived from the crop rectangle, so a keystroke that has
+   * not landed yet ("0.", or a value the page is too small for) would be overwritten
+   * mid-entry by the number it rounds to. The draft is dropped on blur, which is
+   * when the derived value becomes the honest one.
+   */
+  const [draft, setDraft] = useState<Partial<Record<CropEdge, string>>>({});
   const [allPages, setAllPages] = useState(true);
   const [pageSpec, setPageSpec] = useState('1');
   const [geometry, setGeometry] = useState<DocumentGeometry | null>(null);
@@ -115,6 +140,12 @@ export function CropTool() {
 
   const numPages = geometry?.numPages ?? 0;
   const preview: CropTargetPage | null = geometry?.pages[0] ?? null;
+  /** The sheet the margins are measured against: the one the preview shows. */
+  const previewPage: CropTargetPage | null =
+    preview ??
+    (getPageSizePt().width > 0
+      ? targetPage(0, getPageSizePt().width, getPageSizePt().height, 0)
+      : null);
   const targets = useMemo(
     () => (allPages ? { pages: range(1, numPages), refused: [] } : resolveTargets(pageSpec, numPages)),
     [allPages, numPages, pageSpec],
@@ -123,37 +154,90 @@ export function CropTool() {
     () =>
       describeCrop({
         rect,
-        preview:
-          preview ??
-          (getPageSizePt().width > 0
-            ? targetPage(0, getPageSizePt().width, getPageSizePt().height, 0)
-            : null),
+        preview: previewPage,
         targets: targets.pages,
         refused: targets.refused,
         numPages,
         allPages,
       }),
-    [allPages, numPages, preview, rect, targets],
+    [allPages, numPages, previewPage, rect, targets],
   );
 
   const sizes = useMemo(() => (geometry ? distinctBoxes(geometry.pages) : []), [geometry]);
   const rotated = useMemo(() => (geometry ? geometry.pages.filter((page) => page.rotation !== 0) : []), [geometry]);
 
+  /**
+   * The unit the four boxes are read in — the tool's own field, not a copy.
+   *
+   * Rendering the definition's field is what keeps this panel's label, help line and
+   * option list tied to `pdf-crop.fields`, and writing `unit` through the value bag
+   * is what stops the panel pinning `unit: 'pt'` over a control it shows. `run`
+   * converts the number it is given (`marginPoints`, imported here so the prediction
+   * below and the file cannot disagree), so declaring the same edge in pt, mm, cm or
+   * in lands one `/MediaBox` — measured in `tests/pdf/crop-units.test.ts`.
+   */
+  const unitField = useMemo(
+    () => (getPdfTool('pdf-crop')?.fields ?? []).find((field) => field.key === 'unit'),
+    [],
+  );
+  const unit: LengthUnit = typeof values.unit === 'string' ? (values.unit as LengthUnit) : DEFAULT_UNIT;
+
+  /** The margin this displayed edge currently takes off the page, in points. */
+  const displayedMarginPt = useCallback(
+    (edge: CropEdge): number => (previewPage ? rect[edge] * edgeExtentPt(previewPage, edge) : 0),
+    [previewPage, rect],
+  );
+
+  /** What the box shows while the field is not being typed in. */
+  const shownMargin = useCallback(
+    (edge: CropEdge): string => {
+      const points = displayedMarginPt(edge);
+      const value = unit === 'pt' ? points : fromPoints(points, unit);
+      return String(Number(value.toFixed(unit === 'pt' ? 1 : 4)));
+    },
+    [displayedMarginPt, unit],
+  );
+
+  const typeMargin = useCallback(
+    (edge: CropEdge, raw: string) => {
+      setDraft((current) => ({ ...current, [edge]: raw }));
+      const parsed = raw.trim() === '' ? 0 : Number(raw);
+      if (!previewPage || !Number.isFinite(parsed)) return;
+      setCropRect(setEdgeMargin(rect, previewPage, edge, parsed, unit));
+    },
+    [previewPage, rect, unit],
+  );
+
+  /**
+   * The four numbers handed to the tool, in the unit the select holds.
+   *
+   * `report.marginsPt` are already stored-box margins — the rotation re-aim happened
+   * in the model, and the note above says which displayed edge became which — so the
+   * conversion here is unit only, never geometry.
+   */
+  const outbound = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const edge of CROP_EDGES) {
+      const points = report.marginsPt[edge];
+      out[edge] = unit === 'pt' ? round(points) : Math.round(fromPoints(points, unit) * 10000) / 10000;
+    }
+    return out;
+  }, [report.marginsPt, unit]);
+
+  /** The points each page's own box will lose: the tool's own rounding, not a nicer number. */
+  const writtenPt = CROP_EDGES.map((edge) => marginPoints(outbound[edge] ?? 0, unit)).join('/');
+
   const applyCrop = useCallback(() => {
     if (!report.valid) return;
     void run({
-      // Points of each page's own stored box, plus the 1-based pages the panel
-      // resolved from the typed spec. `unit: 'pt'` stops the tool converting a
-      // measurement that is already in points.
+      // 1-based pages the panel resolved from the typed spec, and the margins in the
+      // unit the select holds — `unit` itself arrives with the field's own value, so
+      // nothing here overrides the control the person just used.
       pages: targets.pages,
-      top: round(report.marginsPt.top),
-      right: round(report.marginsPt.right),
-      bottom: round(report.marginsPt.bottom),
-      left: round(report.marginsPt.left),
-      unit: 'pt',
+      ...outbound,
       allPages,
     });
-  }, [allPages, report, run, targets.pages]);
+  }, [allPages, outbound, report, run, targets.pages]);
 
   return (
     <motion.div
@@ -167,8 +251,8 @@ export function CropTool() {
       </motion.p>
 
       <motion.p variants={fadeUp} className="text-[10px] leading-relaxed text-ink-muted">
-        Drag the blue handles on the preview. The numbers below are what will be written to the file, in points of each
-        page's own box.
+        Drag the blue handles on the preview, or type an exact margin below. The boxes are in the unit chosen here; the
+        line under them is what the file will hold, in points of each page's own box.
       </motion.p>
 
       {/* What was actually measured */}
@@ -238,21 +322,66 @@ export function CropTool() {
         )}
       </motion.section>
 
-      {/* Crop values, from the same model that builds the params */}
+      {/* The unit the margins are typed in, from the definition that converts it */}
+      {unitField && (
+        <motion.div
+          variants={fadeUp}
+          data-crop-unit={unit}
+          className="rounded-[14px] border border-cream-border bg-white p-3 shadow-doodle"
+        >
+          <FieldControl
+            field={unitField}
+            values={values}
+            onChange={(_key, value) => {
+              // The typed boxes are about to mean something else, so drop the
+              // in-flight text and let them re-derive in the new unit.
+              setDraft({});
+              setValue('unit', String(value));
+            }}
+          />
+        </motion.div>
+      )}
+
+      {/* Crop values: typed here, painted on the preview, written by the tool */}
       <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
         <div className="grid grid-cols-4 gap-2">
-          {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
+          {CROP_EDGES.map((side) => (
             <div key={side}>
-              <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">{side}</label>
-              <div className="doodle-input text-center text-[11px] font-mono tabular-nums py-1.5 bg-cream">
-                {round(report.marginsPt[side])}
-              </div>
+              <label
+                htmlFor={`crop-margin-${side}`}
+                className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted"
+              >
+                {side}
+              </label>
+              <input
+                id={`crop-margin-${side}`}
+                data-crop-margin={side}
+                data-crop-unit={unit}
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                spellCheck={false}
+                value={draft[side] ?? shownMargin(side)}
+                aria-label={`${side} margin, in ${describeUnit(unit)}`}
+                onChange={(event) => typeMargin(side, event.target.value)}
+                onBlur={() =>
+                  setDraft((current) => {
+                    const next = { ...current };
+                    delete next[side];
+                    return next;
+                  })
+                }
+                className="doodle-input text-center text-[11px] font-mono tabular-nums py-1.5 bg-cream"
+              />
               <p className="mt-0.5 text-center font-mono text-[8px] tabular-nums text-ink-muted">
                 {(rect[side] * 100).toFixed(0)}%
               </p>
             </div>
           ))}
         </div>
+        <p className="text-center font-mono text-[10px] tabular-nums text-ink-soft" data-crop-written-pt={writtenPt}>
+          writes {writtenPt} pt (top/right/bottom/left) to each page's own box
+        </p>
         <p className="text-center font-mono text-[10px] tabular-nums text-ink-soft" data-crop-kept>
           keeps {Math.round(report.keptWidthPt)} × {Math.round(report.keptHeightPt)} pt
         </p>

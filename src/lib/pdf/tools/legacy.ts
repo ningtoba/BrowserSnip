@@ -53,11 +53,11 @@ import {
  * of a literal the run would have to describe a second time — and get wrong.
  */
 
-/** Largest margin the rail will accept, in points (about 28 inches). */
-const MAX_MARGIN_PT = 2000;
+/** Largest margin the rail will accept, counted in the unit the margins are typed in. */
+const MAX_MARGIN = 2000;
 
 /**
- * The crop margins as the rail shows them.
+ * The crop margins as the tool and its panel show them.
  *
  * `unit: 'pt'` used to be printed beside a number the user could declare in
  * millimetres, and the help said “in points” two fields above a selector that
@@ -65,6 +65,13 @@ const MAX_MARGIN_PT = 2000;
  * off the page. The bounds carry no unit for the same reason: `core/guard`’s
  * clamp sentence quotes them with the field's unit attached, and “at most 2000
  * pt” is not what a millimetre rail means.
+ *
+ * The unit is read, not decoration: `marginPoints` converts whatever the caller
+ * declared into the points the page box is written in, and
+ * `tests/pdf/crop-units.test.ts` proves one region declared in pt, mm, cm and in
+ * lands on the same `/MediaBox`. The crop panel now renders this field and types
+ * its margins in it, which is what makes the card's “type exact margins in
+ * points, mm, cm or inches” a description rather than a promise.
  */
 const CROP_SIDES = ['top', 'right', 'bottom', 'left'] as const;
 
@@ -76,11 +83,11 @@ const CROP_FIELDS: ToolField[] = [
     type: 'number',
     default: 0,
     min: 0,
-    max: MAX_MARGIN_PT,
+    max: MAX_MARGIN,
     step: 1,
     half: true,
     group: 'Margins',
-    help: 'Cut from that edge of the visible box, measured in the unit chosen below (points by default; 72 pt is one inch).',
+    help: 'Cut from that edge of the visible box, measured in the unit chosen below (72 pt is one inch, 25.4 mm is one inch).',
   })),
   {
     key: 'unit',
@@ -88,7 +95,7 @@ const CROP_FIELDS: ToolField[] = [
     type: 'select',
     default: 'pt',
     group: 'Margins',
-    help: 'A display unit only — the margins above are converted to the page’s own points when the crop is written.',
+    help: 'The unit the four margins above are read in — 10 means 10 of these, so switching unit re-crops the page. The page box itself is always written in points.',
     options: [
       { value: 'pt', label: 'Points' },
       { value: 'mm', label: 'Millimetres' },
@@ -185,7 +192,7 @@ export const legacyTools: PdfToolDefinition[] = [
   {
     id: 'pdf-crop',
     name: 'Crop PDF',
-    description: 'Drag a crop rectangle or type exact margins in points, mm or inches',
+    description: 'Drag a crop rectangle or type exact margins in points, mm, cm or inches',
     icon: '✂️',
     category: 'edit',
     keywords: ['trim margins', 'cut edges', 'bounds', 'mediabox'],
@@ -477,9 +484,15 @@ function compareColor(values: ToolValues, warnings: string[]): string {
   return '#ff0000';
 }
 
-/** The margins in the page’s own points, whatever unit was typed. */
-function marginPoints(value: number, unit: LengthUnit): number {
-  return Math.round(toPoints(clampNumber(value, 0, MAX_MARGIN_PT), unit) * 10) / 10;
+/**
+ * The margins in the page’s own points, whatever unit was typed.
+ *
+ * Exported because the crop panel predicts the file with it: the numbers the page
+ * prints as “what will be written” are the numbers `run` goes on to write, rounding
+ * included, so a person can check the box against the crop before clicking.
+ */
+export function marginPoints(value: number, unit: LengthUnit): number {
+  return Math.round(toPoints(clampNumber(value, 0, MAX_MARGIN), unit) * 10) / 10;
 }
 
 /**

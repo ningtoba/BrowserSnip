@@ -13,7 +13,12 @@
  * is pure: `CropTool.tsx` feeds it the overlay rect plus the page facts it read
  * from the document, and renders the report.
  */
-import { normaliseRotation } from "@/lib/pdf/core/pages";
+import {
+  fromPoints,
+  normaliseRotation,
+  toPoints,
+  type LengthUnit,
+} from "@/lib/pdf/core/pages";
 
 export type CropRotation = 0 | 90 | 180 | 270;
 
@@ -411,4 +416,35 @@ export function slideRect(
 function clampValue(value: number, lo: number, hi: number): number {
   if (hi < lo) return Math.max(0, Math.min(1, value));
   return Math.max(lo, Math.min(hi, value));
+}
+
+/** The extent this displayed edge is measured against, in points of the displayed page. */
+export function edgeExtentPt(page: CropTargetPage, edge: CropEdge): number {
+  return edge === "top" || edge === "bottom" ? page.displayHeightPt : page.displayWidthPt;
+}
+
+/**
+ * Type an exact margin on one displayed edge, in the unit the panel shows.
+ *
+ * The rectangle stays in page fractions — the frame the overlay paints and the
+ * arrow keys nudge — so dragging, nudging and typing are three ways of setting one
+ * number rather than three states that can disagree. The typed value is converted
+ * through the same `core/pages` factor the tool applies to what it receives, and
+ * bounded by the rule `nudgeEdge` honours: an edge may not eat the page.
+ */
+export function setEdgeMargin(
+  rect: CropFractions,
+  page: CropTargetPage,
+  edge: CropEdge,
+  value: number,
+  unit: LengthUnit,
+): CropFractions {
+  const next = clampFractions(rect);
+  const extent = edgeExtentPt(page, edge);
+  const opposite: CropEdge =
+    edge === "top" ? "bottom" : edge === "bottom" ? "top" : edge === "left" ? "right" : "left";
+  const asked = Number.isFinite(value) ? Math.max(0, toPoints(value, unit)) : 0;
+  const fraction = extent > 0 ? asked / extent : 0;
+  next[edge] = clampValue(fraction, 0, Math.max(0, 1 - next[opposite] - MIN_KEPT_FRAC));
+  return next;
 }
