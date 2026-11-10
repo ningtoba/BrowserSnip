@@ -344,7 +344,13 @@ export function CropTool() {
 
       {/* Crop values: typed here, painted on the preview, written by the tool */}
       <motion.section variants={fadeUp} className="space-y-2 rounded-[14px] border border-cream-border bg-white p-4 shadow-doodle">
-        <div className="grid grid-cols-4 gap-2">
+        {/*
+          Two across, not four: a millimetre entry is "15.24" and an inch entry is
+          "0.6", and a box that clips the digits it was typed into is worse than no
+          box at all. The old read-only grid could afford four because it printed
+          nothing wider than three digits.
+        */}
+        <div className="grid grid-cols-2 gap-2">
           {CROP_EDGES.map((side) => (
             <div key={side}>
               <label
@@ -352,6 +358,8 @@ export function CropTool() {
                 className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted"
               >
                 {side}
+                {/* The unit each box is read in, spelled where the number is typed. */}
+                <span className="ml-1 opacity-70">· {unit}</span>
               </label>
               <input
                 id={`crop-margin-${side}`}

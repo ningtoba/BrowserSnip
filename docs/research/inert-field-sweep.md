@@ -82,10 +82,12 @@ property (`values.font` in `readTextStyle`).
     that never mounts while the card said "Drag a crop rectangle **or type exact
     margins in points, mm or inches**". The panel now renders the definition's own
     `unit` field, takes typed margins in whatever unit it holds, and forwards both —
-    the tool converts, so 15 typed into the bottom box with `mm` selected takes
-    42.5 pt off the bottom and 42.5 is what the panel printed as the points the file
-    would hold. Choosing a unit therefore *does* change the produced box, which is the
-    only reading of "the margins are in …" that the byte diff can support.
+    the tool converts, so 15 typed into the bottom box with `mm` selected takes 42.5 pt
+    off the bottom, and 42.5 is what the panel printed as the points the file would
+    hold. Both halves of that are pinned: typing a margin means what it says in the
+    chosen unit, and switching unit re-states the same rectangle without moving it (a
+    crop dragged to 20 / 10 / 30 / 40 pt still writes 20 / 10 / 30 / 40 pt with
+    `Millimetres` showing 7.0556 / 3.5278 / 10.5833 / 14.1111 in its boxes).
     Same shape as `scan-to-pdf.fit` — a pinned value outranks a declared field — and
     fixed the way `redact-pdf.alsoMetadata` was, by wiring the pane to the field.
 
