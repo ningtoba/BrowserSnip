@@ -166,7 +166,9 @@ const faceShim = (() => {
       inner = globalThis.fetch;
       globalThis.fetch = (async (input: RequestInfo | URL) =>
         /NotoSans(Arabic|Hebrew)_400Regular\.ttf$/.test(String(input))
-          ? new Response(bytes, { headers: { 'content-type': 'font/ttf' } })
+          // A copy per call: the subsetter aligns the bytes it is handed, and two
+          // script faces must not share one buffer.
+          ? new Response(new Uint8Array(bytes), { headers: { 'content-type': 'font/ttf' } })
           : inner(input as never)) as typeof fetch;
     },
     restore() {
@@ -212,8 +214,10 @@ describe('txt-to-pdf: the whole file reaches the page, not just its first sheet'
       const source = rows(count).join('\n');
       const { sheet, message, pagesOut } = await typeset(source);
       expect(tailGap(sheet, source), `row count ${count}`).toBe('');
-      expect(pagesOut, `count ${count}: the reported page count is the number of sheets`).toBe(sheet.pages);
-      expect(message, `count ${count}`).toMatch(new RegExp(`into ${sheet.pages} page\\(s\\)`));
+      expect(pagesOut, `row count ${count}: the reported page count is the number of sheets`).toBe(sheet.pages);
+      expect(message, `row count ${count}: the sentence names the sheets the file holds`).toMatch(
+        new RegExp(`into ${sheet.pages} page\\(s\\)`),
+      );
       pages.push(sheet.pages);
     }
     expect(pages).toEqual([...pages].sort((a, b) => a - b));
