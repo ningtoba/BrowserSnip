@@ -41,7 +41,7 @@ import {
   StandardFonts,
 } from '../pdf/core/doc';
 import { embedImageBytes, fitScale } from '../pdf/core/pack';
-import { pageContentOps, pageContentStreams } from '../pdf/core/content';
+import { pageContentOps, pageContentStreams, parseContentStream } from '../pdf/core/content';
 import { pageSize as resolvePageSize } from '../pdf/core/pages';
 import { openRender } from '../pdf/core/render';
 import { drawTextU } from '../pdf/core/fonts';
@@ -378,7 +378,14 @@ export async function sheetsWithoutContent(bytes: Uint8Array): Promise<number | 
   return total - sheetsWithContent(doc);
 }
 
-/** Operators that put something on the paper: text shown, paths painted, XObjects drawn. */const PAINT_OPERATORS = new Set(['Tj', 'TJ', "'", '"', 'f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's', 'Do', 'BI']);
+/**
+ * Operators that put something on the paper: text shown, paths painted, XObjects
+ * drawn. One spelling of "this stream draws" for both places that ask it — the
+ * audit of a produced document and the harvest's decision whether a stream is a
+ * page's content at all — because a regex and a set that drift apart would let a
+ * sheet count as content in one and not the other.
+ */
+const PAINT_OPERATORS = new Set(['Tj', 'TJ', "'", '"', 'f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's', 'Do', 'BI']);
 
 /**
  * How many of this document's sheets hold a drawing operator.
@@ -430,7 +437,7 @@ async function recoverPagesFromContentStreams(objects: PdfObject[]): Promise<PDF
     const raw = latin1Bytes(object.body.slice(payload, payload + declared));
     if (raw.byteLength === 0) continue;
     const decoded = decodeStreamPayload(doc.context, object.body, raw);
-    if (!decoded || !PAINT_OPERATORS_TEST.test(decodedText(decoded))) continue;
+    if (!decoded || !parseContentStream(decoded).some((op) => PAINT_OPERATORS.has(op.name))) continue;
     const box = boxOfPageNaming(object.number, objects) ?? [0, 0, 612, 792];
     const page = doc.addPage([box[2] - box[0], box[3] - box[1]]);
     page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.stream(decoded)));
@@ -472,13 +479,6 @@ function decodeStreamPayload(context: PDFContext, dict: string, raw: Uint8Array)
     // nothing rather than pasting ciphertext where a drawing should be.
     return null;
   }
-}
-
-const PAINT_OPERATORS_TEST = /\b(Tj|TJ|f\*?|B\*?|S|s|Do|BI)\b|BT|re\b/;
-
-/** Latin-1 text of a decoded stream, for the operator sniff above. */
-function decodedText(bytes: Uint8Array): string {
-  return latin1Of(bytes.subarray(0, 4096));
 }
 
 /* ── CONVERT TO PDF: scan ─────────────────────────────────────────────────── */
