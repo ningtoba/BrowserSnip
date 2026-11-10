@@ -91,8 +91,10 @@ property (`values.font` in `readTextStyle`).
     `Millimetres` showing 7.0556 / 3.5278 / 10.5833 / 14.1111 in its boxes).
     *On the deployed site too* (`docs/research/crop-units-run.mjs`, one run per unit, the
     downloads read by the same `pypdf` checker into
-    `docs/research/crop-units-deployed.log`): all four files are byte-identical
-    (sha256 `6abdf5b4…`) and each holds `[75.6, 67.2, 489.2, 972.4]`,
+    `docs/research/crop-units-deployed.log`): the four files of one pass are byte-identical
+    to each other (sha256 `6abdf5b4…`; a second pass differs in bytes only because
+    pdf-lib stamps each file, so the cross-unit claim is *identical within a run*, as
+    elsewhere in this campaign) and each holds `[75.6, 67.2, 489.2, 972.4]`,
     `[57.6, 43.2, 566.48, 820.29]`, `[57.6, 43.2, 583.2, 770.4]`,
     `[57.6, 43.2, 371.2, 678.4]` — zero corner drift, `/CropBox` equal to `/MediaBox`,
     no console error — with the panel printing
