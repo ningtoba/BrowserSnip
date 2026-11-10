@@ -521,29 +521,33 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Flatten',
     notes: [
       'A flattened mark is page content: it can no longer be selected, moved, deleted or read as a comment by another reader.',
-      'Annotations with no stored appearance have nothing to bake, and the result names how many were left live instead of pretending they were flattened.',
+      'Baking copies what the annotation already draws — its appearance stream. A comment with no appearance of its own, or one flagged so no reader paints it, is left where it is and counted; nothing is rasterised here.',
       'Baking changes the bytes, so it breaks a signature that is already on the file — flatten first, then sign.',
     ],
     fields: [
       { key: 'forms', label: 'Flatten form fields', type: 'toggle', default: true, group: 'What to bake in', help: 'Field values are drawn into the page and the interactive field is removed, so the answers cannot be retyped.' },
-      { key: 'annotations', label: 'Flatten comments', type: 'toggle', default: true, group: 'What to bake in', help: 'Highlights, ink, stamps and text notes become page content. Turn this off to bake only the form fields.' },
-      { key: 'keepLinks', label: 'Keep clickable links', type: 'toggle', default: true, group: 'What to bake in', help: 'Off draws the underline but removes the target, which is what a print-ready or archived copy wants.' },
-      resolutionField({ group: 'What to bake in', max: 400, help: 'How sharply an annotation is re-drawn when it has no usable appearance of its own. Higher is crisper and bigger.' }),
+      { key: 'annotations', label: 'Flatten comments', type: 'toggle', default: true, group: 'What to bake in', help: 'Highlights, ink, stamps and text notes become page content and leave the comment list. Turn this off to bake only the form fields.' },
+      { key: 'keepLinks', label: 'Keep clickable links', type: 'toggle', default: true, group: 'What to bake in', help: 'Off bakes a link\u2019s own dashes into the page and removes the target, which is what a print-ready or archived copy wants; a link drawn by the reader rather than stored in the file leaves no mark behind.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const { flattenAnnotations } = await import('../core/flatten');
       const { flattenForm } = await import('../core/forms');
       const needsRender = booleanValue(context.values, 'annotations', true);
+      const bakeFields = booleanValue(context.values, 'forms', true);
       const keepLinks = booleanValue(context.values, 'keepLinks', true);
       const session = needsRender ? await openRender(input.bytes, { password: context.password }) : null;
       const warnings: string[] = [];
+      // What the file carried before this run touched it. The counters say what
+      // was baked; only the input says whether there was anything to bake.
+      const had = await liveMarks(input.bytes);
       let bakedAnnotations = 0;
       let pagesTouched = 0;
       let skippedNoAppearance = 0;
+      let skippedUnpainted = 0;
       let fieldsBaked = 0;
       try {
-        const fields = booleanValue(context.values, 'forms', true)
+        const fields = bakeFields
           ? await flattenForm(input.doc, session ?? undefined)
           : { flattened: 0, needsRender: false };
         fieldsBaked = fields.flattened;
@@ -551,24 +555,24 @@ export const securityTools: PdfToolDefinition[] = [
           warnings.push('The form fields could not be baked from their appearances, so they are still interactive in the output.');
         }
         try {
-          const outcome = await flattenAnnotations(
-            input.doc,
-            session ?? undefined,
-            {
-              kinds: needsRender ? undefined : ['Link'],
-              keepLinks,
-              onProgress: context.progress,
-            },
-          );
+          const outcome = await flattenAnnotations(input.doc, {
+            kinds: needsRender ? undefined : ['Link'],
+            keepLinks,
+            onProgress: context.progress,
+          });
           bakedAnnotations = outcome.flattened;
           pagesTouched = outcome.pagesTouched;
           skippedNoAppearance = outcome.skippedNoAppearance;
+          skippedUnpainted = outcome.skippedUnpainted;
         } catch (error) {
           // An appearance the engine cannot draw is a comment left where it is,
           // not a flattened one: the run continues and the saved file is read
-          // back, so the result reports what is really still live.
+          // back, so the result reports what is really still live. The error's own
+          // words are a library sentence (`Expected instance of PDFDict, but got
+          // instance of PDFRawStream`), so they stay out of the card.
+          void error;
           warnings.push(
-            `The comments could not be drawn into the page content (${error instanceof Error ? error.message : 'unknown reason'}), so they were left as live annotations rather than reported as flattened.`,
+            'The comments could not be drawn into the page content, so they were left as live annotations rather than reported as flattened.',
           );
         }
       } finally {
@@ -581,22 +585,40 @@ export const securityTools: PdfToolDefinition[] = [
       if (skippedNoAppearance > 0) {
         warnings.push(`${skippedNoAppearance} annotation(s) had no appearance to draw and were left as live comments instead of being baked in.`);
       }
-      if (saved.fields > 0) {
-        warnings.push(`${saved.fields} form field(s) are still interactive in the saved file, so their answers can still be retyped.`);
+      if (skippedUnpainted > 0) {
+        warnings.push(`${skippedUnpainted} annotation(s) carry a flag that keeps them off the page (Invisible, Hidden or NoView), so they were left as annotations rather than drawn in as ink.`);
       }
-      const liveMarksLeft = keepLinks ? saved.marks - saved.links : saved.marks;
+      if (saved.fields > 0) {
+        warnings.push(bakeFields
+          ? `${saved.fields} form field(s) are still interactive in the saved file, so their answers can still be retyped.`
+          : `Form fields were left interactive, as asked: ${saved.fields} field(s) can still be retyped.`);
+      }
+      const liveMarksLeft = commentCount(saved, keepLinks);
+      const liveLinksLeft = keepLinks ? 0 : saved.links;
       if (needsRender && liveMarksLeft > 0) {
         warnings.push(`${liveMarksLeft} comment(s) are still live annotations in the saved file rather than page content.`);
       }
-      if (!needsRender) {
-        warnings.push('Annotation flattening was off, so comments stayed live — only link annotations were considered.');
+      if (needsRender && liveLinksLeft > 0) {
+        warnings.push(`${liveLinksLeft} link(s) carry no appearance of their own, so they were left clickable rather than baked.`);
       }
+      if (!needsRender) {
+        warnings.push(keepLinks
+          ? 'Annotation flattening was off, so every comment was left live in the saved file.'
+          : 'Annotation flattening was off, so comments were left live; only the links were baked into the page.');
+      }
+      // What the run was actually asked to bake, read off the input rather than
+      // out of the counters: a file that carries nothing of the selected kind is a
+      // different sentence from a file whose marks could not be drawn.
+      const askedFor = (needsRender ? commentCount(had, keepLinks) : 0) + (bakeFields ? had.fields : 0);
       if (bakedAnnotations === 0 && fieldsBaked === 0) {
-        warnings.push('This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.');
+        warnings.push(askedFor === 0
+          ? 'This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.'
+          : `Nothing could be baked: the ${askedFor} item(s) of the selected kind in this file had no appearance this app can draw, so all of them are still live.`);
       }
       const stillLive = [
         ...(saved.fields > 0 ? [`${saved.fields} form field(s) still interactive`] : []),
         ...(liveMarksLeft > 0 ? [`${liveMarksLeft} comment(s) still live`] : []),
+        ...(liveLinksLeft > 0 ? [`${liveLinksLeft} link(s) still clickable`] : []),
       ];
       return {
         kind: 'pdf',
@@ -1862,6 +1884,10 @@ interface LiveMarks {
   marks: number;
   /** The `/Link` subset of `marks`. */
   links: number;
+  /** The `/Widget` subset — form boxes, reported as fields rather than comments. */
+  widgets: number;
+  /** The `/Popup` subset — a note's bubble, which no user counts as a comment. */
+  popups: number;
 }
 
 /**
@@ -1872,11 +1898,17 @@ interface LiveMarks {
  * where it was. Re-reading the output is the only way to tell "baked" from
  * "attempted", and it is what stops a result promising a page the reader can no
  * longer type into.
+ *
+ * The three subtype counts are kept apart because a card that calls a form box or
+ * a note's bubble a "comment" is the same over-count `remove-annotations` was
+ * charged with: the sentence has to name what the file actually holds.
  */
 async function liveMarks(bytes: Uint8Array): Promise<LiveMarks> {
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
   let marks = 0;
   let links = 0;
+  let widgets = 0;
+  let popups = 0;
   for (const page of doc.getPages()) {
     const annots = arrayAt(doc, page.node.get(PDFName.of('Annots')));
     if (!annots) continue;
@@ -1885,10 +1917,22 @@ async function liveMarks(bytes: Uint8Array): Promise<LiveMarks> {
       if (!annotation) continue;
       marks += 1;
       const subtype = annotation.get(PDFName.of('Subtype'));
-      if (subtype instanceof PDFName && subtype.asString() === '/Link') links += 1;
+      if (!(subtype instanceof PDFName)) continue;
+      if (subtype.asString() === '/Link') links += 1;
+      if (subtype.asString() === '/Widget') widgets += 1;
+      if (subtype.asString() === '/Popup') popups += 1;
     }
   }
-  return { fields: formFieldCount(doc), marks, links };
+  return { fields: formFieldCount(doc), marks, links, widgets, popups };
+}
+
+/**
+ * The annotations a reader lists as comments on the page: not the clickable areas,
+ * not the note popups, and not the form boxes — those three are each counted, and
+ * named, by their own number.
+ */
+function commentCount(marks: LiveMarks, keepLinks: boolean): number {
+  return Math.max(0, marks.marks - marks.widgets - marks.popups - (keepLinks ? marks.links : 0));
 }
 
 /**
