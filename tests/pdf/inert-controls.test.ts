@@ -75,8 +75,9 @@ async function boxesOf(bytes: Uint8Array) {
     const crop = cropBox(page);
     return {
       media: [round(media.width), round(media.height)] as [number, number],
-      // `/CropBox` is optional (ISO 32000-1 §14.11.2); a page that leaves it out
-      // is visible in its `/MediaBox`, which is what a viewer and `mutool` use.
+      // `/CropBox` is optional (ISO 32000-1 §14.11.2); a page that leaves it out is
+      // visible in its `/MediaBox`, which is what pymupdf and pypdf report for these
+      // files (`docs/research/cbz-page-size-boxes.py`).
       cropWritten: (page.node as unknown as { get(k: PDFName): unknown }).get(PDFName.of('CropBox')) !== undefined,
       crop: [round(crop.width), round(crop.height)] as [number, number],
     };
@@ -110,6 +111,10 @@ describe('cbz-to-pdf Page size reaches the page boxes', () => {
         const expected = ART[index]!.width > ART[index]!.height ? landscape : portrait;
         expect(box.media, `${size} page ${index + 1}`).toEqual(expected);
         expect(box.crop, `${size} page ${index + 1}`).toEqual(expected);
+        // The packer writes `/MediaBox` only, so the two numbers above are the same
+        // box rather than a crop hiding inside a bigger sheet — the shape the outside
+        // readers confirm.
+        expect(box.cropWritten, `${size} page ${index + 1}`).toBe(false);
       }
       // The picture is scaled into the sheet, not left at its native box, and it
       // keeps its ratio: 600 × 800 and 800 × 600 do not both come out the sheet.

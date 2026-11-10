@@ -2,9 +2,9 @@
 """Read a PDF's page boxes with readers that are not this app.
 
 Used by `cbz-page-size-proof.mjs`: the browser produces the files, this names the
-geometry. `/MediaBox` and the effective `/CropBox` are printed per page from two
-independent readers (pymupdf, pypdf), because the fix being checked is exactly a
-claim about those boxes.
+geometry. `/MediaBox`, the effective `/CropBox` and the rectangle each picture is
+drawn into are printed per page from two independent readers (pymupdf, pypdf),
+because the fix being checked is exactly a claim about those boxes.
 
     python3 docs/research/cbz-page-size-boxes.py /tmp/org/cbz-page-size-fit.pdf ...
 """
@@ -16,7 +16,8 @@ import pypdf
 for path in sys.argv[1:]:
     print(path)
     doc = pymupdf.open(path)
-    for index, page in enumerate(doc):
+    for index in range(doc.page_count):
+        page = doc[index]
         w, h = round(page.rect.width, 2), round(page.rect.height, 2)
         crop = page.cropbox
         print(f"  pymupdf page {index + 1}: mediabox/canvas {w}x{h}  cropbox "
@@ -29,7 +30,7 @@ for path in sys.argv[1:]:
         # Asked FIRST, on purpose: reading `.cropbox` makes pypdf write a `/CropBox`
         # into the page object when the file left the entry out, so checking after
         # the fact reports the reader's default as if it were the writer's.
-        written = "/CropBox" in page.keys()
+        written = "/CropBox" in page
         media = page.mediabox
         crop = page.cropbox
         # `/CropBox` is optional (ISO 32000-1 §14.11.2): a page that leaves it out is
