@@ -21,3 +21,9 @@ sheets 25; characters a reader extracts 143 = 34681 of the source + 264 from 24 
 last sentence of each row on a sheet: 0 of 12 (missing cell1sentence40, cell2sentence40, cell3sentence40, cell4sentence40, cell5sentence40, cell6sentence40, cell7sentence40, cell8sentence40, cell9sentence40, cell10sentence40, cell11sentence40, cell12sentence40)
 the source’s final text 'FINALROW' is on a sheet: NO
 exit 1 (non-zero is the point: the pre-fix download had no tail)
+
+## re-checked against the live site after CI 42741245922 (1331d75, this commit's tree)
+sheets 49; characters a reader extracts 35209 = 34681 of the source + 528 from 48 repeats of the 11-character header: exact
+last sentence of each row on a sheet: 12 of 12
+the source’s final text 'FINALROW' is on a sheet: yes
+exit 0
