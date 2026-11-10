@@ -202,6 +202,43 @@ silently wrong.*
   user-facing warning. On the deployed build from run A it reads *"Expected instance of me, but
   got instance of undefined"*. `ErrorPanel.readableMessage` exists precisely to keep that class of
   string off the page, and the warning path does not go through it.
+* **Closed by `cc19e56`, and the two exception strings were the two causes.** Re-measured on this
+  tree first (`0c1df4c`), because `core/flatten.ts` had not been touched since the feature landed:
+  `drawAppearance` asked `context.lookup(appearanceRef, PDFDict)` for the object `/AP /N` names,
+  an appearance is a **stream** (`PDFRawStream extends PDFStream extends PDFObject`), and the
+  fork's `lookup` throws `UnexpectedObjectTypeError` on a class mismatch rather than answering
+  undefined — so the first annotation with an appearance ended the whole pass, and
+  `PDFDocument.load`'s own `Annots()` answering undefined for a blank sheet was the
+  `got instance of undefined` variant. The bake now resolves the stream through the three shapes
+  PDF writes it in, copies its operators into the page with `inlineFormXObject` (the seam
+  `flattenForm` already uses, so the mark's words stay searchable), carries `/Rotate`, `/CA` and
+  `/BM` through the page's own graphics state because those belong to the annotation and not to
+  its stream, and only then drops the object from `/Annots` — with its `/Popup`, which left behind
+  is an orphan every reader still lists as a comment. `doc.getForm()` is no longer called at the
+  end of the pass: on a document with no form it *creates* one.
+* Judged by ink, not by the absence of an error (`docs/research/flatten-readers.py`, same fixture
+  either side of the fix, each mark's own box measured with MuPDF twice — once as displayed, once
+  with `annots=False` so only page content is painted). Ink at the note's box
+  `0.0 → 98.67`, the highlight `0.0 → 96.64`, the ink stroke `0.0 → 6.01`, the square
+  `0.0 → 99.99`, the 40 % square on the `/Rotate 90` sheet `0.0 → 100.0`; annotations `5 → 0`,
+  widgets `3 → 0`, `AcroForm /Fields` `3 → 0`; page ink as displayed `1.3 / 2.34 / 0 / 1.53 %`
+  before and after, and *content-only* comes to the same four numbers. Before the fix those same
+  boxes measured 0.0 content-only while the annotation still painted them.
+* What is deliberately **not** flattened, counted and said: a mark with no appearance to copy, one
+  flagged `Invisible`/`Hidden`/`NoView` (a viewer never paints it, so baking it prints ink the
+  user never saw), a `/Link` the "keep clickable" toggle keeps, and every `/Widget` — widgets
+  belong to the form pass, and drawing one here left `/AcroForm /Fields` naming a field whose box
+  had vanished, which is neither interactive nor flattened. The promise line is unchanged
+  ("comments baked wherever they have an appearance to draw — the result counts what is still
+  live") because that is now what the bytes do; the dead `Resolution` slider went, since its help
+  promised re-drawing at a dpi nothing read.
+* The contradictory sentence is fixed at its cause: "nothing of the selected kind to flatten" is
+  now compared against what the **input** held, and a library exception never reaches the card —
+  the warning says what was left live and the counts come from re-reading the saved file.
+* Pinned by `tests/pdf/flatten-truth.test.ts` (15) per annotation kind, reading the page's own
+  content streams back with `node:zlib`. Nine reverts, each run: the `PDFDict` lookup restored
+  turns **10** red, the missing-`/Annots` guard **5**, the unpainted-flag guard 2, and the popup
+  carry, the `/CA` state, the widget guard and the `getForm()` side effect 1 each.
 
 ---
 
@@ -222,6 +259,15 @@ silently wrong.*
   re-opened by MuPDF to check the page content (`unmeasured`, not blank).
 * Why it matters: the tool's promise is "the result reports what the saved file actually
   recorded", and the one word it adds — the cipher — is the one the bytes contradict.
+* **Already fixed by `9d064f5`, re-measured on this tree (`f111c00`).** The same run —
+  `tests/fixtures/encrypted/aes-128-user.pdf`, owner secret, print/copy/modifying off,
+  assembly on — now answers *"Restrictions as recorded in the file: printing blocked, editing
+  blocked, copying blocked, comments blocked, form filling allowed, screen readers blocked, page
+  assembly allowed. A PDF reader opens it with no password: 3 page(s) readable."* No cipher is
+  named at all (`9d064f5` deleted `(${cipherName})` from the line rather than guessing at it), the
+  saved `/Encrypt` is `/V 4 /R 4 /CFM /AESV2`, and this app's own guard reads it back as
+  `AES-128`. Pinned in `tests/pdf/edge-security.test.ts`: the message may not match
+  `/AES|RC4|\b256\b|\b128\b/`, and the flags it names have to be the flags `/P` holds.
 
 ### 2. `bates-numbering` — the card prints the first file's page count as the job's
 
@@ -234,6 +280,17 @@ silently wrong.*
   result's first member (`RunOutcome.pagesOut` for a multi-file job), printed in the row the
   user reads as "pages in your file, pages out". The sentence is right and the number beside it
   is wrong by 5 pages.
+* **Real on this tree, fixed in the sentence by `f111c00`; the number itself is another seam's
+  contract.** Re-measured with 4 + 5 sheets: `pagesOut` 4, outputs 4 and 5 pages, message
+  *"Applied 9 Bates numbers across 2 files."* `RunOutcome.pagesOut` means *the primary output* by
+  design — `tests/pdf/pages-out.test.ts` pins this very tool with "reports the first produced
+  document, never a sum of both" — while `pagesIn` is summed over every loaded file in
+  `usePdfTool`, so the `in → out` row compares a total against one member. Moving either half is
+  a shared-UI decision (`ResultCard` / `usePdfTool` / that pinned contract), not a byte this entry
+  owns. What the entry can do is refuse to let the row stand alone, and it now says
+  *"Applied 9 Bates numbers across 2 files (colour_bates.pdf 4 pages, sheets_bates.pdf 5 pages)."*
+  — counts read off the documents that were saved, with `pagesOut` unchanged at 4. Both halves
+  pinned in `tests/pdf/edge-edit.test.ts`.
 
 ### 3. `extract-pages` — "Extracted 4 pages of 4 pages" beside its own contradiction
 
@@ -244,6 +301,11 @@ silently wrong.*
 * The output is correct — a control run with `Pages = 2-3` gives `Extracted 2 pages of 4 pages.`
   with 2 pages out, so the sentence is only false in the all-pages case, where nothing was
   extracted *out of* anything. Recorded as a copy defect, not an output defect.
+* **Real on this tree, fixed by `f111c00`.** The whole-document case now reads *"Copied all 4
+  pages into a new file."* and the note keeps to what the run does hold — the page count and the
+  order — instead of asserting that the content matches, which is `notePageCopy`'s business when a
+  rebuild loses something. `Pages = 1-3` still reads *"Extracted 3 pages of 4 pages."* Pinned in
+  `tests/pdf/edge-organize.test.ts`.
 
 ### 4. `remove-annotations` — counts five marks and two pages where the file has four and one
 
@@ -257,6 +319,14 @@ silently wrong.*
 * The count comes from the operator/display-list scan rather than from the annotation array the
   output loses, so a highlight that also paints and a link that pdf.js lists twice are counted
   as marks; the "pages" half counts pages it looked at, not pages it changed.
+* **Real on this tree, fixed by `f111c00` — with the cause one step away from the hypothesis.**
+  The count *does* come from the annotation array (`removeAnnotations` removes entries from
+  `/Annots`); the fifth entry is the sticky note's own **`/Popup`**, which sits in the array but is
+  not a mark a reader lists — MuPDF reports `Text, FreeText, Highlight` plus the link, four, over
+  the five objects in page 1's array. The "pages" half was exactly as recorded: `pages.length`, the
+  selection. Now both are what the file says: *"Removed 4 annotations and 1 note pop-up from 1
+  page."*, pop-ups named apart and pages counted by whose array actually shrank. Pinned in
+  `tests/pdf/edge-edit.test.ts` against a fixture that carries the popup.
 
 ---
 
