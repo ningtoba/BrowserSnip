@@ -11,15 +11,17 @@
  * that opened, counted 3 pages, still answered to the password, and held 0
  * characters. An "it decrypted" assertion would have passed on all 18.
  *
- * The scope is the two strengths proven here — RC4-128 (`/V 2 /R 3`) and AES-128
- * (`/V 4 /R 4 /CFM /AESV2`). AES-256 is asserted *refused by name*, because a
- * guard that claims a strength it cannot read is the same trap wearing a
- * different hat.
+ * The scope is the three strengths proven here — RC4-128 (`/V 2 /R 3`), AES-128
+ * (`/V 4 /R 4 /CFM /AESV2`) and AES-256 (`/V 5 /R 6 /CFM /AESV3`, whose own
+ * derivations, secrets and `/Perms` decision are worked through in
+ * `tests/pdf/crypto-aes256.test.ts`). What is left *refused by name* is named at
+ * the bottom of this file, because a guard that claims a strength it cannot read
+ * is the same trap wearing a different hat.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import { assessAccess, decryptDocument } from '@/lib/pdf/core/crypto';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
@@ -101,7 +103,7 @@ describe('the base document every fixture starts from', () => {
   });
 });
 
-/* ── the two strengths this app now reads ────────────────────────────────── */
+/* ── the three strengths this app now reads ────────────────────────────────── */
 
 describe.each([
   ['rc4-128-user.pdf', 'RC4-128', 'qpdf'],
@@ -110,7 +112,7 @@ describe.each([
   ['mu-aes-128-user.pdf', 'AES-128', 'MuPDF'],
 ])('decrypting %s (%s by %s)', (name, strength) => {
   it('names the cipher from the dictionary before anything is undone', async () => {
-    const verdict = assessAccess(await loadRaw(name), PASSWORD);
+    const verdict = await assessAccess(await loadRaw(name), PASSWORD);
     expect(verdict.kind).toBe('opens');
     if (verdict.kind !== 'opens') return;
     expect(verdict.strength).toBe(strength);
@@ -163,14 +165,14 @@ describe.each([
 
 describe('the two secrets an /Encrypt dictionary can carry', () => {
   it('asks for a password when the user secret is real', async () => {
-    expect(assessAccess(await loadRaw('rc4-128-user.pdf'))).toMatchObject({ kind: 'needs-password' });
+    expect(await assessAccess(await loadRaw('rc4-128-user.pdf'))).toMatchObject({ kind: 'needs-password' });
     const outcome = await decryptDocument(await loadRaw('rc4-128-user.pdf'));
     expect(outcome).toMatchObject({ kind: 'needs-password', strength: 'RC4-128' });
   });
 
   it('refuses a wrong password instead of opening on the empty one', async () => {
     const doc = await loadRaw('rc4-128-user.pdf');
-    expect(assessAccess(doc, WRONG)).toMatchObject({ kind: 'bad-password' });
+    expect(await assessAccess(doc, WRONG)).toMatchObject({ kind: 'bad-password' });
     expect(await decryptDocument(await loadRaw('rc4-128-user.pdf'), WRONG))
       .toMatchObject({ kind: 'bad-password' });
     expect(doc.isEncrypted).toBe(true);
@@ -178,7 +180,7 @@ describe('the two secrets an /Encrypt dictionary can carry', () => {
 
   it('opens a permissions-only file with nothing typed, and says it was the empty secret', async () => {
     const doc = await loadRaw('rc4-128-owner.pdf');
-    expect(assessAccess(doc)).toMatchObject({ kind: 'opens', openedAs: 'empty', suppliedMatched: false });
+    expect(await assessAccess(doc)).toMatchObject({ kind: 'opens', openedAs: 'empty', suppliedMatched: false });
     const outcome = await decryptDocument(doc);
     expect(outcome).toMatchObject({ kind: 'decrypted', openedAs: 'empty', suppliedMatched: false });
     expect(pageWords(doc)[0]).toContain(SHEET_TEXT[0]);
@@ -207,15 +209,37 @@ describe('the two secrets an /Encrypt dictionary can carry', () => {
 /* ── what is still refused, and by name ──────────────────────────────────── */
 
 describe('the ciphers this module does not claim', () => {
-  it('refuses AES-256 by name, and proves its streams are still ciphered', async () => {
-    expect(assessAccess(await loadRaw('aes-256-user.pdf'), PASSWORD))
-      .toMatchObject({ kind: 'unsupported', reason: 'aes-256' });
+  it('reads AES-256 now, and proves its streams were ciphered before it did', async () => {
+    // The refusal this file exists to end: read leniently, the revision-6 fixture's
+    // page stream will not inflate, and the same document hands back its words a few
+    // lines later. `tests/pdf/crypto-aes256.test.ts` holds the derivation-level
+    // assertions; this one keeps the two sides of the change in one place.
+    expect(await assessAccess(await loadRaw('aes-256-user.pdf'), PASSWORD))
+      .toMatchObject({ kind: 'opens', strength: 'AES-256' });
     expect(await decryptDocument(await loadRaw('aes-256-user.pdf'), PASSWORD))
-      .toMatchObject({ kind: 'unsupported', reason: 'aes-256' });
-    // The page stream of that file will not inflate, which is the cipher the
-    // refusal is about; the two strengths above stop being true once undone.
+      .toMatchObject({ kind: 'decrypted', strength: 'AES-256' });
+    const shut = await loadRaw('aes-256-user.pdf');
+    expect(() => streamBytes(firstContentStream(shut, shut.getPages()[0]))).toThrow();
+    const opened = await loadRaw('aes-256-user.pdf');
+    await decryptDocument(opened, PASSWORD);
+    expect(pageWords(opened)[0]).toContain(SHEET_TEXT[0]);
+  });
+
+  it('refuses AES-256 under a handler revision it has no fixture for', async () => {
+    // Revision 5 hashes the password without the ladder and revision 7 runs the
+    // crypt filter without the padding. Both are named rather than guessed: the
+    // dictionary below is the revision-6 fixture's own, with the `/R` the module
+    // has no outside-locked file to check against, which is the whole reason it is
+    // still refused.
     const doc = await loadRaw('aes-256-user.pdf');
-    expect(() => streamBytes(firstContentStream(doc, doc.getPages()[0]))).toThrow();
+    const entry = doc.context.trailerInfo.Encrypt;
+    const dict = entry instanceof PDFRef ? doc.context.lookupMaybe(entry, PDFDict) : entry;
+    if (!(dict instanceof PDFDict)) throw new Error('the fixture carries no /Encrypt dictionary');
+    dict.set(PDFName.of('R'), PDFNumber.of(5));
+    expect(await assessAccess(doc, PASSWORD))
+      .toMatchObject({ kind: 'unsupported', reason: 'aes-256', strength: null });
+    expect(await decryptDocument(doc, PASSWORD))
+      .toMatchObject({ kind: 'unsupported', reason: 'aes-256' });
   });
 
   it('calls a password gate a gate, not a cipher — the shape this app used to write', async () => {
@@ -225,7 +249,7 @@ describe('the ciphers this module does not claim', () => {
     // app protected before the cipher landed.
     const bytes = await saveGateOnly(await loadRaw('plain.pdf'), { userPassword: PASSWORD, ownerPassword: PASSWORD });
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
-    expect(assessAccess(doc, PASSWORD)).toEqual({ kind: 'gate-only' });
+    expect(await assessAccess(doc, PASSWORD)).toEqual({ kind: 'gate-only' });
     expect(await decryptDocument(doc, PASSWORD))
       .toMatchObject({ kind: 'unsupported', reason: 'no-cipher' });
     // Its streams were never ciphered, so its words are readable untouched.
@@ -238,7 +262,7 @@ describe('the ciphers this module does not claim', () => {
       ownerPassword: PASSWORD,
     });
     const sealed = () => PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
-    expect(assessAccess(await sealed(), PASSWORD))
+    expect(await assessAccess(await sealed(), PASSWORD))
       .toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'user' });
     // Before the pass its page will not even inflate, and after it the words are
     // there: the two directions of this module, on bytes this module wrote.

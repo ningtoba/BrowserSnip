@@ -359,10 +359,10 @@ describe('the ciphertext opens again, twice over', () => {
 
   it('names which secret opened it, and refuses one that opened nothing', async () => {
     const bytes = await saveEncrypted(await sealed(await sample()), { userPassword: USER, ownerPassword: OWNER });
-    expect(assessAccess(await sealed(bytes), USER)).toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'user' });
-    expect(assessAccess(await sealed(bytes), OWNER)).toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'owner' });
-    expect(assessAccess(await sealed(bytes), WRONG)).toMatchObject({ kind: 'bad-password', strength: 'AES-128' });
-    expect(assessAccess(await sealed(bytes))).toMatchObject({ kind: 'needs-password', strength: 'AES-128' });
+    expect(await assessAccess(await sealed(bytes), USER)).toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'user' });
+    expect(await assessAccess(await sealed(bytes), OWNER)).toMatchObject({ kind: 'opens', strength: 'AES-128', openedAs: 'owner' });
+    expect(await assessAccess(await sealed(bytes), WRONG)).toMatchObject({ kind: 'bad-password', strength: 'AES-128' });
+    expect(await assessAccess(await sealed(bytes))).toMatchObject({ kind: 'needs-password', strength: 'AES-128' });
   }, 300_000);
 
   it('is a file the guard lets a rewriting tool touch', async () => {
