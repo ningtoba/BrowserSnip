@@ -7,18 +7,19 @@
  * pass found the card offering "points, mm or inches" while the panel pins
  * `unit: 'pt'`, and `docs/research/inert-field-sweep.md` left the field as a backlog
  * item. The byte diff the sweep asked for is section 1: one physical region declared
- * four ways — 21.6/14.4/28.8/36 pt, the same edges as 7.62/5.08/10.16/12.7 mm,
- * 0.762/0.508/1.016/1.27 cm and 0.3/0.2/0.4/0.5 in — through the shipped `run`, and
+ * four ways — 21.6/28.8/43.2/57.6 pt, the same edges as 7.62/10.16/15.24/20.32 mm,
+ * 0.762/1.016/1.524/2.032 cm and 0.3/0.4/0.6/0.8 in — through the shipped `run`, and
  * the four `/MediaBox`/`/CropBox` arrays come back identical. So `run` converts for
  * real; the control was never a wrong conversion, it was a control nobody could reach.
  *
- * The fixture is deliberately hostile to the classic mistakes. The page is
- * **non-square** (500 × 900) and the box is **asymmetric** on all four sides, so a
- * top/left transposition cannot cancel itself out the way it does on a square sheet;
- * the first page's `/MediaBox` does not start at the origin, so a conversion that
- * forgets the box origin lands on a different number; and the document also carries
- * an A4 and a US Letter sheet, because 72 pt-per-inch against 25.4 mm-per-inch mixed
- * up reads plausible on one of those two and wrong on the other.
+ * The fixture is deliberately hostile to the classic mistakes. The pages are
+ * **non-square** and the box is **asymmetric on all four sides**, so a top/left
+ * transposition cannot cancel itself out the way it does on a square sheet; the first
+ * page's `/MediaBox` does not start at the origin, so a conversion that forgets the box
+ * origin lands on a different number; one sheet carries `/Rotate 90`, because a margin
+ * re-aimed by the preview instead of the stored box moves the file; and the document
+ * also holds an A4 and a US Letter sheet, since 72 pt-per-inch against 25.4
+ * mm-per-inch mixed up reads plausible on one of those two and wrong on the other.
  *
  * **2. Can a user reach it?** Section 2 drives the panel that the route actually
  * mounts. Before this file, `CropTool` converted the dragged rectangle to points,
@@ -34,7 +35,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { PDFDocument } from '@maxwbh/pdf-lib';
+import { PDFDocument, degrees } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { openPDF } from '@/lib/pdf/core/doc';
@@ -44,32 +45,51 @@ import { useProcessStore } from '@/stores/process-store';
 import CropTool from '@/components/tools/pdf/edit/CropTool';
 import { getCropRect, setCropRect } from '@/components/tools/pdf/edit/CropMain';
 
-/** One region, declared four ways: [unit, top, right, bottom, left]. */
+/**
+ * One region, declared four ways: `[unit, top, right, bottom, left]`.
+ *
+ * The four numbers are pairwise distinct and each is exact in every unit, so the
+ * equality below cannot be bought by rounding: 21.6 pt is 7.62 mm is 0.762 cm is
+ * 0.3 in, because an inch is 72 pt and 25.4 mm. A transposed pair (top against left)
+ * is a different number on every edge.
+ */
 const REGION: [LengthUnit, number, number, number, number][] = [
-  ['pt', 21.6, 14.4, 28.8, 36],
-  ['mm', 7.62, 5.08, 10.16, 12.7],
-  ['cm', 0.762, 0.508, 1.016, 1.27],
-  ['in', 0.3, 0.2, 0.4, 0.5],
+  ['pt', 21.6, 28.8, 43.2, 57.6],
+  ['mm', 7.62, 10.16, 15.24, 20.32],
+  ['cm', 0.762, 1.016, 1.524, 2.032],
+  ['in', 0.3, 0.4, 0.6, 0.8],
 ];
 
 /** The same region in points, which is what the page box is written in. */
-const REGION_PT = { top: 21.6, right: 14.4, bottom: 28.8, left: 36 };
+const REGION_PT = { top: 21.6, right: 28.8, bottom: 43.2, left: 57.6 };
 
-/** The four sheets, in the frame `pdf-crop` writes: [originX, originY, width, height]. */
-const SHEETS: [number, number, number, number][] = [
-  [18, 24, 500, 900],
-  [0, 0, 595.28, 841.89],
-  [0, 0, 612, 792],
+/**
+ * The sheets, in the frame `pdf-crop` writes: origin x, origin y, width, height,
+ * `/Rotate`.
+ *
+ * Their `width + height` is 1470 / 1437.17 / 1404 / 1100 — close enough that a box
+ * built from the wrong pair of edges lands on numbers a reader would not glance at
+ * twice, and the per-edge expectation below is what notices. The last sheet is stored
+ * portrait and displayed landscape: the tool's own note promises the margins are
+ * applied to each page's own box, so `/Rotate` must not move them, and the same
+ * equality has to hold in all four units on a turned page.
+ */
+const SHEETS: [number, number, number, number, number][] = [
+  [18, 24, 500, 970, 0],
+  [0, 0, 595.28, 841.89, 0],
+  [0, 0, 612, 792, 0],
+  [0, 0, 400, 700, 90],
 ];
 
 /** The box one `REGION` crop leaves of one `SHEET`, computed from the inches, not from the tool. */
-function expectedBox([ox, oy, width, height]: [number, number, number, number]): number[] {
+function expectedBox([ox, oy, width, height]: [number, number, number, number, number]): number[] {
   const { top, right, bottom, left } = REGION_PT;
-  return [ox + left, oy + bottom, ox + width - right, oy + height - top];
+  const at = (value: number) => Math.round(value * 100) / 100;
+  return [ox + left, oy + bottom, ox + width - right, oy + height - top].map(at);
 }
 
 /**
- * A three-sheet document: an offset non-square page, A4 and US Letter.
+ * A four-sheet document: an offset non-square page, A4, US Letter, and a turned one.
  *
  * Mixed sizes are also the case the tool's own note promises — "margins are applied
  * per page in the page's own units" — so the per-sheet expectation above is checked
@@ -77,10 +97,11 @@ function expectedBox([ox, oy, width, height]: [number, number, number, number]):
  */
 async function sheets(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  for (const [x, y, width, height] of SHEETS) {
+  for (const [x, y, width, height, rotation] of SHEETS) {
     const page = doc.addPage([width, height]);
     page.setMediaBox(x, y, width, height);
     page.setCropBox(x, y, width, height);
+    if (rotation) page.setRotation(degrees(rotation));
   }
   return doc.save({ useObjectStreams: false });
 }
@@ -89,15 +110,20 @@ function file(bytes: Uint8Array, name = 'sheets.pdf'): File {
   return new File([new Uint8Array(bytes) as BlobPart], name, { type: 'application/pdf' });
 }
 
-/** Both page boxes of every page, as the file holds them. */
+/** Both page boxes of every page, as the file holds them, at the file's own precision. */
 async function boxesOf(bytes: Uint8Array): Promise<number[][][]> {
   const doc = await openPDF(bytes);
+  // pdf-lib writes a page box with two decimals, so a comparison at full double
+  // precision would be a comparison of `595.28 - 28.8` against `566.48` — a rounding
+  // difference of one part in ten million, not a finding. Everything below is judged
+  // at the precision the bytes actually carry.
+  const at = (value: number) => Math.round(value * 100) / 100;
   return doc.getPages().map((page) => {
     const media = page.getMediaBox();
     const crop = page.getCropBox();
     return [
-      [media.x, media.y, media.x + media.width, media.y + media.height],
-      [crop.x, crop.y, crop.x + crop.width, crop.y + crop.height],
+      [media.x, media.y, media.x + media.width, media.y + media.height].map(at),
+      [crop.x, crop.y, crop.x + crop.width, crop.y + crop.height].map(at),
     ];
   });
 }
@@ -164,14 +190,21 @@ describe('pdf-crop writes the same box whatever unit the margins were declared i
 
     // The trap this whole check exists for: the same *digits*, a different unit, are
     // a different region. If reading the unit as points made no difference, the
-    // equality above would be a tautology about a field nobody reads.
+    // equality above would be a tautology about a field nobody reads. The control is
+    // judged with a tolerance rather than `not.toEqual` on raw arrays, so it cannot
+    // pass on floating-point noise: the two crops have to differ by whole points.
     const mm = REGION.find(([unit]) => unit === 'mm')!;
     const misread = await crop(source, { unit: 'pt', top: mm[1], right: mm[2], bottom: mm[3], left: mm[4], pages: 'all' });
-    expect(await boxesOf(misread.bytes)).not.toEqual(produced.get('mm')!.boxes);
+    const misreadBoxes = await boxesOf(misread.bytes);
+    const asMm = produced.get('mm')!.boxes;
+    expect(
+      Math.abs(misreadBoxes[0]![0]![0]! - asMm[0]![0]![0]!),
+      'reading the millimetres as points moved the box by no more than the file’s own rounding',
+    ).toBeGreaterThan(1);
     // 7.62 pt off the top, not the 21.6 pt 7.62 mm is worth.
-    expect(misread.message).toContain('7.6/5.1/10.2/12.7 pt');
-    expect(produced.get('mm')!.message).toContain('21.6/14.4/28.8/36 pt');
-    expect(produced.get('mm')!.message).toContain('the 7.62/5.08/10.16/12.7 mm you entered, converted');
+    expect(misread.message).toContain('7.6/10.2/15.2/20.3 pt');
+    expect(produced.get('mm')!.message).toContain('21.6/28.8/43.2/57.6 pt');
+    expect(produced.get('mm')!.message).toContain('the 7.62/10.16/15.24/20.32 mm you entered, converted');
     expect(produced.get('pt')!.message).not.toMatch(/converted/);
   }, 180_000);
 
@@ -199,7 +232,11 @@ describe('pdf-crop writes the same box whatever unit the margins were declared i
     });
     const straightBoxes = await boxesOf(straight.bytes);
     expect(straightBoxes).toEqual(SHEETS.map((sheet) => [expectedBox(sheet), expectedBox(sheet)]));
-    expect(await boxesOf(swapped.bytes)).not.toEqual(straightBoxes);
+    // The swapped run is a whole 36 pt apart on the first corner it is asked about:
+    // 57.6 pt off the stored left in place of the 21.6 pt the top was worth.
+    const swappedBoxes = await boxesOf(swapped.bytes);
+    expect(Math.abs(swappedBoxes[0]![0]![0]! - straightBoxes[0]![0]![0]!)).toBeGreaterThan(30);
+    expect(swappedBoxes).not.toEqual(straightBoxes);
   }, 180_000);
 
   it('declares the unit as a control, since the card names it', () => {

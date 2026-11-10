@@ -1,20 +1,24 @@
-pt:
-  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
-  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
-  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
-mm:
-  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
-  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
-  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
-cm:
-  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
-  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
-  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
-in:
-  sheet 1  /MediaBox [54.0, 52.8, 503.6, 902.4]  /CropBox [54.0, 52.8, 503.6, 902.4]
-  sheet 2  /MediaBox [36.0, 28.8, 580.88, 820.29]  /CropBox [36.0, 28.8, 580.88, 820.29]
-  sheet 3  /MediaBox [36.0, 28.8, 597.6, 770.4]  /CropBox [36.0, 28.8, 597.6, 770.4]
-panel (unit=mm, typed 5/10/15/20):
-  /MediaBox [56.7, 42.5, 471.7, 885.8]  /CropBox [56.7, 42.5, 471.7, 885.8]
+crop-units-pt.pdf — declared in pt: [21.6, 28.8, 43.2, 57.6] pt off each edge
+   sheet 1: /MediaBox [75.6, 67.2, 489.19999999999993, 972.4]  /CropBox [75.6, 67.2, 489.19999999999993, 972.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 2: /MediaBox [57.6, 43.2, 566.4799999999999, 820.29]  /CropBox [57.6, 43.2, 566.4799999999999, 820.29]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 3: /MediaBox [57.6, 43.2, 583.2, 770.4]  /CropBox [57.6, 43.2, 583.2, 770.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 4: /MediaBox [57.6, 43.2, 371.2, 678.4]  /CropBox [57.6, 43.2, 371.2, 678.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+crop-units-mm.pdf — declared in mm: [21.6, 28.8, 43.2, 57.6] pt off each edge
+   sheet 1: /MediaBox [75.6, 67.2, 489.19999999999993, 972.4]  /CropBox [75.6, 67.2, 489.19999999999993, 972.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 2: /MediaBox [57.6, 43.2, 566.4799999999999, 820.29]  /CropBox [57.6, 43.2, 566.4799999999999, 820.29]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 3: /MediaBox [57.6, 43.2, 583.2, 770.4]  /CropBox [57.6, 43.2, 583.2, 770.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 4: /MediaBox [57.6, 43.2, 371.2, 678.4]  /CropBox [57.6, 43.2, 371.2, 678.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+crop-units-cm.pdf — declared in cm: [21.6, 28.8, 43.2, 57.6] pt off each edge
+   sheet 1: /MediaBox [75.6, 67.2, 489.19999999999993, 972.4]  /CropBox [75.6, 67.2, 489.19999999999993, 972.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 2: /MediaBox [57.6, 43.2, 566.4799999999999, 820.29]  /CropBox [57.6, 43.2, 566.4799999999999, 820.29]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 3: /MediaBox [57.6, 43.2, 583.2, 770.4]  /CropBox [57.6, 43.2, 583.2, 770.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 4: /MediaBox [57.6, 43.2, 371.2, 678.4]  /CropBox [57.6, 43.2, 371.2, 678.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+crop-units-in.pdf — declared in in: [21.6, 28.8, 43.2, 57.6] pt off each edge
+   sheet 1: /MediaBox [75.6, 67.2, 489.19999999999993, 972.4]  /CropBox [75.6, 67.2, 489.19999999999993, 972.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 2: /MediaBox [57.6, 43.2, 566.4799999999999, 820.29]  /CropBox [57.6, 43.2, 566.4799999999999, 820.29]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 3: /MediaBox [57.6, 43.2, 583.2, 770.4]  /CropBox [57.6, 43.2, 583.2, 770.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 4: /MediaBox [57.6, 43.2, 371.2, 678.4]  /CropBox [57.6, 43.2, 371.2, 678.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+crop-units-panel.pdf — the panel, with millimetres typed: [14.17, 28.35, 42.52, 56.69] pt off each edge
+   sheet 1: /MediaBox [56.7, 42.5, 471.7, 885.8]  /CropBox [56.7, 42.5, 471.7, 885.8]  worst corner 0.046 pt  /MediaBox = /CropBox
 
-OK: one region declared in pt, mm, cm and in wrote the same /MediaBox and /CropBox on all three sheets, and the panel's millimetre entry wrote the same region in points.
+OK: 5 file(s) read back as asked. The unit spellings of one region wrote the same /MediaBox and /CropBox on all 4 sheets (an offset page, A4, US Letter and a /Rotate 90 sheet), within the file's own rounding of 0.06 pt, and the panel's millimetre entry wrote the same region converted to points.
