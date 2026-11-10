@@ -155,6 +155,18 @@ def main():
             "typedSecretInBytes": b"hunter2" in raw,
         }))
 
+    print("\n\n# the same produced files, asked with a secret")
+    # Only meaningful for `change-permissions action: set`, which keeps a dictionary:
+    # the owner secret it wrote has to be the thing that lifts the flags, or the card's
+    # "only the owner password set here unlocks its restrictions" is a claim nobody checked.
+    for name in sorted(n for n in os.listdir(produced_dir) if n.startswith("change-permissions__")):
+        path = os.path.join(produced_dir, name)
+        for secret in ("", "hunter2", "not-the-password"):
+            doc = pymupdf.open(path)
+            auth = doc.authenticate(secret)
+            print(f"   {name:44} secret {secret!r:20} auth={auth} permissions={doc.permissions}")
+            doc.close()
+
     print("\n\n# the fixtures themselves, opened with their own secret")
     for name in sorted(n for n in os.listdir(fixture_dir) if n.endswith(".pdf")):
         path = os.path.join(fixture_dir, name)

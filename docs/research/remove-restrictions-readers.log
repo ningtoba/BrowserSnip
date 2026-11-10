@@ -28,8 +28,6 @@ against the fixture's own 1.51 %; `libqpdf check` is qpdf's own syntax check;
 `/Encrypt in bytes` and `hunter2 in bytes` are greps of the downloaded file for the
 trailer entry and for the typed secret in the clear.
 
-## the table
-
 | produced file | MuPDF asks | MuPDF `/P` | MuPDF planted | sheet-1 ink | libqpdf `/P` | libqpdf check | poppler chars | `/Encrypt` in bytes | `hunter2` in bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `change-permissions-clear__aes-128-user.pdf` | False | -4 | 3/3 | 1.51 % | no dictionary | clean | 176 | False | False |
@@ -76,13 +74,20 @@ trailer entry and for the typed secret in the clear.
 The 20 `remove-restrictions` and `unlock` rows share one shape: no dictionary left,
 nothing asked, 3 of 3 sheets still saying what they said, `qpdf --check` clean, no
 secret in the bytes. That answers the ledger row — the tool no longer refuses a
-password-protected file, and what it hands back is fully open rather than "restricted
-but readable".
+password-protected file, and what it hands back is **fully open** rather than
+"restricted but readable".
 
 The 10 `change-permissions action: set` rows keep `/Encrypt` and carry `/P = -3104`
 where every fixture arrived at `-3376`: that sibling changes the restrictions and
 leaves a dictionary standing, which is the difference its name rests on. Its
 10 `action: clear` rows drop the dictionary the way `remove-restrictions` does.
+
+`## the same produced files, asked with a secret` below is the half that keeps
+`change-permissions` honest about *which* password it set: MuPDF answers the empty
+secret with `auth=2 permissions=-3104` (open, restricted), `hunter2` with
+`auth=4 permissions=-4` (the owner secret, restrictions lifted), and a wrong secret
+with `auth=0` and the flags still in force. So the card's sentence — *"only the owner
+password set here unlocks its restrictions"* — is the file's behaviour, not a hope.
 
 ## the run, per file
 
@@ -367,6 +372,39 @@ leaves a dictionary standing, which is the difference its name rests on. Its
    qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
    poppler {"rc": 0, "pages": "3", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 176, "planted": true, "stderr": []}
    bytes   {"size": 2580, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+
+# the same produced files, asked with a secret
+   change-permissions__aes-128-user.pdf         secret ''                   auth=2 permissions=-3104
+   change-permissions__aes-128-user.pdf         secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__aes-128-user.pdf         secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__aes-256-owner.pdf        secret ''                   auth=2 permissions=-3104
+   change-permissions__aes-256-owner.pdf        secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__aes-256-owner.pdf        secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__aes-256-user.pdf         secret ''                   auth=2 permissions=-3104
+   change-permissions__aes-256-user.pdf         secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__aes-256-user.pdf         secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__mu-aes-128-user.pdf      secret ''                   auth=2 permissions=-3104
+   change-permissions__mu-aes-128-user.pdf      secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__mu-aes-128-user.pdf      secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__mu-aes-256-owner.pdf     secret ''                   auth=2 permissions=-3104
+   change-permissions__mu-aes-256-owner.pdf     secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__mu-aes-256-owner.pdf     secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__mu-aes-256-user.pdf      secret ''                   auth=2 permissions=-3104
+   change-permissions__mu-aes-256-user.pdf      secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__mu-aes-256-user.pdf      secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__mu-rc4-128-user.pdf      secret ''                   auth=2 permissions=-3104
+   change-permissions__mu-rc4-128-user.pdf      secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__mu-rc4-128-user.pdf      secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__plain.pdf                secret ''                   auth=2 permissions=-3104
+   change-permissions__plain.pdf                secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__plain.pdf                secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__rc4-128-owner.pdf        secret ''                   auth=2 permissions=-3104
+   change-permissions__rc4-128-owner.pdf        secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__rc4-128-owner.pdf        secret 'not-the-password'   auth=0 permissions=-3104
+   change-permissions__rc4-128-user.pdf         secret ''                   auth=2 permissions=-3104
+   change-permissions__rc4-128-user.pdf         secret 'hunter2'            auth=4 permissions=-4
+   change-permissions__rc4-128-user.pdf         secret 'not-the-password'   auth=0 permissions=-3104
 
 
 # the fixtures themselves, opened with their own secret
