@@ -153,13 +153,21 @@ def main() -> int:
         for line in failures:
             print(f"  {line}")
         return 1
-    print(
-        f"OK: {len(paths)} file(s) read back as asked. The unit spellings of one region "
-        f"wrote the same /MediaBox and /CropBox on all {len(SHEETS)} sheets (an offset "
-        "page, A4, US Letter and a /Rotate 90 sheet), within the file's own rounding of "
-        f"{TOLERANCE} pt, and the panel's millimetre entry wrote the same region "
-        "converted to points."
-    )
+    # Say only what was actually read: the deployed probe passes four unit files and no
+    # panel file, and a summary that claimed the panel too would be a sentence the
+    # invocation cannot support.
+    parts = []
+    if len(seen) > 1:
+        parts.append(
+            f"the {len(seen)} unit spellings of one region wrote the same /MediaBox and "
+            f"/CropBox on all {len(SHEETS)} sheets (an offset page, A4, US Letter and a "
+            f"/Rotate 90 sheet), within the file's own rounding of {TOLERANCE} pt"
+        )
+    elif len(seen) == 1:
+        parts.append(f"the {next(iter(seen))} run matched the region it declared")
+    if any(unit_of(path) == "panel" for path in paths if path.exists()):
+        parts.append("the panel's millimetre entry wrote the same region converted to points")
+    print(f"OK: {len(paths)} file(s) read back as asked — " + "; and ".join(parts) + ".")
     return 0
 
 

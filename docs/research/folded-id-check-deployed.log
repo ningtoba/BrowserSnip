@@ -1,0 +1,5 @@
+intake: {"path":"#/tool/redact-pdf","title":"Redact PDF ","retiredName":false}
+redact panel: {"path":"#/tool/redact-pdf","apply":"Apply 0 Redactions","warning":true,"metadataSwitch":true,"canvas":true}
+dashboard: {"printed":121,"cards":121,"shelves":[20,36,18,20,11,16],"shelfTotal":121,"agrees":true,"uniqueIds":121,"redactCard":false,"redactPdfCard":true,"retiredName":false}
+landing: {"painted":["121 PDF tools"],"inDocument":["129 tools","121 PDF tools","8 tools","121 tools · 6 categories"]}
+console errors: []

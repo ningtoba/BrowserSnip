@@ -21,4 +21,4 @@ crop-units-in.pdf — declared in in: [21.6, 28.8, 43.2, 57.6] pt off each edge
 crop-units-panel.pdf — the panel, with millimetres typed: [14.17, 28.35, 42.52, 56.69] pt off each edge
    sheet 1: /MediaBox [56.7, 42.5, 471.7, 885.8]  /CropBox [56.7, 42.5, 471.7, 885.8]  worst corner 0.046 pt  /MediaBox = /CropBox
 
-OK: 5 file(s) read back as asked. The unit spellings of one region wrote the same /MediaBox and /CropBox on all 4 sheets (an offset page, A4, US Letter and a /Rotate 90 sheet), within the file's own rounding of 0.06 pt, and the panel's millimetre entry wrote the same region converted to points.
+OK: 5 file(s) read back as asked — the 4 unit spellings of one region wrote the same /MediaBox and /CropBox on all 4 sheets (an offset page, A4, US Letter and a /Rotate 90 sheet), within the file's own rounding of 0.06 pt; and the panel's millimetre entry wrote the same region converted to points.
