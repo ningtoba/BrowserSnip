@@ -1,6 +1,9 @@
 import { formatFileSize } from '@/lib/utils/download';
+import type { PdfEncryption } from '@/lib/pdf/core/guard';
+import type { FileLockState } from '@/stores/process-store';
 import { EmptyState } from './EmptyState';
 import { ErrorPanel } from './ErrorPanel';
+import { FileLockRow } from './FileCards';
 import { ProgressBar } from './ProgressBar';
 import { FOCUS_RING } from './focusRing';
 
@@ -22,6 +25,10 @@ export interface FileQueueItem {
   error?: string | null;
   /** Being inspected / currently processed. */
   busy?: boolean;
+  /** The file's own encryption dictionary, as the pre-flight classified it. */
+  encryption?: PdfEncryption | null;
+  /** What the password check answered for this file — see `FileLockRow`. */
+  lock?: FileLockState;
 }
 
 export interface FileQueueProps {
@@ -38,6 +45,19 @@ export interface FileQueueProps {
    * job). Saying "estimated" beats a bar that looks exact and is not.
    */
   progressNote?: string | null;
+  /**
+   * The job's open password, and the setter that takes one typed on a row.
+   *
+   * The row itself is `FileCards:FileLockRow` — the same component the cards draw,
+   * so a queue and a card can never disagree about what a lock means or where the
+   * secret goes.
+   */
+  password?: string;
+  onPassword?: (value: string) => void;
+  /** True while a re-read prompted by a new secret is still outstanding. */
+  passwordChecking?: boolean;
+  /** True when the tool declares a password field of its own. */
+  toolOwnsPassword?: boolean;
   emptyTitle?: string;
   emptyBody?: string;
   className?: string;
@@ -69,6 +89,10 @@ export function FileQueue({
   onReorder,
   onRetry,
   progressNote,
+  password = '',
+  onPassword,
+  passwordChecking = false,
+  toolOwnsPassword = false,
   emptyTitle = 'No files yet',
   emptyBody = 'Drop a PDF here — it never leaves this device.',
   className = '',
@@ -76,6 +100,11 @@ export function FileQueue({
   if (items.length === 0) {
     return <EmptyState title={emptyTitle} body={emptyBody} icon="🗂" className={className} />;
   }
+  // More than one row needs the secret: one string covers the job, and the row has
+  // to say that rather than look like it holds its own answer.
+  const lockedRows = items.filter(
+    (item) => item.lock === 'needs-password' || item.lock === 'wrong-password',
+  ).length;
 
   return (
     <div className={className}>
@@ -177,6 +206,18 @@ export function FileQueue({
               </span>
             </div>
 
+            {(item.lock ?? 'none') !== 'none' && (
+              <FileLockRow
+                name={item.name}
+                lock={item.lock ?? 'none'}
+                encryption={item.encryption ?? null}
+                password={password}
+                onPassword={onPassword}
+                checking={passwordChecking}
+                toolOwnsPassword={toolOwnsPassword}
+                shared={lockedRows > 1}
+              />
+            )}
             {item.busy && item.percent == null && !failed && (
               // Working with nothing measured yet: say so with a track that
               // moves, never a determinate bar at a made-up number.

@@ -12,8 +12,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { openRender, type PdfSession } from '@/lib/pdf/core/render';
+import { describeEncryption, refusalReason, type PdfEncryption } from '@/lib/pdf/core/guard';
 import { formatFileSize } from '@/lib/utils/download';
-import type { FileRunState } from '@/stores/process-store';
+import type { FileLockState, FileRunState } from '@/stores/process-store';
 import { splitFileName } from './toolForm';
 import { ErrorPanel } from './ErrorPanel';
 import { usePageThumbnail } from './PageThumbs';
@@ -35,8 +36,7 @@ export interface FileCardsProps {
   /** Opens the picker again — the "add more" card. */
   onAddMore?: () => void;
   addMoreLabel?: string;
-  /**
-   * True while the page is already printing the failure these cards came from.
+  /** True while the page is already printing the failure these cards came from.
    *
    * The store writes the same message onto the file that broke it, so with a
    * single document an error would be said twice: once on the card, once on the
@@ -45,6 +45,27 @@ export interface FileCardsProps {
   errorShown?: boolean;
   /** Page one to show, when a tool is pointed at a specific page. */
   thumbnailPage?: number;
+  /**
+   * The job's open password — the secret typed on a card, if any.
+   *
+   * Held by `usePdfTool` and passed to the runner as `RunRequest.password`, the
+   * channel `openInputs` already reads. One secret per job, which is what the
+   * plumbing carries; a job with two locked files says so on the row rather than
+   * pretending the boxes are independent.
+   */
+  password?: string;
+  onPassword?: (value: string) => void;
+  /** True while a re-read prompted by a new secret is still in flight. */
+  passwordChecking?: boolean;
+  /**
+   * True when this tool asks for a password in its own form.
+   *
+   * Then the card states the lock and names that field instead of adding a second
+   * box beside it: two inputs for one secret is how a user ends up typing it into
+   * the wrong one. The tool's own field is the only box, and the runner's
+   * precedence can never see both filled.
+   */
+  toolOwnsPassword?: boolean;
 }
 
 const keyFor = (file: File): string => `${file.name}:${file.size}`;
@@ -140,10 +161,21 @@ export function FileCards({
   addMoreLabel = 'Add more',
   errorShown = false,
   thumbnailPage = 1,
+  password = '',
+  onPassword,
+  passwordChecking = false,
+  toolOwnsPassword = false,
 }: FileCardsProps) {
   const { sessions, failed } = useFileSessions(files, !imageInput);
   /** Which card is grabbed, and which gap its drop would land in. */
   const [drag, setDrag] = useState<{ from: number; gap: number } | null>(null);
+  // More than one locked file in the job: the secret is one string for all of
+  // them, and the row has to say that instead of offering two boxes that look
+  // like they hold two answers.
+  const lockedCards = files.filter((file) => {
+    const lock = states[file.name]?.lock ?? 'none';
+    return lock === 'needs-password' || lock === 'wrong-password';
+  }).length;
 
   const finish = (to: number) => {
     const from = drag?.from;
@@ -228,6 +260,16 @@ export function FileCards({
                 ? `${state.pages} ${state.pages === 1 ? 'page' : 'pages'}`
                 : 'counting pages…'}
             </p>
+            <FileLockRow
+              name={file.name}
+              lock={state?.lock ?? 'none'}
+              encryption={state?.encryption ?? null}
+              password={password}
+              onPassword={onPassword}
+              checking={passwordChecking}
+              toolOwnsPassword={toolOwnsPassword}
+              shared={lockedCards > 1}
+            />
             <div className="mt-2 flex items-center justify-between gap-1">
               <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
                 {cardStage(state)}
@@ -300,10 +342,15 @@ export function FileCards({
  * The queue's `rowStage` answers "where is this file in a running job"; a card on
  * the ready screen is not in a job yet, and printing its `Waiting` there told the
  * user something was queued when the button was simply waiting to be pressed. A
- * card with no file has nothing to say, so it gets no word.
+ * card with no file has nothing to say, so it gets no word. A file whose lock is
+ * still shut is not `Ready` either: the run would refuse it, and the word has to
+ * say so before the click rather than after.
  */
 function cardStage(state?: FileRunState): string {
   if (state?.error) return 'Stopped';
+  if (state?.lock === 'needs-password' || state?.lock === 'wrong-password' || state?.lock === 'unsupported') {
+    return 'Locked';
+  }
   return state?.pages == null ? 'Reading' : 'Ready';
 }
 
@@ -331,6 +378,136 @@ export function FileName({ name, className = 'mt-2' }: { name: string; className
         </span>
       )}
     </p>
+  );
+}
+
+/* ── the lock, stated on the file that carries it ─────────────────────────── */
+
+export interface FileLockRowProps {
+  /** The file this row speaks for, so the box can be named to a screen reader. */
+  name: string;
+  /** What the pre-flight's password check answered for this file. */
+  lock: FileLockState;
+  /** The file's own encryption dictionary, as `core/guard` classified it. */
+  encryption: PdfEncryption | null;
+  /** The job's secret, from `usePdfTool`. */
+  password: string;
+  onPassword?: (value: string) => void;
+  /** True while a re-read prompted by a new secret is still outstanding. */
+  checking?: boolean;
+  /** True when the tool declares a password field of its own. */
+  toolOwnsPassword?: boolean;
+  /** True when more than one file in this job needs a secret. */
+  shared?: boolean;
+}
+
+/**
+ * What this file's lock is, and the one place its password can be typed.
+ *
+ * An `/Encrypt` entry states two things: which cipher the bytes carry, and which
+ * secret opens it. The app asked for that secret only inside a tool that declared a
+ * password field — four tools — so every other one refused an AES-128 file outright
+ * while `core/crypto` could read it back as words. The fact about the file lives on
+ * the card, so that is where the entry goes: one component, and the ~120 tools that
+ * ask nothing gain it at once.
+ *
+ * Three rules keep the row honest:
+ *
+ * - it names the cipher **and the revision** the dictionary actually spells, never a
+ *   strength the file does not carry;
+ * - a cipher this app cannot undo is refused with the same clause the run gives, and
+ *   gets **no box** — a control that cannot change the output is the kind this
+ *   campaign keeps deleting;
+ * - "no password yet" and "that password is wrong" are said differently, because one
+ *   is a request and the other is a correction.
+ *
+ * When the tool has its own password field, the row states the lock and names that
+ * field instead of stacking a second box beside it: two inputs for one secret is how
+ * a user ends up typing it into the wrong one.
+ */
+export function FileLockRow({
+  name,
+  lock,
+  encryption,
+  password,
+  onPassword,
+  checking = false,
+  toolOwnsPassword = false,
+  shared = false,
+}: FileLockRowProps) {
+  if (lock === 'none' || !encryption) return null;
+  const ciphered = encryption.state === 'ciphered';
+  const headline = ciphered
+    ? `Encrypted with ${describeEncryption(encryption)}`
+    : `Password gate, ${describeEncryption(encryption)}`;
+  const asks = (lock === 'needs-password' || lock === 'wrong-password') && !toolOwnsPassword;
+
+  let tone = 'border-cream-border bg-cream-soft/70 text-ink-soft';
+  let text: string;
+  if (lock === 'unsupported') {
+    tone = 'border-warn/25 bg-warn/5 text-warn';
+    text = `Left alone because ${refusalReason(encryption) ?? 'this app cannot undo this cipher'}. Its password does not change that: a tool that rebuilds the file refuses it and says why.`;
+  } else if (lock === 'opens-empty') {
+    text = ciphered
+      ? 'Its user password is empty, so the pages open with nothing typed.'
+      : 'It opens with nothing typed: the flags ask a reader to behave, and there is no cipher to undo.';
+  } else if (lock === 'opened') {
+    tone = 'border-success/25 bg-success/5 text-success';
+    text = 'Password accepted — the pages are readable.';
+  } else if (lock === 'wrong-password') {
+    tone = 'border-danger/25 bg-danger/5 text-danger';
+    text = toolOwnsPassword
+      ? 'That is not the password for this file. Correct it in this tool’s own password box.'
+      : 'That is not the password for this file — it is still closed. Try again.';
+  } else {
+    tone = 'border-warn/25 bg-warn/5 text-warn';
+    text = toolOwnsPassword
+      ? 'This file needs its password to be opened, and this tool asks for it in its own options.'
+      : 'This file needs its password before anything here can read its pages.';
+  }
+
+  return (
+    // A drag started inside the box is a text selection, not a reorder: the card
+    // is draggable on multi-file tools, and stealing the gesture made the field
+    // impossible to edit.
+    <div
+      className={`mt-1.5 space-y-1 rounded-doodle border p-1.5 ${tone}`}
+      data-file-lock={lock}
+      onDragStart={(event) => event.stopPropagation()}
+    >
+      <p className="font-mono text-[9px] uppercase leading-snug tracking-[0.08em]" data-file-cipher>
+        {headline}
+      </p>
+      <p className="text-[10px] leading-snug">{text}</p>
+      {asks && (
+        <label className="block space-y-1">
+          <span className="font-mono text-[9px] uppercase tracking-[0.08em]">
+            Password for this file
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => onPassword?.(event.target.value)}
+            placeholder="Opens this file"
+            aria-label={`Open password for ${name}`}
+            data-file-password={name}
+            autoComplete="off"
+            spellCheck={false}
+            className={`doodle-input w-full px-2 py-1 text-[11px] ${FOCUS_RING}`}
+          />
+          {shared && (
+            <span className="block text-[9px] leading-snug opacity-80">
+              One secret per job: this applies to every locked file here.
+            </span>
+          )}
+          {checking && (
+            <span className="block font-mono text-[9px] uppercase tracking-[0.08em]" data-lock-checking>
+              re-reading…
+            </span>
+          )}
+        </label>
+      )}
+    </div>
   );
 }
 

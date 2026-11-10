@@ -344,15 +344,39 @@ export async function runPdfTool(request: RunRequest): Promise<RunOutcome> {
     });
   }
 
-  // A tool may collect the password in its own form (`Unlock`, `Change
-  // permissions`, `Remove restrictions`) or rely on the shared gate in the
-  // sidebar. Either source has to reach `openPDF`, otherwise opening the file
-  // fails before the tool can use the password it was just given.
+  // Two places can hold the secret, and only one of them may win.
+  //
+  // A tool that declares a password field is asking a question of its own, and the
+  // answer belongs to that tool: Unlock wants the current password, Protect wants
+  // the one the *copy* will carry, Change permissions wants the owner secret. The
+  // card's box exists for the other ~120 tools, which ask nothing and would
+  // otherwise refuse a cipher this app can undo — and theirs is the secret that
+  // opens the bytes, so it wins:
+  //
+  //     shared secret (typed on the file's card, or passed by a caller) → the tool's own field
+  //
+  // That order is also the only one `Protect` can survive: typing the new password
+  // into its form must not be mistaken for the password an already-locked input
+  // opens with. The surface keeps the two apart structurally — `FileLockRow` hides
+  // its box whenever the tool declares a field — so a user ever sees exactly one
+  // box per job, and either way the value has to reach `openPDF` before the tool
+  // runs, or the file fails to open in front of the password it was just given.
   const declared = (tool.fields ?? [])
     .filter((field) => field.type === 'password')
     .map((field) => values[field.key])
     .find((value): value is string => typeof value === 'string' && value.length > 0);
   const effectivePassword = request.password || declared;
+  // Which box did the work, said out loud and without echoing the value: a user who
+  // typed a secret somewhere should be able to see that it was *that* box which
+  // opened the file, and a log line is the one place this is stated as a fact about
+  // the run rather than as a layout hint.
+  if (effectivePassword) {
+    onLog(
+      request.password
+        ? 'Opening the inputs with the password supplied for the file itself.'
+        : 'Opening the inputs with the password this tool’s own form holds.',
+    );
+  }
 
   const inputs = request.files.map(toToolFile);
   // The wrong *kind* of file is refused here, before the tool opens anything:

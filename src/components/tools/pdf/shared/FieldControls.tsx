@@ -145,8 +145,7 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           {api.needsPassword && (
             <div className="w-[240px] space-y-1">
-              <PasswordGate api={api} />
-              <LockedNotice visible={api.locked} />
+              <LockedNotice visible={api.locked} problem={api.lockProblem} />
             </div>
           )}
 
@@ -285,29 +284,34 @@ export function NotesPanel({ notes, defaultOpen }: { notes: string[]; defaultOpe
   );
 }
 
-function PasswordGate({ api }: { api: UsePdfTool }) {
-  return (
-    <label className="block space-y-1">
-      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted">
-        PDF password
-      </span>
-      <input
-        type="password"
-        value={api.password}
-        onChange={(event) => api.setPassword(event.target.value)}
-        placeholder="Not required unless the file is protected"
-        className="doodle-input"
-        autoComplete="off"
-      />
-    </label>
-  );
-}
-
-function LockedNotice({ visible }: { visible: boolean }) {
+/**
+ * The nudge after a run that stopped at the password.
+ *
+ * Two failures, two asks. `needed` is "give me something I do not have"; `wrong`
+ * is "what you typed was not it". One sentence for both sends a user off to hunt
+ * for a secret they just tried, which is the same class of bug as a refusal that
+ * names the wrong reason — so the notice reads the code the guard raised.
+ *
+ * It points at the tool's own field, not at a box of this panel's: the generic
+ * gate that used to live here wrote the same secret from a second input, and
+ * "which of these two does Unlock read?" had no answer on the page.
+ */
+function LockedNotice({
+  visible,
+  problem,
+}: {
+  visible: boolean;
+  problem: 'needed' | 'wrong' | null;
+}) {
   if (!visible) return null;
   return (
-    <p className="rounded-doodle-md border border-warn/25 bg-warn/5 p-2 text-[10px] leading-relaxed text-warn">
-      This PDF is password protected. Enter its password above and run again.
+    <p
+      data-password-notice={problem ?? 'needed'}
+      className="rounded-doodle-md border border-warn/25 bg-warn/5 p-2 text-[10px] leading-relaxed text-warn"
+    >
+      {problem === 'wrong'
+        ? 'That password did not open this PDF — it is still closed. Correct it in this tool’s password field, then run again.'
+        : 'This PDF needs its password before it can be opened. Type it in this tool’s password field, then run again.'}
     </p>
   );
 }

@@ -249,6 +249,10 @@ function ReadyPane({ api, intake, copy, before, onDone, state, touched }: ReadyP
             onReorder={(from, to) => reorderFiles(from, to)}
             onAddMore={intake.open}
             addMoreLabel={multiple ? 'Add more' : 'Use another file'}
+            password={api.password}
+            onPassword={api.setPassword}
+            passwordChecking={api.lockChecking}
+            toolOwnsPassword={api.needsPassword}
           />
         </section>
 
