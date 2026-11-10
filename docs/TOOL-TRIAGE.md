@@ -406,7 +406,10 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   neither the bytes nor the download name. So the promise is reachable, and the copy is
   **fully open** — the dictionary goes, which takes the user password with it; the sibling
   that lifts restrictions and keeps a dictionary is `change-permissions action: set`, whose
-  10 files carry `/P = -3104` where every fixture arrived at `-3376`. What still refuses,
+  10 files carry `/P = -3104` where every fixture arrived at `-3376`, and lift those flags
+  under MuPDF only for the owner secret the tool was given (`auth=4 permissions=-4`; the
+  empty user secret answers `auth=2` with the flags still in force, a wrong one `auth=0`).
+  What still refuses,
   and owns the refusal: nothing typed on a file with a non-empty **user** secret asks for it
   (`PASSWORD_REQUIRED`, `passwordRequired=true`), and AES-256 under a handler revision this
   app does not derive is refused by `core/guard.ts`, naming
