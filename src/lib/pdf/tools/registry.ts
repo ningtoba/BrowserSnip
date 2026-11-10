@@ -247,14 +247,18 @@ export function visibleFields(
  * renamed component fails loudly here instead of rendering a blank pane.
  *
  * **Keys are canonical ids, and the lookups below fold before they read.** A
- * folded id (`redact`, `compare`, `edit-pdf-text`) is a spelling rather than a
- * tool: the route resolves it to its canonical tool before any surface is chosen,
- * so a key written only in the old spelling is a pane that can never mount. That is
- * how `8bb1c49` left `#/tool/redact-pdf` with a redaction canvas and no apply
- * button. The folded keys kept below are the ids the *definition* is looked up by
- * elsewhere (the text editor's tests, the bookmarks), and each one has its
- * canonical twin beside it — which is the difference between a duplicate and a
- * stranding.
+ * folded id (`compare`, `edit-pdf-text`) is a spelling rather than a tool: the route
+ * resolves it to its canonical tool before any surface is chosen, so a key written
+ * only in the old spelling is a pane that can never mount. That is how `8bb1c49` left
+ * `#/tool/redact-pdf` with a redaction canvas and no apply button. The folded keys kept
+ * below are the ids the *definition* is looked up by elsewhere (the text editor's
+ * tests, the bookmarks), and each one has its canonical twin beside it — which is the
+ * difference between a duplicate and a stranding.
+ *
+ * `redact` is not among them any more. Its definition was a second tool for a job
+ * `redact-pdf` already owned, so retiring the definition (`tools/edit.ts`) took its
+ * pane key with it; `TOOL_ALIASES` still folds the id, which is what keeps the old URL
+ * and the old star working, and the canonical twin is the only surface left.
  */
 const MAIN_VIEWS: Record<string, LazyExoticType> = {
   organize: lazy(() => import('@/components/tools/pdf/organize/PageOrganizer')),
@@ -273,7 +277,6 @@ const MAIN_VIEWS: Record<string, LazyExoticType> = {
   // reads this map to divide the registry into generated and hand-written pages, and
   // `edit-pdf-text` has no `run` of its own, so dropping its key there would call it
   // a generated tool that cannot run.
-  redact: lazy(() => import('@/components/tools/pdf/security/RedactMain').then(asDefault('RedactMain'))),
   compare: lazy(() => import('@/components/tools/pdf/security/CompareMain').then(asDefault('CompareMain'))),
   'edit-pdf-text': lazy(() => import('@/components/tools/pdf/editor/PdfEditorSurface').then(asDefault('PdfEditorSurface'))),
 };

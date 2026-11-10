@@ -33,11 +33,12 @@ const REDACT_TOOL = getPdfTool('redact-pdf');
  * Turn a region from the frame the marks are stored in to the frame the tool wants.
  *
  * `redactionRegions` reports a box in the engine's own space: points from the
- * bottom of the displayed page, which is what `redact` (typed `page:x,y,w,h`
- * regions) and the annotation editor both speak. `redact-pdf` takes the mark as
- * the user sees it — origin top-left — and turns it back through `frameOf` itself,
- * because a box drawn over the mirrored band redacts the wrong line. The flip is
- * the difference, and one page height of it: the words survive, the bar lands.
+ * bottom of the displayed page, which is what the annotation editor speaks (and what
+ * the retired `redact` definition took as typed `page:x,y,w,h` entries). `redact-pdf`
+ * takes the mark as the user sees it — origin top-left — and turns it back through
+ * `frameOf` itself, because a box drawn over the mirrored band redacts the wrong line.
+ * The flip is the difference, and one page height of it: the words survive, the bar
+ * lands.
  */
 function displayedRegions(
   regions: { page: number; x: number; y: number; width: number; height: number }[],

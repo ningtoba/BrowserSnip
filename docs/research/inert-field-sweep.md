@@ -47,9 +47,9 @@ property (`values.font` in `readTextStyle`).
   * `redact-pdf.alsoMetadata` — "Also clear matching text from metadata and bookmarks".
     The run does read it (`tools/security.ts:714, 729`), but `redact-pdf` mounts
     `RedactMain` as its surface and the shell renders no generated rail beside a main
-    view, while `RedactTool` — the panel for the folded `redact` id — sends only
-    `{ regions, fill }`. So on `/tool/redact-pdf` the switch never appears and the value
-    is whatever `default: true` says.
+    view, while `RedactTool` — the panel the route resolves for the redaction job —
+    sent only `{ regions, fill }`. So on `/tool/redact-pdf` the switch never appears and
+    the value is whatever `default: true` says.
     *Measured and wired*: the run honours it (the two outputs differ, and `pypdf` reads
     `/Title` `'Zephyr Bravo Content'` with the switch off against `None` with it on, the
     bookmark title intact against `[redacted]`), and the panel now renders the definition's
@@ -103,6 +103,35 @@ property (`values.font` in `readTextStyle`).
   control. `compare-pdfs` was measured, not assumed: its panel was already keyed
   canonically and mounts once the two documents it asks for are loaded — judging a
   two-file tool with one file invents a defect.
+* **A definition left standing after its fold** — the half of that story `cafea60`
+  could not fix, and a routing pass found rather than the census: folding `redact` into
+  `redact-pdf` kept `redact`'s own entry in `tools/edit.ts`, so the registry still
+  answered `getPdfTool('redact')` with a registered tool ("Redact Regions", `run`, fields
+  and all) that no route could reach — `TOOL_CATALOGUE` already left it out, and the
+  surface behind `/tool/redact` was `redact-pdf`'s, because the route folds before it
+  picks a pane. Its only exercisers were tests calling the definition directly, which is
+  precisely the state a fold leaves behind and precisely what no count notices.
+  **Retired**, and `redact-pdf` kept as the one tool for the job: the entry and its
+  `ANNOTATION_SURFACE_FIELDS` list are gone, `MAIN_VIEWS` no longer carries a `redact`
+  key, and the byte tests that used to drive the dead definition now drive `redact-pdf`
+  on the same documents (`tests/pdf/edge-edit.test.ts`, `tests/pdf/edit-bytes.test.ts`).
+  What the retired id still has to do is keep working for a visitor who already used
+  it, and that is pinned twice over: `canonicalToolId('redact')` still folds and
+  `/tool/redact` still lands on the redaction panel with its apply control
+  (`tests/pdf/field-reach.test.ts`), the palette and the job-word table still answer the
+  word with `redact-pdf` (`tests/app/shell.test.tsx`,
+  `tests/pdf/parity-definitions.test.ts`), and the pane maps hold no orphan key
+  (`tests/pdf/parity-surface.test.ts`). The id itself stays in
+  `TOOL_ALIASES`, in `ToolId` and in the download-suffix switch beside `compare`,
+  because those three spell out *ids a bookmark or a stored session can carry*, not
+  tools the app offers.
+  *What it cost: nothing a user could reach.* The retired entry's own note offered
+  "type page:x,y,w,h entries", but its `regions` field belonged to a rail that never
+  mounted beside the pane — `redact-pdf` takes its regions from the marks on the canvas,
+  and `add-stamps` still parses the same `page:x,y,w,h` grammar for its placements
+  field. The catalogue count is unchanged at **121** tools (`PDF_TOOL_COUNT` reads
+  `TOOL_CATALOGUE.length`; the retired id was already folded out of it), and
+  `PDF_TOOLS` — every id the registry answers — went from 124 to 123.
 * A value that reaches the output only to be overwritten downstream. `scan-to-pdf`'s
   `fit` is the standing example: the pane pins `fit: 'contain'` in its own `run({...})`
   overrides, so the definition's three-way `Fit` select cannot be reached from the page

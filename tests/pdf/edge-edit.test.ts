@@ -917,27 +917,56 @@ describe('stamps, annotations and redaction (E9, E13, E15)', () => {
     expect(Math.max(mark.rect.width, mark.rect.height)).toBeLessThanOrEqual(105);
   });
 
-  it('explains regions it had to trim or ignore (E15)', async () => {
-    // The fixture writes its body text at y=782, so these boxes land on it.
+  // The two rows that used to drive the `redact` definition now drive `redact-pdf`,
+  // the tool that owns the job since `8bb1c49` folded the id and `cafea60` made the
+  // pane reachable. Same findings, same documents, read back out of the produced
+  // bytes — and one frame change worth naming: `redact` took rects in the engine's
+  // bottom-left space, while `redact-pdf` takes the mark as the pane shows it (the
+  // page as displayed, origin top-left) and turns it back itself. The boxes below are
+  // the same bands with one page height of arithmetic applied, not new cases.
+  it('explains the box it skipped and refuses a mark on a page the file does not have (E15, E13)', async () => {
+    // The fixture draws its body line at user-space y 782 of an 841.89 pt sheet, so
+    // the band over it starts 841.89 - 794 = 47.89 pt below the top edge.
     const bytes = await fixture([
       { size: A4, text: 'Fixture body one' },
       { size: A4, text: 'Fixture body two' },
     ], 'redact');
-    const outcome = await run('redact', { regions: '1:40,770,600,24;2:20,770,200,24;3:0,0,10,10;garbage' }, [bytes]);
-    const joined = outcome.warnings.join('\n');
-    expect(joined).toMatch(/A box on page 1 hung past the edge of the page/i);
-    expect(joined).toMatch(/1 box named a page outside this 2-page document/i);
-    expect(joined).toMatch(/1 entry could not be read/i);
-    expect(outcome.message).toMatch(/Redacted 2 boxes, deleting \d+ text runs?/i);
+    const outcome = await run('redact-pdf', {
+      regions: [
+        // 600 pt wide on a 595.28 pt page: it overhangs the right edge, and the line
+        // under it still goes. `redact` trimmed and announced this; `redact-pdf`
+        // simply covers what it covers, which is the behaviour worth pinning now.
+        { page: 0, x: 40, y: 48, width: 600, height: 24 },
+        { page: 1, x: 20, y: 48, width: 200, height: 24 },
+        { page: 1, x: 20, y: 48, width: 0, height: 24 },
+      ],
+    }, [bytes]);
+    expect(outcome.message).toMatch(/Redacted 2 text run\(s\) under 2 area\(s\)/i);
+    expect(outcome.warnings.join('\n')).toMatch(/1 marked area\(s\) had no width or height and were skipped/i);
     const doc = await openPDF(await outputBytes(outcome));
-    expect(drawnRuns(doc.getPage(0)).map((entry) => entry.text).join(' ')).not.toMatch(/Fixture body/);
+    expect(doc.getPageCount()).toBe(2);
+    for (const sheet of [0, 1]) {
+      expect(
+        drawnRuns(doc.getPage(sheet)!).map((entry) => entry.text).join(' '),
+        `page ${sheet + 1} still holds the line the band covered`,
+      ).not.toMatch(/Fixture body/);
+    }
+    // A mark on a page outside the document is named, not quietly dropped.
+    await expect(
+      run('redact-pdf', { regions: [{ page: 4, x: 40, y: 48, width: 200, height: 24 }] }, [bytes]),
+    ).rejects.toThrow(/targets page 5, but this document has 2 pages/i);
   });
 
-  it('refuses to redact nothing at all (E13)', async () => {
-    await expect(run('redact', { regions: '' })).rejects.toThrow(/draw at least one redaction box/i);
-    const empty = await run('redact', { regions: '1:20,20,40,20' });
-    expect(empty.outputs).toHaveLength(0);
-    expect(empty.message).toMatch(/no region removed anything/i);
+  it('refuses to redact nothing at all, and says which case it is (E13)', async () => {
+    const bytes = await fixture([{ size: A4, text: 'Fixture body one' }], 'redact');
+    await expect(run('redact-pdf', { regions: [] })).rejects.toThrow(/draw at least one redaction rectangle/i);
+    // A box over blank paper still paints its fill and still returns a file — but it
+    // is not counted as a redaction, and it leaves the text it missed alone.
+    const blank = await run('redact-pdf', { regions: [{ page: 0, x: 20, y: 400, width: 40, height: 20 }] }, [bytes]);
+    expect(blank.message).toMatch(/none of them held text, so nothing was deleted/i);
+    expect(blank.outputs).toHaveLength(1);
+    const kept = await openPDF(await outputBytes(blank));
+    expect(drawnRuns(kept.getPage(0)!).map((entry) => entry.text).join(' ')).toMatch(/Fixture body one/);
   });
 
   it('reports an empty annotation hunt instead of shipping the file back (E13)', async () => {

@@ -431,12 +431,14 @@ describe('redact marks words, not rectangles', () => {
     expect(clamped[0].y).toBe(0);
   });
 
-  it('the tool sends the lines it was given and says the text is deleted, not covered', async () => {
-    const tool = getPdfTool('redact');
+  it('the tool says the text is deleted, not covered, and one definition owns the job', async () => {
+    const tool = getPdfTool('redact-pdf');
     expect(`${tool?.promise ?? ''} ${tool?.notes?.join(' ') ?? ''}`).toMatch(
-      /deleted from the page content/i,
+      /deletes glyphs from page content/i,
     );
-    expect(tool?.fields?.map((field) => field.key)).toContain('regions');
+    // `redact` was the second definition of this job. Its id still routes (the pane
+    // and the byte tests are in `field-reach` / `edge-edit`); it is no longer a tool.
+    expect(getPdfTool('redact')).toBeUndefined();
   });
 });
 

@@ -417,17 +417,6 @@ const ANCHOR_OPTIONS = [
   { value: 'bottom-right', label: 'Bottom right' },
 ];
 
-const ANNOTATION_SURFACE_FIELDS = [
-  {
-    key: 'regions',
-    label: 'Regions',
-    type: 'text' as const,
-    default: '',
-    group: 'Marking',
-    help: 'Fill in from the page editor, or type page:x,y,w,h entries separated by semicolons.',
-  },
-];
-
 /** The six text slots a header/footer run can fill, in draw order. */
 const HEADER_SLOTS = ['headerLeft', 'headerCenter', 'headerRight'] as const;
 const FOOTER_SLOTS = ['footerLeft', 'footerCenter', 'footerRight'] as const;
@@ -2001,63 +1990,15 @@ export const editTools: PdfToolDefinition[] = [
     },
   },
 
-  {
-    id: 'redact',
-    // The catalogue already carries `redact-pdf` (the annotation editor's redaction
-    // pane). Two entries named "Redact PDF" is one job the user cannot tell apart,
-    // so this one is named for what it takes: boxes, drawn or typed.
-    name: 'Redact Regions',
-    description: 'Permanently delete text and regions, not just cover them',
-    icon: '⬛',
-    category: 'security',
-    keywords: ['blackout', 'remove sensitive data', 'censor', 'gdpr'],
-    surface: 'surface',
-    outputSuffix: '_redacted.pdf',
-    actionLabel: 'Redact',
-    promise: 'The text under each box is deleted from the page content, then a solid fill is painted — not a sticky note over the top.',
-    notes: [
-      'Where a box covers an image, the page is re-rendered and loses selectable text; the result says so.',
-      'Draw the boxes on the page, or type page:x,y,w,h entries; a box that hangs off the edge is trimmed and reported.',
-    ],
-    fields: [
-      { key: 'fill', label: 'Redaction colour', type: 'color', default: '#000000', group: 'Marking', help: 'Painted on after the text underneath is deleted, so any colour is equally safe — black is convention, not the mechanism.' },
-      ...ANNOTATION_SURFACE_FIELDS,
-    ],
-    async run(context) {
-      const notes: string[] = [];
-      const [input] = await openInputs(context);
-      const { applyRedactions } = await import('../core/redact');
-      const regions = parseRegions(context.values['regions'], input.doc, notes);
-      if (regions.length === 0) {
-        throw new Error(`Draw at least one redaction box on the page, or enter page:x,y,w,h regions. ${notes[0] ?? ''}`.trim());
-      }
-      const outcome = applyRedactions(
-        input.doc,
-        regions.map((r) => ({ page: r.page, rect: { x: r.x, y: r.y, width: r.width, height: r.height } })),
-        { fill: stringValue(context.values, 'fill', '#000000') },
-      );
-      if (outcome.removed === 0) {
-        // E13: a box over blank paper is not a redaction.
-        return admit(
-          reportResult(
-            [{
-              title: 'Nothing was redacted',
-              text: `None of the ${countLabel(regions.length, 'box', 'boxes')} you selected covered anything this redactor can remove, so the document is unchanged.`,
-            }],
-            { message: 'No region removed anything — the file is unchanged.' },
-          ),
-          notes,
-        );
-      }
-      return pdfOutput(
-        input.doc,
-        notes,
-        outcome.rasterised
-          ? `Redacted ${countLabel(regions.length, 'box', 'boxes')}, deleting ${countLabel(outcome.removed, 'text run')}. Some covered images, so those pages were re-rendered and lost selectable text.`
-          : `Redacted ${countLabel(regions.length, 'box', 'boxes')}, deleting ${countLabel(outcome.removed, 'text run')} — the underlying text is gone, not hidden.`,
-      );
-    },
-  },
+  // The `redact` entry that used to close this list is retired. `8bb1c49` folded the
+  // id into `redact-pdf` (see `TOOL_ALIASES` in `registry.ts`), `cafea60` made the
+  // canonical pane reachable again, and from that moment nothing in the app ran this
+  // definition: the route folds before it picks a surface, so `/tool/redact` mounts
+  // `redact-pdf`'s canvas and panel, and the `regions` text field that carried this
+  // tool's typed `page:x,y,w,h` grammar belonged to a rail that never mounts beside a
+  // pane. The id still answers its URL; the second definition of one job does not.
+  // `tests/pdf/edge-edit.test.ts` runs the job on `redact-pdf`, and
+  // `tests/pdf/field-reach.test.ts` pins that the folded route reaches it.
 ];
 
 // ── helpers ─────────────────────────────────────────────────────────────────

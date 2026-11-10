@@ -1093,7 +1093,13 @@ describe('remove-annotations and redact delete from the bytes', () => {
   });
 
   it('deletes the text under a redaction box rather than covering it', async () => {
-    const outcome = await runPdf('redact', { regions: '1:40,772,200,18', fill: '#000000' }, [
+    // The mark is the band over the fixture's line (user-space y 781.89 of an
+    // 841.89 pt sheet) in the frame the redaction pane hands the tool: the page as
+    // displayed, origin top-left.
+    const outcome = await runPdf('redact-pdf', {
+      regions: [{ page: 0, x: 40, y: 52, width: 200, height: 18 }],
+      fill: '#000000',
+    }, [
       { text: 'secret sentence here' },
     ]);
     const doc = await reopen(outcome);

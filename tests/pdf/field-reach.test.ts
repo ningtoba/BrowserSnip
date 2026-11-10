@@ -28,12 +28,12 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import { TOOL_CATALOGUE, canonicalToolId, getPdfTool, isToolAlias } from '@/lib/pdf/tools/registry';
@@ -297,6 +297,17 @@ function paneMapKeys(file: string, mapName: string): string[] {
   return [...block.matchAll(/^\s{2}'?([a-z0-9]+(?:-[a-z0-9]+)*)'?:/gm)].map((match) => match[1]!);
 }
 
+/** Every TypeScript/TSX file under `dir`, for the source-wide scans below. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = resolve(dir, entry.name);
+    if (entry.isDirectory()) out.push(...sourceFiles(path));
+    else if (/\.[cm]?tsx?$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
 const PANEL_KEYS = paneMapKeys('src/components/layout/ToolWorkspace.tsx', 'PDF_PANELS');
 const MAIN_KEYS = paneMapKeys('src/lib/pdf/tools/registry.ts', 'MAIN_VIEWS');
 
@@ -392,6 +403,72 @@ describe('a route reaches a control that runs its tool', () => {
     ]);
     expect(problems).toEqual([]);
   }, 240_000);
+
+  it('answers the retired id’s URL with the panel that runs the surviving tool', async () => {
+    // `redact` was registered beside `redact-pdf`, and `8bb1c49` folded it away while
+    // its definition stayed behind: a tool nothing mounted and no test ran. The
+    // definition is retired now, so the bookmark has exactly one job — land on the
+    // tool that owns redaction — and this measures that it does.
+    const source = await secretPdf();
+    let path = '';
+    const Probe = () => {
+      path = useLocation().pathname;
+      return null;
+    };
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/tool/redact'] },
+        createElement(Probe, null),
+        createElement(
+          Routes,
+          null,
+          createElement(Route, { path: '/tool/:toolId', element: createElement(ToolWorkspace) }),
+        ),
+      ),
+    );
+    act(() => {
+      useFileStore.setState({ file: fileOf(source, 'doc.pdf'), files: [fileOf(source, 'doc.pdf')] });
+      const store = useProcessStore.getState();
+      store.setOutput(new Blob(['%PDF-1.7 out'], { type: 'application/pdf' }), 'blob:retired', 'out.pdf');
+      store.complete('Done.');
+      store.setPhase('done');
+    });
+    await waitFor(
+      () => {
+        expect(path).toBe('/tool/redact-pdf');
+        if (!document.querySelector('#tool-process-btn')) {
+          throw new Error('the folded route mounted no panel that runs redaction');
+        }
+        // The panel is the redaction one, in its own words — not a generated rail
+        // standing in for a tool whose definition is gone.
+        expect(document.body.textContent).toMatch(/Permanent redaction/);
+      },
+      { timeout: 6000, interval: 50 },
+    );
+    // And the retired id is not quietly still a tool.
+    expect(getPdfTool('redact')).toBeUndefined();
+    expect(canonicalToolId('redact')).toBe('redact-pdf');
+    cleanup();
+  }, 240_000);
+
+  it('leaves no caller behind for a retired definition', () => {
+    // A `run` nobody reaches is how `redact` survived its fold: the only witnesses were
+    // its own tests, and those went when the definition did. This scans what the app
+    // compiles for the ways a file asks the registry for a tool by id, so a retired
+    // definition cannot quietly grow a caller that reads `undefined` at runtime — and so
+    // the next retirement is checked the same way rather than by someone's memory.
+    const lookups = /(?:getPdfTool|usePdfTool|suffixFor|enginesFor)\(\s*'redact'\s*\)|(?:toolId|activeTool)\s*[:=]\s*'redact'/;
+    const hits = sourceFiles(resolve(process.cwd(), 'src')).filter((file) => lookups.test(readFileSync(file, 'utf8')));
+    expect(hits.map((file) => file.replace(`${process.cwd()}/`, '')).sort()).toEqual([]);
+    // The panel that owns the job names the canonical id and nothing else.
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/components/tools/pdf/security/RedactTool.tsx'),
+      'utf8',
+    );
+    expect(panel).toMatch(/getPdfTool\('redact-pdf'\)/);
+    expect(panel.match(/'redact'/g) ?? []).toEqual([]);
+  });
 });
 
 // ══ 3. redact-pdf: the switch the panel offers is the switch the bytes obey ═

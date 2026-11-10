@@ -107,9 +107,12 @@ const generated = PDF_TOOLS.filter((tool: PdfToolDefinition) => !bespokeIds.has(
 /**
  * The tools the generated page does not own, by id.
  *
- * `redact` and `compare` are folded ids: their routes answer at the canonical
- * address, but the pane maps still resolve them, because a definition looked up
- * directly by id has to keep working.
+ * `compare` and `edit-pdf-text` are folded ids that still have a definition: their
+ * routes answer at the canonical address, and the pane maps keep a key for each
+ * because a definition looked up directly by id has to keep working. `redact` is not
+ * in the list and not in the maps any more — its definition was retired (see
+ * `tools/edit.ts`), so the id is a fold over `redact-pdf` with no second tool, and no
+ * second pane, behind it.
  */
 const EXPECTED_BESPOKE = [
   'add-stamps',
@@ -121,7 +124,6 @@ const EXPECTED_BESPOKE = [
   'form-filler',
   'organize',
   'pdf-crop',
-  'redact',
   'redact-pdf',
   'scan-to-pdf',
   'sign',
@@ -253,6 +255,22 @@ describe('the catalogue lists jobs, not ids', () => {
       // The old spelling is still a tool the registry can answer for.
       expect(getPdfTool(alias), `${alias} is no longer resolvable`).toBeTruthy();
     }
+  });
+
+  it('keeps a retired tool as a fold, not as a phantom tool', () => {
+    // `redact` was the second definition of the redaction job. Retiring it has to
+    // keep the two things a visitor actually relies on — the URL and the search word
+    // — while removing the thing nobody could use: a registered tool with no surface.
+    expect(isToolAlias('redact'), 'the id stopped folding; a bookmark now 404s').toBe(true);
+    expect(canonicalToolId('redact')).toBe('redact-pdf');
+    expect(getPdfTool('redact'), 'a definition survived the retirement').toBeUndefined();
+    expect(catalogueIds).not.toContain('redact');
+    expect(mainViewFor('redact'), 'the folded id resolves no surface').toBeTruthy();
+    expect(hasCustomMainView('redact')).toBe(true);
+    // And the fold must not be a key in a pane map any more: that is a pane whose
+    // tool does not exist, which is how `redact-pdf` lost its apply button once.
+    const keys = new Set<string>([...MAIN_VIEWS.map((route: PaneRoute) => route.id), ...PANELS.map((route: PaneRoute) => route.id)]);
+    expect([...keys]).not.toContain('redact');
   });
 
   it('resolves every catalogue entry to a surface a visitor can use', () => {

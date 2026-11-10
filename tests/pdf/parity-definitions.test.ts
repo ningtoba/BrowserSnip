@@ -436,7 +436,7 @@ describe('discovery by job words', () => {
     ['sign', 'sign'],
     ['password', 'protect'],
     ['remove password', 'unlock'],
-    ['redact', 'redact'],
+    ['redact', 'redact-pdf'],
     ['watermark', 'watermark'],
     ['page numbers', 'page-numbers'],
     ['word to pdf', 'word-to-pdf'],
