@@ -1,0 +1,60 @@
+# `remove-restrictions` on the deployed site, and what other people's readers said about the download
+
+Two runs of `scripts/live-remove-restrictions-proof.mjs` against
+`https://www.browsersnip.com` (the build deployed from this branch), each driven the
+way a person drives it: open the tool, drop the file, read what the file's card says
+about the lock, type the open password into the box on that card, press
+**Remove restrictions**, press **Download**. Then the downloaded bytes are judged by
+libqpdf, MuPDF, pypdf and poppler — never by the card.
+
+The first file is `tests/fixtures/encrypted/aes-256-user.pdf`: written by libqpdf
+12.3.2, `/V 5 /R 6 /CFM /AESV3`, user secret `hunter2`, `/P = -3376` (print, edit,
+copy, annotate, form-fill and assemble refused). The second is its
+**restricted-but-openable** twin `aes-256-owner.pdf`, whose user secret is empty, so
+that run types nothing at all — it is the shape the triage row's own words call
+"password protected" while five readers call it open.
+
+`has_encrypt_key` / `has_P_key` / `has_CFM_key` are greps of the download for the
+trailer entry, the permission dictionary and the crypt filter; `*_opens_with_no_password`
+/ `mupdf_needs_pass` are the gate; `mupdf_permissions = -4` is every restriction bit
+set; `mupdf_planted_pages` counts the sheets still carrying the planted sentence;
+`mupdf_ink_page1_percent` is the non-white share of a 72 dpi raster of sheet 1, which
+is the fixture's own 1.51 %; `mupdf_toc_entries` is the two-level outline;
+`qpdf_check_exit` is `qpdf --check`; `secret_in_bytes` is the typed password in the
+clear.
+
+## the user-password run (`hunter2` typed into the file card)
+
+# https://www.browsersnip.com · remove-restrictions · aes-256-user.pdf · secret "hunter2"
+route : #/tool/remove-restrictions
+intake: file input present, accept=.pdf,application/pdf
+card  : ENCRYPTED WITH AES-256 (CRYPT FILTER /STDCF, REVISION 6) /  / This file needs its password before anything here can read its pages. /  / PASSWORD FOR THIS FILE
+typed : typed into aes-256-user.pdf · aria-label="Open password for aes-256-user.pdf"
+run   : clicked <button> Remove restrictions
+result: Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
+notes : Page 1 of 3 of aes-256-user_unrestricted.pdf, drawn in this tab — a picture of the file, not the file itself. / aes-256-user_unrestricted.pdf / Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
+down  : clicked <button> Download
+name  : aes-256-user_unrestricted.pdf
+file  : /tmp/live-restrictions-r3BPit/deployed-unrestricted.pdf 2816 bytes
+errors: []
+# outside readers, on the file the deployed site downloaded
+{"bytes": 2816, "has_encrypt_key": false, "has_P_key": false, "has_CFM_key": false, "secret_in_bytes": false, "qpdf_opens_with_no_password": true, "qpdf_encrypted": false, "qpdf_pages": 3, "qpdf_check_exit": 0, "mupdf_needs_pass": false, "mupdf_opens_with_empty": true, "mupdf_permissions": -4, "mupdf_planted_pages": 3, "mupdf_pages": 3, "mupdf_toc_entries": 2, "mupdf_ink_page1_percent": 1.51, "pypdf_is_encrypted": false, "pypdf_pages": 3, "pypdf_chars": 164, "poppler_rc": 0, "poppler_has_planted": true}
+workdir: /tmp/live-restrictions-r3BPit
+
+
+## the owner-only run (nothing typed)
+
+# https://www.browsersnip.com · remove-restrictions · aes-256-owner.pdf · secret (none typed)
+route : #/tool/remove-restrictions
+intake: file input present, accept=.pdf,application/pdf
+card  : ENCRYPTED WITH AES-256 (CRYPT FILTER /STDCF, REVISION 6) /  / Its user password is empty, so the pages open with nothing typed.
+run   : clicked <button> Remove restrictions
+result: Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
+notes : Page 1 of 3 of aes-256-owner_unrestricted.pdf, drawn in this tab — a picture of the file, not the file itself. / aes-256-owner_unrestricted.pdf / Restrictions cleared — 3 page(s) verified readable with no /Encrypt entry and no password needed, carrying 1 bookmark(s).
+down  : clicked <button> Download
+name  : aes-256-owner_unrestricted.pdf
+file  : /tmp/live-restrictions-KCzbzM/deployed-unrestricted.pdf 2701 bytes
+errors: []
+# outside readers, on the file the deployed site downloaded
+{"bytes": 2701, "has_encrypt_key": false, "has_P_key": false, "has_CFM_key": false, "secret_in_bytes": false, "qpdf_opens_with_no_password": true, "qpdf_encrypted": false, "qpdf_pages": 3, "qpdf_check_exit": 0, "mupdf_needs_pass": false, "mupdf_opens_with_empty": true, "mupdf_permissions": -4, "mupdf_planted_pages": 3, "mupdf_pages": 3, "mupdf_toc_entries": 2, "mupdf_ink_page1_percent": 1.51, "pypdf_is_encrypted": false, "pypdf_pages": 3, "pypdf_chars": 164, "poppler_rc": 0, "poppler_has_planted": true}
+workdir: /tmp/live-restrictions-KCzbzM

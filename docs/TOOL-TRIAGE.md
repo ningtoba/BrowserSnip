@@ -413,7 +413,13 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   `AES-256 (crypt filter /StdCF, revision 5)` — never by the tool's own `validate`, which
   it does not have. Pinned by `tests/pdf/remove-restrictions.test.ts` (34 cases, one per
   strength and producer); forcing `classifyEncryption` to answer `supported: false` for
-  AES-256 reddens 16 of them, which is what makes the pin worth having.
+  AES-256 reddens 16 of them, which is what makes the pin worth having. On the deployed
+  build the same run is driven end to end by `scripts/live-remove-restrictions-proof.mjs`
+  (`docs/research/remove-restrictions-deployed.log`): the card names the lock, the box on
+  that card takes the secret, and the 2 816-byte download answers
+  `has_encrypt_key False`, `qpdf_check_exit 0`, `mupdf_permissions -4`,
+  `mupdf_planted_pages 3`, `secret_in_bytes False` — with the owner-only file answering the
+  same shape at 2 701 bytes and nothing typed.
 
 ### 3. `font-to-outline` — the optional engine is reached and fails on a plain text page
 
