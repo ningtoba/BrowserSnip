@@ -41,14 +41,26 @@ const CHROME = process.env.CHROME
   ?? '/home/nekophobia/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
 const BASE = process.argv[2] ?? process.env.BASE ?? 'https://www.browsersnip.com';
 const PORT = Number(process.env.PORT ?? 9443);
+/**
+ * Which rewriting tool drives the edit, and what its downloaded file owes.
+ *
+ * `unlock` carries its own password field, so the rail shows the gate; `rotate`
+ * does not — the organize surface only asks for a secret when its preview cannot
+ * read the file, and pdf.js reads AES-256 — so a rotate run on a locked file comes
+ * back `PASSWORD_REQUIRED` with nothing to type into. Both are measured, and the
+ * `rotate` outcome is reported rather than hidden.
+ */
+const TOOL = process.env.TOOL ?? 'unlock';
+const ACTION = process.env.ACTION ?? 'Unlock';
+const FIXTURE_NAME = process.env.FIXTURE_NAME ?? 'aes-256-user.pdf';
 const PASSWORD = process.env.PASSWORD ?? 'hunter2';
 const WRONG = 'not-the-password';
 const PLANTED = 'Lighthouse Inventory 1887';
 const SHEETS = ['ALPHA', 'BRAVO', 'CHARLIE'];
 const work = mkdtempSync(join(tmpdir(), 'live-aes256-'));
 
-const input = join(work, 'aes-256-user.pdf');
-const fixture = process.env.FIXTURE ?? 'tests/fixtures/encrypted/aes-256-user.pdf';
+const input = join(work, FIXTURE_NAME);
+const fixture = process.env.FIXTURE ?? `tests/fixtures/encrypted/${FIXTURE_NAME}`;
 if (!existsSync(fixture)) {
   console.log(`missing fixture ${fixture}; run \`python3 scripts/encrypted-fixtures.py\``);
   process.exit(1);
@@ -93,16 +105,23 @@ const said = async (expression) => {
   return result.error ? `ERR ${String(result.error).slice(0, 160)}` : String(result.value);
 };
 
-const clickText = (pattern, what) => raw(`(() => {
-  const re = new RegExp(${JSON.stringify(pattern)}, 'i');
-  const matches = [...document.querySelectorAll('button, a, input, [role], label, span, p')]
-    .filter((n) => re.test((n.innerText || n.textContent || n.getAttribute('aria-label') || '').trim()))
-    .sort((a, b) => (a.innerText || a.textContent || '').length - (b.innerText || b.textContent || '').length;
-  if (matches.length === 0) return 'MISSING:${what}';
-  const leaf = matches[0];
-  const el = leaf.closest('button, a, input, [role=switch], [role=checkbox], label') || leaf;
+// Click a control by its own label, matched exactly rather than by a substring:
+// the rail's action button reads "Rotate" while the card, the breadcrumb and the
+// search palette all read "Rotate PDF", and a substring match has already clicked
+// the wrong one of those in this harness's first draft.
+const clickButton = (labels) => raw(`(() => {
+  const wanted = ${JSON.stringify(labels)};
+  const nodes = [...document.querySelectorAll('button, a [role=button], a, input')]
+    .map((el) => ({ el, text: (el.innerText || el.textContent || el.getAttribute('aria-label') || el.value || '').trim() }))
+    .filter(({ el, text }) => el.offsetParent !== null && wanted.some((w) => text === w || text.startsWith(w + ' ')));
+  if (nodes.length === 0) {
+    return 'MISSING ' + wanted.join('/') + '; on screen: '
+      + [...document.querySelectorAll('button')].map((b) => JSON.stringify((b.innerText || '').trim())).filter((t) => t !== '""').join(' ').slice(0, 300);
+  }
+  const { el, text } = nodes[0];
   el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-  return 'clicked <' + el.tagName.toLowerCase() + '> ' + (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 40);
+  el.click?.();
+  return 'clicked <' + el.tagName.toLowerCase() + '> ' + text.slice(0, 40);
 })()`);
 
 /**
@@ -114,10 +133,13 @@ const clickText = (pattern, what) => raw(`(() => {
  * nothing about the file it thought it had opened.
  */
 const typePassword = (value) => raw(`(() => {
-  const fields = [...document.querySelectorAll('input[type=password]')]
-    .filter((f) => f.offsetParent !== null);
-  const gate = fields.find((f) => /not required unless/i.test(f.placeholder || '')) ?? fields[0];
-  if (!gate) return 'no visible password field; fields: ' + fields.length;
+  // The re-prompt the error panel paints is a plain password input, not the rail's
+  // gate, and it can be mounted while still hidden; visible ones win, and any other
+  // password field is used rather than giving up.
+  const all = [...document.querySelectorAll('input[type=password]')];
+  const fields = all.filter((f) => f.offsetParent !== null);
+  const gate = fields.find((f) => /not required unless/i.test(f.placeholder || '')) ?? fields[0] ?? all[0];
+  if (!gate) return 'no password field on this page';
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
   gate.focus();
   setter.call(gate, ${JSON.stringify(value)});
@@ -138,14 +160,31 @@ await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, de
 
 console.log(`# ${BASE} · rotate · AES-256 (/V 5 /R 6 /AESV3) · password ${JSON.stringify(PASSWORD)}`);
 await send('Page.navigate', { url: `${BASE}/#/pdf` });
-await sleep(6000);
-await send('Storage.clearDataForOrigin', { origin: new URL(BASE).origin, storageTypes: 'all' });
-await send('Page.navigate', { url: 'about:blank' });
-await sleep(1500);
-await send('Page.navigate', { url: `${BASE}/#/pdf` });
 await sleep(7000);
-console.log('card  :', (await clickText('Rotate PDF', 'rotate-card')).value);
+// Reach the tool the way the dashboard does - its own card link - and fall back to
+// typing the route when the link is not there, saying which happened. An earlier
+// version clicked the first node whose words were "Rotate PDF", hit the search
+// palette's button, which does not navigate, and then reported a page with no file
+// input as if the site had refused the file.
+const opened = await raw(`(() => {
+  const wanted = ${JSON.stringify('#/tool/' + TOOL)};
+  const link = [...document.querySelectorAll('a[href]')].find((a) => a.getAttribute('href').includes(wanted));
+  if (!link) return 'no dashboard link for ' + wanted;
+  link.click();
+  return 'clicked ' + link.getAttribute('href');
+})()`);
+console.log('card  :', opened.value ?? `ERR ${String(opened.error).slice(0, 120)}`);
 await sleep(5000);
+if (await said('location.hash') !== '#/tool/' + TOOL) {
+  await send('Page.navigate', { url: BASE + '/#/tool/' + TOOL });
+  await sleep(6000);
+  console.log('route : opened by URL instead');
+}
+console.log('route :', await said('location.hash'));
+console.log('intake:', (await raw(`(() => {
+  const input = document.querySelector('input[type=file]');
+  return input ? 'file input present, accept=' + (input.accept || '(none)') : 'MISSING:file-input';
+})()`)).value);
 
 const doc = await send('DOM.getDocument', { depth: -1 });
 const fileInput = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: 'input[type=file]' });
@@ -165,31 +204,63 @@ console.log('notice:', await said(`(() => {
   return line ?? '(no lock line in view)';
 })()`));
 console.log('gate  :', await gateState());
-console.log('typed :', (await typePassword(PASSWORD)).value);
+// The rail asks for the secret where it wants it: some surfaces show the gate next
+// to the file, some only after a run comes back `PASSWORD_REQUIRED`. Both are driven
+// here, and which one happened is printed, because "it downloaded something" is not
+// the claim - "it opened an AES-256 file with the typed password" is.
+const click = async (...labels) => {
+  const hit = await clickButton(labels);
+  return hit.value ?? `ERR ${String(hit.error).slice(0, 200)}`;
+};
+console.log('typed :', (await typePassword(PASSWORD)).value ?? '(no gate shown yet)');
 await sleep(1500);
 console.log('gate  :', await gateState());
-console.log('run   :', (await clickText('^Rotate$', 'rotate-action')).value);
+console.log('run   :', await click(ACTION));
+
+const anyGate = () => said(`(() => [...document.querySelectorAll('input[type=password]')]
+  .filter((f) => f.offsetParent !== null).map((f) => f.id || f.placeholder || f.getAttribute('aria-label') || 'unnamed').join(' | ') || '(none)')()`);
+/** Wait for the rail to paint its password gate, which it only does once a run has
+ *  come back `PASSWORD_REQUIRED` and the inspection has been re-read. */
+const waitForGate = async (ticks) => {
+  for (let tick = 0; tick < ticks; tick++) {
+    const seen = await anyGate();
+    if (seen !== '(none)') return seen;
+    await sleep(2000);
+  }
+  return '(none)';
+};
 
 let card = '';
 for (let tick = 0; tick < 60; tick++) {
   await sleep(2000);
   card = await said(`(() => {
-    const line = document.body.innerText.split('\\n').find((l) => /Rotated|could not|not correct|cannot|refus/i.test(l));
+    const line = document.body.innerText.split('\\n').find((l) => /Unlocked|Rotated|could not|not correct|cannot|refus|password/i.test(l));
     return line ?? '';
   })()`);
-  if (card) break;
+  if (!card) continue;
+  if (/Unlocked|Rotated/i.test(card)) break;
+  // A re-prompt is the rail asking for the secret: wait for its gate, type, and run
+  // again rather than letting the loop settle on the question.
+  const gate = await waitForGate(10);
+  if (!/password/i.test(card) || gate === '(none)') break;
+  console.log('asked :', card);
+  console.log('gate  :', gate);
+  console.log('typed :', (await typePassword(PASSWORD)).value ?? '(no gate)');
+  // The rail's action is "Rotate"; the error panel's own is "Retry".
+  console.log('run   :', await click(ACTION, 'Retry'));
+  card = '';
 }
 console.log('result:', card);
-console.log('errors:', await said(`(() => {
-  const hits = document.body.innerText.split('\\n').filter((l) => /error|failed|password|ciphertext|blank/i.test(l));
+console.log('notes :', await said(`(() => {
+  const hits = document.body.innerText.split('\\n').filter((l) => /error|failed|password|ciphertext|blank|warn/i.test(l));
   return hits.slice(0, 6).join(' / ') || '(none in view)';
 })()`));
-console.log('down  :', (await clickText('^(Download|Save PDF|Download PDF)', 'download')).value);
+console.log('down  :', await click('Download', 'Download PDF', 'Save PDF'));
 
 let produced = null;
 for (let tick = 0; tick < 40; tick++) {
   await sleep(1000);
-  const found = readdirSync(work).filter((name) => name.endsWith('.pdf') && name !== 'aes-256-user.pdf');
+  const found = readdirSync(work).filter((name) => name.endsWith('.pdf') && name !== FIXTURE_NAME);
   const pdf = found.map((name) => join(work, name)).find((path) => readFileSync(path).subarray(0, 5).toString('latin1') === '%PDF-');
   if (pdf) { produced = pdf; break; }
 }
@@ -205,24 +276,36 @@ import json, sys
 import pikepdf, pymupdf
 path, wrong, key, planted, sheets = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split(',')
 report = {}
-with pikepdf.open(path, password=key) as pdf:
-    enc = pdf.trailer['/Encrypt']
-    cf = enc['/CF'][enc['/StmF']]
-    report['qpdf_opens'] = True
-    report['V'] = int(enc['/V']); report['R'] = int(enc['/R'])
-    report['CFM'] = str(cf['/CFM']); report['cf_length'] = int(cf['/Length'])
-    report['pages'] = len(pdf.pages)
-    report['has_OE'] = '/OE' in enc and len(bytes(enc['/OE'])) == 32
-    report['has_UE'] = '/UE' in enc and len(bytes(enc['/UE'])) == 32
-    report['has_Perms'] = '/Perms' in enc and len(bytes(enc['/Perms'])) == 16
 try:
-    pikepdf.open(path, password=wrong); report['qpdf_refuses_wrong'] = False
+    opened = pikepdf.open(path)
+    report['opens_with_no_password'] = True
 except pikepdf.PasswordError:
-    report['qpdf_refuses_wrong'] = True
+    opened = pikepdf.open(path, password=key)
+    report['opens_with_no_password'] = False
+with opened as pdf:
+    enc = pdf.trailer.get('/Encrypt')
+    report['has_encrypt'] = enc is not None
+    cf = enc['/CF'][enc['/StmF']] if enc is not None and '/CF' in enc else None
+    report['qpdf_opens'] = True
+    report['pages'] = len(pdf.pages)
+    if enc is not None:
+        report['V'] = int(enc['/V']); report['R'] = int(enc['/R'])
+        report['CFM'] = str(cf['/CFM']); report['cf_length'] = int(cf['/Length'])
+        report['has_OE'] = '/OE' in enc and len(bytes(enc['/OE'])) == 32
+        report['has_UE'] = '/UE' in enc and len(bytes(enc['/UE'])) == 32
+        report['has_Perms'] = '/Perms' in enc and len(bytes(enc['/Perms'])) == 16
+if report['has_encrypt']:
+    try:
+        pikepdf.open(path, password=wrong); report['qpdf_refuses_wrong'] = False
+    except pikepdf.PasswordError:
+        report['qpdf_refuses_wrong'] = True
+else:
+    report['qpdf_refuses_wrong'] = 'n/a (no cipher left to refuse)'
 job = pikepdf.Job(['qpdf', '--password=' + key, '--check', path])
 job.run(); report['qpdf_check_exit'] = job.exit_code
 doc = pymupdf.open(path)
 report['mupdf_needs_pass'] = bool(doc.needs_pass)
+report['mupdf_opens_empty'] = bool(pymupdf.open(path).authenticate(''))
 report['mupdf_accepts_password'] = bool(doc.authenticate(key))
 report['mupdf_refuses_empty'] = not bool(pymupdf.open(path).authenticate(''))
 texts = [page.get_text() for page in doc]

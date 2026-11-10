@@ -1,0 +1,32 @@
+# https://www.browsersnip.com · rotate · AES-256 (/V 5 /R 6 /AESV3) · password "hunter2"
+card  : no dashboard link for #/tool/unlock
+route : opened by URL instead
+route : #/tool/unlock
+intake: file input present, accept=.pdf,application/pdf
+file  : /tmp/live-aes256-iXikul/aes-256-user.pdf
+notice: The same pages, opening with no password asked — and a refusal to hand back a file that still carries one.
+gate  : Not required unless the file is protected=(empty) · tool-field-password=(empty)
+typed : typed the open password into Not required unless the file is protected
+gate  : Not required unless the file is protected="hunter2" · tool-field-password=(empty)
+run   : clicked <button> Unlock
+result: Page 1 of 3 of aes-256-user_unlocked.pdf, drawn in this tab — a picture of the file, not the file itself.
+notes : Removed protection — the file opens without a password now: 3 page(s), page content verified, carrying 1 bookmark(s).
+down  : clicked <button> Download
+file  : /tmp/live-aes256-iXikul/deployed-aes256.pdf 2816 bytes
+# outside readers, on the file the deployed site downloaded
+{"opens_with_no_password": true, "has_encrypt": false, "qpdf_opens": true, "pages": 3, "qpdf_refuses_wrong": "n/a (no cipher left to refuse)", "qpdf_check_exit": 0, "mupdf_needs_pass": false, "mupdf_opens_empty": true, "mupdf_accepts_password": true, "mupdf_refuses_empty": false, "planted_pages": 3, "sheets": ["ALPHA", "BRAVO", "CHARLIE"], "rotations": [0, 0, 0], "chars": 167}
+workdir: /tmp/live-aes256-iXikul
+
+Control, same rig, same build, `rotate` (an organize-surface tool with no password
+field of its own) on the AES-128 fixture:
+
+  run   : clicked <button> Rotate
+  result: AES-128-USER.PDF"aes-128-user.pdf" is password protected.
+  notes : … / Enter the password for "aes-128-user.pdf" and run again.
+
+and the identical outcome on the AES-256 fixture. So the missing gate on that
+surface is not an AES-256 defect and not a regression from the revision-6 read
+path: it is how the organize workspace asks (or fails to ask) for a secret when
+pdf.js can already preview the file. `unlock`, which carries its own password
+field, is the surface this proof runs on, and it is a rewriting tool: the
+downloaded bytes above are its output, judged by MuPDF and libqpdf.
