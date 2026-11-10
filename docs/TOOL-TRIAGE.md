@@ -390,6 +390,30 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   password or an owner key"* — is unreachable for any file that is protected by a password,
   which is most of the files the tool is asked about.
 * Not inferred: three different ciphers, same refusal, no output blob in any run.
+* **Stale on this tree: the refusal is gone and the box exists.** Re-measured against
+  `tests/fixtures/encrypted/` — libqpdf 12.3.2 and MuPDF 1.28.2 as producers, RC4-128
+  (`/V 2 /R 3`), AES-128 (`/V 4 /R 4 /CFM /AESV2`) and AES-256 (`/V 5 /R 6 /CFM /AESV3`),
+  each as a **user-password** file and, where that producer wrote one, an **owner-only**
+  file: 40 runs of `remove-restrictions` / `unlock` / `change-permissions` through the
+  shipped `runPdfTool`, **40 files produced**. The row's cause was the read path, not the
+  tool: `core/crypto.ts` undoes all three strengths on load and the file's own card has
+  held a password box for every tool with no field of its own since the password-anywhere
+  pass. Judged by other people's readers on the produced bytes, with **nothing typed**
+  (`docs/research/remove-restrictions-readers.py` → `-readers.log`): no `/Encrypt` key and
+  no `/P` survive, MuPDF answers `needs_pass=False` and `permissions=-4` — every
+  restriction bit set — the planted sentence is still on 3 of 3 sheets, sheet-1 ink is the
+  fixture's own 1.51 %, `qpdf --check` is clean on 40 of 40, and `hunter2` appears in
+  neither the bytes nor the download name. So the promise is reachable, and the copy is
+  **fully open** — the dictionary goes, which takes the user password with it; the sibling
+  that lifts restrictions and keeps a dictionary is `change-permissions action: set`, whose
+  10 files carry `/P = -3104` where every fixture arrived at `-3376`. What still refuses,
+  and owns the refusal: nothing typed on a file with a non-empty **user** secret asks for it
+  (`PASSWORD_REQUIRED`, `passwordRequired=true`), and AES-256 under a handler revision this
+  app does not derive is refused by `core/guard.ts`, naming
+  `AES-256 (crypt filter /StdCF, revision 5)` — never by the tool's own `validate`, which
+  it does not have. Pinned by `tests/pdf/remove-restrictions.test.ts` (34 cases, one per
+  strength and producer); forcing `classifyEncryption` to answer `supported: false` for
+  AES-256 reddens 16 of them, which is what makes the pin worth having.
 
 ### 3. `font-to-outline` — the optional engine is reached and fails on a plain text page
 

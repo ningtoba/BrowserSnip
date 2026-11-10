@@ -202,6 +202,10 @@ describe('removing restrictions from a locked file', () => {
     const outcome = await run('remove-restrictions', {}, fixture);
     const { bytes } = await produced(outcome);
     expect(outcome.pagesOut).toBe(PAGES);
+    // The bookmark figure is the app's own top-level census: the fixture's outline
+    // is one heading with one child, so the card says 1 where MuPDF's flattened
+    // `get_toc()` says 2. Under-claiming about what survived, in the same direction
+    // on the input, and pinned here so a change to either number is a decision.
     expect(outcome.message).toBe(
       `Restrictions cleared — ${PAGES} page(s) verified readable with no /Encrypt entry and no password needed, `
       + 'carrying 1 bookmark(s).',
