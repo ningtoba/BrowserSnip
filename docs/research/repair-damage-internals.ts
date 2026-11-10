@@ -58,7 +58,8 @@ export async function internals(name: string, bytes: Uint8Array): Promise<Intern
   }
 
   const pageObjects = (text.match(/\/Type\s*\/Page[^sA-Za-z]/g) ?? []).length;
-  const counts = [...text.matchAll(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/g)].map((m) => Number(m[1]));
+  const counts: number[] = [];
+  for (const found of text.matchAll(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/g)) counts.push(Number(found[1]));
   const streams = (text.match(/[^d]stream\r?\n/g) ?? []).length;
 
   let pdfjs: number | null = null;

@@ -1,6 +1,6 @@
 # step 4: pdf.js — the engine this app renders with — over both sides. `P` marks a
-# sheet whose display list holds a painting operator, `W` one whose text holds a
-# planted word, so `.-` is a sheet that counts and prints nothing.
+# sheet whose display list holds a painting operator, `W` one whose extracted text
+# holds a planted word, so `.-` is a sheet that counts and prints nothing.
 
 case                     pdf.js reads the input    pdf.js reads the repaired file
 base-objstm              4p [PW PW PW PW]           4p [PW PW PW PW]

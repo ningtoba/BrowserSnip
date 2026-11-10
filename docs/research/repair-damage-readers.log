@@ -1,8 +1,8 @@
-# step 3: MuPDF, qpdf (libqpdf), poppler, pypdf over the same files, before and after.
-# The table is `input still holds` vs `output reads as`, with non-white pixels per
-# produced sheet; the detail blocks quote the tool's own sentence beside the
-# characters and planted words the readers found. Verdict `preserved` needs all four
-# readers agreeing on the sheet count AND the sheets holding ink and words.
+# step 3: MuPDF, qpdf (libqpdf), poppler and pypdf over the same files, before and
+# after. The table is `input still holds` against `output reads as`, with non-white
+# pixels per produced sheet; the detail blocks quote the tool's own sentence beside
+# the characters and planted words the readers found. `preserved` needs the sheet
+# count to agree across the readers AND the sheets to hold ink and words.
 
 case                     input still holds                                    output reads as                                      ink % per sheet        verdict
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
