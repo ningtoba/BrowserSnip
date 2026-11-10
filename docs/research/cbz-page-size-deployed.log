@@ -1,0 +1,22 @@
+# cbz-to-pdf Page size, against the deployed build (https://www.browsersnip.com)
+# bundle: assets/index-QdBeFcMM.js — the fix's own rail label, "Match each image", is in it
+# input: /tmp/org/inert-photos.cbz — page-01.png 600x800, page-02.png 800x600 (real PNGs)
+# driver: node docs/research/cbz-page-size-proof.mjs
+# reader: python3 docs/research/cbz-page-size-boxes.py (pymupdf 1.28.2, pypdf 6.14.2)
+
+rail Page size {"value":"fit","options":["fit:Match each image","a4:A4","letter:Letter","legal:Legal","a3:A3","a5:A5","tabloid:Tabloid"]}
+  a4 (read back a4) -> live-cbz-page-size-a4.pdf 1096640 bytes  card: 2 comic pages -> 2 PDF page(s) on A4 paper.
+  a5 (read back a5) -> live-cbz-page-size-a5.pdf 1096640 bytes  card: 2 comic pages -> 2 PDF page(s) on A5 paper.
+  console errors []
+
+/tmp/org/live-cbz-page-size-a4.pdf
+  pymupdf page 1: mediabox/canvas 595.28x841.89  cropbox 595.28x841.89  images 1  drawn image bbox [(0.0, 24.1, 595.3, 817.8)]
+  pymupdf page 2: mediabox/canvas 841.89x595.28  cropbox 841.89x595.28  images 1  drawn image bbox [(24.1, 0.0, 817.8, 595.3)]
+  pypdf    page 1: media 595.28x841.89  crop 595.28x841.89  (/CropBox on the page: False)
+  pypdf    page 2: media 841.89x595.28  crop 841.89x595.28  (/CropBox on the page: False)
+
+/tmp/org/live-cbz-page-size-a5.pdf
+  pymupdf page 1: mediabox/canvas 419.53x595.28  cropbox 419.53x595.28  images 1  drawn image bbox [(0.0, 18.0, 419.5, 577.3)]
+  pymupdf page 2: mediabox/canvas 595.28x419.53  cropbox 595.28x419.53  images 1  drawn image bbox [(18.0, 0.0, 577.3, 419.5)]
+  pypdf    page 1: media 419.53x595.28  crop 419.53x595.28  (/CropBox on the page: False)
+  pypdf    page 2: media 595.28x419.53  crop 595.28x419.53  (/CropBox on the page: False)

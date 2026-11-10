@@ -470,11 +470,13 @@ value, reading it back out of the DOM, and diffing the produced file's content d
 ignores pdf-lib's timestamp, so "identical" means identical and not "same size").*
 
 **Re-measured against this tree (post-`d3d32e3`), row by row:** row 1 was real and is
-fixed (`1941921`); row 2 does not reproduce — the choice reaches the bytes, and what is
-actually unreachable on that surface is the entry's `Fit` select, which the pane pins to
-`contain`; row 3 was real and is fixed (`ff66110`). The census that asked *how big the
-class is* is `docs/research/inert-field-sweep.md`, with its numbers, pinned as
-`tests/pdf/inert-field-sweep.test.ts`.
+fixed (`1941921`), and the fix was run again against the deployed site — the same archive
+now writes A4 595.28 × 841.89 and A5 419.53 × 595.28, boxes read back by pymupdf and
+pypdf in `docs/research/cbz-page-size-deployed.log`; row 2 does not reproduce — the choice
+reaches the bytes, and what is actually unreachable on that surface is the entry's `Fit`
+select, which the pane pins to `contain`; row 3 was real and is fixed (`ff66110`). The
+census that asked *how big the class is* is `docs/research/inert-field-sweep.md`, with its
+numbers, pinned as `tests/pdf/inert-field-sweep.test.ts`.
 
 ### 1. `cbz-to-pdf` — `Page size` never reaches the page boxes
 
