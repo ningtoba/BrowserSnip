@@ -665,10 +665,15 @@ export const convertFromTools: PdfToolDefinition[] = [
     promise: 'A JSON file with every block, its text, bounding box and fonts, plus the tables the grid implies.',
     actionLabel: 'Export JSON',
     notes: textOutNotes('JSON'),
-    fields: [
-      PAGES_FIELD,
-      { key: 'tables', label: 'Detect tables', type: 'toggle', default: true, group: 'Content', help: 'Off returns the raw text runs only, which is faster and never guesses a grid that is not there.' },
-    ],
+    // No `tables` switch, on purpose. `documentToJson` detects the grid and
+    // splices it into every page's blocks inside `core/convert.ts`, before any
+    // caller sees them, so both values of a toggle produced byte-identical JSON
+    // (measured: 1696 B, sha 90772710962aff99 either way, one table block in each
+    // — `docs/research/inert-field-sweep.md`, `tests/pdf/field-reach.test.ts`).
+    // Making the option real is a `core/convert.ts` feature — a flag on
+    // `documentToJson`, and an answer for what "off" costs in speed — not a
+    // control this file can honour.
+    fields: [PAGES_FIELD],
     async run(context) {
       const { input, json, facts } = await buildJson(context);
       // A page of pictures only is still worth describing, so the empty-result
