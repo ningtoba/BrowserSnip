@@ -230,7 +230,7 @@ describe('the refusals that remain are the guard naming a cipher, not the tool',
     // that file, not a refusal of it — and the answer has somewhere to go, which is
     // the half of the triage row the file-row password box retired.
     expect(takesPasswordInput(getPdfTool('remove-restrictions')), 'the tool declares a box of its own').toBe(false);
-    const error = await run('remove-restrictions', {}, LOCKED[5], '').then(
+    const error = await run('remove-restrictions', {}, lockedWith('AES-256'), '').then(
       () => null,
       (caught: unknown) => caught,
     );
