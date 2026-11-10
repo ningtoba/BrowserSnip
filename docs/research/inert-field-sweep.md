@@ -30,8 +30,11 @@ property (`values.font` in `readTextStyle`).
   * `pdf-to-json.tables` — "Detect tables". `buildJson` calls
     `documentToJson(doc, session, indices)`, which detects tables unconditionally
     (`core/convert.ts` splices them into the blocks before the caller sees them), so
-    `off` is not "the raw text runs only, which is faster" — it is `on`. The toggle is
-    rendered, defaults to on, and the JSON is the same JSON either way.
+    `off` is not "the raw text runs only, which is faster" — it is `on`: `documentToJson`
+    takes no such flag and splices detected tables in unconditionally
+    (`core/convert.ts:188-198`), so no value the toggle can hold reaches a parameter. The
+    toggle is rendered and defaults to on. Not byte-measured here — pdf.js needs a real
+    worker URL, which jsdom does not give it — and a fix must carry that measurement.
 * **1** field on a pane-owned id is written by neither the rail nor the pane:
   * `redact-pdf.alsoMetadata` — "Also clear matching text from metadata and bookmarks".
     The run does read it (`tools/security.ts:714, 729`), but `redact-pdf` mounts
