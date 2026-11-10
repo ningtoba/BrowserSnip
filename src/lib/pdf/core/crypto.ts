@@ -295,7 +295,9 @@ async function aesCbcUnpadless(key: Uint8Array, iv: Uint8Array, data: Uint8Array
     throw new Error(`an unpadded AES value of ${data.length} bytes is not block-aligned`);
   }
   const cryptoKey = await aesKey(key);
-  const tail = data.length > 16 ? data.subarray(data.length - 16) : iv;
+  // The block the synthetic pad is decrypted against is the last ciphertext block,
+  // not the IV: CBC chains from the ciphertext, so `data` always ends in one.
+  const tail = data.subarray(data.length - 16);
   const filler = await aesEncryptBlock(key, xorWithRepeat(tail, 16));
   const opened = await api.decrypt({ name: 'AES-CBC', iv }, cryptoKey, concat(data, filler));
   return new Uint8Array(opened, 0, data.length);
