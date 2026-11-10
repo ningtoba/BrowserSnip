@@ -215,6 +215,22 @@ describe('rotate — a tool with no password field — reaches all three strengt
     expect(opened.opensWithEmptyPassword).toBe(false);
   });
 
+  it('does not promise an open output for the file it re-seals', async () => {
+    // The two things a locked rotate says about protection have to agree with each
+    // other and with the bytes. The copy is rebuilt without a lock and then re-sealed
+    // with the source's own, and the deployed site was caught saying "the output opens
+    // without a password" in the same breath as "Kept this file's own protection" —
+    // while MuPDF, qpdf and poppler all insisted on the secret.
+    const ran = await rotate(fixtureBytes('aes-256-user.pdf'), 'aes-256-user.pdf', PASSWORD);
+    const said = [ran.message ?? '', ...ran.warnings].join(' ');
+    expect(said).toMatch(/copied into a new document/i);
+    expect(said).toMatch(/Kept this file.s own protection/i);
+    expect(said).not.toMatch(/opens without a password/i);
+    const after = await inspectPdf(await outputBytes(ran), 'aes-256-user.pdf', { password: PASSWORD });
+    expect(after.encrypted).toBe(true);
+    expect(after.algorithm).toBe('AES-256');
+  });
+
   it.each([
     { name: 'rc4-128-owner.pdf', cipher: 'RC4-128' },
     { name: 'aes-256-owner.pdf', cipher: 'AES-256' },

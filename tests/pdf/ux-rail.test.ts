@@ -956,6 +956,50 @@ describe('the rail’s one password box', () => {
   });
 });
 
+describe('the rail’s one password box', () => {
+  /**
+   * A generic "PDF password" field used to sit in the options bar for every tool that
+   * declared a password field of its own — two inputs writing one secret, with nothing
+   * on the page saying which one `unlock` reads. The bar holds none now: the tool's own
+   * field is the box, and a tool that has none asks on the file's card.
+   */
+  it('holds no second box beside a tool that asks for a password itself', async () => {
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    await screen.findByLabelText('Current password');
+    expect(document.querySelectorAll('input[type=password]')).toHaveLength(1);
+    expect(screen.queryByText('PDF password')).toBeNull();
+  });
+
+  it('answers a missing secret and a wrong secret with two different asks', async () => {
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Unlock' }));
+    const needed = await waitFor(() => {
+      const node = document.querySelector('[data-password-notice]');
+      if (!node) throw new Error('the notice has not arrived');
+      return node;
+    });
+    expect(needed).toHaveAttribute('data-password-notice', 'needed');
+    expect(needed.textContent).toMatch(/needs its password before it can be opened/i);
+    expect(needed.textContent).not.toMatch(/did not open/i);
+
+    cleanup();
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-locked' }));
+    fireEvent.change(await screen.findByLabelText('Current password'), { target: { value: 'hunter2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    const wrong = await waitFor(() => {
+      const node = document.querySelector('[data-password-notice="wrong"]');
+      if (!node) throw new Error('the wrong-secret notice has not arrived');
+      return node;
+    });
+    expect(wrong.textContent).toMatch(/did not open this PDF/i);
+    expect(wrong.textContent).not.toMatch(/needs its password before/i);
+    expect(wrong.textContent).not.toBe(needed.textContent);
+  });
+});
+
 describe('ErrorPanel copy', () => {
   it('pairs a failure with the next action and names the file', () => {
     render(

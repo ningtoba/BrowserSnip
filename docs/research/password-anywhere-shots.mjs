@@ -250,3 +250,6 @@ chrome.kill();
 server.close();
 console.log(`\npage complaints (${complaints.length}):`);
 for (const line of complaints.slice(0, 12)) console.log(`  ${line}`);
+// The CDP socket keeps the event loop alive after the work is done, and a harness
+// that never returns is indistinguishable from one that is still thinking.
+process.exit(0);

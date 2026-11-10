@@ -519,13 +519,19 @@ function notePageCopy(sources: PDFDocument[], fidelity: CopyFidelity, notes: Not
  * *loaded* with a password, so handing the input straight back gives the user a
  * file that still asks for one (E5). Copying the pages into a fresh document is
  * the only reliable way to drop the protection.
+ *
+ * What the saved file then *carries* is not this function's claim: the run re-seals
+ * the copy with the source's own lock when it can (`tools/runner.ts:preserveProtection`)
+ * and says which of the two happened in its own note. Measured on the deployed site
+ * before that was noticed: a rotate of `aes-256-user.pdf` came back `/V 5 /R 6`
+ * `/CFM /AESV3`, refusing the empty password and the wrong one alike, beside a note
+ * promising "the output opens without a password" — a sentence the bytes contradicted
+ * and the reader behind it confirmed.
  */
 async function savable(input: OpenedInput, notes: Notes): Promise<PDFDocument> {
   if (!input.inspection?.encrypted) return input.doc;
   const rebuilt = await rebuildDocument(input.doc);
-  notes.add(
-    `"${input.name}" is password protected, so the pages were copied into a new file — the output opens without a password.`,
-  );
+  notes.add(`"${input.name}" is password protected, so its pages were copied into a new document.`);
   // The copy re-points the bookmarks and carries the embedded files across, so
   // the field list is the only thing this rebuild can still lose.
   noteFormFields(listFormFields(input.doc).length, notes);
