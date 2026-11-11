@@ -1,0 +1,18 @@
+document in: /tmp/eight/stamps-source.pdf
+surface census: {"tools":["select","highlight","underline","strike","note","freetext","ink","line","arrow","polygon","polyline","square","circle","stamp","image","signature","link","redact"],"armed":"stamp","extent":"595x842@0","selects":["Font family=Automatic (match the page) (no italic)","unlabelled=Approved"],"pageControls":["✍️\nSign\n— Draw or type a","🔤\nEdit text\n— Retype th","◂ Prev","Next ▸"],"export":"Export annotated PDF (0)","status":"Pick a stamp below, then click or drag where it should land. After one placement the tool hands control back to Select."}
+stamp kind: selected Draft in #unlabelled
+arm: armed=stamp
+place 1: clicked 0.85/0.08 of a 595x842 px <div> showing 595x842@0
+page: clicked <button> "Next ▸" at 883,164 · extent now 842x595@90
+place 2: clicked 0.8/0.1 of a 842x595 px <div> showing 842x595@90
+page: clicked <button> "Next ▸" at 919,164 · extent now 400x300@0
+place 3: clicked 0.7/0.15 of a 400x300 px <div> showing 400x300@0
+page: clicked <button> "Next ▸" at 883,164 · extent now 500x700@180
+place 4: clicked 0.6/0.2 of a 500x700 px <div> showing 500x700@180
+page: clicked <button> "Next ▸" at 925,164 · extent now 600x450@270
+place 5: clicked 0.9/0.05 of a 600x450 px <div> showing 600x450@270
+marks: {"count":1,"export":"5","status":"Placed Stamp · p.5 · “Draft”. Select is armed."}
+export: Export annotated PDF (5)
+wrote /tmp/eight/stamped-deployed.pdf 6136 bytes
+result screen: Add Stamps ;; stamps-source.pdf ;; A standard or image stamp as a real PDF annotation, one per page you click or per page you list. ;; Add Stamps finished in this tab — nothing was uploaded. ;; Page 1 of 5 of annotated-pdf.pdf, drawn in this tab — a picture of the file, not the file itself.
+console errors []

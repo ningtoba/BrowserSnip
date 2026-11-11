@@ -1,0 +1,39 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+MuPDF 1.28.2 on stamped-deployed.pdf: 5 pages, expected anchor 'top-right'
+
+-- page 1: displayed 595x842, rotation 0, mediabox (0, 0, 595, 842)
+   Stamp: rect=(435.5,45.5,575.5,89.5) in unrotated space, 140.0x44.0 pt; hidden=? content='' field=None
+      appearance stream: 141x45 px
+   stamp-coloured ink as rendered: (436,45)-(575,89) = 140x45 pt, 19 pt from the right edge, 45 pt from the top — VISIBLE ON THE SHEET
+
+-- page 2: displayed 842x595, rotation 90, mediabox (0, 0, 595, 842)
+   Stamp: rect=(0.0,146.0,140.0,190.0) in unrotated space, 140.0x44.0 pt; hidden=? content='' field=None
+      appearance stream: 44x140 px
+   stamp-coloured ink as rendered: (652,0)-(695,139) = 44x140 pt, 146 pt from the right edge, 0 pt from the top — VISIBLE ON THE SHEET
+
+-- page 3: displayed 400x300, rotation 0, mediabox (0, 0, 400, 300)
+   Stamp: rect=(210.0,23.2,350.0,67.2) in unrotated space, 140.0x44.0 pt; hidden=? content='' field=None
+      appearance stream: 140x45 px
+   stamp-coloured ink as rendered: (210,23)-(349,66) = 140x44 pt, 50 pt from the right edge, 23 pt from the top — VISIBLE ON THE SHEET
+
+-- page 4: displayed 500x700, rotation 180, mediabox (0, 0, 500, 700)
+   Stamp: rect=(130.0,538.0,270.0,582.0) in unrotated space, 140.0x44.0 pt; hidden=? content='' field=None
+      appearance stream: 140x44 px
+   stamp-coloured ink as rendered: (230,118)-(369,161) = 140x44 pt, 130 pt from the right edge, 118 pt from the top — VISIBLE ON THE SHEET
+
+-- page 5: displayed 600x450, rotation 270, mediabox (0, 0, 450, 600)
+   Stamp: rect=(310.0,518.0,450.0,562.0) in unrotated space, 140.0x44.0 pt; hidden=? content='' field=None
+      appearance stream: 44x140 px
+   stamp-coloured ink as rendered: (518,0)-(561,139) = 44x140 pt, 38 pt from the right edge, 0 pt from the top — VISIBLE ON THE SHEET
+pikepdf page 1: /Subtype=/Stamp /Rect=[Decimal('435.5'), Decimal('752.5'), Decimal('575.5'), Decimal('796.5')] /Rotate=None /CA=0.85 /AP=yes /Name=None /FS=None
+pikepdf page 2: /Subtype=/Stamp /Rect=[0, 652, 140, 696] /Rotate=None /CA=0.85 /AP=yes /Name=None /FS=None
+pikepdf page 3: /Subtype=/Stamp /Rect=[210, Decimal('232.75'), 350, Decimal('276.75')] /Rotate=None /CA=0.85 /AP=yes /Name=None /FS=None
+pikepdf page 4: /Subtype=/Stamp /Rect=[130, 118, 270, 162] /Rotate=None /CA=0.85 /AP=yes /Name=None /FS=None
+pikepdf page 5: /Subtype=/Stamp /Rect=[310, 38, 450, 82] /Rotate=None /CA=0.85 /AP=yes /Name=None /FS=None
+
+pdftoppm render: exit=0 files=['pop-1.png', 'pop-2.png', 'pop-3.png', 'pop-4.png', 'pop-5.png']
+  pop-1.png: 595x842 px, 520 stamp-coloured pixels (poppler sees the mark)
+  pop-2.png: 842x595 px, 523 stamp-coloured pixels (poppler sees the mark)
+  pop-3.png: 400x300 px, 524 stamp-coloured pixels (poppler sees the mark)
+  pop-4.png: 500x700 px, 518 stamp-coloured pixels (poppler sees the mark)
+  pop-5.png: 600x450 px, 523 stamp-coloured pixels (poppler sees the mark)
