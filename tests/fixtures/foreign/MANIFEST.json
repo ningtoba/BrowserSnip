@@ -1,0 +1,70 @@
+{
+ "annotations.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "sha256": "67d91d65e29338a027bb61b94bb425f096a02fc494eaaa61e76f596f2e813146",
+  "shape": "note + free-text + highlight + link on one page"
+ },
+ "attachment.pdf": {
+  "payloads": {
+   "enclosure.txt": "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470"
+  },
+  "producer": "MuPDF 1.28.2 (PyMuPDF embfile_add)",
+  "sha256": "73fbe933cfe75edd369988826ad75cbb626d207ccffa3ec4013a360e98947c77",
+  "shape": "an enclosure MuPDF writes into the name tree"
+ },
+ "form.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF add_widget)",
+  "sha256": "54e4cd6842ad004e80e33d4345cfe43e07f4533de18309572f877a7f62505763",
+  "shape": "an AcroForm with a text field and a checkbox widget"
+ },
+ "layers.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF add_ocg)",
+  "sha256": "c232bc3b41ee6c6f2982732e2ca68bb4424578dc9d0b2dac958a98e2a2f3890e",
+  "shape": "two /OCGs, one on and one off, referenced from page content"
+ },
+ "metadata.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "sha256": "f99e531c7e000682a5d30389d47cccada8c0cf89b3aa1dbfc4abea667bc08b8d",
+  "shape": "/Info written by one tool, an XMP packet by another"
+ },
+ "outlines-dests-flat-direct.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "cb18c90ce28acb977efbdc9bddc9c263a43d570488ed9feeafb02a9087edb61c",
+  "shape": "/Dests /Names with the destination arrays inline — the control"
+ },
+ "outlines-dests-flat-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "afcdd57d4b66dff913306af6792e817d04241d56a60006ffba4b54f5c5261671",
+  "shape": "/Dests /Names with each destination behind a reference"
+ },
+ "outlines-dests-tree-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests tree)",
+  "sha256": "834e7cdde8aa90b0f50e29c6f6a37f8c0bfd14b1a4934a3727f975e4f1bc9e36",
+  "shape": "a /Kids + /Limits /Dests tree, destinations behind references"
+ },
+ "outlines.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF set_toc)",
+  "sha256": "14798db369fd29425505e4ca6c882021e83aca366d2b732dbd270cde0b1a01c1",
+  "shape": "a /Outlines tree of three entries, one of them a child"
+ },
+ "page-labels-flat.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "0a9b1c3676c0832f2837b0279185b7b59eafbb16f81ac5514047bfb3da61cf7f",
+  "shape": "/PageLabels as a flat /Nums array — the control"
+ },
+ "page-labels.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "a3b366df338e0e93a14dcb39bf1d7be27183652fb1c2e42ee146b4c3cea7e9c6",
+  "shape": "/PageLabels as a /Kids number tree, not a flat /Nums"
+ }
+}

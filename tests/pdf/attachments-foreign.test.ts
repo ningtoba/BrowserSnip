@@ -39,8 +39,8 @@ import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PDFArray, PDFDict, PDFName } from '@maxwbh/pdf-lib';
-import { newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
+import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRawStream, PDFRef, PDFString } from '@maxwbh/pdf-lib';
+import { newPDF, openPDF, savePDF, type PDFDocument } from '@/lib/pdf/core/doc';
 import { addAttachments, listAttachments, md5Hex, removeAttachments } from '@/lib/pdf/core/attachments';
 import { context } from '@/lib/pdf/core/doc';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
@@ -208,6 +208,50 @@ describe('the committed fixtures are the bytes the generator recorded', () => {
   });
 });
 
+/**
+ * The stored half of that assertion has to be reachable, or "the reported digest
+ * matches the bytes" only ever tests this app's own MD5.
+ *
+ * `flat-names-indirect.pdf` is the fixture that writes `/Params /CheckSum`; this reads
+ * the dictionary out of the file rather than asking the reader what it computed, so a
+ * generator change that stopped storing the digest fails here instead of quietly
+ * narrowing the case above.
+ */
+/** The `/Params /CheckSum` bytes the file itself stores, hex-encoded; '' when absent. */
+function storedChecksum(doc: PDFDocument): string {
+  const names = doc.catalog
+    .lookupMaybe(PDFName.of('Names'), PDFDict)
+    ?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict);
+  const array = names?.lookupMaybe(PDFName.of('Names'), PDFArray);
+  if (!array) return '';
+  for (let i = 1; i < array.size(); i += 2) {
+    const spec = context(doc).lookup(array.get(i));
+    if (!(spec instanceof PDFDict)) continue;
+    const ef = spec.get(PDFName.of('EF'));
+    const efDict = ef instanceof PDFRef ? context(doc).lookup(ef) : ef;
+    if (!(efDict instanceof PDFDict)) continue;
+    const streamRef = efDict.get(PDFName.of('F'));
+    const stream = streamRef instanceof PDFRef ? context(doc).lookup(streamRef) : streamRef;
+    if (!(stream instanceof PDFRawStream)) continue;
+    const params = stream.dict.lookupMaybe(PDFName.of('Params'), PDFDict);
+    const digest = params ? context(doc).lookup(params.get(PDFName.of('CheckSum'))) : undefined;
+    if (digest instanceof PDFString || digest instanceof PDFHexString) {
+      return Array.from(digest.asBytes(), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+  }
+  return '';
+}
+
+describe('the /CheckSum a foreign file stores is read, not just recomputed', () => {
+  it('is present in the fixture the reader is compared against', async () => {
+    const doc = await open('flat-names-indirect.pdf');
+    const [entry] = listAttachments(doc);
+    const stored = storedChecksum(doc);
+    expect(stored, 'the fixture stores /Params /CheckSum').not.toBe('');
+    expect(stored).toBe(md5Hex(entry.bytes));
+  });
+});
+
 const listed = async (file: string) => listAttachments(await open(file));
 
 describe.each(CASES)('listAttachments over a foreign file: $file', (testCase) => {
@@ -230,14 +274,17 @@ describe.each(CASES)('listAttachments over a foreign file: $file', (testCase) =>
     }
   });
 
-  it('reports a checksum for every entry, computing it where the file stores no /Params', async () => {
+  it('reports a checksum that the extracted bytes agree with', async () => {
     const entries = await listed(testCase.file);
     for (const entry of entries) {
       expect(entry.checksum).toMatch(/^[0-9a-f]{32}$/);
+      // Whether the digest came from `/Params /CheckSum` or from this reader's own
+      // pass over the payload, it has to describe the bytes that were extracted. A
+      // stored checksum that disagreed with them would be reported to the user as
+      // though it were a fact about the file.
+      expect(entry.checksum, `${entry.name}: reported digest vs extracted bytes`).toBe(md5Hex(entry.bytes));
       if (entry.name === 'no-params.bin' || entry.name === 'bare.bin') {
-        // The stream carries no /Params: the MD5 is then ours, computed from the
-        // bytes we read rather than claimed from a dictionary that is not there.
-        expect(entry.checksum).toBe(md5Of(entry.bytes));
+        // Those two fixtures carry no `/Params` at all, so the digest here is ours.
         expect(entry.creationDate).toBeUndefined();
       }
     }

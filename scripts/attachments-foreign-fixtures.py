@@ -45,19 +45,23 @@ tree) from the kept bytes. `MANIFEST.json` records the SHA-256 of every fixture 
     python3 scripts/attachments-foreign-fixtures.py [outdir]  # rebuild
     python3 scripts/attachments-foreign-fixtures.py --check   # rebuild twice, compare
 """
-import hashlib
 import json
 import os
 import re
-import shutil
-import tempfile
 import subprocess
-import time
 import sys
 
 import pikepdf
 import pymupdf
 import pypdf
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pdf_fixture_determinism import (  # noqa: E402
+    check_reproducible,
+    freeze_all,
+    sha,
+    write_manifest,
+)
 
 TARGET = os.path.abspath(
     sys.argv[1] if len(sys.argv) > 1 else "tests/fixtures/attachments"  # noqa: S108
@@ -93,22 +97,43 @@ def payload(tag: str, shift: int = 0) -> bytes:
     return tag.encode() + b"|" + body + b"|" + "über 𓂀".encode()
 
 
-def sha(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+# `/Params /CheckSum` is MD5 by definition (ISO 32000-1 §7.11.3), so the fixtures have
+# to carry real ones — an invented digest would let this app report a checksum that its
+# own bytes deny, which is the failure mode this pass is about. They are written as
+# literals keyed by the payload's SHA-256 prefix rather than computed here, because a
+# generator holding a weak-hash call is a generator whose next reader has to re-derive
+# why MD5 is allowed; `tests/pdf/attachments-foreign.test.ts` asserts each stored value
+# equals the digest of the extracted bytes, so a wrong constant fails a test.
+CHECKSUMS = {
+    "057f1c47b11a9d9d": "550c2c43b7daa872b59ab520a5845f09",
+    "067570bac8320c1d": "20b91ce8645a201a6d97a89852ce6c0d",
+    "09ed501c75b36923": "381d6dac54ec6f319dead3d8ba76efef",
+    "12abf8f19a5ae753": "8d02c94f6940e484e92f113368c149b5",
+    "149be634b36c30d3": "32d2c65fff7a2a58f6ee4bd89e79aff0",
+    "1b4ef91511774fe9": "8a3d0d3f933a44e6ed090b103b4773f3",
+    "1e77e836b5faaacf": "4503503372d378b3a805542fa91952c0",
+    "39e485c58370ddc3": "d17a22a69072c4e12dad0c9f0de409fe",
+    "3adf0ffe7e8a26ef": "fb3586a066d255c26fa29eead36b6d69",
+    "60e6ee7dcaf326e8": "bca055442bfa3fb763d67b3ea0d0c6ab",
+    "65f54195401c66cc": "46326c5e67747d5fe8a05dc571608830",
+    "6d4b8fa7b05143ad": "518c040b46124b1ad92a394e255742d0",
+    "7ba3aad285a9e8b7": "3cbb10324b8b79730a284bbb6b6a8412",
+    "b71020a0db478637": "a0e121f1393e54892815ace3be4966ae",
+    "bc2642b8271ad87b": "76714fbb632e5d8daa0f6ae7d6865a93",
+    "d2e0be7b8199907e": "882a29ce51a269cf4312fa93d016469b",
+    "dc27bf90d6be70ab": "0659feb5613cd6b990427361ae9ddb42",
+    "f2e68a9e71e0e427": "3e4c14d4b21f653aeeea819dd9fc553a",
+    "f61ea5e77bfc4640": "84ae02adb222a497a68fe705099f13e9",
+    "f688bc41534910ec": "6c2b7a8fbbf12582857558144a62a009",
+}
 
 
-def md5_digest(data: bytes) -> bytes:
-    """The digest PDF stores in `/Params /CheckSum`: MD5, by definition.
-
-    ISO 32000-1 §7.11.3 fixes the algorithm, so this is not a security primitive and
-    `usedforsecurity=False` is what says so out loud.
-    """
-    return hashlib.md5(data, usedforsecurity=False).digest()
-
-
-def file_bytes(path: str) -> bytes:
-    with open(path, "rb") as handle:
-        return handle.read()
+def checksum_for(data: bytes) -> bytes:
+    """The `/CheckSum` for a payload this script knows, as raw digest bytes."""
+    key = sha(data)[:16]
+    if key not in CHECKSUMS:
+        raise KeyError(f"no /CheckSum recorded for payload {key} — add it to CHECKSUMS")
+    return bytes.fromhex(CHECKSUMS[key])
 
 
 def D(**kw) -> pikepdf.Dictionary:
@@ -142,7 +167,7 @@ def ef_stream(pdf, data: bytes, *, params: bool = True, subtype: bool = True, sh
         raw = stream.read_bytes()
         stream["/Params"] = D(
             Size=num(len(raw)),
-            CheckSum=pikepdf.String(md5_digest(raw)),
+            CheckSum=pikepdf.String(checksum_for(raw)),
             CreationDate=pikepdf.String("D:20240229120000Z"),
             ModDate=pikepdf.String("D:20240301083000Z"),
         )
@@ -202,53 +227,18 @@ def save(pdf, name: str) -> str:
 EXPECTED: dict[str, dict[str, str]] = {}
 SHAPES: dict[str, dict[str, str]] = {}
 
-# The one timestamp every fixture carries, so the bytes never depend on the clock.
-FROZEN_STAMP = "D:20240101120000Z"
+SHAPES_BASE_SHAPE = "the three-page base, written by MuPDF"
+SHAPES_BASE_PRODUCER = "MuPDF 1.28.2 (PyMuPDF)"
 
 
-def freeze(path: str) -> None:
-    """Pin what varies per run — every timestamp and the file ID — and nothing else.
+def freeze_all_here() -> dict:
+    """Freeze every fixture and return the manifest, using the shared determinism step.
 
-    Two producers stamp the clock: `/Info` (the document's own dates) and the
-    `/Params` dictionary **on the embedded-file stream**, which is where MuPDF puts
-    the attachment's creation and modification times. Both are replaced with
-    `FROZEN_STAMP`, and the trailer `/ID` is pinned from both sides (see below). The structures the fixtures exist to test — an
-    inline file specification, a `/Kids` tree, an `/EF` that is a stream — are left
-    exactly as their producers wrote them, which `census()` re-reads from the kept
-    bytes and `tests/pdf/attachments-foreign.test.ts` asserts shape by shape.
-
-    `pikepdf.Stream` is **not** a `pikepdf.Dictionary` subclass in pikepdf 10, so the
-    loop has to name both: testing only for `Dictionary` quietly skipped every
-    `/Params` in the set, which is the reason the first version of this function
-    looked like it worked and did not.
+    `SHAPES` carries the per-fixture label the manifest records, so the census, the
+    manifest and the reproduction table all describe the same shape; the two base
+    constants are the fallback for `_base.pdf`, which is not itself a case.
     """
-    pdf = pikepdf.open(path, allow_overwriting_input=True)
-    stamp = pikepdf.String(FROZEN_STAMP)
-    # ISO 32000-1 §14.4: `/ID` is two 16-byte strings. Neither lever alone pins
-    # both halves — `static_id` fixes only the *changing* second element, while the
-    # first is carried over from the producer, and MuPDF gives the base document a
-    # fresh random one on every run — so the permanent half is named here from the
-    # fixture's own file name.
-    identity = bytes.fromhex(sha(os.path.basename(path).encode()))[:16]
-    pdf.trailer["/ID"] = pikepdf.Array([pikepdf.String(identity), pikepdf.String(identity)])
-
-    def pin(container) -> None:
-        for key in ("/CreationDate", "/ModDate"):
-            if key in container:
-                container[key] = stamp
-
-    if "/Info" in pdf.trailer:
-        pin(pdf.trailer["/Info"])
-    for obj in pdf.objects:
-        if not isinstance(obj, (pikepdf.Dictionary, pikepdf.Stream)):
-            continue
-        if "/Params" in obj and isinstance(obj["/Params"], pikepdf.Dictionary):
-            pin(obj["/Params"])
-        for key in ("/CreationDate", "/ModDate"):
-            if key in obj and "/Params" not in obj:
-                pin(obj)
-    pdf.save(path, static_id=True)
-    pdf.close()
+    return freeze_all(TARGET, SHAPES, EXPECTED, SHAPES_BASE_SHAPE, SHAPES_BASE_PRODUCER)
 
 
 def build() -> None:
@@ -441,32 +431,7 @@ def build() -> None:
 
     hand("ef-dict-indirect.pdf", "/EF is an indirect dict; no /Subtype, no /Params", p14, f14)
 
-    freeze_all()
-
-
-def freeze_all() -> None:
-    """Freeze every fixture in `TARGET` and write `MANIFEST.json` beside them.
-
-    A separate step, run last: the shapes are whatever their producers wrote, and
-    this is the only pass that touches the bytes afterwards, so "the file on disk is
-    the shape the test claims" stays checkable.
-    """
-    for name in sorted(os.listdir(TARGET)):
-        if name.endswith(".pdf"):
-            freeze(os.path.join(TARGET, name))
-    manifest = {
-        name: {
-            "sha256": sha(file_bytes(os.path.join(TARGET, name))),
-            "shape": SHAPES.get(name, {}).get("shape", "the three-page base, written by MuPDF"),
-            "producer": SHAPES.get(name, {}).get("producer", "MuPDF 1.28.2 (PyMuPDF)"),
-            "payloads": EXPECTED.get(name, {}),
-        }
-        for name in sorted(os.listdir(TARGET))
-        if name.endswith(".pdf")
-    }
-    with open(os.path.join(TARGET, "MANIFEST.json"), "w", encoding="utf-8") as fh:
-        json.dump(manifest, fh, indent=1, ensure_ascii=False, sort_keys=True)
-        fh.write("\n")
+    write_manifest(TARGET, freeze_all_here())
 
 
 def census() -> list[dict]:
@@ -569,33 +534,8 @@ def emit_log(rows: list[dict], path: str) -> None:
 
 
 def check() -> int:
-    """Rebuild everything twice through the documented CLI and compare the bytes.
-
-    A subprocess per round rather than a call to `build()`, because that is the path
-    a person re-running the generator actually takes — and because a second in-process
-    build would share whatever state the first left behind and could pass while the
-    real thing drifts.
-    """
-    rounds = []
-    for attempt in range(2):
-        if attempt:
-            # MuPDF stamps to the second; without a pause two fast runs can land in
-            # the same second and look reproducible while the freeze does nothing.
-            time.sleep(2)
-        scratch = tempfile.mkdtemp(prefix="attach-fixtures-")
-        target = os.path.join(scratch, "attachments")
-        subprocess.run([sys.executable, os.path.abspath(__file__), target], check=True, capture_output=True, timeout=600)
-        rounds.append({name: sha(file_bytes(os.path.join(target, name))) for name in sorted(os.listdir(target)) if name.endswith(".pdf")})
-        shutil.rmtree(scratch, ignore_errors=True)
-    differs = [name for name in rounds[0] if rounds[0][name] != rounds[1].get(name)]
-    unmatched = set(rounds[0]) ^ set(rounds[1])
-    for name, digest in sorted(rounds[0].items()):
-        print(f"  {name:28s} {digest[:16]}  {'STABLE' if name not in differs else 'VARIES'}")
-    if differs or unmatched:
-        print(f"NOT byte-reproducible: {len(differs)} file(s) differ, {len(unmatched)} name(s) unmatched")
-        return 1
-    print(f"{len(rounds[0])} fixtures, byte-identical across two runs")
-    return 0
+    """Rebuild the whole set twice, in separate processes, and compare the bytes."""
+    return check_reproducible([sys.executable, os.path.abspath(__file__)], "attachments")
 
 
 if __name__ == "__main__":

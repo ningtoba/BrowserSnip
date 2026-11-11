@@ -1,0 +1,546 @@
+{
+ "outlines.pdf": {
+  "intended": {
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 3,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 3,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "outlines-dests-flat-direct.pdf": {
+  "intended": {
+   "mupdf_pages": [
+    0,
+    0
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "outlines-dests-flat-ref.pdf": {
+  "intended": {
+   "mupdf_pages": [
+    0,
+    0
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "outlines-dests-tree-ref.pdf": {
+  "intended": {
+   "mupdf_pages": [
+    0,
+    0
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 2,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "page-labels.pdf": {
+  "intended": {
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "page-labels-flat.pdf": {
+  "intended": {
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 1,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    }
+   ],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "layers.pdf": {
+  "intended": {
+   "ocgs": [
+    19,
+    20
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [
+    19,
+    20
+   ],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [
+    2,
+    3
+   ],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "annotations.pdf": {
+  "intended": {
+   "annots": [
+    [
+     "Text",
+     "FreeText",
+     "Highlight"
+    ],
+    [],
+    []
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [
+    "FreeText",
+    "Highlight",
+    "Text"
+   ],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [
+    "FreeText",
+    "Highlight",
+    "Text"
+   ],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "form.pdf": {
+  "intended": {
+   "widgets": [
+    "answer",
+    "tick"
+   ]
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [
+    "answer",
+    "tick"
+   ],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [
+    "answer",
+    "tick"
+   ],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "metadata.pdf": {
+  "intended": {
+   "title": "Foreign structures",
+   "xmp_bytes": 383
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "Foreign structures",
+   "xmp": 383,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "Foreign structures",
+   "xmp": 447,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ]
+  }
+ },
+ "attachment.pdf": {
+  "intended": {
+   "names": [
+    "enclosure.txt"
+   ],
+   "sha256": "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [
+    "enclosure.txt"
+   ],
+   "poppler_attachments": [
+    "1 embedded files"
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [
+    "enclosure.txt"
+   ],
+   "poppler_attachments": [
+    "1 embedded files"
+   ]
+  }
+ }
+}
