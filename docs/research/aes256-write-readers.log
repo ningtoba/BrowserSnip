@@ -1,0 +1,39 @@
+# AES-256 files written by this app, judged by parsers that share no code with it.
+# Revision 7ea16db. Produced by:
+#   AES256_PROBE_DIR=/tmp/a256 npx vitest run tests/pdf/crypto-aes256-write.test.ts
+#   cp tests/fixtures/encrypted/{aes-256-user,mu-aes-256-owner}.pdf /tmp/a256/   # the two outside controls
+#   python3 docs/research/aes256-write-readers.py /tmp/a256
+# Readers: pypdf 6.14.2, PyMuPDF 1.28.2, pikepdf 10.9.1 (libqpdf 30.3.2), pdftotext version 26.10.0, gs 10.08.0
+# The three `a256-app-*` rows are this writer; the last two are libqpdf and MuPDF over the same base
+# document, the same `hunter2`, the same /P -3376 — the verdicts are the same lines on both sides.
+--- a256-app-owner.pdf  (4228 bytes)
+    pypdf: decrypt('')=1 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -3376 EncryptMetadata=True, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain d0f2ffffffffffff54616462 (byte 8 b'T', 9-11 b'adb'), pages=3, planted True, text chars 164
+    MuPDF: needs_pass=0, opens with no password, auth=4, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-3376, planted_pages 3/3, ink_page1_percent=1.53, toc_entries=2, title='Lighthouse Inventory 1887'
+    qpdf: opens with no password, restricted only, opened with empty, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:no copy:yes change:no addNotes:no algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders with no password → wrote 3 page(s), planted text through gs: True
+--- a256-app-plainmeta.pdf  (4080 bytes)
+    pypdf: decrypt('hunter2')=2 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -3376 EncryptMetadata=False, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain d0f2ffffffffffff46616462 (byte 8 b'F', 9-11 b'adb'), pages=3, planted True, text chars 164
+    MuPDF: needs_pass=1, refuses an empty password, opened with 'hunter2', auth=6, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-3376, planted_pages 3/3, ink_page1_percent=1.53, toc_entries=2, title='Lighthouse Inventory 1887'
+    qpdf: refuses an empty password, opened with hunter2, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:no copy:yes change:no addNotes:no algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders → wrote 3 page(s), planted text through gs: True
+--- a256-app-user.pdf  (4228 bytes)
+    pypdf: decrypt('hunter2')=2 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -3376 EncryptMetadata=True, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain d0f2ffffffffffff54616462 (byte 8 b'T', 9-11 b'adb'), pages=3, planted True, text chars 164
+    MuPDF: needs_pass=1, refuses an empty password, opened with 'hunter2', auth=6, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-3376, planted_pages 3/3, ink_page1_percent=1.53, toc_entries=2, title='Lighthouse Inventory 1887'
+    qpdf: refuses an empty password, opened with hunter2, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:no copy:yes change:no addNotes:no algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders → wrote 3 page(s), planted text through gs: True
+--- aes-256-user.pdf  (4358 bytes)
+    pypdf: decrypt('hunter2')=2 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -3376 EncryptMetadata=True, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain d0f2ffffffffffff54616462 (byte 8 b'T', 9-11 b'adb'), pages=3, planted True, text chars 164
+    MuPDF: needs_pass=1, refuses an empty password, opened with 'hunter2', auth=6, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-3376, planted_pages 3/3, ink_page1_percent=1.53, toc_entries=2, title='Lighthouse Inventory 1887'
+    qpdf: refuses an empty password, opened with hunter2, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:no copy:yes change:no addNotes:no algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders → wrote 3 page(s), planted text through gs: True
+--- mu-aes-256-owner.pdf  (4016 bytes)
+    pypdf: decrypt('')=1 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -3376 EncryptMetadata=True, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain d0f2ffffffffffff54616462 (byte 8 b'T', 9-11 b'adb'), pages=3, planted True, text chars 164
+    MuPDF: needs_pass=0, opens with no password, auth=4, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-3376, planted_pages 3/3, ink_page1_percent=1.53, toc_entries=2, title='Lighthouse Inventory 1887'
+    qpdf: opens with no password, restricted only, opened with empty, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:no copy:yes change:no addNotes:no algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders with no password → wrote 3 page(s), planted text through gs: True
+--- planted sentence asked for: 'Lighthouse Inventory 1887', password: 'hunter2'

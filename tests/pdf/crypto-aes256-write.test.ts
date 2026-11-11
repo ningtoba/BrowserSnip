@@ -32,7 +32,7 @@
  * password hashes into it.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
@@ -52,6 +52,12 @@ import { openRender } from '@/lib/pdf/core/render';
 
 const latin1 = new TextDecoder('latin1');
 const FIXTURES = resolve(process.cwd(), 'tests/fixtures/encrypted');
+/**
+ * Where the outside-reader rig takes its files: `AES256_PROBE_DIR=/tmp/a256 npx
+ * vitest run tests/pdf/crypto-aes256-write.test.ts` then
+ * `python3 docs/research/aes256-write-readers.py /tmp/a256`.
+ */
+const PROBE_DIR = process.env.AES256_PROBE_DIR ?? '';
 /** The secret `scripts/encrypted-fixtures.py` locked every fixture with. */
 const PASSWORD = 'hunter2';
 const PLANTED = 'Lighthouse Inventory 1887 page 1';
@@ -76,6 +82,10 @@ beforeAll(() => {
     },
   });
 }, 120_000);
+
+beforeAll(() => {
+  if (PROBE_DIR) mkdirSync(PROBE_DIR, { recursive: true });
+});
 
 const fixtureBytes = (name: string): Uint8Array => new Uint8Array(readFileSync(join(FIXTURES, name)));
 
@@ -602,5 +612,83 @@ describe('an edit to a file this app ciphered at 256 bits', () => {
     expect(pageWords(copy)[0]).toContain(PLANTED);
     expect(copy.getPageCount()).toBe(3);
     expect(copy.getPage(0).getRotation().angle).toBe(90);
+  }, 300_000);
+});
+
+/* ── 6. the files the outside readers are shown ──────────────────────────── */
+
+/**
+ * The corpus's own three locks, written by this app.
+ *
+ * `tests/fixtures/encrypted/plain.pdf` is the base every foreign fixture was
+ * locked from, and `/P` is the `-3376` the corpus carries — copy and accessibility
+ * allowed, print, modify, annotate, form-fill and assemble refused. So a reader
+ * that has already been shown `aes-256-user.pdf` and `mu-aes-256-owner.pdf` is
+ * shown these: the planted sentence, the sheet words, the ink, the bookmarks and
+ * the permissions are the ones `scripts/encrypted-fixtures.py` measured, and any
+ * difference left is the cipher's, not the document's.
+ *
+ * The dumps are asserted before they are written, and asserted against this app's
+ * reader as well as the byte-level claims — `docs/research/aes256-write-readers.py`
+ * is the second opinion, not the only one.
+ */
+describe('the AES-256 files the outside readers are shown', () => {
+  /** The corpus permission set, spelled the way `permissionsToFlags` takes it. */
+  const CORPUS_PERMISSIONS = { copying: true, contentAccessibility: true };
+
+  const dump = (name: string, bytes: Uint8Array): void => {
+    if (PROBE_DIR) writeFileSync(join(PROBE_DIR, name), bytes);
+  };
+
+  /** `/P` as the saved file spells it. */
+  const permissionsOf = (bytes: Uint8Array): number =>
+    Number(/\/P (-?\d+)/.exec(encryptBody(bytes))?.[1] ?? 0);
+
+  it('locks the fixture base at -3376 with an open password', async () => {
+    const bytes = await saveEncrypted(await sealed(fixtureBytes('plain.pdf')), {
+      userPassword: PASSWORD, ownerPassword: PASSWORD, cipher: 'AES-256', permissions: CORPUS_PERMISSIONS,
+    });
+    expect(permissionsOf(bytes), 'the same /P the qpdf and MuPDF fixtures carry').toBe(-3376);
+    expect(latin1.decode(bytes)).not.toContain(PLANTED);
+    expect(pageWords(await openPDF(bytes, { password: PASSWORD }))[0]).toContain(PLANTED);
+    const opened = await readerSays(bytes, PASSWORD);
+    expect('pages' in opened, `pdf.js refused this lock: ${JSON.stringify(opened)}`).toBe(true);
+    expect((opened as { text: string }).text).toContain(PLANTED);
+    expect('refused' in await readerSays(bytes), 'a user-password file must not open with nothing').toBe(true);
+    dump('a256-app-user.pdf', bytes);
+  }, 300_000);
+
+  it('locks it again with no open password, at the same /P', async () => {
+    const bytes = await saveEncrypted(await sealed(fixtureBytes('plain.pdf')), {
+      userPassword: '', ownerPassword: PASSWORD, cipher: 'AES-256', permissions: CORPUS_PERMISSIONS,
+    });
+    expect(permissionsOf(bytes)).toBe(-3376);
+    expect(latin1.decode(bytes)).not.toContain(PLANTED);
+    const seen = await inspectPdf(bytes, 'a256-app-owner.pdf');
+    expect(seen).toMatchObject({ encrypted: true, needsPassword: false, opensWithEmptyPassword: true, algorithm: 'AES-256' });
+    expect(pageWords(await openPDF(bytes))[0]).toContain(PLANTED);
+    expect(await assessAccess(await sealed(bytes), PASSWORD))
+      .toMatchObject({ kind: 'opens', openedAs: 'owner', suppliedMatched: true });
+    dump('a256-app-owner.pdf', bytes);
+  }, 300_000);
+
+  it('locks it a third time with the metadata left in the clear', async () => {
+    const doc = await sealed(fixtureBytes('plain.pdf'));
+    await encryptDocument(doc, {
+      userPassword: PASSWORD,
+      ownerPassword: PASSWORD,
+      permissions: -3376,
+      strength: 'AES-256',
+      encryptMetadata: false,
+    });
+    const bytes = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
+    expect(encryptBody(bytes)).toMatch(/\/EncryptMetadata false/);
+    expect(permissionsOf(bytes)).toBe(-3376);
+    // `/Title` readable, the page's operators not: the exemption and the cipher,
+    // both doing their own jobs in the same file.
+    expect((await sealed(bytes)).getTitle()).toBe(PLANTED.split(' page')[0]);
+    expect(latin1.decode(bytes)).not.toContain(PLANTED);
+    expect(pageWords(await openPDF(bytes, { password: PASSWORD }))[0]).toContain(PLANTED);
+    dump('a256-app-plainmeta.pdf', bytes);
   }, 300_000);
 });
