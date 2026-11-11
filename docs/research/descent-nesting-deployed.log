@@ -1,0 +1,81 @@
+# The deployed card, on a file whose images live in a Form XObject
+
+Ticket 1's user-visible half was a sentence the bytes contradicted: over
+`resources-xobject.pdf` — one form carrying three faces and two rasters, which MuPDF
+counts on sheet 1 — the `view-metadata` card printed *"None · no raster images are
+embedded"*. This is that card, on the deployed site, after `bc0bcdd`.
+
+## Which build the site is serving
+
+    $ curl -s https://www.browsersnip.com/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
+    assets/index-DYSTTN5G.js
+
+`assets/index-DYSTTN5G.js` is the chunk this tree builds (`npx vite build` at `bcf48a4`
+prints the same name for the 2 347.56 kB entry), and it is a different name from the one
+the site served before this pass deployed (`index-DvXje1gi.js`). Grepped apart, the two
+bundles differ on the descent itself:
+
+    $ curl -s .../assets/index-DvXje1gi.js | grep -c 'XObject/'   # before  -> 0
+    $ curl -s .../assets/index-DYSTTN5G.js | grep -c 'XObject/'   # now     -> 1
+
+## The input
+
+`/tmp/live-form-images.pdf` = `tests/fixtures/foreign/resources-xobject.pdf` with an
+`/Info` dictionary added by libqpdf 12.3.2 (`pdf.docinfo['/Title']`, saved). The added
+dictionary is not decoration: `metadataReport` reaches `/Info` through `infoDict`, which
+**throws** on a document that has none — the open seam
+`docs/research/reader-sweep-reconciliation.md` records — so without it the card cannot
+render at all, fixed walk or not. The shapes the probe depends on are unchanged by the
+save, measured with MuPDF before the site saw it:
+
+    pages 3  ·  fonts/images/xobjects per page [(3, 2, 1), (1, 0, 0), (1, 0, 0)]
+    /Info present: True
+
+Sheet 1 names one `/XObject` and nothing else; the three faces and both rasters sit in
+`/Fm0`'s own `/Resources`.
+
+## The run
+
+    $ BASE=https://www.browsersnip.com TOOL=view-metadata \
+        PDF=/tmp/live-form-images.pdf LABEL='Read metadata' \
+        OUT=/tmp/live-metadata.txt PORT=9788 \
+        node docs/research/rail-tool-bytes.mjs
+    clicked "Read metadata"
+
+and the screen, verbatim (`document.body.innerText`, the rig's own refusal path):
+
+    PDF Tools / PDF Security / View Metadata
+    Your file is ready — View Metadata finished in this tab; nothing was uploaded.
+    Finished — nothing to download, the answer is in the report
+    Read 6 section(s) of document metadata.
+
+    File            PDF VERSION 1.7 · PAGES 3 · FILE SIZE 294.3 KiB
+                    INDIRECT OBJECTS 34 · STREAMS 15 · ENCRYPTED no · BOOKMARKS 0
+    Document info   TITLE Form-carried images, live probe
+                    PRODUCER libqpdf 12.3.2 (Info added for the live probe)
+    Pages           PAGE 1 595 × 842 pt · A4 · 29 B of content
+                    PAGE 2 … 241 B · PAGE 3 … 245 B
+    Fonts           FIXTURE SANS REGULAR  Type0 · embedded · full font · Identity-H
+                    HELVETICA             Type1 · not embedded — substituted on screen · WinAnsiEncoding
+                    NOTOSANS-REGULAR      Type0 · embedded · full font · Identity-H
+    Images          40 × 24 PX  DCTDecode · 8-bit · ICCBased · 619 B · on 1 page
+                    40 × 24 PX  FlateDecode · 8-bit · ICCBased · 47 B · on 1 page
+    Protection      ENCRYPTED no
+
+**The card names both rasters and all three faces, and the sentence "no raster images
+are embedded" is gone** — with the sizes, filters, bit depth, colour space and stored
+byte counts MuPDF and the libqpdf walk record for the same two objects in
+`tests/fixtures/foreign/census.json` (40×24, 8-bit, ICCBased, 619 B DCT + 47 B Flate,
+sheet 1). "on 1 page" is right too: the form is drawn once, on sheet 1, which is the
+direction this session had to learn to check — a fixed inventory can also *overstate*.
+
+## The rig, named as the suspect
+
+`docs/research/rail-tool-bytes.mjs` ends by waiting for `URL.createObjectURL` to have
+been called, and `view-metadata` on this build produced **no blob**: the rail says so on
+screen ("nothing to download, the answer is in the report") and prints the sections
+inline. So the probe threw `the tool produced no output blob` *after* collecting the
+screen text, and `/tmp/live-metadata.txt` was never written. That is the rig's
+assumption about every tool having a download, not a defect in the card — the same
+script's refusal path is what captured the report quoted above. Nothing on the page
+raised a console error, and the run reports `console errors []`.
