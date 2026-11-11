@@ -499,6 +499,13 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   whose only completion condition is a wall-clock sleep will read red on a loaded runner.
   Every source change here is in the two green runs (`e02b410`, `fef14b8`); the two reds are
   `4bb51ae` (before the gate) and `bbd1b77` (after it, with nothing but documents changed).
+  Re-pushed unchanged in substance, `002b01d` went **green**, which is the flake reproduced in
+  the direction that matters: the same assertion, same runner, opposite verdict, no code between
+  them. Its evidence for `font-to-outline` is unaffected — the deployed run in STEP 4 of
+  `docs/research/font-outline-proof.log` landed 3 files, and the newest bundle (served as
+  `assets/index-fpwU_seM.js`) is confirmed to carry both the glued `-sOutputFile=${…}` and the
+  corrected growth sentence; the wording commit itself is pinned by 2 tests, not by a fresh
+  browser pass, because this session's own probe hung (`docs/research/font-outline-live.mjs`).
 * **The class, counted rather than anecdoted.** `core/engine-ops.ts` exports **10 verbs** that
   hand arguments to an engine and assemble **27 argument-bearing call sites**: 3 string vectors
   for Ghostscript (`convertToPdfA`, `textToOutlines`, `rebuildWithGhostscript`, all finished by
