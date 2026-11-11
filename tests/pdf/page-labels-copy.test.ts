@@ -60,7 +60,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { PDFDocument } from '@maxwbh/pdf-lib';
-import { PDFArray, PDFDict, PDFName, openPDF } from '@/lib/pdf/core/doc';
+import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRef, PDFString, openPDF } from '@/lib/pdf/core/doc';
 import {
   readPageLabelRanges,
   readPageLabels,
@@ -85,12 +85,29 @@ const fixtureBytes = (name: string) => new Uint8Array(readFileSync(resolve(FIXTU
  */
 const produced = new Map<string, Uint8Array>();
 
-const keep = (id: string, bytes: Uint8Array): void => {
+const keep = (id: string, bytes: Uint8Array, testCase?: CopyCase): void => {
   produced.set(id, bytes);
   const dir = process.env.BROWSERSNIP_LABEL_DUMP;
   if (!dir) return;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${id}.pdf`), bytes);
+  // The row itself travels with the file, so `docs/research/page-labels-copy-round-trip.py`
+  // can ask two readers that did not write the fixture the same question the test
+  // just asked, and compare their answers against the column asserted here.
+  if (testCase) {
+    writeFileSync(
+      join(dir, `${id}.json`),
+      `${JSON.stringify({
+        id: testCase.id,
+        tool: testCase.tool,
+        values: testCase.values,
+        inputs: testCase.inputs,
+        before: testCase.before,
+        after: testCase.after,
+        why: testCase.why,
+      }, null, 1)}\n`,
+    );
+  }
 };
 
 /** One copy run: the tool, its values, the files it was given, and the answers. */
@@ -285,6 +302,22 @@ const storeOf = (doc: PDFDocument): Record<string, number> => {
   return store;
 };
 
+/** The `/P` objects the produced file actually holds, in range order. */
+const storedPrefixObjects = (doc: PDFDocument): (PDFString | PDFHexString)[] => {
+  const tree = doc.catalog.lookupMaybe(PDFName.of('PageLabels'), PDFDict);
+  const nums = tree?.lookupMaybe(PDFName.of('Nums'), PDFArray);
+  const found: (PDFString | PDFHexString)[] = [];
+  if (!(nums instanceof PDFArray)) return found;
+  for (let index = 1; index < nums.size(); index += 2) {
+    const range = nums.get(index);
+    const stored = range instanceof PDFRef ? doc.context.lookup(range) : range;
+    if (!(stored instanceof PDFDict)) continue;
+    const prefix = stored.get(PDFName.of('P'));
+    if (prefix instanceof PDFString || prefix instanceof PDFHexString) found.push(prefix);
+  }
+  return found;
+};
+
 /** The ranges as the produced file stores them, with the defaults left out. */
 const shaped = (ranges: PageLabelRange[]) =>
   ranges.map((range) => ({
@@ -321,11 +354,11 @@ const runCase = async (testCase: CopyCase): Promise<RunOutcome> => {
 };
 
 /** The single PDF a case produced, parsed back with the shipped loader. */
-const outputOf = async (outcome: RunOutcome, id: string) => {
+const outputOf = async (outcome: RunOutcome, id: string, testCase?: CopyCase) => {
   const pdfs = outcome.outputs.filter((output) => output.name.endsWith('.pdf'));
   expect(pdfs, `${id} produced a PDF`).toHaveLength(1);
   const bytes = new Uint8Array(await pdfs[0].blob.arrayBuffer());
-  keep(id, bytes);
+  keep(id, bytes, testCase);
   return openBytes(bytes);
 };
 
@@ -376,7 +409,7 @@ describe('the page numbering across a page copy', () => {
   for (const testCase of CASES) {
     it(`${testCase.id}: ${testCase.why}`, async () => {
       const outcome = await runCase(testCase);
-      const doc = await outputOf(outcome, testCase.id);
+      const doc = await outputOf(outcome, testCase.id, testCase);
       expect(doc.getPageCount(), `${testCase.id} page count`).toBe(testCase.after.length);
       // The assertion is the numbering per sheet, not the presence of the key.
       expect(labelsOf(doc), `${testCase.id} labels per sheet`).toEqual(testCase.after);
@@ -408,7 +441,7 @@ describe('the bytes behind the table', () => {
     const testCase = CASES.find((item) => item.id === 'copy-subset')!;
     const input = await openBytes(fixtureBytes(testCase.inputs[0]));
     expect(storeOf(input)).toEqual({ kids: 2 });
-    const doc = await outputOf(await runCase(testCase), 'copy-subset');
+    const doc = await outputOf(await runCase(testCase), 'copy-subset', testCase);
     expect(storeOf(doc)).toEqual({ nums: 6 });
     const starts = readPageLabelRanges(doc).map((range) => range.start);
     expect(starts).toEqual([0, 1, 2]);
@@ -416,7 +449,7 @@ describe('the bytes behind the table', () => {
 
   it('keeps a style name it does not recognise instead of rewriting it', async () => {
     const testCase = CASES.find((item) => item.id === 'copy-unknown-style')!;
-    const doc = await outputOf(await runCase(testCase), 'copy-unknown-style');
+    const doc = await outputOf(await runCase(testCase), 'copy-unknown-style', testCase);
     const tree = doc.catalog.lookupMaybe(PDFName.of('PageLabels'), PDFDict);
     const nums = tree?.lookupMaybe(PDFName.of('Nums'), PDFArray);
     const range = nums?.get(1) as PDFDict;
@@ -452,6 +485,39 @@ describe('the bytes behind the table', () => {
         );
       }
     }
+  });
+
+  it('keeps a prefix in the encoding that survives being read back', async () => {
+    // MuPDF's page-label reader copies `/P`'s bytes straight into the label without
+    // looking for the UTF-16BE BOM, so a prefix written as `<FEFF0078>` reads back
+    // `<FEFF0078>x` there while pypdf says `x` — measured both ways in
+    // `docs/research/page-labels-copy-table.md`. §7.9.2.2 allows either text-string
+    // encoding, so the writer uses the one every reader here spells back, and keeps
+    // the BOM form for what PDFDocEncoding cannot spell.
+    const carried = CASES.find((item) => item.id === 'copy-subset-prefix')!;
+    const doc = await outputOf(await runCase(carried), carried.id, carried);
+    const prefixes = storedPrefixObjects(doc);
+    expect(prefixes.map((entry) => entry.decodeText()), 'the prefixes the copy wrote')
+      .toEqual(['§', 'A-']);
+    for (const prefix of prefixes) {
+      expect(prefix instanceof PDFString, 'a prefix PDFDocEncoding can spell stays single-byte')
+        .toBe(true);
+    }
+
+    // And one it cannot: an Egyptian-hieroglyph prefix has to go in the BOM form,
+    // which is the only spelling that holds it — and it still reads back as itself.
+    const outcome = await runPdfTool({
+      toolId: 'add-page-labels',
+      files: [new File([fixtureBytes('labels-nums-r.pdf') as BlobPart], 'labels-nums-r.pdf', { type: 'application/pdf' })],
+      values: { ranges: '1-2 roman 1 𓂀' },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    const wide = await openBytes(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const widePrefixes = storedPrefixObjects(wide);
+    expect(widePrefixes).toHaveLength(1);
+    expect(widePrefixes[0] instanceof PDFHexString, '𓂀 is not in PDFDocEncoding').toBe(true);
+    expect(labelsOf(wide).slice(0, 2)).toEqual(['𓂀i', '𓂀ii']);
   });
 
   it('numbers each file of a split from the pages that went into it', async () => {

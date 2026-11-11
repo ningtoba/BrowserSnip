@@ -990,12 +990,39 @@ function formatLabelNumber(style: PageLabelRange['style'], value: number): strin
 function labelDict(doc: PDFDocument, range: PageLabelRange): PDFDict {
   const ctx = context(doc);
   const dict = ctx.obj({});
-  if (range.prefix) dict.set(PDFName.of('P'), PDFHexString.fromText(range.prefix));
+  if (range.prefix) dict.set(PDFName.of('P'), prefixString(range.prefix));
   if (range.style !== '') dict.set(PDFName.of('S'), PDFName.of(range.style));
   if (range.firstPageNumber !== undefined && range.firstPageNumber !== 1) {
     dict.set(PDFName.of('St'), PDFNumber.of(Math.max(1, Math.trunc(range.firstPageNumber))));
   }
   return dict;
+}
+
+/**
+ * `/P` in the narrowest encoding the format allows for it.
+ *
+ * §7.9.2.2 lets a text string be PDFDocEncoding or UTF-16BE with a BOM. The BOM form
+ * holds anything; it is also the one MuPDF's page-label reader cannot use —
+ * `pdf_get_page_label` copies the string's bytes into the label without looking for
+ * the BOM, so a prefix written `<FEFF0078>` reads back as `<FEFF0078>x` there while
+ * pypdf and Acrobat both say `x`. Measured both ways on this box
+ * (`docs/research/page-labels-copy-table.md`), so the single-byte form is used wherever
+ * it says the same thing — which is also the shape every producer in
+ * `tests/fixtures/readers/` writes, and what lets a copied prefix survive being copied
+ * in more than one reader.
+ *
+ * The test is the decoder itself rather than a hand-copied code page: a prefix that
+ * does not come back out of `PDFString` unchanged (`𓂀`, anything PDFDocEncoding cannot
+ * spell) goes in the BOM form, which is the only one that can hold it.
+ *
+ * This changes what `add-page-labels` writes, not only what a copy writes: its
+ * `keep-labels` probe used to hand MuPDF a BOM-prefixed `Cover` as well.
+ */
+function prefixString(prefix: string): PDFString | PDFHexString {
+  const singleByte = PDFString.of(prefix);
+  return singleByte.decodeText() === prefix
+    ? singleByte
+    : PDFHexString.fromText(prefix);
 }
 
 /**

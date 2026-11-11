@@ -6,12 +6,12 @@
 ### copy-labels-nums__labels-nums-r.pdf
 
 - in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
-- out — copy-labels-nums__labels-nums-r.pdf: MuPDF per page ['', '', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3', '4']; the file's own store: absent
+- out — copy-labels-nums__labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
 
 ### copy-labels__labels-kids-mixed.pdf
 
 - in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
-- out — copy-labels__labels-kids-mixed.pdf: MuPDF per page ['', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3']; the file's own store: absent
+- out — copy-labels__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I']; MuPDF ranges 2; pypdf ['i', 'ii', 'I']; the file's own store: /Nums x2
 
 ### copy-outline__outlines-names-dests-kids-ref.pdf
 
@@ -36,12 +36,12 @@
 ### keep-labels__labels-nums-r.pdf
 
 - in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
-- out — keep-labels__labels-nums-r.pdf: MuPDF per page ['<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>']; MuPDF ranges 1; pypdf ['Cover', 'Cover', 'Cover', 'Cover']; the file's own store: /Nums x1
+- out — keep-labels__labels-nums-r.pdf: MuPDF per page ['Cover', 'Cover', 'Cover', 'Cover']; MuPDF ranges 1; pypdf ['Cover', 'Cover', 'Cover', 'Cover']; the file's own store: /Nums x1
 
 ### merge-labels__labels-kids-mixed.pdf
 
 - in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
-- out — merge-labels__labels-kids-mixed.pdf: MuPDF per page ['', '', '', '', '', '', '', '', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']; the file's own store: absent
+- out — merge-labels__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA', 'i', 'ii', 'iii', 'iv']; MuPDF ranges 5; pypdf ['i', 'ii', 'I', 'II', 'c', 'xA', 'i', 'ii', 'iii', 'iv']; the file's own store: /Nums x5
 
 ### redact-titles__outlines-redactable.pdf
 
