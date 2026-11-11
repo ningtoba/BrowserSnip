@@ -514,6 +514,22 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   is not embedded; the live pass gives 6 070 B with `GPL Ghostscript 10.06.0`, the same
   intent and flag, and the card reading **"1 of 1 font(s) embedded"** where the ledger's
   old deployed run read "0 of 1". `docs/research/pdfa-invocation-deployed.log`.
+* **The neighbours on that seam, checked rather than assumed.** Same deployed rig, same
+  fixture: `font-to-outline` answers 2 416 B → 21.6 KB (+818 %) with `ENGINE Ghostscript`
+  and, in the download, `fonts: no fonts` — type drawn as paths, no face left; blocked,
+  it produces no file and says it refused, which is the designed behaviour for a tool
+  with no fallback. `repair` on the same clean input answers from its local path in both
+  passes (2 089 B, −14 %, `ENGINE local path · no engine`): a file that opens never
+  reaches the Ghostscript escalation, so this ticket's seam is not in its path. Offline,
+  both vectors replay through the published build at **22 177 B and 3 113 B** — the
+  numbers this row carried before the change — and the argv pin asserts each still writes
+  only `/tmp/input.pdf`, naming no `-dPDFA` and no colour strategy.
+* **CI reddened on the open wall-clock row, not on this work.** `e6d9831` failed once
+  with `field-reach.test.ts:510` — *"the run produced no file"*, the fixed 3 s `act()`
+  sleep this file already records as load-sensitive — and the same commit went **green**
+  on a rerun (`43093384116`, 3 m 6 s) with no code between them: the flake reproduced in
+  the direction that matters, again. Nothing here is in that test's path; the new engine
+  block skips on CI (`BROWSERSNIP_GS` unset), so no 15 MB download joins the pool.
 * What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
   via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
   and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:

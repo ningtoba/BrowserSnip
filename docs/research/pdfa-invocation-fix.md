@@ -237,6 +237,20 @@ download, the same wording flaw `font-to-outline` had); the sweep's five dead ve
 `deskewWithPyMuPDF` — still have no caller in `src/`; and the 24 typed CoherentPDF /
 PyMuPDF call sites still pin no argument values.
 
+The same two verbs, driven on the deployed site with the campaign fixture (same rig,
+`TOOL=font-to-outline` and `TOOL=repair`):
+
+| tool | pass | the card | the download, read outside |
+| --- | --- | --- | --- |
+| `font-to-outline` | engine blocked | refuses — it has no fallback, and says so | no file, as designed |
+| `font-to-outline` | engine fetched | "Ghostscript drew the type on all 2 page(s) as vector paths: no page shows text through a font and no font resource is left. 2.4 KB → 21.6 KB (+818%)" | 22 168 B, producer `GPL Ghostscript 10.06.0`, `fonts: no fonts` — the same result the offline rig measures at 22 177 B |
+| `repair` | both passes | "Repaired type.pdf: 2 page(s) readable. 2.4 KB → 2.0 KB (-14%)", ENGINE row `local path · no engine` | 2 089 B, producer `BrowserSnip PDF`, `Helvetica (Type1) NOT embedded` — a clean input never reaches the Ghostscript escalation, so this ticket's seam change is not in this file's path at all |
+
+`repair`'s Ghostscript vector is byte-for-byte the one it built before (`-dPDFA` absent,
+`-sOutputFile` second-to-last, input last — pinned by a test and replayed at 3 113 B
+through the published build), and `font-to-outline`'s is unchanged and replays at
+22 177 B, the number this row recorded before the change.
+
 ## 7. Red without the fix, counted
 
 * invocation reverted (`convertToPdfA` back to the flag-only vector, no prolog, no
