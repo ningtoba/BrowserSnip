@@ -227,11 +227,12 @@ describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
     for (const testCase of CASES) {
       if (testCase.expect.length === 0) continue;
       const outcome = await run('extract-attachments', {}, testCase.file);
+      const rows = (outcome.report?.sections ?? []).flatMap((section) => section.rows ?? []);
       expect(
-        outcome.report?.sections.flatMap((s) => s.rows ?? []).map((r) => r.value),
+        rows.map((row) => row.value),
         `${testCase.file} was reported as empty`,
       ).not.toContain('This PDF contains no embedded files.');
-      expect(outcome.outputs.length, testCase.file).toBe(testCase.expect.length > 1 ? 1 : 1);
+      expect(outcome.outputs, testCase.file).toHaveLength(1);
     }
   });
 

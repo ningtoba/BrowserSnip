@@ -30,6 +30,7 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
+  PDFObject,
   PDFRef,
   context,
 } from './doc';
@@ -69,15 +70,24 @@ export interface AttachmentInput {
 
 /** Where a file specification is referenced from. */
 interface FilespecSite {
+  /** The key this file is filed under (or the spec's own name). */
   name: string;
-  ref: PDFRef;
+  /**
+   * The file specification dictionary itself. §7.9.6 lets a name-tree value be
+   * an indirect reference **or** an inline dictionary, and both occur in files
+   * this app is handed, so the dictionary — not a reference — is what is known.
+   */
+  spec: PDFDict;
+  /** Its reference, when it has one. An inline spec is removed with its pair. */
+  ref?: PDFRef;
   /** The name-tree `/Names` array holding the key/value pair, if any. */
   tree?: PDFArray;
-  /** Index of the key inside `tree` (the value follows it). */
-  keyIndex?: number;
   /** `/AF` array or `/FileAttachment` annotation dictionary, if that is the host. */
   host?: PDFDict | PDFArray;
 }
+
+/** The keys `/EF` may name, in the order a viewer should prefer them. */
+const EF_KEYS = ['UF', 'F', 'DOS', 'UNIX', 'Mac'] as const;
 
 // ---------------------------------------------------------------------------
 // Checksums
@@ -111,42 +121,79 @@ function hexToBytes(hex: string): Uint8Array {
 // Finding the file specifications a document references
 // ---------------------------------------------------------------------------
 
-function isRefTo(dict: PDFDict, key: string): PDFRef | undefined {
-  const value = dict.get(PDFName.of(key));
-  return value instanceof PDFRef ? value : undefined;
+/**
+ * Follow one indirection without asking pdf-lib what class the object should be.
+ *
+ * The fork's `lookupMaybe` throws `UnexpectedObjectTypeError` on a class
+ * mismatch rather than answering `undefined`, so asking for a `PDFDict` at a key
+ * that holds a stream took the whole listing down with an engine sentence in the
+ * user's face. A reader of foreign files asks what something *is* and moves on
+ * when it is not what it hoped.
+ */
+function resolve(doc: PDFDocument, value: PDFObject | undefined): PDFObject | undefined {
+  return value instanceof PDFRef ? context(doc).lookup(value) : value;
+}
+
+function asDict(value: unknown): PDFDict | undefined {
+  return value instanceof PDFDict ? value : undefined;
+}
+
+/**
+ * Is this object a dictionary worth reading as a file specification?
+ *
+ * `/Type /Filespec` is written by some producers and omitted by others, so the
+ * entry keys stand in for it. The check is still worth making: a
+ * `/FileAttachment` annotation's `/A` launch action is a dictionary too, and it
+ * is not the file.
+ */
+function looksLikeFilespec(value: unknown): value is PDFDict {
+  if (!(value instanceof PDFDict)) return false;
+  const type = value.lookupMaybe(PDFName.of('Type'), PDFName);
+  if (type !== undefined && type.decodeText() !== 'Filespec') return false;
+  return (
+    value.has(PDFName.of('EF')) ||
+    value.has(PDFName.of('F')) ||
+    value.has(PDFName.of('UF'))
+  );
 }
 
 /** Walk a name tree (`/Names` pairs and/or `/Kids` subtrees). */
 function collectNameTree(
+  doc: PDFDocument,
   root: PDFDict | undefined,
   out: FilespecSite[],
   depth = 0,
 ): void {
   if (!root || depth > 32) return;
-  const names = root.lookupMaybe(PDFName.of('Names'), PDFArray);
-  if (names) {
+  const names = resolve(doc, root.get(PDFName.of('Names')));
+  if (names instanceof PDFArray) {
     for (let i = 0; i + 1 < names.size(); i += 2) {
-      const key = decodeTextString(names.get(i));
+      const key = decodeTextString(resolve(doc, names.get(i)));
       const value = names.get(i + 1);
-      if (key !== undefined && value instanceof PDFRef) {
-        out.push({ name: key, ref: value, tree: names, keyIndex: i });
+      const spec = resolve(doc, value);
+      if (key !== undefined && looksLikeFilespec(spec)) {
+        out.push({
+          name: key,
+          spec,
+          ...(value instanceof PDFRef ? { ref: value } : {}),
+          tree: names,
+        });
       }
     }
   }
-  const kids = root.lookupMaybe(PDFName.of('Kids'), PDFArray);
-  if (kids) {
+  const kids = resolve(doc, root.get(PDFName.of('Kids')));
+  if (kids instanceof PDFArray) {
     for (let i = 0; i < kids.size(); i++) {
-      collectNameTree(kids.lookupMaybe(i, PDFDict), out, depth + 1);
+      collectNameTree(doc, asDict(resolve(doc, kids.get(i))), out, depth + 1);
     }
   }
 }
 
-function specName(doc: PDFDocument, ref: PDFRef): string | undefined {
-  const dict = context(doc).lookupMaybe(ref, PDFDict);
-  if (!(dict instanceof PDFDict)) return undefined;
+/** The name a file specification carries: `/UF` — the Unicode name — then `/F`. */
+function specName(doc: PDFDocument, spec: PDFDict): string | undefined {
   return (
-    decodeTextString(dict.lookup(PDFName.of('UF'))) ??
-    decodeTextString(dict.lookup(PDFName.of('F')))
+    decodeTextString(resolve(doc, spec.get(PDFName.of('UF')))) ??
+    decodeTextString(resolve(doc, spec.get(PDFName.of('F'))))
   );
 }
 
@@ -157,22 +204,31 @@ function specName(doc: PDFDocument, ref: PDFRef): string | undefined {
 function filespecSites(doc: PDFDocument): FilespecSite[] {
   const sites: FilespecSite[] = [];
 
-  const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
-  collectNameTree(names?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict), sites);
+  const names = asDict(resolve(doc, doc.catalog.get(PDFName.of('Names'))));
+  collectNameTree(
+    doc,
+    asDict(resolve(doc, names?.get(PDFName.of('EmbeddedFiles')))),
+    sites,
+  );
 
   for (const page of doc.getPages()) {
-    const pageNames = page.node.lookupMaybe(PDFName.of('Names'), PDFDict);
-    collectNameTree(pageNames?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict), sites);
+    const pageNames = asDict(resolve(doc, page.node.get(PDFName.of('Names'))));
+    collectNameTree(
+      doc,
+      asDict(resolve(doc, pageNames?.get(PDFName.of('EmbeddedFiles')))),
+      sites,
+    );
   }
 
   // PDF 2.0 associated-files array: the entries are file specs with no key.
-  const af = doc.catalog.lookupMaybe(PDFName.of('AF'), PDFArray);
-  if (af) {
+  const af = resolve(doc, doc.catalog.get(PDFName.of('AF')));
+  if (af instanceof PDFArray) {
     for (let i = 0; i < af.size(); i++) {
       const value = af.get(i);
-      if (!(value instanceof PDFRef)) continue;
-      const name = specName(doc, value);
-      if (name) sites.push({ name, ref: value, host: af });
+      const spec = resolve(doc, value);
+      if (!looksLikeFilespec(spec)) continue;
+      const name = specName(doc, spec);
+      if (name) sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: af });
     }
   }
 
@@ -180,45 +236,65 @@ function filespecSites(doc: PDFDocument): FilespecSite[] {
     const annots = page.node.Annots();
     if (!annots) continue;
     for (let i = 0; i < annots.size(); i++) {
-      const annot = annots.lookupMaybe(i, PDFDict);
+      const annot = asDict(resolve(doc, annots.get(i)));
       if (!annot) continue;
-      if (
-        annot.lookupMaybe(PDFName.of('Subtype'), PDFName)?.decodeText() !== 'FileAttachment'
-      ) {
+      const subtype = resolve(doc, annot.get(PDFName.of('Subtype')));
+      if (!(subtype instanceof PDFName) || subtype.decodeText() !== 'FileAttachment') {
         continue;
       }
-      const ref = isRefTo(annot, 'FS') ?? isRefTo(annot, 'A');
-      if (!ref) continue;
+      const value = annot.get(PDFName.of('FS')) ?? annot.get(PDFName.of('A'));
+      const spec = resolve(doc, value);
+      if (!looksLikeFilespec(spec)) continue;
       const name =
-        specName(doc, ref) ?? decodeTextString(annot.lookup(PDFName.of('Contents')));
-      if (name) sites.push({ name, ref, host: annot });
+        specName(doc, spec) ?? decodeTextString(resolve(doc, annot.get(PDFName.of('Contents'))));
+      if (name) sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: annot });
     }
   }
 
+  // One file declared in the catalogue and also named by an annotation is still
+  // one attachment. An inline spec has no reference to deduplicate by, so its
+  // object identity does.
+  const inlineTags = new Map<PDFDict, string>();
+  let inlineCount = 0;
   const seen = new Set<string>();
   return sites.filter((site) => {
-    const tag = site.ref.toString();
+    let tag = site.ref?.toString();
+    if (tag === undefined) {
+      tag = inlineTags.get(site.spec);
+      if (tag === undefined) {
+        tag = `inline:${(inlineCount += 1)}`;
+        inlineTags.set(site.spec, tag);
+      }
+    }
     if (seen.has(tag)) return false;
     seen.add(tag);
     return true;
   });
 }
 
-/** The `/EmbeddedFile` stream behind a file specification, if it has one. */
+/**
+ * The `/EmbeddedFile` stream behind a file specification, if it has one.
+ *
+ * §7.11.3 allows `/EF` to **be** the stream or to be a dictionary naming `/UF`,
+ * `/F`, `/DOS`, `/UNIX` or `/Mac` — each of those either a reference or (for the
+ * dictionary form) inline. `/UF` is asked for first: it is the Unicode entry a
+ * modern viewer prefers, and where `/F` and `/UF` name different streams it is
+ * the one the file's real name belongs to.
+ */
 function embeddedFileStream(
   doc: PDFDocument,
   spec: PDFDict,
-): { stream: PDFStream; ref: PDFRef } | undefined {
-  const ef = spec.lookupMaybe(PDFName.of('EF'), PDFDict);
-  const candidates: (PDFRef | undefined)[] = ef
-    ? [isRefTo(ef, 'UF'), isRefTo(ef, 'F'), isRefTo(ef, 'DOS')]
-    : [];
-  const directRef = spec.get(PDFName.of('EF'));
-  if (!ef && directRef instanceof PDFRef) candidates.push(directRef);
-  for (const ref of candidates) {
-    if (!ref) continue;
-    const stream = context(doc).lookup(ref);
-    if (stream instanceof PDFStream) return { stream, ref };
+): { stream: PDFStream; ref?: PDFRef } | undefined {
+  const raw = spec.get(PDFName.of('EF'));
+  const ef = resolve(doc, raw);
+  const candidates: (PDFObject | undefined)[] =
+    ef instanceof PDFDict ? EF_KEYS.map((key) => ef.get(PDFName.of(key))) : [raw];
+  for (const value of candidates) {
+    if (value === undefined) continue;
+    const stream = resolve(doc, value);
+    if (stream instanceof PDFStream) {
+      return { stream, ...(value instanceof PDFRef ? { ref: value } : {}) };
+    }
   }
   return undefined;
 }
@@ -230,11 +306,8 @@ function pdfDateString(value: unknown): string | undefined {
   return date ? formatPdfDate(date) : text;
 }
 
-function readEntry(
-  doc: PDFDocument,
-  site: FilespecSite,
-  spec: PDFDict,
-): AttachmentEntry | undefined {
+function readEntry(doc: PDFDocument, site: FilespecSite): AttachmentEntry | undefined {
+  const spec = site.spec;
   const located = embeddedFileStream(doc, spec);
   if (!located) return undefined;
   const bytes = streamBytes(located.stream);
@@ -252,9 +325,7 @@ function readEntry(
     checksum: stored ?? md5Hex(bytes),
     bytes,
   };
-  const filename =
-    decodeTextString(spec.lookup(PDFName.of('UF'))) ??
-    decodeTextString(spec.lookup(PDFName.of('F')));
+  const filename = specName(doc, spec);
   if (filename !== undefined) entry.filename = filename;
   const subtype = dict.lookupMaybe(PDFName.of('Subtype'), PDFName);
   if (subtype) entry.mimeType = subtype.decodeText();
@@ -275,9 +346,7 @@ function readEntry(
 export function listAttachments(doc: PDFDocument): AttachmentEntry[] {
   const entries: AttachmentEntry[] = [];
   for (const site of filespecSites(doc)) {
-    const spec = context(doc).lookupMaybe(site.ref, PDFDict);
-    if (!(spec instanceof PDFDict)) continue;
-    const entry = readEntry(doc, site, spec);
+    const entry = readEntry(doc, site);
     if (entry) entries.push(entry);
   }
   return entries;
@@ -347,8 +416,7 @@ export async function addAttachments(
 
   for (const file of byName.values()) {
     const site = filespecSites(doc).find((s) => s.name === file.name);
-    const spec = site ? context(doc).lookupMaybe(site.ref, PDFDict) : undefined;
-    const streamRef = spec instanceof PDFDict ? embeddedFileStream(doc, spec)?.ref : undefined;
+    const streamRef = site ? embeddedFileStream(doc, site.spec)?.ref : undefined;
     if (streamRef) writeParams(doc, streamRef, file.bytes, { creationDate: new Date() });
   }
 
@@ -418,8 +486,7 @@ export async function replaceAttachment(
 ): Promise<boolean> {
   const site = filespecSites(doc).find((s) => s.name.toLowerCase() === name.toLowerCase());
   if (!site) return false;
-  const spec = context(doc).lookupMaybe(site.ref, PDFDict);
-  if (!(spec instanceof PDFDict)) return false;
+  const spec = site.spec;
 
   const old = embeddedFileStream(doc, spec);
   const oldParams = old?.stream.dict.lookupMaybe(PDFName.of('Params'), PDFDict);
@@ -433,13 +500,13 @@ export async function replaceAttachment(
   });
   const streamRef = ctx.register(stream);
 
-  const ef = spec.lookupMaybe(PDFName.of('EF'), PDFDict) ?? ctx.obj({});
+  const ef = asDict(resolve(doc, spec.get(PDFName.of('EF')))) ?? ctx.obj({});
   ef.set(PDFName.of('F'), streamRef);
   ef.set(PDFName.of('UF'), streamRef);
   spec.set(PDFName.of('EF'), ef);
 
   writeParams(doc, streamRef, bytes, { creationDate: created, modificationDate: new Date() });
-  if (old && old.ref.toString() !== streamRef.toString()) ctx.delete(old.ref);
+  if (old?.ref && old.ref.toString() !== streamRef.toString()) ctx.delete(old.ref);
   return true;
 }
 
@@ -447,22 +514,21 @@ export async function replaceAttachment(
 // Removal
 // ---------------------------------------------------------------------------
 
-/** Delete `ref` and its embedded-file stream when nothing else refers to them. */
+/** Is this `/Names` value, `/AF` member or annotation entry the spec at `site`? */
+function isSiteEntry(doc: PDFDocument, value: PDFObject | undefined, site: FilespecSite): boolean {
+  if (site.ref) return value instanceof PDFRef && value.toString() === site.ref.toString();
+  // An inline spec has no reference to compare, so the object itself is the tag.
+  return resolve(doc, value) === site.spec;
+}
+
 /**
  * Remove every `key value` pair in a name-tree `/Names` array that points at
  * this site. Indices are re-read on each pass because earlier removals shift
  * everything after them.
  */
-function splicePair(array: PDFArray, site: FilespecSite): void {
-  const wanted = site.ref.toString();
+function splicePair(doc: PDFDocument, array: PDFArray, site: FilespecSite): void {
   for (let i = 0; i + 1 < array.size(); ) {
-    const key = decodeTextString(array.get(i));
-    const value = array.get(i + 1);
-    const matches =
-      value instanceof PDFRef &&
-      value.toString() === wanted &&
-      (key === undefined || key === site.name);
-    if (matches) {
+    if (isSiteEntry(doc, array.get(i + 1), site)) {
       array.remove(i + 1);
       array.remove(i);
       continue;
@@ -471,25 +537,28 @@ function splicePair(array: PDFArray, site: FilespecSite): void {
   }
 }
 
-function deleteFilespecObjects(doc: PDFDocument, refs: PDFRef[]): void {
+/**
+ * Delete the file specifications that were just unlinked, and the streams that
+ * nothing refers to any more. An inline spec is gone with the pair it lived in;
+ * what is left of it to collect is the embedded-file stream behind `/EF`.
+ */
+function deleteFilespecObjects(doc: PDFDocument, sites: FilespecSite[]): void {
   const ctx = context(doc);
-  const streams: PDFRef[] = [];
-  for (const ref of refs) {
-    const spec = ctx.lookupMaybe(ref, PDFDict);
-    if (spec instanceof PDFDict) {
-      const ef = spec.lookupMaybe(PDFName.of('EF'), PDFDict);
-      const keys = ef ? [ef] : [];
-      for (const dict of keys) {
-        for (const value of dict.values()) {
-          if (value instanceof PDFRef) streams.push(value);
-        }
+  const reachable: PDFRef[] = [];
+  for (const site of sites) {
+    const raw = site.spec.get(PDFName.of('EF'));
+    if (raw instanceof PDFRef) reachable.push(raw);
+    const ef = resolve(doc, raw);
+    if (ef instanceof PDFDict) {
+      if (raw instanceof PDFRef) reachable.push(raw); // the `/EF` dictionary itself
+      for (const key of EF_KEYS) {
+        const value = ef.get(PDFName.of(key));
+        if (value instanceof PDFRef) reachable.push(value);
       }
-      const direct = spec.get(PDFName.of('EF'));
-      if (direct instanceof PDFRef) streams.push(direct);
     }
-    ctx.delete(ref);
+    if (site.ref) ctx.delete(site.ref);
   }
-  for (const ref of streams) {
+  for (const ref of reachable) {
     if (ctx.lookup(ref) === undefined) continue;
     if (!isOrphan(doc, ref)) continue;
     ctx.delete(ref);
@@ -523,23 +592,20 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
 
   const sites = filespecSites(doc).filter((site) => {
     if (wanted.has(site.name.toLowerCase())) return true;
-    const stored = specName(doc, site.ref)?.toLowerCase();
+    const stored = specName(doc, site.spec)?.toLowerCase();
     return stored !== undefined && wanted.has(stored);
   });
   if (sites.length === 0) return 0;
 
-  const removedRefs: PDFRef[] = [];
   for (const site of sites) {
-    removedRefs.push(site.ref);
     if (site.tree) {
-      splicePair(site.tree, site);
+      splicePair(doc, site.tree, site);
       continue;
     }
     const host = site.host;
     if (host instanceof PDFArray) {
       for (let i = host.size() - 1; i >= 0; i--) {
-        const value = host.get(i);
-        if (value instanceof PDFRef && value.toString() === site.ref.toString()) host.remove(i);
+        if (isSiteEntry(doc, host.get(i), site)) host.remove(i);
       }
     } else if (host instanceof PDFDict) {
       host.delete(PDFName.of('FS'));
@@ -549,16 +615,14 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
 
   // The `/AF` array is written alongside every name-tree entry; drop the
   // matching members so readers do not resurrect the removed file.
-  const af = doc.catalog.lookupMaybe(PDFName.of('AF'), PDFArray);
-  if (af) {
-    const tags = new Set(removedRefs.map((ref) => ref.toString()));
+  const af = resolve(doc, doc.catalog.get(PDFName.of('AF')));
+  if (af instanceof PDFArray) {
     for (let i = af.size() - 1; i >= 0; i--) {
-      const value = af.get(i);
-      if (value instanceof PDFRef && tags.has(value.toString())) af.remove(i);
+      if (sites.some((site) => isSiteEntry(doc, af.get(i), site))) af.remove(i);
     }
   }
 
-  deleteFilespecObjects(doc, removedRefs);
+  deleteFilespecObjects(doc, sites);
   // `filespecSites` already de-duplicates by reference, so one file counts once
   // even when the name tree, `/AF` and an annotation all point at it.
   return sites.length;
