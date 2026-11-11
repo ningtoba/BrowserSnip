@@ -1,0 +1,1707 @@
+{
+ "labels": [
+  {
+   "file": "labels-absent.pdf",
+   "shape": "no /PageLabels at all — the negative control",
+   "basis": "pypdf expands an unlabelled document to arabic; MuPDF answers \"\" for \"no label\", which is the same fact seen from the other side. This reader reports the number a viewer shows.",
+   "ours": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "mupdf": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "file": "labels-nums-d.pdf",
+   "shape": "flat /Nums, /S /D with /St 1 — a genuinely arabic file",
+   "basis": "the negative control the fix must not move: an arabic-labelled file still reads as arabic.",
+   "ours": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "mupdf": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "file": "labels-nums-r.pdf",
+   "shape": "flat /Nums, /S /r (lowercase roman)",
+   "basis": "MuPDF and pypdf agree.",
+   "ours": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "mupdf": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ]
+  },
+  {
+   "file": "labels-nums-R-st4.pdf",
+   "shape": "flat /Nums, /S /R with /St 4 (uppercase roman, offset start)",
+   "basis": "MuPDF and pypdf agree.",
+   "ours": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "mupdf": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "pypdf": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ]
+  },
+  {
+   "file": "labels-nums-a.pdf",
+   "shape": "flat /Nums, /S /a (lowercase alphabetic)",
+   "basis": "MuPDF and pypdf agree.",
+   "ours": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "mupdf": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "pypdf": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "file": "labels-nums-A-st2.pdf",
+   "shape": "flat /Nums, /S /A with /St 2 (uppercase alphabetic, offset start)",
+   "basis": "MuPDF and pypdf agree.",
+   "ours": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "mupdf": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "pypdf": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ]
+  },
+  {
+   "file": "labels-nums-prefix.pdf",
+   "shape": "flat /Nums with /P prefixes on a decimal and a roman range",
+   "basis": "pypdf agrees; MuPDF escapes the § prefix byte as <A7> when it prints it.",
+   "ours": [
+    "i-1",
+    "i-2",
+    "§i",
+    "§ii"
+   ],
+   "mupdf": [
+    "i-1",
+    "i-2",
+    "<A7>i",
+    "<A7>ii"
+   ],
+   "pypdf": [
+    "i-1",
+    "i-2",
+    "§i",
+    "§ii"
+   ]
+  },
+  {
+   "file": "labels-nums-prefix-only.pdf",
+   "shape": "a range with /P and no /S — a prefix-only label",
+   "basis": "MuPDF and pypdf both drop the number when there is no /S. This app writes that shape itself: `add-page-labels` with style `none` emits /P and no /S.",
+   "ours": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "mupdf": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "pypdf": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ]
+  },
+  {
+   "file": "labels-nums-empty-dict.pdf",
+   "shape": "a range whose dictionary is empty — no /S, no /P, no /St",
+   "basis": "both outside readers answer with no number and no prefix. The `none` style this app writes, given without a prefix, is exactly this dictionary.",
+   "ours": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "mupdf": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf": [
+    "",
+    "",
+    "",
+    ""
+   ]
+  },
+  {
+   "file": "labels-nums-unknown-style.pdf",
+   "shape": "a range whose /S names a style the format does not define (/G)",
+   "basis": "no two readers agree on a style the format does not define: MuPDF shows no label, pypdf counts from 1 and ignores /St, this app counts from /St in decimal. Pinned as it behaves, not as one of the three prefers.",
+   "ours": [
+    "2",
+    "3",
+    "4",
+    "5"
+   ],
+   "mupdf": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ]
+  },
+  {
+   "file": "labels-nums-mixed.pdf",
+   "shape": "flat /Nums, a mixed sequence across three sections (/r, /D, /A + /P)",
+   "basis": "MuPDF and pypdf agree — the control for the same ranges behind a /Kids tree.",
+   "ours": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "mupdf": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ]
+  },
+  {
+   "file": "labels-nums-inline-dicts.pdf",
+   "shape": "flat /Nums whose range dictionaries are inline, not referenced",
+   "basis": "the shape this app and MuPDF write; MuPDF and pypdf agree.",
+   "ours": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "mupdf": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ]
+  },
+  {
+   "file": "labels-native-mupdf.pdf",
+   "shape": "the ranges MuPDF's own set_page_labels writes",
+   "basis": "MuPDF and pypdf agree on the file MuPDF wrote.",
+   "ours": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "mupdf": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ]
+  },
+  {
+   "file": "labels-kids-mixed.pdf",
+   "shape": "/Kids + /Limits number tree, one style per section",
+   "basis": "MuPDF expands the same four ranges to these six labels; pypdf loses the carry on pages 3 (answers \"4\"), so the flat sibling above — where all three agree — is what pins the range semantics.",
+   "ours": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "mupdf": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "I",
+    "4",
+    "c",
+    "xA"
+   ]
+  },
+  {
+   "file": "labels-kids-prefix.pdf",
+   "shape": "a /Kids tree carrying /P prefixes and /St offsets",
+   "basis": "MuPDF gives the same four labels (its § prints as <A7>); pypdf stops the roman range after one page.",
+   "ours": [
+    "§I",
+    "§II",
+    "A-21",
+    "A-22"
+   ],
+   "mupdf": [
+    "<A7>I",
+    "<A7>II",
+    "A-21",
+    "A-22"
+   ],
+   "pypdf": [
+    "§I",
+    "2",
+    "A-21",
+    "4"
+   ]
+  },
+  {
+   "file": "labels-kids-deep.pdf",
+   "shape": "a /Kids tree whose leaves sit under a second /Kids level",
+   "basis": "§7.9.7 allows a number tree of any depth, and these are the same three ranges `labels-nums-mixed.pdf` carries flat — where MuPDF and pypdf both agree. Neither outside reader gets the nested copy right (MuPDF finds no labels at all, pypdf only the first page of each range), which is why the flat sibling is the reference for this row.",
+   "ours": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "mupdf": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf": [
+    "i",
+    "ii",
+    "1",
+    "4",
+    "Ex A",
+    "6"
+   ]
+  }
+ ],
+ "outlines": [
+  {
+   "file": "outlines-native-mupdf.pdf",
+   "shape": "MuPDF's own /Outlines: /A /GoTo with the /D array inline, two levels, /XYZ",
+   "basis": "MuPDF and pypdf both resolve all three.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-native-pypdf.pdf",
+   "shape": "pypdf's own outline: /A /GoTo with an inline /D array, nested through /First",
+   "basis": "MuPDF and pypdf both resolve all three.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-native-pikepdf.pdf",
+   "shape": "libqpdf's own outline: /Dest as an inline array, nesting through /First",
+   "basis": "MuPDF and pypdf both resolve all three.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-flat-chain.pdf",
+   "shape": "a flat /First → /Next chain of two items with inline /Dest arrays — the control",
+   "basis": "MuPDF and pypdf agree; nothing here is nested, which is what makes the nested rows a separate shape.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Chapter Two",
+     "page": 1,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Chapter Two",
+     "page": 1
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     2
+    ]
+   ]
+  },
+  {
+   "file": "outlines-dests-inline.pdf",
+   "shape": "/Dests flat /Names with the destination array inline, item /Dest a string",
+   "basis": "pypdf resolves all three; MuPDF reports 0 for every entry, which is how it marks a destination it did not resolve.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-dests-ref.pdf",
+   "shape": "/Dests flat /Names with each destination behind a reference — the reported failure",
+   "basis": "pypdf resolves all three; the only difference from the row above is that the value is a reference.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-dests-kids-ref.pdf",
+   "shape": "/Dests as a /Kids + /Limits tree with referenced destinations",
+   "basis": "pypdf walks the tree and resolves all three.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-names-dests-kids-ref.pdf",
+   "shape": "the PDF 1.4 location: /Names → /Dests as a /Kids tree with referenced destinations",
+   "basis": "MuPDF and pypdf both resolve all three. §12.3.2.3 puts named destinations in the name dictionary from PDF 1.4 onwards; `/Dests` on the catalogue is the 1.1 spelling.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-names-dests-dict.pdf",
+   "shape": "/Names → /Dests whose value is a destination DICTIONARY behind a reference",
+   "basis": "MuPDF and pypdf both resolve all three. This is what pypdf 6.14.2 `add_named_destination` writes, and §12.3.2.2 allows an array or a dictionary.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-dest-name.pdf",
+   "shape": "item /Dest written as a NAME object naming /Dests, values behind references",
+   "basis": "neither outside reader resolves a name key here (MuPDF reports 0, pypdf None), so the expectation comes from the same file read with the key as a string — `outlines-dests-ref.pdf`, which pypdf resolves to 0,1,2 — and from §12.3.2 allowing a name or a byte string.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-action-name.pdf",
+   "shape": "item /A /GoTo whose /D is a NAME into a referenced /Dests value",
+   "basis": "as the row above: the destination store is identical to `outlines-dests-ref.pdf`, only the key that names it differs.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-action-string.pdf",
+   "shape": "item /A /GoTo whose /D is a STRING into the /Names → /Dests tree",
+   "basis": "MuPDF and pypdf both resolve all three.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-action-array.pdf",
+   "shape": "item /A /GoTo with the /D destination array inline (no name tree)",
+   "basis": "MuPDF and pypdf agree.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ]
+  },
+  {
+   "file": "outlines-dest-and-action.pdf",
+   "shape": "an item carrying /Dest **and** /A on the same entry",
+   "basis": "the two outside readers split: MuPDF honours /Dest (every entry → page 1), pypdf honours /A (0,1,2). This app already follows /Dest, the same answer MuPDF gives, and the row pins that it keeps doing so.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 0,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 0,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     1
+    ]
+   ]
+  },
+  {
+   "file": "outlines-redactable.pdf",
+   "shape": "the referenced-/Dests failure, titles matching the page's own words, with a /Info dictionary",
+   "basis": "pypdf resolves all three; MuPDF reports 0 (unresolved). This is the file the redaction round trip runs on, and the only fixture that carries a /Info dictionary — which `redact-pdf` needs to get as far as the bookmarks.",
+   "ours": [
+    {
+     "title": "Lighthouse One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Inventory Two",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Sheet Three",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Lighthouse One",
+     "page": 0
+    },
+    {
+     "title": "Inventory Two",
+     "page": 1
+    },
+    {
+     "title": "Sheet Three",
+     "page": 2
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Lighthouse One",
+     0
+    ],
+    [
+     2,
+     "Inventory Two",
+     0
+    ],
+    [
+     1,
+     "Sheet Three",
+     0
+    ]
+   ]
+  },
+  {
+   "file": "outlines-targetless.pdf",
+   "shape": "items with no destination at all: a heading, a /URI action, an /SE-only entry",
+   "basis": "the negative control: MuPDF answers -1 and pypdf None for every entry, so `page: null` is the honest answer here and not the defect.",
+   "ours": [
+    {
+     "title": "Chapter One",
+     "page": null,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": null,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": null,
+     "depth": 0
+    }
+   ],
+   "pypdf": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "mupdf": [
+    [
+     1,
+     "Chapter One",
+     -1
+    ],
+    [
+     2,
+     "Section One.A",
+     -1
+    ],
+    [
+     1,
+     "Chapter Two",
+     -1
+    ]
+   ]
+  },
+  {
+   "file": "outlines-empty.pdf",
+   "shape": "/Outlines present with /Count 0 and no /First — empty, not null-everywhere",
+   "basis": "both outside readers report no entries.",
+   "ours": [],
+   "pypdf": [],
+   "mupdf": []
+  },
+  {
+   "file": "outlines-absent.pdf",
+   "shape": "no /Outlines at all — empty, not null-everywhere",
+   "basis": "both outside readers report no entries.",
+   "ours": [],
+   "pypdf": [],
+   "mupdf": []
+  }
+ ],
+ "roundTrips": [
+  {
+   "id": "rotate-labels",
+   "tool": "rotate",
+   "input": "labels-kids-mixed.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+   "sha256Out": "c0590226a6967947ce8a54011ea13a02a5422d6f7bdf96aeac4c1b4c2ca95564",
+   "oursLabels": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 2
+   },
+   "message": "Rotated 6 pages by 90°.",
+   "warnings": []
+  },
+  {
+   "id": "rotate-nums",
+   "tool": "rotate",
+   "input": "labels-nums-r.pdf",
+   "sha256In": "95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+   "sha256Out": "3f2351115969d666244c66c7ad0d3feb9cd0ced80cb046327a05f6d0c9741168",
+   "oursLabels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 2,
+    "kids": 0
+   },
+   "message": "Rotated 4 pages by 90°.",
+   "warnings": []
+  },
+  {
+   "id": "folios",
+   "tool": "page-numbers",
+   "input": "labels-kids-mixed.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+   "sha256Out": "4d8472a26aa7b371c4912d930bb14b2fc975ad510f9af77e560c61da5670f565",
+   "oursLabels": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 2
+   },
+   "message": "Numbered 6 pages, 1 to 6.",
+   "warnings": []
+  },
+  {
+   "id": "folios-nums",
+   "tool": "page-numbers",
+   "input": "labels-nums-r.pdf",
+   "sha256In": "95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+   "sha256Out": "1dcd0325cb9dc3bdd3a2f8820d370b78dd0427bb23d4d904494b40e35c6b6ce0",
+   "oursLabels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 2,
+    "kids": 0
+   },
+   "message": "Numbered 4 pages, 1 to 4.",
+   "warnings": []
+  },
+  {
+   "id": "header-footer",
+   "tool": "header-footer",
+   "input": "labels-kids-mixed.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+   "sha256Out": "c94c72298ef087dbc25c5e6d98cbc29d3fb964e0e3deff69e17b1db56ccd8dd8",
+   "oursLabels": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 2
+   },
+   "message": "Added headers and footers to 6 pages.",
+   "warnings": []
+  },
+  {
+   "id": "copy-labels",
+   "tool": "extract-pages",
+   "input": "labels-kids-mixed.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+   "sha256Out": "f3390e8454fa89fd7175eedf1185d46dd782cd6d88026d74b4b3cfb304c54b5c",
+   "oursLabels": [
+    "1",
+    "2",
+    "3"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Extracted 3 pages of 6 pages.",
+   "warnings": []
+  },
+  {
+   "id": "copy-labels-nums",
+   "tool": "extract-pages",
+   "input": "labels-nums-r.pdf",
+   "sha256In": "95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+   "sha256Out": "6f7e89ed4e8b5deb0570c236ce578faedbee1098e16e194b8fae45f181fe8ef1",
+   "oursLabels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Copied all 4 pages into a new file.",
+   "warnings": [
+    "You selected every page, so the new file holds 4 pages in the original order."
+   ]
+  },
+  {
+   "id": "merge-labels",
+   "tool": "merge",
+   "input": "labels-kids-mixed.pdf + labels-nums-r.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f,95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+   "sha256Out": "a8de0411b0277663184c6fd443d16bb095d84c19b5454cc7649810b2bf97a753",
+   "oursLabels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+   ],
+   "oursOutline": [
+    {
+     "title": "labels-kids-mixed.pdf",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "labels-nums-r.pdf",
+     "page": 6,
+     "depth": 0
+    }
+   ],
+   "itemsNamingATarget": [
+    {
+     "title": "labels-kids-mixed.pdf",
+     "target": true
+    },
+    {
+     "title": "labels-nums-r.pdf",
+     "target": true
+    }
+   ],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Merged 2 files into 10 pages.",
+   "warnings": []
+  },
+  {
+   "id": "replace-labels",
+   "tool": "add-page-labels",
+   "input": "labels-kids-mixed.pdf",
+   "sha256In": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+   "sha256Out": "671b2ea6379b50fc5e878590ae1cf707340c4e227c3a57f6ad3ff0bf517de443",
+   "oursLabels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 4,
+    "kids": 0
+   },
+   "message": "Applied 2 label ranges. The first 6 pages now read: i, ii, 1, 2, 3, 4.",
+   "warnings": []
+  },
+  {
+   "id": "keep-labels",
+   "tool": "add-page-labels",
+   "input": "labels-nums-r.pdf",
+   "sha256In": "95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+   "sha256Out": "971a53f4e678a6e8a8deabca8e8a5a83df58fc14c303d3496705df6acab018d7",
+   "oursLabels": [
+    "Cover",
+    "Cover",
+    "Cover",
+    "Cover"
+   ],
+   "oursOutline": [],
+   "itemsNamingATarget": [],
+   "pageLabelStore": {
+    "nums": 2,
+    "kids": 0
+   },
+   "message": "Applied 1 label range. The first 4 pages now read: Cover, Cover, Cover, Cover.",
+   "warnings": []
+  },
+  {
+   "id": "append-bookmarks",
+   "tool": "bookmarks",
+   "input": "outlines-dests-ref.pdf",
+   "sha256In": "87e10f8f174236cc618496e360bdee6cac024a5f5daa48721bb86148400d3ca2",
+   "sha256Out": "e3d36d1d71b987f487bcbed8fa840d7db494e29c3be9bb87f3bf8e3162c1dfa2",
+   "oursLabels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "oursOutline": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    },
+    {
+     "title": "Appendix",
+     "page": 3,
+     "depth": 0
+    }
+   ],
+   "itemsNamingATarget": [
+    {
+     "title": "Chapter One",
+     "target": true
+    },
+    {
+     "title": "Section One.A",
+     "target": true
+    },
+    {
+     "title": "Chapter Two",
+     "target": true
+    },
+    {
+     "title": "Appendix",
+     "target": true
+    }
+   ],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Added 1 bookmark after the 3 existings outline.",
+   "warnings": []
+  },
+  {
+   "id": "copy-outline",
+   "tool": "extract-pages",
+   "input": "outlines-names-dests-kids-ref.pdf",
+   "sha256In": "7078767ec2ab3e11dd6efbedf4b84c6e2259778aec98ffc5d63c7ed9ee03911d",
+   "sha256Out": "709cafc3735eabe1679cdbbffff70769ffe5b068e656a4c641286082797589d4",
+   "oursLabels": [
+    "1",
+    "2",
+    "3"
+   ],
+   "oursOutline": [
+    {
+     "title": "Chapter One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "itemsNamingATarget": [
+    {
+     "title": "Chapter One",
+     "target": true
+    },
+    {
+     "title": "Section One.A",
+     "target": true
+    },
+    {
+     "title": "Chapter Two",
+     "target": true
+    }
+   ],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Extracted 3 pages of 4 pages.",
+   "warnings": []
+  },
+  {
+   "id": "toc",
+   "tool": "table-of-contents",
+   "input": "outlines-dests-ref.pdf",
+   "sha256In": "87e10f8f174236cc618496e360bdee6cac024a5f5daa48721bb86148400d3ca2",
+   "sha256Out": "779aaa7f7bb92ad93123c8a24cecf695d0d0ba0816e869cce4e3cc810bba04b0",
+   "oursLabels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+   ],
+   "oursOutline": [
+    {
+     "title": "Chapter One",
+     "page": 1,
+     "depth": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 2,
+     "depth": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 3,
+     "depth": 0
+    }
+   ],
+   "itemsNamingATarget": [
+    {
+     "title": "Chapter One",
+     "target": true
+    },
+    {
+     "title": "Section One.A",
+     "target": true
+    },
+    {
+     "title": "Chapter Two",
+     "target": true
+    }
+   ],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Inserted a 1 page table of contents at page 1, listing 3 entries from the outline.",
+   "warnings": []
+  },
+  {
+   "id": "redact-titles",
+   "tool": "redact-pdf",
+   "input": "outlines-redactable.pdf",
+   "sha256In": "e424606312c5db253020873b4c8412e71df7b482dd892838281a158aaef77b71",
+   "sha256Out": "270a8231d43951e779c64d69062fbec1ffbfe695ed1ba045a5e19df322aa19d1",
+   "oursLabels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "oursOutline": [
+    {
+     "title": "One",
+     "page": 0,
+     "depth": 0
+    },
+    {
+     "title": "Two",
+     "page": 1,
+     "depth": 1
+    },
+    {
+     "title": "Three",
+     "page": 2,
+     "depth": 0
+    }
+   ],
+   "itemsNamingATarget": [
+    {
+     "title": "One",
+     "target": true
+    },
+    {
+     "title": "Two",
+     "target": true
+    },
+    {
+     "title": "Three",
+     "target": true
+    }
+   ],
+   "pageLabelStore": {
+    "nums": 0,
+    "kids": 0
+   },
+   "message": "Redacted 2 text run(s) under 1 area(s) by deleting the glyphs themselves, then read the saved file back: none of the 9 word(s) that were under the marks still extracts.",
+   "warnings": [
+    "Also deleted the redacted words from 1 document property, 3 bookmark title(s) — a search that reads properties or the outline no longer finds them.",
+    "Redaction deletes text from page content and, with this option on, from the document properties and the outline — the 2 document properties you can see under View Metadata and 2 bookmark title(s) still hold other text this tool does not rewrite. Clear it with Remove Metadata if the file must not carry it at all."
+   ]
+  }
+ ]
+}

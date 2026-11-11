@@ -1,0 +1,70 @@
+### append-bookmarks__outlines-dests-ref.pdf
+
+- in  — outlines-dests-ref.pdf: pypdf resolves 3 of 3: [('Chapter One', 0), ('Section One.A', 1), ('Chapter Two', 2)]; MuPDF [[1, 'Chapter One', 0], [2, 'Section One.A', 0], [1, 'Chapter Two', 0]]; items naming a target in the bytes: 3
+- out — append-bookmarks__outlines-dests-ref.pdf: pypdf resolves 4 of 4: [('Chapter One', 0), ('Section One.A', 1), ('Chapter Two', 2), ('Appendix', 3)]; MuPDF [[1, 'Chapter One', 1], [2, 'Section One.A', 2], [1, 'Chapter Two', 3], [1, 'Appendix', 4]]; items naming a target in the bytes: 4
+
+### copy-labels-nums__labels-nums-r.pdf
+
+- in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+- out — copy-labels-nums__labels-nums-r.pdf: MuPDF per page ['', '', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3', '4']; the file's own store: absent
+
+### copy-labels__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — copy-labels__labels-kids-mixed.pdf: MuPDF per page ['', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3']; the file's own store: absent
+
+### copy-outline__outlines-names-dests-kids-ref.pdf
+
+- in  — outlines-names-dests-kids-ref.pdf: pypdf resolves 3 of 3: [('Chapter One', 0), ('Section One.A', 1), ('Chapter Two', 2)]; MuPDF [[1, 'Chapter One', 1], [2, 'Section One.A', 2], [1, 'Chapter Two', 3]]; items naming a target in the bytes: 3
+- out — copy-outline__outlines-names-dests-kids-ref.pdf: pypdf resolves 3 of 3: [('Chapter One', 0), ('Section One.A', 1), ('Chapter Two', 2)]; MuPDF [[1, 'Chapter One', 1], [2, 'Section One.A', 2], [1, 'Chapter Two', 3]]; items naming a target in the bytes: 3
+
+### folios-nums__labels-nums-r.pdf
+
+- in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+- out — folios-nums__labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+
+### folios__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — folios__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+
+### header-footer__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — header-footer__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+
+### keep-labels__labels-nums-r.pdf
+
+- in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+- out — keep-labels__labels-nums-r.pdf: MuPDF per page ['<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>', '<FEFF0043006F007600650072>']; MuPDF ranges 1; pypdf ['Cover', 'Cover', 'Cover', 'Cover']; the file's own store: /Nums x1
+
+### merge-labels__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — merge-labels__labels-kids-mixed.pdf: MuPDF per page ['', '', '', '', '', '', '', '', '', '']; MuPDF ranges 0; pypdf ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']; the file's own store: absent
+
+### redact-titles__outlines-redactable.pdf
+
+- in  — outlines-redactable.pdf: pypdf resolves 3 of 3: [('Lighthouse One', 0), ('Inventory Two', 1), ('Sheet Three', 2)]; MuPDF [[1, 'Lighthouse One', 0], [2, 'Inventory Two', 0], [1, 'Sheet Three', 0]]; items naming a target in the bytes: 3
+- out — redact-titles__outlines-redactable.pdf: pypdf resolves 3 of 3: [('One', 0), ('Two', 1), ('Three', 2)]; MuPDF [[1, 'One', 1], [2, 'Two', 2], [1, 'Three', 3]]; items naming a target in the bytes: 3
+
+### replace-labels__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — replace-labels__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', '1', '2', '3', '4']; MuPDF ranges 2; pypdf ['i', 'ii', '1', '2', '3', '4']; the file's own store: /Nums x2
+
+### rotate-labels__labels-kids-mixed.pdf
+
+- in  — labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+- out — rotate-labels__labels-kids-mixed.pdf: MuPDF per page ['i', 'ii', 'I', 'II', 'c', 'xA']; MuPDF ranges 4; pypdf ['i', 'ii', 'I', '4', 'c', 'xA']; the file's own store: /Kids x2
+
+### rotate-nums__labels-nums-r.pdf
+
+- in  — labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+- out — rotate-nums__labels-nums-r.pdf: MuPDF per page ['i', 'ii', 'iii', 'iv']; MuPDF ranges 1; pypdf ['i', 'ii', 'iii', 'iv']; the file's own store: /Nums x1
+
+### toc__outlines-dests-ref.pdf
+
+- in  — outlines-dests-ref.pdf: pypdf resolves 3 of 3: [('Chapter One', 0), ('Section One.A', 1), ('Chapter Two', 2)]; MuPDF [[1, 'Chapter One', 0], [2, 'Section One.A', 0], [1, 'Chapter Two', 0]]; items naming a target in the bytes: 3
+- out — toc__outlines-dests-ref.pdf: pypdf resolves 3 of 3: [('Chapter One', 1), ('Section One.A', 2), ('Chapter Two', 3)]; MuPDF [[1, 'Chapter One', 0], [2, 'Section One.A', 0], [1, 'Chapter Two', 0]]; items naming a target in the bytes: 3
+

@@ -44,8 +44,8 @@ processes with a two-second pause: 11 + 16 fixtures, byte-identical each time.
 | `core/guard.ts` `classifyEncryption` | `/Encrypt` dictionary, effective crypt filter | yes — `protect`, `change-permissions` | **yes** (12 files, libqpdf + MuPDF) |
 | `core/crypto.ts` `decryptDocument` | RC4 / AES-128 stream and string ciphers | yes — `saveEncrypted` | **yes** (same 12) |
 | `core/content.ts` `streamBytes`, `pageContentStreams` | content and object streams, filters | yes — every drawing path | **yes**, incidentally (the cipher tests read foreign streams) |
-| `core/bookmarks.ts` `readOutline` | `/Outlines` tree, `/Dest` forms, `/Dests` | yes — `add-bookmarks`, `organize` | **no** — only a parity assertion over encrypted copies of a MuPDF file, which asserts "same as unlocked", not "same as MuPDF" |
-| `core/bookmarks.ts` `readPageLabels` | `/PageLabels` number tree | yes — page-labels tool | **no** |
+| `core/bookmarks.ts` `readOutline` | `/Outlines` tree, `/Dest` forms, `/Dests` | yes — `add-bookmarks`, `organize` | **yes, since `7d1d1ad`** — 18 foreign shapes in `tests/pdf/readers-foreign.test.ts`; before it, only a parity assertion over encrypted copies of a MuPDF file, which asserts "same as unlocked", not "same as MuPDF" |
+| `core/bookmarks.ts` `readPageLabels` | `/PageLabels` number tree | yes — page-labels tool | **yes, since `7d1d1ad`** — 16 foreign shapes in the same file, flat and `/Kids`, every style, with and without `/St` and `/P` |
 | `core/forms.ts` `listFormFields` | `/AcroForm`, field inheritance, widgets, quads | yes — fill-form, form editors, flatten | **no** — 3 test files, all documents built here |
 | `core/layers.ts` `listLayers` | `/OCProperties`, `/OCGs`, `/D`, `/OFF`, usage dicts | yes — layer tools | **no** — 4 test files, all built here |
 | `core/annotations.ts` `listAnnotations` / `annotationCount` | `/Annots`, subtypes, `/AP`, quads, `/C` | yes — stamps, annotate, flatten, redact | **no** — 6 test files, all built here |
@@ -54,8 +54,10 @@ processes with a two-second pause: 11 + 16 fixtures, byte-identical each time.
 | `core/sanitize.ts` `inspectScript` / `stripScript` | `/OpenAction`, `/AA`, `/JS`, named scripts | yes — the writers that add actions | **no** (`inert-controls.test.ts` builds its own shapes; `scripts/attachments` never tested it) |
 | `core/signature.ts` `readSignatures` | `/Perms`, `/ByteRange`, `/Contents`, `/SW` | yes — `sign-pdf` | **no** — every input is signed by this app |
 
-**Count: of the 13 rows above, 4 have met a foreign file in CI and 9 have never been
-handed a file this repo did not write.** Counted by row, because two rows group entry
+**Count: of the 13 rows above, 6 have met a foreign file in CI and 7 have never been
+handed a file this repo did not write** — 4 when this audit ran, plus `readOutline` and
+`readPageLabels`, which the follow-up pass (`docs/research/readers-foreign-repro.md`)
+fixed and pinned. Counted by row, because two rows group entry
 points over a single walk (`listAnnotations` with `annotationCount`, `readInfo` with
 `readXmp`) and one row covers two functions that no longer have a caller at all
 (`listFonts` / `listImages`) — 17 exported functions, the same 13 walks behind them. And
@@ -77,9 +79,11 @@ except the attachments row.
 | `listAttachments` | inline file spec (MuPDF's spelling) | MuPDF, pypdf, poppler all list `note.txt` | was "no embedded files", now the file | **fixed here**, pinned by 15 fixtures |
 | `readOutline` | `/Outlines` with a child entry | MuPDF 3 entries / 2 levels; pypdf same | 3 nodes, depth 2 | correct |
 | `readOutline` | `/Dest` naming an **inline** destination array | pypdf resolves both to pages 1 and 2 | pages 0 and 1 (0-based: correct sheets) | correct |
-| `readOutline` | `/Dest` naming an array **behind a reference** | pypdf resolves both | **both `page: null`** | **same defect class** — `resolveNamedDestination` wants `value instanceof PDFArray` and never follows the reference |
-| `readOutline` | `/Dests` as a `/Kids` + `/Limits` tree | pypdf walks it and resolves both | **both `page: null`** | **same defect class** — no `/Kids` walk |
-| `readPageLabels` | `/PageLabels` as a `/Kids` number tree | MuPDF: 3 ranges (`i-1`, upper roman, lower alpha) | `["1","2","3"]` | **wrong, silently** — reads `/Nums` on the root only |
+| `readOutline` | `/Dest` naming an array **behind a reference** | pypdf resolves both | was **both `page: null`**, now both pages | **fixed since** — `resolveNamedDestination` wanted `value instanceof PDFArray` and never followed the reference; `core/tree.ts:collectTreePairs` + `destinationArray` do |
+| `readOutline` | `/Dests` as a `/Kids` + `/Limits` tree | pypdf walks it and resolves both | was **both `page: null`**, now both pages | **fixed since** — the walk is shared now, so there is no "no `/Kids` walk" left to make |
+| `readOutline` | the same store under the PDF 1.4 `/Names → /Dests`, and as a destination *dictionary* | MuPDF and pypdf both resolve | was `page: null`, now both pages | **fixed since**; found by the per-shape sweep, not in the original table |
+| `readPageLabels` | `/PageLabels` as a `/Kids` number tree | MuPDF: 3 ranges (`i-1`, upper roman, lower alpha) | was `["1","2","3"]`, now the labels | **fixed since** — it read `/Nums` on the root only |
+| `readPageLabels` | a range with `/P` and **no `/S`**, and an empty range dictionary | MuPDF and pypdf both show the prefix and no number | was `Cover 1`, now `Cover ` | **fixed since**; this is also the shape `add-page-labels` writes for its own `none` style |
 | `readPageLabels` | the same ranges in a flat `/Nums` | MuPDF: same 3 ranges | `["i-1","I","c"]` | correct — which is what makes the row above a walk gap, not a labels gap |
 | `listLayers` | two OCGs, one `/OFF`, content drawn through one | MuPDF: 2 groups | 2 layers, on/off right | correct |
 | `listAnnotations` | note + pop-up + free-text + highlight + link | MuPDF's `annots()` shows 3 (hides the link and the pop-up); the raw array holds 5 | 5, kinds right | correct, and more complete than the comparison |
@@ -97,19 +101,21 @@ and letting `UnexpectedObjectTypeError` reach the user as an engine sentence, wh
 what the `flatten` row closed for annotation appearances.
 
 So "our tests pass on our own output" was not the attachments bug. It is the shape of a
-class, and the class has nine untested-at-foreign readers in it.
+class, and the class still has seven untested-at-foreign readers in it.
 
 ## Left deliberately
 
-- **No fixes to the readers in Table 2** except attachments. Report, per the task; the
-  `/Dests` and `/PageLabels` rows each need their own branch, a foreign fixture per
-  shape, and — for `/PageLabels` — a decision about whether a tree-shaped label number
-  tree is common enough in the wild to matter (the fixture proves our reader is wrong on
-  it, not that users hit it).
+- **`/PageLabels` and `/Dests` are fixed and pinned** (`7d1d1ad`,
+  `docs/research/readers-foreign-repro.md`) — this section used to say they were left for
+  someone else. What was left *out* of that pass on purpose: the page-copy path
+  (`core/doc.ts:carryPageFurniture`) still drops `/PageLabels` entirely, so a labelled
+  document loses its numbering through `extract-pages`, `merge` and friends. Measured,
+  recorded, and a product decision about merges rather than a walk bug.
 - **The rig is not in CI.** `docs/research/foreign-structure.vitest.config.ts` keeps it
-  out of `tests/**`, the same choice as the encrypted-inputs rig, because it reads
-  committed fixture bytes that no CI assertion compares today. Making it CI means
-  asserting the two wrong rows, which means fixing them first.
+  out of `tests/**`, the same choice as the encrypted-inputs rig. The rows that rig found
+  wrong are now asserted in `tests/pdf/readers-foreign.test.ts` instead, so the two wrong
+  verdicts in Table 2 no longer depend on a hand-run rig; the rest of the table (layers,
+  annotations, fields, metadata) still does.
 - **Not foreign-tested at all, still:** signatures (`readSignatures` — the fixtures carry
   none), `listFonts`/`listImages` (no callers), and every reader above against a *real*
   Word/Preview/Acrobat export rather than a hand-shaped file.
@@ -122,4 +128,6 @@ python3 scripts/foreign-structure-fixtures.py              # rebuild + census + 
 npx vitest run --config docs/research/foreign-structure.vitest.config.ts
 python3 scripts/attachments-foreign-fixtures.py --check     # the attachments set
 npx vitest run tests/pdf/attachments-foreign.test.ts
+python3 scripts/readers-foreign-fixtures.py --check         # the labels/outlines set
+npx vitest run tests/pdf/readers-foreign.test.ts            # 122 assertions, in CI
 ```
