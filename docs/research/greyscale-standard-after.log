@@ -1,0 +1,70 @@
+# tests/pdf/greyscale-standard.test.ts, full output, at cb975ad -- the same file, run against src/lib/pdf/core/colour.ts.
+# 14 tests green. The Recolour column of the chart table is the only one that moved between the two logs.
+
+npm notice run browsersnip@1.0.0 npx
+npm notice run 'vitest' run tests/pdf/greyscale-standard.test.ts --reporter=verbose --disable-console-intercept
+
+ RUN  v4.1.9 /home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip
+
+(node:1463572) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+── the chart table, 3 plain-grey paths × 24 swatches
+   path                              Recolour (operators)Re-render (applyColorFilter)adjust-colors (rerasterise)
+red-ink         rgb 220,38,38   601   92.4 709   76.7    76.7    77.0    77.0
+green-ink       rgb 5,150,105   601  101.5 709  115.9   115.9   116.0   116.0
+highlight       rgb 255,235,59  601  220.9 709  226.5   226.5   227.0   227.0
+marker-wash     rgb 255,243,163 601  237.5 709  239.8   239.8   240.0   240.0
+orange          rgb 255,152,0   601  165.5 709  162.9   162.9   163.0   163.0
+pink            rgb 233,30,99   601   98.6 709   78.1    78.1    78.0    78.0
+violet          rgb 139,92,246  601  123.6 709  113.1   113.1   113.0   113.0
+blue-ink        rgb 37,99,235   601   96.0 709   95.6    95.6    96.0    96.0
+pen-ink         rgb 27,27,24    601   26.7 709   26.8    26.8    27.0    27.0
+fixture-red     rgb 230,26,26   601   87.0 709   69.4    69.4    69.0    69.0
+fixture-green   rgb 26,178,51   601  118.1 709  136.5   136.5   137.0   137.0
+fixture-blue    rgb 26,51,230   601   63.9 709   58.6    58.6    59.0    59.0
+pure-red        rgb 255,0,0     601   76.2 709   54.2    54.2    54.0    54.0
+pure-green      rgb 0,255,0     601  149.7 709  182.4   182.4   182.0   182.0
+cyan            rgb 0,255,255   601  178.8 709  200.8   200.8   201.0   201.0
+magenta         rgb 255,0,255   601  105.3 709   72.6    72.6    73.0    73.0
+grey-89         rgb 89,89,89    601   89.0 709   89.0    89.0    89.0    89.0
+grey-128        rgb 128,128,128 601  128.0 709  128.0   128.0   128.0   128.0
+grey-166        rgb 166,166,166 601  166.0 709  166.0   166.0   166.0   166.0
+near-white      rgb 250,250,250 601  250.0 709  250.0   250.0   250.0   250.0
+paper           rgb 255,255,255 601  255.0 709  255.0   255.0   255.0   255.0
+near-black      rgb 10,10,10    601   10.0 709   10.0    10.0    10.0    10.0
+text-black      rgb 0,0,0       601    0.0 709    0.0     0.0     0.0     0.0
+cmyk-look-red   rgb 181,21,28   601   69.6 709   55.5    55.5    56.0    56.0
+
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > is the Filter Effects formula the browser uses, not a private preference 1ms
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > sums to exactly 1, which is what makes grey a fixed point 0ms
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > has no second copy in the modules that used to own one 0ms
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > is the only coefficient triple left in a greyscale-of-a-document path 6ms
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > Recolour, Re-render and adjust-colors agree within one unit 122ms
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > removes the colour completely: channel spread is 0 on every swatch 40ms
+
+── collapse check
+   Recolour (operators): 24 distinct greys over 24 distinct colours
+   Re-render (applyColorFilter): 24 distinct greys over 24 distinct colours
+   adjust-colors (rerasterise): 24 distinct greys over 24 distinct colours
+
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > scanner-effect greys with the same standard even though its look moves 106ms
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > keeps distinct colours distinct: no two swatches collapse to one grey 94ms
+
+── closest pairs under the standard now in force (8-bit units apart)
+   Recolour (operators)           pure-red/cmyk-look-red 1.3  red-ink/pink 1.4  green-ink/violet 2.8  orange/grey-166 3.1
+   Re-render (applyColorFilter)   red-ink/pink 1.0  pure-red/cmyk-look-red 2.0  green-ink/violet 3.0  orange/grey-166 3.0
+   adjust-colors (rerasterise)    red-ink/pink 1.0  pure-red/cmyk-look-red 2.0  green-ink/violet 3.0  orange/grey-166 3.0
+
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > reports the pairs that come closest, rather than hiding them 162ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > leaves all 256 tones untouched, on both scales 4ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > does not move a swatch through a second pass of the operator path 7ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > does not move an already-grey page through the raster path either 81ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > takes the bilevel cut on the same luma as everything else 0ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > reaches the paint exactly once per rendered page 41ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  07:34:54
+   Duration  1.74s (transform 568ms, setup 29ms, import 723ms, tests 666ms, environment 254ms)
+

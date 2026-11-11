@@ -1,0 +1,155 @@
+# tests/pdf/greyscale-standard.test.ts, full output, run in a worktree checked out at 32c6ada -- i.e. BEFORE core/colour.ts existed, with
+# src/lib/pdf/core/colour.ts + the chart rig + this test file overlaid so the identical file could run in both trees.
+# 4 tests red here (the cross-path agreement test, both one-triple tests, the bilevel-cutoff test); 10 green in both states as controls.
+# Reproduce: git worktree add -f --detach /tmp/bs-before 32c6ada && cp src/lib/pdf/core/colour.ts docs/research/greyscale-chart.* docs/research/colour-fixture.mjs tests/pdf/greyscale-standard.test.ts there && npx vitest run tests/pdf/greyscale-standard.test.ts --reporter=verbose --disable-console-intercept
+
+npm notice run browsersnip@1.0.0 npx
+npm notice run 'vitest' run tests/pdf/greyscale-standard.test.ts --reporter=verbose --disable-console-intercept
+
+ RUN  v4.1.9 /tmp/bs-before
+
+(node:1428083) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+── the chart table, 3 plain-grey paths × 24 swatches
+   path                              Recolour (operators)Re-render (applyColorFilter)adjust-colors (rerasterise)
+red-ink         rgb 220,38,38   601   92.4 709   76.7    92.4    77.0    77.0
+green-ink       rgb 5,150,105   601  101.5 709  115.9   101.5   116.0   116.0
+highlight       rgb 255,235,59  601  220.9 709  226.5   220.9   227.0   227.0
+marker-wash     rgb 255,243,163 601  237.5 709  239.8   237.5   240.0   240.0
+orange          rgb 255,152,0   601  165.5 709  162.9   165.5   163.0   163.0
+pink            rgb 233,30,99   601   98.6 709   78.1    98.6    78.0    78.0
+violet          rgb 139,92,246  601  123.6 709  113.1   123.6   113.0   113.0
+blue-ink        rgb 37,99,235   601   96.0 709   95.6    96.0    96.0    96.0
+pen-ink         rgb 27,27,24    601   26.7 709   26.8    26.7    27.0    27.0
+fixture-red     rgb 230,26,26   601   87.0 709   69.4    87.0    69.0    69.0
+fixture-green   rgb 26,178,51   601  118.1 709  136.5   118.1   137.0   137.0
+fixture-blue    rgb 26,51,230   601   63.9 709   58.6    63.9    59.0    59.0
+pure-red        rgb 255,0,0     601   76.2 709   54.2    76.2    54.0    54.0
+pure-green      rgb 0,255,0     601  149.7 709  182.4   149.7   182.0   182.0
+cyan            rgb 0,255,255   601  178.8 709  200.8   178.8   201.0   201.0
+magenta         rgb 255,0,255   601  105.3 709   72.6   105.3    73.0    73.0
+grey-89         rgb 89,89,89    601   89.0 709   89.0    89.0    89.0    89.0
+grey-128        rgb 128,128,128 601  128.0 709  128.0   128.0   128.0   128.0
+grey-166        rgb 166,166,166 601  166.0 709  166.0   166.0   166.0   166.0
+near-white      rgb 250,250,250 601  250.0 709  250.0   250.0   250.0   250.0
+paper           rgb 255,255,255 601  255.0 709  255.0   255.0   255.0   255.0
+near-black      rgb 10,10,10    601   10.0 709   10.0    10.0    10.0    10.0
+text-black      rgb 0,0,0       601    0.0 709    0.0     0.0     0.0     0.0
+cmyk-look-red   rgb 181,21,28   601   69.6 709   55.5    69.6    56.0    56.0
+
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > is the Filter Effects formula the browser uses, not a private preference 1ms
+ ✓ tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > sums to exactly 1, which is what makes grey a fixed point 0ms
+ × tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > has no second copy in the modules that used to own one 3ms
+   → core/measure.ts still exports its own luma: expected [Function lumaOf] to be undefined
+ × tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > is the only coefficient triple left in a greyscale-of-a-document path 6ms
+   → expected [ …(7) ] to deeply equal [ …(5) ]
+ × tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > Recolour, Re-render and adjust-colors agree within one unit 127ms
+   → red-ink through Recolour (operators): 92.4, the standard says 76.7: expected 15.7239 to be less than or equal to 1
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > removes the colour completely: channel spread is 0 on every swatch 40ms
+
+── collapse check
+   Recolour (operators): 24 distinct greys over 24 distinct colours
+   Re-render (applyColorFilter): 24 distinct greys over 24 distinct colours
+   adjust-colors (rerasterise): 24 distinct greys over 24 distinct colours
+
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > scanner-effect greys with the same standard even though its look moves 110ms
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > keeps distinct colours distinct: no two swatches collapse to one grey 96ms
+
+── closest pairs under the standard now in force (8-bit units apart)
+   Recolour (operators)           orange/grey-166 0.5  fixture-red/grey-89 2.0  pink/blue-ink 2.6  green-ink/pink 3.0
+   Re-render (applyColorFilter)   red-ink/pink 1.0  pure-red/cmyk-look-red 2.0  green-ink/violet 3.0  orange/grey-166 3.0
+   adjust-colors (rerasterise)    red-ink/pink 1.0  pure-red/cmyk-look-red 2.0  green-ink/violet 3.0  orange/grey-166 3.0
+
+ ✓ tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > reports the pairs that come closest, rather than hiding them 164ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > leaves all 256 tones untouched, on both scales 4ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > does not move a swatch through a second pass of the operator path 7ms
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > does not move an already-grey page through the raster path either 84ms
+ × tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > takes the bilevel cut on the same luma as everything else 1ms
+   → the cut is not being taken on the shared luma: expected 255 to be +0 // Object.is equality
+ ✓ tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > reaches the paint exactly once per rendered page 43ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > has no second copy in the modules that used to own one
+AssertionError: core/measure.ts still exports its own luma: expected [Function lumaOf] to be undefined
+
+- Expected:
+undefined
+
++ Received:
+[Function lumaOf]
+
+ ❯ tests/pdf/greyscale-standard.test.ts:614:7
+    612|       (measure as Record<string, unknown>).lumaOf,
+    613|       'core/measure.ts still exports its own luma',
+    614|     ).toBeUndefined();
+       |       ^
+    615|     // The number the decision turned on: the fixture red, on the oper…
+    616|     // Recolour path writes. 69 under Rec.709, 87 under the retired BT…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/pdf/greyscale-standard.test.ts > the coefficients exist in exactly one place > is the only coefficient triple left in a greyscale-of-a-document path
+AssertionError: expected [ …(7) ] to deeply equal [ …(5) ]
+
+- Expected
++ Received
+
+  [
+    "src/components/tools/pdf/scan/ScanMain.tsx",
+    "src/components/tools/pdf/text-editor/model.ts",
+    "src/lib/ocr/engine.ts",
+    "src/lib/pdf/core/colour.ts",
++   "src/lib/pdf/core/content.ts",
++   "src/lib/pdf/core/measure.ts",
+    "src/lib/pdf/tools/security.ts",
+  ]
+
+ ❯ tests/pdf/greyscale-standard.test.ts:632:18
+    630|     // and the last four are deliberately excluded with a reason — nam…
+    631|     // stops a later reader "fixing" them into a third standard.
+    632|     expect(hits).toEqual(
+       |                  ^
+    633|       [
+    634|         'src/lib/pdf/core/colour.ts', // the definition, and the only …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/pdf/greyscale-standard.test.ts > every greyscale path lands on the same grey, per swatch > Recolour, Re-render and adjust-colors agree within one unit
+AssertionError: red-ink through Recolour (operators): 92.4, the standard says 76.7: expected 15.7239 to be less than or equal to 1
+ ❯ tests/pdf/greyscale-standard.test.ts:676:11
+    674|           Math.abs(v - swatch.grey709),
+    675|           `${swatch.name} through ${name}: ${v.toFixed(1)}, the standa…
+    676|         ).toBeLessThanOrEqual(1);
+       |           ^
+    677|       }
+    678|       expect(hi - lo, `${swatch.name}: the paths disagree by ${(hi - l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/pdf/greyscale-standard.test.ts > grey is a fixed point of the standard > takes the bilevel cut on the same luma as everything else
+AssertionError: the cut is not being taken on the shared luma: expected 255 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 255
+
+ ❯ tests/pdf/greyscale-standard.test.ts:820:70
+    818|     const edge = new Uint8ClampedArray([220, 38, 38, 255]);
+    819|     thresholdPixels(edge, 85);
+    820|     expect(edge[0], 'the cut is not being taken on the shared luma').t…
+       |                                                                      ^
+    821|     // Achromatic controls: the cut must not invent a tint on a page t…
+    822|     const grey = new Uint8ClampedArray([200, 200, 200, 255, 10, 10, 10…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 10 passed (14)
+   Start at  07:24:40
+   Duration  1.77s (transform 584ms, setup 29ms, import 745ms, tests 686ms, environment 252ms)
+
