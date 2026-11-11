@@ -135,9 +135,10 @@ and its parsing is judged by OpenSSL. A second pass with a real signer should re
 
 The `this app` column is the walk **after** ticket 1 was fixed (`bc0bcdd`): both
 inventories now run over `core/content.ts resourceScopes`, which is the one
-`core/tree.ts descend` kernel handed the resource edge function. Rows 1–3 and 6–7
-read as they did when they were measured; the four shapes ticket 1 was about are
-marked, and `resources-inherited.pdf` carries the correction its row needed.
+`core/tree.ts descend` kernel handed the resource edge function. Rows 1, 4 and 5 read as
+they did when they were measured; row 2 carries the correction its own bytes demanded,
+row 6 is ticket 1, and rows 3 and 7 are the two shapes the fix pass added because the
+five the measuring pass shipped could not tell a descent from a single step.
 
 | fixture | the shape | MuPDF, and a libqpdf walk over the resolved resources | this app | verdict |
 | --- | --- | --- | --- | --- |
@@ -261,7 +262,11 @@ creating path is unreachable. Both halves are pinned in
 
 **0 of the 13 rows are foreign-untested.** Six were before this pass, four more were
 pinned here, and the three that had never been measured now have per-shape CI
-assertions — which is where the two tickets came from. Over the 18 named functions the
+assertions — which is where the two tickets came from, and both of those tickets are
+closed: `93aa4fd` extracted the shared descent, `bc0bcdd` fixed `listFonts` /
+`listImages` / `inspectScript` / `stripScript` (and `attachmentCount`, the third instance
+found on the same card) on top of it, `d227879` + `2b31e0c` pinned the nesting the
+foreign set does not carry. Over the 18 named functions the
 same statement, with its limits:
 
 * 18/18 now execute against bytes this repo did not write inside `tests/**`;
