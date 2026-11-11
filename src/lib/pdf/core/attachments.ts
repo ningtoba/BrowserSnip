@@ -395,11 +395,31 @@ export async function addAttachments(
 
   for (const file of byName.values()) {
     const site = filespecSites(doc).find((s) => s.name === file.name);
-    const streamRef = site ? embeddedFileStream(doc, site.spec)?.ref : undefined;
+    if (!site) continue;
+    // `doc.attach` writes the name into `/UF` with the same raw bytes it puts in
+    // `/F`, so an accented or CJK name arrives as UTF-8 read through
+    // PDFDocEncoding: MuPDF listed `notes-éè.txt` as `notes-Ã©Ã¨.txt`. `/UF` is the
+    // Unicode entry, and a UTF-16BE string with a BOM is what tells a reader to
+    // decode it instead of guessing. `/F` keeps the plain bytes for the old ones.
+    site.spec.set(PDFName.of('UF'), unicodeFileName(file.name));
+    const streamRef = embeddedFileStream(doc, site.spec)?.ref;
     if (streamRef) writeParams(doc, streamRef, file.bytes, { creationDate: new Date() });
   }
 
   return listAttachments(doc).length;
+}
+
+/** `name` as a text string in UTF-16BE, led by the BOM the spec asks for. */
+function unicodeFileName(name: string): PDFHexString {
+  const bytes = new Uint8Array(2 + name.length * 2);
+  bytes[0] = 0xfe;
+  bytes[1] = 0xff;
+  for (let index = 0; index < name.length; index++) {
+    const unit = name.charCodeAt(index);
+    bytes[2 + index * 2] = (unit >> 8) & 0xff;
+    bytes[3 + index * 2] = unit & 0xff;
+  }
+  return PDFHexString.fromBytes(bytes);
 }
 
 /** What a page-copy carry did with the embedded files. */

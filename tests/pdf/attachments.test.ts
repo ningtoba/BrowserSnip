@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { newPDF, openPDF, savePDF, PDFName, PDFArray } from '@/lib/pdf/core/doc';
+import { PDFDict, PDFHexString, PDFString } from '@maxwbh/pdf-lib';
 import {
   addAttachments,
   listAttachments,
@@ -137,5 +138,82 @@ describe('removeAttachments', () => {
     expect(removeAttachments(doc, ['alpha.txt', 'BETA.TXT'])).toBe(2);
     const loaded = await reload(await savePDF(doc));
     expect(listAttachments(loaded).map((entry) => entry.name)).toEqual(['Gamma.txt']);
+  });
+});
+
+/**
+ * What the deployed pane was measured on.
+ *
+ * `add-attachments` was one of the eight tools the triage never reached, so the only
+ * claim that had never been checked was the one the card leads with: "They are
+ * embedded whole, not referenced." Three files of different shape — a PNG, a
+ * 1 KiB byte-everything pattern, and a name with accents — were attached through the
+ * real pane and the output was hashed back by pypdf, MuPDF and pikepdf
+ * (`docs/research/verify-attachments-read.py`, log `attachments-deployed.log`). All
+ * three came out byte-identical. The name did not: `/UF` carried the same raw bytes
+ * as `/F`, so MuPDF decoded UTF-8 through PDFDocEncoding and listed the file as
+ * `notes-Ã©Ã¨.txt`, which is pinned below as well.
+ */
+describe('an attachment arrives as the same bytes, under the same name', () => {
+  const KIB = Uint8Array.from(Array.from({ length: 1024 }, (_, i) => (i * 37 + 214) & 0xff));
+  const PNG = Uint8Array.from(atob(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/wD/7AAAAABJRU5ErkJggg==',
+  ), (c) => c.charCodeAt(0));
+
+  const sha256 = async (bytes: Uint8Array) => {
+    const digest = await crypto.subtle.digest('SHA-256', bytes as unknown as BufferSource);
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  it('hashes back to the input for every shape it was fed', async () => {
+    const doc = await docWithPages();
+    await addAttachments(doc, [
+      { name: 'pixel.png', bytes: PNG, mimeType: 'image/png' },
+      { name: 'bin-handshake.bin', bytes: KIB },
+      { name: 'notes-éè.txt', bytes: utf8('attachment note\n') },
+    ]);
+    const loaded = await reload(await savePDF(doc));
+    const byName = new Map(listAttachments(loaded).map((entry) => [entry.name, entry]));
+    expect([...byName.keys()]).toEqual(['pixel.png', 'bin-handshake.bin', 'notes-éè.txt']);
+    for (const [name, bytes] of [['pixel.png', PNG], ['bin-handshake.bin', KIB]] as const) {
+      const stored = byName.get(name)!.bytes;
+      expect(md5Hex(stored), `${name} changed on the way in`).toBe(md5Hex(bytes));
+      expect(await sha256(stored)).toBe(await sha256(bytes));
+    }
+    expect(byName.get('pixel.png')!.mimeType).toBe('image/png');
+  });
+
+  it('writes /UF as a Unicode text string so an accented name is not decoded as bytes', async () => {
+    const doc = await docWithPages();
+    await addAttachments(doc, [{ name: 'notes-éè.txt', bytes: utf8('attachment note\n') }]);
+    const loaded = await reload(await savePDF(doc));
+    const names = loaded.catalog
+      .lookupMaybe(PDFName.of('Names'), PDFDict)
+      ?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict)
+      ?.lookupMaybe(PDFName.of('Names'), PDFArray);
+    expect(names, 'no /EmbeddedFiles name tree was written').toBeTruthy();
+    const spec = loaded.context.lookup(names!.lookup(1)) as PDFDict;
+    const uf = spec.lookup(PDFName.of('UF')) as PDFHexString;
+    const hex = uf.toString().replace(/^</, '').replace(/>$/, '');
+    const stored = Uint8Array.from(hex.match(/../g) ?? [], (pair) => parseInt(pair, 16));
+    // §7.9.2.2: a text string in UTF-16BE is marked by the BOM, and that mark is the
+    // only thing that stops a reader guessing an encoding for a name like this.
+    expect([...stored.subarray(0, 2)]).toEqual([0xfe, 0xff]);
+    expect(uf.decodeText()).toBe('notes-éè.txt');
+    expect(listAttachments(loaded).map((entry) => entry.name)).toEqual(['notes-éè.txt']);
+    // `/F` stays the plain bytes, for readers that only ever look there.
+    expect((spec.lookup(PDFName.of('F')) as PDFString).decodeText()).toContain('notes-');
+  });
+
+  it('keeps the note the user typed with every file in the run', async () => {
+    const doc = await docWithPages();
+    await addAttachments(doc, [
+      { name: 'a.txt', bytes: utf8('a'), description: 'Board pack of 2026-11-11' },
+      { name: 'b.txt', bytes: utf8('b'), description: 'Board pack of 2026-11-11' },
+    ]);
+    const loaded = await reload(await savePDF(doc));
+    for (const entry of listAttachments(loaded)) {
+      expect(entry.description, `${entry.name} lost the note`).toBe('Board pack of 2026-11-11');
+    }
   });
 });

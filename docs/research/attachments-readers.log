@@ -1,0 +1,32 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+targets:
+  daaf29ba63f382d2…    67B  pixel.png
+  b9d00a39bc5e2b11…  1024B  bin-handshake.bin
+  82a521e2de7cd594…    16B  notes-éè.txt
+
+pypdf lists 3: ['pixel.png', 'bin-handshake.bin', 'notes-éè.txt']
+MuPDF 1.28.2: embfile_count=3
+  'pixel.png': desc=None declared size=67 length=67 sha256=daaf29ba63f382d2… mime=None
+  'bin-handshake.bin': desc=None declared size=1024 length=1024 sha256=b9d00a39bc5e2b11… mime=None
+  'notes-Ã©Ã¨.txt': desc=None declared size=16 length=16 sha256=82a521e2de7cd594… mime=None
+  pikepdf 'pixel.png': 67B via /EF file specification /Desc=None /Subtype=/image/png /UF=None /Params /Size=67 /CheckSum=yes /CreationDate=D:20261112074303+08'00'
+  pikepdf 'bin-handshake.bin': 1024B via /EF file specification /Desc=None /Subtype=/application/octet-stream /UF=None /Params /Size=1024 /CheckSum=yes /CreationDate=D:20261112074303+08'00'
+  pikepdf 'notes-éè.txt': 16B via /EF file specification /Desc=None /Subtype=/text/plain /UF=None /Params /Size=16 /CheckSum=yes /CreationDate=D:20261112074303+08'00'
+  filespec 'pixel.png': /UF=pikepdf.String("pixel.png") /F=pikepdf.String("pixel.png") /AFRelationship=pikepdf.Name("/Unspecified") /Desc=pikepdf.String("Board pack of 2026-11-11")
+  filespec 'bin-handshake.bin': /UF=pikepdf.String("bin-handshake.bin") /F=pikepdf.String("bin-handshake.bin") /AFRelationship=pikepdf.Name("/Unspecified") /Desc=pikepdf.String("Board pack of 2026-11-11")
+  filespec 'notes-éè.txt': /UF=pikepdf.String("notes-éè.txt") /F=pikepdf.String("notes-éè.txt") /AFRelationship=pikepdf.Name("/Unspecified") /Desc=pikepdf.String("Board pack of 2026-11-11")
+  /AF: ['<pikepdf.Dictionary(Type="/Filespec")({\n  "/AFRelationship": "/Unspecified",\n  "/Desc": "Board pack of 2026-11-11",\n  "/EF": {\n    "/F": pikepdf.Stream(owner=<...>, data=<...>, {\n      "/Filter": "/FlateDecode",\n      "/Length": 66,\n      "/Params": {\n        "/CheckSum": "˛d²yMØ\x14ÌÏøš£nI1ð",\n        "/CreationDate": "D:20261112074303+08\'00\'",\n        "/ModDate": "D:20261112074303+08\'00\'",\n        "/Size": 67\n      },\n      "/Subtype": "/image/png",\n      "/Type": "/EmbeddedFile"\n    })\n  },\n  "/F": "pixel.png",\n  "/Type": "/Filespec",\n  "/UF": "pixel.png"\n})>', '<pikepdf.Dictionary(Type="/Filespec")({\n  "/AFRelationship": "/Unspecified",\n  "/Desc": "Board pack of 2026-11-11",\n  "/EF": {\n    "/F": pikepdf.Stream(owner=<...>, data=<...>, {\n      "/Filter": "/FlateDecode",\n      "/Length": 287,\n      "/Params": {\n        "/CheckSum": "q˘d´Ãø:+e£Ò®Áù¼˚",\n        "/CreationDate": "D:20261112074303+08\'00\'",\n        "/ModDate": "D:20261112074303+08\'00\'",\n        "/Size": 1024\n      },\n      "/Subtype": "/application/octet-stream",\n      "/Type": "/EmbeddedFile"\n    })\n  },\n  "/F": "bin-handshake.bin",\n  "/Type": "/Filespec",\n  "/UF": "bin-handshake.bin"\n})>', '<pikepdf.Dictionary(Type="/Filespec")({\n  "/AFRelationship": "/Unspecified",\n  "/Desc": "Board pack of 2026-11-11",\n  "/EF": {\n    "/F": pikepdf.Stream(owner=<...>, data=<...>, {\n      "/Filter": "/FlateDecode",\n      "/Length": 24,\n      "/Params": {\n        "/CheckSum": " åëø©�hn—×·£Í´F·",\n        "/CreationDate": "D:20261112074303+08\'00\'",\n        "/ModDate": "D:20261112074303+08\'00\'",\n        "/Size": 16\n      },\n      "/Subtype": "/text/plain",\n      "/Type": "/EmbeddedFile"\n    })\n  },\n  "/F": "notes-éè.txt",\n  "/Type": "/Filespec",\n  "/UF": "notes-éè.txt"\n})>']; /Names keys: ['/EmbeddedFiles']
+
+per file, across the three readers:
+  bin-handshake.bin: {'pypdf': 'b9d00a39bc5e…', 'MuPDF': 'b9d00a39bc5e…', 'pikepdf': 'b9d00a39bc5e…'} · readers agree · matches the input bytes
+  notes-Ã©Ã¨.txt: {'pypdf': 'MISSING', 'MuPDF': '82a521e2de7c…', 'pikepdf': 'MISSING'} · readers agree · matches the input bytes
+  notes-éè.txt: {'pypdf': '82a521e2de7c…', 'MuPDF': 'MISSING', 'pikepdf': '82a521e2de7c…'} · readers agree · matches the input bytes
+  pixel.png: {'pypdf': 'daaf29ba63f3…', 'MuPDF': 'daaf29ba63f3…', 'pikepdf': 'daaf29ba63f3…'} · readers agree · matches the input bytes
+
+poppler `pdfinfo -listattachments`: exit=99
+  
+  pdfinfo version 26.10.0
+Copyright 2005-2026 The Poppler Developers - http://poppler.freedesktop.org
+Copyright 1996-2011, 2022 Glyph & Cog, LLC
+Usage: pdfinfo [options] <PDF-file>
+  -f <int>           

@@ -1,0 +1,14 @@
+enclosures: pixel.png 67B · bin-handshake.bin 1024B · notes-éè.txt 16B
+document in: /tmp/eight/plain.pdf
+fold: opened "▸\n1 MORE OPTION"
+files field: 2 files chosen / pixel.png / ✕ / bin-handshake.bin / ✕
+in-page add: dispatched 3 files
+note field : description=Board pack of 2026-11-11
+run: Attach files
+wrote /tmp/eight/attached-deployed.pdf 2313 bytes
+result screen: Add Attachments ;; Add Attachments finished in this tab — nothing was uploaded. ;; Page of plain_attached.pdf, drawn in this tab — a picture of the file, not the file itself. ;; plain_attached.pdf ;; Embedded 3 new file(s). The document now carries 3 attachment(s). Readers with an attachments panel will list them. ;; 2 file(s) shared a name with another in this run, and a PDF stores one attachment per name: only the last copy of each is embedded.
+hashes: daaf29ba63f382d2a566b32caf5ad8b6b98682fa9e29135447df5fca16c7e606  67  pixel.png
+b9d00a39bc5e2b116520728c0852a89a2115e6412ed98515d2d6300e9635b9a5  1024  bin-handshake.bin
+82a521e2de7cd594423f1e8307ebc34061061914f2f9dcee4dce1383d095e3a9  16  notes-éè.txt
+workdir: /tmp/attach-RQhDds
+console errors []
