@@ -1,0 +1,44 @@
+ATTACHMENTS — the same foreign fixture, extracted on the deployed site.
+
+Proves the reader fix is live, not merely green on a branch. The input is
+`tests/fixtures/attachments/mupdf-native.pdf`, written by MuPDF 1.28.2
+(`embfile_add`), whose name-tree value is an **inline** file specification — the shape
+that made `docs/TOOL-TRIAGE.md` ERRORS 4 say "This PDF contains no embedded files."
+
+    bundle served    assets/index-C6ma42d2.js   (contains the `inline:` identity tag
+                  the de-duplication in `core/attachments.ts` introduced, so this is
+                  a post-fix build)
+    command        BASE=https://www.browsersnip.com TOOL=extract-attachments \
+                     LABEL='Extract attachments' \
+                     PDF=tests/fixtures/attachments/mupdf-native.pdf \
+                     OUT=/tmp/live-note.txt node docs/research/colour-rail.mjs
+
+What the card printed, read off the page by the rail's own probe:
+
+    report line: note.txt
+    READY
+    SIZE
+    3.0 KB → 280 B · 91% smaller
+    PAGES
+    3 in · out not counted
+
+    Found 1 embedded file(s): note.txt (280 B).
+
+    console errors: []
+
+The downloaded bytes:
+
+    280 bytes
+    sha256 6d4b8fa7b05143ad7816d3b57e46cd37d0d70396436fea36ba19124a0f40a94f
+
+which is the payload the fixture was built to carry — the same digest pinned in
+`tests/pdf/attachments-foreign.test.ts`, in `tests/fixtures/attachments/MANIFEST.json`
+and in `docs/research/attachments-foreign-shapes.log`, where MuPDF 1.28.2, pypdf 6.14.2
+and poppler 26.10.0 each report it as `= expected`. Content, not count: a filename
+beside 280 bytes that hashed differently would have been the same class of lie as a
+blank page with a page count.
+
+Two things the run did **not** claim, on purpose: `out not counted` is the honest label
+for a tool whose result is the enclosure rather than a document, and no sentence says
+anything about the other 10 attachments in this app's catalogue that this fixture does
+not carry.

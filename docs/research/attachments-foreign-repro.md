@@ -27,3 +27,14 @@ four readers, not five.
 | `catalog-and-annot.pdf` | one FileSpec named twice: /EmbeddedFiles AND a page /FileAttachment | MuPDF: catalog-and-annot.bin sha256=65f54195401c = expected; pypdf: catalog-and-annot.bin sha256=65f54195401c = expected; poppler: catalog-and-annot.bin, catalog-and-annot.bin | found it (the shape pdf-lib also writes) | Found 1 embedded file(s): catalog-and-annot.bin (272 B). — `['catalog-and-annot.bin']`; edit: “This PDF carries 1 attachment(s). List the names you want removed.” |
 | `annot-only.pdf` | attachment reachable only through a page /FileAttachment | MuPDF: nothing; pypdf: nothing; poppler: annot-only.bin | found it (the shape pdf-lib also writes) | Found 1 embedded file(s): annot-only.bin (278 B). — `['annot-only.bin']`; edit: “This PDF carries 1 attachment(s). List the names you want removed.” |
 | `unicode-name.pdf` | UTF-16BE name-tree key whose /UF differs from its /F | MuPDF: Ã¼ber-ð.txt sha256=067570bac832 (unexpected name); pypdf: über-𓂀.txt sha256=067570bac832 = expected; poppler: über-������.txt | found it (the shape pdf-lib also writes) | Found 1 embedded file(s): über-𓂀.txt (275 B). — `['über-𓂀.txt']`; edit: “This PDF carries 1 attachment(s). List the names you want removed.” |
+
+## And on the deployed site
+
+`docs/research/attachments-foreign-deployed.log`: the same `mupdf-native.pdf` driven
+through the rail's own **Extract attachments** button on
+`https://www.browsersnip.com` (bundle `assets/index-C6ma42d2.js`, which carries the
+`inline:` identity tag this fix introduced). The card reads *"Found 1 embedded file(s):
+note.txt (280 B)."* and the 280 bytes downloaded hash to
+`6d4b8fa7b05143ad7816d3b57e46cd37d0d70396436fea36ba19124a0f40a94f` — the digest the
+fixture carries in `MANIFEST.json` and the three outside readers report as
+`= expected`.
