@@ -38,6 +38,10 @@ processes with a two-second pause: 11 + 16 fixtures, byte-identical each time.
 
 ## Table 1 — coverage: fed a foreign file in CI?
 
+*Snapshot as the sweep took it. The definitive per-function list, with the two fixes and
+this pass's measurements folded in, is Table R in
+`docs/research/reader-sweep-reconciliation.md` — read that one when the two disagree.*
+
 | reader | structure | our writer produces it too | foreign file in a CI test |
 | --- | --- | --- | --- |
 | `core/attachments.ts` `listAttachments` | `/EmbeddedFiles` name tree, file specs, `/AF`, `/Annots` | yes — `addAttachments` | **yes, since this pass** (15 fixtures; before it: only pdf-lib files, plus one rig line) |
@@ -60,10 +64,20 @@ handed a file this repo did not write** — 4 when this audit ran, plus `readOut
 fixed and pinned. Counted by row, because two rows group entry
 points over a single walk (`listAnnotations` with `annotationCount`, `readInfo` with
 `readXmp`) and one row covers two functions that no longer have a caller at all
-(`listFonts` / `listImages`) — 17 exported functions, the same 13 walks behind them. And
+(`listFonts` / `listImages`) — **18** exported functions, the same 13 walks behind them
+(the "17" this file printed until the reconciliation pass was an arithmetic error: the
+names in Table 1 sum to 18, and the `/Info` row even omits `readXmpText`, which `readXmp`
+is built on). And
 3 of the 4 "yes" rows are the cipher trio plus content-stream decoding, which met foreign
 bytes only because a password test had to: the app was not looking for a foreign
 *structure*, it was looking for a foreign *cipher*.
+
+**This count is closed.** `docs/research/reader-sweep-reconciliation.md` re-counted every
+row against the code, found that the residue of *unmeasured* rows was three (not two) —
+`listFonts`/`listImages`, `inspectScript`/`stripScript`, `readSignatures` — measured all
+three per shape against MuPDF, libqpdf, poppler and OpenSSL, pinned the four rows that
+until then lived only in Table 2 below, and landed on **0 of 13 foreign-untested**, with
+two of the newly measured readers broken and filed as tickets rather than fixed here.
 
 The attachments row is the one that changed today, and it is also the proof that
 "never" did not mean "fine": that reader had 8 passing tests and failed 10 of 15 foreign
@@ -101,7 +115,9 @@ and letting `UnexpectedObjectTypeError` reach the user as an engine sentence, wh
 what the `flatten` row closed for annotation appearances.
 
 So "our tests pass on our own output" was not the attachments bug. It is the shape of a
-class, and the class still has seven untested-at-foreign readers in it.
+class, and the class has now been measured to the last row of this table: the fourth and
+fifth instances of the walk gap are `sanitize`'s `/Kids` JavaScript tree and the resource
+inventories that stop at the page (`reader-sweep-reconciliation.md`, tickets 1 and 2).
 
 ## Left deliberately
 
@@ -110,15 +126,21 @@ class, and the class still has seven untested-at-foreign readers in it.
   someone else. What was left *out* of that pass on purpose: the page-copy path
   (`core/doc.ts:carryPageFurniture`) still drops `/PageLabels` entirely, so a labelled
   document loses its numbering through `extract-pages`, `merge` and friends. Measured,
-  recorded, and a product decision about merges rather than a walk bug.
-- **The rig is not in CI.** `docs/research/foreign-structure.vitest.config.ts` keeps it
-  out of `tests/**`, the same choice as the encrypted-inputs rig. The rows that rig found
-  wrong are now asserted in `tests/pdf/readers-foreign.test.ts` instead, so the two wrong
-  verdicts in Table 2 no longer depend on a hand-run rig; the rest of the table (layers,
-  annotations, fields, metadata) still does.
-- **Not foreign-tested at all, still:** signatures (`readSignatures` — the fixtures carry
-  none), `listFonts`/`listImages` (no callers), and every reader above against a *real*
-  Word/Preview/Acrobat export rather than a hand-shaped file.
+  recorded, and a product decision about merges rather than a walk bug — **since closed**
+  by `7d8d7c5`, `e362e78` and `ca8e552`.
+- **The rig is not in CI, and no longer needs to be for the rows in Table 2.**
+  `docs/research/foreign-structure.vitest.config.ts` keeps it out of `tests/**`, the same
+  choice as the encrypted-inputs rig. Every verdict in Table 2 — layers, annotations,
+  fields, `/Info` + XMP — is now asserted in
+  `tests/pdf/readers-sweep-foreign.test.ts` over the same fixtures and the same
+  `census.json` columns, so a markdown table is no longer the only place a measurement
+  lives.
+- **Not foreign-tested at all, still:** nothing in the 13. What is open is narrower and
+  named: two broken readers filed as tickets in
+  `docs/research/reader-sweep-reconciliation.md` (`listFonts`/`listImages` do not enter a
+  Form XObject; `sanitize`'s named-script walk does not enter a `/Kids` name tree),
+  `readSignatures` blind to `/Perms`, and every reader above against a *real*
+  Word/Preview/Acrobat export rather than a MuPDF- or libqpdf-shaped file.
 
 ## Re-running this
 
@@ -126,6 +148,7 @@ class, and the class still has seven untested-at-foreign readers in it.
 python3 scripts/foreign-structure-fixtures.py --check      # determinism of the fixtures
 python3 scripts/foreign-structure-fixtures.py              # rebuild + census + MANIFEST
 npx vitest run --config docs/research/foreign-structure.vitest.config.ts
+npx vitest run tests/pdf/readers-sweep-foreign.test.ts      # the same rows, in CI
 python3 scripts/attachments-foreign-fixtures.py --check     # the attachments set
 npx vitest run tests/pdf/attachments-foreign.test.ts
 python3 scripts/readers-foreign-fixtures.py --check         # the labels/outlines set
