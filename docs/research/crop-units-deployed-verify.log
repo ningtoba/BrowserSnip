@@ -1,0 +1,83 @@
+Re-verification of the two unfinished items against the deployed build.
+Run 2026-11-11 against https://www.browsersnip.com (deployed from 82a178d; the two
+later pushes died in actions/deploy-pages, not in the build job).
+Nothing here was read through this app's object model: the produced files were cropped
+by the live page and read back by pypdf (`crop-units-read.py`) and by pymupdf.
+
+── 1. pdf-crop: one region, four units, on the deployed site ─────────────────
+
+Driver: `BASE=https://www.browsersnip.com UNIT=<u> MARGINS=<m> PDF=/tmp/crop-units/sheets.pdf
+node docs/research/crop-units-run.mjs`, fixture from `crop-units-fixture.mjs`
+(4 sheets: 500x970 at origin 18,24; A4; US Letter; 400x700 carrying /Rotate 90).
+
+  pt  21.6/28.8/43.2/57.6      -> panel: writes 21.6/28.8/43.2/57.6 pt
+  mm   7.62/10.16/15.24/20.32  -> panel: writes 21.6/28.8/43.2/57.6 pt
+  cm 0.762/1.016/1.524/2.032   -> panel: writes 21.6/28.8/43.2/57.6 pt
+  in   0.3/0.4/0.6/0.8         -> panel: writes 21.6/28.8/43.2/57.6 pt
+
+python3 docs/research/crop-units-read.py <the four downloads>
+
+crop-units-pt.pdf — declared in pt: [21.6, 28.8, 43.2, 57.6] pt off each edge
+   sheet 1: /MediaBox [75.6, 67.2, 489.19999999999993, 972.4]  /CropBox [75.6, 67.2, 489.19999999999993, 972.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 2: /MediaBox [57.6, 43.2, 566.4799999999999, 820.29]  /CropBox [57.6, 43.2, 566.4799999999999, 820.29]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 3: /MediaBox [57.6, 43.2, 583.2, 770.4]  /CropBox [57.6, 43.2, 583.2, 770.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+   sheet 4: /MediaBox [57.6, 43.2, 371.2, 678.4]  /CropBox [57.6, 43.2, 371.2, 678.4]  worst corner 0.000 pt  /MediaBox = /CropBox
+(mm, cm, in: identical /MediaBox and /CropBox on all 4 sheets, digit for digit)
+
+OK: 4 file(s) read back as asked — the 4 unit spellings of one region wrote the same
+/MediaBox and /CropBox on all 4 sheets (an offset page, A4, US Letter and a /Rotate 90
+sheet), within the file's own rounding of 0.06 pt.
+
+Cross-checked against the arithmetic, not against the tool, with pymupdf reading the
+raw stored arrays (`xref_get_key`, because both pypdf and pymupdf normalise the box
+origin and would hide a shift): sheet 1 = [75.6, 67.2, 489.2, 972.4] = 18+57.6,
+24+43.2, 18+500-28.8, 24+970-21.6. MATCH for pt, mm, cm and in.
+
+── 1b. negative control on the deployed bytes ────────────────────────────────
+
+The equality above is only interesting if the unit is actually read. Same digits, unit
+switched to pt — 7.62/10.16/15.24/20.32 typed with unit=pt:
+
+  panel: writes 7.6/10.2/15.2/20.3 pt,  keeps 470 × 947 pt   (the mm run kept 414 × 905)
+  /CropBox sheet 1: [38.3, 39.2, 507.8, 986.4]   vs mm [75.6, 67.2, 489.2, 972.4]
+
+37.3 pt apart on the first corner. The unit moves the file; the control is not
+decoration, and the four-unit agreement is not a tautology.
+
+── 1c. red-without-fix count ─────────────────────────────────────────────────
+
+`marginPoints` mutated to ignore its unit argument (the pre-fix behaviour: geometry
+pinned to points), then `npx vitest run tests/pdf/crop-units.test.ts`:
+
+  Tests  3 failed | 2 passed (5)     # crop-units alone
+  Tests  3 failed | 121 passed (124) # across the five named files
+
+The three that go red are the byte equality, the panel's predicted-points line, and the
+panel's mm run. Unmutated: 5 passed / 124 passed. Source and the written evidence PDFs
+were restored from git afterwards.
+
+Caveat found while doing this: `tests/pdf/crop-units.test.ts` writes
+`docs/research/crop-units-*.pdf` on every run, so a mutated run dirties the committed
+evidence files. They differ run to run only in compressed-stream length (creation
+date / file ID), never in a box; re-run the file unmutated before committing.
+
+── 2. the retired `redact` id, and the count the UI prints ───────────────────
+
+  #/tool/redact on the deployed site -> location.hash "#/tool/redact-pdf"
+  after uploading a PDF: "Permanent redaction" panel present,
+  #tool-process-btn reads "Apply 0 Redactions"
+
+So the bookmark lands on the tool that owns the job and mounts a panel that can run it.
+`getPdfTool('redact')` is undefined in this tree (pinned by field-reach.test.ts), and
+`redact-pdf` declares its own `outputSuffix: '_redacted.pdf'`, so the download name does
+not depend on the retired id. `src/lib/utils/download.ts` still carries a `case 'redact'`
+in the legacy `ToolId` switch — a different namespace from the PDF catalogue, left alone.
+
+Catalogue count versus what the page actually prints:
+
+  TOOL_CATALOGUE.length = 121     PDF_TOOLS.length = 123 (2 folded ids)
+  PDF_TOOL_COUNT                = 121
+  deployed #/pdf headline       = "121 tools that run on your own computer"
+  deployed button[data-tool]    = 121 cards
+
+The number a visitor is told, the number of cards under it, and the catalogue agree.
