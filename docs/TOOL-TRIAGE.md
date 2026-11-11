@@ -2,8 +2,10 @@
 
 **Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (2 closed — `repair`
 since `2ca815b`, and `txt-to-pdf` by `c2226b5` with its marker rig in `abdbbd5`) · 4 FALSE CLAIM ·
-3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT (1 closed — `font-to-outline`'s Ghostscript
-invocation by `4ad2be3`, its sentences by `25829fb`, measured by the argv rig in `4bb51ae`) ·
+3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT (2 closed — `font-to-outline`'s Ghostscript
+invocation by `4ad2be3`, its sentences by `25829fb`, measured by the argv rig in `4bb51ae`; and
+the attachments reader of ERRORS 4 by `9f4116b`, on foreign fixtures banked in `7724390`,
+measured per shape in `34a8b10` and byte-reproducible since `23f7af5`) ·
 81 CLEAN (MEASURED) · 26 NOT REACHED.**
 Coverage: every one of the 130 ids was driven in real Chromium against the deployed site, and
 **all 427 field flips of the PDF catalogue were run** (288 of them produced a file to compare,
@@ -542,6 +544,61 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   `add-attachments` was driven here and the rerun (below) is the chain that will say whether
   the reader only recognises what `pdf-lib` wrote. Recorded as measured-on-this-input, cause
   not inferred.
+* **Still reproduces on `c581e80`, and it is the shape, not the producer.** `attach.pdf` here
+  is MuPDF's (`docs/research/triage-fixtures-images.py`, `embfile_add`), and MuPDF writes a
+  name-tree pair as `/Names [ (note.txt) << /Type /Filespec /EF << /F 10 0 R >> … >> ]` — the
+  file specification **inline**. `collectNameTree` accepted a value only when it was a
+  `PDFRef`, so the pair was invisible and both tools spoke a sentence the bytes denied.
+  Rebuilt as 15 fixtures written outside this repo — libqpdf 12.3.2 through pikepdf 10.9.1,
+  MuPDF 1.28.2 through PyMuPDF, pypdf 6.14.2 — and judged by four readers before being kept
+  (`qpdf` and `mutool` are not on this box, so four, not five):
+  `tests/fixtures/attachments/`, generator `scripts/attachments-foreign-fixtures.py`, census
+  `docs/research/attachments-foreign-shapes.log`, per-shape table
+  `docs/research/attachments-foreign-repro.md`.
+* **Closed by `9f4116b`; 10 of 37 assertions red before it** (`tests/pdf/attachments-foreign.test.ts`,
+  58 cases now). What the shapes turned out to cover:
+  * the inline file specification — invisible, the reported bug, both from MuPDF and from a
+    hand-built libqpdf file, so the reader's assumption and not one producer's quirk;
+  * `/EF` pointing **at** the embedded-file stream — not skipped but fatal:
+    `spec.lookupMaybe('EF', PDFDict)` threw `Expected instance of PDFDict, but got instance of
+    PDFRawStream` out of the fork's typed lookup, the same throw class `flatten`'s row closed
+    for annotation appearances. A read of a foreign file now asks what an object *is*
+    (`resolve`) instead of asking pdf-lib to confirm a hope;
+  * `/EF` naming only `/UNIX` — passed over entirely (`/DOS` was read, `/UNIX` and `/Mac` were
+    not in the key list);
+  * one file declared in the catalogue **and** named again by a `/FileAttachment` — counted once,
+    which needed an identity to deduplicate by now that a spec may have no reference, and
+    removal had to splice the pair rather than strand an inline dictionary's stream.
+  Green before and after, so the fix did not move them: the `/Kids` + `/Limits` tree, the
+  `/F`+`/UF` decoy pair (`/UF` already won), a stream with no `/Params`, an indirect `/EF`
+  dictionary, the annotation-only enclosure, the UTF-16BE name.
+* **Assertions are on SHA-256 of the extracted bytes**, never on a count, and the fixtures are
+  byte-reproducible (`MANIFEST.json` + `--check`: 16 fixtures identical across two rebuilds) so
+  a red test means the reader changed rather than somebody re-ran a generator.
+* **The reciprocal direction holds too** — `docs/research/attachments-reciprocal.py`, log
+  `attachments-reciprocal.log`: on the file `add-attachments` writes, MuPDF, pypdf and poppler
+  each list both enclosures with distinct payloads and extract them intact, and libqpdf reads
+  back a `/Params /CheckSum` equal to the MD5 of the bytes it inflated. On the file
+  `edit-attachments` produced by removing a MuPDF enclosure, all three list nothing and poppler
+  still parses the 3 pages: the removal is in the bytes, not just in the reader that did it.
+  Recorded, not fixed, because it is pdf-lib's and this app makes no claim about it: the legacy
+  `/F` of a name containing 𓂀 holds `\x0c\x80`, since PDFDocEncoding has no byte for it.
+* **Re-measured on the deployed site** (`docs/research/attachments-foreign-deployed.log`, bundle
+  `assets/index-C6ma42d2.js`, fetched and checked to carry this fix's `inline:` identity tag):
+  the rail's own **Extract attachments** over `mupdf-native.pdf` answers *"Found 1 embedded
+  file(s): note.txt (280 B)."* with `console errors: []`, and the download is 280 bytes hashing
+  to `6d4b8fa7b05143ad7816d3b57e46cd37d0d70396436fea36ba19124a0f40a94f` — the digest three
+  outside readers call `= expected`.
+* **This entry is the third instance of a pattern, so it was audited as one.**
+  `docs/research/foreign-structure-audit.md` asks, of 13 readers that parse a structure this
+  app's writer also produces, whether a CI test has ever fed one a foreign file: **4 have, 9
+  have never**. Measured over 11 further foreign fixtures: `listLayers`, `listAnnotations`,
+  `listFormFields`, `readInfo`/`readXmp` and a nested `/Outlines` answer correctly; two more
+  failures are the same two lines of code again — `readPageLabels` loses a `/Kids` number tree
+  and prints `["1","2","3"]` for a file labelled `i-1, I, c`, and `readOutline` resolves a named
+  destination only when the array is written inline, so a `/Dests` value behind a reference or
+  inside a `/Kids` tree yields `page: null` where pypdf 6.14.2 resolves both. Reported, not
+  fixed: attachments was the entry that had a user sentence to close.
 
 ### 5. A note on tools that start blocked — which is the design, not a defect
 
