@@ -27,9 +27,12 @@
  * The Ghostscript and CoherentPDF *loaders* are doubled at the module edge, so the
  * real `core/engine-ops` seam and the real tools run; only the binaries are stand-ins.
  * The last block runs the published `@bentopdf/gs-wasm` build when it is on disk
-* (`BROWSERSNIP_GS=live`, skipped on CI) and asserts the finding the label hid: the
- * engine's file carries Ghostscript's producer and **no** `/OutputIntents`, and the
- * fallback's file is the one that has an output intent.
+ * (`BROWSERSNIP_GS=live`, skipped on CI) and asserts what each path's catalogue
+ * carries: the engine's file has Ghostscript's producer and — since the prefix
+ * prolog landed in `convertToPdfA` — an output intent too, and the fallback's file
+ * has one as well. Before that fix the engine's file had none, which is the
+ * measurement `docs/research/pdfa-attribution-recheck.md` §2 records and
+ * `docs/research/pdfa-invocation-fix.md` closes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -521,13 +524,14 @@ describe('pdf-to-pdfa over the published Ghostscript build', () => {
     expect(outcome.outputs[0].producedBy).toEqual({ via: 'engine', engine: 'ghostscript' });
     // Ghostscript wrote this file: its producer string is in it, and the tool says so.
     expect(Buffer.from(bytes).toString('latin1')).toMatch(/GPL Ghostscript [0-9.]+/);
-    // …and the finding the label used to hide is measured, not quoted: this build's
-    // `-dPDFA=2` run identifies the file without giving it the output intent PDF/A
-    // asks for, so the card may not lean on the word "converted" alone.
+    // …and the finding the label used to hide, measured on the file the run hands
+    // over. The invocation now carries a prefix prolog, so this build writes the
+    // intent too; the card reports whichever way the catalogue reads, which is why
+    // the opposite result is still a passing assertion here rather than a lie.
     const doc = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
-    expect(doc.catalog.get(PDFName.of('OutputIntents'))).toBeUndefined();
-    expect(outcome.message).toMatch(/no output intent in the catalogue/);
-    console.log(`[attribution] engine ${bytes.byteLength} B, producer GPL Ghostscript, /OutputIntents absent`);
+    expect(doc.catalog.get(PDFName.of('OutputIntents'))).toBeDefined();
+    expect(outcome.message).toMatch(/an output intent in the catalogue/);
+    console.log(`[attribution] engine ${bytes.byteLength} B, producer GPL Ghostscript, /OutputIntents present`);
     fs.writeFileSync('/tmp/attr-live-engine.pdf', bytes);
   }, 240_000);
 

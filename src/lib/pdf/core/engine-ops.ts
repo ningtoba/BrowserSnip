@@ -33,6 +33,7 @@ import {
   run as gsRun,
 } from '../engines';
 import type { CpdfApi, CpdfDocument, EngineId, PyMuPDFInstance } from '../engines';
+import { srgbIccProfile } from './metadata';
 import type { ByteSource } from '../tools/types';
 
 export type { EngineId };
@@ -81,6 +82,9 @@ async function requireEngine(id: EngineId, hooks: EngineHooks = {}): Promise<voi
 
 const GS_SANDBOX_IN = '/tmp/input.pdf';
 const GS_SANDBOX_OUT = '/tmp/output.pdf';
+/** The PDF/A prefix prolog and the profile it reads, both written per run. */
+const GS_SANDBOX_PDFA_PS = '/tmp/pdfa_prefix.ps';
+const GS_SANDBOX_PDFA_ICC = '/tmp/pdfa_profile.icc';
 
 interface GsOutcome {
   bytes: Uint8Array;
@@ -108,20 +112,76 @@ interface GsOutcome {
  * same constants `runGhostscript` writes and reads back, so no call site can
  * split the switch from its value or point the device at a path the sandbox
  * never collects.
+ *
+ * A prefix file (`pdfaProlog`, below) is itself a job, so it goes *after*
+ * `-sOutputFile` and *before* the input. Measured through the published WASM
+ * build: the same vector with the prolog ahead of `-sOutputFile` dies with the
+ * exact sentence above, because the pdfmark's `setpagedevice` opens the device
+ * before any output file has been named.
  */
-function gsCommandLine(switches: string[]): string[] {
-  return [...switches, `-sOutputFile=${GS_SANDBOX_OUT}`, GS_SANDBOX_IN];
+function gsCommandLine(switches: string[], prefixFiles: string[] = []): string[] {
+  return [...switches, `-sOutputFile=${GS_SANDBOX_OUT}`, ...prefixFiles, GS_SANDBOX_IN];
+}
+
+/**
+ * The pdfmark prefix that gives `-dPDFA=N` the half of PDF/A it does not write.
+ *
+ * `-dPDFA=N` alone makes `pdfwrite` *identify* a file — its XMP carries
+ * `pdfaid:part`/`pdfaid:conformance` — and stop there: measured on the campaign's
+ * `type.pdf`, the engine's catalogue had no `/OutputIntents` and no `/MarkInfo`, so
+ * the path that reported success shipped the less conformant file of the two
+ * (`docs/research/pdfa-attribution-recheck.md` §2). PDF/A-2 §6.2.11.4 wants an
+ * output intent; §6.2.11 wants the document marked.
+ *
+ * Ghostscript's mechanism for that half is a pdfmark prefix file — `lib/PDFA_def.ps`
+ * in a disk build. The WASM build has no such file to read: its `/tmp` starts empty
+ * and every resource is compiled into the binary (checked with `FS.readdir` on the
+ * cached `gs.wasm`: 17 entries, no `.ps` and no `.icc`). So the app writes its own
+ * prolog and its own profile into the sandbox for the run — same pdfmarks, fewer of
+ * them, and `/N 3` fixed to match `-sColorConversionStrategy=RGB` and
+ * `srgbIccProfile()` rather than guessed from the device.
+ *
+ * If the profile cannot be opened the `stopped` branch prints and `cleartomark`s:
+ * the run still produces a file, just without the intent, and the caller reads that
+ * back off the catalogue instead of trusting this string.
+ */
+function pdfaProlog(): string {
+  return [
+    '%!',
+    `% BrowserSnip PDF/A prefix: an sRGB output intent and the tagging flag.`,
+    `/ICCProfile (${GS_SANDBOX_PDFA_ICC}) def`,
+    '[/_objdef {icc_PDFA} /type /stream /OBJ pdfmark',
+    '[{icc_PDFA} <</N 3>> /PUT pdfmark',
+    '[{icc_PDFA}',
+    '{ICCProfile (r) file} stopped',
+    '{ (BrowserSnip: the ICC profile could not be read) print cleartomark }',
+    '{ /PUT pdfmark',
+    '  [/_objdef {OutputIntent_PDFA} /type /dict /OBJ pdfmark',
+    '  [{OutputIntent_PDFA} <<',
+    '    /Type /OutputIntent',
+    '    /S /GTS_PDFA1',
+    '    /DestOutputProfile {icc_PDFA}',
+    '    /OutputConditionIdentifier (sRGB IEC61966-2.1)',
+    '    /RegistryName (http://www.color.org)',
+    '    /Info (sRGB IEC61966-2.1 (minimal profile written by BrowserSnip))',
+    '  >> /PUT pdfmark',
+    '  [{Catalog} <</OutputIntents [ {OutputIntent_PDFA} ]>> /PUT pdfmark',
+    '  [{Catalog} <</MarkInfo << /Marked true >> >> /PUT pdfmark',
+    '} ifelse',
+    '',
+  ].join('\n');
 }
 
 async function runGhostscript(
   switches: string[],
   input: Uint8Array,
   hooks: EngineHooks = {},
+  prefix: { files: Record<string, Uint8Array>; jobs?: string[] } = { files: {} },
 ): Promise<GsOutcome> {
   await requireEngine('ghostscript', hooks);
   const result = await gsRun(
-    gsCommandLine(switches),
-    { [GS_SANDBOX_IN]: input },
+    gsCommandLine(switches, prefix.jobs ?? []),
+    { [GS_SANDBOX_IN]: input, ...prefix.files },
     { outputs: [GS_SANDBOX_OUT] },
   );
   const output = result.outputs[GS_SANDBOX_OUT];
@@ -135,9 +195,20 @@ async function runGhostscript(
 }
 
 /**
- * Convert to PDF/A. `-dPDFACompatibilityPolicy=1` keeps going and reports the
- * reasons instead of aborting on the first violation, which is what a user
- * uploading their own file needs.
+ * Convert to PDF/A.
+ *
+ * Three things make the difference between an identified file and one whose
+ * catalogue says what PDF/A requires, and all three are measured through the
+ * published WASM build rather than assumed from a manual page:
+ *
+ *   * `pdfaProlog()` — the pdfmark prefix that writes `/OutputIntents` (with the
+ *     476-byte sRGB profile `srgbIccProfile()` generates) and `/MarkInfo`;
+ *   * `-sColorConversionStrategy=RGB` — the output intent declares an RGB
+ *     alternative, so the device space has to be RGB for `/N 3` to be true;
+ *   * `-dPDFACompatibilityPolicy=1` — keep going and report the reasons instead
+ *     of aborting on the first violation, which is what a user handing over their
+ *     own file needs. It is not a validator: measured on these fixtures its log is
+ *     empty, which is "nothing reported", not "passed".
  */
 export async function convertToPdfA(
   bytes: Uint8Array,
@@ -157,6 +228,7 @@ export async function convertToPdfA(
     '-sDEVICE=pdfwrite',
     `-dCompatibilityLevel=${compatibility}`,
     '-dAutoRotatePages=/None',
+    '-sColorConversionStrategy=RGB',
     '-dColorImageDownsampleType=/Bicubic',
     '-dColorImageResolution=300',
     '-dGrayImageResolution=300',
@@ -165,7 +237,18 @@ export async function convertToPdfA(
     '-dSubsetFonts=true',
     '-dDetectDuplicateImages=true',
     '-dCompressFonts=true',
-  ], bytes, hooks);
+  ], bytes, hooks, {
+    // Only the prolog is a job. Naming the profile on the command line as well —
+    // which handing `Object.keys(files)` to `gsCommandLine` does — makes
+    // Ghostscript try to *interpret* the ICC bytes as PostScript: measured, the run
+    // dies at exit 1 with "Current allocation mode is local / Current file position
+    // is 11" and the tool silently falls back.
+    files: {
+      [GS_SANDBOX_PDFA_PS]: new TextEncoder().encode(pdfaProlog()),
+      [GS_SANDBOX_PDFA_ICC]: srgbIccProfile(),
+    },
+    jobs: [GS_SANDBOX_PDFA_PS],
+  });
 }
 
 /**

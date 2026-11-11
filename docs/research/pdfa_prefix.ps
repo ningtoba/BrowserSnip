@@ -1,0 +1,21 @@
+%!
+% BrowserSnip PDF/A prefix: an sRGB output intent and the tagging flag.
+/ICCProfile (/tmp/pdfa_profile.icc) def
+[/_objdef {icc_PDFA} /type /stream /OBJ pdfmark
+[{icc_PDFA} <</N 3>> /PUT pdfmark
+[{icc_PDFA}
+{ICCProfile (r) file} stopped
+{ (BrowserSnip: the ICC profile could not be read) print cleartomark }
+{ /PUT pdfmark
+  [/_objdef {OutputIntent_PDFA} /type /dict /OBJ pdfmark
+  [{OutputIntent_PDFA} <<
+    /Type /OutputIntent
+    /S /GTS_PDFA1
+    /DestOutputProfile {icc_PDFA}
+    /OutputConditionIdentifier (sRGB IEC61966-2.1)
+    /RegistryName (http://www.color.org)
+    /Info (sRGB IEC61966-2.1 (minimal profile written by BrowserSnip))
+  >> /PUT pdfmark
+  [{Catalog} <</OutputIntents [ {OutputIntent_PDFA} ]>> /PUT pdfmark
+  [{Catalog} <</MarkInfo << /Marked true >> >> /PUT pdfmark
+} ifelse

@@ -40,6 +40,13 @@ Every number below was printed by a command in this repo; nothing is retyped fro
 
 ## 2. The bigger finding: what each path's bytes actually carry
 
+> **Superseded on its last bullet by `pdfa-invocation-fix.md`.** The absent output
+> intent there was an invocation gap, and it is closed: `convertToPdfA` now sends the
+> engine a prefix prolog and the 476-byte sRGB profile, and the engine's file carries
+> `/OutputIntents` and `/MarkInfo` (measured by MuPDF and pypdf on four fixtures, both
+> parts). Everything else on this page — the producer readings, the size table, the
+> §3 inventory — stands.
+
 Same fixture, both paths, read back with MuPDF 1.28.2 and pypdf 6.14.2 — neither of
 which wrote the file (`docs/research/pdfa-attribution-readers.py`, whose full output
 is quoted at the foot of this file):

@@ -474,6 +474,40 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   it told users Ghostscript's embedded subset was not embedded. Both sentences are now read back
   off the bytes. `docs/research/pdfa-attribution-recheck.md` (inventory + numbers, rig:
   `pdfa-attribution-readers.py`), pinned by `tests/pdf/engine-attribution.test.ts`.
+* **The invocation gap in that last sentence is closed, and closing it turned up a
+  third reporting bug.** `-dPDFA=N` makes `pdfwrite` *identify* a file and stop; the
+  output intent and the tagging flag come from a pdfmark **prefix**, and this engine
+  has no `PDFA_def.ps` to read — walking the WASM build's `FS.readdir` gives 17 entries
+  and **no `.ps` or `.icc` among them**, every resource being compiled into the binary.
+  So `convertToPdfA` now writes its own prolog plus `srgbIccProfile()`'s **476 bytes**
+  (generated, not bundled — no download, no new dependency) into the sandbox, and pins
+  `-sColorConversionStrategy=RGB` so `/N 3` is true. Two ordering facts, both measured
+  through the published build (`docs/research/pdfa-invocation.mjs`, replaying the argv
+  the source dumps): the prolog must come **after** `-sOutputFile` — before it, the
+  pdfmark opens the device and the run dies with the same *"Device 'pdfwrite' requires
+  an output file but no file was specified"* this row was opened for — and the profile
+  must **not** be named on the command line at all, because a file there is a job to
+  interpret, which killed the run with "Current allocation mode is local". Result, read
+  by MuPDF and pypdf: `type.pdf` 2 416 B → 6 078 B with `/OutputIntents` (`GTS_PDFA1`,
+  476-byte `/DestOutputProfile`, `/N 3`) and `/MarkInfo << /Marked true >>`, against
+  5 543 B without either for the old vector; ink, text, page boxes and page count
+  unchanged on all four fixtures; a part-1 run removes transparency (8 404 B → 239 429 B
+  on an alpha page) and a part-2 run keeps it, which the tool now says in each case.
+  Reverting the invocation reddens **5 of 34**, and `auditFonts` — already reading
+  descriptors — reddens **3 of 157** when put back to reading the font dictionary, with
+  a five-face fixture (`/FontFile2` on the dict, on the descriptor, `/FontFile3` on a
+  subset's descriptor, a `/Type0` descendant, and a bare `/Helvetica`) proving the
+  "1 of 5 not embedded" figure against bytes. The third bug was found by the new
+  read-back itself: it warned *"the output carries no pdfaid:part"* over a Ghostscript
+  file that did, because the packet was pattern-matched for `pdfaid:part="2"` while
+  Ghostscript quotes with single quotes (`pdfaid:part='2'`); the reading now goes
+  through `core/metadata`'s XMP parser, pinned at **1 of 15** without it. **No validator
+  exists here** — no veraPDF (no jar; `pip install pyverapdf` finds no distribution; the
+  GitHub release host answers 404), no qpdf, no `mutool`, Java 27 alone useless — so the
+  tool's copy stopped claiming conformance: it names the three catalogue entries, says
+  which path wrote them, and says plainly that nothing checked ISO 19005.
+  `docs/research/pdfa-invocation-fix.md` (all of it, with the validator inventory),
+  pinned by `tests/pdf/pdfa-structure.test.ts` (15 cases).
 * What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
   via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
   and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:

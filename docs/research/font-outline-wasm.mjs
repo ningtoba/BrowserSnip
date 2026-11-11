@@ -52,9 +52,35 @@ function splitOutputFile(args) {
   );
 }
 
+/**
+ * Extra sandbox files a vector names but does not carry.
+ *
+ * `convertToPdfA` writes a prefix prolog and an ICC profile into the sandbox before
+ * it runs (`core/engine-ops.ts`), and names only the prolog on the command line —
+ * the profile is data the prolog opens. The dump directory holds a copy of each,
+ * written by the test that dumped the vector, so replaying here needs the same
+ * files put back. Without them Ghostscript cannot read the profile and the PDF/A
+ * row of this proof measures a different run from the one the app makes.
+ */
+function writeSandboxFiles(args) {
+  const extras = [];
+  for (const arg of args) {
+    if (!/^\/tmp\/[\w.-]+\.(ps|icc|icm)$/.test(arg)) continue;
+    const local = path.join(path.dirname(vectorsFile), path.basename(arg));
+    if (!fs.existsSync(local)) {
+      console.log(`  note: ${path.basename(arg)} is not beside ${vectorsFile} — this run will not carry its output intent. Dump both with BROWSERSNIP_PDFA_DUMP.`);
+      continue;
+    }
+    gs.FS.writeFile(arg, new Uint8Array(fs.readFileSync(local)));
+    extras.push(arg);
+  }
+  return extras;
+}
+
 function runOnce(args, tag, vector) {
   lines = [];
   gs.FS.writeFile(IN, new Uint8Array(fs.readFileSync(input)));
+  const extras = writeSandboxFiles(args);
   let exit;
   try {
     exit = gs.callMain(args.slice());
@@ -77,6 +103,11 @@ function runOnce(args, tag, vector) {
   try {
     gs.FS.unlink(IN);
     gs.FS.unlink(OUT);
+    // A prolog or profile left behind would be read by the next vector as if that
+    // vector had asked for it.
+    for (const extra of extras) {
+      try { gs.FS.unlink(extra); } catch { /* never written */ }
+    }
   } catch {
     /* never created */
   }

@@ -26,7 +26,8 @@ import { openPDF, PDFName, PDFDict, PDFRawStream, PDFRef, PDFStream } from '@/li
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fileProblem, runPdfTool } from '@/lib/pdf/tools/runner';
 import { defaultValues, type ToolFile, type ToolResult, type ToolValues } from '@/lib/pdf/tools/types';
-import { isLinearized, srgbIccProfile } from '@/lib/pdf/tools/optimize';
+import { isLinearized } from '@/lib/pdf/tools/optimize';
+import { srgbIccProfile } from '@/lib/pdf/core/metadata';
 
 /** ── engine doubles ─────────────────────────────────────────────────────── */
 

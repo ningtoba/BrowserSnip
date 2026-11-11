@@ -28,6 +28,7 @@
       "-sDEVICE=pdfwrite",
       "-dCompatibilityLevel=1.7",
       "-dAutoRotatePages=/None",
+      "-sColorConversionStrategy=RGB",
       "-dColorImageDownsampleType=/Bicubic",
       "-dColorImageResolution=300",
       "-dGrayImageResolution=300",
@@ -37,6 +38,7 @@
       "-dDetectDuplicateImages=true",
       "-dCompressFonts=true",
       "-sOutputFile=/tmp/output.pdf",
+      "/tmp/pdfa_prefix.ps",
       "/tmp/input.pdf"
     ]
   },

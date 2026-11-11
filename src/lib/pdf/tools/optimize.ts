@@ -19,8 +19,10 @@ import {
   PDFArray,
   PDFDict,
   PDFName,
+  PDFNumber,
   PDFRawStream,
   PDFRef,
+  PDFStream,
   newPDF,
   openPDF,
   pdfVersion,
@@ -38,6 +40,7 @@ import {
   stripEmbeddedFiles,
 } from '../core/content';
 import { inspectScript, stripScript } from '../core/sanitize';
+import { readXmp, srgbIccProfile } from '../core/metadata';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { listLayers, removeHiddenLayerContent } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
@@ -286,6 +289,159 @@ function auditFonts(doc: PDFDocument): FontAudit {
   return audit;
 }
 
+/**
+ * What the catalogue of a produced PDF/A file really carries.
+ *
+ * `pdf-to-pdfa` used to describe the switches it had run. This describes the
+ * bytes the user is handed, which is the only thing either path can prove: every
+ * field is read off an object in the document, and an entry that is not there is
+ * reported as missing rather than inferred from the command line that asked.
+ *
+ * These are the parts of ISO 19005 that are visible without a validator: an
+ * output intent (`/S /GTS_PDFA1`, and a `/DestOutputProfile` stream that names its
+ * component count in `/N`), the tagging flag, the XMP identification, and whether
+ * transparency survived a run whose part forbids it. None of them adds up to
+ * "conforms", and the copy says which of them was checked.
+ */
+function pdfAStructures(produced: PDFDocument): PdfAStructures {
+  const dictOf = (value: unknown): PDFDict | undefined => {
+    const resolved = value instanceof PDFRef ? produced.context.lookup(value) : value;
+    return resolved instanceof PDFDict ? resolved : undefined;
+  };
+  const streamOf = (value: unknown): PDFRawStream | undefined => {
+    const resolved = value instanceof PDFRef ? produced.context.lookup(value) : value;
+    return resolved instanceof PDFRawStream ? resolved : undefined;
+  };
+
+  // The identification is read by the module that owns XMP, not by a second
+  // regular expression here. Ghostscript quotes a packet with single quotes
+  // (`pdfaid:part='2'`) and this app uses double ones (`pdfaid:part="2"`); a
+  // pattern written for the form this repo produces told a user their Ghostscript
+  // file carried no identification at all — measured live, 2026-11-12, on the
+  // 5 769-byte output of the fixed invocation.
+  const summary = readXmp(produced);
+  const identification = summary?.pdfaPart === undefined
+    ? null
+    : { part: summary.pdfaPart, conformance: summary.pdfaConformance ?? 'B' };
+
+  let intent: PdfAStructures['intent'] = { present: false };
+  const intents = produced.catalog.get(PDFName.of('OutputIntents'));
+  const list = intents instanceof PDFRef ? produced.context.lookup(intents) : intents;
+  const entry = list instanceof PDFArray && list.size() > 0 ? dictOf(list.get(0)) : undefined;
+  if (entry) {
+    const profile = streamOf(entry.get(PDFName.of('DestOutputProfile')));
+    let bytes = new Uint8Array(0);
+    if (profile) {
+      try {
+        bytes = streamBytes(profile);
+      } catch {
+        // A profile this app cannot inflate is still a stream the file carries:
+        // fall back to its stored length so the sentence stays a reading, not a guess.
+        bytes = profile.contents;
+      }
+    }
+    const declared = profile?.dict.get(PDFName.of('N'));
+    intent = {
+      present: true,
+      subtype: `${entry.get(PDFName.of('S')) ?? ''}`.replace(/^\//, ''),
+      components: declared instanceof PDFNumber ? declared.asNumber() : null,
+      profileBytes: bytes.byteLength,
+      // Bytes 16..20 of an ICC profile are its data colour space.
+      profileSpace: bytes.byteLength >= 20 ? ascii(bytes.subarray(16, 20)) : '',
+    };
+  }
+
+  const marked = dictOf(produced.catalog.get(PDFName.of('MarkInfo')))?.get(PDFName.of('Marked'));
+  const tagged = `${marked ?? ''}` === 'true';
+
+  let softMasks = 0;
+  let alphaStates = 0;
+  const inspected = new Set<PDFDict>();
+  const inspect = (dict: PDFDict | undefined) => {
+    if (!dict || inspected.has(dict)) return;
+    inspected.add(dict);
+    if (dict.get(PDFName.of('SMask')) !== undefined) softMasks += 1;
+    if (`${dict.get(PDFName.of('Type'))}` !== '/ExtGState') return;
+    for (const key of ['ca', 'CA']) {
+      const value = dict.get(PDFName.of(key));
+      if (value instanceof PDFNumber && value.asNumber() < 1) {
+        alphaStates += 1;
+        break;
+      }
+    }
+  };
+  // Transparency hides in three places, and reading only the indirect
+  // dictionaries — as a first pass at this did — counts a page with alpha as if it
+  // had none: an image's `/SMask` sits on the *stream* dictionary, a graphic state
+  // may be indirect or written inline in the page's own `/Resources`.
+  for (const [, object] of produced.context.enumerateIndirectObjects()) {
+    if (object instanceof PDFDict) inspect(object);
+    else if (object instanceof PDFStream) inspect(object.dict);
+  }
+  for (const page of produced.getPages()) {
+    const states = dictOf(dictOf(page.node.Resources())?.get(PDFName.of('ExtGState')));
+    if (!states) continue;
+    for (const [, value] of states.entries()) inspect(dictOf(value));
+  }
+
+  return { identification, intent, tagged, transparency: { softMasks, alphaStates } };
+}
+
+/** The shape `pdfAStructures` reads back, spelled once. */
+interface PdfAStructures {
+  identification: { part: number; conformance: string } | null;
+  intent:
+    | { present: false }
+    | {
+        present: true;
+        subtype: string;
+        components: number | null;
+        profileBytes: number;
+        profileSpace: string;
+      };
+  tagged: boolean;
+  transparency: { softMasks: number; alphaStates: number };
+}
+
+/** Four header bytes of an ICC profile, as the ASCII they are. */
+function ascii(bytes: Uint8Array): string {
+  let out = '';
+  for (const byte of bytes) out += String.fromCharCode(byte);
+  return out;
+}
+
+/** A sentence about the output intent, from the reading above and nothing else. */
+function describeIntent(intent: PdfAStructures['intent']): string {
+  if (!intent.present) return 'no output intent in the catalogue';
+  const profile = intent.profileBytes > 0
+    ? `${describeSize(intent.profileBytes)} ${intent.profileSpace.trim() || 'unknown'} profile`
+    : 'no readable /DestOutputProfile stream';
+  const components = intent.components === null ? '' : `, /N ${intent.components}`;
+  const subtype = intent.subtype || 'no /S';
+  return `an output intent in the catalogue (${subtype}, ${profile}${components})`;
+}
+
+/** What neither path may claim, said in the same words on both of them. */
+const NOT_A_VALIDATOR = 'Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed.';
+
+/**
+ * PDF/A-1 forbids transparency, so report any that is still in the output.
+ *
+ * The Ghostscript path removes it on a part-1 run — measured on a page with one
+ * alpha image and two alpha graphic states: neither survived, and the file paid
+ * 8.2 KB → 233.8 KB for it. The local path removes nothing, which is why this is a
+ * reading of the produced bytes rather than a sentence about the switch list.
+ * Parts 2 and 3 allow transparency and are left alone.
+ */
+function transparencyWarning(part: string, structures: PdfAStructures, warnings: string[]): void {
+  if ((Number.parseInt(part, 10) || 2) > 1) return;
+  const { softMasks, alphaStates } = structures.transparency;
+  if (softMasks === 0 && alphaStates === 0) return;
+  warnings.push(
+    `PDF/A-1b does not allow transparency, and this file still carries ${softMasks} image soft mask(s) and ${alphaStates} graphic state(s) with alpha: a validator would report it. Choose PDF/A-2b or PDF/A-3b, or rasterise the page first.`,
+  );
+}
+
 /** The XMP packet a document carries, decoded, or `null` when it has none. */
 function xmpPacket(doc: PDFDocument): string | null {
   const raw = doc.catalog.get(PDFName.of('Metadata'));
@@ -422,126 +578,6 @@ export function applySkew(page: PDFPage, turn: number): SkewCorrection {
   appendContentOps(page, [makeOp('Q')]);
   setMediaAndCrop(page, { x: 0, y: 0, width, height });
   return { applied: true, angle: turn, width, height, annotations };
-}
-
-/* ── PDF/A output intent ─────────────────────────────────────────────────── */
-
-/** Tag data plus its signature, ready to be laid out into an ICC profile. */
-interface IccTag {
-  signature: string;
-  data: Uint8Array;
-}
-
-function fourCc(value: string): number {
-  let out = 0;
-  for (let i = 0; i < 4; i++) out = (out << 8) | (value.charCodeAt(i) & 0xff);
-  return out >>> 0;
-}
-
-function tagText(value: string): Uint8Array {
-  const bytes = new Uint8Array(8 + value.length + 1);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, fourCc('text'));
-  const encoder = new TextEncoder();
-  bytes.set(encoder.encode(value).subarray(0, value.length), 8);
-  bytes[8 + value.length] = 0;
-  return bytes;
-}
-
-function tagDescription(value: string): Uint8Array {
-  const text = `${value}\u0000`;
-  const bytes = new Uint8Array(12 + text.length + 8);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, fourCc('desc'));
-  view.setUint32(8, text.length);
-  for (let i = 0; i < text.length; i++) bytes[12 + i] = text.charCodeAt(i) & 0xff;
-  view.setUint32(12 + text.length, 0, false);
-  view.setUint32(16 + text.length, 0, false);
-  return bytes;
-}
-
-/** An s15Fixed16 number: 16 bits of integer range, 16 of fraction. */
-function fixed16(value: number): number {
-  return Math.round(value * 65536) | 0;
-}
-
-function tagXyz(x: number, y: number, z: number): Uint8Array {
-  const bytes = new Uint8Array(4 + 4 + 12);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, fourCc('XYZ '));
-  view.setUint32(8, fixed16(x));
-  view.setUint32(12, fixed16(y));
-  view.setUint32(16, fixed16(z));
-  return bytes;
-}
-
-/** A parametric tone curve of the simplest kind: `Y = X^gamma`. */
-function tagCurve(gamma: number): Uint8Array {
-  const bytes = new Uint8Array(4 + 4 + 2 + 2 + 4);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, fourCc('para'));
-  view.setUint16(8, 0);
-  view.setUint16(10, 0);
-  view.setInt32(12, fixed16(gamma));
-  return bytes;
-}
-
-/**
- * A minimal but structurally valid sRGB profile for the output intent.
- *
- * The version this file used to hand out was 3144 zero bytes with a header
- * claiming 52 tags: parseable as a blob, meaningless as a colour profile, and
- * exactly the kind of "looks processed" output this pass exists to remove. What
- * is written here declares the tags it really carries, and its size field agrees
- * with its length, so a validator can read the matrix and the tone curves.
- */
-export function srgbIccProfile(): Uint8Array {
-  const tags: IccTag[] = [
-    { signature: 'desc', data: tagDescription('sRGB IEC61966-2.1 (BrowserSnip minimal)') },
-    { signature: 'wtpt', data: tagXyz(0.9505, 1.0, 1.089) },
-    { signature: 'rXYZ', data: tagXyz(0.4361, 0.2225, 0.0139) },
-    { signature: 'gXYZ', data: tagXyz(0.385, 0.7169, 0.1057) },
-    { signature: 'bXYZ', data: tagXyz(0.1431, 0.0606, 0.7141) },
-    { signature: 'rTRC', data: tagCurve(2.2) },
-    { signature: 'gTRC', data: tagCurve(2.2) },
-    { signature: 'bTRC', data: tagCurve(2.2) },
-    { signature: 'cprt', data: tagText('No copyright, generated by BrowserSnip.') },
-  ];
-  const headerSize = 128;
-  const tableSize = 4 + tags.length * 12;
-  let offset = headerSize + tableSize;
-  const placed = tags.map((tag) => {
-    const at = offset;
-    offset += tag.data.byteLength;
-    return { ...tag, at };
-  });
-
-  const bytes = new Uint8Array(offset);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, bytes.byteLength);
-  view.setUint32(4, fourCc('none'));
-  view.setUint32(8, 0x0210_0000);
-  view.setUint32(12, fourCc('mntr'));
-  view.setUint32(16, fourCc('RGB '));
-  view.setUint32(20, fourCc('XYZ '));
-  view.setUint16(24, 2024);
-  view.setUint16(26, 1);
-  view.setUint16(28, 1);
-  view.setUint32(36, fourCc('acsp'));
-  view.setUint32(64, 0);
-  view.setInt32(68, fixed16(0.9642));
-  view.setInt32(72, fixed16(1));
-  view.setInt32(76, fixed16(0.8249));
-  view.setUint32(88, fourCc('BrSn'));
-  view.setUint32(128, tags.length);
-  placed.forEach((tag, index) => {
-    const entry = 132 + index * 12;
-    view.setUint32(entry, fourCc(tag.signature));
-    view.setUint32(entry + 4, tag.at);
-    view.setUint32(entry + 8, tag.data.byteLength);
-    bytes.set(tag.data, tag.at);
-  });
-  return bytes;
 }
 
 /**
@@ -1546,14 +1582,14 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'pdf-to-pdfa',
     name: 'PDF to PDF/A',
-    description: 'Convert for archiving: XMP identification on either path; embedded fonts need Ghostscript',
+    description: 'Writes the structures PDF/A asks for — identification, output intent, tagging; embedded fonts need Ghostscript',
     icon: '🏛️',
     category: 'optimize',
     keywords: ['archive', 'pdfa', 'iso 19005', 'conformance'],
     outputSuffix: '_pdfa.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Convert to PDF/A',
-    promise: 'A PDF/A-identised file, and a plain statement of which path wrote it and what the catalogue actually carries.',
+    promise: 'The catalogue entries PDF/A names, written by whichever path ran — and a plain statement of what was checked and what was not.',
     fields: [
       {
         key: 'part',
@@ -1566,11 +1602,13 @@ export const optimizeTools: PdfToolDefinition[] = [
           { value: '3b', label: 'PDF/A-3b (ISO 19005-3, allows attachments)' },
         ],
         group: 'Conformance level',
-      help: 'Level B only asks that the file render the same in ten years. A and U additionally demand tagged, readable content, which needs a font-embedding pass this tool cannot promise offline.',
+      help: 'Level B only asks that the file render the same in ten years. A and U additionally demand tagged, readable content, which needs a font-embedding pass this tool cannot promise offline. Part 1 also forbids transparency: on a page with one alpha image and two alpha graphic states, Ghostscript removed it and the file went 8.2 KB → 233.8 KB.',
     },
     ],
     notes: [
-      'Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser) rewrites the file: measured on a 2-page text document it embeds the subset font and writes the XMP identification, and leaves no /OutputIntents in the catalogue — which the result now says out loud instead of leaving the word "converted" to imply it. If Ghostscript cannot be reached, BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag itself, and cannot embed a font. Neither path proves conformance: Ghostscript is asked to report violations (-dPDFACompatibilityPolicy=1) and the measured run reported none, which is not the same as passing, and the local path checks nothing at all.',
+      'What the tool promises is the structures, not a verdict. Both paths write an /OutputIntents entry (/S /GTS_PDFA1, with a 476-byte sRGB profile carrying /N 3), the /MarkInfo tagging flag and the pdfaid XMP identification, and the result card reports those three from the catalogue of the file it hands over — never from the switches that were run.',
+      'Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser) rewrites the file and additionally subsets and embeds its fonts; on a 2-page text document that is the only path that can produce an embedded face. Without it BrowserSnip writes the same three catalogue entries itself and cannot embed a font, so the file is identified and structured but not self-contained. The engine needs a prefix prolog to do this: -dPDFA=2 alone identifies a file and writes no output intent, which is what this build measured before the invocation was fixed (docs/research/pdfa-attribution-recheck.md §2).',
+      'Neither path is a validator, and none can run in a browser tab: Ghostscript is asked to report violations (-dPDFACompatibilityPolicy=1) and on the measured fixtures its log was empty, which is “nothing reported”, not “passed”. No veraPDF, qpdf or mutool was available here either. Expect a validator to check more than these three entries — transparency, colour, fonts and metadata are the usual places a file that looks right still fails.',
       'Nothing here is uploaded: only the engine binary is fetched.',
     ],
     async run(context) {
@@ -1591,17 +1629,24 @@ export const optimizeTools: PdfToolDefinition[] = [
           if (fonts.total > fonts.embedded) {
             warnings.push(`${fonts.total - fonts.embedded} of ${fonts.total} font(s) in the output are still not embedded, so PDF/A conformance will be rejected by a strict validator.`);
           }
-          // Read back off the file being handed over, not off the switch list: the
-          // engine's own log is empty for this run, and PDF/A §6.2.11.4 wants the
-          // catalogue to carry an output intent. Measured on the campaign fixture —
-          // Ghostscript identifies the file and writes no intent (the local path
-          // writes one), so the sentence says which of the two the bytes show.
-          const intent = declared.catalog.get(PDFName.of('OutputIntents')) !== undefined;
-          if (!intent) {
+          // Read back off the file being handed over, not off the switch list. The
+          // prefix prolog in `core/engine-ops` is what asks for the intent and the
+          // tagging flag; whether this particular run got them is a question about
+          // these bytes, and an input that Ghostscript cannot colour-convert is
+          // exactly the case where the prolog's pdfmarks might not survive.
+          const structures = pdfAStructures(declared);
+          if (!structures.identification) {
+            warnings.push('The output carries no pdfaid:part in its XMP, so no reader will identify it as PDF/A at all.');
+          }
+          if (!structures.intent.present) {
             warnings.push(
-              'No /OutputIntents entry is in the catalogue, which PDF/A requires: the file is identified as PDF/A and will not pass a validator that checks for one. The identification is what this run proved; conformance is not claimed.',
+              'No /OutputIntents entry is in the catalogue, which PDF/A §6.2.11.4 requires: the file is identified as PDF/A and will not pass a validator that checks for one. The identification is what this run proved; conformance is not claimed.',
             );
           }
+          if (!structures.tagged) {
+            warnings.push('No /MarkInfo << /Marked true >> is in the catalogue, which PDF/A §6.2.11 requires.');
+          }
+          transparencyWarning(part, structures, warnings);
           const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
           context.progress(1, 'Converted with Ghostscript');
           return {
@@ -1613,7 +1658,7 @@ export const optimizeTools: PdfToolDefinition[] = [
             // `declared` is the Ghostscript output re-opened for the font audit,
             // so the count comes off the document itself, not off a guess.
             pages: declared.getPageCount(),
-            message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${intent ? 'an output intent in the catalogue' : 'no output intent in the catalogue'}, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
+            message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${describeIntent(structures.intent)}, ${structures.tagged ? 'the tagging flag' : 'no /MarkInfo'}, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}. ${NOT_A_VALIDATOR}`,
             warnings,
           };
         }
@@ -1631,12 +1676,11 @@ export const optimizeTools: PdfToolDefinition[] = [
         });
       }
       const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
-      const xmp = xmpPacket(produced) ?? '';
-      const identified = /pdfaid:part\s*=\s*"?\d/.test(xmp);
-      const intent = produced.catalog.get(PDFName.of('OutputIntents')) !== undefined;
-      const tagged = produced.catalog.get(PDFName.of('MarkInfo')) !== undefined;
+      const structures = pdfAStructures(produced);
+      const identified = structures.identification !== null;
+      const tagged = structures.tagged;
       if (!identified) warnings.push('The XMP identification did not survive the save, so this file is not PDF/A-identified.');
-      if (!intent) warnings.push('The output intent did not survive the save.');
+      if (!structures.intent.present) warnings.push('The output intent did not survive the save.');
       if (!tagged) warnings.push('The tagging flag (/MarkInfo) did not survive the save.');
       const fonts = auditFonts(produced);
       if (fonts.total > fonts.embedded) {
@@ -1644,6 +1688,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           `${fonts.total - fonts.embedded} of ${fonts.total} font(s) are not embedded. Subsetting and embedding fonts needs Ghostscript, so a validator will reject this file as it stands.`,
         );
       }
+      transparencyWarning(part, structures, warnings);
       warnings.push(
         'No conformance check was run: the local path writes the identification and the output intent, it does not prove the file passes ISO 19005.',
       );
@@ -1656,7 +1701,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         // could not be reached, or when its file was discarded for not reopening.
         producedBy: { via: 'fallback', engine: 'ghostscript' },
         pages: input.doc.getPageCount(),
-        message: `Wrote PDF/A-${written.number}${written.conformance} identification (pdfaid:part=${written.number}, conformance=${written.conformance})${intent ? ', an sRGB output intent' : ''}${tagged ? ' and the tagging flag' : ''} with this app’s own path, not Ghostscript. ${sizeSentence(change)}.`,
+        message: `Wrote PDF/A-${written.number}${written.conformance} identification (pdfaid:part=${written.number}, conformance=${written.conformance}), ${describeIntent(structures.intent)} and ${tagged ? 'the tagging flag' : 'no /MarkInfo'} with this app’s own path, not Ghostscript. ${sizeSentence(change)}. ${NOT_A_VALIDATOR}`,
         warnings,
       };
     },
