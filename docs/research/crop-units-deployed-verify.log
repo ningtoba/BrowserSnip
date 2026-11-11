@@ -81,3 +81,16 @@ Catalogue count versus what the page actually prints:
   deployed button[data-tool]    = 121 cards
 
 The number a visitor is told, the number of cards under it, and the catalogue agree.
+
+── 3. re-checked against the deploy that landed after this file was written ────
+
+The run above measured the build Pages was serving at the time. `8a3e65a` then deployed
+cleanly (build 2m42s, deploy 9s), so the millimetre case was run again against the new
+live bundle. Panel: unit `mm`, 7.62/10.16/15.24/20.32 typed, "writes 21.6/28.8/43.2/57.6
+pt", "keeps 414 × 905 pt", no console errors. pymupdf on sheet 1 of the download:
+`/CropBox [75.6, 67.2, 489.2, 972.4]` — the same box as before.
+
+`shots/crop-units-verify-mm-dark.png` is that panel in dark mode. The preview canvas is
+empty in the capture, and in `shots/crop-units-2-panel-dark.png` as well: headless pdf.js
+does not paint that pane here, so it is a property of the rig, not of this change. Nothing
+in the source moved between the two dark screenshots except the unit and its four numbers.
