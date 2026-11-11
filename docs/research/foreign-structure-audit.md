@@ -54,11 +54,18 @@ processes with a two-second pause: 11 + 16 fixtures, byte-identical each time.
 | `core/sanitize.ts` `inspectScript` / `stripScript` | `/OpenAction`, `/AA`, `/JS`, named scripts | yes — the writers that add actions | **no** (`inert-controls.test.ts` builds its own shapes; `scripts/attachments` never tested it) |
 | `core/signature.ts` `readSignatures` | `/Perms`, `/ByteRange`, `/Contents`, `/SW` | yes — `sign-pdf` | **no** — every input is signed by this app |
 
-**Count: of the 13 readers above, 4 have met a foreign file in CI — and 3 of those 4 are
-the cipher trio plus content-stream decoding, which met foreign bytes only because a
-password test had to. 9 have never been handed a file this repo did not write.** The
-attachments row is the one that changed today, and it is also the proof that "never" did
-not mean "fine": the reader had 8 passing tests and failed 10 of 15 foreign shapes.
+**Count: of the 13 rows above, 4 have met a foreign file in CI and 9 have never been
+handed a file this repo did not write.** Counted by row, because two rows group entry
+points over a single walk (`listAnnotations` with `annotationCount`, `readInfo` with
+`readXmp`) and one row covers two functions that no longer have a caller at all
+(`listFonts` / `listImages`) — 17 exported functions, the same 13 walks behind them. And
+3 of the 4 "yes" rows are the cipher trio plus content-stream decoding, which met foreign
+bytes only because a password test had to: the app was not looking for a foreign
+*structure*, it was looking for a foreign *cipher*.
+
+The attachments row is the one that changed today, and it is also the proof that
+"never" did not mean "fine": that reader had 8 passing tests and failed 10 of 15 foreign
+shapes.
 
 ## Table 2 — measured behaviour on foreign bytes
 
