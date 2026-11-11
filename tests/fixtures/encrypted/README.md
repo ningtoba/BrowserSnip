@@ -9,7 +9,11 @@ somebody else's encryptor**, over `plain.pdf`:
 - `mu-*` — MuPDF 1.28.2;
 - `plain.pdf` — MuPDF 1.28.2, unlocked: the base every lock starts from.
 
-They exist because this repo cannot make its own:
+They exist because a cipher measured only against this app's own reader is this
+app agreeing with itself. It *can* make its own ciphered files now —
+`saveEncrypted` has written real AES-128 since `89a5b7e` and real AES-256 since
+`7ea16db` — which is exactly why the files it produces are judged by the readers
+named at the foot of this README and are never kept here:
 
 > `@maxwbh/pdf-lib`'s `save({ encrypt })` registers an `/Encrypt` dictionary and a
 > `/ID`, and never calls `PDFSecurity.encryptStream` — every stream leaves as
@@ -63,7 +67,7 @@ modify, annotate, form-fill and assemble refused), which is the permission set t
 
 No file here is written by this app.
 
-Two of its shapes still matter and neither can be made here any more:
+Two of its shapes still matter and neither belongs in this directory:
 
 - **a password gate with no cipher** (`/V 4 /R 4`, empty `/CF`, no `/StmF`) is what
   `core/doc.ts:saveEncrypted` wrote while the vendor ran no cipher, and is what
@@ -76,3 +80,11 @@ Two of its shapes still matter and neither can be made here any more:
   it is evidence about the write path only in combination with a reader that is not
   this app's — see `tests/pdf/crypto-encrypt.test.ts` (pdf.js, and the outside
   reader table in `docs/research/protect-readers-aes128.log`).
+- **this app's own AES-256 file** is produced the same way (`cipher: 'AES-256'`),
+  and its proof runs the other direction: `tests/pdf/crypto-aes256-write.test.ts`
+  feeds `revision6Values` the file key, the four salts and the four `/Perms` random
+  bytes *of a fixture in this directory* and demands that fixture's own `/U`, `/UE`,
+  `/O`, `/OE` and `/Perms` back, byte for byte. What this app writes is then judged
+  by `docs/research/aes256-write-readers.py` — pypdf re-derives the five values and
+  MuPDF, libqpdf, poppler and Ghostscript answer the gate, the text and the `/P`
+  (`docs/research/aes256-write-readers.log`).

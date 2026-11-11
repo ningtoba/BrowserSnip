@@ -21,6 +21,7 @@
  *   node scripts/live-protect-proof.mjs [BASE]
  *
  * Env: `CHROME` (a Chrome-family binary), `USER_PASSWORD`, `OWNER_PASSWORD`,
+ * `CIPHER` (`AES-128` or `AES-256`; unset leaves the control at its default),
  * `PAGES`, `PORT`. Needs `python3` with `pymupdf` and `pikepdf`.
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -41,6 +42,7 @@ const PORT = Number(process.env.PORT ?? 9433);
 const PAGES = Number(process.env.PAGES ?? 3);
 const USER_PASSWORD = process.env.USER_PASSWORD ?? 'open-sesame';
 const OWNER_PASSWORD = process.env.OWNER_PASSWORD ?? 'owner-key';
+const CIPHER = process.env.CIPHER ?? '';
 const WORDS = 'Secret Alice 42 Bravo';
 const work = mkdtempSync(join(tmpdir(), 'live-protect-'));
 
@@ -168,12 +170,35 @@ const fieldState = () => said(`(() => {
     .map((f, i) => i + ':' + (f.id || labelFor(f) || 'unlabelled') + '=' + JSON.stringify(f.value)).join(' · ') || '(none)';
 })()`);
 
+/**
+ * Choose the Cipher control, when the run is asked to.
+ *
+ * Same rule as the password boxes: address it by the id the field renderer stamps
+ * (`tool-field-cipher`), write through the prototype's setter so React's own state
+ * moves and not just the DOM's, and report the value and option text read back off
+ * the live panel. A proof that named the strength the *harness* meant, while the
+ * select still showed the default, would be worth nothing.
+ */
+const pickCipher = (value) => raw(`(() => {
+  const el = document.getElementById('tool-field-cipher');
+  if (!el) {
+    return 'no #tool-field-cipher on this page; selects present: '
+      + ([...document.querySelectorAll('select')].map((s) => s.id || s.getAttribute('aria-label') || 'unlabelled').join(' | ') || '(none)');
+  }
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+  el.focus();
+  setter.call(el, ${JSON.stringify(value)});
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return 'cipher → #' + el.id + ' = ' + JSON.stringify(el.value)
+    + ' (option: ' + JSON.stringify(el.options[el.selectedIndex]?.text ?? '') + ')';
+})()`);
+
 await send('Runtime.enable');
 await send('Page.enable');
 await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: work });
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
 
-console.log(`# ${BASE} · protect · user ${JSON.stringify(USER_PASSWORD)}`);
+console.log(`# ${BASE} · protect · user ${JSON.stringify(USER_PASSWORD)} · cipher ${JSON.stringify(CIPHER || '(control default)')}`);
 await send('Page.navigate', { url: `${BASE}/#/pdf` });
 await sleep(6000);
 // Storage is cleared on a fresh document, so the queue a previous run left behind
@@ -197,8 +222,12 @@ await sleep(20000);
 console.log('mode is the default "Both"; fields before:', await fieldState());
 console.log((await typeInto('Open password', USER_PASSWORD)).value);
 console.log((await typeInto('Owner password', OWNER_PASSWORD)).value);
+if (CIPHER) console.log('cipher      :', (await pickCipher(CIPHER)).value);
 await sleep(1000);
 console.log('fields after    :', await fieldState());
+console.log('selects after   :', await said(`[...document.querySelectorAll('select')]
+  .filter((s) => s.offsetParent !== null)
+  .map((s) => (s.id || 'unlabelled') + '=' + JSON.stringify(s.value)).join(' · ') || '(none)'`));
 console.log('run:', (await clickText('^Protect$', 'protect-action')).value);
 
 let card = '';
