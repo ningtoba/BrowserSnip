@@ -117,7 +117,7 @@ an opinion of a reader.
 | `replace-labels` | add-page-labels, `1-2 roman 1 / 3-6 decimal 1` | 4 ranges → 2, `i, ii, I, II, c, xA` → `i, ii, 1, 2, 3, 4` — the replacement the tool promises |
 | `keep-labels` | add-page-labels, `1-4 none 1 Cover` | writes `/P` with no `/S`; pypdf reads `Cover, Cover, Cover, Cover` |
 | `copy-labels` | extract-pages `1-3` | `/Kids x2` → **absent**; MuPDF finds 0 ranges, pypdf falls back to `1, 2, 3` |
-| `merge-labels` | merge of two labelled files | `/Kids x2` + `/Nums x1` → **absent** |
+| `merge-labels` | merge of `labels-kids-mixed.pdf` with `labels-nums-r.pdf` | `/Kids x2` (the first input's store) → **absent**; the merged file carries no numbering at all |
 
 `readPageLabels` has exactly **one** caller in `src/` — `add-page-labels`, reading back
 the ranges it wrote a line earlier (`src/lib/pdf/tools/edit.ts:1046`). `page-numbers`,
@@ -196,6 +196,24 @@ All three readers call it:
 Nothing else in `core/attachments.ts` moved: `looksLikeFilespec`, the `/EF` preference
 order, the `/AF` and annotation walks, removal, and `md5Hex` are untouched.
 
+## And on the deployed site
+
+`scripts/live-readers-proof.mjs` drives `https://www.browsersnip.com` over CDP the way a
+person does — drop the foreign file on the tool's own card, press the button, keep the
+download — and then asks MuPDF and pypdf about the download instead of believing the
+sentence on screen. Full transcript: `docs/research/readers-foreign-deployed.log`, bundle
+`assets/index-BM7HnvH8.js` (the attachments pass recorded `index-C6ma42d2.js`, so this is
+a newer bundle — and the last row, where a page copy brings back three bookmarks that
+still name their pages, is what shows it carries *this* fix rather than merely a different
+one).
+
+| probe | what the site said | what the download actually holds |
+| --- | --- | --- |
+| `/tool/bookmarks`, empty box, on `outlines-dests-ref.pdf` (sha256 `87e10f8f1742…`, the digest `MANIFEST.json` records, so the upload arrived whole) | *"3 bookmarks (2 at the top levels)."* | 3 items naming a destination in the bytes; pypdf resolves all three to pages 0, 1, 2. The pre-fix build answered the same file with *"3 bookmarks (2 at the top levels, **3 without a page**)"* — pinned by `shows the outline of a foreign file as it is, not as three blanks`, one of the 26 assertions that were red before `7d1d1ad` |
+| `/tool/rotate` 90° on `labels-kids-mixed.pdf` | *"Rotated 6 pages by 90°."* | download sha256 `c0590226a696…`, 6 pages, the planted sentence on all six of them, label store still `/Kids x2`, MuPDF per page `i, ii, I, II, c, xA` — the same six labels the fixture carries. An in-place run leaves the numbering where it was |
+| `/tool/add-page-labels`, default ranges, on `labels-nums-r.pdf` | *"Applied 2 label ranges. The first 4 pages now read: i, ii, iii, 1."* | download sha256 `a5dddb8ffd77…`, store `/Nums x2`, MuPDF `i, ii, iii, 1`, pypdf `i, ii, iii, 1` — the card's sentence and the file agree, which is the only place in the app a `readPageLabels` answer reaches a user |
+| `/tool/extract-pages` on `outlines-names-dests-kids-ref.pdf` | a 4-page result card, no "dropped" note | download sha256 `0bbac343cff2…`, **3 items naming a target and pypdf resolves 3 of 3 to pages 0, 1, 2**, MuPDF to 1, 2, 3. The same copy run on the pre-fix build produced 3 items with **0** targets — the bookmark count that read as a success while the destinations were gone. No console errors in any probe |
+
 ## Re-running this
 
 ```sh
@@ -207,6 +225,7 @@ python3 docs/research/readers-round-trip.py /tmp/after > docs/research/readers-r
 python3 docs/research/readers-foreign-table.py /tmp/before.json /tmp/after.json /tmp/tables.md
 npx vitest run tests/pdf/readers-foreign.test.ts tests/pdf/attachments-foreign.test.ts \
   tests/pdf/edge-organize.test.ts tests/pdf/edge-edit.test.ts tests/pdf/field-reach.test.ts
+node scripts/live-readers-proof.mjs                    # the four probes above, on the live site
 ```
 
 The fixtures are byte-reproducible the way the attachment set is: timestamps and both

@@ -17,7 +17,11 @@
  *           download as it reads out of the upload, and the `/Kids` store must still be
  *           in the file. This is the answer to "does a misread rewrite the document":
  *           no writer consults `readPageLabels`, and the bytes say so.
- *   copy    `/tool/extract-pages` 1-3 on `outlines-names-dests-kids-ref.pdf` — the
+ *   replace `/tool/add-page-labels` on `labels-nums-r.pdf`, default ranges — the one
+ *           sentence in the app that quotes `readPageLabels` back at the user ("The
+ *           first 4 pages now read: …"), set against the numbering the download
+ *           actually carries.
+ *   copy    `/tool/extract-pages` on `outlines-names-dests-kids-ref.pdf` — the
  *           read-modify-write damage. Before the fix every bookmark came back as a
  *           caption: 3 items naming a destination in, **0 out**, while the run reported
  *           carrying three.
@@ -25,7 +29,8 @@
  *     node scripts/live-readers-proof.mjs [BASE]
  *
  * Env: `CHROME`, `PROBES` (comma list, default `report,rotate,copy`), `PORT`.
- * Needs `python3` with `pymupdf`, `pypdf`, `pikepdf`.
+ * `PROBES=report,rotate,replace,copy` adds the label-writing probe. Needs `python3`
+ * with `pymupdf`, `pypdf`, `pikepdf`.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -36,7 +41,7 @@ const CHROME = process.env.CHROME
   ?? '/home/nekophobia/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
 const BASE = process.argv[2] ?? process.env.BASE ?? 'https://www.browsersnip.com';
 const PORT = Number(process.env.PORT ?? 9461);
-const PROBES = (process.env.PROBES ?? 'report,rotate,copy').split(',').filter(Boolean);
+const PROBES = (process.env.PROBES ?? 'report,rotate,replace,copy').split(',').filter(Boolean);
 const FIXTURES = 'tests/fixtures/readers';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -99,7 +104,21 @@ const click = (labels) => raw(`(() => {
   return 'clicked <' + el.tagName.toLowerCase() + '> ' + text.slice(0, 40);
 })()`).then((hit) => hit.value ?? `ERR ${String(hit.error).slice(0, 140)}`);
 
-/** Type into a tool field by its group's own accessible name. */
+/** Type into a tool field by its group's own accessible name.
+ *
+ *  The rail folds every field but its lead one behind "▸ N more options", so the
+ *  group is not in the DOM until that is opened — clicking it first is what makes the
+ *  lookup work, and the failure is printed rather than swallowed because a probe that
+ *  silently kept the default is a probe that measured the wrong run.
+ */
+const openMoreOptions = () => raw(`(() => {
+  const fold = [...document.querySelectorAll('button')]
+    .find((b) => b.offsetParent !== null && /more options/i.test(b.innerText || ''));
+  if (!fold) return 'no fold on screen';
+  fold.click();
+  return 'opened ' + fold.innerText.trim().slice(0, 30);
+})()`).then((hit) => hit.value ?? `ERR ${String(hit.error).slice(0, 140)}`);
+
 const typeField = (label, value) => raw(`(() => {
   const group = document.querySelector('[role=group][aria-label=${JSON.stringify(label)}]');
   const field = group && (group.querySelector('textarea') || group.querySelector('input:not([type=checkbox]):not([type=radio])'));
@@ -207,7 +226,8 @@ const runProbe = async ({ tag, tool, fixture, fill, action, download }) => {
     console.log(`${tag}: NO FILE INPUT; body:`, await said('document.body.innerText.slice(0,400)'));
     return null;
   }
-  await send('DOM.setFileInputFiles', { nodeId: input.result.nodeId, files: [local] });
+  const uploads = [local];
+  await send('DOM.setFileInputFiles', { nodeId: input.result.nodeId, files: uploads });
   let intake = '';
   for (let tick = 0; tick < 30; tick++) {
     await sleep(2000);
@@ -216,18 +236,32 @@ const runProbe = async ({ tag, tool, fixture, fill, action, download }) => {
   }
   console.log(`\n## ${tag} — /tool/${tool} · ${fixture}`);
   console.log('intake :', intake.slice(0, 200));
-  for (const [label, value] of fill ?? []) console.log('field  :', await typeField(label, value));
+  if (fill) {
+    console.log('fold   :', await openMoreOptions());
+    await sleep(1500);
+  }
+  for (const [label, value] of fill ?? []) {
+    const typed = await typeField(label, value);
+    console.log('field  :', typed);
+    if (/^no field/.test(typed)) { console.log('ABORT: the field the probe needs was not found'); return null; }
+  }
   await sleep(1500);
   console.log('run    :', await click([action]));
+  // The sentence the run leaves on screen, read out of the page in Node rather than in
+  // an injected script: it is the claim being compared with the bytes, so it is kept
+  // verbatim.
   let message = '';
-  for (let tick = 0; tick < 60; tick++) {
+  for (let tick = 0; tick < 45; tick++) {
     await sleep(2000);
-    message = await bodyLine('/bookmark|label|Rotated|Extracted|page|found|error|refus/i');
+    const body = await said('document.body.innerText');
+    const lines = String(body).split('\n').map((line) => line.trim()).filter(Boolean);
+    const hits = lines.filter((line) =>
+      /bookmark|label|Rotated|Extracted|Merged|without a page|no page target|error|refus|Applied|Found/i.test(line)
+      && !/^Edit Bookmarks$|^Add Page Labels$|^Rotate PDF$|^Merge PDFs$/.test(line));
+    message = hits.join(' ⏎ ');
     if (message) break;
   }
-  await sleep(3000);
-  const again = await bodyLine('/bookmark|label|Rotated|Extracted|error|refus/i');
-  console.log('result :', (again || message).slice(0, 300));
+  console.log('result :', message.slice(0, 500) || '(nothing on screen)');
   if (!download) return { tag, file: local };
   console.log('down   :', await click(['Download', 'Download PDF', 'Save PDF']));
   let produced = null;
@@ -256,10 +290,20 @@ for (const tag of PROBES) {
     results.push(await runProbe({
       tag, tool: 'rotate', fixture: 'labels-kids-mixed.pdf', action: 'Rotate', download: true,
     }));
+  } else if (tag === 'replace') {
+    // The same file through the tool that *replaces* the numbering, on its own default
+    // ranges, so the card's "now read:" sentence can be compared with what the download
+    // really holds — the one place a page-label reader's answer reaches a user.
+    results.push(await runProbe({
+      tag: 'replace-labels', tool: 'add-page-labels', fixture: 'labels-nums-r.pdf',
+      action: 'Apply labels', download: true,
+    }));
   } else if (tag === 'copy') {
+    // No field typed: `Pages` defaults to the whole document, and the point is the
+    // copy itself — every page goes through `collectPages` and `carryPageFurniture`.
     results.push(await runProbe({
       tag, tool: 'extract-pages', fixture: 'outlines-names-dests-kids-ref.pdf',
-      fill: [['Pages', '1-3']], action: 'Extract', download: true,
+      action: 'Extract', download: true,
     }));
   }
 }

@@ -1,0 +1,36 @@
+# Deployed-site round trip, both readers, foreign files
+# node scripts/live-readers-proof.mjs · 2026-11-11T18:27Z · bundle assets/index-BM7HnvH8.js (the attachments pass recorded index-C6ma42d2.js)
+
+# https://www.browsersnip.com
+bundle: assets/index-BM7HnvH8.js
+
+## report — /tool/bookmarks · outlines-dests-ref.pdf
+intake : Edit Bookmarks
+run    : clicked <button> Save bookmarks
+result : Edit Bookmarks finished in this tab — nothing was uploaded. ⏎ 3 bookmarks (2 at the top levels). Copy the text, edit it, and run again to replace them.
+
+## rotate — /tool/rotate · labels-kids-mixed.pdf
+intake : The same PDF with the pages you chose turned by 90°, 180° or 270°. Only the orientation changes — nothing is redrawn.
+run    : clicked <button> Rotate
+result : Page 1 of 6 of labels-kids-mixed_rotated.pdf, drawn in this tab — a picture of the file, not the file itself. ⏎ labels-kids-mixed_rotated.pdf ⏎ Rotated 6 pages by 90°.
+down   : clicked <button> Download
+name   : labels-kids-mixed_rotated.pdf 3732 bytes
+
+## replace-labels — /tool/add-page-labels · labels-nums-r.pdf
+intake : Add Page Labels
+run    : clicked <button> Apply labels
+result : Add Page Labels finished in this tab — nothing was uploaded. ⏎ Page 1 of 4 of labels-nums-r_labelled.pdf, drawn in this tab — a picture of the file, not the file itself. ⏎ labels-nums-r_labelled.pdf ⏎ Applied 2 label ranges. The first 4 pages now read: i, ii, iii, 1. ⏎ The labels from page 4 run to page 4, not page 99: PDF labels last until the next range starts.
+down   : clicked <button> Download
+name   : labels-nums-r_labelled.pdf 2657 bytes
+
+## copy — /tool/extract-pages · outlines-names-dests-kids-ref.pdf
+intake : Extract Pages
+run    : clicked <button> Extract
+result : Page 1 of 4 of outlines-names-dests-kids-ref_extracted.pdf, drawn in this tab — a picture of the file, not the file itself. ⏎ ref_extracted.pdf
+down   : clicked <button> Download
+name   : outlines-names-dests-kids-ref_extracted.pdf 2813 bytes
+
+errors: []
+# the readers that did not write the fixture, over what the deployed site produced
+{"report": {"bytes": 4147, "sha256": "87e10f8f174236cc618496e360bdee6cac024a5f5daa48721bb86148400d3ca2", "pages": 4, "mupdf_labels_per_page": ["", "", "", ""], "mupdf_label_ranges": [], "mupdf_toc": [[1, "Chapter One", 0], [2, "Section One.A", 0], [1, "Chapter Two", 0]], "planted_pages": 4, "pypdf_labels": ["1", "2", "3", "4"], "pypdf_outline": [["Chapter One", 0], ["Section One.A", 1], ["Chapter Two", 2]], "label_store": "absent", "outline_items_total": 3, "outline_items_naming_a_target": 3}, "rotate": {"bytes": 3732, "sha256": "c0590226a6967947ce8a54011ea13a02a5422d6f7bdf96aeac4c1b4c2ca95564", "pages": 6, "mupdf_labels_per_page": ["i", "ii", "I", "II", "c", "xA"], "mupdf_label_ranges": [{"startpage": 0, "prefix": "", "firstpagenum": 1, "style": "r"}, {"startpage": 2, "prefix": "", "firstpagenum": 1, "style": "R"}, {"startpage": 4, "prefix": "", "firstpagenum": 3, "style": "a"}, {"startpage": 5, "prefix": "x", "firstpagenum": 1, "style": "A"}], "mupdf_toc": [], "planted_pages": 6, "pypdf_labels": ["i", "ii", "I", "4", "c", "xA"], "pypdf_outline": [], "label_store": "/Kids x2", "outline_items_total": 0, "outline_items_naming_a_target": 0}, "replace-labels": {"bytes": 2657, "sha256": "a5dddb8ffd77a57bb94252fdd48b5eb8961056c0c64ac1013fd2bbd4b3bd94c6", "pages": 4, "mupdf_labels_per_page": ["i", "ii", "iii", "1"], "mupdf_label_ranges": [{"startpage": 0, "prefix": "", "firstpagenum": 1, "style": "r"}, {"startpage": 3, "prefix": "", "firstpagenum": 1, "style": "D"}], "mupdf_toc": [], "planted_pages": 4, "pypdf_labels": ["i", "ii", "iii", "1"], "pypdf_outline": [], "label_store": "/Nums x2", "outline_items_total": 0, "outline_items_naming_a_target": 0}, "copy": {"bytes": 2813, "sha256": "0bbac343cff2c8756b8735caf864ea7241e80b59b11d9ae18b582f6aaf211e04", "pages": 4, "mupdf_labels_per_page": ["", "", "", ""], "mupdf_label_ranges": [], "mupdf_toc": [[1, "Chapter One", 1], [2, "Section One.A", 2], [1, "Chapter Two", 3]], "planted_pages": 4, "pypdf_labels": ["1", "2", "3", "4"], "pypdf_outline": [["Chapter One", 0], ["Section One.A", 1], ["Chapter Two", 2]], "label_store": "absent", "outline_items_total": 3, "outline_items_naming_a_target": 3}}
+workdir: /tmp/live-readers-QzZAWN
