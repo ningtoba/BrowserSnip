@@ -17,7 +17,7 @@
  * skipped, never fatal, because a broken bookmark panel is worse than a short
  * one.
  */
-import type { PDFDocument, PDFFont, PDFPage } from '@maxwbh/pdf-lib';
+import type { PDFDocument, PDFFont, PDFObject, PDFPage } from '@maxwbh/pdf-lib';
 // `PDFString` is the one object-model class `./doc` does not re-export.
 import { PDFString } from '@maxwbh/pdf-lib';
 import {
@@ -30,6 +30,7 @@ import {
   context,
   rgb,
 } from './doc';
+import { asDict, collectTreePairs, followRef } from './tree';
 import { cropBox, displayedSize, resolvePages, PAGE_SIZES } from './pages';
 import { getFont, measureText, drawTextU } from './fonts';
 import { readInfo } from './metadata';
@@ -83,26 +84,69 @@ function nameOf(value: unknown): string | undefined {
   return value instanceof PDFName ? value.decodeText() : undefined;
 }
 
-/** Resolve a named destination (`/Dests` name tree) to its destination array. */
-function resolveNamedDestination(
+/**
+ * Every place this document may keep named destinations.
+ *
+ * `/Dests` on the catalogue is the PDF 1.1 spelling; from PDF 1.4 a producer that has a
+ * name dictionary puts the same tree under `/Names → /Dests` instead, and files carry
+ * one, the other, or — seen in the wild with a half-migrated catalogue — both. Looking
+ * at only the first is how a bookmark written by a modern tool read as "no page".
+ */
+function namedDestinationStores(doc: PDFDocument): PDFDict[] {
+  const found: PDFDict[] = [];
+  const catalog = doc.catalog;
+  const direct = asDict(followRef(doc, catalog.get(PDFName.of('Dests'))));
+  if (direct) found.push(direct);
+  const names = asDict(followRef(doc, catalog.get(PDFName.of('Names'))));
+  const underNames = asDict(followRef(doc, names?.get(PDFName.of('Dests'))));
+  if (underNames && !found.includes(underNames)) found.push(underNames);
+  return found;
+}
+
+/**
+ * Resolve anything a destination may be written as into the destination array itself.
+ *
+ * ISO 32000-1 §12.3.2 allows four spellings where this app used to accept one, and
+ * foreign producers do use all of them:
+ *
+ *   [ page /Fit ]                       the array, inline
+ *   12 0 R                              that array behind a reference
+ *   << /S /GoTo /D [ … ] >>             a destination *dictionary* (§12.3.2.2),
+ *                                       which is what pypdf files under `/Dests`
+ *   (name) / name                       a key into the named-destination tree
+ *
+ * `depth` bounds the walk: a dictionary's `/D` may name another entry, and a broken
+ * file can name itself.
+ */
+function destinationArray(
   doc: PDFDocument,
-  name: string,
+  raw: PDFObject | undefined,
+  depth = 0,
 ): PDFArray | undefined {
-  const dests = doc.catalog.lookupMaybe(PDFName.of('Dests'), PDFDict);
-  if (!dests) return undefined;
-  const names = dests.lookupMaybe(PDFName.of('Names'), PDFArray);
-  if (names) {
-    for (let i = 0; i + 1 < names.size(); i += 2) {
-      const key = textOf(names.get(i)) ?? nameOf(names.get(i));
-      if (key !== name) continue;
-      const value = names.get(i + 1);
-      if (value instanceof PDFArray) return value;
+  if (raw === undefined || depth > 3) return undefined;
+  const value = followRef(doc, raw);
+  if (value instanceof PDFArray) return value.size() === 0 ? undefined : value;
+  if (value instanceof PDFDict) {
+    const inner = value.has(PDFName.of('D')) ? value.get(PDFName.of('D')) : undefined;
+    return inner === undefined ? undefined : destinationArray(doc, inner, depth + 1);
+  }
+  const key = textOf(value) ?? nameOf(value);
+  if (key === undefined) return undefined;
+  for (const store of namedDestinationStores(doc)) {
+    for (const pair of collectTreePairs(doc, store)) {
+      const name = textOf(followRef(doc, pair.key)) ?? nameOf(followRef(doc, pair.key));
+      if (name !== key) continue;
+      const found = destinationArray(doc, pair.value, depth + 1);
+      if (found) return found;
+    }
+    // Documents with no tree at all keep a flat dictionary of name → destination.
+    const direct = store.get(PDFName.of(key));
+    if (direct !== undefined) {
+      const found = destinationArray(doc, direct, depth + 1);
+      if (found) return found;
     }
   }
-  // Older documents store `/Dests` as a flat dict of name → destination.
-  const direct = dests.get(PDFName.of(name));
-  const resolved = direct instanceof PDFRef ? context(doc).lookup(direct) : direct;
-  return resolved instanceof PDFArray ? resolved : undefined;
+  return undefined;
 }
 
 function destinationFrom(
@@ -110,30 +154,24 @@ function destinationFrom(
   item: PDFDict,
   indexOf: (ref: unknown) => number | null,
 ): { page: number | null; destination?: OutlineNode['destination'] } {
-  let raw: unknown = item.get(PDFName.of('Dest'));
-  if (!raw) {
-    const action = item.lookupMaybe(PDFName.of('A'), PDFDict);
-    if (!action || nameOf(action.lookupMaybe(PDFName.of('S'), PDFName)) !== 'GoTo') {
-      return { page: null };
-    }
-    raw = action.get(PDFName.of('D'));
-  }
-  if (raw instanceof PDFRef) raw = context(doc).lookup(raw);
-  if (raw instanceof PDFName || raw instanceof PDFString || raw instanceof PDFHexString) {
-    const key = textOf(raw) ?? nameOf(raw);
-    raw = key ? resolveNamedDestination(doc, key) : undefined;
-  }
-  if (!(raw instanceof PDFArray) || raw.size() === 0) return { page: null };
+  // `/Dest` first, then a `/GoTo` action's `/D`: an entry may carry both, and this app
+  // follows `/Dest` — the answer MuPDF gives. pypdf prefers the action; the row in
+  // `docs/research/readers-foreign-repro.md` records the two readers disagreeing.
+  const action = item.lookupMaybe(PDFName.of('A'), PDFDict);
+  const raw = item.get(PDFName.of('Dest'))
+    ?? (action && nameOf(action.lookupMaybe(PDFName.of('S'), PDFName)) === 'GoTo'
+      ? action.get(PDFName.of('D'))
+      : undefined);
+  if (raw === undefined) return { page: null };
+  const array = destinationArray(doc, raw);
+  if (!array) return { page: null };
 
-  const page = indexOf(raw.get(0));
+  const page = indexOf(array.get(0));
   if (page === null) return { page: null };
 
-  const kind = nameOf(raw.get(1));
+  const kind = nameOf(array.get(1));
   if (kind === 'XYZ') {
-    const number = (index: number): number | undefined => {
-      const value = raw instanceof PDFArray ? raw.lookupMaybe(index, PDFNumber) : undefined;
-      return value?.asNumber();
-    };
+    const number = (index: number): number | undefined => array.lookupMaybe(index, PDFNumber)?.asNumber();
     const destination: NonNullable<OutlineNode['destination']> = { kind: 'xyz' };
     const x = number(2);
     const y = number(3);
@@ -991,33 +1029,46 @@ export function addPageLabels(
   doc.catalog.set(PDFName.of('PageLabels'), ctx.register(tree));
 }
 
-/** Expand `/PageLabels` into one label per page (decimal when none are set). */
+/**
+ * Expand `/PageLabels` into one label per page (decimal when none are set).
+ *
+ * The store is a **number tree** (§7.9.7): `/Nums` pairs, `/Kids` subtrees, or both at
+ * once, with each value either a range dictionary or a reference to one. Reading the
+ * root's `/Nums` and nothing else is what made a labelled document look unlabelled —
+ * `docs/research/readers-foreign-repro.md` has the per-shape table.
+ */
 export function readPageLabels(doc: PDFDocument): PageLabel[] {
-  const tree = doc.catalog.lookupMaybe(PDFName.of('PageLabels'), PDFDict);
-  const nums = tree?.lookupMaybe(PDFName.of('Nums'), PDFArray);
+  const tree = asDict(followRef(doc, doc.catalog.get(PDFName.of('PageLabels'))));
   const parsed: {
     start: number;
     style: PageLabelRange['style'];
     prefix: string;
     firstPageNumber: number;
+    /**
+     * False when the range carries no `/S`. §12.4.2 Table 160 makes the style optional
+     * and both MuPDF and pypdf then show the prefix with no number — which is also what
+     * `add-page-labels` writes for its `none` style, so an app that answered a number
+     * here would contradict its own output.
+     */
+    numbered: boolean;
   }[] = [];
 
-  if (nums) {
-    for (let i = 0; i + 1 < nums.size(); i += 2) {
-      const start = nums.lookupMaybe(i, PDFNumber)?.asNumber();
-      const dict = nums.lookupMaybe(i + 1, PDFDict);
-      if (start === undefined || !dict) continue;
-      const styleName = nameOf(dict.lookupMaybe(PDFName.of('S'), PDFName)) ?? '';
-      const style = (['D', 'R', 'r', 'A', 'a'].includes(styleName)
-        ? styleName
-        : '') as PageLabelRange['style'];
-      parsed.push({
-        start: Math.max(0, Math.trunc(start)),
-        style,
-        prefix: textOf(dict.get(PDFName.of('P'))) ?? '',
-        firstPageNumber: dict.lookupMaybe(PDFName.of('St'), PDFNumber)?.asNumber() ?? 1,
-      });
-    }
+  for (const pair of collectTreePairs(doc, tree)) {
+    const start = followRef(doc, pair.key);
+    const dict = asDict(followRef(doc, pair.value));
+    if (!(start instanceof PDFNumber) || !dict) continue;
+    const styleName = nameOf(followRef(doc, dict.get(PDFName.of('S')))) ?? '';
+    const style = (['D', 'R', 'r', 'A', 'a'].includes(styleName)
+      ? styleName
+      : '') as PageLabelRange['style'];
+    const offset = followRef(doc, dict.get(PDFName.of('St')));
+    parsed.push({
+      start: Math.max(0, Math.trunc(start.asNumber())),
+      style,
+      prefix: textOf(followRef(doc, dict.get(PDFName.of('P')))) ?? '',
+      firstPageNumber: offset instanceof PDFNumber ? offset.asNumber() : 1,
+      numbered: dict.has(PDFName.of('S')),
+    });
   }
   parsed.sort((a, b) => a.start - b.start);
 
@@ -1036,7 +1087,9 @@ export function readPageLabels(doc: PDFDocument): PageLabel[] {
     const value = range.firstPageNumber + (page - range.start);
     labels.push({
       page,
-      label: `${range.prefix}${formatLabelNumber(range.style, Math.max(1, value))}`,
+      label: range.numbered
+        ? `${range.prefix}${formatLabelNumber(range.style, Math.max(1, value))}`
+        : range.prefix,
     });
   }
   return labels;

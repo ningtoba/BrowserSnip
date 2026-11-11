@@ -34,6 +34,7 @@ import {
   PDFRef,
   context,
 } from './doc';
+import { asDict, collectTreePairs, followRef as resolve } from './tree';
 import {
   decodeTextString,
   formatPdfDate,
@@ -122,23 +123,6 @@ function hexToBytes(hex: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 /**
- * Follow one indirection without asking pdf-lib what class the object should be.
- *
- * The fork's `lookupMaybe` throws `UnexpectedObjectTypeError` on a class
- * mismatch rather than answering `undefined`, so asking for a `PDFDict` at a key
- * that holds a stream took the whole listing down with an engine sentence in the
- * user's face. A reader of foreign files asks what something *is* and moves on
- * when it is not what it hoped.
- */
-function resolve(doc: PDFDocument, value: PDFObject | undefined): PDFObject | undefined {
-  return value instanceof PDFRef ? context(doc).lookup(value) : value;
-}
-
-function asDict(value: unknown): PDFDict | undefined {
-  return value instanceof PDFDict ? value : undefined;
-}
-
-/**
  * Is this object a dictionary worth reading as a file specification?
  *
  * `/Type /Filespec` is written by some producers and omitted by others, so the
@@ -157,35 +141,30 @@ function looksLikeFilespec(value: unknown): value is PDFDict {
   );
 }
 
-/** Walk a name tree (`/Names` pairs and/or `/Kids` subtrees). */
+/**
+ * Every file specification in one name tree.
+ *
+ * The walk itself is `core/tree.collectTreePairs`, shared with the named-destination
+ * and page-label lookups: a name-tree pair's value is a reference **or** the object
+ * itself, and subtrees hang off `/Kids`. What stays here is the filespec judgement and
+ * the record of where the pair was found, which removal needs in order to splice the
+ * right array.
+ */
 function collectNameTree(
   doc: PDFDocument,
   root: PDFDict | undefined,
   out: FilespecSite[],
-  depth = 0,
 ): void {
-  if (!root || depth > 32) return;
-  const names = resolve(doc, root.get(PDFName.of('Names')));
-  if (names instanceof PDFArray) {
-    for (let i = 0; i + 1 < names.size(); i += 2) {
-      const key = decodeTextString(resolve(doc, names.get(i)));
-      const value = names.get(i + 1);
-      const spec = resolve(doc, value);
-      if (key !== undefined && looksLikeFilespec(spec)) {
-        out.push({
-          name: key,
-          spec,
-          ...(value instanceof PDFRef ? { ref: value } : {}),
-          tree: names,
-        });
-      }
-    }
-  }
-  const kids = resolve(doc, root.get(PDFName.of('Kids')));
-  if (kids instanceof PDFArray) {
-    for (let i = 0; i < kids.size(); i++) {
-      collectNameTree(doc, asDict(resolve(doc, kids.get(i))), out, depth + 1);
-    }
+  for (const pair of collectTreePairs(doc, root)) {
+    const key = decodeTextString(resolve(doc, pair.key));
+    const spec = resolve(doc, pair.value);
+    if (key === undefined || !looksLikeFilespec(spec)) continue;
+    out.push({
+      name: key,
+      spec,
+      ...(pair.value instanceof PDFRef ? { ref: pair.value } : {}),
+      tree: pair.host,
+    });
   }
 }
 
