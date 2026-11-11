@@ -193,9 +193,9 @@
  },
  "outlines-redactable.pdf": {
   "payloads": {},
-  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
-  "sha256": "4e5580a7d39742afbf9c1834ef7cb04736f6b2cee70d7b27155c90a3cfc10c9d",
-  "shape": "the referenced-/Dests failure with titles that match the page's own words"
+  "producer": "MuPDF 1.28.2 (set_toc, set_metadata) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "e424606312c5db253020873b4c8412e71df7b482dd892838281a158aaef77b71",
+  "shape": "the referenced-/Dests failure, titles matching the page's own words, with a /Info dictionary"
  },
  "outlines-targetless.pdf": {
   "payloads": {},

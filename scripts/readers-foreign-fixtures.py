@@ -279,9 +279,21 @@ def rewrite_items(pdf: Any, form: str, names: tuple[str, ...] = OUTLINE_KEYS) ->
 
 
 def base_outline(name: str, nested: bool = True,
-                 titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two")) -> str:
-    """A MuPDF-written two-level outline, so the wiring is a producer's, not ours."""
+                 titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two"),
+                 info: bool = False) -> str:
+    """A MuPDF-written two-level outline, so the wiring is a producer's, not ours.
+
+    `info` decides whether the file carries a `/Info` dictionary. MuPDF writes none
+    unless metadata is set, which is the shape most of these fixtures keep — and the
+    shape `core/metadata.ts:infoDict` throws on.
+    """
     doc = base(4)
+    if info:
+        doc.set_metadata({
+            "title": "Reader fixtures",
+            "author": "PyMuPDF 1.28.2",
+            "producer": "scripts/readers-foreign-fixtures.py",
+        })
     toc = [[index + 1 if nested and index == 1 else 1, title, page]
            for index, (title, page) in enumerate(zip(titles, (1, 2, 3), strict=True))]
     doc.set_toc(toc if nested else [[1, title, index + 1]
@@ -291,8 +303,9 @@ def base_outline(name: str, nested: bool = True,
 
 def build_outline(name: str, shape: str, producer: str, where: str, value_form: str,
                   item_form: str, nested: bool = True,
-                  titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two")) -> None:
-    base_outline(name, nested, titles)
+                  titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two"),
+                  info: bool = False) -> None:
+    base_outline(name, nested, titles, info)
     pdf = reopen(name)
     install_dests(pdf, where, value_form)
     rewrite_items(pdf, item_form)
@@ -525,10 +538,10 @@ def main() -> None:  # noqa: C901, PLR0915
     # has something to rewrite and the round trip can be measured.
     build_outline(
         "outlines-redactable.pdf",
-        "the referenced-/Dests failure with titles that match the page's own words",
-        "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)", "catalog-flat",
+        "the referenced-/Dests failure, titles matching the page's own words, with a /Info dictionary",
+        "MuPDF 1.28.2 (set_toc, set_metadata) + libqpdf 12.3.2 (/Dests)", "catalog-flat",
         "array-ref", "dest-string",
-        titles=("Lighthouse One", "Inventory Two", "Sheet Three"))
+        titles=("Lighthouse One", "Inventory Two", "Sheet Three"), info=True)
 
 
 # ---------------------------------------------------------------------------

@@ -2694,8 +2694,8 @@
   }
  },
  "outlines-redactable.pdf": {
-  "shape": "the referenced-/Dests failure with titles that match the page's own words",
-  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "shape": "the referenced-/Dests failure, titles matching the page's own words, with a /Info dictionary",
+  "producer": "MuPDF 1.28.2 (set_toc, set_metadata) + libqpdf 12.3.2 (/Dests)",
   "outside": {
    "pages": 4,
    "labels": [],
