@@ -86,6 +86,8 @@ is quoted at the foot of this file):
 
 ## 3. Every place the app claims an engine ran (the step-1 inventory)
 
+Line numbers are as of `58cbaff`, before anything was changed.
+
 Display
   * `src/components/tools/pdf/shared/ToolSurface.tsx:608` — `engine={engines[0] ??
     null}`: the ENGINE row's value is the tool's declaration. This is the defect.
@@ -143,12 +145,25 @@ through the runner and the store to the card, per output.
 
 ## 4. What the attribution now reports (after the change)
 
-`{ via: 'engine', engine }` when an engine's own bytes are what the user is handed,
-`{ via: 'fallback', engine }` when an engine was asked for and the local path wrote
-the file — including when the engine ran and its output was discarded — and
-`{ via: 'core' }` when no engine was in play. The card prints that, never
-`tool.engines[0]`; a tool that declares an engine and reports nothing prints "not
-reported" rather than a name.
+`ToolResult.producedBy` / `ToolOutputFile.producedBy`, stamped by the branch that wrote
+the bytes and carried per output through `RunOutput` → the process store's
+`outputSources` → the card:
+
+| reported by the run | the `ENGINE` row prints |
+| --- | --- |
+| `{ via: 'engine', engine: 'ghostscript' }` | `Ghostscript` |
+| `{ via: 'fallback', engine: 'ghostscript' }` | `local path · Ghostscript not used` (warn token) |
+| `{ via: 'core' }` | `local path · no engine` |
+| a mixed batch | `mixed · see the list below`, each file's own label on its row |
+| nothing, on a tool that declares an engine | `not reported` (warn token) |
+| nothing, on a tool that declares none | no row at all |
+
+The row is never filled from `tool.engines` again — the declaration is read only to
+decide whether silence deserves calling out. Two more sentences changed to agree with
+the bytes: `pdf-to-pdfa`'s engine headline now prints `an output intent in the
+catalogue` or `no output intent in the catalogue`, read back off the file it is handing
+over, and `auditFonts` looks for a font program on the `/FontDescriptor` (§2's last
+bullet) instead of reporting Ghostscript's embedded subset as missing.
 
 ## 5. Reproduce
 

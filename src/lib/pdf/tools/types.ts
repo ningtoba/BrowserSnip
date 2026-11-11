@@ -126,9 +126,32 @@ export interface ToolRunContext {
   password?: string;
 }
 
+/**
+ * Which code path wrote the bytes a result hands back, stamped by that path at the
+ * moment it wrote them.
+ *
+ * The result card used to print `tool.engines[0]` — the engine a tool is *configured*
+ * to use — so a file that a local fallback produced was credited to Ghostscript for
+ * exactly as long as the fallback ran. Measured on `pdf-to-pdfa` in
+ * `docs/research/pdfa-attribution-recheck.md`: the label named Ghostscript while
+ * `bestEffortPdfA` wrote every byte, and that misattribution is what made a dead
+ * engine invocation look like a working conversion.
+ *
+ * Nothing downstream infers this from a declaration. A tool that runs an engine and
+ * keeps its output says `engine`; one that asked, gave up (or threw the engine's file
+ * away) and wrote its own says `fallback`, naming the engine that did not produce
+ * these bytes; a file with no engine in play at all says `core`.
+ */
+export type ByteSource =
+  | { via: 'engine'; engine: EngineId }
+  | { via: 'fallback'; engine: EngineId }
+  | { via: 'core' };
+
 export interface ToolOutputFile {
   blob: Blob;
   name?: string;
+  /** Who wrote these bytes. Omitted means the producer did not say. */
+  producedBy?: ByteSource;
 }
 
 /**
@@ -153,7 +176,7 @@ type ToolResultCommon = {
 };
 
 export type ToolResult =
-  | ({ kind: 'pdf'; bytes: Uint8Array; message?: string } & ToolResultCommon)
+  | ({ kind: 'pdf'; bytes: Uint8Array; producedBy?: ByteSource; message?: string } & ToolResultCommon)
   | ({ kind: 'files'; files: ToolOutputFile[]; message?: string } & ToolResultCommon)
   | ({ kind: 'report'; sections: ToolReportSection[]; message?: string; files?: ToolOutputFile[] } & ToolResultCommon);
 
@@ -200,7 +223,13 @@ export interface PdfToolDefinition {
   multiFile?: boolean;
   minFiles?: number;
   maxFiles?: number;
-  /** Engines that must be reachable before the tool can run. */
+  /**
+   * The CDN engines this tool may call.
+   *
+   * A capability list, not a result: which engine (if any) wrote a given file is
+   * reported per output by `ToolResult.producedBy`, because two of the tools
+   * declared here have a local path that writes the file when the engine does not.
+   */
   engines?: EngineId[];
   surface?: ToolSurface;
   fields?: ToolField[];

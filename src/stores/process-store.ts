@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { FFmpegProgress, ToolId } from '@/types';
 import type { PdfEncryption } from '@/lib/pdf/core/guard';
+import type { ByteSource } from '@/lib/pdf/tools/types';
 
 /** A structured result from a PDF tool that reports rather than produces a file. */
 export interface ToolReportSection {
@@ -75,6 +76,15 @@ interface ProcessSlot {
   outputUrls: string[];
   /** Download name per output, so multi-file results keep meaningful names. */
   outputNames: string[];
+  /**
+   * Who wrote each output's bytes, as its producer said so (`null` = not reported).
+   *
+   * Parallel to `outputBlobs`/`outputNames` for the same reason they are: a run can
+   * hand back several files and the answer can differ between them. The result card
+   * reads this instead of the tool's engine declaration, which is what let a
+   * fallback-written file carry a Ghostscript attribution.
+   */
+  outputSources: (ByteSource | null)[];
   error: string | null;
   /** What to do about `error`, straight from the guard layer when it has one. */
   errorHint: string | null;
@@ -112,6 +122,8 @@ interface ProcessState {
   outputBlobs: Blob[];
   outputUrls: string[];
   outputNames: string[];
+  /** See `ProcessSlot.outputSources` — one entry per produced file. */
+  outputSources: (ByteSource | null)[];
   error: string | null;
   /** What to do about `error`, from the guard layer when it has one. */
   errorHint: string | null;
@@ -158,8 +170,8 @@ interface ProcessState {
   setReport: (report: ToolReport | null) => void;
   updateProgress: (p: FFmpegProgress, percent: number) => void;
   appendLog: (line: string) => void;
-  setOutput: (blob: Blob, url: string, name?: string) => void;
-  addOutput: (blob: Blob, url: string, name?: string) => void;
+  setOutput: (blob: Blob, url: string, name?: string, producedBy?: ByteSource | null) => void;
+  addOutput: (blob: Blob, url: string, name?: string, producedBy?: ByteSource | null) => void;
   /** Mark a run finished without producing a file (report-only tools). */
   complete: (message?: string) => void;
   setError: (error: string, hint?: string | null) => void;
@@ -177,6 +189,7 @@ const emptySlot = (): ProcessSlot => ({
   outputBlobs: [],
   outputUrls: [],
   outputNames: [],
+  outputSources: [],
   error: null,
   errorHint: null,
   label: '',
@@ -207,6 +220,7 @@ function slotOf(state: SlotFields): ProcessSlot {
     outputBlobs: state.outputBlobs,
     outputUrls: state.outputUrls,
     outputNames: state.outputNames,
+    outputSources: state.outputSources,
     error: state.error,
     errorHint: state.errorHint,
     label: state.label,
@@ -265,6 +279,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   outputBlobs: [],
   outputUrls: [],
   outputNames: [],
+  outputSources: [],
   error: null,
   errorHint: null,
   label: '',
@@ -298,6 +313,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       outputUrl: null,
       outputBlobs: [],
       outputUrls: [],
+      outputSources: [],
       error: null,
       errorHint: null,
       label,
@@ -383,7 +399,7 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
   appendLog: (line) =>
     set((state) => ({ logs: [...state.logs, line] })),
 
-  setOutput: (blob, url, name) => {
+  setOutput: (blob, url, name, producedBy) => {
     const prev = get().outputUrl;
     if (prev) URL.revokeObjectURL(prev);
 
@@ -396,16 +412,18 @@ export const useProcessStore = create<ProcessState>((set, get) => ({
       outputBlobs: [blob],
       outputUrls: [url],
       outputNames: [name ?? deriveName(blob, get().label)],
+      outputSources: [producedBy ?? null],
       sizeAfter: get().sizeAfter === null ? blob.size : (get().sizeAfter ?? 0) + blob.size,
     });
   },
 
-  addOutput: (blob, url, name) =>
+  addOutput: (blob, url, name, producedBy) =>
     set((state) => ({
       phase: 'done',
       outputBlobs: [...state.outputBlobs, blob],
       outputUrls: [...state.outputUrls, url],
       outputNames: [...state.outputNames, name ?? deriveName(blob, state.label)],
+      outputSources: [...state.outputSources, producedBy ?? null],
       sizeAfter: (state.sizeAfter ?? 0) + blob.size,
     })),
 

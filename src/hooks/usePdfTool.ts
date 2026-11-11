@@ -324,10 +324,13 @@ export function usePdfTool(
     if (missing.length > 0) {
       // Imperative, and it names the thing: "needs the optional X module" read
       // as a state the user could not act on once the engines UI went away.
+      // It cannot say "this tool cannot run without it": two of the three tools
+      // that declare an engine have a local path that writes the file when the
+      // engine is not there, and the result card names which path did.
       out.push(
         missing.length === 1
-          ? `Connect to the internet to load ${ENGINE_LABELS[missing[0]]} — this tool cannot run without it.`
-          : `Connect to the internet to load ${missing.map((id) => ENGINE_LABELS[id]).join(' and ')} — this tool cannot run without them.`,
+          ? `Connect to the internet to load ${ENGINE_LABELS[missing[0]]} — without it the run uses this tool's own local path, or refuses when it has none.`
+          : `Connect to the internet to load ${missing.map((id) => ENGINE_LABELS[id]).join(' and ')} — without them the run uses this tool's own local path, or refuses when it has none.`,
       );
     }
     for (const field of tool.fields ?? []) {
@@ -474,8 +477,10 @@ export function usePdfTool(
         for (let index = 0; index < outcome.outputs.length; index++) {
           const output = outcome.outputs[index];
           const url = URL.createObjectURL(output.blob);
-          if (index === 0) store.getState().setOutput(output.blob, url, output.name);
-          else store.getState().addOutput(output.blob, url, output.name);
+          // The producer's own attribution travels with the file it wrote, so the
+          // result screen can report what ran rather than what the tool declares.
+          if (index === 0) store.getState().setOutput(output.blob, url, output.name, output.producedBy);
+          else store.getState().addOutput(output.blob, url, output.name, output.producedBy);
         }
         if (outcome.report) store.getState().setReport(outcome.report);
         // Pages out, from the producer that held the document. `null` is an

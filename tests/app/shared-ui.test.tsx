@@ -681,8 +681,8 @@ describe('PreviewPane', () => {
 
 // ── results ─────────────────────────────────────────────────────────────────
 
-function item(name: string, size: number, pages?: number): ResultItem {
-  return { name, blob: new Blob([new Uint8Array(size)], { type: 'application/pdf' }), pages };
+function item(name: string, size: number, pages?: number, producedBy?: ResultItem['producedBy']): ResultItem {
+  return { name, blob: new Blob([new Uint8Array(size)], { type: 'application/pdf' }), pages, producedBy };
 }
 
 describe('describeDelta', () => {
@@ -724,12 +724,33 @@ describe('ResultCard', () => {
     expect(line.textContent).toBe(name);
   });
 
-  it('names the engine, or admits it degraded', () => {
-    const { rerender } = render(<ResultCard outputs={[item('a.pdf', 10)]} engine="ghostscript" />);
+  it('names the engine that ran, and admits when the local path wrote the file', () => {
+    // The row used to print `tool.engines[0]`, so a fallback-written file carried the
+    // engine's name and no mark at all: both states below have to come from what the
+    // run reported, or the assertion is worthless.
+    const { rerender } = render(
+      <ResultCard outputs={[item('a.pdf', 10, undefined, { via: 'engine', engine: 'ghostscript' })]} />,
+    );
     expect(screen.getByText('Ghostscript')).toBeInTheDocument();
-    rerender(<ResultCard outputs={[item('a.pdf', 10)]} engine="ghostscript" degraded warnings={['Ghostscript unavailable — used the core path.']} />);
-    expect(screen.getByText('Ghostscript · degraded')).toBeInTheDocument();
+    rerender(
+      <ResultCard
+        outputs={[item('a.pdf', 10, undefined, { via: 'fallback', engine: 'ghostscript' })]}
+        declared={['ghostscript']}
+        warnings={['Ghostscript unavailable — used the core path.']}
+      />,
+    );
+    expect(screen.getByText(/local path · Ghostscript not used/)).toBeInTheDocument();
+    expect(screen.queryByText('Ghostscript')).not.toBeInTheDocument();
     expect(screen.getByText(/Ghostscript unavailable/)).toBeInTheDocument();
+  });
+
+  it('says it was not told, where a tool declares an engine and the run said nothing', () => {
+    const first = render(<ResultCard outputs={[item('a.pdf', 10)]} declared={['ghostscript']} />);
+    expect(first.getByText('not reported')).toBeInTheDocument();
+    first.unmount();
+    // A tool with no engine in play has nothing to disclaim, so the row stays out.
+    const second = render(<ResultCard outputs={[item('b.pdf', 10)]} />);
+    expect(second.queryByText('Engine')).not.toBeInTheDocument();
   });
 
   it('offers the original back when the output grew (E14)', () => {

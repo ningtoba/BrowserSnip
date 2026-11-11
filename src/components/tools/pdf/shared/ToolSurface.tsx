@@ -510,7 +510,7 @@ export interface ResultPaneProps {
   toolName?: string;
   /** Pages the run started with, so the card can report in → out (E6/E7). */
   pagesIn?: number | null;
-  /** Engines the tool declared, so the card can name the one it used. */
+  /** Engines the tool declares — read only to admit when a run reported no producer. */
   engines?: readonly EngineId[];
   /** Clears the inputs and the result: the page goes back to its drop zone. */
   onDoAnother: () => void;
@@ -549,6 +549,7 @@ export function ResultPane({
   const blobs = useProcessStore((s) => s.outputBlobs);
   const names = useProcessStore((s) => s.outputNames);
   const urls = useProcessStore((s) => s.outputUrls);
+  const sources = useProcessStore((s) => s.outputSources);
   const pagesOut = useProcessStore((s) => s.pagesOut);
   const sizeBefore = useProcessStore((s) => s.sizeBefore);
   const warnings = useProcessStore((s) => s.warnings);
@@ -558,8 +559,14 @@ export function ResultPane({
   const outputs: ResultItem[] = blobs.map((blob, index) => ({
     name: names[index] ?? `output-${index + 1}`,
     blob,
+    // The producer the run reported for this file, `null` when it reported none.
+    // This line used to read `engine: engines[0]` — what the tool is configured to
+    // use — so a file its fallback wrote was credited to the engine, and a `·
+    // degraded` marker that was regexed out of the warning prose (`/degrad/i`) went
+    // missing whenever that sentence said "local path" instead of "degraded". Both
+    // facts now travel as data set by the code that wrote the bytes.
+    producedBy: sources[index] ?? null,
   }));
-  const degraded = warnings.some((warning) => /degrad/i.test(warning));
   const room = usePreviewRoom(blobs[0] ?? null, outputs.length);
 
   return (
@@ -605,8 +612,7 @@ export function ResultPane({
             pages={pagesOut}
             warnings={warnings}
             message={statusMessage || undefined}
-            engine={engines[0] ?? null}
-            degraded={degraded}
+            declared={engines}
             original={file ? { name: file.name, blob: file } : null}
           />
         </div>

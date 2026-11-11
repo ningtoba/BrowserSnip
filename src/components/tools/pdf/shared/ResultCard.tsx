@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { downloadBlob, formatFileSize } from '@/lib/utils/download';
+import type { ByteSource } from '@/lib/pdf/tools/types';
 import { splitFileName } from './toolForm';
 import { EmptyState } from './EmptyState';
 import { FOCUS_RING } from './focusRing';
@@ -10,6 +11,14 @@ export interface ResultItem {
   blob: Blob;
   /** Pages in this output, when the tool knows (E6/E7 reporting). */
   pages?: number | null;
+  /**
+   * Who wrote *these* bytes, said by the code that wrote them.
+   *
+   * `null`/omitted means the producer did not claim one, which the card reports as
+   * "not reported" wherever an engine was expected rather than guessing from the
+   * tool's declaration.
+   */
+  producedBy?: ByteSource | null;
 }
 
 export interface ResultCardProps {
@@ -27,10 +36,12 @@ export interface ResultCardProps {
    * pages" is a number the user can check rather than a claim (research §4).
    */
   pagesIn?: number | null;
-  /** Engine the run actually used, e.g. `"ghostscript"`; `null` = core only. */
-  engine?: string | null;
-  /** The optional engine was unreachable, so a degraded path produced this. */
-  degraded?: boolean;
+  /**
+   * The engines this tool declares, for one purpose only: admitting that a run
+   * reported no producer. It is never printed as the answer — that was the bug
+   * (`tool.engines[0]` stood in for the engine that ran).
+   */
+  declared?: readonly string[];
   warnings?: string[];
   /** The tool's own summary line, when it has one. */
   message?: string | null;
@@ -54,6 +65,58 @@ const ENGINE_LABELS: Record<string, string> = {
   ghostscript: 'Ghostscript',
   cpdf: 'cpdf',
 };
+
+/**
+ * The `Engine` row's answer for one file: who wrote these bytes.
+ *
+ * A fallback names the engine that did *not* produce the file, because that is the
+ * sentence the card used to get backwards — `pdf-to-pdfa` printed "Ghostscript" over
+ * a file `bestEffortPdfA` wrote, and the label is the only reason nobody noticed for
+ * a session (`docs/research/pdfa-attribution-recheck.md`).
+ */
+export function describeSource(source: ByteSource): { text: string; warn: boolean } {
+  switch (source.via) {
+    case 'engine':
+      return { text: ENGINE_LABELS[source.engine] ?? source.engine, warn: false };
+    case 'fallback':
+      return {
+        text: `local path · ${ENGINE_LABELS[source.engine] ?? source.engine} not used`,
+        warn: true,
+      };
+    case 'core':
+      return { text: 'local path · no engine', warn: false };
+  }
+}
+
+/** What the card would say about each file on its own, in order. */
+function sourceLabels(outputs: ResultItem[]): Array<{ text: string; warn: boolean }> {
+  return outputs.map((item) =>
+    item.producedBy ? describeSource(item.producedBy) : { text: 'not reported', warn: true },
+  );
+}
+
+/**
+ * The batch's provenance, per run rather than per declaration.
+ *
+ * One answer when every file agrees; `mixed` when they do not, with each file's own
+ * label beside it in the list below. Silence is only allowed for a tool that has no
+ * engine to speak of — where one is declared and the run said nothing, the row says
+ * "not reported" instead of lending the engine a run it did not have.
+ */
+export function describeProvenance(
+  outputs: ResultItem[],
+  declared: readonly string[],
+): { text: string; warn: boolean } | null {
+  if (outputs.length === 0) return null;
+  const labels = sourceLabels(outputs);
+  const distinct = [...new Set(labels.map((label) => label.text))];
+  const warn = labels.some((label) => label.warn);
+  if (distinct.length > 1) return { text: 'mixed · see the list below', warn };
+  if (distinct[0] === 'not reported') {
+    return declared.length > 0 ? { text: 'not reported', warn: true } : null;
+  }
+  return { text: distinct[0], warn };
+}
 
 /** `2.4 MB → 1.1 MB · 54% smaller`, honest about growth too. */
 export function describeDelta(before: number | null | undefined, after: number | null | undefined): string | null {
@@ -115,8 +178,7 @@ export function ResultCard({
   sizeBefore,
   pages,
   pagesIn,
-  engine,
-  degraded = false,
+  declared = [],
   warnings = [],
   message,
   original,
@@ -140,6 +202,10 @@ export function ResultCard({
   const pageCount = describePages(pagesIn, pageTotal);
   const summary = honestSummary(message, grew);
   const multi = outputs.length > 1;
+  // Who wrote the bytes, per file, and whether the batch has more than one answer.
+  const provenance = describeProvenance(outputs, declared);
+  const labels = sourceLabels(outputs);
+  const mixed = new Set(labels.map((label) => label.text)).size > 1;
 
   const grab = (item: ResultItem) => (onDownload ? onDownload(item) : downloadBlob(item.blob, item.name));
 
@@ -218,13 +284,10 @@ export function ResultCard({
             <dd className="tabular-nums">{pageCount}</dd>
           </div>
         )}
-        {(engine || degraded) && (
+        {provenance && (
           <div className="flex items-baseline justify-between gap-2">
             <dt className="uppercase tracking-[0.08em] text-ink-muted">Engine</dt>
-            <dd className={degraded ? 'text-warn' : 'text-ink-soft'}>
-              {engine ? ENGINE_LABELS[engine] ?? engine : 'pdf-lib core'}
-              {degraded ? ' · degraded' : ''}
-            </dd>
+            <dd className={provenance.warn ? 'text-warn' : 'text-ink-soft'}>{provenance.text}</dd>
           </div>
         )}
       </dl>
@@ -274,6 +337,15 @@ export function ResultCard({
                 </span>
                 {item.pages != null && (
                   <span className="font-mono text-[10px] text-ink-muted tabular-nums">{item.pages}p</span>
+                )}
+                {mixed && (
+                  // A mixed batch cannot be answered by one label, so each file says
+                  // for itself which path wrote it.
+                  <span
+                    className={`font-mono text-[10px] ${labels[index].warn ? 'text-warn' : 'text-ink-muted'}`}
+                  >
+                    {labels[index].text}
+                  </span>
                 )}
                 <button
                   type="button"

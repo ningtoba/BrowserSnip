@@ -47,7 +47,7 @@ import { describeOptions, leadField, quietSummary, splitFileName, verbFor } from
 import { intakeCopy, intakeFootNote, intakeFormats } from '@/components/tools/pdf/shared/FileIntake';
 import { surfaceState } from '@/components/tools/pdf/shared/ToolSurface';
 import { openRender } from '@/lib/pdf/core/render';
-import type { PdfToolDefinition, ToolField } from '@/lib/pdf/tools/types';
+import type { ByteSource, PdfToolDefinition, ToolField } from '@/lib/pdf/tools/types';
 
 // ── module mocks ────────────────────────────────────────────────────────────
 
@@ -98,6 +98,15 @@ const stampField: ToolField = { key: 'stamp', label: 'Stamp text', type: 'text',
 
 /** What the last fake run was given, and the gate that lets it finish. */
 const live: { release: (() => void) | null } = { release: null };
+
+/**
+ * What the fake engine-backed tool claims for its own bytes, per test.
+ *
+ * One tool, two states, the same `engines: ['ghostscript']` declaration in both:
+ * that is the only way to make the `ENGINE` row answer a question about the run
+ * rather than about the config.
+ */
+const attribution: { producedBy: ByteSource | null } = { producedBy: null };
 
 function bytes(size: number): Uint8Array {
   return new TextEncoder().encode('x'.repeat(size));
@@ -226,6 +235,34 @@ const STANDS: Record<string, PdfToolDefinition> = {
     actionLabel: 'Stamp',
     outputSuffix: '_stamped.pdf',
     run: async () => ({ kind: 'pdf', bytes: bytes(50), message: 'Stamped.' }),
+  },
+  /**
+   * A tool that declares Ghostscript and may or may not have used it.
+   *
+   * The card used to print `engines[0]`, so both states read "Ghostscript" and a
+   * run its fallback wrote — including one whose engine invocation had died — was
+   * indistinguishable from a conversion.
+   */
+  'shell-engine': {
+    id: 'shell-engine',
+    name: 'Outline Shell',
+    description: 'Draws the type with an engine when it can',
+    icon: '✒️',
+    category: 'optimize',
+    actionLabel: 'Outline',
+    engines: ['ghostscript'],
+    outputSuffix: '_outlined.pdf',
+    run: async () => ({
+      kind: 'pdf' as const,
+      bytes: bytes(120),
+      producedBy: attribution.producedBy ?? undefined,
+      message: attribution.producedBy?.via === 'engine'
+        ? 'Ghostscript drew the type on all 2 page(s).'
+        : 'Wrote the identification with this app’s own path.',
+      warnings: attribution.producedBy?.via === 'engine'
+        ? []
+        : ['Ghostscript could not be reached; the file below was produced by the local path.'],
+    }),
   },
   /** Two required options: one is visible, the other hides behind the count. */
   'shell-two': {
@@ -1153,6 +1190,48 @@ describe('the produced page count', () => {
     const outcome = await runPdfTool({ toolId: 'shell-uncounted', files: [await realPdf('a.pdf', 2)] });
     expect(outcome.outputs).toHaveLength(1);
     expect(outcome.pagesOut).toBeNull();
+  });
+});
+
+// ── what the result screen says about who did the work ─────────────────────
+
+describe('the ENGINE row reports the run, not the declaration', () => {
+  /** The card's `Engine` row as the user reads it, or `null` when it is absent. */
+  async function engineRow(toolId: string, verb: string): Promise<string | null> {
+    loadFiles([await realPdf('shell.pdf', 2)]);
+    render(<PdfToolPanel toolId={toolId} />);
+    fireEvent.click(await screen.findByRole('button', { name: verb }));
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+    const card = await screen.findByRole('region', { name: 'Result' });
+    const label = [...card.querySelectorAll('dt')].find((node) => node.textContent === 'Engine');
+    return label?.nextElementSibling?.textContent ?? null;
+  }
+
+  it('names the engine for a run the engine wrote', async () => {
+    attribution.producedBy = { via: 'engine', engine: 'ghostscript' };
+    expect(await engineRow('shell-engine', 'Outline')).toBe('Ghostscript');
+  });
+
+  it('stops naming it when the local path wrote the file', async () => {
+    // Same tool, same `engines: ['ghostscript']`, opposite answer — the pair is the
+    // point: a row that read the same in both states was measuring the config.
+    attribution.producedBy = { via: 'fallback', engine: 'ghostscript' };
+    const row = await engineRow('shell-engine', 'Outline');
+    expect(row).toMatch(/local path · Ghostscript not used/);
+    const card = screen.getByRole('region', { name: 'Result' });
+    expect(within(card).queryByText('Ghostscript')).toBeNull();
+    expect(within(card).getByRole('listitem').textContent).toMatch(/produced by the local path/);
+    // The warning colour is a token, so dark mode follows it like everything else.
+    expect(card.querySelector('dd[class*="text-warn"]')).toBeTruthy();
+  });
+
+  it('admits it was not told, instead of lending the engine a run it did not have', async () => {
+    attribution.producedBy = null;
+    expect(await engineRow('shell-engine', 'Outline')).toBe('not reported');
+  });
+
+  it('prints no row at all for a tool with no engine to speak of', async () => {
+    expect(await engineRow('shell-uncounted', 'Stamp')).toBeNull();
   });
 });
 

@@ -460,6 +460,20 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   `· degraded` marker needs the word "degrad" in a warning (`ToolSurface.tsx:562`) and that
   fallback sentence says "produced by the local path", so a pdf-lib file was labelled
   Ghostscript. That misattribution is the row's own defect, still open, and listed below.
+* **The misattribution is closed, and the re-measurement found something the label was
+  hiding.** The row now prints what the run reported (`ToolResult.producedBy`, carried per
+  output), never `tool.engines[0]`, and the `· degraded` marker no longer depends on the word
+  "degrad" appearing in a warning. Re-running this row's own rig on `58cbaff` (argv dump
+  identical to `font-outline-argv.json`, then `font-outline-wasm.mjs` over the same 2 416-byte
+  `type.pdf`) answers the open question — **`pdf-to-pdfa` is not on its fallback today**: the
+  engine's 5 515 B (app run: 5 502 B) carry `GPL Ghostscript 10.06.0`, the forced fallback 3 165 B
+  do not. What the label had been covering is on the other side: measured by MuPDF and pypdf,
+  the **engine's** catalogue has no `/OutputIntents` and no `/MarkInfo`, while the **fallback's**
+  has `GTS_PDFA1` with a 476-byte sRGB profile and the tagging flag — and the tool's own
+  `auditFonts` read `/FontFile*` off the font dictionary rather than its `/FontDescriptor`, so
+  it told users Ghostscript's embedded subset was not embedded. Both sentences are now read back
+  off the bytes. `docs/research/pdfa-attribution-recheck.md` (inventory + numbers, rig:
+  `pdfa-attribution-readers.py`), pinned by `tests/pdf/engine-attribution.test.ts`.
 * What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
   via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
   and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:
@@ -527,10 +541,10 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
     `readBookmarksWithCpdf`, `listFontsWithCpdf`, `scrubWithPyMuPDF`, `deskewWithPyMuPDF` are
     exported, mocked in `optimize-bytes.test.ts`, and never invoked — `deskew-pdf` measures tilt
     with pdf.js instead. Dead surface is how an invocation rots unnoticed.
-  Not touched here, for the schedule: the `ENGINE` row attribution above (a pdf-lib file
-  credited to Ghostscript, no `· degraded`), the same "could not be reached" collapse in
+  Not touched here, for the schedule: the same "could not be reached" collapse in
   `pdf-to-pdfa`'s and `repair`'s own sentences (now *less* true, since Ghostscript really can
-  fail a run after being fetched), the 5 dead verbs, and the argument-value pins.
+  fail a run after being fetched), the 5 dead verbs, and the argument-value pins. The `ENGINE`
+  row attribution that was in that list is closed — see the bullet above.
 
 ### 4. `extract-attachments` · `edit-attachments` — cannot see an attachment that is there
 

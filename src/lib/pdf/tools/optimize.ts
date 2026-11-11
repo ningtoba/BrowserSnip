@@ -61,6 +61,7 @@ import {
   booleanValue,
   numberValue,
   stringValue,
+  type ByteSource,
   type PdfToolDefinition,
   type ToolField,
   type ToolValues,
@@ -226,7 +227,7 @@ interface FontAudit {
 }
 
 /**
- * Count the fonts a document draws with and how many carry a `/FontFile`.
+ * Count the fonts a document draws with and how many carry a font program.
  *
  * Entries are resolved by hand rather than with `lookupMaybe(dict, XClass)`:
  * a font resource may be a dictionary or a reference, and the same is true of
@@ -234,6 +235,13 @@ interface FontAudit {
  * to make an array or a name. Asking pdf-lib for a `PDFDict` there throws
  * `UnexpectedObjectTypeError`, which would end a PDF/A run with a parser stack
  * trace instead of a report.
+ *
+ * A program is looked for where §9.6–§9.7 put it: on the font dictionary (some
+ * producers do write it there), on its `/FontDescriptor`, and for a `/Type0`
+ * composite on the descendant's descriptor. Reading only the font dictionary —
+ * which this function did — told the user that a Ghostscript subset whose
+ * descriptor carries `/FontFile3` was not embedded, a claim two outside readers
+ * contradict (`docs/research/pdfa-attribution-recheck.md`).
  */
 function auditFonts(doc: PDFDocument): FontAudit {
   const audit: FontAudit = { total: 0, embedded: 0 };
@@ -241,6 +249,24 @@ function auditFonts(doc: PDFDocument): FontAudit {
   const dictOf = (value: unknown): PDFDict | undefined => {
     const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
     return resolved instanceof PDFDict ? resolved : undefined;
+  };
+  const carriesProgram = (value: unknown, depth = 0): boolean => {
+    const dict = dictOf(value);
+    if (!dict || depth > 2) return false;
+    if (['FontFile', 'FontFile2', 'FontFile3'].some(
+      (file) => dict.get(PDFName.of(file)) !== undefined,
+    )) {
+      return true;
+    }
+    if (carriesProgram(dict.get(PDFName.of('FontDescriptor')), depth + 1)) return true;
+    const descendants = dict.get(PDFName.of('DescendantFonts'));
+    const list = descendants instanceof PDFRef ? doc.context.lookup(descendants) : descendants;
+    if (list instanceof PDFArray) {
+      for (let index = 0; index < list.size(); index++) {
+        if (carriesProgram(list.get(index), depth + 1)) return true;
+      }
+    }
+    return false;
   };
   for (const page of doc.getPages()) {
     const resources = page.node.Resources();
@@ -254,10 +280,7 @@ function auditFonts(doc: PDFDocument): FontAudit {
       if (seen.has(key)) continue;
       seen.add(key);
       audit.total += 1;
-      const embedded = ['FontFile', 'FontFile2', 'FontFile3'].some(
-        (file) => dict.get(PDFName.of(file)) !== undefined,
-      );
-      if (embedded) audit.embedded += 1;
+      if (carriesProgram(dict)) audit.embedded += 1;
     }
   }
   return audit;
@@ -1135,7 +1158,10 @@ export const optimizeTools: PdfToolDefinition[] = [
 
       context.progress(0.2, 'Rebuilding the cross-reference table');
       let repaired: Uint8Array;
-      let engine: 'pdf-lib' | 'ghostscript' = 'pdf-lib';
+      // Who wrote the file, stamped by the branch that wrote it. `repair` declares no
+      // engine — Ghostscript is the escalation, not the requirement — so this is the
+      // only place the fact exists, and the card now reads it from here.
+      let producedBy: ByteSource = { via: 'core' };
       // What the local rebuild read: how many sheets the input claims, how many the
       // output holds, and how many of those hold a drawing operator at all. The
       // Ghostscript branch has none of that, so the blank count is taken off the
@@ -1151,7 +1177,7 @@ export const optimizeTools: PdfToolDefinition[] = [
         try {
           const outcome = await rebuildWithGhostscript(bytes, { onStatus: context.log });
           repaired = outcome.bytes;
-          engine = 'ghostscript';
+          producedBy = outcome.producedBy;
         } catch (gsError) {
           // A failed download explains itself in full; anything else came out of
           // Ghostscript and has to be attributed to it.
@@ -1181,7 +1207,9 @@ export const optimizeTools: PdfToolDefinition[] = [
         );
       }
       if (before.error) warnings.push(`The input would not open (${before.message})${before.truncated ? ' — it has no end-of-file marker' : ''}.`);
-      if (engine === 'ghostscript') warnings.push('Ghostscript rebuilt this file; the local parser could not read it at all.');
+      if (producedBy.via === 'engine') {
+        warnings.push('Ghostscript rebuilt this file; the local parser could not read it at all.');
+      }
       if (rebuilt?.path === 'rebuilt-index') {
         warnings.push(
           `The file's own index could not be read: a fresh one was written over the ${rebuilt.pages} page object(s) still in the bytes.`,
@@ -1227,6 +1255,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes: repaired,
+        producedBy,
         // The message below already states this number: `inspectPdf` fully parses
         // the repaired file to prove it opens (E3), so the count is read, not
         // guessed, and printing "out not counted" beside "7 page(s) readable" was
@@ -1464,6 +1493,11 @@ export const optimizeTools: PdfToolDefinition[] = [
           return {
             kind: 'pdf',
             bytes: out,
+            // The await resolved and these are the bytes it handed back: the engine
+            // ran, so the engine is credited. Where it ran and its file was thrown
+            // away (`check.problem` above) the run falls through to the local rebuild
+            // and is credited to that instead.
+            producedBy: { via: 'engine', engine: 'cpdf' },
             // CoherentPDF gave back a finished file and no document: the honest
             // answer is "out not counted", not a re-derived guess.
             message: linear
@@ -1498,6 +1532,10 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        // Reached with CoherentPDF unreachable, and with CoherentPDF having run and
+        // produced a file this tool discarded: either way the bytes the user is being
+        // handed are this app's, so that is what the card says.
+        producedBy: { via: 'fallback', engine: 'cpdf' },
         pages: input.doc.getPageCount(),
         message: `Rebuilt with object streams and ${deflated.converted} newly compressed stream(s): ${sizeSentence(change)}. This is not a conforming linearized PDF.`,
         warnings,
@@ -1508,14 +1546,14 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'pdf-to-pdfa',
     name: 'PDF to PDF/A',
-    description: 'Convert for archiving: XMP identification and an output intent; fonts need Ghostscript',
+    description: 'Convert for archiving: XMP identification on either path; embedded fonts need Ghostscript',
     icon: '🏛️',
     category: 'optimize',
     keywords: ['archive', 'pdfa', 'iso 19005', 'conformance'],
     outputSuffix: '_pdfa.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Convert to PDF/A',
-    promise: 'A PDF/A-identised file, and a plain statement of whether Ghostscript could verify it.',
+    promise: 'A PDF/A-identised file, and a plain statement of which path wrote it and what the catalogue actually carries.',
     fields: [
       {
         key: 'part',
@@ -1532,7 +1570,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     },
     ],
     notes: [
-      'A conforming conversion runs on Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser). If it cannot be reached, BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag, which most validators read as a starting point but not as proof of conformance.',
+      'Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser) rewrites the file: measured on a 2-page text document it embeds the subset font and writes the XMP identification, and leaves no /OutputIntents in the catalogue — which the result now says out loud instead of leaving the word "converted" to imply it. If Ghostscript cannot be reached, BrowserSnip writes the XMP identification, an sRGB output intent and the tagging flag itself, and cannot embed a font. Neither path proves conformance: Ghostscript is asked to report violations (-dPDFACompatibilityPolicy=1) and the measured run reported none, which is not the same as passing, and the local path checks nothing at all.',
       'Nothing here is uploaded: only the engine binary is fetched.',
     ],
     async run(context) {
@@ -1542,7 +1580,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       const { convertToPdfA } = await import('../core/engine-ops');
 
       try {
-        const { bytes, log } = await convertToPdfA(input.bytes, part, { onStatus: context.log });
+        const { bytes, log, producedBy } = await convertToPdfA(input.bytes, part, { onStatus: context.log });
         const check = await verifyOutput(bytes, input.name, input.pageCount);
         if (check.problem) {
           warnings.push(`Ghostscript produced a file that does not reopen cleanly (${check.problem}); the local conversion below is used instead.`);
@@ -1553,15 +1591,29 @@ export const optimizeTools: PdfToolDefinition[] = [
           if (fonts.total > fonts.embedded) {
             warnings.push(`${fonts.total - fonts.embedded} of ${fonts.total} font(s) in the output are still not embedded, so PDF/A conformance will be rejected by a strict validator.`);
           }
+          // Read back off the file being handed over, not off the switch list: the
+          // engine's own log is empty for this run, and PDF/A §6.2.11.4 wants the
+          // catalogue to carry an output intent. Measured on the campaign fixture —
+          // Ghostscript identifies the file and writes no intent (the local path
+          // writes one), so the sentence says which of the two the bytes show.
+          const intent = declared.catalog.get(PDFName.of('OutputIntents')) !== undefined;
+          if (!intent) {
+            warnings.push(
+              'No /OutputIntents entry is in the catalogue, which PDF/A requires: the file is identified as PDF/A and will not pass a validator that checks for one. The identification is what this run proved; conformance is not claimed.',
+            );
+          }
           const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
           context.progress(1, 'Converted with Ghostscript');
           return {
             kind: 'pdf',
             bytes,
+            // Stamped by the seam call that produced these bytes, so a run that fell
+            // through to the local path below cannot inherit it.
+            producedBy,
             // `declared` is the Ghostscript output re-opened for the font audit,
             // so the count comes off the document itself, not off a guess.
             pages: declared.getPageCount(),
-            message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
+            message: `Converted to PDF/A-${part} with Ghostscript: ${fonts.embedded} of ${fonts.total} font(s) embedded, ${intent ? 'an output intent in the catalogue' : 'no output intent in the catalogue'}, ${log.length} conformance warning(s) reported. ${sizeSentence(change)}.`,
             warnings,
           };
         }
@@ -1582,8 +1634,10 @@ export const optimizeTools: PdfToolDefinition[] = [
       const xmp = xmpPacket(produced) ?? '';
       const identified = /pdfaid:part\s*=\s*"?\d/.test(xmp);
       const intent = produced.catalog.get(PDFName.of('OutputIntents')) !== undefined;
+      const tagged = produced.catalog.get(PDFName.of('MarkInfo')) !== undefined;
       if (!identified) warnings.push('The XMP identification did not survive the save, so this file is not PDF/A-identified.');
       if (!intent) warnings.push('The output intent did not survive the save.');
+      if (!tagged) warnings.push('The tagging flag (/MarkInfo) did not survive the save.');
       const fonts = auditFonts(produced);
       if (fonts.total > fonts.embedded) {
         warnings.push(
@@ -1598,8 +1652,11 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        // This branch is the local path by definition — reached when Ghostscript
+        // could not be reached, or when its file was discarded for not reopening.
+        producedBy: { via: 'fallback', engine: 'ghostscript' },
         pages: input.doc.getPageCount(),
-        message: `Wrote PDF/A-${written.number}${written.conformance} identification (pdfaid:part=${written.number}, conformance=${written.conformance}), an sRGB output intent and the tagging flag. ${sizeSentence(change)}.`,
+        message: `Wrote PDF/A-${written.number}${written.conformance} identification (pdfaid:part=${written.number}, conformance=${written.conformance})${intent ? ', an sRGB output intent' : ''}${tagged ? ' and the tagging flag' : ''} with this app’s own path, not Ghostscript. ${sizeSentence(change)}.`,
         warnings,
       };
     },
@@ -1629,10 +1686,12 @@ export const optimizeTools: PdfToolDefinition[] = [
       // not be described as converted.
       const textPages = input.doc.getPages().filter(pageShowsText).length;
       let bytes: Uint8Array;
+      let producedBy: ByteSource;
       let outlineLog: string[] = [];
       try {
         const outcome = await textToOutlines(input.bytes, { onStatus: context.log });
         bytes = outcome.bytes;
+        producedBy = outcome.producedBy;
         outlineLog = outcome.log;
       } catch (error) {
         // Two different failures, and saying "could not be reached" for the
@@ -1690,6 +1749,9 @@ export const optimizeTools: PdfToolDefinition[] = [
       return {
         kind: 'pdf',
         bytes,
+        // Always the engine: this tool has no degraded path, so a run that reaches
+        // the return line has Ghostscript's bytes in hand (see the notes above).
+        producedBy,
         pages: produced.getPageCount(),
         message: headline,
         warnings,

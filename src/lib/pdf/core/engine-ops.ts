@@ -19,6 +19,12 @@
  * sentence through `result.warnings`; a caller with no fallback lets it reach
  * the user as the error. Files never leave the device — the engine binary is
  * what is fetched.
+ *
+ * A caller also says which bytes it kept, on `ToolResult.producedBy`: the engine's
+ * own (`{ via: 'engine' }`, handed back by the verb that ran) or its local path's
+ * (`{ via: 'fallback' }`, including where the engine ran and its output was thrown
+ * away). The result card prints that field and nothing else — it used to print
+ * `tool.engines[0]`, which credited the engine for runs it never wrote.
  */
 import {
   EngineUnavailable,
@@ -27,6 +33,7 @@ import {
   run as gsRun,
 } from '../engines';
 import type { CpdfApi, CpdfDocument, EngineId, PyMuPDFInstance } from '../engines';
+import type { ByteSource } from '../tools/types';
 
 export type { EngineId };
 
@@ -78,6 +85,12 @@ const GS_SANDBOX_OUT = '/tmp/output.pdf';
 interface GsOutcome {
   bytes: Uint8Array;
   log: string[];
+  /**
+   * Handed back by the call that ran, so the caller credits the engine it *used*
+   * rather than the one its definition declares — the latter is how a file written
+   * by a local fallback came to carry a Ghostscript attribution.
+   */
+  producedBy: ByteSource;
 }
 
 /**
@@ -118,7 +131,7 @@ async function runGhostscript(
       `Ghostscript produced no output (exit ${result.exitCode}). ${warnings.slice(0, 3).join(' ')}`.trim(),
     );
   }
-  return { bytes: output, log: warnings };
+  return { bytes: output, log: warnings, producedBy: { via: 'engine', engine: 'ghostscript' } };
 }
 
 /**
@@ -216,7 +229,12 @@ async function withCpdf<T>(
   }
 }
 
-/** Conforming linearized ("Optimize for fast Web view") output. */
+/**
+ * Conforming linearized ("Optimize for fast Web view") output.
+ *
+ * Returns raw bytes rather than a `GsOutcome`: the caller stamps the attribution on
+ * the branch that keeps them, which is the branch that knows whether it did.
+ */
 export async function linearizeWithCpdf(
   bytes: Uint8Array,
   password?: string,

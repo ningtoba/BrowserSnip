@@ -628,19 +628,23 @@ describe('degraded runs still speak', () => {
   it('names a skipped optional engine in the result surface', () => {
     // The engine chip is gone from the shell, so this is where "less happened"
     // has to be said. S2 owns the wording; the shell test only pins that the
-    // surface can carry the sentence at all.
-    const item = { name: 'linearized.pdf', blob: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) };
+    // surface can carry the sentence at all — and that it says it about the file
+    // it is carrying, which is the half the old `engines[0]` row got wrong.
+    const item = {
+      name: 'linearized.pdf',
+      blob: new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+      producedBy: { via: 'fallback', engine: 'cpdf' } as const,
+    };
     render(
       <ResultCard
         outputs={[item]}
-        engine="cpdf"
-        degraded
+        declared={['cpdf']}
         warnings={['CoherentPDF was unreachable, so the file was rebuilt instead of linearized.']}
       />,
     );
 
     const card = screen.getByRole('region', { name: 'Result' });
-    expect(card.textContent).toContain('degraded');
+    expect(card.textContent).toContain('local path');
     expect(within(card).getByRole('listitem').textContent).toContain('was unreachable');
   });
 });

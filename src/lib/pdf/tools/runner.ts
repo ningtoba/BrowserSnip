@@ -8,7 +8,14 @@
  */
 import { PDFDocument } from '@maxwbh/pdf-lib';
 import { resealLikeSource, saveEncrypted } from '../core/doc';
-import type { PdfToolDefinition, ToolFile, ToolReportSection, ToolResult, ToolValues } from './types';
+import type {
+  ByteSource,
+  PdfToolDefinition,
+  ToolFile,
+  ToolReportSection,
+  ToolResult,
+  ToolValues,
+} from './types';
 import { downloadName } from './helpers';
 import { getPdfTool, hasCustomMainView } from './registry';
 import { defaultValues } from './types';
@@ -36,6 +43,15 @@ export interface RunRequest {
 export interface RunOutput {
   blob: Blob;
   name: string;
+  /**
+   * Who wrote these bytes, as the code that wrote them said so.
+   *
+   * `null` is an honest answer and means the producer never claimed one — the
+   * result card then refuses to name an engine rather than reading one off the
+   * tool's declaration. Per output, because a multi-file run can mix the two: an
+   * engine may serve three sheets and fail on the fourth.
+   */
+  producedBy: ByteSource | null;
 }
 
 /** Kept for callers that build outputs without a name. */
@@ -240,6 +256,10 @@ async function inputKindProblem(
  * is a second edit nobody asked for — and a permissions-only file has no typed
  * password at all, so carrying the lock is the only way its restrictions survive
  * an unrelated rename.
+ *
+ * Re-sealing replaces the bytes but not `producedBy`: that field answers who produced
+ * *the document*, and the cipher this app put back on it is said in its own note, so
+ * a Ghostscript conversion of a locked file still reads as a Ghostscript conversion.
  */
 async function preserveProtection(
   result: ToolResult,
@@ -481,17 +501,20 @@ function collect(result: ToolResult, firstName: string, suffix: string): RunOutp
     return [{
       blob: new Blob([result.bytes as BlobPart], { type: 'application/pdf' }),
       name: outputNameFor(firstName, suffix, 0, 1),
+      producedBy: result.producedBy ?? null,
     }];
   }
   if (result.kind === 'files') {
     return result.files.map((file, index) => ({
       blob: file.blob,
       name: file.name ?? outputNameFor(firstName, suffix, index, result.files.length),
+      producedBy: file.producedBy ?? null,
     }));
   }
   return (result.files ?? []).map((file, index) => ({
     blob: file.blob,
     name: file.name ?? outputNameFor(firstName, suffix, index, (result.files ?? []).length),
+    producedBy: file.producedBy ?? null,
   }));
 }
 
