@@ -44,8 +44,17 @@ instead of being adjudicated by this app picking a side:
   app follows `/Dest` (MuPDF's answer) and the row says so; the fix did not touch it.
 
 MuPDF also prints a non-ASCII `/P` prefix escaped — `§I` comes back as `<A7>I` from
-`page.get_label()`, and a UTF-16BE prefix this app wrote as `<FEFF0043…>`. That is its
-printing convention, not a different label: pypdf decodes both to the same text.
+`page.get_label()`. That is its printing convention for a byte, not a different label:
+pypdf decodes the same text. **What is not a printing convention** is the encoding the
+label was stored in: `pdf_get_page_label` copies the string's bytes into the label
+without looking for the UTF-16BE BOM, so a prefix written `<FEFF0078>` (legal under
+§7.9.2.2, and what this app's `add-page-labels` used to write for `Cover`) comes back
+as `<FEFF0043006F007600650072>` there while pypdf says `Cover`. Measured on three
+spellings of the same prefix — `(x)` → `x1`, `<78>` → `x1`, `<FEFF0078>` → `<FEFF0078>1`
+— which is why `core/bookmarks.ts:prefixString` now writes the single-byte form wherever
+PDFDocEncoding can spell the text, and the BOM form only for what it cannot (`𓂀`, CJK).
+The `keep-labels` row below re-measured after that change reads `Cover` under MuPDF
+too; its recorded `-before.log` still shows the escaped one.
 
 ### labels: every shape, both readers, this app before and after
 
@@ -115,9 +124,9 @@ an opinion of a reader.
 | `folios` | page-numbers (bottom-centre folios) | `/Kids x2` → `/Kids x2`, labels identical before and after |
 | `header-footer` | header-footer | `/Kids x2` → `/Kids x2`, labels identical |
 | `replace-labels` | add-page-labels, `1-2 roman 1 / 3-6 decimal 1` | 4 ranges → 2, `i, ii, I, II, c, xA` → `i, ii, 1, 2, 3, 4` — the replacement the tool promises |
-| `keep-labels` | add-page-labels, `1-4 none 1 Cover` | writes `/P` with no `/S`; pypdf reads `Cover, Cover, Cover, Cover` |
-| `copy-labels` | extract-pages `1-3` | `/Kids x2` → **absent**; MuPDF finds 0 ranges, pypdf falls back to `1, 2, 3` |
-| `merge-labels` | merge of `labels-kids-mixed.pdf` with `labels-nums-r.pdf` | `/Kids x2` (the first input's store) → **absent**; the merged file carries no numbering at all |
+| `keep-labels` | add-page-labels, `1-4 none 1 Cover` | writes `/P` with no `/S`; MuPDF and pypdf both read `Cover, Cover, Cover, Cover` (single-byte since the `prefixString` change — it used to be `Cover` for pypdf and `<FEFF0043…>` for MuPDF) |
+| `copy-labels` | extract-pages `1-3` | `/Kids x2` → `/Nums x2`; MuPDF and pypdf both read `i, ii, I` — the three sheets that came, numbered as they were, with the ranges for pages 4-6 gone because no sheet of theirs is here |
+| `merge-labels` | merge of `labels-kids-mixed.pdf` with `labels-nums-r.pdf` | `/Kids x2` → `/Nums x5`; `i, ii, I, II, c, xA, i, ii, iii, iv` under both readers — each file's own numbering, shifted onto its own sheets |
 
 `readPageLabels` has exactly **one** caller in `src/` — `add-page-labels`, reading back
 the ranges it wrote a line earlier (`src/lib/pdf/tools/edit.ts:1046`). `page-numbers`,
@@ -127,16 +136,27 @@ not have been rewriting anybody's document — it was reporting one wrongly, and
 thing it could have corrupted was a future "carry the labels across a copy" built on top
 of it, which is exactly the fix that this table now makes safe.
 
-**The label damage that is real is not the reader's.** A page copy — `extract-pages`,
-`merge`, `split`, `organize`, and everything else that goes through
-`core/doc.ts:carryPageFurniture` — does not carry `/PageLabels` at all, so a file labelled
-`i, ii, I, II, c, xA` comes back with **no label store**, and every reader on the planet
-then numbers it `1, 2, 3`. That is data loss wearing the same clothes, and it is a
-different seam: the copy carries bookmarks and embedded files and has never carried the
-numbering. Left as found, pinned in
-`tests/pdf/readers-foreign.test.ts › a page copy drops /PageLabels altogether — recorded,
-not fixed here`, because fixing it means deciding what a merge of two labelled documents
-should do, which is a product call and outside this pass.
+**The label damage that was real is not the reader's, and it is closed.** A page copy —
+`extract-pages`, `merge`, `split`, `organize`, and everything else that goes through
+`core/doc.ts:carryPageFurniture` — did not carry `/PageLabels` at all, so a file labelled
+`i, ii, I, II, c, xA` came back with **no label store**, and every reader on the planet
+then numbered it `1, 2, 3`. The copy carries bookmarks and embedded files and had never
+carried the numbering; it does now (`e362e78`, with the range read and re-point added in
+`7d8d7c5`), and the merge question this pass left as a product call went the way the
+bookmarks already went: each file's ranges are shifted onto its own sheets and
+concatenated, and a file that numbers nothing keeps reading its position rather than
+running on in the previous file's roman numerals.
+
+What "carried" means per sheet, for every copy shape, is
+`docs/research/page-labels-copy-table.md` — twelve rows, MuPDF and pypdf answering the
+input and the output of `extract-pages`, `organize`, `merge`, `split` and
+`add-blank-page`, produced by `docs/research/page-labels-copy-round-trip.py` from the
+dump `tests/pdf/page-labels-copy.test.ts` writes. **16 assertions are red without the
+carry**, 13 of them in that file; 267 are green with it across
+`page-labels-copy`, `page-copy-fidelity`, `readers-foreign`, `edge-organize` and
+`field-reach`. The row that recorded this as "left unfixed" is now the pin that it is
+fixed: `tests/pdf/readers-foreign.test.ts › carries /PageLabels across a page copy,
+remapped to the new page indices`.
 
 ### Outlines: the misread did reach writers, and it did destroy things
 
@@ -223,8 +243,13 @@ BROWSERSNIP_READERS_TABLE=/tmp/after.json BROWSERSNIP_READERS_DUMP=/tmp/after \
   npx vitest run tests/pdf/readers-foreign.test.ts
 python3 docs/research/readers-round-trip.py /tmp/after > docs/research/readers-round-trip-after.log
 python3 docs/research/readers-foreign-table.py /tmp/before.json /tmp/after.json /tmp/tables.md
+BROWSERSNIP_LABEL_DUMP=/tmp/labels \
+  npx vitest run tests/pdf/page-labels-copy.test.ts
+python3 docs/research/page-labels-copy-round-trip.py /tmp/labels \
+  > docs/research/page-labels-copy-table.md
 npx vitest run tests/pdf/readers-foreign.test.ts tests/pdf/attachments-foreign.test.ts \
-  tests/pdf/edge-organize.test.ts tests/pdf/edge-edit.test.ts tests/pdf/field-reach.test.ts
+  tests/pdf/edge-organize.test.ts tests/pdf/edge-edit.test.ts tests/pdf/field-reach.test.ts \
+  tests/pdf/page-labels-copy.test.ts tests/pdf/page-copy-fidelity.test.ts
 node scripts/live-readers-proof.mjs                    # the four probes above, on the live site
 ```
 
