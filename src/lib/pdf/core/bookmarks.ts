@@ -29,6 +29,7 @@ import {
   PDFRef,
   context,
   rgb,
+  type PagePlacement,
 } from './doc';
 import { asDict, collectTreePairs, dictAt, followRef } from './tree';
 import { cropBox, displayedSize, resolvePages, PAGE_SIZES } from './pages';
@@ -936,14 +937,6 @@ export interface PageLabelRange {
 export interface PageLabel {
   page: number;
   label: string;
-}
-
-/** One sheet a page copy placed: where it came from, and where it landed. */
-export interface PagePlacement {
-  /** Page index in the document the sheet was copied **from**. */
-  source: number;
-  /** Page index of that sheet in the document the copy is building. */
-  dest: number;
 }
 
 const ROMAN: [number, string][] = [

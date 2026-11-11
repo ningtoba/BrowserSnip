@@ -53,6 +53,23 @@
  * **Red without the fix: 17 of the 19 tests here.** The two that pass are the
  * fixture census and `rotate` — the first measures the input, the second runs in
  * place and never had the bug.
+ *
+ * ## Third round: the numbering, same primitive, same trap
+ *
+ * The fixture then carried no `/PageLabels`, so the copy could drop the page
+ * numbering invisibly from here — which is what `docs/research/readers-round-trip.py`
+ * found: `i, ii, I, II, c, xA` in, **no label store** out, and a file that still
+ * opens at the right page count. The fixture is numbered now (`i, ii, 11, 12`: roman
+ * front matter, arabic from 11, the shape a book has), and two tests hold the copy
+ * path to it — nine rebuilding tools' outputs numbered sheet by sheet as their own
+ * pages were, and the dropped-range count said out loud when a numbering had no
+ * sheet left. `tests/pdf/page-labels-copy.test.ts` is the table of what "carried"
+ * means for each copy shape; this is the same claim over the furniture fixture.
+ *
+ * **Red without the numbering carry: 2 here, 13 in `page-labels-copy.test.ts`,** 16
+ * across the five files around this seam. The redraw tools still leave the numbering
+ * behind — a redraw has no page indices to re-point one at — and their warning names
+ * it now rather than only the bookmarks.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PDFDocument } from '@maxwbh/pdf-lib';
@@ -72,7 +89,14 @@ import {
   StandardFonts,
   rgb,
 } from '@/lib/pdf/core/doc';
-import { countOutlineNodes, readOutline, writeOutline } from '@/lib/pdf/core/bookmarks';
+import {
+  addPageLabels,
+  countOutlineNodes,
+  readOutline,
+  readPageLabelRanges,
+  readPageLabels,
+  writeOutline,
+} from '@/lib/pdf/core/bookmarks';
 import { addAttachments, listAttachments, md5Hex } from '@/lib/pdf/core/attachments';
 import { addAnnotations, listAnnotations } from '@/lib/pdf/core/annotations';
 import { createFormField, listFormFields } from '@/lib/pdf/core/forms';
@@ -159,6 +183,13 @@ async function fixture(): Promise<Uint8Array> {
     { title: 'Chapter One', page: 0, children: [{ title: 'Section 1.1', page: 1 }] },
     { title: 'Chapter Two', page: 3 },
   ]);
+  // The numbering a viewer shows, as distinct from the folios `page-numbers` draws:
+  // front matter in roman, the rest arabic from 11, which is the shape a book
+  // actually carries and the shape a subset copy has to re-point.
+  addPageLabels(doc, [
+    { start: 0, style: 'r' },
+    { start: 2, style: 'D', firstPageNumber: 11 },
+  ]);
   await addAttachments(doc, [
     { name: 'source.csv', bytes: PAYLOAD, mimeType: 'text/csv', description: 'Raw data' },
   ]);
@@ -195,6 +226,13 @@ interface Census {
   outlinesKey: boolean;
   /** `/Names → /EmbeddedFiles` really is in the saved catalog. */
   embeddedFilesKey: boolean;
+  /**
+   * What the saved file says the number is on each sheet — the page numbering a
+   * reader shows in its toolbar, which is not the folio `page-numbers` draws.
+   */
+  labels: string[];
+  /** Whether the output carries a `/PageLabels` dictionary at all. */
+  labelStore: boolean;
 }
 
 /** A dictionary whether it is inline or behind a reference. */
@@ -247,6 +285,8 @@ async function census(bytes: Uint8Array): Promise<Census> {
     fields: listFormFields(doc).length,
     outlinesKey: dict(doc, catalog.get(PDFName.of('Outlines'))) !== undefined,
     embeddedFilesKey: keys.some((key) => key.includes('source.csv')),
+    labels: readPageLabels(doc).map((entry) => entry.label),
+    labelStore: dict(doc, catalog.get(PDFName.of('PageLabels'))) !== undefined,
   };
 }
 
@@ -320,9 +360,67 @@ describe('the fixture, and the seam it is measured through', () => {
     expect(Array.from(baseline.attachments[0].bytes)).toEqual(Array.from(PAYLOAD));
     expect(baseline.annotations).toBe(5); // 3 marks + 2 widget annotations
     expect(baseline.fields).toBe(2);
+    // Front matter in roman, arabic from 11: the numbering a reader shows in its
+    // toolbar, which is a catalog dictionary and not a drawing on the sheet.
+    expect(baseline.labels).toEqual(['i', 'ii', '11', '12']);
+    expect(baseline.labelStore).toBe(true);
     // The names really are in the file, not just in the reader's view of it.
     expect(baseline.embeddedFilesKey).toBe(true);
     expect(baseline.outlinesKey).toBe(true);
+  });
+});
+
+describe('page-copy tools — the page numbering survives, re-pointed at the new sheets', () => {
+  it('numbers every output sheet with the label its own page carried', async () => {
+    // The fixture reads `i, ii, 11, 12`. Each expected row below is that statement
+    // re-addressed to the sheets the tool produced, which is the whole difference
+    // between carrying a numbering and copying its source page indices: a carry-across
+    // leaves `extract-pages 2-3` with a range starting at 0 and another at 2, so the
+    // first output sheet — source page 2, which read `ii` — finds no range and the
+    // second gets the arabic one.
+    const rows: [string, Record<string, unknown>, string[], number][] = [
+      ['remove-pages', { pages: '4' }, ['i', 'ii', '11'], 1],
+      ['extract-pages', { pages: '2-3', mergeIntoOne: true }, ['ii', '11'], 1],
+      ['organize', { pageOrder: '4,1,2,3' }, ['12', 'i', 'ii', '11'], 1],
+      ['reverse-pages', {}, ['12', '11', 'ii', 'i'], 1],
+      ['duplex-collate', {}, ['i', '12', 'ii', '11'], 1],
+      ['add-blank-page', { position: 'after', anchor: 1, count: 1 }, ['i', '2', 'ii', '11', '12'], 1],
+      ['split', { mode: 'ranges', ranges: '1-3' }, ['i', 'ii', '11'], 1],
+      ['merge', { bookmarks: false }, ['i', 'ii', '11', '12', 'i', 'ii', '11', '12'], 2],
+      ['alternate-merge', { pattern: '1-1' }, ['i', 'i', 'ii', 'ii', '11', '11', '12', '12'], 2],
+    ];
+    for (const [id, values, expectLabels, fileCount] of rows) {
+      const files = Array.from({ length: fileCount }, (_, index) =>
+        fileOf(source, fileCount > 1 ? `file-${index + 1}.pdf` : 'fixture.pdf'),
+      );
+      const outcome = await run(id, values, files);
+      const bytes = await pdfBytes(outcome);
+      const got = await census(bytes);
+      expect(got.labelStore, `${id} wrote no /PageLabels at all`).toBe(true);
+      expect(got.labels, id).toEqual(expectLabels);
+      // A bookmark may only point at a sheet the output has; the same rule holds of a
+      // numbering range, which is why a discarded range leaves rather than shifting.
+      const numbered = await openPDF(bytes, { ignoreEncryption: true });
+      for (const range of readPageLabelRanges(numbered)) {
+        expect(range.start, `${id} numbers a page it does not have`).toBeLessThan(got.pages);
+      }
+    }
+  });
+
+  it('counts the numbering ranges that had no sheet left to number', async () => {
+    // Keeping only page 1 keeps the roman front matter and strands the arabic range
+    // on pages 3-4, and the tool says which of the two happened rather than leaving
+    // the user to compare the two files by hand.
+    const outcome = await run('extract-pages', { pages: '1', mergeIntoOne: true });
+    const got = await census(await pdfBytes(outcome));
+    expect(got.labels).toEqual(['i']);
+    expect(warned(outcome, /1 page-numbering range numbered only pages that are not in this output/i))
+      .toBe(true);
+
+    // Every range is still in play when all four sheets come, so nothing is said.
+    const whole = await run('extract-pages', { pages: 'all', mergeIntoOne: true });
+    expect(whole.warnings.join(' | ')).not.toMatch(/page-numbering range/i);
+    expect((await census(await pdfBytes(whole))).labels).toEqual(['i', 'ii', '11', '12']);
   });
 });
 
@@ -550,7 +648,11 @@ describe('what a page copy still cannot carry is said out loud', () => {
       const got = await census(await pdfBytes(outcome));
       expect(got.bookmarkCount, id).toBe(0);
       expect(got.attachments, id).toHaveLength(0);
+      // A redraw has no page indices to re-point a numbering at — the sheets are new
+      // ones — so the dictionary stays behind with the file, and says so.
+      expect(got.labelStore, `${id} claims a numbering it did not carry`).toBe(false);
       expect(warned(outcome, /bookmarks are not in the output/i), `${id}: ${outcome.warnings.join(' | ')}`).toBe(true);
+      expect(warned(outcome, /neither is its page numbering/i), `${id}: ${outcome.warnings.join(' | ')}`).toBe(true);
       expect(warned(outcome, /1 attached file .* not in the output|attached file/i), `${id}: ${outcome.warnings.join(' | ')}`).toBe(true);
       expect(warned(outcome, /form field/i), `${id}: ${outcome.warnings.join(' | ')}`).toBe(true);
     }

@@ -50,8 +50,11 @@ import type { CipherStrength } from './crypto';
 import {
   countOutlineNodes,
   readOutline,
+  readPageLabelRanges,
   remapOutline,
+  remapPageLabelRanges,
   writeOutline,
+  writePageLabelRanges,
   type OutlineNode,
 } from './bookmarks';
 import { copyAttachments } from './attachments';
@@ -420,9 +423,9 @@ export async function clonePDF(
  *
  * This is **the** page-copy primitive: every tool that rebuilds a document from
  * copied pages comes through here or through `carryPageFurniture` directly. A
- * copy moves page objects, and page objects are not where the bookmarks or the
- * embedded files live — see `carryPageFurniture` for what travels and what the
- * caller has to admit it lost.
+ * copy moves page objects, and page objects are not where the bookmarks, the page
+ * numbering or the embedded files live — see `carryPageFurniture` for what travels
+ * and what the caller has to admit it lost.
  */
 export async function collectPages(
   sources: { doc: PDFDocument; pages: number[] }[],
@@ -440,22 +443,53 @@ export async function collectPages(
     const copied = await target.copyPages(doc, pages);
     copied.forEach((p) => target.addPage(p));
     ranges.push({ start, count: pages.length });
-    const mapping = new Map<number, number>();
-    pages.forEach((page, offset) => {
-      // First copy wins: a bookmark can only point at one of them.
-      if (!mapping.has(page)) mapping.set(page, start + offset);
-    });
-    copies.push({ doc, mapping });
+    // Destination order, duplicates included: a page used twice is two sheets here,
+    // and the numbering of the second one is not "the next page's".
+    const placed: PagePlacement[] = pages.map((page, offset) => ({
+      source: page,
+      dest: start + offset,
+    }));
+    copies.push({ doc, placed });
   }
   const fidelity = await carryPageFurniture(target, copies);
   return { doc: target, ranges, fidelity };
 }
 
+/** One sheet a page copy placed: where it came from, and where it landed. */
+export interface PagePlacement {
+  /** Page index in the document the sheet was copied **from**. */
+  source: number;
+  /** Page index of that sheet in the document the copy is building. */
+  dest: number;
+}
+
 /** A source document and where its pages landed in a copy. */
 export interface PageCopyMap {
   doc: PDFDocument;
-  /** Source page index → destination page index; pages that stayed home are absent. */
-  mapping: Map<number, number>;
+  /**
+   * Every sheet the copy placed, in destination order. A source page copied twice
+   * appears twice, which is what the page numbering has to know: two sheets came
+   * from one page, so they carry the same label rather than consecutive ones.
+   *
+   * For the bookmarks, where one destination can only be one place, the derived
+   * first-copy view is used instead — see `remapOutline`.
+   */
+  placed: PagePlacement[];
+}
+
+/**
+ * The bookmark view of a copy: source page → the sheet it landed on.
+ *
+ * Where a page was copied twice the **first** copy wins, because a bookmark names a
+ * place in the reading order and a reader follows it to the first sheet, and pages
+ * that stayed home are absent.
+ */
+export function firstCopyOf(placed: PagePlacement[]): Map<number, number> {
+  const mapping = new Map<number, number>();
+  for (const { source, dest } of placed) {
+    if (!mapping.has(source)) mapping.set(source, dest);
+  }
+  return mapping;
 }
 
 /** What a page copy did with the parts of a document that are not pages. */
@@ -468,20 +502,34 @@ export interface CopyFidelity {
   attachments: number;
   /** Embedded files left behind because that name had already been carried. */
   attachmentsCollided: number;
+  /**
+   * Page-numbering ranges written to the output, addressed in **destination** pages.
+   *
+   * Counted in ranges, not pages: a range runs until the next one starts, so one
+   * entry can number the whole file.
+   */
+  labels: number;
+  /** Ranges the copy left with no sheet to number, so they are gone. */
+  labelsDropped: number;
 }
 
 /**
- * Carry the outline and the embedded files of the copied documents into the new
- * one, and report what could not come.
+ * Carry the outline, the embedded files and the page numbering of the copied
+ * documents into the new one, and report what could not come.
  *
- * Both live above the page tree — `/Outlines` and `/Names → /EmbeddedFiles` on
- * the catalog, `/AF` on the document — so `copyPages` leaves them with the file
- * they came from. Measured on an unencrypted fixture, that cost every rebuilding
- * tool its whole table of contents and every attached source file, silently.
+ * All three live above the page tree — `/Outlines`, `/Names → /EmbeddedFiles` and
+ * `/PageLabels` on the catalog, `/AF` on the document — so `copyPages` leaves them
+ * with the file they came from. Measured on an unencrypted fixture, that cost every
+ * rebuilding tool its whole table of contents and every attached source file,
+ * silently, and the numbering with them: a book MuPDF numbers `i, ii, I, II, c, xA`
+ * came back with **no label store at all**, so it opens, it has the right page count,
+ * and every page number a user cites from it silently changes meaning.
  *
- * A bookmark whose destination page was **not** copied is dropped rather than
- * snapped to the nearest surviving page; `remapOutline` carries the reasoning and
- * the count, which the tool owes the user as a warning.
+ * A bookmark whose destination page was **not** copied is dropped rather than snapped
+ * to the nearest surviving page; `remapOutline` carries the reasoning and the count,
+ * which the tool owes the user as a warning. A label range whose pages were all
+ * dropped disappears for the same reason (`remapPageLabelRanges`), and a document
+ * that never had a numbering is not given one.
  */
 export async function carryPageFurniture(
   target: PDFDocument,
@@ -492,8 +540,8 @@ export async function carryPageFurniture(
   const nodes: OutlineNode[] = [];
   let bookmarksDropped = 0;
   if (wantOutlines) {
-    for (const { doc, mapping } of copies) {
-      const remapped = remapOutline(readOutline(doc), mapping);
+    for (const { doc, placed } of copies) {
+      const remapped = remapOutline(readOutline(doc), firstCopyOf(placed));
       nodes.push(...remapped.nodes);
       bookmarksDropped += remapped.dropped;
     }
@@ -508,11 +556,25 @@ export async function carryPageFurniture(
           target,
           copies.map((copy) => copy.doc),
         );
+  // Same rule as the bookmarks: one pass over every source, because the writer
+  // replaces the store and a per-source call would keep only the last file's
+  // numbering. Ranges come back addressed in destination pages already, which is
+  // what lets a merge concatenate them without either file overwriting the other.
+  const labels = remapPageLabelRanges(
+    copies.map((copy) => ({
+      ranges: readPageLabelRanges(copy.doc),
+      placed: copy.placed,
+    })),
+    target.getPageCount(),
+  );
+  if (labels.ranges.length > 0) writePageLabelRanges(target, labels.ranges);
   return {
     bookmarks: countOutlineNodes(nodes),
     bookmarksDropped,
     attachments: files.carried,
     attachmentsCollided: files.collided,
+    labels: labels.ranges.length,
+    labelsDropped: labels.dropped,
   };
 }
 

@@ -43,6 +43,7 @@ import {
   savePDF,
   type CopyFidelity,
   type PageCopyMap,
+  type PagePlacement,
 } from '../core/doc';
 import { countOutlineNodes, readOutline } from '../core/bookmarks';
 import { listAttachments } from '../core/attachments';
@@ -439,7 +440,7 @@ function noteRebuildLoss(subject: string, doc: PDFDocument, indices: number[], n
   }
   if (hasOutlines(doc)) {
     notes.add(
-      `${subject} rebuilt the pages, so this document's bookmarks are not in the output — the optional CoherentPDF engine edits bookmarks without a rebuild.`,
+      `${subject} rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering — the optional CoherentPDF engine edits bookmarks without a rebuild.`,
     );
   }
   // Both of these are page-independent structures the rebuild has no handle on:
@@ -493,9 +494,10 @@ function noteFormFields(count: number, notes: Notes): void {
 /**
  * Say out loud whatever the page copy could not carry.
  *
- * `collectPages` keeps the outline and the embedded files; this is the remainder,
- * stated with a count instead of left silent. The copy used to drop the whole
- * table of contents and every attached file without a word.
+ * `collectPages` keeps the outline, the page numbering and the embedded files;
+ * this is the remainder, stated with a count instead of left silent. The copy used
+ * to drop the whole table of contents and every attached file without a word, and
+ * numbered the surviving sheets `1, 2, 3` while it was at it.
  */
 function notePageCopy(sources: PDFDocument[], fidelity: CopyFidelity, notes: Notes): void {
   noteDroppedBookmarks(
@@ -504,12 +506,27 @@ function notePageCopy(sources: PDFDocument[], fidelity: CopyFidelity, notes: Not
     fidelity.bookmarksDropped,
     notes,
   );
+  noteDroppedLabels(fidelity, notes);
   if (fidelity.attachmentsCollided > 0) {
     notes.add(
       `${countLabel(fidelity.attachmentsCollided, 'attached file')} shared a name with one already carried, so only the first copy is in the output.`,
     );
   }
   noteFormFields(sources.reduce((sum, doc) => sum + listFormFields(doc).length, 0), notes);
+}
+
+/**
+ * A numbering range that covered only discarded pages leaves the file, so say so.
+ *
+ * The sheets that came are still numbered as they were — this is the one case where
+ * the copy cannot keep a promise, and it is the same shape as the dropped-bookmark
+ * note beside it: what fell out is counted, not swallowed.
+ */
+function noteDroppedLabels(fidelity: CopyFidelity, notes: Notes): void {
+  if (fidelity.labelsDropped === 0) return;
+  notes.add(
+    `${countLabel(fidelity.labelsDropped, 'page-numbering range')} numbered only pages that are not in this output, so it left with them; the ${countLabel(fidelity.labels, 'range')} covering the sheets you kept came along.`,
+  );
 }
 
 /**
@@ -595,7 +612,7 @@ const MAX_EDGE_TEXT = '14 400 pt';
  * pages" would be the overclaim this pass exists to remove.
  */
 const PAGE_COPY_NOTE =
-  'The pages are copied into a new file. The ink, the annotations, the bookmarks that point at pages you kept and any attached files travel with them. What never travels is the form-field list: a fillable form stops being fillable, so flatten it first if the values have to survive.';
+  'The pages are copied into a new file. The ink, the annotations, the bookmarks that point at pages you kept, the page numbering the reader shows in its toolbar and any attached files travel with them — a numbering is re-pointed at the sheets its pages landed on, so extracting pages 4-6 of a book numbered i, ii, I, II, c, xA still reads II, c, xA. What never travels is the form-field list: a fillable form stops being fillable, so flatten it first if the values have to survive.';
 
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
@@ -892,11 +909,13 @@ export const organizeTools: PdfToolDefinition[] = [
         const start = target.getPageCount();
         marks.push({ title: input.name, page: start });
         const copied = await target.copyPages(input.doc, resolvePages('all', input.pageCount));
-        // Source page index → merged index. The blank spacer is appended after
-        // this file's own pages, so the run of offsets stays contiguous.
-        const mapping = new Map<number, number>();
-        for (let page = 0; page < copied.length; page++) mapping.set(page, start + page);
-        copies.push({ doc: input.doc, mapping });
+        // Source page → merged sheet. The blank spacer is appended after this
+        // file's own pages, so the run of offsets stays contiguous.
+        const placed: PagePlacement[] = copied.map((_, page) => ({
+          source: page,
+          dest: start + page,
+        }));
+        copies.push({ doc: input.doc, placed });
         for (const page of copied) {
           target.addPage(page);
           const box = visibleBox(page);
@@ -1263,9 +1282,10 @@ export const organizeTools: PdfToolDefinition[] = [
       const target = await newPDF();
       let planIndex = 0;
       let stamped = 0;
-      // Source page → the sheet it landed on. A page used twice keeps its first
-      // copy as the bookmark target, and a blank sheet claims no index.
-      const mapping = new Map<number, number>();
+      // Every sheet the plan placed, in order. A page used twice appears twice —
+      // the bookmarks follow its first copy, the page numbering follows both. A
+      // blank sheet claims no source page at all.
+      const placed: PagePlacement[] = [];
       for (const item of plan) {
         throwIfAborted(context.signal);
         if (item.blank) {
@@ -1277,7 +1297,7 @@ export const organizeTools: PdfToolDefinition[] = [
           target.insertPage(planIndex, [size.width, size.height]);
         } else {
           const [page] = await target.copyPages(input.doc, [item.page]);
-          if (!mapping.has(item.page)) mapping.set(item.page, planIndex);
+          placed.push({ source: item.page, dest: planIndex });
           // Only re-set the rotation when the plan says so, so a `/Rotate 90`
           // page is not silently flattened to 0 by being reordered (E9).
           if (item.rotate !== null) page.setRotation(degrees(normaliseRotation(item.rotate)));
@@ -1308,7 +1328,7 @@ export const organizeTools: PdfToolDefinition[] = [
       if (isIdentity) {
         notes.add('The order you set matches the document as it is, so the output is a copy rather than a rearrangement.');
       }
-      const fidelity = await carryPageFurniture(target, [{ doc: input.doc, mapping }]);
+      const fidelity = await carryPageFurniture(target, [{ doc: input.doc, placed }]);
       notePageCopy([input.doc], fidelity, notes);
       return pdfOut(target, notes, `Rebuilt the document with ${pageCountLabel(target.getPageCount())}.`);
     },
@@ -1546,14 +1566,14 @@ export const organizeTools: PdfToolDefinition[] = [
         notes.add(`This document mixes page sizes, so the blank sheets match page ${neighbourIndex + 1} beside them.`);
       }
       // Every original page is present, shifted by the blanks that landed before
-      // it, so no bookmark can be lost here — but the field list still is.
-      const spacerMapping = new Map<number, number>();
+      // it, so no bookmark can be lost here — but the field list still is. The blank
+      // sheets claim no source page, which is what keeps the page numbering from
+      // running on into a sheet the document never had.
+      const placed: PagePlacement[] = [];
       for (let page = 0; page < total; page++) {
-        spacerMapping.set(page, page < insertAt ? page : page + count);
+        placed.push({ source: page, dest: page < insertAt ? page : page + count });
       }
-      const fidelity = await carryPageFurniture(target, [
-        { doc: input.doc, mapping: spacerMapping },
-      ]);
+      const fidelity = await carryPageFurniture(target, [{ doc: input.doc, placed }]);
       notePageCopy([input.doc], fidelity, notes);
       return pdfOut(
         target,
@@ -1634,7 +1654,7 @@ export const organizeTools: PdfToolDefinition[] = [
       const target = await newPDF();
       const copies: PageCopyMap[] = inputs.map((item) => ({
         doc: item.doc,
-        mapping: new Map<number, number>(),
+        placed: [] as PagePlacement[],
       }));
       for (let i = 0; i < plan.length; i++) {
         if (i % 25 === 0) throwIfAborted(context.signal);
@@ -1643,8 +1663,7 @@ export const organizeTools: PdfToolDefinition[] = [
         // copied fresh rather than reused from a cache.
         const [page] = await target.copyPages(inputs[item.source].doc, [item.page]);
         target.addPage(page);
-        const mapping = copies[item.source].mapping;
-        if (!mapping.has(item.page)) mapping.set(item.page, i);
+        copies[item.source].placed.push({ source: item.page, dest: i });
         context.progress((i + 1) / plan.length, `Page ${i + 1}`);
       }
       if (distinctSizes(target, resolvePages('all', target.getPageCount())) > 1) {

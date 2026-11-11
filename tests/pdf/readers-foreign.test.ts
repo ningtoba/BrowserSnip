@@ -625,17 +625,32 @@ describe('the round trip on page labels', () => {
     );
   });
 
-  it('a page copy drops /PageLabels altogether — recorded, not fixed here', async () => {
-    // `core/doc.ts:carryPageFurniture` carries the outline and the embedded files
-    // across a copy and has never carried the label tree, so the output of every
-    // rebuilding tool is a document whose numbering falls back to arabic in the
-    // viewer. That is the damage the sweep asked about, and it is the copy's, not
-    // the reader's: nothing here reads `/PageLabels` wrongly *into* a writer.
+  it('carries /PageLabels across a page copy, remapped to the new page indices', async () => {
+    // The row this file recorded as “left unfixed, and named so it cannot be closed
+    // as fine”. `carryPageFurniture` carried the outline and the embedded files and
+    // not the numbering, so a file MuPDF labels `i, ii, I, II, c, xA` came back with
+    // **no label store at all** — same page count, opens fine, and every page number
+    // a reader cites from it quietly changing meaning. It carries the numbering now.
+    // `tests/pdf/page-labels-copy.test.ts` is the table of what “carried” means per
+    // sheet for each copy shape, judged outside this repo as well; this is the pin
+    // that the store reaches the output at all, and that a merge concatenates two
+    // numberings instead of keeping one or dropping both.
     const name = 'labels-kids-mixed.pdf';
     const copy = await run('extract-pages', { pages: '1-3' }, name);
     expect(copy.doc.getPageCount()).toBe(3);
-    expect(pageLabelStore(copy.doc)).toEqual({ nums: 0, kids: 0 });
-    expect(readPageLabels(copy.doc).map((entry) => entry.label)).toEqual(['1', '2', '3']);
+    expect(pageLabelStore(copy.doc)).toEqual({ nums: 4, kids: 0 });
+    expect(readPageLabels(copy.doc).map((entry) => entry.label)).toEqual(['i', 'ii', 'I']);
+
+    const merged = await run('merge', {}, name, 'labels-nums-r.pdf');
+    expect(pageLabelStore(merged.doc)).toEqual({ nums: 10, kids: 0 });
+    expect(readPageLabels(merged.doc).map((entry) => entry.label)).toEqual([
+      'i', 'ii', 'I', 'II', 'c', 'xA', 'i', 'ii', 'iii', 'iv',
+    ]);
+
+    // And a file that had no numbering still has none after a copy: preserving is not
+    // the same as inventing.
+    const plain = await run('extract-pages', { pages: '1-3' }, 'labels-absent.pdf');
+    expect(pageLabelStore(plain.doc)).toEqual({ nums: 0, kids: 0 });
   });
 
   it('add-page-labels reports what the file it wrote actually holds', async () => {

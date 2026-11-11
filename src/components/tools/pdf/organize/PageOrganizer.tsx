@@ -40,6 +40,7 @@ import {
   openPDF,
   savePDF,
   type CopyFidelity,
+  type PagePlacement,
 } from '@/lib/pdf/core/doc';
 import type { PDFDocument } from '@maxwbh/pdf-lib';
 import { displayedSize, resolvePages } from '@/lib/pdf/core/pages';
@@ -580,10 +581,11 @@ export default function PageOrganizer(): JSX.Element {
       };
 
       const target = await newPDF();
-      // Where each source page lands, so the copied document can be given back
-      // its bookmarks: they live on the catalog, not on a page, and a bare
-      // `copyPages` leaves them behind with the file they came from.
-      const placed = new Map<PDFDocument, Map<number, number>>();
+      // Where each source page lands, so the copy can give the catalog its own
+      // structures back: bookmarks and page numbering live on the catalog, not on a
+      // page, and a bare `copyPages` leaves them with the file they came from. Every
+      // sheet is listed, because a page used twice is numbered on both copies.
+      const placed = new Map<PDFDocument, PagePlacement[]>();
       for (let index = 0; index < plan.length; index += 1) {
         const item = plan[index];
         if (item.kind === 'blank') {
@@ -601,13 +603,9 @@ export default function PageOrganizer(): JSX.Element {
           const angle = outputRotation(sourceAngle, item.rotate);
           if (angle !== sourceAngle) page.setRotation(degrees(angle));
           target.insertPage(index, page);
-          let mapping = placed.get(source);
-          if (!mapping) {
-            mapping = new Map<number, number>();
-            placed.set(source, mapping);
-          }
-          // A page used twice keeps its first copy as the bookmark target.
-          if (!mapping.has(item.page)) mapping.set(item.page, index);
+          const sheets = placed.get(source) ?? [];
+          sheets.push({ source: item.page, dest: index });
+          placed.set(source, sheets);
         }
         useProcessStore
           .getState()
@@ -620,7 +618,7 @@ export default function PageOrganizer(): JSX.Element {
       }
       const fidelity = await carryPageFurniture(
         target,
-        [...placed].map(([doc, mapping]) => ({ doc, mapping })),
+        [...placed].map(([doc, sheets]) => ({ doc, placed: sheets })),
       );
       return { doc: target, fidelity };
     },
