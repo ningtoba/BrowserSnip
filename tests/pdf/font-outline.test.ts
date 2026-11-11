@@ -23,7 +23,9 @@
  * (2) needs the 15 MB engine, which the rest of the suite deliberately never
  * fetches. It is cached under `node_modules/.browsersnip-gs`; when it cannot be
  * downloaded the real-engine block says why and skips, and everything else here
- * still runs. `BROWSERSNIP_GS=off` skips it on purpose.
+ * still runs. On CI the block stays skipped — a 15 MB download in one fork was
+ * measured starving a timing-sensitive render test in another — and runs there
+ * only with `BROWSERSNIP_GS=live`. `BROWSERSNIP_GS=off` skips it on purpose.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -287,8 +289,18 @@ beforeAll(async () => {
     },
   });
 
-  if (process.env.BROWSERSNIP_GS === 'off') {
-    gs.skipped = 'BROWSERSNIP_GS=off';
+  // The rest of this suite is fast, offline and deterministic by contract, and a
+  // 15 MB download in one fork measurably starves the timing-sensitive renders in
+  // another: `npm test` on a CI runner failed in `field-reach.test.ts` (a fixed
+  // 3 s wait on a redact run) only while this file was fetching Ghostscript. So
+  // the real engine runs where a person is — and on CI only when it is asked for
+  // with `BROWSERSNIP_GS=live`, which is what the CI job would set to re-run the
+  // byte proofs on purpose. The argv pins above run either way.
+  const wanted = process.env.BROWSERSNIP_GS === 'live' || (process.env.BROWSERSNIP_GS !== 'off' && !process.env.CI);
+  if (!wanted) {
+    gs.skipped = process.env.BROWSERSNIP_GS === 'off'
+      ? 'BROWSERSNIP_GS=off'
+      : 'a CI run keeps the suite offline; set BROWSERSNIP_GS=live to fetch the engine here';
     return;
   }
   try {
