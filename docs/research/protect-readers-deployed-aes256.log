@@ -1,0 +1,66 @@
+# protect on https://www.browsersnip.com, at AES-256, with the download judged outside the app.
+# Revision 8b16198 (deployed bundle assets/index-C2BBcn2H.js, the same name this tree builds).
+#   CIPHER=AES-256 node scripts/live-protect-proof.mjs
+#   cp <workdir>/deployed-protected.pdf /tmp/a256-live/deployed-browsersnip-aes256.pdf
+#   python3 docs/research/aes256-write-readers.py /tmp/a256-live "Secret Alice 42 Bravo" open-sesame owner-key
+# The first run of this rig reported "no #tool-field-cipher on this page; selects present: (none)"
+# and produced an AES-128 file: the rig, not the site, was the suspect — the rail folds everything
+# but its lead field behind "11 MORE OPTIONS", so the select was in the DOM and not on screen. The
+# rig now opens the fold, refuses to run on a read-back it did not get, and the run below is the
+# re-run with that fix (scripts/live-protect-proof.mjs).
+
+## the rig
+# https://www.browsersnip.com · protect · user "open-sesame" · cipher "AES-256"
+card: clicked <button> Protect PDF
+file in: /tmp/live-protect-BqGE7g/claim.pdf
+options   : opened the options group: "▸\n11 MORE OPTIONS"
+mode is the default "Both"; fields before: 0:tool-field-userPassword="" · 1:tool-field-ownerPassword=""
+typed Open password → #tool-field-userPassword
+typed Owner password → #tool-field-ownerPassword
+cipher      : cipher → #tool-field-cipher = "AES-256" (option: "AES-256 — PDF 2.0, /V 5 /R 6. Strongest; needs a modern reader.")
+fields after    : 0:tool-field-userPassword="open-sesame" · 1:tool-field-ownerPassword="owner-key"
+selects after   : tool-field-cipher="AES-256" · tool-field-printLevel="high"
+run: clicked <button> Protect
+result card: Protected with an open password. The file is ciphered in AES-256 (crypt filter /StdCF, revision 6) and carries the /P flags. As written to the file: printing allowed (any resolution), editing allowed, copying allowed, comments allowed, form filling allowed, screen readers allowed, page assembly blocked. A PDF reader opened the copy with that password and read 3 page(s).
+warnings    : The viewer here could not draw claim_protected.pdf, so nothing is pictured — the download is still the file.
+download: clicked <button> Download
+downloaded: /tmp/live-protect-BqGE7g/deployed-protected.pdf 3315 bytes
+# outside readers, on the file the deployed site downloaded
+=== claim.pdf (2268 bytes)
+  mupdf   : opens, gate: asks for no password, pages=3, cipher=None, /P allows ['access', 'annot', 'assemble', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: opens with no password, pages=3, pdfinfo /P: no
+           planted text extracted: True
+  qpdf    : opens, gate: asks for no password, pages=3, is_encrypted=False, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=False, gate: no password asked, pages=3
+           planted text extracted: True
+  gs      : renders with no password → wrote 3 page(s), planted text through gs: True
+=== claim_protected.pdf (3315 bytes)
+  mupdf   : opens, gate: opened with the password 'open-sesame', pages=3, cipher='Standard V5 R6 256-bit AES', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: asks for a password (yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES-256)), pages=3, pdfinfo /P: yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES-256)
+           planted text extracted: True
+  qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=True, gate: 'open-sesame', pages=3
+           planted text extracted: True
+  gs      : renders → wrote 3 page(s), planted text through gs: True
+=== deployed-protected.pdf (3315 bytes)
+  mupdf   : opens, gate: opened with the password 'open-sesame', pages=3, cipher='Standard V5 R6 256-bit AES', /P allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+           planted text extracted: True
+  poppler : opens, gate: asks for a password (yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES-256)), pages=3, pdfinfo /P: yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES-256)
+           planted text extracted: True
+  qpdf    : opens, gate: refuses an empty password, pages=3, is_encrypted=True, qpdf syntax check: clean, /P allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : opens, is_encrypted=True, gate: 'open-sesame', pages=3
+           planted text extracted: True
+  gs      : renders → wrote 3 page(s), planted text through gs: True
+
+workdir: /tmp/live-protect-BqGE7g
+
+## the same bytes, recomputed value by value by pypdf (docs/research/aes256-write-readers.py)
+--- deployed-browsersnip-aes256.pdf  (3315 bytes)
+    pypdf: decrypt('open-sesame')=1 (1=user 2=owner), keylen=32, dict=/V 5 /R 6 /Length 256 CFM=/AESV3 CF/Length=32 /P -1028 EncryptMetadata=True, |O|=48 |U|=48 |OE|=32 |UE|=32 |Perms|=16, recomputed /U matches, /UE matches, /O matches, /OE matches, /Perms matches, perms-plain fcfbffffffffffff54616462 (byte 8 b'T', 9-11 b'adb'), pages=3, planted True, text chars 96
+    MuPDF: needs_pass=1, refuses an empty password, opened with 'open-sesame', auth=2, pages=3, cipher='Standard V5 R6 256-bit AES', /P=-1028, planted_pages 3/3, ink_page1_percent=0.33, toc_entries=0, title='Live protect proof'
+    qpdf: refuses an empty password, opened with open-sesame, pages=3, is_encrypted=True, qpdf syntax check: clean
+    poppler: pdfinfo says Encrypted: yes (print:yes copy:yes change:yes addNotes:yes algorithm:AES-256), pages=3, text extracted with a password, planted text: True
+    Ghostscript: renders → wrote 3 page(s), planted text through gs: True
+--- planted sentence asked for: 'Secret Alice 42 Bravo', password: 'open-sesame', owner: 'owner-key'

@@ -193,6 +193,24 @@ const pickCipher = (value) => raw(`(() => {
     + ' (option: ' + JSON.stringify(el.options[el.selectedIndex]?.text ?? '') + ')';
 })()`);
 
+/**
+ * Open the rail's collapsed control group.
+ *
+ * The page shape puts everything but the lead field behind a "N more options" bar,
+ * so a probe that addresses `#tool-field-cipher` straight after intake finds the
+ * element in the DOM but nothing visible — and `selects present: (none)` was exactly
+ * this, not a missing control. The fold is opened by the same rule as everything
+ * else here: click what the panel renders, then read the panel back.
+ */
+const openOptions = () => raw(`(() => {
+  const el = [...document.querySelectorAll('button')]
+    .find((b) => /more options|options$/i.test((b.innerText || '').trim()) && b.offsetParent !== null);
+  if (!el) return 'no options toggle in view; selects now: '
+    + ([...document.querySelectorAll('select')].map((s) => s.id || 'unlabelled').join(' | ') || '(none)');
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  return 'opened the options group: ' + JSON.stringify(el.innerText.trim());
+})()`);
+
 await send('Runtime.enable');
 await send('Page.enable');
 await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: work });
@@ -217,12 +235,26 @@ if (!input.result?.nodeId) { console.log('NO FILE INPUT; body:', await said('doc
 await send('DOM.setFileInputFiles', { nodeId: input.result.nodeId, files: [fixture] });
 console.log('file in:', fixture);
 await sleep(20000);
+if (CIPHER) {
+  console.log('options   :', (await openOptions()).value);
+  await sleep(1500);
+}
 // `mode` defaults to "Both", which is the case this proof is for: an open password
 // that gates reading and an owner password that lifts the restrictions.
 console.log('mode is the default "Both"; fields before:', await fieldState());
 console.log((await typeInto('Open password', USER_PASSWORD)).value);
 console.log((await typeInto('Owner password', OWNER_PASSWORD)).value);
-if (CIPHER) console.log('cipher      :', (await pickCipher(CIPHER)).value);
+if (CIPHER) {
+  const picked = (await pickCipher(CIPHER)).value ?? '';
+  console.log('cipher      :', picked);
+  // A run that could not reach the control must not be reported as the strength it
+  // meant: the file below would be AES-128 and every reader verdict would still
+  // look like a pass.
+  if (!picked.includes(`= "${CIPHER}"`)) {
+    console.log('ABORT: the Cipher control did not take ' + JSON.stringify(CIPHER) + '; read back: ' + picked);
+    ws.close(); chrome.kill(); process.exit(1);
+  }
+}
 await sleep(1000);
 console.log('fields after    :', await fieldState());
 console.log('selects after   :', await said(`[...document.querySelectorAll('select')]

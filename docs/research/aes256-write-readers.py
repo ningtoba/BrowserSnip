@@ -28,6 +28,12 @@ refuses it is refusing the gate, not the fixture.
 
   python3 docs/research/aes256-write-readers.py <dir> [PLANTED] [PASSWORD]
 
+  python3 docs/research/aes256-write-readers.py <dir> [PLANTED] [PASSWORD] [OWNER]
+
+`OWNER` defaults to `PASSWORD`. It is a separate argument because the two secrets
+are derived differently and a run that guesses the owner one reports `/O` and `/OE`
+as DIFFERS on a file that is simply locked with two different words.
+
 The dir the test fills:
 
   AES256_PROBE_DIR=/tmp/a256 npx vitest run tests/pdf/crypto-aes256-write.test.ts
@@ -41,6 +47,7 @@ import sys
 TARGET = os.path.abspath(sys.argv[1])
 PLANTED = sys.argv[2] if len(sys.argv) > 2 else "Lighthouse Inventory 1887"
 PASSWORD = sys.argv[3] if len(sys.argv) > 3 else "hunter2"
+OWNER = sys.argv[4] if len(sys.argv) > 4 else PASSWORD
 TRY_PASSWORDS = ("", PASSWORD)
 
 
@@ -113,7 +120,7 @@ def recompute(path):
     computed_ue = aes_cbc_encrypt(
         AlgV5.calculate_hash(6, user_secret, seal_key["userKeySalt"], b""), bytes(16), key
     )
-    owner_secret = PASSWORD.encode()
+    owner_secret = OWNER.encode()
     computed_o = AlgV5.calculate_hash(6, owner_secret, seal_key["ownerValidationSalt"], u_value)
     computed_oe = aes_cbc_encrypt(
         AlgV5.calculate_hash(6, owner_secret, seal_key["ownerKeySalt"], u_value), bytes(16), key
@@ -260,4 +267,4 @@ for target in sorted(glob.glob(os.path.join(TARGET, "*.pdf"))):
             print(f"    {probe(target)}")
         except Exception as err:  # noqa: BLE001
             print(f"    {probe.__name__}: crashed {type(err).__name__}: {clip(str(err))}")
-print(f"--- planted sentence asked for: {PLANTED!r}, password: {PASSWORD!r}")
+print(f"--- planted sentence asked for: {PLANTED!r}, password: {PASSWORD!r}, owner: {OWNER!r}")

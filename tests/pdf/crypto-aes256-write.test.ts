@@ -394,6 +394,11 @@ describe('an AES-256 file this app writes', () => {
 
   it('answers pdf.js, which runs its own AES-256, with the same pages and words', async () => {
     const bytes = await write();
+    // The claim is about AES-256 specifically. Without this line a writer that
+    // quietly stayed at revision 4 would pass every verdict below for the wrong
+    // reason, because pdf.js reads AES-128 perfectly well too.
+    expect(encryptBody(bytes)).toMatch(/\/CFM \/AESV3/);
+    expect(encryptBody(bytes)).toMatch(/\/R 6\b/);
     expect('refused' in await readerSays(bytes), 'pdf.js read a ciphered file with no password').toBe(true);
     expect('refused' in await readerSays(bytes, WRONG), 'pdf.js accepted a wrong password').toBe(true);
     const opened = await readerSays(bytes, USER);
@@ -649,6 +654,7 @@ describe('the AES-256 files the outside readers are shown', () => {
       userPassword: PASSWORD, ownerPassword: PASSWORD, cipher: 'AES-256', permissions: CORPUS_PERMISSIONS,
     });
     expect(permissionsOf(bytes), 'the same /P the qpdf and MuPDF fixtures carry').toBe(-3376);
+    expect(latin1.decode(bytes)).toMatch(/\/CFM \/AESV3/);
     expect(latin1.decode(bytes)).not.toContain(PLANTED);
     expect(pageWords(await openPDF(bytes, { password: PASSWORD }))[0]).toContain(PLANTED);
     const opened = await readerSays(bytes, PASSWORD);
