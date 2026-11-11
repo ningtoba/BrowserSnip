@@ -278,6 +278,41 @@ describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
     expect(saved.getPageCount()).toBe(3);
   });
 
+  it('records what each shape produces, for the reproduction table', async () => {
+    const table = process.env.BROWSERSNIP_ATTACH_TABLE;
+    if (!table) return;
+    interface Row {
+      file: string;
+      shape: string;
+      seenBy: string;
+      ours: { name: string; bytes: number; sha256: string }[];
+      extractMessage: string;
+      extractFiles: string[];
+      editMessage: string;
+    }
+    const rows: Row[] = [];
+    for (const testCase of CASES) {
+      const entries = await listed(testCase.file);
+      const extract = await run('extract-attachments', {}, testCase.file);
+      const edit = await run('edit-attachments', { remove: '' }, testCase.file);
+      rows.push({
+        file: testCase.file,
+        shape: testCase.shape,
+        seenBy: testCase.seenBy,
+        ours: entries.map((entry) => ({
+          name: entry.name,
+          bytes: entry.bytes.length,
+          sha256: sha256(entry.bytes),
+        })),
+        extractMessage: extract.message ?? '',
+        extractFiles: extract.outputs.map((output) => output.name),
+        editMessage: edit.message ?? '',
+      });
+    }
+    writeFileSync(table, `${JSON.stringify(rows, null, 1)}\n`);
+    expect(rows).toHaveLength(CASES.length);
+  });
+
   it('does not count one file twice when the catalogue and an annotation both name it', async () => {
     const doc = await open('catalog-and-annot.pdf');
     expect(listAttachments(doc)).toHaveLength(1);
