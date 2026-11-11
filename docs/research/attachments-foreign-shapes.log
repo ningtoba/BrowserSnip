@@ -1,0 +1,130 @@
+ATTACHMENTS — the foreign fixtures in `tests/fixtures/attachments/`, and what
+readers that did not write them say.
+
+Producers on this box: libqpdf 12.3.2 (through pikepdf 10.9.1), MuPDF 1.28.2 (through PyMuPDF 1.28.2), pypdf 6.14.2.
+Readers used to judge them: the same three, plus poppler's `pdfdetach` pdfdetach version 26.10.0 (the `qpdf` and `mutool` binaries are not installed here, so the census is four readers, not five).
+
+Each `sha256=` is the payload the fixture was built to carry; a reader that lists a
+name whose hash differs found the entry but not its bytes, which is the failure this
+repo calls a blank page with a page count.
+
+== annot-only.pdf
+   shape    attachment reachable only through a page /FileAttachment
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    nothing
+   pypdf    nothing
+   poppler  annot-only.bin
+   expected annot-only.bin sha256=7ba3aad285a9
+
+== catalog-and-annot.pdf
+   shape    one FileSpec named twice: /EmbeddedFiles and page /Annots
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    catalog-and-annot.bin sha256=65f54195401c = expected
+   pypdf    catalog-and-annot.bin sha256=65f54195401c = expected
+   poppler  catalog-and-annot.bin, catalog-and-annot.bin
+   expected catalog-and-annot.bin sha256=65f54195401c
+
+== direct-namespec.pdf
+   shape    flat /Names whose value is a DIRECT FileSpec dict
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    direct-spec.bin sha256=f688bc415349 = expected
+   pypdf    direct-spec.bin sha256=f688bc415349 = expected
+   poppler  direct-spec.bin
+   expected direct-spec.bin sha256=f688bc415349
+
+== doc-annot-only.pdf
+   shape    attachment named only in a catalogue-level /Annots
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    nothing
+   pypdf    nothing
+   poppler  nothing
+   expected doc-annot.bin sha256=39e485c58370
+
+== ef-dict-indirect.pdf
+   shape    /EF is an indirect dict; no /Subtype, no /Params
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    bare.bin sha256=3adf0ffe7e8a = expected
+   pypdf    bare.bin sha256=3adf0ffe7e8a = expected
+   poppler  bare.bin
+   expected bare.bin sha256=3adf0ffe7e8a
+
+== ef-dos-unix.pdf
+   shape    /EF naming only /DOS and only /UNIX
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    error: FzErrorFormat: code=7: object is not a stream
+   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/DOS': IndirectObject(5, 0, 140200883123840)}
+   poppler  dos.bin, unix.bin, stderr: Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
+Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
+   expected dos.bin sha256=12abf8f19a5a, unix.bin sha256=149be634b36c
+
+== ef-points-at-stream.pdf
+   shape    /EF is the EmbeddedFile stream itself, no wrapper dict
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    error: FzErrorFormat: code=7: object is not a stream
+   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/Params': {'/CheckSum': '¼€UD+ú?·cÖ{>€ÐÆ«', '/CreationDate': 'D:20240229120000Z', '/ModDate': 'D:20240301083000Z', '/Size': 277}, '/Subtype': '/text/plain', '/Type': '/EmbeddedFile', '/Filter': '/FlateDecode'}
+   poppler  ef-stream.bin
+   expected ef-stream.bin sha256=60e6ee7dcaf3
+
+== ef-uf-only.pdf
+   shape    /EF << /UF >> with no /F at all
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    error: FzErrorFormat: code=7: object is not a stream
+   pypdf    ef-uf.bin sha256=d2e0be7b8199 = expected
+   poppler  ef-uf.bin, stderr: Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
+   expected ef-uf.bin sha256=d2e0be7b8199
+
+== ef-uf-over-f.pdf
+   shape    /EF << /F decoy /UF real >>: /UF must win
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    both-names.bin sha256=1e77e836b5fa != expected f2e68a9e71e0
+   pypdf    both-names.bin sha256=f2e68a9e71e0 = expected
+   poppler  both-names.bin
+   expected both-names.bin sha256=f2e68a9e71e0
+
+== flat-names-indirect.pdf
+   shape    flat /Names, indirect FileSpec, /EF << /F >>, full /Params
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    flat-ref.bin sha256=b71020a0db47 = expected
+   pypdf    flat-ref.bin sha256=b71020a0db47 = expected
+   poppler  flat-ref.bin
+   expected flat-ref.bin sha256=b71020a0db47
+
+== kids-tree.pdf
+   shape    /EmbeddedFiles as a /Kids + /Limits tree, two leaves
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    nothing
+   pypdf    alpha.bin sha256=bc2642b8271a = expected, beta.bin sha256=f61ea5e77bfc = expected
+   poppler  alpha.bin, beta.bin
+   expected alpha.bin sha256=bc2642b8271a, beta.bin sha256=f61ea5e77bfc
+
+== mupdf-native.pdf
+   shape    name-tree value is a direct FileSpec dict, /EF << /F >>
+   producer MuPDF 1.28.2 (PyMuPDF embfile_add)
+   MuPDF    note.txt sha256=6d4b8fa7b051 = expected
+   pypdf    note.txt sha256=6d4b8fa7b051 = expected
+   poppler  note.txt
+   expected note.txt sha256=6d4b8fa7b051
+
+== no-params.pdf
+   shape    EmbeddedFile stream with no /Params (no Size, no CheckSum)
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    no-params.bin sha256=09ed501c75b3 = expected
+   pypdf    no-params.bin sha256=09ed501c75b3 = expected
+   poppler  no-params.bin
+   expected no-params.bin sha256=09ed501c75b3
+
+== pypdf-native.pdf
+   shape    pypdf's own FileSpec + /EmbeddedFiles entry
+   producer pypdf 6.14.2
+   MuPDF    ledger.csv sha256=dc27bf90d6be = expected
+   pypdf    ledger.csv sha256=dc27bf90d6be = expected
+   poppler  ledger.csv
+   expected ledger.csv sha256=dc27bf90d6be
+
+== unicode-name.pdf
+   shape    UTF-16BE /Names key, /UF differing from /F
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    Ã¼ber-ð.txt sha256=067570bac832 (unexpected name)
+   pypdf    über-𓂀.txt sha256=067570bac832 = expected
+   poppler  error: UnicodeDecodeError: 'utf-8' codec can't decode byte 0xed in position 26: invalid continuation byte
+   expected über-𓂀.txt sha256=067570bac832
