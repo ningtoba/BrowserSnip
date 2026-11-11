@@ -35,17 +35,18 @@
  * `core/guard.ts` refuses a rewrite on that answer rather than on the bare
  * presence of a cipher.
  *
- * It writes too, and at one strength only: `encryptDocument` saves a document as
- * **AES-128** (`/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, selected by
- * `/StmF` and `/StrF`) with the `/O`, `/U`, `/P` and `/Perms` values revision 4
- * defines, running the *same* key schedule over the *same* primitives as the read
- * path — Algorithms 1-5 and 2.B in one module, so the writer and the reader cannot
- * drift apart, and so a file this app protects is a file this app can read back.
- * RC4 and AES-256 stay read-only: RC4 is what the outside fixtures were measured
- * with, AES-256 is read from this change onwards and its writer has to prove its
- * own round trip next, and a strength nobody has to choose is a strength nobody
- * is sold. An AES-256 file this app *edits* is still re-sealed with the source's
- * own key and dictionary, so it leaves as AES-256 as it arrived.
+ * It writes two of those three, and only those two: `encryptDocument` saves a
+ * document as **AES-128** (`/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`,
+ * selected by `/StmF` and `/StrF`) or as **AES-256** (`/V 5 /R 6`,
+ * `/CF /StdCF /CFM /AESV3 /Length 32`, `/O` and `/U` 48 bytes, `/OE`, `/UE` and
+ * `/Perms` derived by the same revision-6 ladder this module verifies with), and
+ * every value is the read path's own key schedule run *forwards* — Algorithms 1-5
+ * and 2.B in one module, over one set of primitives, so the writer and the reader
+ * cannot drift apart and a file this app protects is a file this app can read
+ * back. RC4-128 stays read-only: it is what the outside fixtures were measured
+ * with, and this writer has never produced a byte of it for anyone to check.
+ * An AES-256 file this app *edits* is still re-sealed with the source's own key
+ * and dictionary, so it leaves as AES-256 as it arrived.
  *
  * The primitives, in the order the constraints arrive: **MD5** comes from
  * `node-forge`, already a dependency and already how `core/attachments.ts`
@@ -1209,10 +1210,21 @@ async function rewriteStrings(
 /** Which way the filter runs over the bytes it is handed. */
 type CipherMode = 'seal' | 'open';
 
-/** The one shape this module both writes and reads: `/V 4 /R 4` with `/AESV2`. */
-const WRITE_REVISION = 4;
-const WRITE_KEY_BYTES = 16;
-const WRITE_METHOD: Method = 'AESV2';
+/** The strengths this module both writes and reads: the two a caller may pick. */
+export type WritableStrength = 'AES-128' | 'AES-256';
+
+/**
+ * The dictionary shape each writable strength spells, and the filter it selects.
+ *
+ * `/V` and `/R` are a pair, not two answers: revision 6 is spelled `/V 5 /R 6`
+ * (ISO 32000-2 §7.11.2), and a file that says `/V 4 /R 6` is read by its `/R` here
+ * and by its `/V` by somebody else — the mismatch `protect` was written up for.
+ */
+const WRITE_SHAPES: Record<WritableStrength, { version: number; revision: number; keyBytes: number; method: Method }> = {
+  'AES-128': { version: 4, revision: 4, keyBytes: 16, method: 'AESV2' },
+  'AES-256': { version: 5, revision: 6, keyBytes: 32, method: 'AESV3' },
+};
+
 const CRYPT_FILTER = 'StdCF';
 
 /** What a caller asks `encryptDocument` to write. */
@@ -1227,10 +1239,25 @@ export interface CipherRequest {
   ownerPassword: string;
   /**
    * The raw `/P` integer, Table 25 bits already OR-ed. It is asked for rather
-   * than derived because the same four bytes feed the file key, `/U` and `/Perms`:
-   * one value, three uses, and the value a test can read back off the file.
+   * than derived because the same four bytes feed the file key (revision 4),
+   * `/U` and `/Perms`: one value, three uses, and the value a test can read back
+   * off the file.
    */
   permissions: number;
+  /**
+   * The strength to write. Required rather than defaulted because every value a
+   * caller can name has to have been round-tripped outside this app first, and a
+   * default is how a strength ends up in a file nobody checked.
+   */
+  strength: WritableStrength;
+  /**
+   * `/EncryptMetadata`, asked for rather than assumed. The flag is not one bit in
+   * the dictionary: at revision 4 it is mixed into the file key, at revision 6 it
+   * is byte 8 of the `/Perms` plaintext, and with it false the `/Info` dictionary
+   * and the user metadata stream stay in the clear — which is what a reader that
+   * wants a title without a password looks for.
+   */
+  encryptMetadata: boolean;
 }
 
 /**
@@ -1262,38 +1289,42 @@ async function permsValue(cipher: Cipher, fileKey: Uint8Array): Promise<Uint8Arr
   return rc4Encrypt(fileKey, hash);
 }
 
+/** The dictionary shape one writable strength spells. */
+type WriteShape = (typeof WRITE_SHAPES)[WritableStrength];
+
 /**
  * The `/Encrypt` dictionary for the cipher this module just ran.
  *
- * `/CFM /AESV2 /Length 16` selected by both `/StmF` and `/StrF` is the shape the
- * outside fixtures carry, and the shape `readCipher` accepts: a dictionary that
- * names a filter it never selected would be read back as a gate, and a gate is
- * what the bytes would not be.
+ * The filter is *named and selected* — `/CFM /AESV2 /Length 16` or
+ * `/CFM /AESV3 /Length 32` under `/StdCF`, picked by both `/StmF` and `/StrF` —
+ * because that is the shape the outside fixtures carry and the shape `readCipher`
+ * accepts: a dictionary that names a filter it never selected would be read back
+ * as a gate, and a gate is what the bytes would not be. `/EncryptMetadata` is
+ * written in both directions rather than left to the default, so a file this app
+ * sealed at `false` does not depend on a reader knowing what an absent key means.
  */
-function encryptDictionary(
-  context: PDFContext,
-  cipher: Cipher,
-  owner: Uint8Array,
-  user: Uint8Array,
-  perms: Uint8Array,
-): PDFDict {
+function encryptDictionary(context: PDFContext, cipher: Cipher, shape: WriteShape): PDFDict {
   const standard = PDFDict.withContext(context);
-  standard.set(PDFName.of('CFM'), PDFName.of('AESV2'));
+  standard.set(PDFName.of('CFM'), PDFName.of(shape.method));
   standard.set(PDFName.of('AuthEvent'), PDFName.of('DocOpen'));
-  standard.set(PDFName.of('Length'), PDFNumber.of(WRITE_KEY_BYTES));
+  standard.set(PDFName.of('Length'), PDFNumber.of(shape.keyBytes));
   const filters = PDFDict.withContext(context);
   filters.set(PDFName.of(CRYPT_FILTER), standard);
 
   const dict = PDFDict.withContext(context);
   dict.set(PDFName.of('Filter'), PDFName.of('Standard'));
-  dict.set(PDFName.of('V'), PDFNumber.of(WRITE_REVISION));
-  dict.set(PDFName.of('R'), PDFNumber.of(WRITE_REVISION));
-  dict.set(PDFName.of('Length'), PDFNumber.of(WRITE_KEY_BYTES * 8));
+  dict.set(PDFName.of('V'), PDFNumber.of(shape.version));
+  dict.set(PDFName.of('R'), PDFNumber.of(shape.revision));
+  dict.set(PDFName.of('Length'), PDFNumber.of(shape.keyBytes * 8));
   dict.set(PDFName.of('P'), PDFNumber.of(cipher.permissions));
-  dict.set(PDFName.of('O'), PDFHexString.fromBytes(owner));
-  dict.set(PDFName.of('U'), PDFHexString.fromBytes(user));
-  dict.set(PDFName.of('Perms'), PDFHexString.fromBytes(perms));
-  dict.set(PDFName.of('EncryptMetadata'), PDFBool.True);
+  dict.set(PDFName.of('O'), PDFHexString.fromBytes(cipher.owner));
+  dict.set(PDFName.of('U'), PDFHexString.fromBytes(cipher.user));
+  // The revision-6 pair: each holds the same 32-byte file key, wrapped by a
+  // different secret. Revision 4 has no such values and must not carry them.
+  if (cipher.userWrap) dict.set(PDFName.of('UE'), PDFHexString.fromBytes(cipher.userWrap));
+  if (cipher.ownerWrap) dict.set(PDFName.of('OE'), PDFHexString.fromBytes(cipher.ownerWrap));
+  if (cipher.perms) dict.set(PDFName.of('Perms'), PDFHexString.fromBytes(cipher.perms));
+  dict.set(PDFName.of('EncryptMetadata'), cipher.metadataEncrypted ? PDFBool.True : PDFBool.False);
   dict.set(PDFName.of('CF'), filters);
   dict.set(PDFName.of('StmF'), PDFName.of(CRYPT_FILTER));
   dict.set(PDFName.of('StrF'), PDFName.of(CRYPT_FILTER));
@@ -1301,15 +1332,226 @@ function encryptDictionary(
 }
 
 /**
- * Save a document as a genuinely ciphered one: AES-128, revision 4.
+ * The five random inputs one revision-6 seal consumes.
  *
- * It runs the read path's derivations forwards — Algorithm 3 for `/O`, 2 for the
- * file key, 4 for `/U`, 5 for `/Perms`, 1 for every object key — so the two
- * directions cannot hold two different ideas about what a password means here.
- * The document is modified in place: the `/Encrypt` dictionary and the `/ID` it
- * was derived from go into the trailer, every stream payload is replaced by the
- * bytes the writer will serialize (deflated first, ciphered last, which is the
- * order the spec writes them in), and every string by its ciphered hex form.
+ * Handed in rather than generated inside `revision6Values` so a test can feed a
+ * foreign file its *own* file key and salts and demand byte-identical output —
+ * the only proof that this writer's ladder is the ladder the readers verified.
+ */
+export interface Revision6Seal {
+  /** The file encryption key: 32 bytes of CSPRNG, never a password hash. */
+  fileKey: Uint8Array;
+  /** The 8 bytes `/U` carries at 32-39, hashed with the user secret. */
+  userValidationSalt: Uint8Array;
+  /** The 8 bytes `/U` carries at 40-47, which hashes to the `/UE` key. */
+  userKeySalt: Uint8Array;
+  /** The 8 bytes `/O` carries at 32-39, hashed with the owner secret. */
+  ownerValidationSalt: Uint8Array;
+  /** The 8 bytes `/O` carries at 40-47, which hashes to the `/OE` key. */
+  ownerKeySalt: Uint8Array;
+  /** The four bytes `/Perms` carries at 12-15; random, and ignored by readers. */
+  permsRandom: Uint8Array;
+}
+
+/** The five dictionary values a revision-6 seal writes. */
+export interface Revision6Values {
+  fileKey: Uint8Array;
+  /** 48 bytes: 32 of hash, then the two 8-byte salts. */
+  user: Uint8Array;
+  /** 32 bytes: the file key under the user key-salt hash, no padding. */
+  userWrap: Uint8Array;
+  owner: Uint8Array;
+  ownerWrap: Uint8Array;
+  /** 16 bytes: the check value under the file key. */
+  perms: Uint8Array;
+}
+
+/** A seal's randomness from the platform CSPRNG; the values above say what for. */
+function randomRevision6Seal(): Revision6Seal {
+  return {
+    fileKey: randomBytes(32),
+    userValidationSalt: randomBytes(8),
+    userKeySalt: randomBytes(8),
+    ownerValidationSalt: randomBytes(8),
+    ownerKeySalt: randomBytes(8),
+    permsRandom: randomBytes(4),
+  };
+}
+
+/** The upper half of the 64-bit `/P` the revision-6 check value records. */
+const PERMISSIONS_HIGH = Uint8Array.from([0xff, 0xff, 0xff, 0xff]);
+
+/** The byte `/Perms` carries at 8: `T` when the metadata is ciphered, `F` when not. */
+const PERMS_METADATA = { yes: 0x54, no: 0x46 } as const;
+
+/**
+ * The 16 clear bytes under a revision-6 `/Perms`.
+ *
+ * Revision 6 does not hash anything here — it encrypts the dictionary's own
+ * entries: `/P` as a 64-bit little-endian value (bytes 0-7, the upper half all
+ * ones), `T` or `F` for `/EncryptMetadata` at byte 8, `adb` at 9-11 and four
+ * bytes nobody reads at 12-15. `adb` is the three bytes `permsAgrees` looks for,
+ * so writing them anywhere else produces a file that opens and then refuses its
+ * own key.
+ */
+function revision6PermsPlain(permissions: number, encryptMetadata: boolean, random: Uint8Array): Uint8Array {
+  return concat(
+    permissionsBytes(permissions),
+    PERMISSIONS_HIGH,
+    Uint8Array.from([encryptMetadata ? PERMS_METADATA.yes : PERMS_METADATA.no]),
+    PERMS_MARKER,
+    random,
+  );
+}
+
+/**
+ * Algorithms 3.8-3.10: the revision-6 values, this module's ladder run forwards.
+ *
+ * `/U` and `/O` are `revision6Hash` — the same function the read path verifies
+ * with — over the secret (UTF-8, cut at 127, **not** padded as revision 4 pads)
+ * and the relevant salt, with the 48-byte `/U` appended as user data for the
+ * owner value and for nothing in the user one. That asymmetry is why `/U` is
+ * derived first: `/O` and `/OE` are both computed *over* it, so a `/U` written
+ * afterwards is a `/O` computed over the wrong bytes.
+ *
+ * `/UE` and `/OE` wrap the file key with AES-256-CBC under a zero IV and **no**
+ * padding, which `aesCbcSealRaw` produces by discarding Web Crypto's pad block.
+ * The file key this writer generates is always the full 32 bytes, so the spec's
+ * padding string for a short key (0x41… then up to 0x7E, repeated) never applies
+ * to a file this app seals.
+ */
+export async function revision6Values(
+  request: Pick<CipherRequest, 'userPassword' | 'ownerPassword' | 'permissions' | 'encryptMetadata'>,
+  seal: Revision6Seal,
+): Promise<Revision6Values> {
+  const userSecret = secret127(request.userPassword);
+  const ownerSecret = secret127(request.ownerPassword);
+  const noUserData = new Uint8Array(0);
+  const user = concat(
+    await revision6Hash(userSecret, seal.userValidationSalt, noUserData),
+    seal.userValidationSalt,
+    seal.userKeySalt,
+  );
+  const userWrap = await aesCbcSealRaw(
+    await revision6Hash(userSecret, seal.userKeySalt, noUserData),
+    ZERO_IV,
+    seal.fileKey,
+  );
+  const owner = concat(
+    await revision6Hash(ownerSecret, seal.ownerValidationSalt, user),
+    seal.ownerValidationSalt,
+    seal.ownerKeySalt,
+  );
+  const ownerWrap = await aesCbcSealRaw(
+    await revision6Hash(ownerSecret, seal.ownerKeySalt, user),
+    ZERO_IV,
+    seal.fileKey,
+  );
+  return {
+    fileKey: seal.fileKey,
+    user,
+    userWrap,
+    owner,
+    ownerWrap,
+    perms: await aesEncryptBlock(
+      seal.fileKey,
+      revision6PermsPlain(request.permissions | 0, request.encryptMetadata, seal.permsRandom),
+    ),
+  };
+}
+
+/** The cipher and the file key one seal writes into a document. */
+interface Sealed {
+  cipher: Cipher;
+  fileKey: Uint8Array;
+  shape: WriteShape;
+}
+
+/**
+ * AES-128, revision 4: the key comes out of the user password.
+ *
+ * Algorithm 3 for `/O`, 2 for the file key, 4 for `/U`, 5 for `/Perms`; the
+ * per-object keys of Algorithm 1 are derived by the walk that cipheres the bytes.
+ */
+async function sealRevision4(request: CipherRequest, documentId: Uint8Array): Promise<Sealed> {
+  const shape = WRITE_SHAPES['AES-128'];
+  // `/O` first: the file key is derived from the user password *and* the owner
+  // value, so a hash written after the key would be a hash of the wrong bytes.
+  const owner = ownerValue(shape.revision, shape.keyBytes, request.ownerPassword, request.userPassword);
+  const cipher: Cipher = {
+    strength: 'AES-128',
+    revision: shape.revision,
+    stream: shape.method,
+    string: shape.method,
+    keyBytes: shape.keyBytes,
+    owner,
+    // Revision 4 unwraps nothing and derives its `/Perms` value below.
+    ownerWrap: null,
+    userWrap: null,
+    perms: null,
+    // `/U` is written below and read back by `opensWith`; the derivation of the
+    // file key does not look at it.
+    user: new Uint8Array(32),
+    permissions: request.permissions,
+    metadataEncrypted: request.encryptMetadata,
+    documentId,
+  };
+  const fileKey = fileEncryptionKey(cipher, padSecret(request.userPassword));
+  // Only the first 16 bytes of `/U` are the hash; the tail is arbitrary, and this
+  // one is derived rather than random so two saves of the same document differ
+  // by their IVs and nothing else.
+  const userHash = userKey(cipher, fileKey);
+  cipher.user = concat(userHash, md5(userHash, documentId));
+  cipher.perms = await permsValue(cipher, fileKey);
+  return { cipher, fileKey, shape };
+}
+
+/**
+ * AES-256, revision 6: the key is random, and both secrets only *unwrap* it.
+ *
+ * Nothing here is hashed from a password except the four values that gate access:
+ * the file key comes from the CSPRNG, which is why a revision-6 file can be
+ * re-keyed for a second secret without touching a single stream — and why an
+ * owner-only revision-6 file, whose user secret is empty, still carries real
+ * ciphertext that anybody who cares can unwrap.
+ */
+async function sealRevision6(request: CipherRequest, documentId: Uint8Array): Promise<Sealed> {
+  const shape = WRITE_SHAPES['AES-256'];
+  const values = await revision6Values(request, randomRevision6Seal());
+  return {
+    fileKey: values.fileKey,
+    shape,
+    cipher: {
+      strength: 'AES-256',
+      revision: shape.revision,
+      stream: shape.method,
+      string: shape.method,
+      keyBytes: shape.keyBytes,
+      owner: values.owner,
+      ownerWrap: values.ownerWrap,
+      user: values.user,
+      userWrap: values.userWrap,
+      perms: values.perms,
+      permissions: request.permissions,
+      metadataEncrypted: request.encryptMetadata,
+      documentId,
+    },
+  };
+}
+
+/**
+ * Save a document as a genuinely ciphered one, at a strength this module reads.
+ *
+ * It runs the read path's derivations forwards — the same `fileEncryptionKey`,
+ * `ownerValue`, `userKey`, `permsValue` and `revision6Hash` the reader verifies
+ * with — so the two directions cannot hold two different ideas about what a
+ * password means here. The document is modified in place: the `/Encrypt`
+ * dictionary and the `/ID` it was derived from go into the trailer, every stream
+ * payload is replaced by the bytes the writer will serialize (deflated first,
+ * ciphered last, which is the order the spec writes them in), and every string by
+ * its ciphered hex form. At revision 6 the crypt filter runs over the file key
+ * itself — there is no per-object key to hash, and hashing one is the mistake
+ * that turns a page into mojibake while its count still reads 3.
  *
  * Two things the caller owes this function, and `core/doc.ts:saveEncrypted` pays
  * them: everything the writer would create *while* it writes must exist first (a
@@ -1323,42 +1565,18 @@ export async function encryptDocument(
   doc: PDFDocument,
   request: CipherRequest,
 ): Promise<CipherWritten> {
-  requireAes(WRITE_METHOD);
+  const shape = WRITE_SHAPES[request.strength];
+  requireAes(shape.method);
+  // `/P` is a 32-bit signed integer in the file; a caller that OR-ed its flags in
+  // JavaScript can easily hand over the unsigned form, and those four bytes are
+  // hashed into the key, the check value and (at revision 4) `/U`.
+  const wanted: CipherRequest = { ...request, permissions: request.permissions | 0 };
   const context = doc.context;
   const documentId = randomBytes(16);
-  // `/O` first: the file key is derived from the user password *and* the owner
-  // value, so a hash written after the key would be a hash of the wrong bytes.
-  const owner = ownerValue(WRITE_REVISION, WRITE_KEY_BYTES, request.ownerPassword, request.userPassword);
-  const cipher: Cipher = {
-    strength: 'AES-128',
-    revision: WRITE_REVISION,
-    stream: WRITE_METHOD,
-    string: WRITE_METHOD,
-    keyBytes: WRITE_KEY_BYTES,
-    owner,
-    // The revision-6 derivations: this strength unwraps nothing and carries its
-    // `/Perms` value in the dictionary it writes.
-    ownerWrap: null,
-    userWrap: null,
-    perms: null,
-    // `/U` is written below and read back by `opensWith`; the derivation of the
-    // file key does not look at it.
-    user: new Uint8Array(32),
-    // `/P` is a 32-bit signed integer in the file; a caller that OR-ed its flags
-    // in JavaScript can easily hand over the unsigned form.
-    permissions: request.permissions | 0,
-    metadataEncrypted: true,
-    documentId,
-  };
-  const fileKey = fileEncryptionKey(cipher, padSecret(request.userPassword));
-  // Only the first 16 bytes of `/U` are the hash; the tail is arbitrary, and this
-  // one is derived rather than random so two saves of the same document differ
-  // by their IVs and nothing else.
-  const userHash = userKey(cipher, fileKey);
-  const user = concat(userHash, md5(userHash, documentId));
-
-  const perms = await permsValue(cipher, fileKey);
-  const dict = encryptDictionary(context, cipher, owner, user, perms);
+  const { cipher, fileKey } = shape.revision === 6
+    ? await sealRevision6(wanted, documentId)
+    : await sealRevision4(wanted, documentId);
+  const dict = encryptDictionary(context, cipher, shape);
   discardEncryptDicts(context);
   const ref = context.register(dict);
   context.trailerInfo.Encrypt = ref;
@@ -1369,7 +1587,7 @@ export async function encryptDocument(
   ids.push(idValue);
   context.trailerInfo.ID = ids;
 
-  const { streams, strings } = await cipherIndirectObjects(context, cipher, fileKey, ref);
+  const { streams, strings } = await cipherIndirectObjects(context, cipher, fileKey);
   return { strength: cipher.strength, streams, strings };
 }
 
@@ -1394,7 +1612,7 @@ function discardEncryptDicts(context: PDFContext): void {
 }
 
 /**
- * Cipher every indirect object of a context except the encryption dictionary.
+ * Cipher every indirect object of a context except the ones the spec exempts.
  *
  * The one walk both write paths take, so a file this app ciphered and a file it
  * re-sealed with its source's key cannot drift apart in what they leave in the
@@ -1404,19 +1622,23 @@ async function cipherIndirectObjects(
   context: PDFContext,
   cipher: Cipher,
   fileKey: Uint8Array,
-  encryptRef: PDFRef,
 ): Promise<{ streams: number; strings: number }> {
   // The method the cipher carries, not the one this module prefers to write: a
   // re-sealed RC4-128 file has to come back RC4-128, or its `/CFM` would be a
   // claim the bytes do not honour — the exact defect `protect` was written up for.
   const method = cipher.stream;
   if (!method) return { streams: 0, strings: 0 };
+  // The same set the read path skips, and for the same reasons: the encryption
+  // dictionary holds the `/O`, `/U`, `/OE` and `/UE` that *are* the keys, and with
+  // `/EncryptMetadata false` the `/Info` dictionary and the user metadata stream
+  // stay in the clear. Ciphering them here while writing that flag would hand back
+  // a file whose dictionary promises readable metadata over bytes only a key can
+  // reach — and `decryptDocument` would leave them ciphered on the way back in.
+  const exempt = exemptRefs(context, cipher);
   let streams = 0;
   let strings = 0;
   for (const [objectRef, object] of context.enumerateIndirectObjects()) {
-    // The encryption dictionary is exempt from the cipher it describes (ISO
-    // 32000-1 §7.3.2.1): ciphering `/O` or `/U` would make the file unopenable.
-    if (refKey(objectRef) === refKey(encryptRef)) continue;
+    if (exempt.has(refKey(objectRef))) continue;
     if (object instanceof PDFStream) {
       // `getContents()` is the *encoded* payload: a `PDFFlateStream` deflates on
       // demand, and the cipher belongs outside the flate, not inside it.
@@ -1517,7 +1739,7 @@ export async function resealDocument(
   context.trailerInfo.ID = ids;
 
   if (!lock.cipher) return { streams: 0, strings: 0 };
-  return cipherIndirectObjects(context, lock.cipher, lock.fileKey, ref);
+  return cipherIndirectObjects(context, lock.cipher, lock.fileKey);
 }
 
 /** Copy a parsed value out of one context and into another, by value. */

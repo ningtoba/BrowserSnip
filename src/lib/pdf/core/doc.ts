@@ -46,7 +46,7 @@ import type {
 } from '@maxwbh/pdf-lib';
 import { cropBox } from './pages';
 import { decryptDocument, encryptDocument, resealDocument, retainedLock } from './crypto';
-import type { CipherStrength } from './crypto';
+import type { CipherStrength, WritableStrength } from './crypto';
 import {
   countOutlineNodes,
   readOutline,
@@ -241,6 +241,13 @@ export interface PasswordOptions {
   userPassword?: string;
   ownerPassword?: string;
   permissions?: PDFPermissions;
+  /**
+   * The strength to write. Absent means AES-128, which is the strength this app
+   * has measured against five outside readers; `AES-256` is offered because
+   * `core/crypto` now writes it *and* reads it back, and is checked against pypdf
+   * and MuPDF by `docs/research/aes256-write-readers.py`.
+   */
+  cipher?: WritableStrength;
 }
 
 /**
@@ -271,7 +278,7 @@ export function permissionsToFlags(permissions: PDFPermissions | undefined): num
 }
 
 /**
- * The password gate, the `/P` flags **and the cipher**: AES-128, revision 4.
+ * The password gate, the `/P` flags **and the cipher**: AES-128 or AES-256.
  *
  * `@maxwbh/pdf-lib`'s own `save({ encrypt })` registers an `/Encrypt` dictionary
  * and a document `/ID`, and its `PDFSecurity` computes `/O` and `/U` to spec —
@@ -280,15 +287,14 @@ export function permissionsToFlags(permissions: PDFPermissions | undefined): num
  * is why this file used to write the crypt filter `/None` out loud: the honest
  * shape for an engine that ran no cipher.
  *
- * The cipher exists now, in `core/crypto.ts:encryptDocument`, at the one strength
- * this module has both written and read back against an outside tool — `/V 4 /R 4`
- * with `/CF /StdCF /CFM /AESV2 /Length 16`, selected by `/StmF` and `/StrF`, and
- * every stream and string ciphered on the way out. The read path is wider than the
- * write path: AES-256 (`/V 5 /R 6`) is undone on the way in since the revision-6
- * derivations landed, and a file that arrives at 256 bits leaves at 256 bits
- * because an edit carries the source's lock rather than this writer's, but writing
- * a strength this app has never round-tripped outside itself would turn a protected
- * download into blank paper the moment the user re-opened it here.
+ * The cipher exists now, in `core/crypto.ts:encryptDocument`, at the two strengths
+ * this module has written *and* read back against an implementation that is not
+ * this app's: `/V 4 /R 4` with `/CF /StdCF /CFM /AESV2 /Length 16`, and `/V 5 /R 6`
+ * with `/CF /StdCF /CFM /AESV3 /Length 32`, either one selected by `/StmF` and
+ * `/StrF`, with every stream and string ciphered on the way out. RC4-128 is read
+ * but never written: this app has no outside measurement of its own RC4 output,
+ * and writing a strength nobody has confirmed would turn a protected download into
+ * blank paper the moment the user re-opened it here.
  *
  * The dictionary is assembled there rather than by `save({ encrypt })` for the
  * same reason the `/None` gate was: `setupEncryption` writes a cipher claim it
@@ -316,13 +322,21 @@ export async function saveEncrypted(
   // reaching into the vendor's private form cache; the second save is the file.
   await sealWriterCreatures(doc);
 
-  // `/V 4 /R 4`, `/CF /StdCF /CFM /AESV2 /Length 16`, `/O`, `/U`, `/Perms` and the
-  // document `/ID` the three hashes are derived from are written there, along
+  // `/V`+`/R`, the crypt filter, `/O`, `/U`, the revision-6 `/OE` and `/UE`,
+  // `/Perms` and the document `/ID` they are derived from are written there, along
   // with every ciphered stream and string; `save()` alone never touches them.
+  //
+  // `/EncryptMetadata` is decided here rather than left to the writer's default:
+  // the title, author and XMP packet are part of what an open password is hiding,
+  // and every outside fixture this app's reader was measured against either writes
+  // `true` or omits the key (which means `true`). A file that left the metadata in
+  // the clear would be a different promise, so it is not this app's default.
   await encryptDocument(doc, {
     userPassword: user,
     ownerPassword: owner,
     permissions: permissionsToFlags(opts.permissions),
+    strength: opts.cipher ?? 'AES-128',
+    encryptMetadata: true,
   });
 
   return doc.save({ useObjectStreams: false, updateFieldAppearances: false });

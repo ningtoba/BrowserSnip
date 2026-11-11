@@ -26,10 +26,11 @@
  *       PROTECT_PROBE_DIR=/tmp/pb npx vitest run tests/pdf/protect-spec.test.ts
  *       python3 docs/research/protect-readers.py /tmp/pb "Secret Alice 42 Bravo" open-sesame
  *
- * One strength is written, because one strength is read: AES-128 at `/V 4 /R 4`.
- * AES-256 is asserted *absent* rather than assumed — `/R 6` needs `/OE`, `/UE` and
- * a different `/U`, none of which this module derives, and ciphertext the app
- * cannot open is half a feature.
+ * One strength is written *here*, because one strength is what this seam was
+ * first proved with: AES-128 at `/V 4 /R 4`. AES-256 (`/V 5 /R 6`, with `/OE`,
+ * `/UE` and the revision-6 `/U`) is written and read too, and its evidence is
+ * `tests/pdf/crypto-aes256-write.test.ts` — which feeds this module a foreign
+ * file's own salts and asks for that file's own bytes back. RC4-128 stays read-only.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -530,7 +531,12 @@ describe('an edit keeps the protection it came with, rather than a new one', () 
 describe('encryptDocument, asked directly', () => {
   it('counts what it ciphered and reports the strength it wrote', async () => {
     const doc = await sealed(await sample());
-    const written = await encryptDocument(doc, { userPassword: USER, ownerPassword: OWNER, permissions: -3392 });
+    const written = await encryptDocument(doc, {
+      userPassword: USER, ownerPassword: OWNER, permissions: -3392,
+      // The request names the strength and the metadata flag rather than inheriting
+      // them: `encryptDocument` writes what it is told and refuses to guess.
+      strength: 'AES-128', encryptMetadata: true,
+    });
     // Two page content streams: every stream this document holds.
     expect(written).toEqual({ strength: 'AES-128', streams: 2, strings: expect.any(Number) });
     expect(written.strings).toBeGreaterThan(0);
