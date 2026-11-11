@@ -1,0 +1,17 @@
+marked 1 inputs; intake is the drop zone
+document in: /tmp/eight/ruled.pdf
+fields before the fold: {"groups":["Certificate (PEM or P12)"],"boxes":[],"fold":"▸\n7 MORE OPTIONS"}
+fold: opened ▸
+7 MORE OPTIONS
+fields after the fold : {"groups":["Certificate (PEM or P12)","Private key (PEM)"],"boxes":["tool-field-passphrase=\"\"","tool-field-reason=\"I approve this doc\"","tool-field-location=\"\"","tool-field-contact=\"\"","checkbox=\"on\"","tool-field-page=\"1\""],"fold":"▾\nFEWER OPTIONS"}
+cert field: 1 file chosen / ada.pem / ✕
+key field : 1 file chosen / ada.key.pem / ✕
+reason  : tool-field-reason=I approve this document
+location: tool-field-location=Cambridge
+page    : tool-field-page=2
+visible : no visible control (left as it is)
+screen  : {"button":"Sign","enabled":true,"blocker":["Only needed when the key or bundle is encrypted. It is used once to sign and then dropped."]}
+run: Sign
+wrote /tmp/eight/digital-deployed.pdf 19808 bytes
+result screen: Digital Signature ;; Digital Signature finished in this tab — nothing was uploaded. ;; Page 1 of 3 of ruled_signed.pdf, drawn in this tab — a picture of the file, not the file itself. ;; ruled_signed.pdf ;; Signed as Ada Lovelace using SHA-256. The signature covers 1.38 KiB of the file and verifies against it.
+console errors []

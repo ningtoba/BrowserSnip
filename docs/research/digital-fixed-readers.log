@@ -1,0 +1,27 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+pypdf over digital-fixed.pdf: 1 form field(s)
+  '/Signature5560': /FT=/Sig /V=present /M=None
+pikepdf: /AcroForm in Root = True，/NeedAppearances=None
+  field /Signature5560 /FT=/Sig /Subtype=None /Rect=[] /Kids=1 /F=None /V=yes
+  signature dictionary: /Filter=/Adobe.PPKLite /SubFilter=/adbe.pkcs7.detached /ByteRange=[0, 2735, 19119, 689]
+  /Name=/Signature5560 /Location=/Cambridge /Reason=/I approve this document /M=/D:20261111233653Z /Cert=None /Prop_Build=None
+  /Contents reserves 8192 bytes; 1409 of them are the CMS blob. The signature covers 3424 of the file's 19808 bytes (the gap is the placeholder itself)
+openssl cms -verify over the byte range as written: exit=0 · CMS Verification successful
+openssl names the certificate inside the blob: CMS Verification successful
+certificate the blob carries: exit=0 · Certificate: |     Data: |         Version: 3 (0x2) |         Serial Number: |             79:b7:1d:60:f9:dc:65:62:dc:2a:38:69:fb:b4:e0:42:5b:53:26:d8 |         Signature Algorithm: sha256WithRSAEncryption |         Issuer: C=GB, O=BrowserSnip, CN=Ada Lovelace
+digest/signature algorithms inside the CMS blob: exit=0/0 · ['1014:d=6  hl=2 l=   9 prim: OBJECT            :sha256', '1057:d=7  hl=2 l=   9 prim: OBJECT            :messageDigest', '1136:d=6  hl=2 l=   9 prim: OBJECT            :rsaEncryption', '268:d=8  hl=2 l=   9 prim: OBJECT            :rsaEncryption', '30:d=5  hl=2 l=   9 prim: OBJECT            :sha256', '643:d=6  hl=2 l=   9 prim: OBJECT            :sha256WithRSAEncryption']
+certificate the blob carries: subject=C=GB, O=BrowserSnip, CN=Ada Lovelace | issuer=C=GB, O=BrowserSnip, CN=Ada Lovelace
+MuPDF error: syntax error: invalid key in dict
+
+tamper middle of the first span (offset 40): exit=4 · CMS Verification failure / 40379369D97F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failu · MuPDF still opens it (0 pages)
+tamper last signed byte of the first span (offset 2734): exit=4 · CMS Verification failure / 40F7F004157F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failu
+tamper inside the second span (offset 19129): exit=4 · CMS Verification failure / 40D7EC358B7F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failu
+tamper in the signature placeholder itself (offset 2739): exit=0 · CMS Verification successful
+
+MuPDF 1.28.2: 3 pages, needs_pass=0, form=1
+  page 1 (595x842): annots=[] widgets=[] · render 595x842 px, 627 dark pixels
+  page 2 (595x842): annots=[] widgets=[('', 'Signature', (36.0, 36.0, 256.0, 126.0))] · render 595x842 px, 652 dark pixels
+  page 3 (400x300): annots=[] widgets=[] · render 400x300 px, 675 dark pixels
+
+pdfinfo: exit=0 ['Pages:           3', 'Encrypted:       no', 'Page size:       595 x 842 pts (A4)']
+poppler text: planted sentences = [1, 1, 1] (exit 0)

@@ -785,7 +785,17 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const signed = await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]);
     const bytes = await bytesOf(signed);
     expect(signed.message).toMatch(/Signed as BrowserSnip Edge Tester/);
-    expect(signed.message).toMatch(/verifies against it/);
+    // The sentence states what `/ByteRange` covers, not how big the signature blob is.
+    expect(signed.message).toMatch(/verifies against those bytes/);
+    const [signatureRow] = await readSignatures(bytes);
+    const [rangeStart, lengthA, secondStart, lengthB] = signatureRow.byteRange!;
+    expect(rangeStart).toBe(0);
+    expect(secondStart + lengthB).toBe(bytes.length);
+    const perKib = (value: number) => value / 1024;
+    const stated = [...String(signed.message).matchAll(/([\d.]+) (B|KiB|MB)/g)]
+      .map((match) => perKib(Number(match[1]) * (match[2] === 'KiB' ? 1024 : 1)));
+    expect(stated.some((value) => Math.abs(value - perKib(lengthA + lengthB)) < 0.06),
+      `the message does not name the covered length: ${signed.message}`).toBe(true);
     expect(signed.warnings.join(' ')).not.toMatch(/could not be read back|does not verify/i);
 
     const outcome = await run('validate-signature-pdf', {}, [pdfFile(bytes, 'contract_signed.pdf')]);

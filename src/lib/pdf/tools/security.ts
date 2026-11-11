@@ -1430,13 +1430,24 @@ export const securityTools: PdfToolDefinition[] = [
       if (readBack.length > 0 && mine?.error) {
         warnings.push(`The saved signature could not be parsed: ${mine.error}`);
       }
+      const [, first, secondStart, secondLength] = result.byteRange;
+      const covered = first + secondLength;
+      const fileLength = secondStart + secondLength;
+      // What the digest covers is the file outside the placeholder the signature is
+      // written into - not the size of the signature, which is what this sentence
+      // used to report (`1.38 KiB of the file` for a 19.4 KiB file whose signed span
+      // was 3.34 KiB). A claim about coverage has to come from `/ByteRange`.
+      const coverage = result.byteRange[0] === 0
+        ? `covers ${formatBytes(covered)} of the ${formatBytes(fileLength)} file - every byte except the `
+          + `${formatBytes(secondStart - first)} placeholder the signature itself sits in`
+        : `covers ${formatBytes(covered)} of the ${formatBytes(fileLength)} file in ${result.byteRange.length / 2} spans`;
       return {
         kind: 'pdf',
         bytes: result.bytes,
         // `signDocument` saves this same document and fills the `/ByteRange`
         // placeholder in place: the signature adds a field, never a page.
         pages: input.doc.getPageCount(),
-        message: `Signed as ${result.signer}${result.hash ? ` using ${result.hash}` : ''}. The signature covers ${formatBytes(result.contentsLength)} of the file${readBack.length > 0 && mine?.digestMatches ? ' and verifies against it' : ''}.`,
+        message: `Signed as ${result.signer}${result.hash ? ` using ${result.hash}` : ''}. The signature ${coverage}${readBack.length > 0 && mine?.digestMatches ? ', and verifies against those bytes' : ''}.`,
         warnings,
       };
     },
