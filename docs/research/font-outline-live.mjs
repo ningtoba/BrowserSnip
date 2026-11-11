@@ -10,6 +10,14 @@
  * `gs.js` and call it a day. This probe waits on one thing only — the app's own
  * `section[aria-label="Result"]` card, or its `[role=alert]` — presses the
  * card's Download button, and takes the bytes that go through `downloadBlob`.
+ *
+ * Status: the deployed evidence in `font-outline-proof.log` STEP 4 came from
+ * `colour-rail.mjs`, which did land 3 runs and 3 files. This probe has not yet
+ * produced its own clean pass in this sandbox — an earlier run asked for a CDP
+ * page target and never got one, and nothing was measured (which is a fact about
+ * the probe, not about the site). Other automation was on the machine at the
+ * time: ten Chromium processes from a different profile, `/tmp/hns-9614`, none of
+ * them started here. The loop is bounded and loud now.
  */
 import { spawn } from 'node:child_process';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -18,7 +26,6 @@ const CHROME = process.env.CHROME ?? '/home/nekophobia/.cache/ms-playwright/chro
 const BASE = process.env.BASE ?? 'https://www.browsersnip.com';
 const PDF = process.env.PDF;
 const OUT = process.env.OUT;
-const LABEL = process.env.LABEL ?? 'Outline';
 const PORT = Number(process.env.PORT ?? 9831);
 const WAIT_MS = Number(process.env.WAIT_MS ?? 420_000);
 /** Stage lines, flushed: a probe that dies quietly teaches nothing. */
@@ -31,17 +38,40 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
   `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/fo-live-${PORT}`, 'about:blank',
 ], { stdio: 'ignore' });
+note(`spawned ${CHROME}`);
 
 let ws;
 for (let attempt = 0; attempt < 90 && !ws; attempt++) {
   try {
-    const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+    // Bounded, because an unbounded `fetch` here is what made this probe silent:
+    // a Chromium that has claimed the port but not yet answered stalls the request
+    // indefinitely, and a probe that prints nothing looks like a site that does
+    // nothing. A dead endpoint is a measurement, not a hang.
+    const response = await fetch(`http://127.0.0.1:${PORT}/json/list`, { signal: AbortSignal.timeout(4000) });
+    const list = await response.json();
     const page = list.find((target) => target.type === 'page');
     if (page) ws = new WebSocket(page.webSocketDebuggerUrl);
-  } catch { /* chrome is still starting */ }
+    else if (attempt % 10 === 0) note(`no page target yet (${list.length} targets)`);
+  } catch (error) {
+    if (attempt % 10 === 0) note(`cdp endpoint not up: ${String(error).slice(0, 80)}`);
+  }
   await sleep(400);
 }
-await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+if (!ws) {
+  chrome.kill('SIGKILL');
+  throw new Error(`no CDP page target on ${PORT} within 36 s — the rig, not the site: nothing was measured`);
+}
+// The handshake is bounded too: a Chromium that answers `/json/list` but never
+// completes the WebSocket is exactly how this probe once ran silent for 260 s,
+// and "my measurement returned nothing" must not be readable as "the site is down".
+await Promise.race([
+  new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; }),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('CDP WebSocket handshake unfinished after 20 s')), 20_000)),
+]).catch((error) => {
+  chrome.kill('SIGKILL');
+  throw new Error(`${error.message} — the rig, not the site: nothing was measured`);
+});
+note('attached to the page over CDP');
 
 let nextId = 1;
 const pending = new Map();
