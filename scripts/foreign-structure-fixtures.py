@@ -395,6 +395,8 @@ def build_resources(mode: str) -> dict:
         inherited  `/Resources` sits on the `/Pages` node (§7.7.3.3 inherited attrs)
         xobject    the page draws one Form XObject that carries the resources itself
         shared     every page names the *same* resource dictionary object
+        subset     the two embedded faces carry a `BCDFEE+` subsetting tag, as
+                   LibreOffice and Acrobat write them
     """
     import pikepdf
 
@@ -417,6 +419,25 @@ def build_resources(mode: str) -> dict:
     elif mode == "shared":
         for page in kids[1:]:
             page["/Resources"] = resources
+    elif mode == "subset":
+        # The tag a subsetting producer puts in front of the face name. MuPDF embeds
+        # these two faces whole, so the prefix is added by hand over the libqpdf model
+        # — which is exactly the spelling (`BCDFEE+Faker`, `ABCDEA+FontName`) that
+        # LibreOffice and Acrobat write and that `listFonts` splits into `name` and
+        # `subset`.
+        prefixes = {"/noto": "BCDFEE+", "/cff": "ABCDEA+"}
+        for key, font in first["/Resources"]["/Font"].items():
+            prefix = prefixes.get(str(key))
+            if prefix is None:
+                continue
+            for node in [font, *(font.get("/DescendantFonts") or [])]:
+                if "/BaseFont" in node:
+                    node["/BaseFont"] = pikepdf.Name(
+                        f"/{prefix}{str(node['/BaseFont']).lstrip('/')}")
+            descriptor = (font.get("/DescendantFonts") or [font])[0].get("/FontDescriptor")
+            if descriptor is not None and "/FontName" in descriptor:
+                descriptor["/FontName"] = pikepdf.Name(
+                    f"/{prefix}{str(descriptor['/FontName']).lstrip('/')}")
     elif mode == "xobject":
         contents = first["/Contents"]
         entries = contents if isinstance(contents, pikepdf.Array) else [contents]
@@ -1018,6 +1039,11 @@ def verify(name: str) -> dict:
         "toc": len(doc.get_toc()),
         "labels": doc.get_page_labels(),
         "ocgs": sorted(doc.get_ocgs()),
+        # `get_ocgs()` is keyed by xref, so the names come from its values: this is the
+        # column `listLayers` is compared against, and an xref list proves nothing about
+        # the words a user reads.
+        "ocg_names": sorted(
+            str((details or {}).get("name", "")) for details in doc.get_ocgs().values()),
         "annots": sorted({a.type[1] for i in range(doc.page_count)
                           for a in (doc.load_page(i).annots() or [])}),
         "widgets": widget_names(doc),
@@ -1069,6 +1095,7 @@ def main() -> None:
         "resources-inherited.pdf": lambda: build_resources("inherited"),
         "resources-xobject.pdf": lambda: build_resources("xobject"),
         "resources-shared.pdf": lambda: build_resources("shared"),
+        "resources-subset.pdf": lambda: build_resources("subset"),
         "script-openaction-inline.pdf": lambda: build_scripts("openaction-inline"),
         "script-openaction-ref.pdf": lambda: build_scripts("openaction-ref"),
         "script-openaction-array.pdf": lambda: build_scripts("openaction-array"),
@@ -1108,6 +1135,8 @@ def main() -> None:
                                   "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (Form XObject wrap)"),
         "resources-shared.pdf": ("three pages naming the *same* /Resources object — the deduplication case",
                                  "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (shared resource dict)"),
+        "resources-subset.pdf": ("the two embedded faces renamed with a BCDFEE+/ABCDEA+ subsetting tag",
+                                 "MuPDF 1.28.2 (pages, embedded faces) + libqpdf 12.3.2 (subset tags)"),
         "script-openaction-inline.pdf": ("catalogue /OpenAction with the JavaScript action inline",
                                          "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction)"),
         "script-openaction-ref.pdf": ("catalogue /OpenAction naming one action behind a reference",

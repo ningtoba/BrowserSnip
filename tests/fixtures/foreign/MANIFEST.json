@@ -85,6 +85,12 @@
   "sha256": "3728a1c2490c961b4652563b814f773a3c2920f94a121c5add4ed941fbd36ab2",
   "shape": "three pages naming the *same* /Resources object — the deduplication case"
  },
+ "resources-subset.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages, embedded faces) + libqpdf 12.3.2 (subset tags)",
+  "sha256": "31431439abba97c3a8f7881c86b16941db67c9571c93f2b6b946776e3b69fb36",
+  "shape": "the two embedded faces renamed with a BCDFEE+/ABCDEA+ subsetting tag"
+ },
  "resources-xobject.pdf": {
   "payloads": {},
   "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (Form XObject wrap)",
