@@ -1,0 +1,2800 @@
+{
+ "labels-absent.pdf": {
+  "shape": "no /PageLabels at all — the negative control",
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-kids-deep.pdf": {
+  "shape": "a /Kids tree whose leaves sit under a second /Kids level",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 6,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "4",
+    "Ex A",
+    "6"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  },
+  "outside_after_freeze": {
+   "pages": 6,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "4",
+    "Ex A",
+    "6"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  }
+ },
+ "labels-kids-mixed.pdf": {
+  "shape": "/Kids + /Limits number tree, one style per section",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 4,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    },
+    {
+     "startpage": 5,
+     "prefix": "x",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "I",
+    "4",
+    "c",
+    "xA"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  },
+  "outside_after_freeze": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 4,
+     "prefix": "",
+     "firstpagenum": 3,
+     "style": "a"
+    },
+    {
+     "startpage": 5,
+     "prefix": "x",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "I",
+    "II",
+    "c",
+    "xA"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "I",
+    "4",
+    "c",
+    "xA"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  }
+ },
+ "labels-kids-prefix.pdf": {
+  "shape": "a /Kids tree carrying /P prefixes and /St offsets",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "<A7>",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "A-",
+     "firstpagenum": 21,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "<A7>I",
+    "<A7>II",
+    "A-21",
+    "A-22"
+   ],
+   "pypdf_labels": [
+    "§I",
+    "2",
+    "A-21",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "<A7>",
+     "firstpagenum": 1,
+     "style": "R"
+    },
+    {
+     "startpage": 2,
+     "prefix": "A-",
+     "firstpagenum": 21,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "<A7>I",
+    "<A7>II",
+    "A-21",
+    "A-22"
+   ],
+   "pypdf_labels": [
+    "§I",
+    "2",
+    "A-21",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-native-mupdf.pdf": {
+  "shape": "the label ranges MuPDF's own set_page_labels writes (flat /Nums, inline dicts) — control",
+  "producer": "MuPDF 1.28.2 (PyMuPDF set_page_labels)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "x-",
+     "firstpagenum": 7,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "x-",
+     "firstpagenum": 7,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "x-7",
+    "x-8"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-A-st2.pdf": {
+  "shape": "flat /Nums, /S /A with /St 2 (uppercase alphabetic, offset start)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 2,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "pypdf_labels": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 2,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "pypdf_labels": [
+    "B",
+    "C",
+    "D",
+    "E"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-R-st4.pdf": {
+  "shape": "flat /Nums, /S /R with /St 4 (uppercase roman, offset start)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 4,
+     "style": "R"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "pypdf_labels": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 4,
+     "style": "R"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "pypdf_labels": [
+    "IV",
+    "V",
+    "VI",
+    "VII"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-a.pdf": {
+  "shape": "flat /Nums, /S /a (lowercase alphabetic)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "a"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "pypdf_labels": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "a"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "pypdf_labels": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-d.pdf": {
+  "shape": "flat /Nums, /S /D with /St 1 — a genuinely arabic file",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-empty-dict.pdf": {
+  "shape": "a flat /Nums whose range dictionary is empty — no /S, no /P, no /St",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-inline-dicts.pdf": {
+  "shape": "flat /Nums whose range dictionaries are inline, not referenced",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 4,
+     "prefix": "Ex ",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  },
+  "outside_after_freeze": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 4,
+     "prefix": "Ex ",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  }
+ },
+ "labels-nums-mixed.pdf": {
+  "shape": "flat /Nums, a mixed sequence across three sections (/r, /D, /A + /P)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 4,
+     "prefix": "Ex ",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  },
+  "outside_after_freeze": {
+   "pages": 6,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    },
+    {
+     "startpage": 2,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 4,
+     "prefix": "Ex ",
+     "firstpagenum": 1,
+     "style": "A"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "1",
+    "2",
+    "Ex A",
+    "Ex B"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "6"
+  }
+ },
+ "labels-nums-prefix-only.pdf": {
+  "shape": "a range with /P and no /S — a prefix-only label",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "Cover ",
+     "firstpagenum": 1
+    },
+    {
+     "startpage": 2,
+     "prefix": "of ",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "pypdf_labels": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "Cover ",
+     "firstpagenum": 1
+    },
+    {
+     "startpage": 2,
+     "prefix": "of ",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "pypdf_labels": [
+    "Cover ",
+    "Cover ",
+    "of i",
+    "of ii"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-prefix.pdf": {
+  "shape": "flat /Nums with /P prefixes on a decimal and a roman range",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 2,
+     "prefix": "<A7>",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i-1",
+    "i-2",
+    "<A7>i",
+    "<A7>ii"
+   ],
+   "pypdf_labels": [
+    "i-1",
+    "i-2",
+    "§i",
+    "§ii"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "i-",
+     "firstpagenum": 1,
+     "style": "D"
+    },
+    {
+     "startpage": 2,
+     "prefix": "<A7>",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i-1",
+    "i-2",
+    "<A7>i",
+    "<A7>ii"
+   ],
+   "pypdf_labels": [
+    "i-1",
+    "i-2",
+    "§i",
+    "§ii"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-r.pdf": {
+  "shape": "flat /Nums, /S /r (lowercase roman)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 1,
+     "style": "r"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "pypdf_labels": [
+    "i",
+    "ii",
+    "iii",
+    "iv"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "labels-nums-unknown-style.pdf": {
+  "shape": "a range whose /S is a style this format does not define (/G)",
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "outside": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 2,
+     "style": "G"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [
+    {
+     "startpage": 0,
+     "prefix": "",
+     "firstpagenum": 2,
+     "style": "G"
+    }
+   ],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-absent.pdf": {
+  "shape": "no /Outlines at all — empty, not null-everywhere",
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-action-array.pdf": {
+  "shape": "item /A /GoTo with the /D destination array inline (no name tree involved)",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-action-name.pdf": {
+  "shape": "item /A /GoTo whose /D is a NAME into a referenced /Dests value",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-action-string.pdf": {
+  "shape": "item /A /GoTo whose /D is a STRING into the /Names → /Dests tree",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-dest-and-action.pdf": {
+  "shape": "an item carrying /Dest **and** /A on the same entry (which one a reader honours)",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     1
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     1
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-dest-name.pdf": {
+  "shape": "item /Dest written as a NAME object naming /Dests, values behind references",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-dests-inline.pdf": {
+  "shape": "/Dests flat /Names with the destination array inline, item /Dest a string",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-dests-kids-ref.pdf": {
+  "shape": "/Dests as a /Kids + /Limits tree with referenced destinations",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests tree)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-dests-ref.pdf": {
+  "shape": "/Dests flat /Names with each destination behind a reference — the reported failure",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     0
+    ],
+    [
+     2,
+     "Section One.A",
+     0
+    ],
+    [
+     1,
+     "Chapter Two",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-empty.pdf": {
+  "shape": "/Outlines present with /Count 0 and no /First — empty, not null-everywhere",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-flat-chain.pdf": {
+  "shape": "a flat /First → /Next chain of two items with inline /Dest arrays — the control",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     2
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Chapter Two",
+     "page": 1
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     1,
+     "Chapter Two",
+     2
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Chapter Two",
+     "page": 1
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-names-dests-dict.pdf": {
+  "shape": "/Names → /Dests whose value is a destination DICTIONARY behind a reference (what pypdf's add_named_destination writes)",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-names-dests-kids-ref.pdf": {
+  "shape": "the PDF 1.4 location: /Names → /Dests as a /Kids tree with referenced destinations",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-native-mupdf.pdf": {
+  "shape": "MuPDF's own /Outlines: /A /GoTo with the /D array inline, two levels, /XYZ destinations",
+  "producer": "MuPDF 1.28.2 (PyMuPDF set_toc)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-native-pikepdf.pdf": {
+  "shape": "libqpdf's own outline: /Dest as an inline array, nesting through /First and /Parent",
+  "producer": "libqpdf 12.3.2 (pikepdf open_outline)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-native-pypdf.pdf": {
+  "shape": "pypdf's own outline: /A /GoTo with an inline /D array, nested through /First",
+  "producer": "pypdf 6.14.2 (PdfWriter.add_outline_item)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     1
+    ],
+    [
+     2,
+     "Section One.A",
+     2
+    ],
+    [
+     1,
+     "Chapter Two",
+     3
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": 0
+    },
+    {
+     "title": "Section One.A",
+     "page": 1
+    },
+    {
+     "title": "Chapter Two",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
+ "outlines-targetless.pdf": {
+  "shape": "items with no destination at all: a heading, a /URI action, and an /SE-only item",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     -1
+    ],
+    [
+     2,
+     "Section One.A",
+     -1
+    ],
+    [
+     1,
+     "Chapter Two",
+     -1
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Chapter One",
+     -1
+    ],
+    [
+     2,
+     "Section One.A",
+     -1
+    ],
+    [
+     1,
+     "Chapter Two",
+     -1
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Chapter One",
+     "page": null
+    },
+    {
+     "title": "Section One.A",
+     "page": null
+    },
+    {
+     "title": "Chapter Two",
+     "page": null
+    }
+   ],
+   "pypdf_named_dests": [],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ }
+}

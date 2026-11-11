@@ -1,0 +1,200 @@
+{
+ "labels-absent.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "sha256": "66bd5f4450a68f2b83c0e241a42bd52c1b04c3c6c9e14a871c46a40554f0babc",
+  "shape": "no /PageLabels at all — the negative control"
+ },
+ "labels-kids-deep.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "136e3e54664e07150b980ab36e0e97454f7b1911a5296ecd3336cc53e73debab",
+  "shape": "a /Kids tree whose leaves sit under a second /Kids level"
+ },
+ "labels-kids-mixed.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "41e6e7c378e61190996f5575806234dfd588497f3b03f4dddea4ea76ed305f0f",
+  "shape": "/Kids + /Limits number tree, one style per section"
+ },
+ "labels-kids-prefix.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "ddc2bf552b8b7243886263669e81eabdb11dcaa4766da4862e85414b30d7d42f",
+  "shape": "a /Kids tree carrying /P prefixes and /St offsets"
+ },
+ "labels-native-mupdf.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF set_page_labels)",
+  "sha256": "58aa6ff062f0baa87f707deaf8d83cde3082ef89262c8d1f7524a590f093d7a9",
+  "shape": "the label ranges MuPDF's own set_page_labels writes (flat /Nums, inline dicts) — control"
+ },
+ "labels-nums-A-st2.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "cb1ee37395cc84d75d83aca02735499ecce0e85c4f7a81b76e4c352110518b43",
+  "shape": "flat /Nums, /S /A with /St 2 (uppercase alphabetic, offset start)"
+ },
+ "labels-nums-R-st4.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "1a453c01c6bab4bef481463afa0156bda90fcf68395e2f6f365896690318011d",
+  "shape": "flat /Nums, /S /R with /St 4 (uppercase roman, offset start)"
+ },
+ "labels-nums-a.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "c41659e8c312c85bc8b9f1ae9fecf94400e9f0de0e3d6dcaa42d780517605139",
+  "shape": "flat /Nums, /S /a (lowercase alphabetic)"
+ },
+ "labels-nums-d.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "25550ea8ba4a95460a77d441eb2d7b9343a0a346150fcc4aea345026d31dcd93",
+  "shape": "flat /Nums, /S /D with /St 1 — a genuinely arabic file"
+ },
+ "labels-nums-empty-dict.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "cb1f0ea2a19df19b819005feaeca3cf86bdf03f75a8bb604a5e3b03b6636065f",
+  "shape": "a flat /Nums whose range dictionary is empty — no /S, no /P, no /St"
+ },
+ "labels-nums-inline-dicts.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "a76fe18e5f46fc5b6eb1654d619e8883efd856061ebeb98df596de08acfd607a",
+  "shape": "flat /Nums whose range dictionaries are inline, not referenced"
+ },
+ "labels-nums-mixed.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "0b4dfa438ad86896b335cbb53e9b1e33c9a2e2074b12ee871de93c9d6bec1995",
+  "shape": "flat /Nums, a mixed sequence across three sections (/r, /D, /A + /P)"
+ },
+ "labels-nums-prefix-only.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "d7c9f1fbc972f063588a63a3e32e92ba9accec006c6f1d3ad607a7ede5a22592",
+  "shape": "a range with /P and no /S — a prefix-only label"
+ },
+ "labels-nums-prefix.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "2ac9464c235a287a78f91be4f8a1548cb40e43b35db92a97e61dd8c35d4d92ad",
+  "shape": "flat /Nums with /P prefixes on a decimal and a roman range"
+ },
+ "labels-nums-r.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "95047bbff892e98f01c330831c9860a59a0c093d2ede8722bf46d2cca11a5a0f",
+  "shape": "flat /Nums, /S /r (lowercase roman)"
+ },
+ "labels-nums-unknown-style.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "f88e938a5f7ea61abae4d3db332936dce964a03ef0902f6f5b3d8bf873be15bd",
+  "shape": "a range whose /S is a style this format does not define (/G)"
+ },
+ "outlines-absent.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "sha256": "6665ac2311554e71b3dd502b85d483afa490c948072b44845d67b3ec493682c3",
+  "shape": "no /Outlines at all — empty, not null-everywhere"
+ },
+ "outlines-action-array.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "sha256": "e3a057ec1180bb1059e3accc9b541c7cfcb9c9bb670f99bf20ea443b04552a7e",
+  "shape": "item /A /GoTo with the /D destination array inline (no name tree involved)"
+ },
+ "outlines-action-name.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "7580b031a50dcda24896fdda7200f0bf2da2dc32c14e13a0a2a71c9a96fd23a7",
+  "shape": "item /A /GoTo whose /D is a NAME into a referenced /Dests value"
+ },
+ "outlines-action-string.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "sha256": "a19ea9d3f27147e12a31b6edfb6687be9e2e1c3c0f5249295c17d5878b850e90",
+  "shape": "item /A /GoTo whose /D is a STRING into the /Names → /Dests tree"
+ },
+ "outlines-dest-and-action.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "d97022ba90099a481143f953f056cc9de2d15c72d47fabb53edce31edb6d6f5f",
+  "shape": "an item carrying /Dest **and** /A on the same entry (which one a reader honours)"
+ },
+ "outlines-dest-name.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "6914dccacd9261a6bfd251657a0117edad533f2f329312a119be95bf4490466e",
+  "shape": "item /Dest written as a NAME object naming /Dests, values behind references"
+ },
+ "outlines-dests-inline.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "ce9159a3d918fe1c83cdb211fc476e6b9170c62fadc9dc98b724ee05009a3d57",
+  "shape": "/Dests flat /Names with the destination array inline, item /Dest a string"
+ },
+ "outlines-dests-kids-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests tree)",
+  "sha256": "f35a31604ffd12954832b5edcf3592e228a8f41f8218482275f8e40e827ade05",
+  "shape": "/Dests as a /Kids + /Limits tree with referenced destinations"
+ },
+ "outlines-dests-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "87e10f8f174236cc618496e360bdee6cac024a5f5daa48721bb86148400d3ca2",
+  "shape": "/Dests flat /Names with each destination behind a reference — the reported failure"
+ },
+ "outlines-empty.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "sha256": "03bcb6484db422ba6c938b51542a22fd8d88ad1d07fa46d9ec93ce40b4b5c61a",
+  "shape": "/Outlines present with /Count 0 and no /First — empty, not null-everywhere"
+ },
+ "outlines-flat-chain.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "sha256": "f7c8c72e7b9c71cb1778d97eb98c8f26de2c35d43f04ae09e24f02e473d14b4b",
+  "shape": "a flat /First → /Next chain of two items with inline /Dest arrays — the control"
+ },
+ "outlines-names-dests-dict.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "sha256": "287ad4ff0ff9cbe705dbd4ec2aa31a4f4b88b29179e90385a55baa5afb13ba39",
+  "shape": "/Names → /Dests whose value is a destination DICTIONARY behind a reference (what pypdf's add_named_destination writes)"
+ },
+ "outlines-names-dests-kids-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Names)",
+  "sha256": "7078767ec2ab3e11dd6efbedf4b84c6e2259778aec98ffc5d63c7ed9ee03911d",
+  "shape": "the PDF 1.4 location: /Names → /Dests as a /Kids tree with referenced destinations"
+ },
+ "outlines-native-mupdf.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF set_toc)",
+  "sha256": "6e873502d7cd0e65966a52a0177020e0d1d2a9ae5ef145be637c27d8c47c8fcc",
+  "shape": "MuPDF's own /Outlines: /A /GoTo with the /D array inline, two levels, /XYZ destinations"
+ },
+ "outlines-native-pikepdf.pdf": {
+  "payloads": {},
+  "producer": "libqpdf 12.3.2 (pikepdf open_outline)",
+  "sha256": "bfc4ca49c2fa6fd5248d82114ef5a587d254811c4d733093018ba426fdf51cf7",
+  "shape": "libqpdf's own outline: /Dest as an inline array, nesting through /First and /Parent"
+ },
+ "outlines-native-pypdf.pdf": {
+  "payloads": {},
+  "producer": "pypdf 6.14.2 (PdfWriter.add_outline_item)",
+  "sha256": "3ecaf497817e61905c7807f5a25fda3e74f6a38f097d4c2bdda716384256360e",
+  "shape": "pypdf's own outline: /A /GoTo with an inline /D array, nested through /First"
+ },
+ "outlines-targetless.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",
+  "sha256": "5b62bb0ff4fd7e7dd95f4e2bf929a9ebabee19acd9d08a23c80e975c165afe70",
+  "shape": "items with no destination at all: a heading, a /URI action, and an /SE-only item"
+ }
+}
