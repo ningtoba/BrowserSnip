@@ -507,7 +507,13 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   tool's copy stopped claiming conformance: it names the three catalogue entries, says
   which path wrote them, and says plainly that nothing checked ISO 19005.
   `docs/research/pdfa-invocation-fix.md` (all of it, with the validator inventory),
-  pinned by `tests/pdf/pdfa-structure.test.ts` (15 cases).
+  pinned by `tests/pdf/pdfa-structure.test.ts` (15 cases). Deployed and re-measured on
+  `https://www.browsersnip.com` (bundle `assets/index-CVwM1dS5.js`): the blocked pass
+  gives 3 165 B with producer `BrowserSnip` and, read by MuPDF, a `/GTS_PDFA1` intent
+  with a 476-byte `/DestOutputProfile` and `/MarkInfo`, over a Helvetica the card says
+  is not embedded; the live pass gives 6 070 B with `GPL Ghostscript 10.06.0`, the same
+  intent and flag, and the card reading **"1 of 1 font(s) embedded"** where the ledger's
+  old deployed run read "0 of 1". `docs/research/pdfa-invocation-deployed.log`.
 * What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
   via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
   and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:

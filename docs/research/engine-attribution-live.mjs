@@ -203,21 +203,22 @@ for (const [label, blocked] of [['blocked (engine unreachable)', true], ['live (
   say(`   download: ${result.file ? `${result.file.size} bytes` : 'none'}`);
   say(`   producer inside those bytes: ${/GPL Ghostscript [0-9.]+/.test(text) ? 'GPL Ghostscript (the engine wrote it)' : 'no Ghostscript producer (the local path wrote it)'}`);
   // The structures the tool claims, looked for in the bytes the page handed over and
-  // not in anything the app printed. With DUMP=<prefix> the same bytes go to a file
-  // for `pdfa-attribution-readers.py`, which reads them with MuPDF and pypdf —
-  // readers that never saw this app.
-  const structure = [
+  // not in anything the app printed. This is a *raw* scan: an entry that lives inside
+  // a compressed object stream is invisible to it, so a missing label here is not a
+  // verdict — the same bytes are dumped (DUMP=<prefix>) for
+  // `pdfa-attribution-readers.py`, which parses them with MuPDF and pypdf.
+  const found = [
     ['/OutputIntents', /\/OutputIntents/],
-    ['/S /GTS_PDFA1', /\/S\s*\/GTS_PDFA1/],
     ['/DestOutputProfile', /\/DestOutputProfile/],
     ['/MarkInfo', /\/MarkInfo/],
     ['pdfaid:part', /pdfaid:part\s*=/],
-  ].map(([label, pattern]) => `${label} ${pattern.test(text) ? 'present' : 'ABSENT'}`);
-  say(`   catalogue: ${structure.join(' · ')}`);
+  ].filter(([, pattern]) => pattern.test(text)).map(([label]) => label);
+  say(`   in the raw bytes, uncompressed: ${found.length ? found.join(', ') : 'none of them'}`);
   if (result.file && process.env.DUMP) {
     const file = `${process.env.DUMP}.${blocked ? 'blocked' : 'live'}.pdf`;
     writeFileSync(file, bytes);
     say(`   dumped: ${file}`);
+    say(`   read it: python3 docs/research/pdfa-attribution-readers.py ${file}`);
   }
   say(`   the card says: ${(result.card || '').replace(/\s+/g, ' ').slice(0, 400)}`);
   if (result.errors.length) say(`   console errors: ${JSON.stringify(result.errors)}`);

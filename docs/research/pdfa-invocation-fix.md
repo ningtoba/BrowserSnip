@@ -183,6 +183,38 @@ The live engine run, on a 2-page text fixture, printed exactly:
 and no warnings. The fallback's headline names the same three entries and ends with
 the sentence that it was "this app's own path, not Ghostscript".
 
+## 5b. On the deployed site, in both states, judged by the download
+
+`docs/research/engine-attribution-live.mjs` (headless Chromium over CDP, one fresh
+profile per pass — the engine loader is a module singleton), `pdf-to-pdfa`, the
+campaign's 2 416-byte `type.pdf`, the produced file taken out of the page as bytes and
+then read by MuPDF and pypdf. Full output: `docs/research/pdfa-invocation-deployed.log`.
+
+    BASE=https://www.browsersnip.com PDF=/tmp/pdfa-fix/type.pdf TOOL=pdf-to-pdfa \
+      DUMP=/tmp/deployed-pdf node docs/research/engine-attribution-live.mjs
+
+Bundle `assets/index-CVwM1dS5.js` — fetched and grepped first, so the claim is about
+the deployed build: it carries `no validator ran`, `pdfa_prefix`, `Writes the
+structures` and `pdfa_profile.icc`.
+
+| pass | the card | download | inside those bytes |
+| --- | --- | --- | --- |
+| `cdn.jsdelivr.net` blocked | ENGINE row `local path · Ghostscript not used`; "Wrote PDF/A-2B identification (pdfaid:part=2, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app's own path, not Ghostscript. 2.4 KB → 3.1 KB (+31%). Read back off the file…no validator ran" | 3 165 B | producer `BrowserSnip`; MuPDF: `/OutputIntent /S /GTS_PDFA1 … /DestOutputProfile 18 0 R`, stream **476 B**; `/MarkInfo` present; `Helvetica` **not** embedded — which is the warning the same card prints |
+| nothing blocked | ENGINE row `Ghostscript`; "Converted to PDF/A-2b with Ghostscript: **1 of 1 font(s) embedded**, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 2.4 KB → 5.9 KB (+151%)" | 6 070 B | producer `GPL Ghostscript 10.06.0`; MuPDF and pypdf: `/OutputIntents` array → `/S /GTS_PDFA1`, `/DestOutputProfile 4 0 R` stream **476 B**; `/MarkInfo` present; `NBLSWY+Helvetica` **embedded** |
+
+So the deployed file answers "1 of 1 embedded" where the ledger's old run answered
+"0 of 1" (the `auditFonts` fix, observed on the site rather than in a test), and it
+carries the output intent on both paths (the invocation fix, likewise).
+
+**One trap this exposed in the rig itself.** The probe first reported the blocked
+pass's catalogue as `/OutputIntents ABSENT · /S /GTS_PDFA1 ABSENT · …` — while the
+same card, correctly, said the intent was there. The local path saves with object
+streams, so those entries live inside a compressed stream and a byte regex cannot see
+them; MuPDF and pypdf, which decompress, read them in the same file. The rig now
+labels that line `in the raw bytes, uncompressed` and dumps the file for a real reader
+instead of letting a grep stand in for one — the same mistake, in miniature, as
+believing a dictionary entry is present because a string was found in the file.
+
 ## 6. The other verbs on the same seam (not touched, and verified not to have moved)
 
 `font-outline-wasm.mjs` re-run on the rebuilt `docs/research/font-outline-argv.json`,

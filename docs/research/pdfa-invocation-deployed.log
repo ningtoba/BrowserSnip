@@ -1,0 +1,45 @@
+target : https://www.browsersnip.com
+bundle : assets/index-CVwM1dS5.js (2207774 bytes) carries the fallback label, silence is admitted, per-file answers, the PDF/A read-back, the engine’s output intent
+fixture: /tmp/pdfa-fix/type.pdf (2416 bytes)
+
+── blocked (engine unreachable) ──
+   pressed "Convert to PDF/A"
+   SIZE: 2.4 KB → 3.1 KB · 31% larger
+   PAGES: 2 → 2
+   ENGINE: local path · Ghostscript not used
+   download: 3165 bytes
+   producer inside those bytes: no Ghostscript producer (the local path wrote it)
+   in the raw bytes, uncompressed: none of them
+   dumped: /tmp/deployed-pdf.blocked.pdf
+   read it: python3 docs/research/pdfa-attribution-readers.py /tmp/deployed-pdf.blocked.pdf
+   the card says: type_pdfa.pdf READY SIZE 2.4 KB → 3.1 KB · 31% larger PAGES 2 → 2 ENGINE local path · Ghostscript not used Wrote PDF/A-2B identification (pdfaid:part=2, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app’s own path, not Ghostscript. 2.4 KB → 3.1 KB (+31%). Read back off the file being handed over; no validator ran, so conforman
+
+── live (engine fetched) ──
+   pressed "Convert to PDF/A"
+   SIZE: 2.4 KB → 5.9 KB · 151% larger
+   PAGES: 2 → 2
+   ENGINE: Ghostscript
+   download: 6070 bytes
+   producer inside those bytes: GPL Ghostscript (the engine wrote it)
+   in the raw bytes, uncompressed: /OutputIntents, /MarkInfo, pdfaid:part
+   dumped: /tmp/deployed-pdf.live.pdf
+   read it: python3 docs/research/pdfa-attribution-readers.py /tmp/deployed-pdf.live.pdf
+   the card says: type_pdfa.pdf READY SIZE 2.4 KB → 5.9 KB · 151% larger PAGES 2 → 2 ENGINE Ghostscript Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 2.4 KB → 5.9 KB (+151%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not clai
+
+── the same two downloads, read by engines that did not write them ──
+/tmp/deployed-pdf.blocked.pdf
+  bytes 3165  pages 2
+  producer BrowserSnip
+  xmp_pdfaid 2 conformance B
+  output_intents array  <</Type/OutputIntent/S/GTS_PDFA1/OutputConditionIdentifier/sRGB#20IEC61966-2.1/RegistryName/http:#2F#2Fwww.color.org/Info/sRGB#20IEC61966-2.1#20#28minimal#20profile#20written#20by#20BrowserSnip#29/DestOutputProfile 18 0 R>> | DestOutputProfile stream 476 B
+  markinfo present
+  fonts Helvetica (Type1) NOT embedded
+  pypdf_catalog_output_intents present
+/tmp/deployed-pdf.live.pdf
+  bytes 6070  pages 2
+  producer GPL Ghostscript 10.06.0
+  xmp_pdfaid 2 conformance B
+  output_intents array  <</Type/OutputIntent/RegistryName(http://www.color.org)/Info(sRGB IEC61966-2.1 \(minimal profile written by BrowserSnip\))/DestOutputProfile 4 0 R/OutputConditionIdentifier(sRGB IEC61966-2.1)/S/GTS_PDFA1>> | DestOutputProfile stream 476 B
+  markinfo present
+  fonts NBLSWY+Helvetica (Type1) embedded
+  pypdf_catalog_output_intents present
