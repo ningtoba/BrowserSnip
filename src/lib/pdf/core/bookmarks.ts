@@ -30,7 +30,7 @@ import {
   context,
   rgb,
 } from './doc';
-import { asDict, collectTreePairs, followRef } from './tree';
+import { asDict, collectTreePairs, dictAt, followRef } from './tree';
 import { cropBox, displayedSize, resolvePages, PAGE_SIZES } from './pages';
 import { getFont, measureText, drawTextU } from './fonts';
 import { readInfo } from './metadata';
@@ -95,10 +95,9 @@ function nameOf(value: unknown): string | undefined {
 function namedDestinationStores(doc: PDFDocument): PDFDict[] {
   const found: PDFDict[] = [];
   const catalog = doc.catalog;
-  const direct = asDict(followRef(doc, catalog.get(PDFName.of('Dests'))));
+  const direct = dictAt(doc, catalog, 'Dests');
   if (direct) found.push(direct);
-  const names = asDict(followRef(doc, catalog.get(PDFName.of('Names'))));
-  const underNames = asDict(followRef(doc, names?.get(PDFName.of('Dests'))));
+  const underNames = dictAt(doc, dictAt(doc, catalog, 'Names'), 'Dests');
   if (underNames && !found.includes(underNames)) found.push(underNames);
   return found;
 }
@@ -916,8 +915,19 @@ export async function generateTocPage(
 export interface PageLabelRange {
   /** 0-based index of the first page this range covers. */
   start: number;
-  /** `D` decimal, `R`/`r` roman, `A`/`a` letters, `''` for the viewer default. */
-  style: 'D' | 'R' | 'r' | 'A' | 'a' | '';
+  /**
+   * The `/S` name: `D` decimal, `R`/`r` roman, `A`/`a` letters, `''` for no `/S` at
+   * all (§12.4.2 makes the style optional, and a range with only a `/P` shows the
+   * prefix and no number).
+   *
+   * It is a plain string rather than the six names `add-page-labels` offers because
+   * a **page copy** carries whatever the file stored. `/S /G` is not a style the
+   * format defines, and MuPDF, pypdf and this app already give it three different
+   * answers (see `docs/research/readers-foreign-repro.md`); a copy that rewrote it
+   * would be taking a side in that disagreement, so it keeps the name and formats
+   * it the way this app formats any style it does not know: decimal.
+   */
+  style: string;
   prefix?: string;
   /** Number shown on `start` itself (1-based, PDF `/St`). Defaults to 1. */
   firstPageNumber?: number;
@@ -926,6 +936,14 @@ export interface PageLabelRange {
 export interface PageLabel {
   page: number;
   label: string;
+}
+
+/** One sheet a page copy placed: where it came from, and where it landed. */
+export interface PagePlacement {
+  /** Page index in the document the sheet was copied **from**. */
+  source: number;
+  /** Page index of that sheet in the document the copy is building. */
+  dest: number;
 }
 
 const ROMAN: [number, string][] = [
@@ -990,18 +1008,15 @@ function labelDict(doc: PDFDocument, range: PageLabelRange): PDFDict {
 /**
  * Write the catalog `/PageLabels` number tree, replacing any existing one.
  * Passing an empty array removes page labels altogether.
+ *
+ * This is the validating front door — what `add-page-labels` uses. The copy path
+ * calls `writePageLabelRanges` instead, because a range it read out of a foreign
+ * file may name a style this app would refuse to *invent*.
  */
 export function addPageLabels(
   doc: PDFDocument,
   ranges: PageLabelRange[],
 ): void {
-  const ctx = context(doc);
-  const existing = doc.catalog.get(PDFName.of('PageLabels'));
-  const existingRef = existing instanceof PDFRef ? existing : undefined;
-  doc.catalog.delete(PDFName.of('PageLabels'));
-  if (existingRef) ctx.delete(existingRef);
-  if (ranges.length === 0) return;
-
   const sorted = [...ranges].sort((a, b) => a.start - b.start);
   const starts = new Set<number>();
   for (const range of sorted) {
@@ -1018,9 +1033,30 @@ export function addPageLabels(
       );
     }
   }
+  writePageLabelRanges(doc, sorted);
+}
+
+/**
+ * Write the catalog `/PageLabels` as a flat `/Nums` number tree, replacing any
+ * existing one. An empty list removes the entry rather than writing an empty tree.
+ *
+ * A flat array is one of the two shapes §7.9.7 allows and the one every reader met
+ * here accepts; the `/Kids` form a producer may use on the way *in* is why reading
+ * goes through `core/tree.ts` rather than through this writer.
+ */
+export function writePageLabelRanges(
+  doc: PDFDocument,
+  ranges: PageLabelRange[],
+): void {
+  const ctx = context(doc);
+  const existing = doc.catalog.get(PDFName.of('PageLabels'));
+  const existingRef = existing instanceof PDFRef ? existing : undefined;
+  doc.catalog.delete(PDFName.of('PageLabels'));
+  if (existingRef) ctx.delete(existingRef);
+  if (ranges.length === 0) return;
 
   const nums = ctx.obj([]);
-  for (const range of sorted) {
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
     nums.push(PDFNumber.of(range.start));
     nums.push(labelDict(doc, range));
   }
@@ -1030,69 +1066,165 @@ export function addPageLabels(
 }
 
 /**
+ * The `/PageLabels` ranges a document stores, in page order.
+ *
+ * `[]` for "no numbering", which covers both an absent `/PageLabels` and a tree
+ * with no pairs in it; a caller that has to keep an unlabelled file unlabelled
+ * (`core/doc.ts:carryPageFurniture`) can therefore test the one answer it cares
+ * about instead of reaching for the catalogue.
+ */
+export function readPageLabelRanges(doc: PDFDocument): PageLabelRange[] {
+  const tree = dictAt(doc, doc.catalog, 'PageLabels');
+  const ranges: PageLabelRange[] = [];
+  for (const pair of collectTreePairs(doc, tree)) {
+    const start = followRef(doc, pair.key);
+    const dict = asDict(followRef(doc, pair.value));
+    if (!(start instanceof PDFNumber) || !dict) continue;
+    const offset = followRef(doc, dict.get(PDFName.of('St')));
+    // An empty `/S` name (`/S /`) is not a style, so it reads as no `/S`: the same
+    // answer `labelDict` gives when it writes this range back out.
+    const style = nameOf(followRef(doc, dict.get(PDFName.of('S')))) ?? '';
+    ranges.push({
+      start: Math.max(0, Math.trunc(start.asNumber())),
+      style,
+      prefix: textOf(followRef(doc, dict.get(PDFName.of('P')))) ?? '',
+      firstPageNumber: offset instanceof PDFNumber ? offset.asNumber() : 1,
+    });
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  return ranges;
+}
+
+/** The range in force on `page`: the last one starting at or before it. */
+function coveringRange(
+  ranges: PageLabelRange[],
+  page: number,
+): PageLabelRange | undefined {
+  let range: PageLabelRange | undefined;
+  for (const candidate of ranges) {
+    if (candidate.start <= page) range = candidate;
+    else break;
+  }
+  return range;
+}
+
+/**
  * Expand `/PageLabels` into one label per page (decimal when none are set).
  *
  * The store is a **number tree** (§7.9.7): `/Nums` pairs, `/Kids` subtrees, or both at
  * once, with each value either a range dictionary or a reference to one. Reading the
  * root's `/Nums` and nothing else is what made a labelled document look unlabelled —
  * `docs/research/readers-foreign-repro.md` has the per-shape table.
+ *
+ * A range with **no `/S`** contributes its prefix and no number, which is what §12.4.2
+ * Table 160 says and what both MuPDF and pypdf answer — and it is the shape this app's
+ * own `add-page-labels` writes for its `none` style, so an answer that added a number
+ * here would contradict the file this app wrote.
  */
 export function readPageLabels(doc: PDFDocument): PageLabel[] {
-  const tree = asDict(followRef(doc, doc.catalog.get(PDFName.of('PageLabels'))));
-  const parsed: {
-    start: number;
-    style: PageLabelRange['style'];
-    prefix: string;
-    firstPageNumber: number;
-    /**
-     * False when the range carries no `/S`. §12.4.2 Table 160 makes the style optional
-     * and both MuPDF and pypdf then show the prefix with no number — which is also what
-     * `add-page-labels` writes for its `none` style, so an app that answered a number
-     * here would contradict its own output.
-     */
-    numbered: boolean;
-  }[] = [];
-
-  for (const pair of collectTreePairs(doc, tree)) {
-    const start = followRef(doc, pair.key);
-    const dict = asDict(followRef(doc, pair.value));
-    if (!(start instanceof PDFNumber) || !dict) continue;
-    const styleName = nameOf(followRef(doc, dict.get(PDFName.of('S')))) ?? '';
-    const style = (['D', 'R', 'r', 'A', 'a'].includes(styleName)
-      ? styleName
-      : '') as PageLabelRange['style'];
-    const offset = followRef(doc, dict.get(PDFName.of('St')));
-    parsed.push({
-      start: Math.max(0, Math.trunc(start.asNumber())),
-      style,
-      prefix: textOf(followRef(doc, dict.get(PDFName.of('P')))) ?? '',
-      firstPageNumber: offset instanceof PDFNumber ? offset.asNumber() : 1,
-      numbered: dict.has(PDFName.of('S')),
-    });
-  }
-  parsed.sort((a, b) => a.start - b.start);
-
+  const ranges = readPageLabelRanges(doc);
   const labels: PageLabel[] = [];
   const total = doc.getPageCount();
   for (let page = 0; page < total; page++) {
-    let range: (typeof parsed)[number] | undefined;
-    for (const candidate of parsed) {
-      if (candidate.start <= page) range = candidate;
-      else break;
-    }
+    const range = coveringRange(ranges, page);
     if (!range) {
       labels.push({ page, label: String(page + 1) });
       continue;
     }
-    const value = range.firstPageNumber + (page - range.start);
+    const value = (range.firstPageNumber ?? 1) + (page - range.start);
     labels.push({
       page,
-      label: range.numbered
-        ? `${range.prefix}${formatLabelNumber(range.style, Math.max(1, value))}`
-        : range.prefix,
+      label: range.style !== ''
+        ? `${range.prefix ?? ''}${formatLabelNumber(range.style, Math.max(1, value))}`
+        : (range.prefix ?? ''),
     });
   }
   return labels;
+}
+
+/** What a page copy did with a document's page numbering. */
+export interface RemappedLabels {
+  /** Ranges addressed in the **destination** document, in page order. */
+  ranges: PageLabelRange[];
+  /** Ranges the copy left with no sheet to number. */
+  dropped: number;
+}
+
+/**
+ * Re-point `/PageLabels` ranges at the pages a copy placed in a new document.
+ *
+ * A range is a statement about **source page indices**: `/Start` says where it begins
+ * and `/St` says what number is printed there, and §12.4.2 runs it to the next range
+ * or the end of the file. Carrying those two numbers across unchanged is the naive
+ * answer, and it is wrong in the way that looks right: extract pages 4-6 of a book and
+ * the output has three sheets whose ranges start at 2, 4 and 5, so the first two sheets
+ * name no range at all and the numbering that survives is the fallback — `1, 2` where
+ * the file said `II, c`.
+ *
+ * So each **destination** sheet is asked which source range covered it, and a range is
+ * opened again whenever the answer changes shape. Two sheets share one output range
+ * only while *both* indices step by one: `12.4.2` gives every sheet after a range's
+ * `/Start` the next number, which is true of the copy only if its sheets come from
+ * consecutive pages of the source. That is what makes a reorder, a duplicate, a blank
+ * inserted between two labelled sheets, and a subset whose first sheet is the middle of
+ * a range all come out right, one label per sheet, instead of merely legal.
+ *
+ * A range whose pages were **all** discarded disappears (§12.4.2 gives it nowhere to
+ * start), and it is counted so the tool can say so. A document with no numbering
+ * contributes nothing: `writePageLabelRanges` is only called when something came back,
+ * so an unlabelled file stays unlabelled rather than being given one this app invented.
+ */
+export function remapPageLabelRanges(
+  sources: { ranges: PageLabelRange[]; placed: PagePlacement[] }[],
+  destinationPages: number,
+): RemappedLabels {
+  const carried: PageLabelRange[] = [];
+  /** Destination sheets that came out of some source range. */
+  const claimed = new Set<number>();
+  let dropped = 0;
+
+  for (const { ranges, placed } of sources) {
+    const ordered = [...ranges].sort((a, b) => a.start - b.start);
+    const used = new Set<PageLabelRange>();
+    let previous: { range: PageLabelRange; source: number; dest: number } | undefined;
+    for (const { source, dest } of [...placed].sort((a, b) => a.dest - b.dest)) {
+      const range = coveringRange(ordered, source);
+      if (!range) continue;
+      used.add(range);
+      claimed.add(dest);
+      // Two neighbouring sheets share a range only while **both** indices step by one:
+      // §12.4.2 hands the next number to the next page, which is the same sheet's
+      // successor only if the copy did not reorder, duplicate or space them out.
+      const continues = previous !== undefined
+        && previous.range === range
+        && previous.source + 1 === source
+        && previous.dest + 1 === dest;
+      previous = { range, source, dest };
+      if (continues) continue;
+      carried.push({
+        start: dest,
+        style: range.style,
+        prefix: range.prefix ?? '',
+        // The number this sheet carried in the source, printed at the sheet's new
+        // address: `/Start` moves, and `/St` moves with it.
+        firstPageNumber: (range.firstPageNumber ?? 1) + (source - range.start),
+      });
+    }
+    dropped += ordered.length - used.size;
+  }
+
+  // A sheet with no range of its own — a blank the tool inserted, or the pages of a
+  // merged file that numbers nothing — still falls under the last range that started
+  // above it, because §12.4.2 runs a range to the end of the document. Naming its
+  // position out loud is what keeps such a sheet reading `7` where it read `7` at home,
+  // rather than continuing somebody else's roman numerals.
+  for (let dest = 1; dest < destinationPages; dest++) {
+    if (!claimed.has(dest) && claimed.has(dest - 1)) {
+      carried.push({ start: dest, style: 'D', prefix: '', firstPageNumber: dest + 1 });
+    }
+  }
+  carried.sort((a, b) => a.start - b.start);
+  return { ranges: carried, dropped };
 }
 
 // ---------------------------------------------------------------------------

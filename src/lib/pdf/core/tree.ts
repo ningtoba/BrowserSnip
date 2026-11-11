@@ -57,6 +57,22 @@ export function asDict(value: PDFObject | undefined): PDFDict | undefined {
 }
 
 /**
+ * The dictionary stored at `key` on `owner`, following a reference.
+ *
+ * Every tree in the format reaches its nodes this way — `/PageLabels`, `/Dests`,
+ * `/EmbeddedFiles` — and the value may be the dictionary itself or `12 0 R`, which
+ * is the difference this module exists to stop each reader rediscovering.
+ */
+export function dictAt(
+  doc: PDFDocument,
+  owner: PDFDict | undefined,
+  key: string,
+): PDFDict | undefined {
+  if (!owner) return undefined;
+  return asDict(followRef(doc, owner.get(PDFName.of(key))));
+}
+
+/**
  * Every pair in a name or number tree, in document order.
  *
  * `/Kids` subtrees are walked recursively, a node's own pairs come before its
