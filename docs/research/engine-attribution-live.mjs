@@ -40,6 +40,8 @@ async function bundleProvenance() {
     ['the fallback label', 'local path · '],
     ['silence is admitted', 'not reported'],
     ['per-file answers', 'see the list below'],
+    ['the PDF/A read-back', 'no validator ran'],
+    ['the engine’s output intent', '/OutputIntents entry is in the catalogue'],
   ]
     .filter(([, needle]) => body.includes(needle))
     .map(([name]) => name);
@@ -200,6 +202,23 @@ for (const [label, blocked] of [['blocked (engine unreachable)', true], ['live (
   const text = bytes ? bytes.toString('latin1') : '';
   say(`   download: ${result.file ? `${result.file.size} bytes` : 'none'}`);
   say(`   producer inside those bytes: ${/GPL Ghostscript [0-9.]+/.test(text) ? 'GPL Ghostscript (the engine wrote it)' : 'no Ghostscript producer (the local path wrote it)'}`);
+  // The structures the tool claims, looked for in the bytes the page handed over and
+  // not in anything the app printed. With DUMP=<prefix> the same bytes go to a file
+  // for `pdfa-attribution-readers.py`, which reads them with MuPDF and pypdf —
+  // readers that never saw this app.
+  const structure = [
+    ['/OutputIntents', /\/OutputIntents/],
+    ['/S /GTS_PDFA1', /\/S\s*\/GTS_PDFA1/],
+    ['/DestOutputProfile', /\/DestOutputProfile/],
+    ['/MarkInfo', /\/MarkInfo/],
+    ['pdfaid:part', /pdfaid:part\s*=/],
+  ].map(([label, pattern]) => `${label} ${pattern.test(text) ? 'present' : 'ABSENT'}`);
+  say(`   catalogue: ${structure.join(' · ')}`);
+  if (result.file && process.env.DUMP) {
+    const file = `${process.env.DUMP}.${blocked ? 'blocked' : 'live'}.pdf`;
+    writeFileSync(file, bytes);
+    say(`   dumped: ${file}`);
+  }
   say(`   the card says: ${(result.card || '').replace(/\s+/g, ' ').slice(0, 400)}`);
   if (result.errors.length) say(`   console errors: ${JSON.stringify(result.errors)}`);
 }

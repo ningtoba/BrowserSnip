@@ -1602,7 +1602,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           { value: '3b', label: 'PDF/A-3b (ISO 19005-3, allows attachments)' },
         ],
         group: 'Conformance level',
-      help: 'Level B only asks that the file render the same in ten years. A and U additionally demand tagged, readable content, which needs a font-embedding pass this tool cannot promise offline. Part 1 also forbids transparency: on a page with one alpha image and two alpha graphic states, Ghostscript removed it and the file went 8.2 KB → 233.8 KB.',
+      help: 'Level B asks only that the file render the same in ten years; A and U need tagged content. Part 1 forbids transparency and removes it, at a real size cost.',
     },
     ],
     notes: [
