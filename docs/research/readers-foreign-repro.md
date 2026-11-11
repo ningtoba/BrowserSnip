@@ -151,10 +151,15 @@ What "carried" means per sheet, for every copy shape, is
 `docs/research/page-labels-copy-table.md` — twelve rows, MuPDF and pypdf answering the
 input and the output of `extract-pages`, `organize`, `merge`, `split` and
 `add-blank-page`, produced by `docs/research/page-labels-copy-round-trip.py` from the
-dump `tests/pdf/page-labels-copy.test.ts` writes. **16 assertions are red without the
-carry**, 13 of them in that file; 267 are green with it across
+dump `tests/pdf/page-labels-copy.test.ts` writes. **17 assertions are red without the
+carry**, 14 of them in that file; 268 are green with it across
 `page-labels-copy`, `page-copy-fidelity`, `readers-foreign`, `edge-organize` and
-`field-reach`. The row that recorded this as "left unfixed" is now the pin that it is
+`field-reach`. Counting the outside columns instead of the local ones: **pypdf agrees
+with the asserted column on 11 of the 12 rows** (the twelfth is `/S /G`, where it
+disagrees with the input too), and **MuPDF on 9**, the three exceptions being that
+style, the file with no store at all (where MuPDF's answer for every sheet is `''`), and
+one sheet where it escapes byte `A7` for `§` in the input and in the output alike. Before
+the `/P` encoding change MuPDF agreed on **1** of the 12, which is what that change bought. The row that recorded this as "left unfixed" is now the pin that it is
 fixed: `tests/pdf/readers-foreign.test.ts › carries /PageLabels across a page copy,
 remapped to the new page indices`.
 
@@ -222,17 +227,19 @@ order, the `/AF` and annotation walks, removal, and `md5Hex` are untouched.
 person does — drop the foreign file on the tool's own card, press the button, keep the
 download — and then asks MuPDF and pypdf about the download instead of believing the
 sentence on screen. Full transcript: `docs/research/readers-foreign-deployed.log`, bundle
-`assets/index-BM7HnvH8.js` (the attachments pass recorded `index-C6ma42d2.js`, so this is
-a newer bundle — and the last row, where a page copy brings back three bookmarks that
-still name their pages, is what shows it carries *this* fix rather than merely a different
-one).
+`assets/index-Dmtf_QUd.js` (`index-BM7HnvH8.js` in the pass before it, and the
+attachments pass recorded `index-C6ma42d2.js`, so each row is against a newer build than
+the last). The last two rows are what show this bundle carries the copy work rather than
+merely a different bundle: one brings back three bookmarks that still name their pages,
+the other brings back a numbering the copy used to delete.
 
 | probe | what the site said | what the download actually holds |
 | --- | --- | --- |
 | `/tool/bookmarks`, empty box, on `outlines-dests-ref.pdf` (sha256 `87e10f8f1742…`, the digest `MANIFEST.json` records, so the upload arrived whole) | *"3 bookmarks (2 at the top levels)."* | 3 items naming a destination in the bytes; pypdf resolves all three to pages 0, 1, 2. The pre-fix build answered the same file with *"3 bookmarks (2 at the top levels, **3 without a page**)"* — pinned by `shows the outline of a foreign file as it is, not as three blanks`, one of the 26 assertions that were red before `7d1d1ad` |
 | `/tool/rotate` 90° on `labels-kids-mixed.pdf` | *"Rotated 6 pages by 90°."* | download sha256 `c0590226a696…`, 6 pages, the planted sentence on all six of them, label store still `/Kids x2`, MuPDF per page `i, ii, I, II, c, xA` — the same six labels the fixture carries. An in-place run leaves the numbering where it was |
-| `/tool/add-page-labels`, default ranges, on `labels-nums-r.pdf` | *"Applied 2 label ranges. The first 4 pages now read: i, ii, iii, 1."* | download sha256 `a5dddb8ffd77…`, store `/Nums x2`, MuPDF `i, ii, iii, 1`, pypdf `i, ii, iii, 1` — the card's sentence and the file agree, which is the only place in the app a `readPageLabels` answer reaches a user |
-| `/tool/extract-pages` on `outlines-names-dests-kids-ref.pdf` | a 4-page result card, no "dropped" note | download sha256 `0bbac343cff2…`, **3 items naming a target and pypdf resolves 3 of 3 to pages 0, 1, 2**, MuPDF to 1, 2, 3. The same copy run on the pre-fix build produced 3 items with **0** targets — the bookmark count that read as a success while the destinations were gone. No console errors in any probe |
+| `/tool/add-page-labels`, default ranges, on `labels-nums-r.pdf` | *"Applied 2 label ranges. The first 4 pages now read: i, ii, iii, 1."* | download sha256 `a5dddb8ffd77…`, store `/Nums x2`, MuPDF `i, ii, iii, 1`, pypdf `i, ii, iii, 1` — the card's sentence and the file agree, which is the only place in the app a `readPageLabels` answer reaches a user. Note the ranges MuPDF reads out of it: `{startpage 0, /r}` and `{startpage 3, /D}` with **no escaped prefix**, which is the single-byte `/P` this app now writes |
+| `/tool/extract-pages` on `outlines-names-dests-kids-ref.pdf` | a 4-page result card, no "dropped" note | download sha256 `19e610cf1bf5…`, **3 items naming a target and pypdf resolves 3 of 3 to pages 0, 1, 2**, MuPDF to 1, 2, 3. The same copy run on the pre-fix build produced 3 items with **0** targets — the bookmark count that read as a success while the destinations were gone |
+| `/tool/extract-pages`, `Pages: 4-6`, on `labels-kids-mixed.pdf` | *"Extracted 3 pages of 6 pages."* | download sha256 `20f95f40fd8c…`, 2 202 bytes, 3 pages, the planted sentence on all three, store `/Kids x2` → **`/Nums x3`**, and **MuPDF and pypdf both read `II, c, xA`** — the surviving range re-based onto the output's first sheet with its `/St` moved to 2. Before the carry this same download was a file with **no label store at all**, which every reader then numbered `1, 2, 3` under a card that said nothing. No console errors in any probe |
 
 ## Re-running this
 
@@ -250,7 +257,7 @@ python3 docs/research/page-labels-copy-round-trip.py /tmp/labels \
 npx vitest run tests/pdf/readers-foreign.test.ts tests/pdf/attachments-foreign.test.ts \
   tests/pdf/edge-organize.test.ts tests/pdf/edge-edit.test.ts tests/pdf/field-reach.test.ts \
   tests/pdf/page-labels-copy.test.ts tests/pdf/page-copy-fidelity.test.ts
-node scripts/live-readers-proof.mjs                    # the four probes above, on the live site
+node scripts/live-readers-proof.mjs                    # the five probes above, on the live site
 ```
 
 The fixtures are byte-reproducible the way the attachment set is: timestamps and both

@@ -117,7 +117,7 @@ const click = (labels) => raw(`(() => {
  */
 const openMoreOptions = () => raw(`(() => {
   const fold = [...document.querySelectorAll('button')]
-    .find((b) => b.offsetParent !== null && /more options/i.test(b.innerText || ''));
+    .find((b) => b.offsetParent !== null && /more options?/i.test(b.innerText || ''));
   if (!fold) return 'no fold on screen';
   fold.click();
   return 'opened ' + fold.innerText.trim().slice(0, 30);
@@ -128,10 +128,14 @@ const typeField = (label, value) => raw(`(() => {
   let field = group
     && (group.querySelector('textarea') || group.querySelector('input:not([type=checkbox]):not([type=radio])'));
   if (!field) {
-    // A "pages" control is labelable rather than a group: its caption is a
-    // label-for element, and that is the only way the probe can name it.
+    // A "pages" control is labelable rather than a group: its caption is a label
+    // element pointing at the input, and that is the only way the probe can name it.
+    // The caption is styled uppercase and innerText reports what is rendered, so the
+    // comparison ignores case — a probe that quietly found nothing would type into no
+    // field at all and then report a whole-document run as if it had been a subset.
+    const wanted = ${JSON.stringify(label)}.toLowerCase();
     const caption = [...document.querySelectorAll('label')].find(
-      (el) => (el.innerText || el.textContent || '').trim() === ${JSON.stringify(label)} && el.htmlFor);
+      (el) => (el.innerText || el.textContent || '').trim().toLowerCase() === wanted && el.htmlFor);
     field = caption ? document.getElementById(caption.htmlFor) : null;
   }
   if (!field) return 'no field for group ' + ${JSON.stringify(label)};

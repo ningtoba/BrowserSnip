@@ -66,7 +66,7 @@
  * sheet left. `tests/pdf/page-labels-copy.test.ts` is the table of what "carried"
  * means for each copy shape; this is the same claim over the furniture fixture.
  *
- * **Red without the numbering carry: 2 here, 13 in `page-labels-copy.test.ts`,** 16
+ * **Red without the numbering carry: 2 here, 14 in `page-labels-copy.test.ts`,** 17
  * across the five files around this seam. The redraw tools still leave the numbering
  * behind — a redraw has no page indices to re-point one at — and their warning names
  * it now rather than only the bookmarks.
