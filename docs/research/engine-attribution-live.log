@@ -1,0 +1,21 @@
+target : https://www.browsersnip.com
+bundle : assets/index-CIIyqWlH.js (2203485 bytes) carries the fallback label, silence is admitted, per-file answers
+fixture: /tmp/fo-fix2/type.pdf (2416 bytes)
+
+── blocked (engine unreachable) ──
+   pressed "Convert to PDF/A"
+   SIZE: 2.4 KB → 3.1 KB · 31% larger
+   PAGES: 2 → 2
+   ENGINE: local path · Ghostscript not used
+   download: 3165 bytes
+   producer inside those bytes: no Ghostscript producer (the local path wrote it)
+   the card says: type_pdfa.pdf READY SIZE 2.4 KB → 3.1 KB · 31% larger PAGES 2 → 2 ENGINE local path · Ghostscript not used Wrote PDF/A-2B identification (pdfaid:part=2, conformance=B), an sRGB output intent and the tagging flag with this app’s own path, not Ghostscript. 2.4 KB → 3.1 KB (+31%). The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need t
+
+── live (engine fetched) ──
+   pressed "Convert to PDF/A"
+   SIZE: 2.4 KB → 5.4 KB · 128% larger
+   PAGES: 2 → 2
+   ENGINE: Ghostscript
+   download: 5506 bytes
+   producer inside those bytes: GPL Ghostscript (the engine wrote it)
+   the card says: type_pdfa.pdf READY SIZE 2.4 KB → 5.4 KB · 128% larger PAGES 2 → 2 ENGINE Ghostscript Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded, no output intent in the catalogue, 0 conformance warning(s) reported. 2.4 KB → 5.4 KB (+128%). The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. WHAT YOU SHOULD KNOW

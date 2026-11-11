@@ -218,3 +218,36 @@ $ python3 docs/research/pdfa-attribution-readers.py \
   fonts Helvetica (Type1) NOT embedded
   pypdf_catalog_output_intents absent
 ```
+
+## 6. On the deployed site, in both states, judged by the download
+
+Rig: `docs/research/engine-attribution-live.mjs` (headless Chromium over CDP, one fresh
+profile per pass because the engine loader is a module singleton; `pdf-to-pdfa`, the
+campaign's own 2 416-byte `type.pdf`; the produced file is taken out of the page as
+bytes and searched for Ghostscript's producer string). Full output committed as
+`docs/research/engine-attribution-live.log`.
+
+    BASE=https://www.browsersnip.com PDF=/tmp/fo-fix2/type.pdf \
+      node docs/research/engine-attribution-live.mjs
+
+bundle `assets/index-CIIyqWlH.js` — fetched and grepped first, so the claim is about the
+deployed build: it carries `local path · `, `not reported` and `see the list below`.
+
+| pass | the card's `ENGINE` row | download | producer inside those bytes |
+| --- | --- | --- | --- |
+| `cdn.jsdelivr.net` blocked before navigation | `local path · Ghostscript not used` | 3 165 B | none |
+| nothing blocked (the engine is fetched) | `Ghostscript` | 5 506 B | GPL Ghostscript |
+
+The blocked pass is the demonstration the label needed: the same tool, the same
+declaration, the same fixture — the card no longer credits Ghostscript for a file it did
+not write, and the sentence under it says "with this app's own path, not Ghostscript".
+The live pass prints `Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded,
+no output intent in the catalogue`, which is §2 read back off the file rather than
+asserted by the switch list: the font audit fix (the descriptor, not the font dictionary)
+turns the old false `0 of 1` into `1 of 1`, and the absent output intent is now said.
+
+Four runs of the same vector on the same input — 5 502 B (this file's §1), 5 506 B
+(deployed), 5 507 B (the same build previewed locally), 5 515 B (the wasm rig) — land
+13 B apart. Ghostscript's `/ID`, its XMP dates and its random subset tag vary per run;
+the catalogues and the 1 568-byte XMP packets are identical, so the size is not a
+signal of a different invocation. The producer string is.
