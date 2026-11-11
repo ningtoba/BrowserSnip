@@ -185,7 +185,7 @@ All three readers call it:
 
 - `core/attachments.ts:collectNameTree` kept its name, its `FilespecSite` record and its
   inline-versus-reference handling, and delegates the traversal. Its behaviour is
-  unchanged and `tests/pdf/attachments-foreign.test.ts` (77 assertions over 15 foreign
+  unchanged and `tests/pdf/attachments-foreign.test.ts` (58 assertions over 15 foreign
   fixtures) is green on the extracted helper — the reference implementation still covers
   the shared code, which was the condition on touching a file that shipped hours ago.
 - `core/bookmarks.ts:destinationArray` resolves all four spellings §12.3.2 allows — inline
