@@ -490,9 +490,15 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   three engine runs); reverting `25829fb`'s sentences alone reddens **5 of 58** across this file
   and `edge-optimize.test.ts`; reverting both, **9 of 58**; reverting `9e9a8bf`, **2 of 58**.
   On CI the engine block skips itself out loud — measured, this file's 15 MB download starved
-  `field-reach.test.ts:510`, which waits a fixed 3 s inside `act()` (`e02b410`); the argv pins,
-  which are the part that guards this defect, never skip, and `BROWSERSNIP_GS=live` asks for
-  the engine on CI on purpose.
+  `field-reach.test.ts:510`, which waits a fixed 3 s inside `act()`; the argv pins, which are
+  the part that guards this defect, never skip, and `BROWSERSNIP_GS=live` asks for the engine on
+  CI on purpose. Gating the download turned the suite green at `e02b410` and `fef14b8`, and it
+  did not own the whole flake: `bbd1b77` — two probe documents and five regenerated crop sheets,
+  no source and no test file — died at that same `field-reach.test.ts:510` line with the same
+  `the run produced no file`. **That row is open and it is not this tool's**: a redact-panel test
+  whose only completion condition is a wall-clock sleep will read red on a loaded runner.
+  Every source change here is in the two green runs (`e02b410`, `fef14b8`); the two reds are
+  `4bb51ae` (before the gate) and `bbd1b77` (after it, with nothing but documents changed).
 * **The class, counted rather than anecdoted.** `core/engine-ops.ts` exports **10 verbs** that
   hand arguments to an engine and assemble **27 argument-bearing call sites**: 3 string vectors
   for Ghostscript (`convertToPdfA`, `textToOutlines`, `rebuildWithGhostscript`, all finished by
