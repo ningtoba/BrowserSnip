@@ -1,0 +1,157 @@
+font-to-outline — measured proof of the invocation defect and its fix
+=====================================================================
+Reproduce with (every command is in this repo; fixtures land in a directory you
+choose, nothing here is retyped from memory):
+
+  0  python3 docs/research/font-outline-fixtures.py /tmp/fo-fix
+  1  BROWSERSNIP_GS_DUMP=docs/research/font-outline-argv.json \
+       npx vitest run tests/pdf/font-outline.test.ts
+       # dumps the argv the SOURCE builds, from src/lib/pdf/core/engine-ops.ts
+  2  node docs/research/font-outline-wasm.mjs docs/research/font-outline-argv.json <in.pdf> <outdir>
+       # replays each vector through the published engine twice: as built, and with
+       # the output switch split back into two arguments (the shape until 4ad2be3)
+  3  python3 docs/research/font-outline-readers.py <in.pdf> <out.pdf> …
+       # measures the result with engines that did not write it
+
+Run 2026-11-11 in the BrowserSnip sandbox. Node v26.12.1, vitest 4.1.9, the
+engine the tab downloads (`@bentopdf/gs-wasm@0.1.1`, GPL Ghostscript 10.06.0).
+
+STEP 1 — the argv, quoted from both builds of src/lib/pdf/core/engine-ops.ts
+  pre  = 4ad2be3~1 (docs/research/font-outline-argv.pre-4ad2be3.json)
+  post = 4ad2be3   (docs/research/font-outline-argv.json)
+  The only difference is where the output path sits relative to its switch.
+
+textToOutlines (font-to-outline)
+  pre  : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dNoOutputFonts", "-dCompatibilityLevel=1.7", "-dAutoRotatePages=/None", "-dColorConversionStrategy=/LeaveColorUnchanged", "-sOutputFile", "/tmp/output.pdf", "/tmp/input.pdf"]
+  post : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dNoOutputFonts", "-dCompatibilityLevel=1.7", "-dAutoRotatePages=/None", "-dColorConversionStrategy=/LeaveColorUnchanged", "-sOutputFile=/tmp/output.pdf", "/tmp/input.pdf"]
+  diff : ["-sOutputFile", "-sOutputFile=/tmp/output.pdf", "/tmp/output.pdf"]
+
+convertToPdfA (pdf-to-pdfa)
+  pre  : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-dPARANOIDSAFER", "-dPDFA=2", "-dPDFACompatibilityPolicy=1", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.7", "-dAutoRotatePages=/None", "-dColorImageDownsampleType=/Bicubic", "-dColorImageResolution=300", "-dGrayImageResolution=300", "-dMonoImageResolution=600", "-dEmbedAllFonts=true", "-dSubsetFonts=true", "-dDetectDuplicateImages=true", "-dCompressFonts=true", "-sOutputFile", "/tmp/output.pdf", "/tmp/input.pdf"]
+  post : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-dPARANOIDSAFER", "-dPDFA=2", "-dPDFACompatibilityPolicy=1", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.7", "-dAutoRotatePages=/None", "-dColorImageDownsampleType=/Bicubic", "-dColorImageResolution=300", "-dGrayImageResolution=300", "-dMonoImageResolution=600", "-dEmbedAllFonts=true", "-dSubsetFonts=true", "-dDetectDuplicateImages=true", "-dCompressFonts=true", "-sOutputFile=/tmp/output.pdf", "/tmp/input.pdf"]
+  diff : ["-sOutputFile", "-sOutputFile=/tmp/output.pdf", "/tmp/output.pdf"]
+
+rebuildWithGhostscript (repair)
+  pre  : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.7", "-dAutoFixDirtyXrefTables=true", "-dDoThumbnails=false", "-sOutputFile", "/tmp/output.pdf", "/tmp/input.pdf"]
+  post : ["-dQUIET", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.7", "-dAutoFixDirtyXrefTables=true", "-dDoThumbnails=false", "-sOutputFile=/tmp/output.pdf", "/tmp/input.pdf"]
+  diff : ["-sOutputFile", "-sOutputFile=/tmp/output.pdf", "/tmp/output.pdf"]
+
+Reading of STEP 1, against what docs/TOOL-TRIAGE.md item 3 inferred:
+
+  The bug is NOT a difference between the `font-to-outline` vector and the
+  working `pdf-to-pdfa` vector. All THREE vectors split `-sOutputFile` from its
+  path, and all three exit 1 with the same sentence. `pdf-to-pdfa` only looked
+  healthy because it carries a local fallback that wrote the file its card then
+  attributed to Ghostscript — see STEP 2, and `ResultCard`'s Engine row, which
+  prints `tool.engines[0]` (what a tool declares) and not what ran.
+
+STEP 0 — the fixtures, as built
+type pages 2 text chars [107, 107] images painted [0, 0] vector paths [0, 0]
+type-art pages 2 text chars [107, 107] images painted [1, 1] vector paths [2, 2]
+art-only pages 1 text chars [0] images painted [1] vector paths [2]
+
+STEP 2 — three fixtures x three vectors x two argv shapes = 18 runs
+engine: node_modules/.browsersnip-gs/gs.wasm — 15533046 bytes, sha256 c3373cd4a123f05b…
+input : /tmp/fo-fix/type.pdf — 2416 bytes
+textToOutlines (font-to-outline) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+textToOutlines (font-to-outline) [as-built] exit 0  out 22175 B
+convertToPdfA (pdf-to-pdfa) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+convertToPdfA (pdf-to-pdfa) [as-built] exit 0  out 5516 B
+rebuildWithGhostscript (repair) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+rebuildWithGhostscript (repair) [as-built] exit 0  out 3113 B
+
+produced, in <outdir>:
+  convertToPdfA (pdf-to-pdfa) [as-built] → type.convertToPdfA_(pdf-to-pdfa).as-built.pdf
+  rebuildWithGhostscript (repair) [as-built] → type.rebuildWithGhostscript_(repair).as-built.pdf
+  textToOutlines (font-to-outline) [as-built] → type.textToOutlines_(font-to-outline).as-built.pdf
+
+engine: node_modules/.browsersnip-gs/gs.wasm — 15533046 bytes, sha256 c3373cd4a123f05b…
+input : /tmp/fo-fix/type-art.pdf — 9186 bytes
+textToOutlines (font-to-outline) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+textToOutlines (font-to-outline) [as-built] exit 0  out 29461 B
+convertToPdfA (pdf-to-pdfa) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+convertToPdfA (pdf-to-pdfa) [as-built] exit 0  out 11709 B
+rebuildWithGhostscript (repair) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+rebuildWithGhostscript (repair) [as-built] exit 0  out 9306 B
+
+produced, in <outdir>:
+  convertToPdfA (pdf-to-pdfa) [as-built] → type-art.convertToPdfA_(pdf-to-pdfa).as-built.pdf
+  rebuildWithGhostscript (repair) [as-built] → type-art.rebuildWithGhostscript_(repair).as-built.pdf
+  textToOutlines (font-to-outline) [as-built] → type-art.textToOutlines_(font-to-outline).as-built.pdf
+
+engine: node_modules/.browsersnip-gs/gs.wasm — 15533046 bytes, sha256 c3373cd4a123f05b…
+input : /tmp/fo-fix/art-only.pdf — 6937 bytes
+textToOutlines (font-to-outline) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+textToOutlines (font-to-outline) [as-built] exit 0  out 7065 B
+convertToPdfA (pdf-to-pdfa) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+convertToPdfA (pdf-to-pdfa) [as-built] exit 0  out 7385 B
+rebuildWithGhostscript (repair) [split-output-file (pre-4ad2be3)] exit 1  out 0 B  gs said: GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no file was specified. / **** Unable to open the initial device, quitting.
+rebuildWithGhostscript (repair) [as-built] exit 0  out 7030 B
+
+produced, in <outdir>:
+  convertToPdfA (pdf-to-pdfa) [as-built] → art-only.convertToPdfA_(pdf-to-pdfa).as-built.pdf
+  rebuildWithGhostscript (repair) [as-built] → art-only.rebuildWithGhostscript_(repair).as-built.pdf
+  textToOutlines (font-to-outline) [as-built] → art-only.textToOutlines_(font-to-outline).as-built.pdf
+
+STEP 3 — the same outputs read by readers that did not write them
+readers:
+  PyMuPDF 1.28.2: Python bindings for the MuPDF 1.28.2 library.
+Python 3.14 running on linux (64-bit).
+  pypdf 6.14.2
+  pdftotext pdftotext version 26.10.0
+  pdfinfo pdfinfo version 26.10.0
+  gs 10.08.0
+  qpdf: not installed in this sandbox
+  mutool CLI: not installed in this sandbox (MuPDF is used through PyMuPDF above)
+
+=== /tmp/fo-fix/type.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 0 / painted 0 | vector paths 0 | ink 0.87% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 0 / painted 0 | vector paths 0 | ink 0.92% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 107
+    pdftotext  : exit 0, characters 208
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-out/type.textToOutlines_(font-to-outline).as-built.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 0 | vector paths 88 | ink 0.87% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 0 | vector paths 88 | ink 0.92% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-fix/art-only.pdf
+    mupdf      : open ok, pages 1, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 1 / painted 1 | vector paths 2 | ink 13.49% | annots 0
+    pypdf      : open ok, pages 1, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-out/art-only.textToOutlines_(font-to-outline).as-built.pdf
+    mupdf      : open ok, pages 1, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 2 | ink 13.49% | annots 0
+    pypdf      : open ok, pages 1, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-fix/type-art.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 1 / painted 1 | vector paths 2 | ink 14.43% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 1 / painted 1 | vector paths 2 | ink 14.96% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 107
+    pdftotext  : exit 0, characters 208
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-out/type-art.textToOutlines_(font-to-outline).as-built.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 90 | ink 14.43% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 90 | ink 14.96% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0

@@ -1,0 +1,61 @@
+[
+  {
+    "tool": "textToOutlines (font-to-outline)",
+    "args": [
+      "-dQUIET",
+      "-dNOPAUSE",
+      "-dBATCH",
+      "-dSAFER",
+      "-sDEVICE=pdfwrite",
+      "-dNoOutputFonts",
+      "-dCompatibilityLevel=1.7",
+      "-dAutoRotatePages=/None",
+      "-dColorConversionStrategy=/LeaveColorUnchanged",
+      "-sOutputFile",
+      "/tmp/output.pdf",
+      "/tmp/input.pdf"
+    ]
+  },
+  {
+    "tool": "convertToPdfA (pdf-to-pdfa)",
+    "args": [
+      "-dQUIET",
+      "-dNOPAUSE",
+      "-dBATCH",
+      "-dSAFER",
+      "-dPARANOIDSAFER",
+      "-dPDFA=2",
+      "-dPDFACompatibilityPolicy=1",
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.7",
+      "-dAutoRotatePages=/None",
+      "-dColorImageDownsampleType=/Bicubic",
+      "-dColorImageResolution=300",
+      "-dGrayImageResolution=300",
+      "-dMonoImageResolution=600",
+      "-dEmbedAllFonts=true",
+      "-dSubsetFonts=true",
+      "-dDetectDuplicateImages=true",
+      "-dCompressFonts=true",
+      "-sOutputFile",
+      "/tmp/output.pdf",
+      "/tmp/input.pdf"
+    ]
+  },
+  {
+    "tool": "rebuildWithGhostscript (repair)",
+    "args": [
+      "-dQUIET",
+      "-dNOPAUSE",
+      "-dBATCH",
+      "-dSAFER",
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.7",
+      "-dAutoFixDirtyXrefTables=true",
+      "-dDoThumbnails=false",
+      "-sOutputFile",
+      "/tmp/output.pdf",
+      "/tmp/input.pdf"
+    ]
+  }
+]

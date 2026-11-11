@@ -1615,7 +1615,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     outputSuffix: '_outlined.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Outline',
-    promise: 'Text drawn as vector paths that cannot reflow or substitute — or a refusal that says whether Ghostscript could not be fetched, or ran and refused the file.',
+    promise: 'Text that cannot reflow or substitute, and a refusal that says whether Ghostscript could not be fetched or refused the file.',
     notes: [
       'Glyphs become vector paths: the text can no longer be selected, searched or edited.',
       'This tool has no degraded path — a rebuild without Ghostscript would leave the fonts in place and only look outlined.',

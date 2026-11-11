@@ -81,7 +81,10 @@ vi.mock('@/lib/pdf/engines/ghostscript', async (importOriginal) => {
     ) => {
       const inputs = Object.keys(files);
       const outputs = options.outputs ?? [];
-      gs.calls.push({ args, inputs, outputs });
+      // Copy before delegating: Emscripten's `callMain` prepends its own program
+      // name to the array it is handed, and the recorded vector has to be the one
+      // the app built.
+      gs.calls.push({ args: args.slice(), inputs, outputs });
       if (gs.failWith) {
         throw new Error(
           `Ghostscript stopped with exit code 1: ${gs.failWith}. The PDF was not converted; ` +
@@ -322,10 +325,34 @@ afterAll(() => {
 describe('the Ghostscript command line each tool builds', () => {
   it('names the output file to the device that requires one', async () => {
     expect(VECTORS.length).toBe(3);
+    // Capture everything first, then assert: the proof rig wants the vectors a
+    // broken build produced too, not only the ones that pass.
+    const captured = [];
+    const rejected: Array<[string, unknown]> = [];
     for (const [name, invoke] of VECTORS) {
       gs.calls.length = 0;
-      await invoke();
-      const call = lastCall();
+      try {
+        await invoke();
+      } catch (error) {
+        // A malformed vector makes Ghostscript exit 1 before the promise settles.
+        // The command line is already recorded, so dump and assert it, then fail.
+        rejected.push([name, error]);
+      }
+      captured.push({ tool: name, ...lastCall() });
+    }
+    const dump = process.env.BROWSERSNIP_GS_DUMP;
+    if (dump) {
+      // `docs/research/font-outline-wasm.mjs` runs these exact vectors through
+      // the published build, so the quoted command line comes out of the source
+      // rather than being retyped into a proof script.
+      fs.writeFileSync(
+        dump,
+        `${JSON.stringify(captured.map(({ tool, args }) => ({ tool, args })), null, 2)}\n`,
+      );
+    }
+
+    for (const call of captured) {
+      const name = call.tool;
       // The defect, per vector: `-sOutputFile` alone sets the parameter to the
       // empty string and `pdfwrite` refuses to start.
       const outputArgs = call.args.filter((arg) => arg.startsWith('-sOutputFile'));
@@ -338,6 +365,9 @@ describe('the Ghostscript command line each tool builds', () => {
       expect(call.args.filter((arg) => /^-s[^=]+$/.test(arg)), `${name}: ${JSON.stringify(call.args)}`)
         .toEqual([]);
       expect(call.args.every((arg) => arg.length > 0 && !arg.includes('\n'))).toBe(true);
+    }
+    if (rejected.length) {
+      throw new Error(`${rejected[0][0]}: ${String((rejected[0][1] as Error)?.message ?? rejected[0][1])}`);
     }
   });
 
