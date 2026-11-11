@@ -189,8 +189,8 @@ async function bytesOf(outcome: RunOutcome, index = 0): Promise<Uint8Array> {
  * stream, and the pages' own content.
  *
  * A payload that will not decode is reported by its absence rather than as a
- * crash — which since `protect` writes AES-128 is the normal answer for a file of
- * this app's own. Hand it the secret to see the words instead.
+ * crash — which since `protect` runs a real cipher is the normal answer for a file
+ * of this app's own. Hand it the secret to see the words instead.
  */
 async function readableText(bytes: Uint8Array, password?: string): Promise<string> {
   const doc = await openPDF(bytes, password === undefined ? { ignoreEncryption: true } : { password });
@@ -230,17 +230,19 @@ const PROTECTION_DEFAULTS: ToolValues = {
 };
 
 /**
- * The strengths the Cipher control used to offer, minus the one the engine now
- * writes.
+ * The strengths the Cipher control used to offer that still do not reach the bytes.
  *
  * They stay as a table because the defect was per-strength: each name was a claim
  * about bytes the engine never ciphered, and each claimed dictionary was read a
- * different wrong way by a different reader. `AES-128` is off the list because it
- * is no longer a claim — `core/crypto.ts:encryptDocument` runs it and reads it
- * back — so the surviving rule is that the *other* names cannot come back: no
- * field to pick them, and no sentence this tool shows the user that sells them.
+ * different wrong way by a different reader. `AES-128` and `AES-256` are off the
+ * list because neither is a claim any more — `core/crypto.ts:encryptDocument` runs
+ * both and this app reads both back, the first measured in
+ * `docs/research/protect-readers-aes128.log` and the second in
+ * `docs/research/aes256-write-readers.log`. The surviving rule is the one that
+ * outlived the change: no option, and no sentence this tool shows the user, may
+ * name a strength the bytes cannot answer for.
  */
-const CIPHER_NAMES = ['AES-256', 'RC4-128', 'RC4-40'];
+const CIPHER_NAMES = ['RC4-128', 'RC4-40'];
 
 let certificate: { certificatePem: string; privateKeyPem: string };
 const encoder = new TextEncoder();
@@ -286,10 +288,13 @@ describe('protect and unlock round trip (E4, E5)', () => {
 
   it.each(CIPHER_NAMES)('sells no %s output, and says so where the name still appears', (name) => {
     const tool = getPdfTool('protect')!;
-    // No field picks a strength, and no line the user acts on — the description
-    // under the title, the promise, the password help, and what a run prints —
-    // names one.
-    expect((tool.fields ?? []).map((field) => field.key)).not.toContain('version');
+    // The restored Cipher control lists exactly the strengths that reach the bytes,
+    // so a retired name cannot sneak back on through it — and no line the user acts
+    // on (the description under the title, the promise, any field's help) names one.
+    const cipher = (tool.fields ?? []).find((field) => field.key === 'cipher');
+    expect(cipher, 'the control that picks the strength').toBeTruthy();
+    const offered = (cipher?.options ?? []).flatMap((option) => [String(option.value), option.label]);
+    expect(offered, `${name} is back on the menu`).not.toContain(name);
     const claims = [
       tool.description,
       tool.promise ?? '',
@@ -301,7 +306,7 @@ describe('protect and unlock round trip (E4, E5)', () => {
     // produced.
     for (const note of tool.notes ?? []) {
       if (note.includes(name)) {
-        expect(note, `${name} is named without retiring it`).toMatch(/the only strength offered|refused by name|cannot read back/i);
+        expect(note, `${name} is named without retiring it`).toMatch(/the only strength offered|refused by name|cannot read back|never written|not offered/i);
       }
     }
   });
@@ -319,9 +324,29 @@ describe('protect and unlock round trip (E4, E5)', () => {
     // out of it.
     const outcome = await run('protect', PROTECTION_DEFAULTS);
     expect(outcome.message).toMatch(/AES-128/);
+    // The card follows the file, not the option list: at the default it says
+    // AES-128 at revision 4 and holds 256 back for the run that earned it.
+    expect(outcome.message).toMatch(/revision 4/);
+    expect(outcome.message).not.toMatch(/AES-256|revision 6/);
     for (const name of CIPHER_NAMES) {
       expect(outcome.message, `the card is selling ${name} again`).not.toContain(name);
     }
+  }, 120_000);
+
+  it('names AES-256 on the card exactly when the file is written at it', async () => {
+    const outcome = await run('protect', { ...PROTECTION_DEFAULTS, cipher: 'AES-256' });
+    const bytes = await bytesOf(outcome);
+    expect(latin1.decode(bytes)).toMatch(/\/CFM \/AESV3/);
+    expect(latin1.decode(bytes)).not.toMatch(/\/CFM \/AESV2/);
+    expect((await inspectPdf(bytes, 'out.pdf')).algorithm).toBe('AES-256');
+    expect(outcome.message).toMatch(/ciphered in AES-256 \(crypt filter \/StdCF, revision 6\)/);
+    expect(outcome.message).not.toMatch(/AES-128|revision 4/);
+    // The promise the control is allowed to make: this app re-opens what it sealed,
+    // at 256 bits, with the pages counted back out of the file.
+    const opened = await inspectPdf(bytes, 'out.pdf', { password: 'hunter2' });
+    expect(opened.error).toBeNull();
+    expect(opened.passwordAccepted).toBe(true);
+    expect(opened.pages).toBe(2);
   }, 120_000);
 
   it('unlocks the gated file into one that opens with no password', async () => {
