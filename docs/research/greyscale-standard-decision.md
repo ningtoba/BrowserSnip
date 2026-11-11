@@ -216,6 +216,41 @@ the projection profile. The direction is that Rec.709 reads saturated greens/cya
 has fewer ink pixels to align and its confidence can drop. Not observed on any page in
 this corpus that is not the chart itself, and `deskew.test.ts` still passes untouched.
 
+## On the deployed site
+
+`www.browsersnip.com` was driven from real Chromium with the chart as input
+(`docs/research/colour-rail.mjs`, values written as a user's event and read back out of the
+DOM), and the two downloads measured swatch by swatch with `colour-ink.py`'s own raster and
+region maths via `greyscale-chart-read.py`. Full table:
+`docs/research/greyscale-deployed.log`.
+
+The bundle those runs came from is `assets/index-D8Az52Yr.js`, **byte-identical** to the
+local `npx vite build` at this commit (`cmp` clean), so the claim is about the deployed
+build and not about a local one: it carries `core/colour.ts` — one occurrence of the shared
+triple, and the retired triple surviving only as the excluded OCR pre-pass.
+
+**24 of 24 swatches agree between the two deployed methods within one 8-bit unit** (widest
+disagreement exactly 1.0000), **no two swatches collapse to one grey in either**, and every
+swatch sits on the Rec.709 value: `red-ink` 76 / 77 not 92, `fixture-red` 69 / 69 not 87,
+`magenta` 72 / 73 not 105, `pure-green` 182 / 182 not 150. No console errors on either run.
+
+The residual is systematic, not noise, and it is worth naming: the vector path writes the
+operator at full precision (`0.29902 g` → 76.25) while the canvas rounds the filtered pixel
+to an integer before encoding (77). So Recolour reads at most one unit **below** Re-render
+on every chromatic swatch, which is the same distance the ticket's tolerance allows and the
+same distance two neighbouring swatches can be. It is not a second standard — one triple
+produces both numbers — but a chart where two colours sat 1 unit apart would be decided by
+this rounding, which is a further reason the near-merge pairs above are reported rather
+than smoothed over.
+
+The result screen's own preview was screenshotted and counted (`docs/research/shots/`), and
+it corroborates: 373–471 flat pixels at each Rec.709 grey against 4–92 at the retired BT.601
+value for the 14 swatches where the UI palette does not itself use that grey. That count is
+**not** the evidence — the poster shares the page with cream and ink chrome whose greys collide
+with `cmyk-look-red`'s two candidates (450 px at 56 against 385 px at 70), so the deployed
+claim rests on the two measured downloads, and the screenshot is recorded as corroboration
+with its one ambiguous row named.
+
 ## Coefficient-site ledger
 
 Every hit for `0.299 / 0.587 / 0.114` and `0.2126 / 0.7152 / 0.0722`, and what happened:

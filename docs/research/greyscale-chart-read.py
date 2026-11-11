@@ -170,9 +170,13 @@ def cmd_compare(args):
             for b in table["swatches"][i + 1 :]
         )[:4]
         print(f"   {n:<14}" + "  ".join(f"{x}/{y}:{d}" for d, x, y in ranked))
-    over = [w for w in widest if w[0] > args.tolerance]
+    # `within one unit` has to mean one unit. Measured greys are means over thousands of
+    # pixels, so a true 1.0 disagreement arrives as 1.0000000000000284 and a bare `>` failed
+    # it — the rig reporting a defect the tolerance explicitly allows.
+    epsilon = 1e-6
+    over = [w for w in widest if w[0] > args.tolerance + epsilon]
     print(
-        f"\ncompare: widest cross-path disagreement {max(w for w, _ in widest):.1f}"
+        f"\ncompare: widest cross-path disagreement {max(w for w, _ in widest):.4f}"
         f" on {max(widest, key=lambda w: w[0])[1]}; tolerance {args.tolerance}."
     )
     if over:

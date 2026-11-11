@@ -1,0 +1,49 @@
+# the deployed site, measured per swatch — 2026-11-11T23:50Z
+
+# bundle: assets/index-D8Az52Yr.js — byte-identical to the local `npx vite build` at this commit (cmp clean),
+#   so these runs exercised the tree that carries core/colour.ts.
+#   occurrences of the retired triple in that bundle: 1 (the excluded OCR pre-pass); the shared triple: 1.
+
+# runs (docs/research/colour-rail.mjs, real Chromium, values read back out of the DOM):
+#   BASE=https://www.browsersnip.com TOOL=pdf-to-greyscale LABEL='Convert to greyscale' \
+#     PDF=docs/research/greyscale-chart.pdf FIELDS='mode=Recolour pages=1'   -> 5219 bytes, console errors: []
+#   ... FIELDS='mode=Re-render pages=1'                                       -> 42581 bytes, console errors: []
+
+# measure: python3 docs/research/greyscale-chart-read.py compare \
+#     --path 'Recolour=/tmp/gs-live/deploy-recolour.pdf:1' --path 'Re-render=/tmp/gs-live/deploy-rerender.pdf:1' --tolerance 1
+# exit 0
+
+swatch            709   601       Recolour      Re-render   spread  worst Δ
+red-ink            77    92           76.0           77.0      1.0      0.7
+green-ink         116   102          115.0          116.0      1.0      0.9
+highlight         227   221          226.0          227.0      1.0      0.5
+marker-wash       240   237          239.0          240.0      1.0      0.8
+orange            163   165          162.0          163.0      1.0      0.9
+pink               78    99           78.0           78.0      0.0      0.1
+violet            113   124          113.0          113.0      0.0      0.1
+blue-ink           96    96           95.0           96.0      1.0      0.6
+pen-ink            27    27           26.0           27.0      1.0      0.8
+fixture-red        69    87           69.0           69.0      0.0      0.4
+fixture-green     137   118          136.0          137.0      1.0      0.5
+fixture-blue       59    64           58.0           59.0      1.0      0.6
+pure-red           54    76           54.0           54.0      0.0      0.2
+pure-green        182   150          182.0          182.0      0.0      0.4
+cyan              201   179          200.0          201.0      1.0      0.8
+magenta            73   105           72.0           73.0      1.0      0.6
+grey-89            89    89           88.7           89.0      0.3      0.3
+grey-128          128   128          127.7          128.0      0.3      0.3
+grey-166          166   166          165.7          166.0      0.3      0.3
+near-white        250   250          249.7          250.0      0.3      0.3
+paper             255   255          255.0          255.0      0.0      0.0
+near-black         10    10           10.0           10.0      0.0      0.0
+text-black          0     0            0.0            0.0      0.0      0.0
+cmyk-look-red      56    70           55.0           56.0      1.0      0.5
+
+── distinct colours that collapse to one grey, per path
+   none
+
+── the pairs that come closest, per path (rounded units apart)
+   Recolour      pure-red/cmyk-look-red:1  green-ink/violet:2  red-ink/pink:2  fixture-blue/cmyk-look-red:3
+   Re-render     red-ink/pink:1  pure-red/cmyk-look-red:2  fixture-blue/cmyk-look-red:3  green-ink/violet:3
+
+compare: widest cross-path disagreement 1.0000 on highlight; tolerance 1.0.
