@@ -5,7 +5,7 @@
  * then click "Add to PDF" to place them on the page.
  * The overlay (SignMain) handles positioning, resizing, and editing.
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { usePdfTool } from '@/hooks/usePdfTool';
 import { useFileStore } from '@/stores/file-store';
@@ -85,7 +85,15 @@ export function SignTool() {
   const [drawW, setDrawW] = useState(120);
   const [drawH, setDrawH] = useState(40);
 
-  useEffect(() => subscribeSign(() => setSt(getSignState())), []);
+  /**
+   * The shared sign state is mutated in place — `addSigItem` pushes onto the same
+   * array, a drag writes `item.x` — so the snapshot has to be copied for React to
+   * see the change at all. Handing back `getSignState()` kept the button dead:
+   * a mark appeared on the page and "Place signatures" still read "Nothing placed
+   * yet", because the state object was the same reference and React skipped the
+   * render (and any derivation memoised on the array identity, below).
+   */
+  useEffect(() => subscribeSign(() => setSt({ ...getSignState() })), []);
 
   const selected = st.items.find((s) => s.id === st.selectedId) ?? null;
 
@@ -263,17 +271,20 @@ export function SignTool() {
 
   /**
    * Items whose page still exists (E6, E19). A signature placed on page 3 and a
-   * document swapped for a 2-page one must not silently write to a page the output
-   * does not have — it is dropped, named, and the user is told.
+   * document swapped for a 2-page one must not silently write to the output that
+   * does not have it — it is dropped, named, and the user is told.
+   *
+   * Deliberately not memoised: the item array is mutated in place, so its identity
+   * says nothing about its contents and a cached list kept holding the marks that
+   * existed when the cache was filled — the newest mark invisible to the count on
+   * the button, and to the run itself.
    */
-  const unusable = useMemo(
-    () => (st.totalPages > 0 ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) === null) : []),
-    [st.items, st.totalPages],
-  );
-  const usable = useMemo(
-    () => (st.totalPages > 0 ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) !== null) : st.items),
-    [st.items, st.totalPages],
-  );
+  const unusable = st.totalPages > 0
+    ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) === null)
+    : [];
+  const usable = st.totalPages > 0
+    ? st.items.filter((item) => clampPageNumber(item.page, st.totalPages) !== null)
+    : st.items;
 
   const handleProcess = useCallback(() => {
     if (unusable.length > 0) {

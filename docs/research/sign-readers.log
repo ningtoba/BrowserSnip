@@ -1,0 +1,36 @@
+# outside readers on the file the deployed site produced (pre-fix): the run never happened, so this is the fixed build's output
+PyMuPDF 1.28.2 on /tmp/eight/sign-fixed.pdf: 3 pages, needs_pass=0, is_form=False
+pypdf %PDF-1.7 · /AcroForm in Root: False · Root keys: ['/Type', '/Pages']
+pypdf fields: (none)
+
+-- page 1: box 595.0 x 842.0
+   annotations: (none)
+   widgets:     (none)
+   image xref=11 cs=DeviceRGB placed 120.0 x 40.0 pt at left=237.5 bottom=401.0 (x frac 0.3992, y-from-bottom frac 0.4762)
+   planted sentence: ['alice1bravo']
+   other words on the page: ['PAGE', '1', '595x842', 'lower-left', 'Ada', 'Lovelace']
+
+-- page 2: box 595.0 x 842.0
+   annotations: (none)
+   widgets:     (none)
+   vector drawings: 4 paths, 0 larger than 20x20 pt; first bboxes (none)
+   planted sentence: ['alice2bravo']
+   other words on the page: ['PAGE', '2', '595x842', 'lower-left']
+
+-- page 3: box 400.0 x 300.0
+   annotations: (none)
+   widgets:     (none)
+   image xref=16 cs=DeviceRGB placed 120.0 x 40.0 pt at left=159.7 bottom=142.9 (x frac 0.3992, y-from-bottom frac 0.4762)
+   planted sentence: ['alice3bravo']
+   other words on the page: ['PAGE', '3', '400x300', 'lower-left']
+
+-- panel claim vs bytes
+   page 1: panel wants left=237.6 bottom=401.0 w=120.0 h=40.0
+     image is  left=237.5 bottom=401.0 w=120.0 h=40.0  dx=-0.1 dy=-0.0 dw=-0.0 dh=-0.0
+     text 'alice1bravo' at left=30.0 bottom=417.4
+     text 'Ada' at left=17.3 bottom=100.1
+     text 'Lovelace' at left=70.8 bottom=100.1
+
+# fonts in the two exports, read by pikepdf
+before the family fix /tmp/eight/sign-local.pdf ['/Helvetica', '/NotoSans-Regular-9750']
+after /tmp/eight/sign-fixed.pdf ['/Helvetica']

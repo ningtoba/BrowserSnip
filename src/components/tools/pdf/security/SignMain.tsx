@@ -92,6 +92,16 @@ export function SignMain() {
   const [loading, setLoading] = useState(true);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [st, setSt] = useState<SignState>(_state);
+  /**
+   * Which typed mark is showing its text editor, if any.
+   *
+   * The editor used to cover a selected mark completely and stopped the mousedown,
+   * so a typed signature could not be dragged at all; the arrow-key nudge - "the
+   * only one a keyboard user gets", below - was swallowed by the same focused
+   * textarea. A mark now moves by drag and by key, and opens for typing on double
+   * click, F2 or Enter, which is what "placed where you drop it" needs to be true.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [canvasDims, setCanvasDims] = useState({ w: 0, h: 0 });
   const [scale, setScale] = useState(1.0);
   const scaleRef = useRef(scale);
@@ -370,6 +380,18 @@ export function SignMain() {
                   return (
                     <div key={item.id}
                       onMouseDown={(e) => onItemDragStart(e, item.id)}
+                      onDoubleClick={() => { if (item.type === 'text') setEditingId(item.id); }}
+                      tabIndex={0}
+                      onFocus={() => selectSigItem(item.id)}
+                      onKeyDown={(event) => {
+                        if (item.type === 'text' && (event.key === 'F2' || event.key === 'Enter')) {
+                          event.preventDefault();
+                          setEditingId(item.id);
+                        }
+                      }}
+                      title={item.type === 'text'
+                        ? 'Drag to move, arrow keys to nudge, double-click or F2 to retype'
+                        : 'Drag to move, arrow keys to nudge'}
                       data-sign-placement
                       aria-label={`${item.type === 'text' ? 'Typed signature' : item.type === 'image' ? 'Signature image' : 'Drawn signature'} on page ${item.page}`}
                       className={`absolute border-2 rounded select-none cursor-move ${borderColor} ${isSelected ? selBg : 'bg-transparent'}`}
@@ -378,10 +400,17 @@ export function SignMain() {
 
                       {/* Text */}
                       {item.type === 'text' && (
-                        isSelected ? (
+                        isSelected && editingId === item.id ? (
                           <textarea value={item.text}
                             onChange={(e) => handleTextChange(item.id, e.target.value)}
                             onMouseDown={(e) => e.stopPropagation()}
+                            onBlur={() => setEditingId(null)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape' || event.key === 'Enter') {
+                                event.preventDefault();
+                                event.currentTarget.blur();
+                              }
+                            }}
                             className="w-full h-full bg-transparent border-0 outline-none resize-none text-black px-1.5 pt-3 pb-0.5 font-['Helvetica',sans-serif]"
                             style={{ fontSize: Math.max(8, item.h * 0.45 * scale) }}
                             placeholder="Type…" autoFocus />

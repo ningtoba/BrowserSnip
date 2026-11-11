@@ -1,0 +1,24 @@
+screen at intake: {"doc":"ruled.pdf · 3 pages · placing on page 1","blocked":"Add a signature above: type one, upload a picture, or draw it.","offpage":null,"button":"Place signatures","enabled":false,"notice":null}
+pad drawn, ink pixels: 362
+clicked "Add drawing to PDF"
+marks after add: [{"label":"Drawn signature on page 1","page":1,"px":{"x":349.8,"y":590.5,"w":176.7,"h":58.9},"abs":{"x":821.8,"y":773,"w":176.7,"h":58.9},"canvas":{"w":876,"h":1240},"scale":1.4723,"xFrac":0.3993,"yFrac":0.4763,"wPt":120.03,"hPt":40.01}]
+screen after add: {"doc":"ruled.pdf · 3 pages · placing on page 1","blocked":null,"offpage":null,"button":"Place 1 signature","enabled":true,"notice":null}
+typed: typed into Your name or initials…
+add text: Add text to PDF
+marks now: [{"label":"Drawn signature on page 1","page":1,"px":{"x":349.8,"y":590.5,"w":176.7,"h":58.9},"abs":{"x":821.8,"y":773,"w":176.7,"h":58.9},"canvas":{"w":876,"h":1240},"scale":1.4723,"xFrac":0.3993,"yFrac":0.4763,"wPt":120.03,"hPt":40.01},{"label":"Typed signature on page 1","page":1,"px":{"x":305.6,"y":590.5,"w":265.1,"h":58.9},"abs":{"x":777.6,"y":773,"w":265.1,"h":58.9},"canvas":{"w":876,"h":1240},"scale":1.4723,"xFrac":0.3488,"yFrac":0.4763,"wPt":180.05,"hPt":40.01}]
+marks after drag: [{"label":"Drawn signature on page 1","page":1,"px":{"x":349.8,"y":590.5,"w":176.7,"h":58.9},"abs":{"x":821.8,"y":773,"w":176.7,"h":58.9},"canvas":{"w":876,"h":1240},"scale":1.4723,"xFrac":0.3993,"yFrac":0.4763,"wPt":120.03,"hPt":40.01},{"label":"Typed signature on page 1","page":1,"px":{"x":25.5,"y":1032.5,"w":265.1,"h":58.9},"abs":{"x":497.5,"y":1215,"w":265.1,"h":58.9},"canvas":{"w":876,"h":1240},"scale":1.4723,"xFrac":0.0291,"yFrac":0.1198,"wPt":180.05,"hPt":40.01}]
+PANEL CLAIM (page,xFrac,yFrac,wPt,hPt): 1,0.3993,0.4763,120.03,40.01;1,0.0291,0.1198,180.05,40.01
+result screen: Your mark, placed where you drop it, drawn into the page in this tab. ;; Place 2 signatures
+PANEL CLAIM, page 1 (page,xFrac,yFrac,wPt,hPt): 1,0.3993,0.4763,120.03,40.01;1,0.0291,0.1198,180.05,40.01
+page 1 -> 2 (Next: clicked)
+page 2 -> 3 (Next: clicked)
+small page: duplicated Place the draw signature again on page 3 · pane is showing page 3 of 3
+marks on the page the pane is showing: [{"label":"Drawn signature on page 3","page":3,"px":{"x":235.1,"y":172.5,"w":176.7,"h":58.9},"abs":{"x":850.6,"y":355,"w":176.7,"h":58.9},"canvas":{"w":589,"h":441},"scale":1.4725,"xFrac":0.3992,"yFrac":0.4753,"wPt":120.01,"hPt":40}]
+PANEL CLAIM, page 3 (page,xFrac,yFrac,wPt,hPt): 3,0.3992,0.4753,120.01,40
+pane notice: ""
+zoomed to 1280x900, marks: [{"label":"Drawn signature on page 3","page":3,"px":{"x":140.3,"y":102.9,"w":105.5,"h":35.1},"abs":{"x":764.8,"y":285.4,"w":105.5,"h":35.1},"canvas":{"w":351,"h":263},"scale":0.8775,"xFrac":0.3998,"yFrac":0.475,"wPt":120.17,"hPt":40.05}]
+zoom drift (fractions of the page, and pt): [{"page":3,"dx":0.0006,"dy":-0.0003,"dw":0.16}] · the same point of the page at the new scale
+run click: "Place 3 signatures"
+wrote /tmp/eight/sign-fixed.pdf 5170 bytes
+screen after the run: {"doc":"ruled.pdf · 3 pages · placing on page 3","blocked":null,"offpage":null,"button":"Place 3 signatures","enabled":true,"notice":null}
+console errors []

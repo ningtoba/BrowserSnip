@@ -641,6 +641,21 @@ export interface SignatureResult {
  * Cyrillic or Arabic embeds a real face instead of throwing the WinAnsi
  * `drawText` error the old path died on.
  */
+/**
+ * The families the sign pane offers are standard 14 names, and a standard name is
+ * what the overlay paints the mark with (`font-['Helvetica',sans-serif]`).
+ *
+ * `core/fonts.getFont` reads a present `fontFamily` as "give me an embedded face",
+ * so handing it `Helvetica` fetched a Noto subset from the site, embedded that, and
+ * failed when nothing was served — while the bytes named a face the pane never
+ * showed. A name the standard 14 cannot supply still goes through untouched.
+ */
+const STANDARD_FOURTEEN = new Set(['helvetica', 'times', 'timesroman', 'courier']);
+function embeddedFamily(requested: string | undefined): string | undefined {
+  const name = (requested ?? '').trim().toLowerCase();
+  return name === '' || STANDARD_FOURTEEN.has(name) ? undefined : requested;
+}
+
 export async function drawSignatureMarks(
   doc: PDFDocument,
   marks: readonly SignatureMark[],
@@ -700,13 +715,14 @@ export async function drawSignatureMarks(
         y: y + (height - size) / 2,
         size,
         color: rgb(r, g, b),
-        fontFamily: mark.fontFamily,
+        fontFamily: embeddedFamily(mark.fontFamily),
         maxWidth: box.x + box.width - x,
       });
       placed += 1;
     } catch (error) {
-      // `core/fonts` fetches a Unicode face from the CDN for scripts the
-      // standard 14 cannot spell; offline, that fetch is what fails.
+      // `core/fonts` embeds a Unicode face for scripts the standard 14 cannot
+      // spell; that face is fetched from the site, so this is the one branch a
+      // typed signature can take that does not settle with nothing served.
       notes.push(`The typed signature "${text}" on page ${mark.page} was not written: ${
         error instanceof Error ? error.message : 'its font could not be loaded'
       }. Offline, a signature drawn or uploaded as a picture still works.`);
