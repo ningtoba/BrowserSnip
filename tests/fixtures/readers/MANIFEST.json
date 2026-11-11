@@ -191,6 +191,12 @@
   "sha256": "3ecaf497817e61905c7807f5a25fda3e74f6a38f097d4c2bdda716384256360e",
   "shape": "pypdf's own outline: /A /GoTo with an inline /D array, nested through /First"
  },
+ "outlines-redactable.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "sha256": "4e5580a7d39742afbf9c1834ef7cb04736f6b2cee70d7b27155c90a3cfc10c9d",
+  "shape": "the referenced-/Dests failure with titles that match the page's own words"
+ },
  "outlines-targetless.pdf": {
   "payloads": {},
   "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",

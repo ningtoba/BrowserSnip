@@ -2693,6 +2693,118 @@
    "poppler_pages": "4"
   }
  },
+ "outlines-redactable.pdf": {
+  "shape": "the referenced-/Dests failure with titles that match the page's own words",
+  "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)",
+  "outside": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Lighthouse One",
+     0
+    ],
+    [
+     2,
+     "Inventory Two",
+     0
+    ],
+    [
+     1,
+     "Sheet Three",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Lighthouse One",
+     "page": 0
+    },
+    {
+     "title": "Inventory Two",
+     "page": 1
+    },
+    {
+     "title": "Sheet Three",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  },
+  "outside_after_freeze": {
+   "pages": 4,
+   "labels": [],
+   "toc": [
+    [
+     1,
+     "Lighthouse One",
+     0
+    ],
+    [
+     2,
+     "Inventory Two",
+     0
+    ],
+    [
+     1,
+     "Sheet Three",
+     0
+    ]
+   ],
+   "mupdf_page_labels": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "pypdf_labels": [
+    "1",
+    "2",
+    "3",
+    "4"
+   ],
+   "pypdf_outline": [
+    {
+     "title": "Lighthouse One",
+     "page": 0
+    },
+    {
+     "title": "Inventory Two",
+     "page": 1
+    },
+    {
+     "title": "Sheet Three",
+     "page": 2
+    }
+   ],
+   "pypdf_named_dests": [
+    "alpha",
+    "beta",
+    "gamma"
+   ],
+   "poppler_opens": true,
+   "poppler_pages": "4"
+  }
+ },
  "outlines-targetless.pdf": {
   "shape": "items with no destination at all: a heading, a /URI action, and an /SE-only item",
   "producer": "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2",

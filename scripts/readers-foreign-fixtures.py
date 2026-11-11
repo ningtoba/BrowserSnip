@@ -170,9 +170,6 @@ def build_labels(name: str, shape: str, producer: str, pages: int, build) -> Non
 # Outlines
 # ---------------------------------------------------------------------------
 
-OUTLINE_TITLES = ("Chapter One", "Chapter Two")
-
-
 def outline_dicts(pdf: Any) -> list[Any]:
     """Every outline item dictionary in reading order, flattened."""
     found: list[Any] = []
@@ -242,6 +239,8 @@ def rewrite_items(pdf: Any, form: str, names: tuple[str, ...] = OUTLINE_KEYS) ->
     The base outline is always built the same way, so the only thing that varies
     between two `outlines-*.pdf` files is how the item names where it goes.
     """
+    if form == "keep":
+        return
     items = outline_dicts(pdf)
     for index, item in enumerate(items):
         key = names[index % len(names)]
@@ -275,25 +274,28 @@ def rewrite_items(pdf: Any, form: str, names: tuple[str, ...] = OUTLINE_KEYS) ->
                                            pikepdf.Name("/Fit")])
             item["/A"] = pikepdf.Dictionary(S=pikepdf.Name("/GoTo"),
                                             D=pikepdf.String(key))
-        else:  # keep whatever the producer wrote
-            return
+        else:
+            raise ValueError(f"unknown item form {form!r}")
 
 
-def base_outline(name: str, nested: bool = True) -> str:
+def base_outline(name: str, nested: bool = True,
+                 titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two")) -> str:
     """A MuPDF-written two-level outline, so the wiring is a producer's, not ours."""
     doc = base(4)
-    toc = [[1, "Chapter One", 1], [2, "Section One.A", 2], [1, "Chapter Two", 3]]
-    doc.set_toc(toc if nested else [[1, t, i + 1] for i, t in enumerate(OUTLINE_TITLES)])
+    toc = [[index + 1 if nested and index == 1 else 1, title, page]
+           for index, (title, page) in enumerate(zip(titles, (1, 2, 3), strict=True))]
+    doc.set_toc(toc if nested else [[1, title, index + 1]
+                                    for index, title in enumerate(titles[:2])])
     return write(doc, name)
 
 
 def build_outline(name: str, shape: str, producer: str, where: str, value_form: str,
-                  item_form: str, nested: bool = True) -> None:
-    base_outline(name, nested)
+                  item_form: str, nested: bool = True,
+                  titles: tuple[str, ...] = ("Chapter One", "Section One.A", "Chapter Two")) -> None:
+    base_outline(name, nested, titles)
     pdf = reopen(name)
     install_dests(pdf, where, value_form)
-    if item_form != "keep":
-        rewrite_items(pdf, item_form)
+    rewrite_items(pdf, item_form)
     save(pdf, name)
     SHAPES[name] = {"shape": shape, "producer": producer}
 
@@ -432,7 +434,8 @@ def main() -> None:  # noqa: C901, PLR0915
         "outlines-flat-chain.pdf",
         "a flat /First → /Next chain of two items with inline /Dest arrays — the control",
         "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2", "absent", "array-inline",
-        "dest-inline-array", nested=False)
+        "dest-inline-array", nested=False,
+        titles=("Chapter One", "Chapter Two", "Chapter Three"))
     build_outline(
         "outlines-dests-inline.pdf",
         "/Dests flat /Names with the destination array inline, item /Dest a string",
@@ -518,6 +521,14 @@ def main() -> None:  # noqa: C901, PLR0915
         "an item carrying /Dest **and** /A on the same entry (which one a reader honours)",
         "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)", "catalog-flat",
         "array-ref", "dest-and-action")
+    # Titles made of the words planted on the page, so `redact-pdf`'s bookmark scrub
+    # has something to rewrite and the round trip can be measured.
+    build_outline(
+        "outlines-redactable.pdf",
+        "the referenced-/Dests failure with titles that match the page's own words",
+        "MuPDF 1.28.2 (set_toc) + libqpdf 12.3.2 (/Dests)", "catalog-flat",
+        "array-ref", "dest-string",
+        titles=("Lighthouse One", "Inventory Two", "Sheet Three"))
 
 
 # ---------------------------------------------------------------------------
