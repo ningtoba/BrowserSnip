@@ -52,7 +52,7 @@ repo calls a blank page with a page count.
    shape    /EF naming only /DOS and only /UNIX
    producer libqpdf 12.3.2 (pikepdf)
    MuPDF    error: FzErrorFormat: code=7: object is not a stream
-   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/DOS': IndirectObject(5, 0, 140482203498928)}
+   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/DOS': Object 5 0 R}
    poppler  dos.bin, unix.bin, stderr: Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
 Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
    expected dos.bin sha256=12abf8f19a5a, unix.bin sha256=149be634b36c
@@ -61,7 +61,7 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    shape    /EF is the EmbeddedFile stream itself, no wrapper dict
    producer libqpdf 12.3.2 (pikepdf)
    MuPDF    error: FzErrorFormat: code=7: object is not a stream
-   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/Params': {'/CheckSum': '¼€UD+ú?·cÖ{>€ÐÆ«', '/CreationDate': 'D:20240229120000Z', '/ModDate': 'D:20240301083000Z', '/Size': 277}, '/Subtype': '/text/plain', '/Type': '/EmbeddedFile', '/Filter': '/FlateDecode'}
+   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/Filter': '/FlateDecode', '/Params': {'/CheckSum': '¼€UD+ú?·cÖ{>€ÐÆ«', '/CreationDate': 'D:20240101120000Z', '/ModDate': 'D:20240101120000Z', '/Size': 277}, '/Subtype': '/text/plain', '/Type': '/EmbeddedFile'}
    poppler  ef-stream.bin
    expected ef-stream.bin sha256=60e6ee7dcaf3
 

@@ -1,0 +1,130 @@
+{
+ "_base.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF)",
+  "sha256": "bb101755c74ce2140dbcb93e3c5a68ba78bcc705a9e1f0407dedcc36a57ad448",
+  "shape": "the three-page base, written by MuPDF"
+ },
+ "annot-only.pdf": {
+  "payloads": {
+   "annot-only.bin": "7ba3aad285a9e8b7a87b995b52c8a1d68d070f51a74959e6047e1ae24b19b02a"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "dc29bd11e1b7a615f79a18457cf48d1481b57c3681f52622e32f1ec9d671f7c3",
+  "shape": "attachment reachable only through a page /FileAttachment"
+ },
+ "catalog-and-annot.pdf": {
+  "payloads": {
+   "catalog-and-annot.bin": "65f54195401c66ccc513b5b4e87115362774fb0e418f88d119a0de5f66184a43"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "2b06f4723a0e7c8121e5e6fc9a94cd6ab46e2ac38ee0c9f5bf091326a2c78a75",
+  "shape": "one FileSpec named twice: /EmbeddedFiles and page /Annots"
+ },
+ "direct-namespec.pdf": {
+  "payloads": {
+   "direct-spec.bin": "f688bc41534910ec490e37640d9177d49ca6199d0c488e029f9f648617993fa0"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "41ad400dd8743ca818637f5d049aafc05e5072e8b2510f49be798da7302b8dcc",
+  "shape": "flat /Names whose value is a DIRECT FileSpec dict"
+ },
+ "doc-annot-only.pdf": {
+  "payloads": {
+   "doc-annot.bin": "39e485c58370ddc353926099391d4c886615f843006c485aac554f0407660962"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "d7941a98b852550a7280649a8ecee61da83d94427eb737284ec598c3ff78ea44",
+  "shape": "attachment named only in a catalogue-level /Annots"
+ },
+ "ef-dict-indirect.pdf": {
+  "payloads": {
+   "bare.bin": "3adf0ffe7e8a26ef9185f23ad960fc778ec8f5a3b470653f010e377df2f83b46"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "0233a7eaf6d4db8c638931510e4cf28b6f64211d54abdd5a0f3e52c06a70c7a5",
+  "shape": "/EF is an indirect dict; no /Subtype, no /Params"
+ },
+ "ef-dos-unix.pdf": {
+  "payloads": {
+   "dos.bin": "12abf8f19a5ae7531964124c39f6a178bb70516785ab4adc3f2cba5319f49e34",
+   "unix.bin": "149be634b36c30d303821fceac007b36517c40394afb3ca2987e851079157e3e"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "c2e2a99c15a2e5dd1a6fd8c04cb03b5b82bfd7f199c23faa17e3be468809bbc5",
+  "shape": "/EF naming only /DOS and only /UNIX"
+ },
+ "ef-points-at-stream.pdf": {
+  "payloads": {
+   "ef-stream.bin": "60e6ee7dcaf326e8629d185f902291d1aae1f9779d6cab0810c5c96a21ae6c5b"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "494c840675d61b100bce4acab9d42f5b091214d1971ea5311303351e306fe748",
+  "shape": "/EF is the EmbeddedFile stream itself, no wrapper dict"
+ },
+ "ef-uf-only.pdf": {
+  "payloads": {
+   "ef-uf.bin": "d2e0be7b8199907e8beef79e1e3a54363d77d25341b2ab2fe85b05a4dd06e059"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "9dab9974f0d97ca787b8bf49f87d2e916d66880699a057b3e4a74a40484eea32",
+  "shape": "/EF << /UF >> with no /F at all"
+ },
+ "ef-uf-over-f.pdf": {
+  "payloads": {
+   "both-names.bin": "f2e68a9e71e0e4276c8f5ca611fbd98dd68a46981881e9e09fa321e5c7b5a702"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "092555a44f14de6bd2fb59cc244ccf4020b322b944ccea13d1a9ed2634de588b",
+  "shape": "/EF << /F decoy /UF real >>: /UF must win"
+ },
+ "flat-names-indirect.pdf": {
+  "payloads": {
+   "flat-ref.bin": "b71020a0db478637d22d3b3964df821029a12296f518cdbc595c9e0cbfcb932d"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "b3c2d9d4c415df5deba57fc73af80fbfd7ba114211b433838e876ce32ccdfa7e",
+  "shape": "flat /Names, indirect FileSpec, /EF << /F >>, full /Params"
+ },
+ "kids-tree.pdf": {
+  "payloads": {
+   "alpha.bin": "bc2642b8271ad87b18de381dcc8a80794e2a8ebf8b499a4ef4df692ff407fd6d",
+   "beta.bin": "f61ea5e77bfc46401a71eecca12f2811007879fe2887a1752d5919a96e424e0a"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "b07194932de7fed6aa76ae239bf714ff6face695a39c459ec9e75b51216c3ab5",
+  "shape": "/EmbeddedFiles as a /Kids + /Limits tree, two leaves"
+ },
+ "mupdf-native.pdf": {
+  "payloads": {
+   "note.txt": "6d4b8fa7b05143ad7816d3b57e46cd37d0d70396436fea36ba19124a0f40a94f"
+  },
+  "producer": "MuPDF 1.28.2 (PyMuPDF embfile_add)",
+  "sha256": "086a7fbf60182634a452df2ea74ac503143629eff7c6735613dad973a68b8a59",
+  "shape": "name-tree value is a direct FileSpec dict, /EF << /F >>"
+ },
+ "no-params.pdf": {
+  "payloads": {
+   "no-params.bin": "09ed501c75b36923694f7355a5fdda98326f7c475e8d98da01243908c931663d"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "51b260fd0c5976653ec649450eaffc3e37ccbcbcbf5237422036ad8c8e32dea6",
+  "shape": "EmbeddedFile stream with no /Params (no Size, no CheckSum)"
+ },
+ "pypdf-native.pdf": {
+  "payloads": {
+   "ledger.csv": "dc27bf90d6be70abb0146ec37f9da88633a1ba44ae84a5f102640b6c5abb776f"
+  },
+  "producer": "pypdf 6.14.2",
+  "sha256": "dd0f52f7bfc4fc9c86179ed0d349f852d8653ab4c7a531cd07a9201fc4e901e3",
+  "shape": "pypdf's own FileSpec + /EmbeddedFiles entry"
+ },
+ "unicode-name.pdf": {
+  "payloads": {
+   "über-𓂀.txt": "067570bac8320c1d6ee3ddf08d35248281ffcf3ab64277a4c82e668d4bc98325"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "97cde48ff681db4ee1e2b23ba0a5717276eb63022e594efce28c84b2f27842d7",
+  "shape": "UTF-16BE /Names key, /UF differing from /F"
+ }
+}

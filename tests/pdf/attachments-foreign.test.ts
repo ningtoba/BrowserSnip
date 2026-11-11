@@ -37,7 +37,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PDFArray, PDFDict, PDFName } from '@maxwbh/pdf-lib';
 import { newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
@@ -158,6 +158,55 @@ const CASES: Case[] = [
     expect: [{ name: 'über-𓂀.txt', sha256: '067570bac8320c1d6ee3ddf08d35248281ffcf3ab64277a4c82e668d4bc98325' }],
   },
 ];
+
+/**
+ * The fixtures are byte-reproducible, and this is the assertion behind that claim.
+ *
+ * `scripts/attachments-foreign-fixtures.py` freezes every timestamp and both halves
+ * of the trailer `/ID`, and `MANIFEST.json` records the SHA-256 of what it produced.
+ * Without this case, a red test could mean "the reader broke" or "someone re-ran the
+ * generator" — and telling those apart is the whole value of pinning a fixture. With
+ * it, the fixtures cannot drift under the reader: `--check` proves two runs of the
+ * generator agree, and this proves the committed bytes are what that generator
+ * writes.
+ */
+describe('the committed fixtures are the bytes the generator recorded', () => {
+  interface Entry {
+    sha256: string;
+    shape: string;
+    producer: string;
+    payloads: Record<string, string>;
+  }
+  const manifest = JSON.parse(
+    readFileSync(resolve(FIXTURES, 'MANIFEST.json'), 'utf8'),
+  ) as Record<string, Entry>;
+
+  it('covers every fixture, and only fixtures the generator wrote', () => {
+    const onDisk = readdirSync(FIXTURES).filter((name) => name.endsWith('.pdf')).sort();
+    expect(Object.keys(manifest).sort()).toEqual(onDisk);
+  });
+
+  for (const [name, entry] of Object.entries(manifest)) {
+    it(`${name} still hashes to its recorded digest`, () => {
+      expect(sha256(fixtureBytes(name)), `regenerate only with scripts/attachments-foreign-fixtures.py`).toBe(
+        entry.sha256,
+      );
+      expect(entry.shape, name).not.toBe('');
+      expect(entry.producer, name).toMatch(/MuPDF|pikepdf|pypdf/);
+    });
+  }
+
+  it('records the payload hash every case above asserts, so the two cannot disagree', () => {
+    for (const testCase of CASES) {
+      const entry = manifest[testCase.file];
+      expect(entry, `${testCase.file} is in the manifest`).toBeTruthy();
+      expect(Object.keys(entry.payloads).sort()).toEqual(testCase.expect.map((w) => w.name).sort());
+      for (const wanted of testCase.expect) {
+        expect(entry.payloads[wanted.name], `${testCase.file}/${wanted.name}`).toBe(wanted.sha256);
+      }
+    }
+  });
+});
 
 const listed = async (file: string) => listAttachments(await open(file));
 

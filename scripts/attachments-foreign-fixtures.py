@@ -32,12 +32,27 @@ Payloads are distinct per fixture and cover every byte value 0x00-0xFF plus a UT
 marker, so an extraction is proved by its SHA-256 and not by its length — the
 "assert content, not count" rule this repo already applies to pages.
 
-    python3 scripts/attachments-foreign-fixtures.py [outdir]
+**The output is byte-reproducible.** MuPDF stamps the embedded file's `/Params` with
+the time of the run and every producer writes a random `/ID`, so the first version of
+this script gave different bytes on every invocation — which makes a red test mean
+"someone re-ran the generator" as often as "the reader broke". `freeze()` therefore
+replaces every timestamp with a fixed one and re-saves with libqpdf's
+content-derived ID; it touches no structure, and the census below is the proof,
+because it re-reads each shape (inline vs referenced file spec, `/EF` form, `/Kids`
+tree) from the kept bytes. `MANIFEST.json` records the SHA-256 of every fixture and
+`tests/pdf/attachments-foreign.test.ts` asserts the files on disk still match it.
+
+    python3 scripts/attachments-foreign-fixtures.py [outdir]  # rebuild
+    python3 scripts/attachments-foreign-fixtures.py --check   # rebuild twice, compare
 """
 import hashlib
 import json
 import os
+import re
+import shutil
+import tempfile
 import subprocess
+import time
 import sys
 
 import pikepdf
@@ -50,7 +65,16 @@ TARGET = os.path.abspath(
 os.makedirs(TARGET, exist_ok=True)
 
 # One base document, written by MuPDF so no fixture sits on a pdf-lib byte.
-BASE = os.path.join(TARGET, "_base.pdf")
+
+
+def base_path() -> str:
+    """The MuPDF-written three-page base every hand-shaped fixture starts from.
+
+    A function, not a constant: `--check` retargets `TARGET` to a scratch directory,
+    and a module-level path would have the scratch build read and write the committed
+    fixtures.
+    """
+    return os.path.join(TARGET, "_base.pdf")
 
 
 def make_base() -> None:
@@ -59,7 +83,7 @@ def make_base() -> None:
         page = doc.new_page()
         page.insert_text((72, 96), f"Foreign attachment fixture, sheet {i + 1}", fontsize=13)
         page.insert_text((72, 120), "The pages are ordinary; everything of interest is in the catalogue.", fontsize=9)
-    doc.save(BASE)
+    doc.save(base_path())
     doc.close()
 
 
@@ -71,6 +95,20 @@ def payload(tag: str, shift: int = 0) -> bytes:
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def md5_digest(data: bytes) -> bytes:
+    """The digest PDF stores in `/Params /CheckSum`: MD5, by definition.
+
+    ISO 32000-1 §7.11.3 fixes the algorithm, so this is not a security primitive and
+    `usedforsecurity=False` is what says so out loud.
+    """
+    return hashlib.md5(data, usedforsecurity=False).digest()
+
+
+def file_bytes(path: str) -> bytes:
+    with open(path, "rb") as handle:
+        return handle.read()
 
 
 def D(**kw) -> pikepdf.Dictionary:
@@ -85,8 +123,9 @@ def N(text: str) -> pikepdf.Name:
     return pikepdf.Name("/" + text)
 
 
-def num(value: int):
-    return pikepdf.Object.parse(str(value).encode())
+def num(value: int) -> pikepdf.Integer:
+    """A PDF integer object, built directly rather than parsed out of text."""
+    return pikepdf.Integer(int(value))
 
 
 def rect():
@@ -103,8 +142,7 @@ def ef_stream(pdf, data: bytes, *, params: bool = True, subtype: bool = True, sh
         raw = stream.read_bytes()
         stream["/Params"] = D(
             Size=num(len(raw)),
-            # /CheckSum is MD5 by definition (ISO 32000-1 §7.11.3), not a security choice.
-            CheckSum=pikepdf.String(hashlib.md5(raw, usedforsecurity=False).digest()),
+            CheckSum=pikepdf.String(md5_digest(raw)),
             CreationDate=pikepdf.String("D:20240229120000Z"),
             ModDate=pikepdf.String("D:20240301083000Z"),
         )
@@ -156,13 +194,61 @@ def file_attachment(pdf, fs):
 
 def save(pdf, name: str) -> str:
     path = os.path.join(TARGET, name)
-    pdf.save(path)
+    pdf.save(path, static_id=True)
     pdf.close()
     return path
 
 
 EXPECTED: dict[str, dict[str, str]] = {}
 SHAPES: dict[str, dict[str, str]] = {}
+
+# The one timestamp every fixture carries, so the bytes never depend on the clock.
+FROZEN_STAMP = "D:20240101120000Z"
+
+
+def freeze(path: str) -> None:
+    """Pin what varies per run — every timestamp and the file ID — and nothing else.
+
+    Two producers stamp the clock: `/Info` (the document's own dates) and the
+    `/Params` dictionary **on the embedded-file stream**, which is where MuPDF puts
+    the attachment's creation and modification times. Both are replaced with
+    `FROZEN_STAMP`, and the trailer `/ID` is pinned from both sides (see below). The structures the fixtures exist to test — an
+    inline file specification, a `/Kids` tree, an `/EF` that is a stream — are left
+    exactly as their producers wrote them, which `census()` re-reads from the kept
+    bytes and `tests/pdf/attachments-foreign.test.ts` asserts shape by shape.
+
+    `pikepdf.Stream` is **not** a `pikepdf.Dictionary` subclass in pikepdf 10, so the
+    loop has to name both: testing only for `Dictionary` quietly skipped every
+    `/Params` in the set, which is the reason the first version of this function
+    looked like it worked and did not.
+    """
+    pdf = pikepdf.open(path, allow_overwriting_input=True)
+    stamp = pikepdf.String(FROZEN_STAMP)
+    # ISO 32000-1 §14.4: `/ID` is two 16-byte strings. Neither lever alone pins
+    # both halves — `static_id` fixes only the *changing* second element, while the
+    # first is carried over from the producer, and MuPDF gives the base document a
+    # fresh random one on every run — so the permanent half is named here from the
+    # fixture's own file name.
+    identity = bytes.fromhex(sha(os.path.basename(path).encode()))[:16]
+    pdf.trailer["/ID"] = pikepdf.Array([pikepdf.String(identity), pikepdf.String(identity)])
+
+    def pin(container) -> None:
+        for key in ("/CreationDate", "/ModDate"):
+            if key in container:
+                container[key] = stamp
+
+    if "/Info" in pdf.trailer:
+        pin(pdf.trailer["/Info"])
+    for obj in pdf.objects:
+        if not isinstance(obj, (pikepdf.Dictionary, pikepdf.Stream)):
+            continue
+        if "/Params" in obj and isinstance(obj["/Params"], pikepdf.Dictionary):
+            pin(obj["/Params"])
+        for key in ("/CreationDate", "/ModDate"):
+            if key in obj and "/Params" not in obj:
+                pin(obj)
+    pdf.save(path, static_id=True)
+    pdf.close()
 
 
 def build() -> None:
@@ -175,7 +261,7 @@ def build() -> None:
 
     # 1 — the shape MuPDF itself writes, and the one `docs/TOOL-TRIAGE.md` ERRORS 4
     # met: a **direct** file-specification dictionary inside the `/Names` array.
-    doc = pymupdf.open(BASE)
+    doc = pymupdf.open(base_path())
     one = payload("mupdf-native")
     doc.embfile_add("note.txt", one, filename="note.txt", ufilename="note.txt", desc="planted by MuPDF")
     doc.save(os.path.join(TARGET, "mupdf-native.pdf"))
@@ -186,7 +272,7 @@ def build() -> None:
     # 2 — pypdf's own writer: a second independent native producer.
     two = payload("pypdf-native")
     writer = pypdf.PdfWriter()
-    writer.append(pypdf.PdfReader(BASE))
+    writer.append(pypdf.PdfReader(base_path()))
     writer.add_attachment("ledger.csv", two)
     with open(os.path.join(TARGET, "pypdf-native.pdf"), "wb") as fh:
         writer.write(fh)
@@ -194,7 +280,7 @@ def build() -> None:
          {"ledger.csv": two}, "pypdf 6.14.2")
 
     def hand(name: str, shape: str, files: dict[str, bytes], fill) -> None:
-        pdf = pikepdf.open(BASE)
+        pdf = pikepdf.open(base_path())
         fill(pdf)
         save(pdf, name)
         case(name, shape, files, "libqpdf 12.3.2 (pikepdf)")
@@ -355,6 +441,33 @@ def build() -> None:
 
     hand("ef-dict-indirect.pdf", "/EF is an indirect dict; no /Subtype, no /Params", p14, f14)
 
+    freeze_all()
+
+
+def freeze_all() -> None:
+    """Freeze every fixture in `TARGET` and write `MANIFEST.json` beside them.
+
+    A separate step, run last: the shapes are whatever their producers wrote, and
+    this is the only pass that touches the bytes afterwards, so "the file on disk is
+    the shape the test claims" stays checkable.
+    """
+    for name in sorted(os.listdir(TARGET)):
+        if name.endswith(".pdf"):
+            freeze(os.path.join(TARGET, name))
+    manifest = {
+        name: {
+            "sha256": sha(file_bytes(os.path.join(TARGET, name))),
+            "shape": SHAPES.get(name, {}).get("shape", "the three-page base, written by MuPDF"),
+            "producer": SHAPES.get(name, {}).get("producer", "MuPDF 1.28.2 (PyMuPDF)"),
+            "payloads": EXPECTED.get(name, {}),
+        }
+        for name in sorted(os.listdir(TARGET))
+        if name.endswith(".pdf")
+    }
+    with open(os.path.join(TARGET, "MANIFEST.json"), "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=1, ensure_ascii=False, sort_keys=True)
+        fh.write("\n")
+
 
 def census() -> list[dict]:
     """What three outside readers say about each kept fixture."""
@@ -379,9 +492,12 @@ def census() -> list[dict]:
                 for k, v in reader.attachments.items()
             ]
         except Exception as exc:  # noqa: BLE001
-            row["pypdf"] = f"error: {type(exc).__name__}: {exc}"
+            # `IndirectObject(5, 0, 140056169133968)` carries the Python object id,
+            # which is a different number every run and would make the log drift.
+            text = f"{type(exc).__name__}: {exc}"
+            row["pypdf"] = "error: " + re.sub(r"IndirectObject\((\d+), (\d+), \d+\)", r"Object \1 0 R", text)
         try:
-            out = subprocess.run(["pdfdetach", "-list", path], capture_output=True, check=False)
+            out = subprocess.run(["pdfdetach", "-list", path], capture_output=True, check=False, timeout=60)
             # poppler hands back the file's own bytes for a `/UF` name, which is not
             # always valid UTF-8; decode with replacement rather than losing the row.
             stdout = out.stdout.decode("utf-8", errors="replace")
@@ -395,7 +511,7 @@ def census() -> list[dict]:
 
 
 def poppler_version() -> str:
-    out = subprocess.run(["pdfdetach", "--version"], capture_output=True, text=True, check=False)
+    out = subprocess.run(["pdfdetach", "--version"], capture_output=True, text=True, check=False, timeout=60)
     return (out.stdout + out.stderr).strip() or "pdfdetach (version unknown)"
 
 
@@ -452,7 +568,40 @@ def emit_log(rows: list[dict], path: str) -> None:
         fh.write("\n".join(lines))
 
 
+def check() -> int:
+    """Rebuild everything twice through the documented CLI and compare the bytes.
+
+    A subprocess per round rather than a call to `build()`, because that is the path
+    a person re-running the generator actually takes — and because a second in-process
+    build would share whatever state the first left behind and could pass while the
+    real thing drifts.
+    """
+    rounds = []
+    for attempt in range(2):
+        if attempt:
+            # MuPDF stamps to the second; without a pause two fast runs can land in
+            # the same second and look reproducible while the freeze does nothing.
+            time.sleep(2)
+        scratch = tempfile.mkdtemp(prefix="attach-fixtures-")
+        target = os.path.join(scratch, "attachments")
+        subprocess.run([sys.executable, os.path.abspath(__file__), target], check=True, capture_output=True, timeout=600)
+        rounds.append({name: sha(file_bytes(os.path.join(target, name))) for name in sorted(os.listdir(target)) if name.endswith(".pdf")})
+        shutil.rmtree(scratch, ignore_errors=True)
+    differs = [name for name in rounds[0] if rounds[0][name] != rounds[1].get(name)]
+    unmatched = set(rounds[0]) ^ set(rounds[1])
+    for name, digest in sorted(rounds[0].items()):
+        print(f"  {name:28s} {digest[:16]}  {'STABLE' if name not in differs else 'VARIES'}")
+    if differs or unmatched:
+        print(f"NOT byte-reproducible: {len(differs)} file(s) differ, {len(unmatched)} name(s) unmatched")
+        return 1
+    print(f"{len(rounds[0])} fixtures, byte-identical across two runs")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        sys.argv.remove("--check")
+        sys.exit(check())
     build()
     rows = census()
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

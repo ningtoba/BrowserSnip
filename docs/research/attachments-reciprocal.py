@@ -67,7 +67,7 @@ def sha(data: bytes) -> str:
 
 def run(args: list[str]) -> str:
     """poppler prints the file's own bytes for a name, which is not always valid UTF-8."""
-    out = subprocess.run(args, capture_output=True, check=False)
+    out = subprocess.run(args, capture_output=True, check=False, timeout=120)
     return out.stdout.decode("utf-8", errors="replace") + out.stderr.decode("utf-8", errors="replace")
 
 
