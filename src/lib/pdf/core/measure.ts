@@ -12,11 +12,17 @@
  * also imports `resolvePages` / `displayedSize` from `./pages`. Re-parsing the
  * "which pages" grammar and re-deriving the rotated page box here would give
  * the app two spellings of both concepts, and `./pages` is a frozen module.
+ *
+ * The one luminance this file used to own (`lumaOf`, BT.601) now lives in
+ * `./colour` beside every other grey conversion in the app, so the ink metric and
+ * the grey a user downloads are counted with the same weights. Both halves of the
+ * consequence are measured in `docs/research/greyscale-standard-decision.md`.
  */
 import { PDFDocument } from '@maxwbh/pdf-lib';
 import type { PDFImage, PDFPage } from '@maxwbh/pdf-lib';
 import { RenderCancelled } from './render';
 import type { PageRender, PdfSession } from './render';
+import { luma255 } from './colour';
 import { canvasToBlob } from './raster';
 import type { ImageFormat } from './images';
 import { PAGE_SIZES, displayedSize, resolvePages } from './pages';
@@ -32,11 +38,6 @@ export function dpiToScale(dpi: number): number {
 // ---------------------------------------------------------------------------
 // Pure pixel maths
 // ---------------------------------------------------------------------------
-
-/** Perceived luminance of one pixel, 0..255. */
-export function lumaOf(r: number, g: number, b: number): number {
-  return 0.299 * r + 0.587 * g + 0.114 * b;
-}
 
 /**
  * Fraction of sampled pixels that count as ink.
@@ -58,7 +59,7 @@ export function inkRatio(
     if (alpha === 0) continue; // transparent = paper
     sampled += 1;
     const alphaScale = alpha / 255;
-    const luma = lumaOf(pixels[i], pixels[i + 1], pixels[i + 2]) * alphaScale;
+    const luma = luma255(pixels[i], pixels[i + 1], pixels[i + 2]) * alphaScale;
     if (luma < cutoff) inked += 1;
   }
   return sampled === 0 ? 0 : inked / sampled;
@@ -84,7 +85,7 @@ export function alphaMaskFromPixels(
   for (let y = 0, p = 0; y < height; y++) {
     for (let x = 0; x < width; x++, p += 4) {
       const alpha = pixels[p + 3];
-      const luma = lumaOf(pixels[p], pixels[p + 1], pixels[p + 2]) * (alpha / 255);
+      const luma = luma255(pixels[p], pixels[p + 1], pixels[p + 2]) * (alpha / 255);
       mask[y * width + x] = alpha > 0 && luma < cutoff ? 1 : 0;
     }
   }
@@ -238,7 +239,7 @@ export function thresholdPixels(
   cutoff = 128,
 ): Uint8ClampedArray | Uint8Array {
   for (let i = 0; i + 3 < pixels.length; i += 4) {
-    const value = lumaOf(pixels[i], pixels[i + 1], pixels[i + 2]) < cutoff ? 0 : 255;
+    const value = luma255(pixels[i], pixels[i + 1], pixels[i + 2]) < cutoff ? 0 : 255;
     pixels[i] = value;
     pixels[i + 1] = value;
     pixels[i + 2] = value;

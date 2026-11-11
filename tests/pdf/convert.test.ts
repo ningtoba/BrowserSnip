@@ -856,7 +856,7 @@ describe('measure.ts — pure pixel maths', () => {
     new Uint8ClampedArray(pixels.flat());
 
   it('measures the ink fraction and ignores transparent pixels', async () => {
-    const { inkRatio, isBlankFromRatio, lumaOf } = await import('@/lib/pdf/core/measure');
+    const { inkRatio, isBlankFromRatio } = await import('@/lib/pdf/core/measure');
     const mixed = rgba([
       [255, 255, 255, 255],
       [255, 255, 255, 255],
@@ -868,7 +868,10 @@ describe('measure.ts — pure pixel maths', () => {
     expect(inkRatio(new Uint8ClampedArray(0))).toBe(0);
     expect(isBlankFromRatio(0.0005, 0.001)).toBe(true);
     expect(isBlankFromRatio(0.02, 0.001)).toBe(false);
-    expect(lumaOf(255, 255, 255)).toBeCloseTo(255, 0);
+    // The luma this metric uses is the app's one shared rule, not a copy owned by
+    // whichever module happens to count ink.
+    const { luma255 } = await import('@/lib/pdf/core/colour');
+    expect(luma255(255, 255, 255)).toBeCloseTo(255, 0);
   });
 
   it('builds the ink mask the skew search consumes', async () => {

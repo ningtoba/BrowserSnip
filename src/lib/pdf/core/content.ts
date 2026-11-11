@@ -40,6 +40,7 @@ import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import { fontkit } from './doc';
 import { asDict, descend, dictAt, followRef } from './tree';
 import type { DescentEdge } from './tree';
+import { luma01 } from './colour';
 
 // ── Geometry and colour helpers ────────────────────────────────────
 
@@ -79,13 +80,16 @@ export function parseHexColor(hex: string, field = 'color'): RGB {
   return [m[0] / 255, m[1] / 255, m[2] / 255];
 }
 
-/** Luminance of an RGB triple in 0..1, using the Rec. 601 weights PDF tools use. */
+/**
+ * Tuple adapter for the app's one RGB → grey rule.
+ *
+ * The coefficients are **Rec. 709**, held in `./colour` beside every other grey
+ * conversion — they used to be a second, BT.601 copy here, which is the whole
+ * reason `pdf-to-greyscale`'s Recolour method and its own preview disagreed about
+ * how dark a red was. See `docs/research/greyscale-standard-decision.md`.
+ */
 function luminance([r, g, b]: RGB): number {
-  return clamp01(0.299 * r + 0.587 * g + 0.114 * b);
-}
-
-function clamp01(n: number): number {
-  return n < 0 ? 0 : n > 1 ? 1 : n;
+  return luma01(r, g, b);
 }
 
 // ── Tokens ─────────────────────────────────────────────────────────
@@ -3474,7 +3478,10 @@ export function recolourText(
   return rewritePageContent(page, () => ops.map((op, i) => (i < before.length ? op : op)).concat(ops.length > before.length ? [] : []));
 }
 
-/** Convert every colour operator on a page to DeviceGray. */
+/**
+ * Convert every colour operator on a page to DeviceGray, with the grey the canvas
+ * preview shows — one `./colour` luma, two paths to the same page.
+ */
 export function greyscalePage(page: PDFPage): number {
   const before = pageContentOps(page);
   return rewritePageContent(page, (ops) => {
