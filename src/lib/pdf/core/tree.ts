@@ -72,6 +72,69 @@ export function dictAt(
   return asDict(followRef(doc, owner.get(PDFName.of(key))));
 }
 
+/** One dictionary a descent reached, and the path of edges that got there. */
+export interface DescentNode {
+  /** The dictionary itself. */
+  dict: PDFDict;
+  /** `''` at the root, then one `<edge>/<name>` step per hop: `Kids/1`, `XObject/Fm0`. */
+  via: string;
+  /** Hops taken from `root`. */
+  depth: number;
+}
+
+/** A step a descent may take out of one dictionary. */
+export interface DescentEdge {
+  /** The name the format gives this edge; it is what shows up in `DescentNode.via`. */
+  name: string;
+  /** The child **as stored** — a dictionary, or a reference to one. */
+  value: PDFObject | undefined;
+}
+
+/**
+ * Visit a dictionary, then every dictionary `edges` reaches from it, in pre-order.
+ *
+ * Pre-order — a node before its children, children in edge order — because the
+ * callers splice the arrays they were handed and depend on stored order. Each
+ * dictionary is visited **once** however many names point at it, which is what
+ * ends a cycle (`/A → /B → /A`) rather than hanging the tab; `maxDepth` bounds the
+ * work a wide fan-out costs.
+ *
+ * This is the one descent the readers in this app share. The format hands a walk
+ * to a reader through two different-looking edges — a tree node's `/Kids`, a Form
+ * XObject's `/Resources` — and both are "follow this reference, read what you find,
+ * do not visit it twice, stop at the bound". Writing that rule out twice is how a
+ * JavaScript name tree and a resource inventory each came to stop one dictionary
+ * short of what the file holds.
+ */
+export function descend(
+  doc: PDFDocument,
+  root: PDFDict | undefined,
+  edges: (node: DescentNode) => DescentEdge[],
+  maxDepth = 32,
+): DescentNode[] {
+  const visited: DescentNode[] = [];
+  if (!root) return visited;
+  const seen = new Set<PDFDict>();
+
+  const walk = (node: DescentNode): void => {
+    if (seen.has(node.dict) || node.depth > maxDepth) return;
+    seen.add(node.dict);
+    visited.push(node);
+    for (const edge of edges(node)) {
+      const dict = asDict(followRef(doc, edge.value));
+      if (!dict) continue;
+      walk({
+        dict,
+        via: node.via ? `${node.via}/${edge.name}` : edge.name,
+        depth: node.depth + 1,
+      });
+    }
+  };
+
+  walk({ dict: root, via: '', depth: 0 });
+  return visited;
+}
+
 /**
  * Every pair in a name or number tree, in document order.
  *
@@ -85,31 +148,26 @@ export function collectTreePairs(
   maxDepth = 32,
 ): TreePair[] {
   const pairs: TreePair[] = [];
-  if (!root) return pairs;
-  const seen = new Set<PDFDict>();
-
-  const walk = (node: PDFDict | undefined, depth: number): void => {
-    if (!node || depth > maxDepth || seen.has(node)) return;
-    seen.add(node);
+  for (const { dict } of descend(doc, root, (node) => kidsOf(doc, node.dict), maxDepth)) {
     // A node's pairs are under `/Names` in a name tree and `/Nums` in a number tree;
     // no producer seen here writes both, and the order below decides nothing because
     // the keys of the two are different object types.
-    const entries = arrayAt(doc, node, 'Names') ?? arrayAt(doc, node, 'Nums');
-    if (entries) {
-      for (let i = 0; i + 1 < entries.size(); i += 2) {
-        pairs.push({ key: entries.get(i), value: entries.get(i + 1), host: entries });
-      }
+    const entries = arrayAt(doc, dict, 'Names') ?? arrayAt(doc, dict, 'Nums');
+    if (!entries) continue;
+    for (let i = 0; i + 1 < entries.size(); i += 2) {
+      pairs.push({ key: entries.get(i), value: entries.get(i + 1), host: entries });
     }
-    const kids = arrayAt(doc, node, 'Kids');
-    if (kids) {
-      for (let i = 0; i < kids.size(); i++) {
-        walk(asDict(followRef(doc, kids.get(i))), depth + 1);
-      }
-    }
-  };
-
-  walk(root, 0);
+  }
   return pairs;
+}
+
+/** The `/Kids` array of a tree node: the only edge a name or number tree descends. */
+function kidsOf(doc: PDFDocument, node: PDFDict): DescentEdge[] {
+  const kids = arrayAt(doc, node, 'Kids');
+  if (!kids) return [];
+  const edges: DescentEdge[] = [];
+  for (let i = 0; i < kids.size(); i++) edges.push({ name: `Kids/${i}`, value: kids.get(i) });
+  return edges;
 }
 
 /** The array stored at `key`, following a reference, or `undefined`. */
