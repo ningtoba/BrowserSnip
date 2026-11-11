@@ -80,13 +80,37 @@ interface GsOutcome {
   log: string[];
 }
 
+/**
+ * Finish a Ghostscript command line.
+ *
+ * Ghostscript reads a string parameter as ONE argument, `-sName=value`. Handing
+ * it `-sOutputFile` in its own argument slot sets the parameter to the empty
+ * string, so the device opens with nowhere to write and the run dies before it
+ * reads a page:
+ *
+ *   GPL Ghostscript 10.06.0: Device 'pdfwrite' requires an output file but no
+ *   file was specified. / **** Unable to open the initial device, quitting.
+ *
+ * The output path and the input path are therefore appended here, against the
+ * same constants `runGhostscript` writes and reads back, so no call site can
+ * split the switch from its value or point the device at a path the sandbox
+ * never collects.
+ */
+function gsCommandLine(switches: string[]): string[] {
+  return [...switches, `-sOutputFile=${GS_SANDBOX_OUT}`, GS_SANDBOX_IN];
+}
+
 async function runGhostscript(
-  args: string[],
+  switches: string[],
   input: Uint8Array,
   hooks: EngineHooks = {},
 ): Promise<GsOutcome> {
   await requireEngine('ghostscript', hooks);
-  const result = await gsRun(args, { [GS_SANDBOX_IN]: input }, { outputs: [GS_SANDBOX_OUT] });
+  const result = await gsRun(
+    gsCommandLine(switches),
+    { [GS_SANDBOX_IN]: input },
+    { outputs: [GS_SANDBOX_OUT] },
+  );
   const output = result.outputs[GS_SANDBOX_OUT];
   const warnings = result.log.filter((line) => /error|cannot|failed|unable/i.test(line));
   if (!output || output.byteLength === 0) {
@@ -128,9 +152,6 @@ export async function convertToPdfA(
     '-dSubsetFonts=true',
     '-dDetectDuplicateImages=true',
     '-dCompressFonts=true',
-    '-sOutputFile',
-    GS_SANDBOX_OUT,
-    GS_SANDBOX_IN,
   ], bytes, hooks);
 }
 
@@ -152,9 +173,6 @@ export async function textToOutlines(
     '-dCompatibilityLevel=1.7',
     '-dAutoRotatePages=/None',
     '-dColorConversionStrategy=/LeaveColorUnchanged',
-    '-sOutputFile',
-    GS_SANDBOX_OUT,
-    GS_SANDBOX_IN,
   ], bytes, hooks);
 }
 
@@ -172,9 +190,6 @@ export async function rebuildWithGhostscript(
     '-dCompatibilityLevel=1.7',
     '-dAutoFixDirtyXrefTables=true',
     '-dDoThumbnails=false',
-    '-sOutputFile',
-    GS_SANDBOX_OUT,
-    GS_SANDBOX_IN,
   ], bytes, hooks);
 }
 
