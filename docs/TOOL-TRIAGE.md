@@ -530,6 +530,12 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   on a rerun (`43093384116`, 3 m 6 s) with no code between them: the flake reproduced in
   the direction that matters, again. Nothing here is in that test's path; the new engine
   block skips on CI (`BROWSERSNIP_GS` unset), so no 15 MB download joins the pool.
+* **And the next run hung in the Pages uploader, not in the build.** `8d07640` — two
+  markdown files, no source, no test — passed type-check, the whole suite and
+  `npm run build`, then failed at `actions/upload-pages-artifact` and sat in
+  `in_progress` for half an hour (`43094715406`). This entry is the re-push that asks
+  for a clean run; `e6d9831` is the build the site is serving, and it is the build the
+  deployed measurements above were taken against.
 * What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
   via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
   and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:
