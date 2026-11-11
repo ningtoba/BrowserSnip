@@ -1,0 +1,47 @@
+ATTACHMENTS — the reciprocal check: this app's own output, read by tools that
+did not write it. Verifiers: libqpdf 12.3.2 (pikepdf 10.9.1), MuPDF 1.28.2 (PyMuPDF),
+pypdf 6.14.2, poppler 26.10.0 `pdfdetach`. No `qpdf` or `mutool` binary on this box,
+so this is four readers, not five.
+
+== own-writer.pdf — the bytes `add-attachments` wrote
+   payloads: own-writer.bin sha256 40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880, über-𓂀.bin sha256 cd6816b77f68d70001fc3eaa4d42bdd67cb5973b3151cc5292ecc02a3daac6ab
+   (every byte value 0x00-0xFF, and the same set reversed — a reader that handed
+    one stream back for both names would pass a single-payload check)
+   MuPDF 1.28.2: [('own-writer.bin', '40aff2e9d2d8'), ('Ã¼ber-ð\x93\x82\x80.bin', 'cd6816b77f68')]
+    ok    MuPDF 1.28.2 lists both enclosures
+    ok    MuPDF 1.28.2 extracts both payloads byte for byte, and does not duplicate one
+    ok    MuPDF 1.28.2 returns the ASCII-named enclosure's own bytes
+   pypdf 6.14.2: [('own-writer.bin', '40aff2e9d2d8'), ('über-𓂀.bin', 'cd6816b77f68')]
+    ok    pypdf 6.14.2 lists both enclosures
+    ok    pypdf 6.14.2 extracts both payloads byte for byte, and does not duplicate one
+    ok    pypdf 6.14.2 returns the ASCII-named enclosure's own bytes
+   poppler 26.10.0: [('own-writer.bin', '40aff2e9d2d8'), ('über-������.bin', 'cd6816b77f68')]
+    ok    poppler 26.10.0 lists both enclosures
+    ok    poppler 26.10.0 extracts both payloads byte for byte, and does not duplicate one
+    ok    poppler 26.10.0 returns the ASCII-named enclosure's own bytes
+    ok    pypdf reads the names as written, Unicode included: ['own-writer.bin', 'über-𓂀.bin']
+    ok    libqpdf walks the tree to 2 embedded-file streams (found 2)
+    ok    libqpdf reads stream 1 as the payload it stores
+    ok    /Params /CheckSum is the MD5 of the payload libqpdf read
+    ok    /Params /Size matches those bytes
+    ok    libqpdf reads stream 2 as the payload it stores
+    ok    /Params /CheckSum is the MD5 of the payload libqpdf read
+    ok    /Params /Size matches those bytes
+   what the legacy `/F` of the Unicode name holds: b'\xfcber-\x0c\x80.bin'. 𓂀 has no
+   PDFDocEncoding byte, so pdf-lib writes `\x0c\x80` there and the UTF-16BE `/UF`
+   beside it carries the real name — which is what pypdf lists above, while poppler
+   prints `/F` and shows the substitution. Record, not fixed here: the bytes a user
+   downloads come from `/UF`, and every reader above extracted them intact.
+
+== own-removal.pdf — the same enclosure removed by `edit-attachments`
+   MuPDF 1.28.2: []
+    ok    MuPDF 1.28.2 agrees the file is gone
+   pypdf 6.14.2: []
+    ok    pypdf 6.14.2 agrees the file is gone
+   poppler 26.10.0: []
+    ok    poppler 26.10.0 agrees the file is gone
+    ok    poppler parses the re-saved file: Pages:           3
+    ok    removal cost no page
+    ok    MuPDF opens the copy and lists no attachment
+
+0 disagreement(s) with the readers that did not write these bytes.

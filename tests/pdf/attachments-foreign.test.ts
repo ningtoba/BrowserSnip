@@ -37,8 +37,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { PDFArray, PDFDict, PDFName } from '@maxwbh/pdf-lib';
 import { newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
 import { addAttachments, listAttachments, md5Hex, removeAttachments } from '@/lib/pdf/core/attachments';
@@ -289,25 +289,44 @@ describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
 });
 
 describe('the reciprocal direction: what this app writes, other readers must read', () => {
+  /** Every byte value, once — and once more **reversed**, so a reader that hands the
+   * same stream back for both names cannot pass the reciprocal check. */
+  const PAYLOAD = Uint8Array.from(Array.from({ length: 256 }, (_, i) => i));
+  const OTHER_PAYLOAD = Uint8Array.from(Array.from({ length: 256 }, (_, i) => 255 - i));
+  /** The name with characters outside PDFDocEncoding, which writers encode three ways. */
+  const UNICODE = 'über-𓂀.bin';
+  /** `docs/research/attachments-reciprocal.py` asks for this directory. */
+  const DUMP = process.env.BROWSERSNIP_ATTACH_DUMP;
+
   /** The bytes `add-attachments` produces, as a user downloads them. */
   const ours = async () => {
     const doc = await newPDF();
     doc.addPage([595.28, 841.89]);
-    const payload = Uint8Array.from(Array.from({ length: 256 }, (_, i) => i));
-    await addAttachments(doc, [{ name: 'own-writer.bin', bytes: payload, mimeType: 'application/octet-stream' }]);
-    return { bytes: await savePDF(doc), payload };
+    await addAttachments(doc, [
+      { name: 'own-writer.bin', bytes: PAYLOAD, mimeType: 'application/octet-stream' },
+      { name: UNICODE, bytes: OTHER_PAYLOAD, description: 'a name outside PDFDocEncoding' },
+    ]);
+    return await savePDF(doc);
   };
 
-  it('re-reads its own attachment with the exact bytes it embedded', async () => {
-    const { bytes, payload } = await ours();
+  /** The bytes `edit-attachments` produces after removing a MuPDF-written enclosure. */
+  const oursRemoved = async () => {
+    const doc = await open('mupdf-native.pdf');
+    expect(removeAttachments(doc, ['note.txt'])).toBe(1);
+    return await savePDF(doc);
+  };
+
+  it('re-reads its own attachments with the exact bytes it embedded', async () => {
+    const bytes = await ours();
     const doc = await openPDF(bytes, { updateMetadata: false, ignoreEncryption: true });
-    const [entry] = listAttachments(doc);
-    expect(entry.name).toBe('own-writer.bin');
-    expect(sha256(entry.bytes)).toBe(sha256(payload));
+    const entries = listAttachments(doc);
+    expect(entries.map((entry) => entry.name)).toEqual(['own-writer.bin', UNICODE]);
+    expect(sha256(entries[0].bytes)).toBe(sha256(PAYLOAD));
+    expect(sha256(entries[1].bytes)).toBe(sha256(OTHER_PAYLOAD));
   });
 
   it('writes the shape its own reader used to be limited to, so the foreign cases were never exercised', async () => {
-    const { bytes } = await ours();
+    const bytes = await ours();
     const doc = await openPDF(bytes, { updateMetadata: false, ignoreEncryption: true });
     const tree = doc.catalog
       .lookupMaybe(PDFName.of('Names'), PDFDict)
@@ -317,5 +336,19 @@ describe('the reciprocal direction: what this app writes, other readers must rea
     // pdf-lib stores the value as a reference. MuPDF and poppler store it inline.
     // Both are legal, and only one of them was ever read here.
     expect(names!.get(1).constructor.name).toBe('PDFRef');
+  });
+
+  it('hands the two artifacts to the readers that did not write them', async () => {
+    const written = await ours();
+    const removed = await oursRemoved();
+    // Asserted here so the committed bytes are never out of step with what the
+    // Python check judged, and so a broken writer fails in this file first.
+    expect(sha256(removed)).toBeTruthy();
+    const afterRemoval = await openPDF(removed, { updateMetadata: false, ignoreEncryption: true });
+    expect(listAttachments(afterRemoval)).toEqual([]);
+    if (!DUMP) return;
+    mkdirSync(DUMP, { recursive: true });
+    writeFileSync(join(DUMP, 'own-writer.pdf'), written);
+    writeFileSync(join(DUMP, 'own-removal.pdf'), removed);
   });
 });

@@ -52,7 +52,7 @@ repo calls a blank page with a page count.
    shape    /EF naming only /DOS and only /UNIX
    producer libqpdf 12.3.2 (pikepdf)
    MuPDF    error: FzErrorFormat: code=7: object is not a stream
-   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/DOS': IndirectObject(5, 0, 140200883123840)}
+   pypdf    error: PdfReadError: No /(U)F key found in file dictionary: {'/DOS': IndirectObject(5, 0, 140482203498928)}
    poppler  dos.bin, unix.bin, stderr: Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
 Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect reference
    expected dos.bin sha256=12abf8f19a5a, unix.bin sha256=149be634b36c
@@ -126,5 +126,5 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    producer libqpdf 12.3.2 (pikepdf)
    MuPDF    Ã¼ber-ð.txt sha256=067570bac832 (unexpected name)
    pypdf    über-𓂀.txt sha256=067570bac832 = expected
-   poppler  error: UnicodeDecodeError: 'utf-8' codec can't decode byte 0xed in position 26: invalid continuation byte
+   poppler  über-������.txt
    expected über-𓂀.txt sha256=067570bac832

@@ -103,19 +103,22 @@ def ef_stream(pdf, data: bytes, *, params: bool = True, subtype: bool = True, sh
         raw = stream.read_bytes()
         stream["/Params"] = D(
             Size=num(len(raw)),
-            # /CheckSum is MD5 by definition (ISO 32000-1 §7.11.3), not a choice.
-            CheckSum=pikepdf.String(hashlib.md5(raw).digest()),  # noqa: S324
+            # /CheckSum is MD5 by definition (ISO 32000-1 §7.11.3), not a security choice.
+            CheckSum=pikepdf.String(hashlib.md5(raw, usedforsecurity=False).digest()),
             CreationDate=pikepdf.String("D:20240229120000Z"),
             ModDate=pikepdf.String("D:20240301083000Z"),
         )
     return stream
 
 
-def file_spec(pdf, stream, *, name: str, ef: str = "dictF", unicode_name: str | None = None):
-    """A file specification in one of the shapes §7.11.3 allows."""
+def file_spec(pdf, stream, *, name: str, ef: str = "dictF"):
+    """A file specification in one of the shapes §7.11.3 allows.
+
+    A Unicode `/UF` is built by the one fixture that needs it, because
+    `pikepdf.String(str)` serialises in PDFDocEncoding and a non-ASCII name has to
+    travel as UTF-16BE with a BOM to be the shape a real producer writes.
+    """
     fs = D(Type=N("Filespec"), F=pikepdf.String(name))
-    if unicode_name is not None:
-        fs["/UF"] = pikepdf.String(unicode_name)
     if ef == "dictF":
         fs["/EF"] = D(F=stream)
     elif ef == "dictUF":
@@ -378,9 +381,13 @@ def census() -> list[dict]:
         except Exception as exc:  # noqa: BLE001
             row["pypdf"] = f"error: {type(exc).__name__}: {exc}"
         try:
-            out = subprocess.run(["pdfdetach", "-list", path], capture_output=True, text=True, check=False)
-            names = [ln.split(":", 1)[1].strip() for ln in out.stdout.splitlines() if ":" in ln]
-            row["poppler"] = names + ([f"stderr: {out.stderr.strip()}"] if out.stderr.strip() else [])
+            out = subprocess.run(["pdfdetach", "-list", path], capture_output=True, check=False)
+            # poppler hands back the file's own bytes for a `/UF` name, which is not
+            # always valid UTF-8; decode with replacement rather than losing the row.
+            stdout = out.stdout.decode("utf-8", errors="replace")
+            stderr = out.stderr.decode("utf-8", errors="replace")
+            names = [ln.split(":", 1)[1].strip() for ln in stdout.splitlines() if ":" in ln]
+            row["poppler"] = names + ([f"stderr: {stderr.strip()}"] if stderr.strip() else [])
         except Exception as exc:  # noqa: BLE001
             row["poppler"] = f"error: {type(exc).__name__}: {exc}"
         rows.append(row)
