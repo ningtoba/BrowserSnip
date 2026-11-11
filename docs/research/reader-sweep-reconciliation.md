@@ -94,26 +94,33 @@ two-vs-three unmeasured residue are corrected in the arithmetic above.*
    asserted in `tests/pdf/readers-sweep-foreign.test.ts` against the outside columns in
    `tests/fixtures/foreign/census.json`.
 2. **Measured the three unmeasured rows per shape** — 17 new fixtures in
-   `tests/fixtures/foreign/` (29 files in the set now, byte-identical across two rebuilds
-   in separate processes, each re-hashed against `MANIFEST.json` by the test), written by
-   `scripts/foreign-structure-fixtures.py` — the rig that already produced the rows above,
-   so this added shapes to one generator instead of founding a fourth — with
-   `scripts/pdf_fixture_pkcs7.py` for the one thing no installed tool could do (write a
-   signed PDF).
-3. **Reported what breaks and fixed nothing**: two defects and one blind spot are named
-   below with the bytes that show them. No file under `src/lib/pdf/core/` was touched.
+   `tests/fixtures/foreign/` (29 files in the set at that point, byte-identical across
+   two rebuilds in separate processes, each re-hashed against `MANIFEST.json` by the
+   test), written by `scripts/foreign-structure-fixtures.py` — the rig that already
+   produced the rows above, so this added shapes to one generator instead of founding a
+   fourth — with `scripts/pdf_fixture_pkcs7.py` for the one thing no installed tool could
+   do (write a signed PDF). The fix pass added three more shapes and re-cut one
+   (`--check`: **32 fixtures**, byte-identical across two rebuilds), for the reason given
+   in the row-11 table: a claimed shape has to be in the bytes.
+3. **Reported what breaks and fixed nothing**: two defects and one blind spot were named
+   below with the bytes that show them. No file under `src/lib/pdf/core/` was touched
+   by *that* pass; `bc0bcdd` fixed both defects on one descent, and the rows and tickets
+   below carry the correction.
 
 ### Where the measurements came from
 
 MuPDF 1.28.2 (PyMuPDF) wrote the pages, the three faces (base-14 Helvetica, an embedded
 TrueType subset, an OpenType/CFF face through `/FontFile3` + `/CIDFontType0C`) and the two
 rasters (one `/FlateDecode`, one `/DCTDecode`, both behind an `[/ICCBased …]` colour
-space). libqpdf 12.3.2 (pikepdf 10.9.1) wrote the four resource layouts, the eight script
-spellings, and every `/Sig`, `/ByteRange` and `/Perms` dictionary. OpenSSL 3.6.5 generated
+space). libqpdf 12.3.2 (pikepdf 10.9.1) wrote the resource layouts that survive a
+libqpdf round trip, the eight script spellings, and every `/Sig`, `/ByteRange` and
+`/Perms` dictionary; the two **inherited** layouts are cut by MuPDF after the freeze,
+because libqpdf pushes inherited page attributes down onto every leaf as it opens a
+file and so cannot commit them. OpenSSL 3.6.5 generated
 the key pair (`tests/fixtures/foreign/signer-key.pem`, `signer-cert.pem`, serial `1337`,
 validity 2023-01-01 → 2046-01-01) and **verifies every signature in the census**
 (`openssl cms -verify -binary`), which is also what catches `sig-tampered.pdf`.
-poppler 26.10.0 is the parse witness for all 29 files (`pdfinfo` must open each; the test
+poppler 26.10.0 is the parse witness for all 32 files (`pdfinfo` must open each; the test
 asserts the recorded answer) and, for the script row, its `JavaScript: yes/no` line is an
 outside reader's conclusion about the same trees.
 
@@ -124,17 +131,34 @@ PKCS#1 v1.5, a committed key, a fixed `signingTime`) from a certificate and priv
 OpenSSL wrote. The fixture bytes are pinned; the *producer* of the CMS blob is this repo,
 and its parsing is judged by OpenSSL. A second pass with a real signer should re-measure.
 
-## Table M — row 11, `listFonts` / `listImages` (5 shapes)
+## Table M — row 11, `listFonts` / `listImages` (7 shapes)
+
+The `this app` column is the walk **after** ticket 1 was fixed (`bc0bcdd`): both
+inventories now run over `core/content.ts resourceScopes`, which is the one
+`core/tree.ts descend` kernel handed the resource edge function. Rows 1–3 and 6–7
+read as they did when they were measured; the four shapes ticket 1 was about are
+marked, and `resources-inherited.pdf` carries the correction its row needed.
 
 | fixture | the shape | MuPDF, and a libqpdf walk over the resolved resources | this app | verdict |
 | --- | --- | --- | --- | --- |
 | `resources-plain.pdf` | each page names its own `/Resources` — the control | 3 faces + 2 rasters on sheet 1 | 3 faces (`Fixture Sans Regular`/Type0/`/FontFile3`, `NotoSans-Regular`/Type0/`/FontFile2`, `Helvetica`/Type1/not embedded), 2 rasters (40×24, 8-bit, ICCBased, 47 B Flate + 619 B DCT, page [1]) | **correct** |
-| `resources-inherited.pdf` | `/Resources` on the `/Pages` node, none on the page (§7.7.3.3) | 3 faces + 2 rasters on all three sheets | same 3 faces; each image listed once with `pages: [1,2,3]` | **correct** — pdf-lib resolves inherited attributes on the page leaf, so the walk does not have to |
+| `resources-inherited.pdf` | `/Resources` on the `/Pages` node and on no page (§7.7.3.3) | 3 faces + 2 rasters on all three sheets, reached by ascending `/Parent` | the same 3 faces; each image listed once with `pages: [1,2,3]` | **fixed with ticket 1** — and the row as first written did not describe the file: **libqpdf pushes inherited page attributes down onto every leaf as it opens the document**, so the generator's freeze (a libqpdf re-save) had restored a `/Resources` on all three pages and the file was the `shared` shape wearing another row's sentence. It is now cut by MuPDF *after* the freeze, and `census.json` carries `page_tree_layout` — read off MuPDF's object layer, because pikepdf cannot see this shape at all — which `readers-sweep-foreign.test.ts` asserts per row. A page-level walk reads **nothing** from the real bytes: `page.node.get('/Resources')` has no answer for a leaf that names none. |
+| `resources-inherited-parent.pdf` | an intermediate `/Pages` node carries the dictionary for pages 1–2 — two `/Parent` hops — while page 3 names its own | MuPDF counts `[3, 3, 1]` fonts and `[2, 2, 0]` images by sheet; the libqpdf walk resolves the first two up the chain and takes the third from the leaf | 3 faces; both rasters with `pages: [1,2]`; sheet 3 claims nothing it does not name | **correct since the same fix**, and the shape that separates a walk that ascends from one that only looks at the father |
 | `resources-shared.pdf` | three pages naming the *same* `/Resources` object | idem | idem, deduplicated by name and by object | **correct** |
 | `resources-subset.pdf` | the two embedded faces renamed `BCDFEE+…` / `ABCDEA+…` | the tags are in `/BaseFont`, on both the Type0 and its descendant | `subset: 'BCDFEE'` split out of `name: 'BCDFEE+NotoSans-Regular'`; the name is the **descendant's** `/BaseFont` where MuPDF prints the Type0's (`BCDFEE+Noto Sans Regular`) — two spellings of one face, pinned so a change cannot pass silently | **correct** |
-| `resources-xobject.pdf` | sheet 1 draws one Form XObject that carries every font and image | MuPDF: 3 fonts and 2 images on page 1, 1 XObject; the libqpdf walk finds them under `form-xobject:/Fm0` | **1 face (`Helvetica`, which sheets 2–3 name directly) and 0 images** | **broken — ticket 1** |
+| `resources-xobject.pdf` | sheet 1 draws one Form XObject that carries every font and image | MuPDF: 3 fonts and 2 images on page 1, 1 XObject; the libqpdf walk finds them under `form-xobject:/Fm0` | 3 faces, and 2 rasters listed against page [1] | **fixed — ticket 1** (was: 1 face borrowed from sheets 2–3 and *no images*, which the `view-metadata` card printed as “None · no raster images are embedded”) |
+| `resources-form-in-form.pdf` | a Form XObject that draws a second form, the inventory split across the two levels | MuPDF lists 2 XObjects, 2 images and 4 font placements on sheet 1 (three faces: `/outer` and `/helv` are one object named twice); the walk finds the base-14 face under `form-xobject:/Fm0` and the rest under `form-xobject:/Inner` | 3 faces, 2 rasters on page [1] | **correct since the same fix** — and the shape that separates a descent from a single step into the first form |
 
-## Table M — row 12, `inspectScript` / `stripScript` (8 shapes)
+Two things the fixed walk deliberately does **not** claim, both pinned in
+`tests/pdf/descent-nesting.test.ts`: a form whose own stream dictionary declares
+`/XObject` with no `/Resources` wrapper is not followed (no viewer resolves names
+there, so listing that raster would tell the user the page draws a picture it never
+draws — `core/compress.ts` keeps tolerating the spelling for re-encoding, where a
+rewrite cannot make the file wrong), and a form written without `/Resources` hands
+back the *enclosing* dictionary (§8.10.1) which the descent has already visited, so
+its faces are listed once rather than twice.
+
+## Table M — row 12, `inspectScript` / `stripScript` (9 shapes)
 
 The outside column is `pdfinfo`'s `JavaScript:` line and an entry-by-entry walk written
 over the libqpdf model for this census (`qpdf_script_sites`); the app column is
@@ -149,7 +173,8 @@ before it is searched).
 | `script-openaction-array.pdf` | `/OpenAction` naming **two** actions in one entry | poppler **`no`**, 1 site | 1 → 0 | **correct**, and a recorded disagreement: this app counts the entry, poppler's `pdfinfo` does not report the array form at all |
 | `script-js-key-only.pdf` | an action with `/JS` and no `/S` | poppler **`no`**, 1 site | 1 → 0 | **correct** by the module's documented rule (a viewer runs it); poppler's refusal is recorded, not adjudicated |
 | `script-names-flat.pdf` | `/Names » /JavaScript` flat, one value inline, one referenced | poppler `yes`, 2 sites | 1 (`the JavaScript name tree`) → 0, tree gone, **both** bodies gone | **correct** — one entry per entry point, two per action; the units are pinned so the two columns are never compared as numbers |
-| `script-names-kids.pdf` | the same two scripts inside a `/Kids` + `/Limits` subtree | poppler **`yes`**, 2 sites | **1, and not the tree**: `a dictionary in the file /JS`. After the strip the saved bytes still hold `console.clear()` — the inline name-tree value is not an indirect object, so no sweep reaches it | **broken — ticket 2** |
+| `script-names-kids.pdf` | the same two scripts inside a `/Kids` + `/Limits` subtree, one leaf per script | poppler **`yes`**, 2 sites | 1 — the tree — and **both** bodies go with it: the inline `/JS` is emptied before `/Names » /JavaScript` is deleted, so the saved bytes hold no `console.clear()` | **fixed — ticket 2** (`bc0bcdd`). As first measured it reported `a dictionary in the file /JS` (the leftover sweep, not the tree) and `console.clear()` survived, because that action is an **inline name-tree value with no object number**, which no indirect sweep can reach. The fixture was re-cut at the same time: its two scripts now sit in two leaves with their own `/Limits`, which is what a balanced tree looks like. |
+| `script-names-kids-nested.pdf` | a `/Kids` JavaScript tree whose kid is itself a `/Kids` node | poppler **`yes`**, 2 sites | 1, the tree; nothing survives | **correct since the same fix** — the shape that separates a descent from one step into `/Kids` |
 | `script-hosts-aa.pdf` | page `/AA /O`, annot `/AA /E`, field `/AA /K`, field `/A`, and a field with neither | poppler `yes`, 4 sites | 4, naming all four hosts (`page 1 /AA /O`, `form field “totals” /AA /K`, `form field “heading” /A`, `the annotation on page 1 /AA /E`) → 0 | **correct**, including the field that carries no action |
 | `script-xfa.pdf` | `/AcroForm /XFA` whose script lives in the packet's XML | poppler `no`, 0 sites, XFA present | 0 + `unreachable: "the script inside its XFA form packet…"`, and the packet's code is still there afterwards | **correct** — it says what it cannot reach instead of claiming a clean file |
 
@@ -168,33 +193,56 @@ The certificate columns are pinned against `openssl x509` too: `signer`/`issuer`
 2024-01-01T12:00:00Z (a signed attribute fixed in the fixture, not a clock),
 `digestAlgorithm` SHA-256 against `:sha256WithRSAEncryption` in the DER.
 
-## Tickets: two broken, one blind, none fixed
+## Tickets: two broken, one blind — and the two broken ones are now fixed
 
-Nothing in `src/lib/pdf/core/` changed in this pass; each ticket is the smallest
-description of the failure plus the file that owns it.
+Items 1 and 2 were filed unfixed by the measuring pass and are **closed by
+`bc0bcdd`**, on one descent rather than two repairs; item 3 is still open. The
+shape chosen, and why, is in the two entries below.
 
-1. **READER-SWEEP-1 — the resource inventories never enter a Form XObject.**
-   `core/metadata.ts:883 listFonts` / `:940 listImages` read
-   `page.node → /Resources → /Font|/XObject` and stop. `resources-xobject.pdf` holds
+**The seam.** `core/tree.ts` already owned the rule “follow this reference, read what
+you find, visit each dictionary once, stop at the bound”, but only in the form of
+`collectTreePairs` — a name/number tree walk with `/Kids` as its one edge. `bc0bcdd`
+extracts that recursion into `descend(doc, root, edges, maxDepth)` and expresses both
+readers on it: `collectTreePairs` hands it the `/Kids` edge and reads `/Names` or `/Nums`
+pairs off each node, and `core/content.ts:resourceScopes` hands it the `/XObject → /Form
+→ /Resources` edge and starts from the page's resources resolved up the `/Parent` chain.
+One descent, two edge functions — so the next reader that needs to descend adds an edge
+function rather than a third copy of the loop, which is the thing that let these two drift
+apart. The order is unchanged (a node before its children, children in edge order), which
+matters: `attachments.ts` splices the host array it was handed.
+
+1. **READER-SWEEP-1 — the resource inventories never entered a Form XObject. Fixed.**
+   `core/metadata.ts listFonts` / `listImages` read
+   `page.node → /Resources → /Font|/XObject` and stopped. `resources-xobject.pdf` holds
    `Resources << /XObject << /Fm0 n 0 R >> >>` on sheet 1 with the three faces and both
    rasters inside `/Fm0`'s own `/Resources` — MuPDF counts 3 fonts and 2 images for that
-   page, this app reports one face (borrowed from sheets 2–3) and *no images at all*, and
-   the `view-metadata` card prints `None · no raster images are embedded` over the file.
-   A producer that wraps page content in a form (Word, LibreOffice, most print drivers)
-   therefore reports an empty inventory. Owner: `core/metadata.ts` (descend into
-   `/Subtype /Form`, keyed by ref so a form used twice is listed once).
-2. **READER-SWEEP-2 — the script walk does not enter a `/Kids` name tree.**
-   `core/sanitize.ts:namedScriptTree` reads `tree.lookupMaybe('/Names', PDFArray)` on the
-   `/Names » /JavaScript` root only, so a `/Kids` subtree is invisible: 4th instance of
-   the exact pattern `core/tree.ts:collectTreePairs` exists to end (attachments
-   `9f4116b`, `/Dests` + `/PageLabels` `7d1d1ad`). Evidence, in order: poppler's `pdfinfo`
-   says `JavaScript: yes` for `script-names-kids.pdf`; the independent libqpdf walk names
-   two entry points (`Fold`, `Startup`); `inspectScript` reports one and it is
-   `a dictionary in the file /JS` — found by the leftover sweep, not by the tree; and
-   after `stripScript` the saved bytes still carry `console.clear()` inside the tree,
-   because that action was written **inline** as a name-tree value and is not an indirect
-   object the sweep can reach. Owner: `core/sanitize.ts`, on top of `core/tree.ts`; the
-   fix also has to decide whether the card counts trees or actions (today: trees).
+   page, the app reported one face (borrowed from sheets 2–3) and *no images at all*, and
+   the `view-metadata` card printed `None · no raster images are embedded` over the file.
+   Both functions now walk `resourceScopes`. Three consequences the fix had to answer
+   rather than inherit: a form written **without** `/Resources` inherits the enclosing
+   scope (§8.10.1), which the descent has already visited, so it is handed back rather
+   than re-walked and its faces are listed once; a form whose own stream dictionary names
+   `/XObject` with no `/Resources` wrapper is **not** followed, because the inventory
+   says what the page draws and no viewer resolves names there (`core/compress.ts` keeps
+   its tolerance for the rewrite case, where a missed image costs bytes rather than
+   truth); and an image named twice on one sheet — two keys, or two forms — used to
+   accumulate `pages: [1, 1]`, which prints “on 2 pages” about a single sheet.
+   The same fix caught a third instance in the same card: `attachmentCount` read the
+   `/EmbeddedFiles` root's own `/Names` array only, so
+   `tests/fixtures/attachments/kids-tree.pdf` — two enclosures, one per kid — rendered as
+   `Attachments: 0` beside a listing of both.
+2. **READER-SWEEP-2 — the script walk did not enter a `/Kids` name tree. Fixed.**
+   `core/sanitize.ts:namedScriptTree` read `tree.lookupMaybe('/Names', PDFArray)` on the
+   `/Names » /JavaScript` root only: the 4th instance of the pattern `collectTreePairs`
+   exists to end (attachments `9f4116b`, `/Dests` + `/PageLabels` `7d1d1ad`). The tree now
+   goes through `collectTreePairs`, so both spellings of a pair’s value are reached — and
+   the inline one is the half that mattered: an action stored **inside** a leaf has no
+   object number, so it is not in `context.enumerateIndirectObjects()` and no leftover
+   sweep can see it, which is why `console.clear()` sat in the output of a run whose card
+   said the file was clean. The unit question the ticket left open — trees or actions —
+   stays as the module had it: **one entry per entry point**, the tree, pinned against the
+   outside column’s two script sites so the two numbers are never compared as one number
+   (`script-names-flat.pdf` was already this shape and was already correct).
 3. **`readSignatures` is blind to `/Perms`, measured not assumed.** It answers who signed
    and whether the bytes still match, and says nothing about a `/DocMDP` lock that
    forbids changes after signing (`sig-perms.pdf`, `/P 1`). Not called a defect here — the
@@ -229,13 +277,14 @@ Re-run:
 
 ```sh
 python3 scripts/foreign-structure-fixtures.py            # rebuild + census + MANIFEST
-python3 scripts/foreign-structure-fixtures.py --check    # 29 fixtures, two processes, identical bytes
-npx vitest run tests/pdf/readers-sweep-foreign.test.ts   # 64 assertions
+python3 scripts/foreign-structure-fixtures.py --check    # 32 fixtures, two processes, identical bytes
+npx vitest run tests/pdf/readers-sweep-foreign.test.ts   # 81 assertions
+npx vitest run tests/pdf/descent-nesting.test.ts         # 13 assertions, the kernel + the claims
 npx vitest run tests/pdf/readers-foreign.test.ts tests/pdf/attachments-foreign.test.ts \
   tests/pdf/page-labels-copy.test.ts tests/pdf/engine-attribution.test.ts
 ```
 
-The reverts that show the 64 assertions are load-bearing, each run against the file as
+The reverts that show the 81 assertions are load-bearing, each run against the file as
 it stood: `listFonts` not consulting the descendant CID font → **4 red**; `listImages`
 accepting only an inline XObject → **4 red**; `readHexString` keeping its whitespace →
 **2 red**; `verifyOne` not comparing the recomputed digest → **2 red**; `isJavaScriptAction`
@@ -243,6 +292,23 @@ demanding `/S` → **1 red**; `jsActions` skipping an `/OpenAction` array → **
 `annotationCount` excluding pop-ups → **1 red**; `listLayers` ignoring `/OFF` → **1 red**;
 `listFormFields` losing a checkbox state → **1 red**; `readXmp` dropping `dc:title` →
 **1 red**.
+
+### The counts the fix pass moved, and the ones it added
+
+Reverting `listFonts` / `listImages` to the page-level walk and `namedScriptTree` to the
+flat `/Names` read — `git checkout bc0bcdd~1` over those two files, with
+`resourceScopes` left in place so the tests still import — turns **18 assertions red**:
+10 in `readers-sweep-foreign.test.ts` (4 resource rows, the two per-shape descent tests,
+the card row, and both script rows) and 8 in `descent-nesting.test.ts` (the two form
+descents, the page-tree inheritance, both deduplication guards, the card, the attachment
+count, the inline-`/Kids` strip). The other 5 in `descent-nesting` are green in both
+states and are the controls: the three kernel rules, the form that keeps its names
+outside `/Resources`, and the cycle test.
+
+Two numbers in this file were wrong when they were written and are corrected here rather
+than left standing: `resources-inherited.pdf` did not hold the shape its row named (see
+the table), and the resource row is 7 shapes, not 5 — the two added by the fix pass are
+the nested form and the `/Parent` hop two levels deep.
 
 
 ### Readers on this box, named rather than inherited
