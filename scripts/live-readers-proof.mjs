@@ -25,12 +25,16 @@
  *           read-modify-write damage. Before the fix every bookmark came back as a
  *           caption: 3 items naming a destination in, **0 out**, while the run reported
  *           carrying three.
+ *   label-copy
+ *           `/tool/extract-pages` on `labels-kids-mixed.pdf` with `Pages: 4-6` — the
+ *           numbering across a subset copy. MuPDF and pypdf must read `II, c, xA` out
+ *           of the download, whose catalogue then holds `/Nums x3`; before the carry it
+ *           read `1, 2, 3` out of a file with **no label store at all**.
  *
  *     node scripts/live-readers-proof.mjs [BASE]
  *
- * Env: `CHROME`, `PROBES` (comma list, default `report,rotate,copy`), `PORT`.
- * `PROBES=report,rotate,replace,copy` adds the label-writing probe. Needs `python3`
- * with `pymupdf`, `pypdf`, `pikepdf`.
+ * Env: `CHROME`, `PROBES` (comma list, default `report,rotate,replace,copy,label-copy`),
+ * `PORT`. Needs `python3` with `pymupdf`, `pypdf`, `pikepdf`.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -41,7 +45,7 @@ const CHROME = process.env.CHROME
   ?? '/home/nekophobia/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
 const BASE = process.argv[2] ?? process.env.BASE ?? 'https://www.browsersnip.com';
 const PORT = Number(process.env.PORT ?? 9461);
-const PROBES = (process.env.PROBES ?? 'report,rotate,replace,copy').split(',').filter(Boolean);
+const PROBES = (process.env.PROBES ?? 'report,rotate,replace,copy,label-copy').split(',').filter(Boolean);
 const FIXTURES = 'tests/fixtures/readers';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -121,14 +125,23 @@ const openMoreOptions = () => raw(`(() => {
 
 const typeField = (label, value) => raw(`(() => {
   const group = document.querySelector('[role=group][aria-label=${JSON.stringify(label)}]');
-  const field = group && (group.querySelector('textarea') || group.querySelector('input:not([type=checkbox]):not([type=radio])'));
+  let field = group
+    && (group.querySelector('textarea') || group.querySelector('input:not([type=checkbox]):not([type=radio])'));
+  if (!field) {
+    // A "pages" control is labelable rather than a group: its caption is a
+    // label-for element, and that is the only way the probe can name it.
+    const caption = [...document.querySelectorAll('label')].find(
+      (el) => (el.innerText || el.textContent || '').trim() === ${JSON.stringify(label)} && el.htmlFor);
+    field = caption ? document.getElementById(caption.htmlFor) : null;
+  }
   if (!field) return 'no field for group ' + ${JSON.stringify(label)};
   const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, 'value').set.call(field, ${JSON.stringify(value)});
   field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(value)} }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
   return 'typed ' + JSON.stringify(${JSON.stringify(value)}) + ' into ' + field.tagName.toLowerCase()
-    + ' in group ' + group.getAttribute('aria-label');
+    + ' in ' + (field.closest('[role=group]')?.getAttribute('aria-label')
+      ?? 'the ' + ${JSON.stringify(label)} + ' field');
 })()`).then((hit) => hit.value ?? `ERR ${String(hit.error).slice(0, 140)}`);
 
 const bodyLine = (pattern) => said(`(() => {
@@ -304,6 +317,16 @@ for (const tag of PROBES) {
     results.push(await runProbe({
       tag, tool: 'extract-pages', fixture: 'outlines-names-dests-kids-ref.pdf',
       action: 'Extract', download: true,
+    }));
+  } else if (tag === 'label-copy') {
+    // The subset case: pages 4-6 of a file whose six sheets are numbered
+    // i, ii, I, II, c, xA. The download has to read II, c, xA — the one surviving
+    // range re-based onto its own first sheet with /St moved with it. Before the
+    // carry every reader said 1, 2, 3, because the copy wrote no /PageLabels at all
+    // and a three-page result looked like a clean run.
+    results.push(await runProbe({
+      tag: 'subset-copy-labels', tool: 'extract-pages', fixture: 'labels-kids-mixed.pdf',
+      fill: [['Pages', '4-6']], action: 'Extract', download: true,
     }));
   }
 }
