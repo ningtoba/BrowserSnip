@@ -1615,14 +1615,19 @@ export const optimizeTools: PdfToolDefinition[] = [
     outputSuffix: '_outlined.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Outline',
-    promise: 'Text that cannot reflow or substitute, or a clear refusal when Ghostscript cannot be fetched.',
+    promise: 'Text drawn as vector paths that cannot reflow or substitute — or a refusal that says whether Ghostscript could not be fetched, or ran and refused the file.',
     notes: [
       'Glyphs become vector paths: the text can no longer be selected, searched or edited.',
       'This tool has no degraded path — a rebuild without Ghostscript would leave the fonts in place and only look outlined.',
+      'A page that draws no text has nothing to outline: it comes back as Ghostscript rewrote it, and the result says so rather than claiming converted glyphs.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const { textToOutlines } = await import('../core/engine-ops');
+      // What the pages drew before the run, so "outlined" is a comparison and
+      // not an assumption: a file that comes back still drawing its text must
+      // not be described as converted.
+      const textPages = input.doc.getPages().filter(pageShowsText).length;
       let bytes: Uint8Array;
       let outlineLog: string[] = [];
       try {
@@ -1630,12 +1635,21 @@ export const optimizeTools: PdfToolDefinition[] = [
         bytes = outcome.bytes;
         outlineLog = outcome.log;
       } catch (error) {
+        // Two different failures, and saying "could not be reached" for the
+        // second one sends the user to check a connection that is fine: an
+        // `EngineUnavailable` is the download, anything else is Ghostscript
+        // itself running and refusing this file.
+        const fetched = error instanceof EngineUnavailable;
         throw new ToolInputError(
           'NEEDS_ENGINE',
-          `Ghostscript could not be reached, so nothing was outlined: ${engineReason(error)}`,
+          fetched
+            ? `Ghostscript could not be reached, so nothing was outlined: ${engineReason(error)}`
+            : `Ghostscript ran and refused this file, so nothing was outlined: ${engineReason(error)}`,
           {
             fileName: input.name,
-            hint: 'Run again once you are online, or use Rasterize PDF if selectable text does not matter.',
+            hint: fetched
+              ? 'Run again once you are online, or use Rasterize PDF if selectable text does not matter.'
+              : 'The file is unchanged. Rasterize PDF draws each page as one image and needs no font at all.',
           },
         );
       }
@@ -1650,6 +1664,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
       const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
       const fonts = auditFonts(produced);
+      const stillText = produced.getPages().filter(pageShowsText).length;
       if (fonts.total > 0) {
         warnings.push(`${fonts.total} font resource(s) are still referenced, so Ghostscript did not outline every glyph.`);
       }
@@ -1657,12 +1672,22 @@ export const optimizeTools: PdfToolDefinition[] = [
       if (change.grew) {
         warnings.push(`${sizeSentence(change)}: outlines are geometry, so the file grows — that is the cost of rendering that cannot change.`);
       }
+      const outcome = sizeSentence(change);
+      // Three honest answers, chosen by what the bytes now contain.
+      let headline: string;
+      if (textPages === 0) {
+        headline = `Ghostscript rewrote ${input.name}, and no page draws text — there was nothing to outline. ${outcome}.`;
+      } else if (stillText === 0 && fonts.total === 0) {
+        headline = `Ghostscript drew the type on all ${textPages} page(s) as vector paths: no page shows text through a font and no font resource is left. ${outcome}.`;
+      } else {
+        headline = `Ghostscript rewrote the file, but ${stillText} of ${textPages} page(s) still draw text and ${fonts.total} font resource(s) remain: that type is not outlined. ${outcome}.`;
+      }
       context.progress(1, 'Converted glyphs to paths');
       return {
         kind: 'pdf',
         bytes,
         pages: produced.getPageCount(),
-        message: `Every glyph that Ghostscript could reach is now a vector path (${fonts.total} font reference(s) left). ${sizeSentence(change)}.`,
+        message: headline,
         warnings,
       };
     },

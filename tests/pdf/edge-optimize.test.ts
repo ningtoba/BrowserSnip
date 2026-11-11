@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import type { PageRender, PdfSession } from '@/lib/pdf/core/render';
 import { describeSize, inspectPdf, isToolInputError } from '@/lib/pdf/core/guard';
+import { EngineUnavailable } from '@/lib/pdf/engines/provider';
 import { openPDF, PDFName, PDFDict, PDFRawStream, PDFRef, PDFStream } from '@/lib/pdf/core/doc';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fileProblem, runPdfTool } from '@/lib/pdf/tools/runner';
@@ -48,19 +49,24 @@ const engine = vi.hoisted(() => ({
 
 vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/engine-ops')>();
-  const guard = (what: string): void => {
-    if (engine.failure) throw new Error(`${what}: ${engine.failure}`);
+  const guard = (id: 'ghostscript' | 'cpdf', what: string): void => {
+    // Every row that sets `engine.failure` simulates a transport failure ("no
+    // address answered", "Failed to load …"), which is what the loader reports
+    // as `EngineUnavailable`. Tools read that difference: a module that never
+    // arrived is not the same event as the engine running and refusing the
+    // file, and `font-to-outline` says them apart.
+    if (engine.failure) throw new EngineUnavailable(id, `${what}: ${engine.failure}`);
   };
   return {
     ...real,
     engineReady: () => engine.ready,
     linearizeWithCpdf: async (bytes: Uint8Array) => {
-      guard('could not load CoherentPDF');
+      guard('cpdf', 'could not load CoherentPDF');
       if (!engine.linearize) throw new Error('test double: CoherentPDF result not configured');
       return engine.linearize(bytes);
     },
     convertToPdfA: async (bytes: Uint8Array, part: string) => {
-      guard('could not load Ghostscript');
+      guard('ghostscript', 'could not load Ghostscript');
       if (!engine.pdfa) throw new Error('test double: Ghostscript result not configured');
       // The part is forwarded: a double that dropped it could not tell the test
       // which PDF/A level the tool actually asked Ghostscript for.
@@ -68,12 +74,12 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
       return { bytes: engine.pdfa(bytes, part), log: engine.pdfaLog };
     },
     textToOutlines: async (bytes: Uint8Array) => {
-      guard('could not load Ghostscript');
+      guard('ghostscript', 'could not load Ghostscript');
       if (!engine.outline) throw new Error('test double: Ghostscript result not configured');
       return { bytes: engine.outline(bytes), log: [] as string[] };
     },
     rebuildWithGhostscript: async (bytes: Uint8Array) => {
-      guard('could not load Ghostscript');
+      guard('ghostscript', 'could not load Ghostscript');
       if (!engine.rebuild) throw new Error('test double: Ghostscript result not configured');
       return { bytes: engine.rebuild(bytes), log: [] as string[] };
     },
@@ -999,7 +1005,10 @@ describe('font-to-outline refuses instead of faking (E20)', () => {
     const outcome = await run('font-to-outline', {}, [pdfFile(source, 'type.pdf')]);
     engine.outline = null;
     expect(outcome.warnings.join(' ')).toMatch(/still referenced/i);
-    expect(outcome.message).toMatch(/1 font reference\(s\) left|font reference\(s\) left/);
+    // Returning the input unchanged is the silent failure of this family: the
+    // pages still draw their text, so the card may not describe them as paths.
+    expect(outcome.message).toMatch(/2 of 2 page\(s\) still draw text and 1 font resource\(s\) remain/);
+    expect(outcome.message).not.toMatch(/vector paths|no font resource is left/i);
     expectMeasuredSizes(outcome.message ?? '', source.byteLength, outcome.bytes.byteLength);
   });
 });
