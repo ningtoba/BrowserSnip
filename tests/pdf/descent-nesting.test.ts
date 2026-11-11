@@ -29,7 +29,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
-import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from '@maxwbh/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFObject, PDFRawStream, PDFString } from '@maxwbh/pdf-lib';
 import { context, openPDF, savePDF } from '@/lib/pdf/core/doc';
 import { resourceScopes } from '@/lib/pdf/core/content';
 import { asDict, collectTreePairs, descend, dictAt, followRef } from '@/lib/pdf/core/tree';
@@ -41,9 +41,26 @@ import { inspectScript, stripScript } from '@/lib/pdf/core/sanitize';
 const attachmentBytes = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(resolve(process.cwd(), 'tests/fixtures/attachments', name)));
 
+/**
+ * What `PDFContext.obj` and `.stream` take for a dictionary — the fork's
+ * `LiteralObject`, which it does not re-export, spelled at the width this file uses.
+ * An interface rather than a type alias, because the value type names itself.
+ */
+interface DictLiteral {
+  [name: string]:
+    | PDFObject
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | (string | number | boolean | PDFObject)[]
+    | DictLiteral;
+}
+
 /** One page whose `/Resources` is exactly what `build` returns, drawn with `content`. */
 async function onePageDoc(
-  build: (doc: PDFDocument) => Record<string, unknown>,
+  build: (doc: PDFDocument) => DictLiteral,
   content = 'q Q\n',
 ): Promise<PDFDocument> {
   const doc = await PDFDocument.create();
@@ -61,12 +78,12 @@ const scopesOfFirstPage = (doc: PDFDocument): string[] =>
 /** A `/Subtype /Form` stream, indirect, with `resources` as its `/Resources` (`null` = none). */
 function form(
   doc: PDFDocument,
-  resources: Record<string, unknown> | PDFDict | null,
+  resources: DictLiteral | PDFDict | null,
   content = 'q Q\n',
 ) {
   const ctx = context(doc);
-  const dict: Record<string, unknown> = { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 200] };
-  if (resources) dict.Resources = resources instanceof PDFDict ? resources : ctx.obj(resources);
+  const dict: DictLiteral = { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 200] };
+  if (resources) dict.Resources = resources;
   return ctx.register(ctx.stream(content, dict));
 }
 
@@ -227,9 +244,9 @@ describe('resourceScopes — the graph a page draws from', () => {
     const bareForm = ctx.register(ctx.stream('q /Im0 Do Q\n', {
       Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 200],
     }));
-    ctx.lookup(bareForm, PDFRawStream).dict.set(PDFName.of('XObject'), ctx.obj({
-      Im0: raster(doc, 'unreachable'),
-    }));
+    const bare = followRef(doc, bareForm);
+    if (!(bare instanceof PDFRawStream)) throw new Error('the form is a stream');
+    bare.dict.set(PDFName.of('XObject'), ctx.obj({ Im0: raster(doc, 'unreachable') }));
     const page = doc.addPage([200, 200]);
     page.node.set(PDFName.of('Resources'), ctx.obj({ XObject: { Fm0: bareForm } }));
     page.node.set(PDFName.of('Contents'), ctx.register(ctx.stream('q /Fm0 Do Q\n', {})));
