@@ -26,10 +26,21 @@
  * committed file is re-hashed against `MANIFEST.json` here.
  *
  * What the measurement found is written up in
- * `docs/research/reader-sweep-reconciliation.md`: two of the three rows are **broken on
- * shapes a foreign producer writes** — the resource inventories do not descend into a
- * Form XObject, and the script walk does not enter a `/Kids` JavaScript name tree — and
- * both are pinned as broken here rather than fixed, because this pass was the measuring.
+ * `docs/research/reader-sweep-reconciliation.md`: two of the three rows were **broken on
+ * shapes a foreign producer writes** — the resource inventories did not descend into a
+ * Form XObject, and the script walk did not enter a `/Kids` JavaScript name tree. Both
+ * are **fixed** since, on the one descent in `core/tree.ts` that both readers now share,
+ * and the corrected rows are pinned here: the shapes are `resources-xobject.pdf`,
+ * `resources-form-in-form.pdf`, `resources-inherited.pdf`, `resources-inherited-parent.pdf`,
+ * `script-names-kids.pdf` and `script-names-kids-nested.pdf`.
+ *
+ * `resources-inherited.pdf` was re-cut when this file was re-run against the bytes: the
+ * shape its table row claimed — `/Resources` on the `/Pages` node — was not in the file,
+ * because libqpdf pushes inherited attributes down onto every page as it opens one, and
+ * the generator's freeze step re-saves through libqpdf. `census.json` now carries
+ * `page_tree_layout`, read off MuPDF's object layer, and the rows below assert it, so a
+ * fixture that stops being the shape its row describes reddens a test instead of
+ * quietly describing the control file twice.
  */
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -119,6 +130,16 @@ interface Census {
     poppler_opens: boolean;
     poppler_javascript: string | null;
     qpdf_inventory?: { fonts: CensusFont[]; images: CensusImage[] };
+    /**
+     * Where each page's `/Resources` actually sits, read off MuPDF's object layer:
+     * libqpdf normalises inherited attributes as it opens a file, so it cannot
+     * report this and every shape claim in the resource rows rests on it.
+     */
+    page_tree_layout?: {
+      pages: { page: number; ownResources: boolean; ancestors: unknown[] }[];
+      nested: boolean;
+      inherited: boolean;
+    };
     mupdf_resources?: { fonts: unknown[][][]; images: unknown[][][]; xobjects: unknown[][][] };
     qpdf_script_sites?: { entries: string[]; count: number; xfa: boolean };
     signatures?: {
@@ -148,7 +169,9 @@ const CENSUS = JSON.parse(
 const RESOURCE_FILES = [
   'resources-plain.pdf',
   'resources-inherited.pdf',
+  'resources-inherited-parent.pdf',
   'resources-xobject.pdf',
+  'resources-form-in-form.pdf',
   'resources-shared.pdf',
   'resources-subset.pdf',
 ];
@@ -160,6 +183,7 @@ const SCRIPT_FILES = [
   'script-js-key-only.pdf',
   'script-names-flat.pdf',
   'script-names-kids.pdf',
+  'script-names-kids-nested.pdf',
   'script-hosts-aa.pdf',
   'script-xfa.pdf',
 ];
@@ -240,8 +264,15 @@ interface ResourceCase {
   shape: string;
   fonts: FontExpectation[];
   images: ImageExpectation[];
-  /** Faces and rasters the outside readers count on a page this app's walk does not see. */
-  misses: { via: string; names: string[]; images: number }[];
+  /**
+   * Every `/Resources` dictionary the outside walk had to read to count them: the
+   * page's own, plus one entry per Form XObject it descends into. A walk that stops
+   * at the page reports `['page']` and misses what sits behind the other labels —
+   * which is the whole of ticket 1.
+   */
+  reachedVia: string[];
+  /** Where the bytes keep each page's resources, read off MuPDF's object layer. */
+  layout: { ownResources: boolean[]; nested: boolean; inherited: boolean };
 }
 
 /** The three faces `doc_with_resources` draws with, as the file names them. */
@@ -274,30 +305,50 @@ const RESOURCE_CASES: ResourceCase[] = [
     shape: 'every page names its own /Resources — the control',
     fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
     images: [JPEG_IMAGE, RAW_IMAGE],
-    misses: [],
+    reachedVia: ['page'],
+    layout: { ownResources: [true, true, true], nested: false, inherited: false },
   },
   {
     file: 'resources-inherited.pdf',
-    shape: '/Resources on the /Pages node, none on the page (§7.7.3.3)',
+    shape: '/Resources on the /Pages node and on no page, reached by ascending /Parent',
     fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
     images: [acrossPages(JPEG_IMAGE, [1, 2, 3]), acrossPages(RAW_IMAGE, [1, 2, 3])],
-    misses: [],
+    reachedVia: ['page'],
+    layout: { ownResources: [false, false, false], nested: false, inherited: true },
+  },
+  {
+    file: 'resources-inherited-parent.pdf',
+    shape: 'an intermediate /Pages node carries the resources two hops up; page 3 names its own',
+    fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
+    images: [acrossPages(JPEG_IMAGE, [1, 2]), acrossPages(RAW_IMAGE, [1, 2])],
+    reachedVia: ['page'],
+    layout: { ownResources: [false, false, true], nested: true, inherited: true },
   },
   {
     file: 'resources-xobject.pdf',
     shape: 'the page draws one Form XObject that carries the fonts and images',
-    // Only what a page-level walk can see: Helvetica, which pages 2 and 3 name.
-    fonts: [HELVETICA],
-    images: [],
-    misses: [{ via: 'form-xobject:/Fm0',
-               names: ['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular'], images: 2 }],
+    // Ticket 1: all three faces and both rasters live in `/Fm0`’s own resources, which
+    // is where MuPDF counts them for sheet 1. The page’s `/Resources` holds the form.
+    fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
+    images: [JPEG_IMAGE, RAW_IMAGE],
+    reachedVia: ['form-xobject:/Fm0', 'page'],
+    layout: { ownResources: [true, true, true], nested: false, inherited: false },
+  },
+  {
+    file: 'resources-form-in-form.pdf',
+    shape: 'a Form XObject that draws a second form, the inventory split across both levels',
+    fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
+    images: [JPEG_IMAGE, RAW_IMAGE],
+    reachedVia: ['form-xobject:/Fm0', 'form-xobject:/Inner', 'page'],
+    layout: { ownResources: [true, true, true], nested: false, inherited: false },
   },
   {
     file: 'resources-shared.pdf',
     shape: 'three pages naming the same /Resources object — the deduplication case',
     fonts: [CFF_FACE, HELVETICA, NOTO_FACE],
     images: [acrossPages(JPEG_IMAGE, [1, 2, 3]), acrossPages(RAW_IMAGE, [1, 2, 3])],
-    misses: [],
+    reachedVia: ['page'],
+    layout: { ownResources: [true, true, true], nested: false, inherited: false },
   },
   {
     file: 'resources-subset.pdf',
@@ -308,9 +359,19 @@ const RESOURCE_CASES: ResourceCase[] = [
       HELVETICA,
     ],
     images: [JPEG_IMAGE, RAW_IMAGE],
-    misses: [],
+    reachedVia: ['page'],
+    layout: { ownResources: [true, true, true], nested: false, inherited: false },
   },
 ];
+
+/** Every `/Resources` dictionary the outside walk found entries in, for one file. */
+const censusVia = (file: string): string[] => {
+  const inventory = CENSUS[file].outside_after_freeze.qpdf_inventory;
+  return [...new Set([
+    ...(inventory?.fonts ?? []).map((entry) => entry.via),
+    ...(inventory?.images ?? []).map((entry) => entry.via),
+  ])].sort();
+};
 
 /** The outside inventory for a file, reduced the way `listFonts` presents it. */
 const censusFonts = (file: string): FontExpectation[] => {
@@ -356,28 +417,30 @@ const censusImages = (file: string): ImageExpectation[] => {
 
 describe('listFonts / listImages, on files this repo did not write', () => {
   it.each(RESOURCE_CASES)('$shape — the inventory is what the readers that wrote it count', async ({
-    file, fonts, images, misses,
+    file, fonts, images, reachedVia,
   }) => {
     const doc = await open(file);
     expect(listFonts(doc)).toEqual(fonts);
     expect(listImages(doc)).toEqual(images);
-    // A row that claims the walk sees everything must name what it does not: the
-    // outside column carries the faces the app's page-level walk never reaches.
-    for (const miss of misses) {
-      const hidden = (CENSUS[file].outside_after_freeze.qpdf_inventory?.fonts ?? [])
-        .filter((entry) => entry.via === miss.via);
-      expect(hidden.map((entry) => bare(entry.descendantBaseFont ?? entry.baseFont)).sort())
-        .toEqual(miss.names.sort());
-      const hiddenImages = (CENSUS[file].outside_after_freeze.qpdf_inventory?.images ?? [])
-        .filter((entry) => entry.via === miss.via);
-      expect(new Set(hiddenImages.map((entry) => entry.xref)).size).toBe(miss.images);
-    }
+    // The row’s own claim about the walk: the outside inventory is spread over these
+    // `/Resources` dictionaries and no others, so the counts above can only come from
+    // a descent that reached every one of them.
+    expect(censusVia(file)).toEqual([...reachedVia].sort());
   });
 
-  it('agrees with the outside inventory on every shape it claims to read whole', () => {
+  it.each(RESOURCE_CASES)('%s: the bytes hold the layout the row describes', ({ file, layout }) => {
+    // Read off MuPDF’s object layer, because libqpdf rewrites inherited attributes
+    // onto every page as it opens a file and cannot report this shape at all. This is
+    // the pin that catches a fixture drifting away from the sentence written about it.
+    const seen = CENSUS[file].outside_after_freeze.page_tree_layout;
+    expect(seen?.pages.map((entry) => entry.ownResources)).toEqual(layout.ownResources);
+    expect(seen?.nested).toBe(layout.nested);
+    expect(seen?.inherited).toBe(layout.inherited);
+  });
+
+  it('agrees with the outside inventory on every shape it reads', () => {
     for (const testCase of RESOURCE_CASES) {
-      if (testCase.misses.length > 0) continue;
-      // The `subset` row names the terminal face, which is the descendant's `/BaseFont`;
+      // The `subset` row names the terminal face, which is the descendant’s `/BaseFont`;
       // the outside column carries both spellings, so compare on that basis.
       const outside = censusFonts(testCase.file).map((font) => ({
         ...font, name: font.name.replace(/^\w{6}\+/, ''),
@@ -388,29 +451,71 @@ describe('listFonts / listImages, on files this repo did not write', () => {
     }
   });
 
-  it('counts a Form XObject\'s faces and rasters in the census but not in this app', async () => {
+  it('counts a Form XObject’s faces and rasters where the outside readers count them', async () => {
+    // Ticket 1, per shape: libqpdf finds the inventory behind the form, MuPDF counts
+    // it for the sheet, and this app now reports the same totals — the page-level
+    // walk used to answer one borrowed face and no images at all.
     const file = 'resources-xobject.pdf';
     const doc = await open(file);
-    const inventory = CENSUS[file].outside_after_freeze.qpdf_inventory;
-    const hidden = (inventory?.fonts ?? []).filter((entry) => entry.via.startsWith('form-xobject'));
-    const imagesViaForm = (inventory?.images ?? []).filter((entry) => entry.via.startsWith('form-xobject'));
-    // libqpdf, reading the page's resources through the form object, finds three faces
-    // and two rasters on sheet 1 — the page's own `/Resources` holds only the form.
+    const outside = CENSUS[file].outside_after_freeze;
+    const hidden = (outside.qpdf_inventory?.fonts ?? [])
+      .filter((entry) => entry.via.startsWith('form-xobject'));
+    const imagesViaForm = (outside.qpdf_inventory?.images ?? [])
+      .filter((entry) => entry.via.startsWith('form-xobject'));
     expect(hidden.map((entry) => bare(entry.descendantBaseFont ?? entry.baseFont)).sort())
       .toEqual(['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular']);
     expect(new Set(imagesViaForm.map((entry) => entry.xref))).toHaveLength(2);
     // MuPDF, a second implementation, agrees sheet 1 places them: its per-page lists
     // carry the same counts whether or not a form object sits in between.
-    expect(CENSUS[file].outside_after_freeze.mupdf_resources?.fonts?.[0]).toHaveLength(3);
-    expect(CENSUS[file].outside_after_freeze.mupdf_resources?.images?.[0]).toHaveLength(2);
-    expect(CENSUS[file].outside_after_freeze.mupdf_resources?.xobjects?.[0]).toHaveLength(1);
-    // This app sees the two images in no page at all, and one face — the Helvetica
-    // pages 2 and 3 name directly, which is not the one sheet 1 draws with.
-    expect(listFonts(doc).map((font) => font.name)).toEqual(['Helvetica']);
-    expect(listImages(doc)).toEqual([]);
+    expect(outside.mupdf_resources?.fonts?.[0]).toHaveLength(3);
+    expect(outside.mupdf_resources?.images?.[0]).toHaveLength(2);
+    expect(outside.mupdf_resources?.xobjects?.[0]).toHaveLength(1);
+    expect(listFonts(doc).map((font) => font.name).sort())
+      .toEqual(['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular']);
+    expect(listImages(doc).map((image) => [image.width, image.height, image.pages])).toEqual([
+      [40, 24, [1]], [40, 24, [1]],
+    ]);
+    // Both images are 40 × 24, so the pair is identified by the filter each carries:
+    // the one MuPDF lists as `FlateDecode` and the one it lists as `DCTDecode`.
+    expect(listImages(doc).map((image) => image.filter).sort())
+      .toEqual((outside.mupdf_resources?.images?.[0] ?? [])
+        .map((row) => String(row[8])).sort());
   });
 
-  it('the view-metadata card prints the inventory, so the miss is what a user reads', async () => {
+  it('reaches an inventory split across two levels of nested form', async () => {
+    // The shape Word and Distiller emit: the page names one form, that form names
+    // another, and the two levels each hold part of the inventory. A descent that
+    // takes one step reports the outer face and no images.
+    const file = 'resources-form-in-form.pdf';
+    const doc = await open(file);
+    const outside = CENSUS[file].outside_after_freeze;
+    expect(outside.mupdf_resources?.xobjects?.[0]).toHaveLength(2);
+    expect(outside.mupdf_resources?.images?.[0]).toHaveLength(2);
+    expect(censusVia(file)).toEqual(['form-xobject:/Fm0', 'form-xobject:/Inner', 'page']);
+    expect(listFonts(doc).map((font) => font.name).sort())
+      .toEqual(['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular']);
+    expect(listImages(doc)).toHaveLength(2);
+  });
+
+  it('resolves resources inherited up the page tree, one hop and two', async () => {
+    // §7.7.3.3: a page may name no `/Resources` at all and take the one on an
+    // ancestor. The two files differ in how many `/Parent` hops that takes, and
+    // `inherited-parent` also carries a page that names its own dictionary, so a
+    // walk cannot satisfy one shape by answering the other.
+    for (const file of ['resources-inherited.pdf', 'resources-inherited-parent.pdf']) {
+      const doc = await open(file);
+      const outside = CENSUS[file].outside_after_freeze;
+      expect(outside.page_tree_layout?.inherited).toBe(true);
+      expect(listFonts(doc).map((font) => font.name).sort())
+        .toEqual(['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular']);
+      // MuPDF’s per-sheet counts are the yardstick, page by page.
+      expect(listImages(doc).map((image) => image.pages.sort())
+        .flat().filter((page, index, all) => all.indexOf(page) === index))
+        .toEqual([1, 2, 3].filter((page) => (outside.mupdf_resources?.images?.[page - 1] ?? []).length > 0));
+    }
+  });
+
+  it('the view-metadata card prints the inventory a user reads', async () => {
     const file = 'resources-xobject.pdf';
     const doc = await open(file);
     // `metadataReport` reads `/Info` through `infoDict`, which asks pdf-lib for a
@@ -426,9 +531,14 @@ describe('listFonts / listImages, on files this repo did not write', () => {
     const sections = metadataReport(doc, fixtureBytes(file));
     const fonts = sections.find((section) => section.title === 'Fonts');
     const images = sections.find((section) => section.title === 'Images');
-    expect(fonts?.rows.map((row) => row.label)).toEqual(['Helvetica']);
-    // The card says there are no raster images at all in a file MuPDF draws two from.
-    expect(images?.rows).toEqual([{ label: 'None', value: 'no raster images are embedded' }]);
+    expect(fonts?.rows.map((row) => row.label).sort())
+      .toEqual(['Fixture Sans Regular', 'Helvetica', 'NotoSans-Regular']);
+    // The card used to answer “no raster images are embedded” over a file that draws
+    // two; the row it prints now is measured, and is not that sentence.
+    expect(images?.rows).toEqual([
+      { label: '40 × 24 px', value: 'DCTDecode · 8-bit · ICCBased · 619 B · on 1 page' },
+      { label: '40 × 24 px', value: 'FlateDecode · 8-bit · ICCBased · 47 B · on 1 page' },
+    ]);
   });
 
   it.each(RESOURCE_CASES)('%s: every resource pointer is an indirect reference', async ({ file }) => {
@@ -497,12 +607,28 @@ const SCRIPT_CASES: ScriptCase[] = [
   },
   {
     file: 'script-names-kids.pdf',
-    shape: 'the same named scripts inside a /Kids + /Limits subtree — recorded as broken',
+    shape: 'the same named scripts inside a /Kids + /Limits subtree, one leaf per script',
+    // Ticket 2: the tree is the entry point, and both scripts sit behind a `/Kids`
+    // the walk used to stop at. Before the fix this reported one entry that was not
+    // the tree — the indirect action picked up by the leftover sweep — and
+    // `console.clear()`, stored **inline** as a name-tree value, survived the strip.
     present: 1,
-    places: ['a dictionary in the file /JS'],
+    places: ['the JavaScript name tree'],
     outsideSites: 2,
     popplerSees: true,
-    survives: [CODES.named],
+    survives: [],
+  },
+  {
+    file: 'script-names-kids-nested.pdf',
+    shape: 'a /Kids JavaScript tree whose kid is itself a /Kids node',
+    // The same two scripts one level deeper, so a walk that enters `/Kids` exactly
+    // once — which is what a flat reader patched for the first shape tends to do —
+    // still cannot report them.
+    present: 1,
+    places: ['the JavaScript name tree'],
+    outsideSites: 2,
+    popplerSees: true,
+    survives: [],
   },
   {
     file: 'script-hosts-aa.pdf',
@@ -589,26 +715,32 @@ describe('inspectScript / stripScript, on files this repo did not write', () => 
     }
     // `/Kids` subtrees: poppler walks the JavaScript name tree with its own code and
     // says the file runs script; the independent libqpdf walk counts two entry points.
-    // This app names one, and it is not the tree.
-    const kids = CENSUS['script-names-kids.pdf'];
-    expect(kids.outside_after_freeze.poppler_javascript).toBe('yes');
-    expect(kids.outside_after_freeze.qpdf_script_sites?.entries).toEqual([
-      'javascript name tree entry Fold',
-      'javascript name tree entry Startup',
-    ]);
+    // This app now reaches the same two scripts — as one entry, the tree, which is the
+    // unit it counts (pinned below) — on both the one-level and the two-level shape.
+    for (const file of ['script-names-kids.pdf', 'script-names-kids-nested.pdf']) {
+      const kids = CENSUS[file];
+      expect(kids.outside_after_freeze.poppler_javascript).toBe('yes');
+      expect(kids.outside_after_freeze.qpdf_script_sites?.entries).toEqual([
+        'javascript name tree entry Fold',
+        'javascript name tree entry Startup',
+      ]);
+    }
   });
 
   it('counts one entry per tree where the outside walk counts one per script', async () => {
     // Not a defect, a unit difference, pinned so the two columns are never confused:
-    // the flat tree is one entry point holding two actions, and this app reports the
-    // entry. The `/Kids` tree is the same two actions behind one entry it does not see.
-    const flat = await open('script-names-flat.pdf');
-    expect(inspectScript(flat).present).toBe(1);
-    expect(CENSUS['script-names-flat.pdf'].outside_after_freeze.qpdf_script_sites?.count).toBe(2);
-    const kids = await open('script-names-kids.pdf');
-    expect(inspectScript(kids).present).toBeLessThan(
-      CENSUS['script-names-kids.pdf'].outside_after_freeze.qpdf_script_sites?.count ?? 0,
-    );
+    // one name tree holding two actions is one entry point here and two script sites
+    // out there — on the flat tree and on both `/Kids` shapes alike. What the fix
+    // changed is which actions sit behind that one entry, not how many entries the
+    // card counts.
+    for (const file of [
+      'script-names-flat.pdf', 'script-names-kids.pdf', 'script-names-kids-nested.pdf',
+    ]) {
+      const doc = await open(file);
+      expect(inspectScript(doc).present, `${file}: entries counted`).toBe(1);
+      expect(CENSUS[file].outside_after_freeze.qpdf_script_sites?.count,
+        `${file}: outside sites`).toBe(2);
+    }
   });
 });
 

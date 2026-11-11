@@ -67,11 +67,23 @@
   "sha256": "a3b366df338e0e93a14dcb39bf1d7be27183652fb1c2e42ee146b4c3cea7e9c6",
   "shape": "/PageLabels as a /Kids number tree, not a flat /Nums"
  },
+ "resources-form-in-form.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (nested Form XObjects)",
+  "sha256": "330a9580d58e5297c82c6247a0bcdba8cbf3f032b669b9ed94c0a657cc05f4a1",
+  "shape": "a Form XObject that draws a second form, the faces split across the two levels"
+ },
+ "resources-inherited-parent.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)",
+  "sha256": "b0f8fe514f0e83c7d6d467e1d4b64c0272f27bac907a69748e858be1b907c08a",
+  "shape": "an intermediate /Pages node carries /Resources for pages 1-2 (two hops up the /Parent chain) while page 3 names its own"
+ },
  "resources-inherited.pdf": {
   "payloads": {},
-  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (resource move)",
-  "sha256": "9a79653e2e0f956babb2151e569d45015ee8e708289b992e6b76cb7475972e04",
-  "shape": "/Resources on the /Pages node, none on the page (§7.7.3.3 inherited attributes)"
+  "producer": "MuPDF 1.28.2 (pages) + MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)",
+  "sha256": "7e97c181ffd656d6ab76f8fde21b1dc926d6082e8ba95c8f8e63f404f7ad8f6a",
+  "shape": "/Resources on the /Pages node and on no page (§7.7.3.3 inherited attributes)"
  },
  "resources-plain.pdf": {
   "payloads": {},
@@ -115,11 +127,17 @@
   "sha256": "a1c96cc677d10074c57b85cedadaf26f8e4856f257f44a707e8951996da32984",
   "shape": "/Names » /JavaScript as a flat /Names array, one value inline and one referenced"
  },
+ "script-names-kids-nested.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (nested /Kids name tree)",
+  "sha256": "0ab98a87774e7eaec85c705be7b1f1b181654f7bd7312c2417a0ac9f1a8edf77",
+  "shape": "a /Kids JavaScript tree whose kid is itself a /Kids node"
+ },
  "script-names-kids.pdf": {
   "payloads": {},
   "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Kids name tree)",
-  "sha256": "c23f54aff5f1739b35f5ccf0a6e59d25a13abc49b0f22286b13f73646b46f4c3",
-  "shape": "the same named scripts inside a /Kids + /Limits subtree"
+  "sha256": "f88293e17c6fb7c152537ed550dd4b9df8318fbeb1f0522eed2f91eb76934a6c",
+  "shape": "the same named scripts inside a /Kids + /Limits subtree, one leaf per script"
  },
  "script-openaction-array.pdf": {
   "payloads": {},

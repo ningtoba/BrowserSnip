@@ -34,6 +34,7 @@
  */
 import type { PDFContext, PDFDocument, PDFObject } from '@maxwbh/pdf-lib';
 import { PDFArray, PDFDict, PDFName, PDFRawStream, PDFRef, PDFString } from '@maxwbh/pdf-lib';
+import { collectTreePairs, dictAt } from './tree';
 
 /** One place that runs script, with the words the result card quotes for it. */
 export interface ScriptEntry {
@@ -197,8 +198,10 @@ function scriptHosts(doc: PDFDocument): { dict: PDFDict; where: string }[] {
 
 /** The catalogue's `/Names » /JavaScript` subtree, when the file has one. */
 function namedScriptTree(doc: PDFDocument): { names: PDFDict; tree: PDFDict } | null {
-  const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
-  const tree = names?.lookupMaybe(NAMES_SCRIPT_KEY, PDFDict);
+  // Narrowed through `core/tree`, not `lookupMaybe`: a `/Names` that is a stream, a
+  // number or an array is a foreign file, not a reason to throw.
+  const names = dictAt(doc, doc.catalog, 'Names');
+  const tree = dictAt(doc, names, bare(NAMES_SCRIPT_KEY));
   return names && tree ? { names, tree } : null;
 }
 
@@ -272,14 +275,18 @@ function scriptEntries(doc: PDFDocument): ScriptEntry[] {
   }
 
   // Named scripts, which a form calls out of the name tree. The subtree is the
-  // entry; every action it points at is emptied with it.
+  // entry; every action it points at is emptied with it — **wherever** it sits, in
+  // any `/Kids` node, stored inline as a leaf's value or behind a reference. The
+  // inline spelling is the one nothing else here could reach: a dictionary with no
+  // object number is not in `context.enumerateIndirectObjects()`, so a walk that
+  // stopped at the tree's own `/Names` array left that code in the file while the
+  // card said the tree had been taken out.
   const tree = namedScriptTree(doc);
   if (tree) {
-    const pairs = tree.tree.lookupMaybe(PDFName.of('Names'), PDFArray);
     const dicts = new Set<PDFDict>();
     const refs: PDFRef[] = [];
-    for (let index = 1; pairs && index < pairs.size(); index += 2) {
-      const action = asDict(context, pairs.get(index));
+    for (const pair of collectTreePairs(doc, tree.tree)) {
+      const action = asDict(context, pair.value);
       if (!action || !isJavaScriptAction(action.dict)) continue;
       dicts.add(action.dict);
       if (action.ref) refs.push(action.ref);

@@ -38,6 +38,8 @@ import {
 } from '@maxwbh/pdf-lib';
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import { fontkit } from './doc';
+import { asDict, descend, dictAt, followRef } from './tree';
+import type { DescentEdge } from './tree';
 
 // ── Geometry and colour helpers ────────────────────────────────────
 
@@ -2264,6 +2266,68 @@ interface TextStateSnapshot {
 
 /** How deep into nested Form XObjects the text walker may go. */
 const MAX_FORM_DEPTH = 6;
+
+/** One `/Resources` dictionary a page can name, and how the walk reached it. */
+export interface ResourceScope {
+  resources: PDFDict;
+  /** `page` for the page's own dictionary, else the chain that draws it. */
+  via: string;
+  /** 0 for the page's own dictionary, the form level for a form's. */
+  depth: number;
+}
+
+/**
+ * Every `/Resources` dictionary one page draws from: its own — or the one it
+ * inherits up the page tree — plus every form it names, at any depth.
+ *
+ * A form's `/F1` is not the page's `/F1`, and Word, LibreOffice and every Distiller
+ * put a page's real content inside a form, so a walk that reads the page dictionary
+ * and stops answers “what does this page draw with” with the form's name and nothing
+ * else. That is the same stop-one-level-short failure `core/tree.ts` exists to end
+ * for name trees, and it is handed the same descent: follow the reference, read what
+ * you find, visit each dictionary **once** so a form drawn five times is inventoried
+ * once, and stop at the depth the text walker already uses.
+ *
+ * `core/compress.ts` and `core/images-out.ts` walk this graph their own way for
+ * their own purposes — placement measurement, pixel extraction — because a caller
+ * that rewrites an image needs the chain that reached it, not just the dictionary.
+ * This is the read-only half those walks share, and the one the inventories use.
+ */
+export function resourceScopes(doc: PDFDocument, page: PDFPage): ResourceScope[] {
+  const own = resourcesDict(page);
+  if (!own) return [];
+  return descend(doc, own, (node) => formEdges(doc, node.dict), MAX_FORM_DEPTH).map((node) => ({
+    resources: node.dict,
+    via: node.via === '' ? 'page' : node.via,
+    depth: node.depth,
+  }));
+}
+
+/** The `/Resources` of every Form XObject one resource dictionary names. */
+function formEdges(doc: PDFDocument, resources: PDFDict): DescentEdge[] {
+  const xobjects = asDict(followRef(doc, resources.get(PDFName.of('XObject'))));
+  if (!xobjects) return [];
+  const edges: DescentEdge[] = [];
+  for (const [key, value] of xobjects.entries()) {
+    const object = followRef(doc, value);
+    // A form is a **stream**, and a stream's dictionary is reached through `.dict`:
+    // testing the object for `PDFDict` finds nothing in any form, which is how
+    // `collectImages` once reported “no images” over a scan.
+    const dict = object instanceof PDFStream ? object.dict : asDict(object);
+    if (!dict) continue;
+    const subtype = followRef(doc, dict.get(PDFName.of('Subtype')));
+    if (!(subtype instanceof PDFName) || subtype.asString() !== '/Form') continue;
+    // A form written without `/Resources` inherits the dictionary of the scope that
+    // draws it (§8.10.1, the PDF 1.1 spelling). Handing the enclosing dictionary
+    // back is a no-op inside `descend` — it is already visited — and it is the
+    // honest answer: those are the names a viewer resolves for that form.
+    edges.push({
+      name: `XObject/${key instanceof PDFName ? key.asString().slice(1) : String(key)}`,
+      value: dictAt(doc, dict, 'Resources') ?? resources,
+    });
+  }
+  return edges;
+}
 
 /**
  * One content stream the text walker can reach: the page's own `/Contents`, or

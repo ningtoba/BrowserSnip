@@ -29,6 +29,8 @@ import {
   context,
   pdfVersion,
 } from './doc';
+import { resourceScopes } from './content';
+import { collectTreePairs, dictAt } from './tree';
 import { PAGE_SIZES } from './pages';
 
 export interface DocumentInfo {
@@ -878,14 +880,16 @@ function nameText(value: unknown): string | undefined {
  * `/Encoding` is a name on a simple font and a dictionary on a CID font, so it
  * is resolved and narrowed rather than looked up with a class — `lookupMaybe`
  * throws on that mismatch. Shared resource dictionaries mean one face appears on
- * many pages; it is reported once, under the name the file carries.
+ * many pages; it is reported once, under the name the file carries. Faces declared
+ * only inside a Form XObject are reported too, because the page draws with them:
+ * `resources-xobject.pdf` is a file MuPDF counts three faces for and this walk once
+ * answered with one.
  */
 export function listFonts(doc: PDFDocument): FontInventory[] {
   const ctx = context(doc);
   const found = new Map<string, FontInventory>();
-  for (const page of doc.getPages()) {
-    const resources = resolve(ctx, page.node.get(PDFName.of('Resources')));
-    if (!(resources instanceof PDFDict)) continue;
+  // Every `/Resources` the pages can name, forms included, in page order.
+  for (const { resources } of doc.getPages().flatMap((page) => resourceScopes(doc, page))) {
     const fonts = resolve(ctx, resources.get(PDFName.of('Font')));
     if (!(fonts instanceof PDFDict)) continue;
     for (const [, entry] of fonts.entries()) {
@@ -936,15 +940,22 @@ export function listFonts(doc: PDFDocument): FontInventory[] {
 /**
  * Every raster image the pages place, deduplicated by object so one logo used
  * on 300 pages is reported once with its page count (E7).
+ *
+ * The walk covers every `/Resources` a page can name, including the ones inside its
+ * Form XObjects: artwork wrapped in a form is the normal shape of a Word or
+ * LibreOffice export, and a page-level-only walk reported "no raster images are
+ * embedded" on the `view-metadata` card over a file MuPDF draws two from.
  */
 export function listImages(doc: PDFDocument): ImageInventory[] {
   const ctx = context(doc);
   const found = new Map<string, ImageInventory>();
-  doc.getPages().forEach((page, index) => {
-    const resources = resolve(ctx, page.node.get(PDFName.of('Resources')));
-    if (!(resources instanceof PDFDict)) return;
+  // Page order matters here — each image carries the sheets that place it — so the
+  // scopes are flattened with the page index they were reached from.
+  const scopes = doc.getPages()
+    .flatMap((page, index) => resourceScopes(doc, page).map((scope) => ({ ...scope, index })));
+  for (const { resources, index } of scopes) {
     const xobjects = resolve(ctx, resources.get(PDFName.of('XObject')));
-    if (!(xobjects instanceof PDFDict)) return;
+    if (!(xobjects instanceof PDFDict)) continue;
     for (const [, entry] of xobjects.entries()) {
       const stream = resolve(ctx, entry);
       if (!(stream instanceof PDFStream)) continue;
@@ -966,7 +977,9 @@ export function listImages(doc: PDFDocument): ImageInventory[] {
       const key = entry instanceof PDFRef ? entry.toString() : `${number('Width')}x${number('Height')}:${storedLength(stream)}`;
       const existing = found.get(key);
       if (existing) {
-        existing.pages.push(index + 1);
+        // One sheet may name the same stream twice — under two keys, or through two
+        // forms — and "on 2 pages" about a single sheet is a claim the bytes deny.
+        if (!existing.pages.includes(index + 1)) existing.pages.push(index + 1);
         continue;
       }
       found.set(key, {
@@ -979,7 +992,7 @@ export function listImages(doc: PDFDocument): ImageInventory[] {
         pages: [index + 1],
       });
     }
-  });
+  }
   return [...found.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
@@ -991,14 +1004,19 @@ function round(value: number): string {
   return (Math.round(value * 100) / 100).toString();
 }
 
-/** Number of embedded-file name-tree entries, without decoding any stream. */
+/**
+ * Number of embedded-file name-tree entries, without decoding any stream.
+ *
+ * The count is of entries, and an entry can sit in any node of the tree: a producer
+ * with several files writes `/Kids` + `/Limits`, and reading only the root's own
+ * `/Names` array printed "Attachments: 0" on the same card that lists those files —
+ * the third instance of the stop-at-the-root the shared descent now covers.
+ */
 function attachmentCount(doc: PDFDocument): number | undefined {
-  const names = doc.catalog
-    .lookupMaybe(PDFName.of('Names'), PDFDict)
-    ?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict);
-  if (!names) return undefined;
-  const array = names.lookupMaybe(PDFName.of('Names'), PDFArray);
-  return array ? Math.floor(array.size() / 2) : 0;
+  const names = dictAt(doc, doc.catalog, 'Names');
+  const tree = dictAt(doc, names, 'EmbeddedFiles');
+  if (!tree) return undefined;
+  return collectTreePairs(doc, tree).length;
 }
 
 /* ── the sRGB profile a PDF/A output intent points at ─────────────────────── */

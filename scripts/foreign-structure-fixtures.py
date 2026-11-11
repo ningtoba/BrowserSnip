@@ -17,13 +17,16 @@ by that producer plus a second outside reader before it is kept.
     /Info + XMP                    pymupdf `set_metadata` + `set_xml_metadata`
     embedded file                  pymupdf `embfile_add`
     fonts + images                 pymupdf faces (base-14, TrueType subset, CFF/OTF)
-                                   and two rasters, in four resource layouts: page,
-                                   inherited from `/Pages`, inside a Form XObject,
-                                   and one dictionary shared by three pages
+                                   and two rasters, in six resource layouts: page,
+                                   inherited from `/Pages`, inherited from a `/Parent`
+                                   two hops up through a nested page tree, inside a
+                                   Form XObject, inside a form inside a form, and one
+                                   dictionary shared by three pages
     script actions                 pikepdf `/OpenAction` inline / referenced / an
                                    array, `/JS` with no `/S`, `/AA` on a page, an
                                    annotation and a field, `/Names » /JavaScript`
-                                   flat and as a `/Kids` tree, and an XFA packet
+                                   flat, as a `/Kids` tree, as a `/Kids` tree inside a
+                                   `/Kids` tree, and an XFA packet
     signatures                     pikepdf `/Sig` + `/ByteRange` + a PKCS#7 this repo
                                    assembled (`scripts/pdf_fixture_pkcs7.py`) from an
                                    OpenSSL key pair, checked by `openssl cms -verify`
@@ -68,6 +71,9 @@ PLANTED = "Lighthouse Inventory 1887"
 # these module constants entirely while the runtime defines them.
 TEXT_WIDGET: int = pymupdf.PDF_WIDGET_TYPE_TEXT  # type: ignore[attr-defined]
 CHECKBOX_WIDGET: int = pymupdf.PDF_WIDGET_TYPE_CHECKBOX  # type: ignore[attr-defined]
+# PyMuPDF's stubs omit this one too; `doc.save(incremental=True)` needs it to
+# leave an unencrypted file unencrypted rather than dropping the trailer.
+ENCRYPT_KEEP: int = pymupdf.PDF_ENCRYPT_KEEP  # type: ignore[attr-defined]
 SHEETS = ("ALPHA", "BRAVO", "CHARLIE")
 ENCLOSURE = b"a,b\n1,2\n"
 XMP = (
@@ -389,14 +395,27 @@ def doc_with_resources() -> pymupdf.Document:
 
 
 def build_resources(mode: str) -> dict:
-    """Where a page's resources live, in four spellings the format allows.
+    """Where a page's resources live, in the spellings the format allows.
 
-        plain      each page names its own `/Resources` — what pdf-lib writes
-        inherited  `/Resources` sits on the `/Pages` node (§7.7.3.3 inherited attrs)
-        xobject    the page draws one Form XObject that carries the resources itself
-        shared     every page names the *same* resource dictionary object
-        subset     the two embedded faces carry a `BCDFEE+` subsetting tag, as
-                   LibreOffice and Acrobat write them
+        plain            each page names its own `/Resources` — what pdf-lib writes
+        inherited        `/Resources` sits on the `/Pages` node and on nothing else
+                         (§7.7.3.3 inherited attributes), cut after the freeze
+        inherited-parent the same, one hop further up: an intermediate `/Pages`
+                         node carries the dictionary for pages 1–2 while page 3
+                         keeps naming its own, also cut after the freeze
+        xobject          the page draws one Form XObject that carries the resources
+        form-in-form     that form draws a second form, and the two levels each
+                         name part of the inventory — Word and Distiller output
+        shared           every page names the *same* resource dictionary object
+        subset           the two embedded faces carry a `BCDFEE+` subsetting tag, as
+                         LibreOffice and Acrobat write them
+
+    The two inherited shapes are applied by `apply_page_tree_shape` after
+    `freeze_all`, not here: **libqpdf pushes inherited attributes down onto every
+    page as it opens a file**, so the pikepdf round trip the freeze performs erases
+    the shape before it is committed — which is what had happened to
+    `resources-inherited.pdf`, whose table row described an inheritance the bytes
+    did not hold.
     """
     import pikepdf
 
@@ -404,6 +423,9 @@ def build_resources(mode: str) -> dict:
     path = write(doc_with_resources(), name)
     if mode == "plain":
         return {"mode": mode}
+    if mode in ("inherited", "inherited-parent"):
+        PAGE_TREE_SHAPES[name] = mode
+        return {"mode": mode, "applied": "after the freeze, by MuPDF"}
 
     pdf = pikepdf.open(path, allow_overwriting_input=True)
     pages = pdf.Root["/Pages"]
@@ -411,12 +433,7 @@ def build_resources(mode: str) -> dict:
     first = kids[0]
     resources = first["/Resources"]
 
-    if mode == "inherited":
-        pages["/Resources"] = resources
-        for page in kids:
-            if "/Resources" in page:
-                del page["/Resources"]
-    elif mode == "shared":
+    if mode == "shared":
         for page in kids[1:]:
             page["/Resources"] = resources
     elif mode == "subset":
@@ -438,23 +455,168 @@ def build_resources(mode: str) -> dict:
             if descriptor is not None and "/FontName" in descriptor:
                 descriptor["/FontName"] = pikepdf.Name(
                     f"/{prefix}{str(descriptor['/FontName']).lstrip('/')}")
-    elif mode == "xobject":
+    elif mode in ("xobject", "form-in-form"):
         contents = first["/Contents"]
         entries = contents if isinstance(contents, pikepdf.Array) else [contents]
         data = b"".join(entry.read_bytes() for entry in entries)
-        form = pdf.make_indirect(pikepdf.Stream(pdf, data))
-        form["/Type"] = pikepdf.Name("/XObject")
-        form["/Subtype"] = pikepdf.Name("/Form")
-        form["/BBox"] = first["/MediaBox"]
-        form["/Resources"] = resources
+        page_resources = resources
         holder = pikepdf.Dictionary()
-        holder["/Fm0"] = form
+        if mode == "xobject":
+            form = wrap_form(pdf, data, first, page_resources)
+            holder["/Fm0"] = form
+        else:
+            # Two levels, and the inventory split across them: the inner form
+            # carries the page's whole dictionary (three faces, two rasters) and
+            # the outer one names the base-14 face under its own key, so a walk
+            # that stops at the first form misses one face and both images.
+            inner = wrap_form(pdf, data, first, page_resources)
+            outer_resources = pikepdf.Dictionary()
+            outer_resources["/XObject"] = pikepdf.Dictionary({"/Inner": inner})
+            outer_resources["/Font"] = pikepdf.Dictionary(
+                {"/outer": page_resources["/Font"]["/helv"]})
+            outer = wrap_form(pdf, b"q 1 0 0 1 0 0 cm /Inner Do Q\n", first,
+                              outer_resources)
+            holder["/Fm0"] = outer
         first["/Resources"] = pikepdf.Dictionary(XObject=holder)
         first["/Contents"] = pdf.make_indirect(
             pikepdf.Stream(pdf, b"q 1 0 0 1 0 0 cm /Fm0 Do Q\n"))
     pdf.save(path)
     pdf.close()
     return {"mode": mode}
+
+
+def wrap_form(pdf: Any, data: bytes, page: Any, resources: Any) -> Any:
+    """Register `data` as a Form XObject on the page's media box."""
+    import pikepdf
+
+    form = pdf.make_indirect(pikepdf.Stream(pdf, data))
+    form["/Type"] = pikepdf.Name("/XObject")
+    form["/Subtype"] = pikepdf.Name("/Form")
+    form["/BBox"] = page["/MediaBox"]
+    form["/Resources"] = resources
+    return form
+
+
+def refs_in(value: str) -> list[int]:
+    """The object numbers in a `/Kids`-shaped string: `[3 0 R 4 0 R]` -> [3, 4]."""
+    return [int(match) for match in re.findall(r"(\d+) 0 R", value)]
+
+
+def ref_of(value: str) -> int:
+    """The single object number a `("xref", "12 0 R")` answer carries."""
+    return refs_in(value)[0]
+
+
+#: Fixture name -> page-tree shape applied after the freeze. See `build_resources`.
+PAGE_TREE_SHAPES: dict[str, str] = {}
+
+# A trailer `/ID` whose two halves are 32-digit hex strings: the shape every
+# producer here writes, spaced (`qpdf`) or not (`MuPDF`).
+IDENTIFIER = re.compile(
+    rb"(/ID\s*\[\s*)(<[0-9A-Fa-f]{32}>)(\s*)(<[0-9A-Fa-f]{32}>)(\s*\])", re.IGNORECASE)
+
+
+def pin_identifier(path: str, name: str) -> int:
+    """Pin both halves of every trailer `/ID` in the bytes, without moving an offset.
+
+    `freeze` pins them through libqpdf, which is exactly the reader that cannot be
+    used on these two files (it pushes inherited page attributes down onto every
+    leaf as it opens them). MuPDF's incremental save regenerates the second half on
+    every write, so the pair is rewritten in place instead — each half stays a 32
+    digit hex string, so the xref offsets the file just wrote remain true.
+    """
+    identity = f"<{sha(name.encode())[:32]}>".encode()
+    source = file_bytes(path)
+    pinned, count = IDENTIFIER.subn(
+        lambda match: match.group(1) + identity + match.group(3) + identity + match.group(5),
+        source)
+    if count == 0:
+        raise AssertionError(f"no trailer /ID found to pin in {name}")
+    with open(path, "wb") as handle:
+        handle.write(pinned)
+    return count
+
+
+def apply_page_tree_shape(name: str, mode: str) -> dict:
+    """Re-cut a frozen file's page tree with MuPDF, which does not normalise it.
+
+    `xref_set_key` edits the objects the file actually holds and an incremental
+    save appends them, so an inherited attribute stays on the node that carries it
+    instead of being pushed down onto every leaf. Both halves of the trailer `/ID`
+    are then pinned from the file's own name, the way `freeze` pins them, because
+    an incremental save regenerates the second half.
+    """
+    path = os.path.join(TARGET, name)
+    doc = pymupdf.open(path)
+    root = ref_of(doc.xref_get_key(doc.pdf_catalog(), "Pages")[1])
+    kids = refs_in(doc.xref_get_key(root, "Kids")[1])
+    resources = doc.xref_get_key(kids[0], "Resources")[1]
+    # `inherited` moves the dictionary onto the root `/Pages` node, which every
+    # page reaches in one hop. `inherited-parent` hangs pages 1–2 under a new
+    # intermediate node two hops from the leaves and leaves the last page naming
+    # its own resources, so one file holds both answers.
+    shared_with = kids if mode == "inherited" else kids[:-1]
+    middle = 0
+    if mode == "inherited-parent":
+        middle = doc.get_new_xref()
+        held = " ".join(f"{kid} 0 R" for kid in shared_with)
+        doc.update_object(
+            middle,
+            f"<< /Type /Pages /Parent {root} 0 R /Count {len(shared_with)} "
+            f"/Resources {resources} /Kids [{held}] >>")
+        rest = " ".join(f"{kid} 0 R" for kid in kids[len(shared_with):])
+        doc.xref_set_key(root, "Kids", f"[{middle} 0 R{' ' + rest if rest else ''}]".replace("  ", " "))
+    for kid in shared_with:
+        doc.xref_set_key(kid, "Resources", "null")
+        if middle:
+            doc.xref_set_key(kid, "Parent", f"{middle} 0 R")
+    if mode == "inherited":
+        doc.xref_set_key(root, "Resources", resources)
+    doc.save(path, incremental=True, encryption=ENCRYPT_KEEP)
+    doc.close()
+
+    identity = sha(name.encode())[:32]
+    doc = pymupdf.open(path)
+    doc.xref_set_key(-1, "ID", f"[<{identity}> <{identity}>]")
+    doc.save(path, incremental=True, encryption=ENCRYPT_KEEP)
+    doc.close()
+    # The save above regenerates the second half again; pin it over the bytes.
+    trailers = pin_identifier(path, name)
+    doc = pymupdf.open(path)
+    written = doc.xref_length()
+    doc.close()
+    return {"mode": mode, "producer": "MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)",
+            "objects": written, "trailersPinned": trailers}
+
+
+def page_tree_layout(path: str) -> dict:
+    """What the bytes really say about where each page's resources live.
+
+    Asked of MuPDF's object layer, not of pikepdf: libqpdf normalises inherited
+    attributes on open, so a census column read through it cannot tell an
+    inherited `/Resources` from one the page names itself — which is exactly the
+    claim a table row used to make without support.
+    """
+    doc = pymupdf.open(path)
+    pages: list[dict[str, Any]] = []
+    for number in range(doc.page_count):
+        xref = doc.page_xref(number)
+        own = doc.xref_get_key(xref, "Resources")[0] != "null"
+        chain: list[dict[str, Any]] = []
+        node = doc.xref_get_key(xref, "Parent")
+        while node[0] == "xref":
+            ancestor = ref_of(node[1])
+            chain.append({
+                "xref": ancestor,
+                "type": doc.xref_get_key(ancestor, "Type")[1],
+                "namesResources": doc.xref_get_key(ancestor, "Resources")[0] == "xref",
+            })
+            node = doc.xref_get_key(ancestor, "Parent")
+        pages.append({"page": number + 1, "ownResources": own, "ancestors": chain})
+    doc.close()
+    return {"pages": pages,
+            "nested": any(len(entry["ancestors"]) > 1 for entry in pages),
+            "inherited": any(not entry["ownResources"] for entry in pages)}
 
 
 def resource_inventory(path: str) -> dict:
@@ -545,7 +707,10 @@ def resource_inventory(path: str) -> dict:
                 "bytes": len(value.read_raw_bytes()),
             })
 
-    for index, kid in enumerate(pdf.Root["/Pages"]["/Kids"]):
+    # `pdf.pages` walks the **leaves** of the page tree: a fixture may hang its
+    # pages under an intermediate `/Pages` node, and iterating `/Kids` of the root
+    # would treat that node as a page and miss the two under it.
+    for index, kid in enumerate(pdf.pages):
         look(inherited(kid, "/Resources"), index + 1, "page")
     pdf.close()
     return {"fonts": fonts, "images": images}
@@ -584,6 +749,8 @@ def build_scripts(mode: str) -> dict:
         names-flat          `/Names » /JavaScript` as a flat `/Names` array, one
                             value inline and one behind a reference
         names-kids          the same pairs inside a `/Kids` + `/Limits` subtree
+        names-kids-nested   the same pairs one level deeper still: a `/Kids` tree
+                            whose kid is itself a `/Kids` node
         hosts-aa            page `/AA /O`, annotation `/AA /E`, field `/AA /K`
                             and a field `/A`, plus a field with no action at all
         xfa                 an `/AcroForm /XFA` packet whose script lives in its
@@ -621,19 +788,36 @@ def build_scripts(mode: str) -> dict:
             [action(JS_CODES["open"], inline=True), action(JS_CODES["named"])])
     elif mode == "js-key-only":
         pdf.Root["/OpenAction"] = action(JS_CODES["open"], inline=True, with_subtype=False)
-    elif mode in ("names-flat", "names-kids"):
-        pairs = pikepdf.Array()
-        pairs.append(pikepdf.String("Startup"))
-        pairs.append(action(JS_CODES["named"], inline=True))
-        pairs.append(pikepdf.String("Fold"))
-        pairs.append(action(JS_CODES["field"]))
+    elif mode in ("names-flat", "names-kids", "names-kids-nested"):
+        pairs = {
+            "Startup": action(JS_CODES["named"], inline=True),
+            "Fold": action(JS_CODES["field"]),
+        }
         if mode == "names-flat":
-            tree = pikepdf.Dictionary(Names=pairs)
+            flat = pikepdf.Array()
+            for key in ("Startup", "Fold"):
+                flat.append(pikepdf.String(key))
+                flat.append(pairs[key])
+            tree = pikepdf.Dictionary(Names=flat)
         else:
-            leaf = pdf.make_indirect(pikepdf.Dictionary(
-                Limits=pikepdf.Array([pikepdf.String("Fold"), pikepdf.String("Startup")]),
-                Names=pairs))
-            tree = pikepdf.Dictionary(Kids=pikepdf.Array([leaf]))
+            # One leaf per script, each with its own `/Limits`, as a producer that
+            # balances the tree writes them.
+            leaves = []
+            for key in ("Fold", "Startup"):
+                entry = pikepdf.Array([pikepdf.String(key), pairs[key]])
+                leaves.append(pdf.make_indirect(pikepdf.Dictionary(
+                    Limits=pikepdf.Array([pikepdf.String(key), pikepdf.String(key)]),
+                    Names=entry)))
+            if mode == "names-kids":
+                tree = pikepdf.Dictionary(Kids=pikepdf.Array(leaves))
+            else:
+                # The shape `/PageLabels` and `/Dests` already pin two levels deep:
+                # the root names one kid, that kid names the leaves, so a walk that
+                # enters `/Kids` once still stops short of both scripts.
+                middle = pdf.make_indirect(pikepdf.Dictionary(
+                    Limits=pikepdf.Array([pikepdf.String("A"), pikepdf.String("Z")]),
+                    Kids=pikepdf.Array(leaves)))
+                tree = pikepdf.Dictionary(Kids=pikepdf.Array([middle]))
         pdf.Root["/Names"] = pikepdf.Dictionary(JavaScript=tree)
     elif mode == "hosts-aa":
         page = pdf.Root["/Pages"]["/Kids"][0]
@@ -707,7 +891,7 @@ def script_sites(path: str) -> dict:
                     entries.append(f"{label} /AA {trigger}")
 
     scan_host(pdf.Root, "catalogue")
-    for index, kid in enumerate(pdf.Root["/Pages"]["/Kids"]):
+    for index, kid in enumerate(pdf.pages):
         label = f"page {index + 1}"
         scan_host(kid, label)
         for annot in kid.get("/Annots") or []:
@@ -1061,6 +1245,9 @@ def verify(name: str) -> dict:
     if name.startswith("resources-"):
         seen["qpdf_inventory"] = resource_inventory(path)
         seen["mupdf_resources"] = mupdf_resources(path)
+        # The shape claim itself, read off the objects rather than off a normalising
+        # reader: which page names `/Resources`, and which inherits it from where.
+        seen["page_tree_layout"] = page_tree_layout(path)
     if name.startswith("script-"):
         seen["qpdf_script_sites"] = script_sites(path)
     if name in SIGNATURES or name.startswith("sig-"):
@@ -1093,7 +1280,9 @@ def main() -> None:
         "attachment.pdf": build_attachment,
         "resources-plain.pdf": lambda: build_resources("plain"),
         "resources-inherited.pdf": lambda: build_resources("inherited"),
+        "resources-inherited-parent.pdf": lambda: build_resources("inherited-parent"),
         "resources-xobject.pdf": lambda: build_resources("xobject"),
+        "resources-form-in-form.pdf": lambda: build_resources("form-in-form"),
         "resources-shared.pdf": lambda: build_resources("shared"),
         "resources-subset.pdf": lambda: build_resources("subset"),
         "script-openaction-inline.pdf": lambda: build_scripts("openaction-inline"),
@@ -1102,6 +1291,7 @@ def main() -> None:
         "script-js-key-only.pdf": lambda: build_scripts("js-key-only"),
         "script-names-flat.pdf": lambda: build_scripts("names-flat"),
         "script-names-kids.pdf": lambda: build_scripts("names-kids"),
+        "script-names-kids-nested.pdf": lambda: build_scripts("names-kids-nested"),
         "script-hosts-aa.pdf": lambda: build_scripts("hosts-aa"),
         "script-xfa.pdf": lambda: build_scripts("xfa"),
         "sig-detached.pdf": lambda: build_signature("sig-detached.pdf", mode="plain"),
@@ -1129,10 +1319,14 @@ def main() -> None:
         "attachment.pdf": ("an enclosure MuPDF writes into the name tree", "MuPDF 1.28.2 (PyMuPDF embfile_add)"),
         "resources-plain.pdf": ("fonts and images named from each page's own /Resources — the control",
                                 "MuPDF 1.28.2 (PyMuPDF: helv + embedded TrueType subset + CFF/OTF + raw and DCT images)"),
-        "resources-inherited.pdf": ("/Resources on the /Pages node, none on the page (§7.7.3.3 inherited attributes)",
-                                    "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (resource move)"),
+        "resources-inherited.pdf": ("/Resources on the /Pages node and on no page (§7.7.3.3 inherited attributes)",
+                                    "MuPDF 1.28.2 (pages) + MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)"),
+        "resources-inherited-parent.pdf": ("an intermediate /Pages node carries /Resources for pages 1-2 (two hops up the /Parent chain) while page 3 names its own",
+                                           "MuPDF 1.28.2 (pages) + MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)"),
         "resources-xobject.pdf": ("the page draws one Form XObject that carries every font and image itself",
                                   "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (Form XObject wrap)"),
+        "resources-form-in-form.pdf": ("a Form XObject that draws a second form, the faces split across the two levels",
+                                       "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (nested Form XObjects)"),
         "resources-shared.pdf": ("three pages naming the *same* /Resources object — the deduplication case",
                                  "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (shared resource dict)"),
         "resources-subset.pdf": ("the two embedded faces renamed with a BCDFEE+/ABCDEA+ subsetting tag",
@@ -1147,8 +1341,10 @@ def main() -> None:
                                    "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction)"),
         "script-names-flat.pdf": ("/Names » /JavaScript as a flat /Names array, one value inline and one referenced",
                                   "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (name tree)"),
-        "script-names-kids.pdf": ("the same named scripts inside a /Kids + /Limits subtree",
+        "script-names-kids.pdf": ("the same named scripts inside a /Kids + /Limits subtree, one leaf per script",
                                   "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Kids name tree)"),
+        "script-names-kids-nested.pdf": ("a /Kids JavaScript tree whose kid is itself a /Kids node",
+                                         "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (nested /Kids name tree)"),
         "script-hosts-aa.pdf": ("page /AA /O, annotation /AA /E, field /AA /K, field /A, and a field with neither",
                                 "MuPDF 1.28.2 (pages, annot) + libqpdf 12.3.2 (/AA, /AcroForm)"),
         "script-xfa.pdf": ("an /AcroForm /XFA packet whose JavaScript lives in its own XML",
@@ -1190,6 +1386,14 @@ def main() -> None:
     # what is actually kept.
     for name in sorted(SIGNATURES):
         report[name]["signed"] = sign_fixture(name)
+        manifest[name]["sha256"] = sha(file_bytes(os.path.join(TARGET, name)))
+    # The two inherited layouts are the other post-freeze family, for the opposite
+    # reason: `freeze` re-saves through libqpdf, and libqpdf pushes inherited page
+    # attributes down onto every leaf as it opens the file. Cutting the page tree
+    # afterwards, with MuPDF, is the only way the shape survives into the bytes that
+    # get committed — and `page_tree_layout` is the column that proves it did.
+    for name, mode in sorted(PAGE_TREE_SHAPES.items()):
+        report[name]["intended"]["pageTreeShape"] = apply_page_tree_shape(name, mode)
         manifest[name]["sha256"] = sha(file_bytes(os.path.join(TARGET, name)))
     write_manifest(TARGET, manifest)
     # Re-verify after the freeze: the census must describe the bytes that are kept.

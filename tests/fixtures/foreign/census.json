@@ -818,6 +818,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   },
   "outside_after_freeze": {
@@ -1019,12 +1058,58 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   }
  },
  "resources-inherited.pdf": {
   "intended": {
-   "mode": "inherited"
+   "mode": "inherited",
+   "applied": "after the freeze, by MuPDF",
+   "pageTreeShape": {
+    "mode": "inherited",
+    "producer": "MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)",
+    "objects": 39,
+    "trailersPinned": 2
+   }
   },
   "outside": {
    "pages": 3,
@@ -1084,58 +1169,6 @@
      },
      {
       "page": 2,
-      "key": "/cff",
-      "via": "page",
-      "referenced": true,
-      "subtype": "/Type0",
-      "baseFont": "/Fixture Sans Regular",
-      "encoding": "/Identity-H",
-      "descendantSubtype": "/CIDFontType0",
-      "descendantBaseFont": "/Fixture Sans Regular",
-      "registry": "Adobe",
-      "ordering": "Identity",
-      "fontFile": "/FontFile3"
-     },
-     {
-      "page": 2,
-      "key": "/helv",
-      "via": "page",
-      "referenced": true,
-      "subtype": "/Type1",
-      "baseFont": "/Helvetica",
-      "encoding": "/WinAnsiEncoding",
-      "fontFile": null
-     },
-     {
-      "page": 2,
-      "key": "/noto",
-      "via": "page",
-      "referenced": true,
-      "subtype": "/Type0",
-      "baseFont": "/Noto Sans Regular",
-      "encoding": "/Identity-H",
-      "descendantSubtype": "/CIDFontType2",
-      "descendantBaseFont": "/NotoSans-Regular",
-      "registry": "Adobe",
-      "ordering": "Identity",
-      "fontFile": "/FontFile2"
-     },
-     {
-      "page": 3,
-      "key": "/cff",
-      "via": "page",
-      "referenced": true,
-      "subtype": "/Type0",
-      "baseFont": "/Fixture Sans Regular",
-      "encoding": "/Identity-H",
-      "descendantSubtype": "/CIDFontType0",
-      "descendantBaseFont": "/Fixture Sans Regular",
-      "registry": "Adobe",
-      "ordering": "Identity",
-      "fontFile": "/FontFile3"
-     },
-     {
-      "page": 3,
       "key": "/helv",
       "via": "page",
       "referenced": true,
@@ -1146,17 +1179,13 @@
      },
      {
       "page": 3,
-      "key": "/noto",
+      "key": "/helv",
       "via": "page",
       "referenced": true,
-      "subtype": "/Type0",
-      "baseFont": "/Noto Sans Regular",
-      "encoding": "/Identity-H",
-      "descendantSubtype": "/CIDFontType2",
-      "descendantBaseFont": "/NotoSans-Regular",
-      "registry": "Adobe",
-      "ordering": "Identity",
-      "fontFile": "/FontFile2"
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
      }
     ],
     "images": [
@@ -1168,12 +1197,12 @@
       "width": 40,
       "height": 24,
       "bitsPerComponent": 8,
-      "filter": "/FlateDecode",
+      "filter": null,
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 23,
-      "bytes": 47
+      "xref": 33,
+      "bytes": 2880
      },
      {
       "page": 1,
@@ -1187,67 +1216,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 24,
-      "bytes": 619
-     },
-     {
-      "page": 2,
-      "key": "/fzImg0",
-      "via": "page",
-      "referenced": true,
-      "width": 40,
-      "height": 24,
-      "bitsPerComponent": 8,
-      "filter": "/FlateDecode",
-      "colorSpace": "/ICCBased",
-      "smask": false,
-      "imageMask": false,
-      "xref": 23,
-      "bytes": 47
-     },
-     {
-      "page": 2,
-      "key": "/fzImg1",
-      "via": "page",
-      "referenced": true,
-      "width": 40,
-      "height": 24,
-      "bitsPerComponent": 8,
-      "filter": "/DCTDecode",
-      "colorSpace": "/ICCBased",
-      "smask": false,
-      "imageMask": false,
-      "xref": 24,
-      "bytes": 619
-     },
-     {
-      "page": 3,
-      "key": "/fzImg0",
-      "via": "page",
-      "referenced": true,
-      "width": 40,
-      "height": 24,
-      "bitsPerComponent": 8,
-      "filter": "/FlateDecode",
-      "colorSpace": "/ICCBased",
-      "smask": false,
-      "imageMask": false,
-      "xref": 23,
-      "bytes": 47
-     },
-     {
-      "page": 3,
-      "key": "/fzImg1",
-      "via": "page",
-      "referenced": true,
-      "width": 40,
-      "height": 24,
-      "bitsPerComponent": 8,
-      "filter": "/DCTDecode",
-      "colorSpace": "/ICCBased",
-      "smask": false,
-      "imageMask": false,
-      "xref": 24,
+      "xref": 37,
       "bytes": 619
      }
     ]
@@ -1256,16 +1225,7 @@
     "fonts": [
      [
       [
-       20,
-       "otf",
-       "Type0",
-       "Fixture Sans Regular",
-       "cff",
-       "Identity-H",
-       0
-      ],
-      [
-       21,
+       5,
        "n/a",
        "Type1",
        "Helvetica",
@@ -1274,70 +1234,43 @@
        0
       ],
       [
-       22,
+       19,
        "ttf",
        "Type0",
        "Noto Sans Regular",
        "noto",
+       "Identity-H",
+       0
+      ],
+      [
+       26,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
        "Identity-H",
        0
       ]
      ],
      [
       [
-       20,
-       "otf",
-       "Type0",
-       "Fixture Sans Regular",
-       "cff",
-       "Identity-H",
-       0
-      ],
-      [
-       21,
+       5,
        "n/a",
        "Type1",
        "Helvetica",
        "helv",
        "WinAnsiEncoding",
-       0
-      ],
-      [
-       22,
-       "ttf",
-       "Type0",
-       "Noto Sans Regular",
-       "noto",
-       "Identity-H",
        0
       ]
      ],
      [
       [
-       20,
-       "otf",
-       "Type0",
-       "Fixture Sans Regular",
-       "cff",
-       "Identity-H",
-       0
-      ],
-      [
-       21,
+       5,
        "n/a",
        "Type1",
        "Helvetica",
        "helv",
        "WinAnsiEncoding",
-       0
-      ],
-      [
-       22,
-       "ttf",
-       "Type0",
-       "Noto Sans Regular",
-       "noto",
-       "Identity-H",
        0
       ]
      ]
@@ -1345,7 +1278,7 @@
     "images": [
      [
       [
-       23,
+       33,
        0,
        40,
        24,
@@ -1353,11 +1286,11 @@
        "ICCBased",
        "",
        "fzImg0",
-       "FlateDecode",
+       "",
        0
       ],
       [
-       24,
+       37,
        0,
        40,
        24,
@@ -1369,64 +1302,53 @@
        0
       ]
      ],
-     [
-      [
-       23,
-       0,
-       40,
-       24,
-       8,
-       "ICCBased",
-       "",
-       "fzImg0",
-       "FlateDecode",
-       0
-      ],
-      [
-       24,
-       0,
-       40,
-       24,
-       8,
-       "ICCBased",
-       "",
-       "fzImg1",
-       "DCTDecode",
-       0
-      ]
-     ],
-     [
-      [
-       23,
-       0,
-       40,
-       24,
-       8,
-       "ICCBased",
-       "",
-       "fzImg0",
-       "FlateDecode",
-       0
-      ],
-      [
-       24,
-       0,
-       40,
-       24,
-       8,
-       "ICCBased",
-       "",
-       "fzImg1",
-       "DCTDecode",
-       0
-      ]
-     ]
+     [],
+     []
     ],
     "xobjects": [
      [],
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   },
   "outside_after_freeze": {
@@ -1575,7 +1497,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 23,
+      "xref": 25,
       "bytes": 47
      },
      {
@@ -1590,7 +1512,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 24,
+      "xref": 26,
       "bytes": 619
      },
      {
@@ -1605,7 +1527,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 23,
+      "xref": 25,
       "bytes": 47
      },
      {
@@ -1620,7 +1542,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 24,
+      "xref": 26,
       "bytes": 619
      },
      {
@@ -1635,7 +1557,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 23,
+      "xref": 25,
       "bytes": 47
      },
      {
@@ -1650,7 +1572,7 @@
       "colorSpace": "/ICCBased",
       "smask": false,
       "imageMask": false,
-      "xref": 24,
+      "xref": 26,
       "bytes": 619
      }
     ]
@@ -1659,7 +1581,7 @@
     "fonts": [
      [
       [
-       20,
+       22,
        "otf",
        "Type0",
        "Fixture Sans Regular",
@@ -1668,7 +1590,7 @@
        0
       ],
       [
-       21,
+       23,
        "n/a",
        "Type1",
        "Helvetica",
@@ -1677,7 +1599,7 @@
        0
       ],
       [
-       22,
+       24,
        "ttf",
        "Type0",
        "Noto Sans Regular",
@@ -1688,7 +1610,7 @@
      ],
      [
       [
-       20,
+       22,
        "otf",
        "Type0",
        "Fixture Sans Regular",
@@ -1697,7 +1619,7 @@
        0
       ],
       [
-       21,
+       23,
        "n/a",
        "Type1",
        "Helvetica",
@@ -1706,7 +1628,7 @@
        0
       ],
       [
-       22,
+       24,
        "ttf",
        "Type0",
        "Noto Sans Regular",
@@ -1717,7 +1639,7 @@
      ],
      [
       [
-       20,
+       22,
        "otf",
        "Type0",
        "Fixture Sans Regular",
@@ -1726,7 +1648,7 @@
        0
       ],
       [
-       21,
+       23,
        "n/a",
        "Type1",
        "Helvetica",
@@ -1735,7 +1657,7 @@
        0
       ],
       [
-       22,
+       24,
        "ttf",
        "Type0",
        "Noto Sans Regular",
@@ -1748,7 +1670,7 @@
     "images": [
      [
       [
-       23,
+       25,
        0,
        40,
        24,
@@ -1760,7 +1682,7 @@
        0
       ],
       [
-       24,
+       26,
        0,
        40,
        24,
@@ -1774,7 +1696,7 @@
      ],
      [
       [
-       23,
+       25,
        0,
        40,
        24,
@@ -1786,7 +1708,7 @@
        0
       ],
       [
-       24,
+       26,
        0,
        40,
        24,
@@ -1800,7 +1722,7 @@
      ],
      [
       [
-       23,
+       25,
        0,
        40,
        24,
@@ -1812,7 +1734,7 @@
        0
       ],
       [
-       24,
+       26,
        0,
        40,
        24,
@@ -1830,6 +1752,648 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": false,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": true
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": false,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": true
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": false,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": true
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": true
+   }
+  }
+ },
+ "resources-inherited-parent.pdf": {
+  "intended": {
+   "mode": "inherited-parent",
+   "applied": "after the freeze, by MuPDF",
+   "pageTreeShape": {
+    "mode": "inherited-parent",
+    "producer": "MuPDF 1.28.2 (PyMuPDF xref_set_key, after the freeze)",
+    "objects": 40,
+    "trailersPinned": 2
+   }
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": null,
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 33,
+      "bytes": 2880
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 37,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       19,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ],
+      [
+       26,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       33,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "",
+       0
+      ],
+      [
+       37,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 2,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 25,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 26,
+      "bytes": 619
+     },
+     {
+      "page": 2,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 25,
+      "bytes": 47
+     },
+     {
+      "page": 2,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 26,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       22,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       24,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       22,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       24,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       25,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       26,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       25,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       26,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     []
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": false,
+      "ancestors": [
+       {
+        "xref": 39,
+        "type": "/Pages",
+        "namesResources": true
+       },
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": false,
+      "ancestors": [
+       {
+        "xref": 39,
+        "type": "/Pages",
+        "namesResources": true
+       },
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": true,
+    "inherited": true
    }
   }
  },
@@ -2048,6 +2612,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   },
   "outside_after_freeze": {
@@ -2261,6 +2864,614 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
+   }
+  }
+ },
+ "resources-form-in-form.pdf": {
+  "intended": {
+   "mode": "form-in-form"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/outer",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 21,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 22,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "outer",
+       "WinAnsiEncoding",
+       7
+      ],
+      [
+       19,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       17
+      ],
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       17
+      ],
+      [
+       20,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       17
+      ]
+     ],
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       21,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       17
+      ],
+      [
+       22,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       17
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [
+      [
+       7,
+       "Fm0",
+       0,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ],
+      [
+       17,
+       "Inner",
+       7,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ]
+     ],
+     [],
+     []
+    ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/outer",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 21,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "form-xobject:/Inner",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 22,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "outer",
+       "WinAnsiEncoding",
+       7
+      ],
+      [
+       19,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       17
+      ],
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       17
+      ],
+      [
+       20,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       17
+      ]
+     ],
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       16,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       21,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       17
+      ],
+      [
+       22,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       17
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [
+      [
+       7,
+       "Fm0",
+       0,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ],
+      [
+       17,
+       "Inner",
+       7,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ]
+     ],
+     [],
+     []
+    ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   }
  },
@@ -2669,6 +3880,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   },
   "outside_after_freeze": {
@@ -3072,6 +4322,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   }
  },
@@ -3278,6 +4567,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   },
   "outside_after_freeze": {
@@ -3479,6 +4807,45 @@
      [],
      []
     ]
+   },
+   "page_tree_layout": {
+    "pages": [
+     {
+      "page": 1,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 2,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     },
+     {
+      "page": 3,
+      "ownResources": true,
+      "ancestors": [
+       {
+        "xref": 2,
+        "type": "/Pages",
+        "namesResources": false
+       }
+      ]
+     }
+    ],
+    "nested": false,
+    "inherited": false
    }
   }
  },
@@ -3757,6 +5124,62 @@
  "script-names-kids.pdf": {
   "intended": {
    "mode": "names-kids",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "ocg_names": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  }
+ },
+ "script-names-kids-nested.pdf": {
+  "intended": {
+   "mode": "names-kids-nested",
    "annot": false
   },
   "outside": {
@@ -4611,7 +6034,7 @@
       "fileLength": 7296,
       "spansAddUp": true,
       "opensslVerifies": false,
-      "opensslError": "CMS Verification failure\n4027AC3A1B7F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failure:crypto/cms/cms_sd.c:1083:\n4027AC3A1B7F0000:error:1700006D:CMS routines:CMS_veri",
+      "opensslError": "CMS Verification failure\n40076B71837F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failure:crypto/cms/cms_sd.c:1083:\n40076B71837F0000:error:1700006D:CMS routines:CMS_veri",
       "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
       "derBytes": 1410,
       "contentsHexChars": 4096,
