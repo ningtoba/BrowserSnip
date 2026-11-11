@@ -1653,6 +1653,21 @@ export const optimizeTools: PdfToolDefinition[] = [
           },
         );
       }
+      const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
+      const fonts = auditFonts(produced);
+      const stillText = produced.getPages().filter(pageShowsText).length;
+      const outlined = textPages > 0 && stillText === 0 && fonts.total === 0;
+      const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
+      const outcome = sizeSentence(change);
+      // Three honest answers, chosen by what the bytes now contain.
+      let headline: string;
+      if (textPages === 0) {
+        headline = `Ghostscript rewrote ${input.name}, and no page draws text — there was nothing to outline. ${outcome}.`;
+      } else if (outlined) {
+        headline = `Ghostscript drew the type on all ${textPages} page(s) as vector paths: no page shows text through a font and no font resource is left. ${outcome}.`;
+      } else {
+        headline = `Ghostscript rewrote the file, but ${stillText} of ${textPages} page(s) still draw text and ${fonts.total} font resource(s) remain: that type is not outlined. ${outcome}.`;
+      }
       const warnings: string[] = [];
       for (const line of outlineLog) warnings.push(`Ghostscript: ${line}`);
       const check = await verifyOutput(bytes, input.name, input.pageCount);
@@ -1662,25 +1677,14 @@ export const optimizeTools: PdfToolDefinition[] = [
           hint: 'Try Rasterize PDF instead, which draws each page as one image.',
         });
       }
-      const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
-      const fonts = auditFonts(produced);
-      const stillText = produced.getPages().filter(pageShowsText).length;
       if (fonts.total > 0) {
         warnings.push(`${fonts.total} font resource(s) are still referenced, so Ghostscript did not outline every glyph.`);
       }
-      const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
       if (change.grew) {
-        warnings.push(`${sizeSentence(change)}: outlines are geometry, so the file grows — that is the cost of rendering that cannot change.`);
-      }
-      const outcome = sizeSentence(change);
-      // Three honest answers, chosen by what the bytes now contain.
-      let headline: string;
-      if (textPages === 0) {
-        headline = `Ghostscript rewrote ${input.name}, and no page draws text — there was nothing to outline. ${outcome}.`;
-      } else if (stillText === 0 && fonts.total === 0) {
-        headline = `Ghostscript drew the type on all ${textPages} page(s) as vector paths: no page shows text through a font and no font resource is left. ${outcome}.`;
-      } else {
-        headline = `Ghostscript rewrote the file, but ${stillText} of ${textPages} page(s) still draw text and ${fonts.total} font resource(s) remain: that type is not outlined. ${outcome}.`;
+        // Only a run that converted type may blame the growth on geometry.
+        warnings.push(outlined
+          ? `${outcome}: outlines are geometry, so the file grows — that is the cost of rendering that cannot change.`
+          : `${outcome}: nothing was turned into outlines here, so this is the rewrite's own cost.`);
       }
       context.progress(1, 'Converted glyphs to paths');
       return {

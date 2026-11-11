@@ -155,3 +155,112 @@ Python 3.14 running on linux (64-bit).
     pdftotext  : exit 0, characters 0
     pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
     ghostscript: exit 0
+
+STEP 4 — the same tool, driven on the deployed site after the fix
+============================================================
+BASE=https://www.browsersnip.com (bundle assets/index-DDH6baQm.js, the deploy of
+`e02b410`; the asset the same rail read at `ca11a22` was assets/index-CxI-tRbr.js
+and carried the split vector)
+Driver: docs/research/colour-rail.mjs in batch mode — one headless Chromium, the
+real route, the real file input, the rail's own Download button for the bytes.
+Re-run with:
+  BASE=https://www.browsersnip.com SPEC=<spec> OUTDIR=<dir> JSONL=<file> \
+    node docs/research/colour-rail.mjs
+Before the deploy, the same two first runs answered with no file at all:
+  "TYPE.PDF — Ghostscript could not be reached, so nothing was outlined:
+   Ghostscript stopped with exit code 1: GPL Ghostscript 10.06.0: Device
+   'pdfwrite' requires an output file but no file was specified. / **** Unable
+   to open the initial device, quitting."
+That sentence was the second defect: the engine had been reached.
+
+--- run text: type.pdf -> type_outlined.pdf (22166 B, application/pdf)
+    card: type_outlined.pdf |  | READY | SIZE | 2.4 KB → 21.6 KB · 817% larger | PAGES | 2 → 2 | ENGINE | Ghostscript |  | Ghostscript drew the type on all 2 page(s) as vector paths: no page shows text through a font and no font resource is left. 2.4 KB → 21.6 KB (+817%). |  | The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. |  | WHAT YOU SHOULD KNOW (1) |  | 2.4 KB → 21.6 KB (+817%): outlines are geometry, so the file grows — that is the cost of rendering that cannot change. | Download | Keep original
+
+--- run art-only: art-only.pdf -> art-only_outlined.pdf (7056 B, application/pdf)
+    card: art-only_outlined.pdf |  | READY | SIZE | 6.8 KB → 6.9 KB · 2% larger | PAGES | 1 → 1 | ENGINE | Ghostscript |  | Ghostscript rewrote art-only.pdf, and no page draws text — there was nothing to outline. 6.8 KB → 6.9 KB (+2%). |  | The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. |  | WHAT YOU SHOULD KNOW (1) |  | 6.8 KB → 6.9 KB (+2%): outlines are geometry, so the file grows — that is the cost of rendering that cannot change. | Download | Keep original
+
+--- run type-art: type-art.pdf -> type-art_outlined.pdf (29452 B, application/pdf)
+    card: type-art_outlined.pdf |  | READY | SIZE | 9.0 KB → 28.8 KB · 221% larger | PAGES | 2 → 2 | ENGINE | Ghostscript |  | Ghostscript drew the type on all 2 page(s) as vector paths: no page shows text through a font and no font resource is left. 9.0 KB → 28.8 KB (+221%). |  | The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. |  | WHAT YOU SHOULD KNOW (1) |  | 9.0 KB → 28.8 KB (+221%): outlines are geometry, so the file grows — that is the cost of rendering that cannot change. | Download | Keep original
+
+The three downloads above, measured by the same four readers:
+
+readers:
+  PyMuPDF 1.28.2: Python bindings for the MuPDF 1.28.2 library.
+Python 3.14 running on linux (64-bit).
+  pypdf 6.14.2
+  pdftotext pdftotext version 26.10.0
+  pdfinfo pdfinfo version 26.10.0
+  gs 10.08.0
+  qpdf: not installed in this sandbox
+  mutool CLI: not installed in this sandbox (MuPDF is used through PyMuPDF above)
+
+=== /tmp/fo-fix/type.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 0 / painted 0 | vector paths 0 | ink 0.87% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 0 / painted 0 | vector paths 0 | ink 0.92% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 107
+    pdftotext  : exit 0, characters 208
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-fix/art-only.pdf
+    mupdf      : open ok, pages 1, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 1 / painted 1 | vector paths 2 | ink 13.49% | annots 0
+    pypdf      : open ok, pages 1, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-fix/type-art.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 1 / painted 1 | vector paths 2 | ink 14.43% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 107 | fonts ['Helvetica'] | images listed 1 / painted 1 | vector paths 2 | ink 14.96% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 107
+    pdftotext  : exit 0, characters 208
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-live/font-to-outline__text_type_outlined.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 0 | vector paths 88 | ink 0.87% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 0 | vector paths 88 | ink 0.92% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-live/font-to-outline__art-only_art-only_outlined.pdf
+    mupdf      : open ok, pages 1, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 2 | ink 13.49% | annots 0
+    pypdf      : open ok, pages 1, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+=== /tmp/fo-live/font-to-outline__type-art_type-art_outlined.pdf
+    mupdf      : open ok, pages 2, needs_pass 0
+    p1        : size (595.28, 841.89) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 90 | ink 14.43% | annots 0
+    p2        : size (612.00, 792.00) rotate 0 | text chars 0 | fonts [] | images listed 0 / painted 1 | vector paths 90 | ink 14.96% | annots 0
+    pypdf      : open ok, pages 2, page 1 mediabox RectangleObject([0, 0, 595.28, 841.89]), text chars 0
+    pdftotext  : exit 0, characters 0
+    pdfinfo    : exit 0, page sizes ['size:       595.28 x 841.89 pts (A4)']
+    ghostscript: exit 0
+
+Reading of STEP 4
+
+  * text: 107 extractable characters per page -> 0, on MuPDF, pypdf and poppler
+    alike; fonts ['Helvetica'] -> none; 0 -> 88 path objects per page; page count
+    2 -> 2 and both page boxes (A4 595.28 x 841.89, Letter 612 x 792) unchanged;
+    rasterised ink 0.87 % -> 0.87 % and 0.92 % -> 0.92 %, so the type still paints.
+  * inverse case, a page with no text: the picture still paints
+    (`images painted 1 -> 1`; `listed 1 -> 0` only because the rewrite moved the
+    XObject into a form), its two vector drawings are still there, ink
+    13.49 % -> 13.49 %, page box unchanged — nothing was lost by a run that had
+    nothing to outline.
+  * mixed page (text + picture + art): text 107 -> 0, picture still painted,
+    paths 2 -> 90, ink 14.43 % -> 14.43 % and 14.96 % -> 14.96 %.
+  * every file opens cleanly in all four readers (pypdf, MuPDF, poppler, gs 10.08.0).
+  * What the deployed card said for the no-text run is the last inaccuracy left
+    here — "+2 %: outlines are geometry, so the file grows" — for a run that
+    outlined nothing. Fixed with the sentences in this commit: only a run that
+    converted type may blame the growth on geometry.

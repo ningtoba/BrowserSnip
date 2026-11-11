@@ -469,6 +469,10 @@ describe('font-to-outline over the published Ghostscript build', () => {
     // And it must not claim to have converted type that was never there.
     expect(outcome.message).toMatch(/no page draws text|nothing to outline/i);
     expect(outcome.message).not.toMatch(/vector paths|all \d+ page\(s\)/i);
+    // Measured on the deployed run: this file grows by ~2 %, and the extra bytes
+    // are the rewrite, not geometry.
+    const said = `${outcome.message ?? ''} ${outcome.warnings.join(' ')}`;
+    expect(said).not.toMatch(/outlines are geometry/i);
   }, 240_000);
 
   it('hands back a file that reopens, and counts it from the producer', async (ctx) => {
@@ -557,11 +561,16 @@ describe('font-to-outline describes the run it actually had', () => {
 
   it('says there was nothing to outline when no page draws text', async () => {
     const blank = await artPdf();
-    gs.replyWith = blank;
+    // Padding the reply so the run *grew*: only a run that converted type may
+    // blame a bigger file on outlines.
+    gs.replyWith = new Uint8Array([...blank, ...new Uint8Array(4096)]);
     const outcome = await outline(blank, 'artwork.pdf');
     gs.replyWith = null;
+    const said = `${outcome.message ?? ''} ${outcome.warnings.join(' ')}`;
     expect(outcome.message).toMatch(/no page draws text|nothing to outline/i);
-    expect(outcome.message).not.toMatch(/every glyph/i);
+    expect(outcome.message).not.toMatch(/vector paths|no font resource is left/i);
+    expect(said).toMatch(/nothing was turned into outlines/);
+    expect(said).not.toMatch(/outlines are geometry/i);
   });
 
   it('promises only what it can do, and admits it has no fallback', () => {
