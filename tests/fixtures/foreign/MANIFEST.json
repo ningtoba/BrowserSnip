@@ -66,5 +66,107 @@
   "producer": "libqpdf 12.3.2 (pikepdf)",
   "sha256": "a3b366df338e0e93a14dcb39bf1d7be27183652fb1c2e42ee146b4c3cea7e9c6",
   "shape": "/PageLabels as a /Kids number tree, not a flat /Nums"
+ },
+ "resources-inherited.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (resource move)",
+  "sha256": "9a79653e2e0f956babb2151e569d45015ee8e708289b992e6b76cb7475972e04",
+  "shape": "/Resources on the /Pages node, none on the page (§7.7.3.3 inherited attributes)"
+ },
+ "resources-plain.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (PyMuPDF: helv + embedded TrueType subset + CFF/OTF + raw and DCT images)",
+  "sha256": "7f18d2e188dec533657f44adb2b9472fd3c42e6e65d922f14e649d3d15741e67",
+  "shape": "fonts and images named from each page's own /Resources — the control"
+ },
+ "resources-shared.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (shared resource dict)",
+  "sha256": "3728a1c2490c961b4652563b814f773a3c2920f94a121c5add4ed941fbd36ab2",
+  "shape": "three pages naming the *same* /Resources object — the deduplication case"
+ },
+ "resources-xobject.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (Form XObject wrap)",
+  "sha256": "ac5e73d6d035dddb9538282f9040a295abe52d5923b63f7c02b1f5a628d73fe0",
+  "shape": "the page draws one Form XObject that carries every font and image itself"
+ },
+ "script-hosts-aa.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages, annot) + libqpdf 12.3.2 (/AA, /AcroForm)",
+  "sha256": "49d36c4729bedba72a028ad2a3fb2b8c8de2b6aafbcd98cbd920f986d58cc5b9",
+  "shape": "page /AA /O, annotation /AA /E, field /AA /K, field /A, and a field with neither"
+ },
+ "script-js-key-only.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction)",
+  "sha256": "d7aafbf5313ecdd97f3bec4bac21baa3d92b61d85c2fba80efd675d796b53feb",
+  "shape": "an action with /JS and no /S at all"
+ },
+ "script-names-flat.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (name tree)",
+  "sha256": "a1c96cc677d10074c57b85cedadaf26f8e4856f257f44a707e8951996da32984",
+  "shape": "/Names » /JavaScript as a flat /Names array, one value inline and one referenced"
+ },
+ "script-names-kids.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Kids name tree)",
+  "sha256": "c23f54aff5f1739b35f5ccf0a6e59d25a13abc49b0f22286b13f73646b46f4c3",
+  "shape": "the same named scripts inside a /Kids + /Limits subtree"
+ },
+ "script-openaction-array.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction array)",
+  "sha256": "f5798f58ee9d360e23f4baf4b080c38e367b16cedf0d10cfdb7c7a3be2e002ba",
+  "shape": "/OpenAction naming two actions in one array entry"
+ },
+ "script-openaction-inline.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction)",
+  "sha256": "1ea503a1226204748409c361a763930e5a8d518abb9e77e9f44305dfb81f9099",
+  "shape": "catalogue /OpenAction with the JavaScript action inline"
+ },
+ "script-openaction-ref.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/OpenAction)",
+  "sha256": "1b15442e80889a67166970a76e53d13f6fd428776d5a4c592dfa793b63924088",
+  "shape": "catalogue /OpenAction naming one action behind a reference"
+ },
+ "script-xfa.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/XFA packet)",
+  "sha256": "9cee696642a0a8542d58c424183a6261cfe18a97d2b073d0cadbbad07da1ab03",
+  "shape": "an /AcroForm /XFA packet whose JavaScript lives in its own XML"
+ },
+ "sig-contents-wrapped.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7)",
+  "sha256": "2ae3d174a69f7344a475a618f031a8e915ee4ad6c3df1a05145512d4d10c8389",
+  "shape": "the same /Contents hex string wrapped across lines, as Acrobat writes it"
+ },
+ "sig-detached.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7), verified by openssl cms",
+  "sha256": "eebecf16199467a18f92d14132237c98041c141c34fe7eced921aed897a35b43",
+  "shape": "a /Sig field whose /V carries adbe.pkcs7.detached over the two /ByteRange spans"
+ },
+ "sig-perms.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig, /Perms) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7)",
+  "sha256": "de63facd253054c92a74c0795e9ea383d069e159002588ab1f34dcbeec6622bf",
+  "shape": "a signed document that also declares /Perms /DocMDP"
+ },
+ "sig-tampered.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7), one byte patched afterwards)",
+  "sha256": "e7d63a3e1e7df67c4affe7dd08d649e8adf6e3a0d86dd44ed6a98f36e05024df",
+  "shape": "the control file with one byte of the field name changed after signing"
+ },
+ "sig-two-fields.pdf": {
+  "payloads": {},
+  "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig x2) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7)",
+  "sha256": "9cc6b445b33208882d47e32494f2d2b8bfbbb08826a11a1d6966f8ec28c37451",
+  "shape": "two /Sig fields, the second naming a /ByteRange over the whole file"
  }
 }

@@ -31,7 +31,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -45,7 +47,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "outlines-dests-flat-direct.pdf": {
@@ -67,7 +71,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -81,7 +87,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "outlines-dests-flat-ref.pdf": {
@@ -103,7 +111,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -117,7 +127,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "outlines-dests-tree-ref.pdf": {
@@ -139,7 +151,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -153,7 +167,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "page-labels.pdf": {
@@ -210,7 +226,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -243,7 +261,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "page-labels-flat.pdf": {
@@ -300,7 +320,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -333,7 +355,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "layers.pdf": {
@@ -358,7 +382,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -375,7 +401,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "annotations.pdf": {
@@ -406,7 +434,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -424,7 +454,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "form.pdf": {
@@ -449,7 +481,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -466,7 +500,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "metadata.pdf": {
@@ -486,7 +522,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -500,7 +538,9 @@
    "embfiles": [],
    "poppler_attachments": [
     "0 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   }
  },
  "attachment.pdf": {
@@ -524,7 +564,9 @@
    ],
    "poppler_attachments": [
     "1 embedded files"
-   ]
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
   },
   "outside_after_freeze": {
    "pages": 3,
@@ -540,7 +582,3583 @@
    ],
    "poppler_attachments": [
     "1 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no"
+  }
+ },
+ "resources-plain.pdf": {
+  "intended": {
+   "mode": "plain"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": null,
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 33,
+      "bytes": 2880
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 37,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       19,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ],
+      [
+       26,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       5,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       33,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "",
+       0
+      ],
+      [
+       37,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 25,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 26,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       22,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       24,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       25,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       26,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  }
+ },
+ "resources-inherited.pdf": {
+  "intended": {
+   "mode": "inherited"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 2,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 3,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 2,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 2,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 3,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 3,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ]
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 2,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 3,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 2,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 2,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 3,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 3,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ]
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  }
+ },
+ "resources-xobject.pdf": {
+  "intended": {
+   "mode": "xobject"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 20,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 21,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       18,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       7
+      ],
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       7
+      ],
+      [
+       19,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       7
+      ]
+     ],
+     [
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       20,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       7
+      ],
+      [
+       21,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       7
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [
+      [
+       7,
+       "Fm0",
+       0,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ]
+     ],
+     [],
+     []
+    ]
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 20,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "form-xobject:/Fm0",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 21,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       18,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       7
+      ],
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       7
+      ],
+      [
+       19,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       7
+      ]
+     ],
+     [
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ],
+     [
+      [
+       17,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       20,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       7
+      ],
+      [
+       21,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       7
+      ]
+     ],
+     [],
+     []
+    ],
+    "xobjects": [
+     [
+      [
+       7,
+       "Fm0",
+       0,
+       [
+        0.0,
+        0.0,
+        595.0,
+        842.0
+       ]
+      ]
+     ],
+     [],
+     []
+    ]
+   }
+  }
+ },
+ "resources-shared.pdf": {
+  "intended": {
+   "mode": "shared"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 2,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 3,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 2,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 2,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 3,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 3,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ]
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_inventory": {
+    "fonts": [
+     {
+      "page": 1,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 1,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 1,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 2,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 2,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 2,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     },
+     {
+      "page": 3,
+      "key": "/cff",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Fixture Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType0",
+      "descendantBaseFont": "/Fixture Sans Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile3"
+     },
+     {
+      "page": 3,
+      "key": "/helv",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type1",
+      "baseFont": "/Helvetica",
+      "encoding": "/WinAnsiEncoding",
+      "fontFile": null
+     },
+     {
+      "page": 3,
+      "key": "/noto",
+      "via": "page",
+      "referenced": true,
+      "subtype": "/Type0",
+      "baseFont": "/Noto Sans Regular",
+      "encoding": "/Identity-H",
+      "descendantSubtype": "/CIDFontType2",
+      "descendantBaseFont": "/NotoSans-Regular",
+      "registry": "Adobe",
+      "ordering": "Identity",
+      "fontFile": "/FontFile2"
+     }
+    ],
+    "images": [
+     {
+      "page": 1,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 1,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 2,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 2,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     },
+     {
+      "page": 3,
+      "key": "/fzImg0",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/FlateDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 23,
+      "bytes": 47
+     },
+     {
+      "page": 3,
+      "key": "/fzImg1",
+      "via": "page",
+      "referenced": true,
+      "width": 40,
+      "height": 24,
+      "bitsPerComponent": 8,
+      "filter": "/DCTDecode",
+      "colorSpace": "/ICCBased",
+      "smask": false,
+      "imageMask": false,
+      "xref": 24,
+      "bytes": 619
+     }
+    ]
+   },
+   "mupdf_resources": {
+    "fonts": [
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ],
+     [
+      [
+       20,
+       "otf",
+       "Type0",
+       "Fixture Sans Regular",
+       "cff",
+       "Identity-H",
+       0
+      ],
+      [
+       21,
+       "n/a",
+       "Type1",
+       "Helvetica",
+       "helv",
+       "WinAnsiEncoding",
+       0
+      ],
+      [
+       22,
+       "ttf",
+       "Type0",
+       "Noto Sans Regular",
+       "noto",
+       "Identity-H",
+       0
+      ]
+     ]
+    ],
+    "images": [
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ],
+     [
+      [
+       23,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg0",
+       "FlateDecode",
+       0
+      ],
+      [
+       24,
+       0,
+       40,
+       24,
+       8,
+       "ICCBased",
+       "",
+       "fzImg1",
+       "DCTDecode",
+       0
+      ]
+     ]
+    ],
+    "xobjects": [
+     [],
+     [],
+     []
+    ]
+   }
+  }
+ },
+ "script-openaction-inline.pdf": {
+  "intended": {
+   "mode": "openaction-inline",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  }
+ },
+ "script-openaction-ref.pdf": {
+  "intended": {
+   "mode": "openaction-ref",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  }
+ },
+ "script-openaction-array.pdf": {
+  "intended": {
+   "mode": "openaction-array",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  }
+ },
+ "script-js-key-only.pdf": {
+  "intended": {
+   "mode": "js-key-only",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [
+     "catalogue /OpenAction"
+    ],
+    "count": 1,
+    "xfa": false
+   }
+  }
+ },
+ "script-names-flat.pdf": {
+  "intended": {
+   "mode": "names-flat",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  }
+ },
+ "script-names-kids.pdf": {
+  "intended": {
+   "mode": "names-kids",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "javascript name tree entry Fold",
+     "javascript name tree entry Startup"
+    ],
+    "count": 2,
+    "xfa": false
+   }
+  }
+ },
+ "script-hosts-aa.pdf": {
+  "intended": {
+   "mode": "hosts-aa",
+   "annot": true
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [
+    "Text"
+   ],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "field heading /A",
+     "field totals /AA /K",
+     "page 1 /AA /O",
+     "page 1 annot /AA /E"
+    ],
+    "count": 4,
+    "xfa": false
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [
+    "Text"
+   ],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "yes",
+   "qpdf_script_sites": {
+    "entries": [
+     "field heading /A",
+     "field totals /AA /K",
+     "page 1 /AA /O",
+     "page 1 annot /AA /E"
+    ],
+    "count": 4,
+    "xfa": false
+   }
+  }
+ },
+ "script-xfa.pdf": {
+  "intended": {
+   "mode": "xfa",
+   "annot": false
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [],
+    "count": 0,
+    "xfa": true
+   }
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "qpdf_script_sites": {
+    "entries": [],
+    "count": 0,
+    "xfa": true
+   }
+  }
+ },
+ "sig-detached.pdf": {
+  "intended": {
+   "fields": 1,
+   "mode": "plain"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 7262,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  },
+  "signed": {
+   "signatures": [
+    {
+     "byteRange": [
+      0,
+      854,
+      4950,
+      2346
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": true
+    }
    ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       854,
+       4950,
+       2346
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000000854",
+       "0000004950",
+       "0000002346"
+      ],
+      "fileLength": 7296,
+      "spansAddUp": true,
+      "opensslVerifies": true,
+      "opensslError": "CMS Verification successful",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  }
+ },
+ "sig-contents-wrapped.pdf": {
+  "intended": {
+   "fields": 1,
+   "mode": "contents-wrapped"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 7262,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  },
+  "signed": {
+   "signatures": [
+    {
+     "byteRange": [
+      0,
+      854,
+      4992,
+      2346
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": true
+    }
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       854,
+       4992,
+       2346
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000000854",
+       "0000004992",
+       "0000002346"
+      ],
+      "fileLength": 7338,
+      "spansAddUp": true,
+      "opensslVerifies": true,
+      "opensslError": "CMS Verification successful",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": true,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  }
+ },
+ "sig-two-fields.pdf": {
+  "intended": {
+   "fields": 2,
+   "mode": "plain"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 11722,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     },
+     {
+      "name": "Signature2",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 11722,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  },
+  "signed": {
+   "signatures": [
+    {
+     "byteRange": [
+      0,
+      981,
+      5077,
+      0
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": false
+    },
+    {
+     "byteRange": [
+      0,
+      5306,
+      9402,
+      2388
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": true
+    }
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       981,
+       5077,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000000981",
+       "0000005077",
+       "0000000000"
+      ],
+      "fileLength": 11790,
+      "spansAddUp": true,
+      "opensslVerifies": true,
+      "opensslError": "CMS Verification successful",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     },
+     {
+      "name": "Signature2",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       5306,
+       9402,
+       2388
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000005306",
+       "0000009402",
+       "0000002388"
+      ],
+      "fileLength": 11790,
+      "spansAddUp": true,
+      "opensslVerifies": true,
+      "opensslError": "CMS Verification successful",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  }
+ },
+ "sig-perms.pdf": {
+  "intended": {
+   "fields": 1,
+   "mode": "plain"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 7412,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": true,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  },
+  "signed": {
+   "signatures": [
+    {
+     "byteRange": [
+      0,
+      983,
+      5079,
+      2367
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": true
+    }
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       983,
+       5079,
+       2367
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000000983",
+       "0000005079",
+       "0000002367"
+      ],
+      "fileLength": 7446,
+      "spansAddUp": true,
+      "opensslVerifies": true,
+      "opensslError": "CMS Verification successful",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": true,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  }
+ },
+ "sig-tampered.pdf": {
+  "intended": {
+   "fields": 1,
+   "mode": "tampered"
+  },
+  "outside": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature1",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       0,
+       0,
+       0
+      ],
+      "byteRangeSpelled": [
+       "0",
+       "0",
+       "0",
+       "0"
+      ],
+      "fileLength": 7262,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "Error reading SMIME Content Info",
+      "opensslSignatureAlgorithm": null,
+      "derBytes": 0,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
+  },
+  "signed": {
+   "signatures": [
+    {
+     "byteRange": [
+      0,
+      854,
+      4950,
+      2346
+     ],
+     "derBytes": 1410,
+     "contentsHexChars": 4096,
+     "coversWholeFile": true
+    }
+   ]
+  },
+  "outside_after_freeze": {
+   "pages": 3,
+   "toc": 0,
+   "labels": [],
+   "ocgs": [],
+   "annots": [],
+   "widgets": [],
+   "title": "",
+   "xmp": 0,
+   "embfiles": [],
+   "poppler_attachments": [
+    "0 embedded files"
+   ],
+   "poppler_opens": true,
+   "poppler_javascript": "no",
+   "signatures": {
+    "fields": [
+     {
+      "name": "Signature7",
+      "subFilter": "/adbe.pkcs7.detached",
+      "byteRange": [
+       0,
+       854,
+       4950,
+       2346
+      ],
+      "byteRangeSpelled": [
+       "0000000000",
+       "0000000854",
+       "0000004950",
+       "0000002346"
+      ],
+      "fileLength": 7296,
+      "spansAddUp": true,
+      "opensslVerifies": false,
+      "opensslError": "CMS Verification failure\n403752BA757F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify_content:verification failure:crypto/cms/cms_sd.c:1083:\n403752BA757F0000:error:1700006D:CMS routines:CMS_veri",
+      "opensslSignatureAlgorithm": ":sha256WithRSAEncryption",
+      "derBytes": 1410,
+      "contentsHexChars": 4096,
+      "contentsWrapped": false,
+      "valueIsIndirect": true
+     }
+    ],
+    "perms": false,
+    "certificate": {
+     "subject": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "issuer": "C=XX, O=Foreign Fixtures, CN=Foreign Signer",
+     "serial": "1337",
+     "notBefore": "Jan  1 00:00:00 2023 GMT",
+     "notAfter": "Jan  1 00:00:00 2046 GMT"
+    }
+   }
   }
  }
 }
