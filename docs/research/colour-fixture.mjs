@@ -30,10 +30,9 @@ const arg = (name, fallback) => {
 };
 
 const DIR = arg('dir', '/tmp/colour');
-mkdirSync(DIR, { recursive: true });
 
 /** A5-ish, matching `rasterize-fixture.mjs` so the campaign's numbers compare. */
-const BOX = [420, 595];
+export const BOX = [420, 595];
 
 /**
  * The named regions, as fractions of the *displayed* sheet from its top-left —
@@ -63,7 +62,7 @@ function lineText(index) {
 }
 
 /** PDF-space rectangle for a fractional region of an unturned page, y from the bottom. */
-function rectOf(region) {
+export function rectOf(region) {
   return {
     x: region.x0 * BOX[0],
     y: BOX[1] - region.y1 * BOX[1],
@@ -90,6 +89,63 @@ function displayedRect(region) {
     width: (region.y1 - region.y0) * BOX[0],
     height: (region.x1 - region.x0) * BOX[1],
   };
+}
+
+/**
+ * One sheet of solid swatches in a regular grid, and the table that says where each
+ * one landed.
+ *
+ * Shared with `greyscale-chart.mjs` so the chart that measures the greyscale standard
+ * is drawn by the same code that drew the campaign's colour sheet: one placement rule,
+ * one notion of "a region of known colour", and the fractions come *out* of the writer
+ * into a JSON sidecar that `greyscale-chart-read.py` reads back. A second hand-copied
+ * region table is how a rig starts measuring the wrong square.
+ */
+export function swatchGrid(count, columns = 4) {
+  const rows = Math.ceil(count / columns);
+  const margin = 0.06;
+  const gap = 0.025;
+  const cellW = (1 - 2 * margin - (columns - 1) * gap) / columns;
+  const cellH = (1 - 2 * margin - (rows - 1) * gap) / rows;
+  const regions = {};
+  for (let i = 0; i < count; i++) {
+    const col = i % columns;
+    const row = Math.floor(i / columns);
+    regions[i] = {
+      x0: margin + col * (cellW + gap),
+      y0: margin + row * (cellH + gap),
+      x1: margin + col * (cellW + gap) + cellW,
+      y1: margin + row * (cellH + gap) + cellH,
+    };
+  }
+  return regions;
+}
+
+/**
+ * Draw `swatches` (`{ name, rgb }`, channels 0..255) as one sheet of solid blocks.
+ *
+ * With `rotate: 90` the page stores a portrait box and carries `/Rotate 90`, and the ink
+ * is placed **through** the turn by `displayedRect` — so the fractions that come back are
+ * *displayed* fractions in both cases, which is the only space in which pdf.js, PyMuPDF
+ * and the reader below agree about which square is which. Writing them at stored
+ * fractions instead would leave the turned sheet's table describing a page nobody sees.
+ */
+export function drawSwatchSheet(doc, swatches, rotate = 0) {
+  const regions = swatchGrid(swatches.length);
+  const page = doc.addPage(BOX);
+  const place = rotate === 90 ? displayedRect : rectOf;
+  if (rotate) page.setRotation(degrees(rotate));
+  swatches.forEach((swatch, index) => {
+    page.drawRectangle({
+      ...place(regions[index]),
+      color: rgb(swatch.rgb[0] / 255, swatch.rgb[1] / 255, swatch.rgb[2] / 255),
+    });
+  });
+  const out = {};
+  swatches.forEach((swatch, index) => {
+    out[swatch.name] = { ...regions[index], rgb: [...swatch.rgb] };
+  });
+  return { page, regions: out };
 }
 
 async function colourFixture() {
@@ -133,6 +189,16 @@ async function colourFixture() {
   return doc.save({ useObjectStreams: false });
 }
 
-const bytes = await colourFixture();
-writeFileSync(`${DIR}/colour.pdf`, bytes);
-console.log(`${DIR}/colour.pdf`, bytes.byteLength, 'bytes');
+// Running this file *as a script* writes the campaign's three-plus-one sheets. Importing
+// it (which `greyscale-chart.mjs` does, to reuse `BOX` / `rectOf` / `drawSwatchSheet`) must
+// not, or every chart build would also rewrite `/tmp/colour/colour.pdf`.
+const runDirectly
+  = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+if (runDirectly) {
+  mkdirSync(DIR, { recursive: true });
+  const bytes = await colourFixture();
+  writeFileSync(`${DIR}/colour.pdf`, bytes);
+  console.log(`${DIR}/colour.pdf`, bytes.byteLength, 'bytes');
+}
+
+export { colourFixture };
