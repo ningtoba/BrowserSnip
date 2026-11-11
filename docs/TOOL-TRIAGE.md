@@ -2,7 +2,8 @@
 
 **Running tally — 130 of 130 ids accounted for: 5 BLANK OR WRONG OUTPUT (2 closed — `repair`
 since `2ca815b`, and `txt-to-pdf` by `c2226b5` with its marker rig in `abdbbd5`) · 4 FALSE CLAIM ·
-3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT ·
+3 CONTROL INERT · 11 ERRORS/NO-OP ON VALID INPUT (1 closed — `font-to-outline`'s Ghostscript
+invocation by `4ad2be3`, its sentences by `25829fb`, measured by the argv rig in `4bb51ae`) ·
 81 CLEAN (MEASURED) · 26 NOT REACHED.**
 Coverage: every one of the 130 ids was driven in real Chromium against the deployed site, and
 **all 427 field flips of the PDF catalogue were run** (288 of them produced a file to compare,
@@ -435,6 +436,86 @@ One cause, seven shipped tools, all measured on the deployed site with the same 
   missing download. The card's `ENGINE` row is absent because no output was produced, while
   `pdf-to-pdfa` in the same sweep shows `ENGINE Ghostscript` and a real file, so the engine
   itself is fine.
+* **Still reproduces on `ca11a22`, and the engine itself was never the question.** Driven
+  again on the deployed site with the shipped rail (`docs/research/colour-rail.mjs`, headless
+  Chromium, two fixtures — 2 pages of text, and the same text plus a picture and two vector
+  drawings): **2 runs, 0 files**, and an alert carrying the sentence above up to Ghostscript's
+  own two lines, followed by the loader's usual tail ("The PDF was not converted; try the tool
+  again, or simplify the document…") — and headed by the reachability claim that was not true.
+* **Closed by `4ad2be3`, and the inference drawn from `pdf-to-pdfa` was wrong.** Ghostscript
+  reads a string parameter as ONE argument, `-sName=value`; `-sOutputFile` in its own argv
+  slot sets the parameter to the empty string, `pdfwrite` opens with nowhere to write, and the
+  run dies before page one. Dumping the argv the source actually builds
+  (`BROWSERSNIP_GS_DUMP=…` → `docs/research/font-outline-argv.json`, both sides committed) and
+  replaying each vector through the published `@bentopdf/gs-wasm@0.1.1` build (GPL Ghostscript
+  10.06.0) gives **18 runs — 3 vectors × 3 fixtures × 2 shapes: every split vector exits 1 and
+  writes 0 bytes, every as-built vector exits 0** (`docs/research/font-outline-proof.log`,
+  rig: `font-outline-wasm.mjs`, `font-outline-fixtures.py`, `font-outline-readers.py`).
+  `convertToPdfA` and `rebuildWithGhostscript` were **equally dead** — so
+  `pdf-to-pdfa`'s file came from its local fallback (`bestEffortPdfA`), and the `ENGINE
+  Ghostscript` row that made it look like a working conversion prints `tool.engines[0]`, i.e.
+  what a tool *declares* (`ToolSurface.tsx:128` → `ResultCard.tsx:223`), not what ran; the
+  `· degraded` marker needs the word "degrad" in a warning (`ToolSurface.tsx:562`) and that
+  fallback sentence says "produced by the local path", so a pdf-lib file was labelled
+  Ghostscript. That misattribution is the row's own defect, still open, and listed below.
+* What the fixed invocation leaves behind, read by engines that did not write it (MuPDF 1.28.2
+  via PyMuPDF, pypdf 6.14.2, poppler 26.10.0, Ghostscript 10.08.0 — this sandbox has **no qpdf
+  and no `mutool`**, so four readers, not five). Offline rig first, then the deployed tool:
+  * *text page, 2 sheets*: **107 extractable characters per page → 0**, agreeing on MuPDF,
+    pypdf and `pdftotext`; `fonts ['Helvetica'] → none`; **0 → 88 vector path objects per
+    page**; page count 2 → 2 and both page boxes unchanged (A4 595.28 × 841.89, Letter
+    612 × 792), rotation 0 → 0; rasterised ink **0.87 % → 0.87 %** and **0.92 % → 0.92 %** —
+    the type still paints, it is just geometry now.
+  * *the inverse case, a page with no text at all*: picture still painted
+    (`images painted 1 → 1`), its two vector drawings still there, ink **13.49 % → 13.49 %**,
+    page box and count unchanged. `images listed 1 → 0` in the same line is not a loss: the
+    rewrite moves the XObject into a form, which is why the rig counts both.
+  * *mixed page (text + picture + art)*: text 107 → 0, picture still painted,
+    paths 2 → 90, ink **14.43 % → 14.43 %** and **14.96 % → 14.96 %**.
+  Six files, four readers, every one opening cleanly (`gs -sDEVICE=nullpage` exit 0 on all).
+* **Deployed, after `e02b410` shipped**: the same rail on `https://www.browsersnip.com`
+  (bundle `assets/index-DDH6baQm.js`) — **3 runs, 3 files**, the cards reading *"Ghostscript
+  drew the type on all 2 page(s) as vector paths: no page shows text through a font and no font
+  resource is left. 2.4 KB → 21.6 KB (+817%)"* and, for the text-free sheet, *"Ghostscript
+  rewrote art-only.pdf, and no page draws text — there was nothing to outline. 6.8 KB → 6.9 KB"*.
+  Those three downloads measure the same as the offline rig (STEP 4 of the log). One sentence in
+  that deployed output did contradict its own bytes — the no-text run was told *"outlines are
+  geometry, so the file grows"* having outlined nothing — and `9e9a8bf` moved that clause onto
+  the branch that converted something.
+* Pinned by `tests/pdf/font-outline.test.ts` (10 cases: the argv of all three helpers checked
+  against the sandbox paths the run writes and reads back, the outline run repeated against
+  the published build with the byte assertions above, and the four sentences a run may print —
+  fetched-but-refused, unreachable, unchanged bytes, nothing to outline). **Red without the
+  fix, counted**: reverting `4ad2be3` alone reddens **5 of the 10** (both argv pins and all
+  three engine runs); reverting `25829fb`'s sentences alone reddens **5 of 58** across this file
+  and `edge-optimize.test.ts`; reverting both, **9 of 58**; reverting `9e9a8bf`, **2 of 58**.
+  On CI the engine block skips itself out loud — measured, this file's 15 MB download starved
+  `field-reach.test.ts:510`, which waits a fixed 3 s inside `act()` (`e02b410`); the argv pins,
+  which are the part that guards this defect, never skip, and `BROWSERSNIP_GS=live` asks for
+  the engine on CI on purpose.
+* **The class, counted rather than anecdoted.** `core/engine-ops.ts` exports **10 verbs** that
+  hand arguments to an engine and assemble **27 argument-bearing call sites**: 3 string vectors
+  for Ghostscript (`convertToPdfA`, `textToOutlines`, `rebuildWithGhostscript`, all finished by
+  one `gsCommandLine` since `4ad2be3`), 17 CoherentPDF calls behind 4 verbs, 7 PyMuPDF calls
+  behind 3 verbs.
+  * Missing a required argument, before this change: **3 of 3 broken** — every string vector —
+    and **0 of 27 sites had a test that would catch it**: `grep -rn "sOutputFile\|sDEVICE\|callMain"
+    tests/` returned nothing outside the new file, and every existing double replaces
+    `core/engine-ops` wholesale or ignores its arguments (`engine-auto.test.ts:240` is
+    `toMemory: () => new Uint8Array([1])`). After: 3 of 3 pinned by argv assertion.
+  * The typed sites cannot fail this particular way: deleting the third argument of
+    `api.toMemory(pdf, true, false)` fails `tsc` with `TS2554: Expected 3 arguments, but got 2`.
+    They can still be handed the wrong *value* with no test the wiser — **0 of 24** typed sites
+    assert an argument, so `linearize`/`makeId` on the two `toMemory` calls and the
+    `garbage`/`deflate`/`clean` flags on `doc.save` are unpinned.
+  * And **5 of those 10 verbs have no caller in `src/` at all**: `compressWithCpdf`,
+    `readBookmarksWithCpdf`, `listFontsWithCpdf`, `scrubWithPyMuPDF`, `deskewWithPyMuPDF` are
+    exported, mocked in `optimize-bytes.test.ts`, and never invoked — `deskew-pdf` measures tilt
+    with pdf.js instead. Dead surface is how an invocation rots unnoticed.
+  Not touched here, for the schedule: the `ENGINE` row attribution above (a pdf-lib file
+  credited to Ghostscript, no `· degraded`), the same "could not be reached" collapse in
+  `pdf-to-pdfa`'s and `repair`'s own sentences (now *less* true, since Ghostscript really can
+  fail a run after being fetched), the 5 dead verbs, and the argument-value pins.
 
 ### 4. `extract-attachments` · `edit-attachments` — cannot see an attachment that is there
 
