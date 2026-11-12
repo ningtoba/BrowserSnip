@@ -182,7 +182,7 @@ describe('a stamp lands on every page counted, in the corner named', () => {
     const annots = doc.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray);
     const dict = doc.context.lookup(annots!.asArray()[0]) as PDFDict;
     const ap = dict.lookup(PDFName.of('AP'), PDFDict).get(PDFName.of('N'));
-    const stream = doc.context.lookup(ap) as { getContentsString?: () => string } & Record<string, unknown>;
+    const stream = doc.context.lookup(ap) as unknown as { getContentsString?: () => string };
     expect(stream, 'the stamp has no /AP /N appearance').toBeTruthy();
     const decoded = new TextDecoder().decode(decodePDFRawStream(stream as never).decode());
     expect(decoded).toMatch(/Tj|TJ/);
