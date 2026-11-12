@@ -904,17 +904,11 @@ export interface TimestampResult {
  *
  * This is the only PDF step in BrowserSnip that contacts a server, and only the
  * 32-byte message digest is sent — never the document.
- */
-export async function timestampDocument(
-  doc: PDFDocument,
-  options: { tsaUrl: string; fieldName?: string },
-): Promise<TimestampResult> {
-  const saved = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
-  return timestampBytes(toBytes(saved), options);
-}
-
-/**
- * Timestamp from raw bytes, for callers that already saved the document.
+ *
+ * The caller hands over the bytes it read, not an opened document, on purpose:
+ * `/ByteRange` names offsets in the signed file, and `PDFDocument.save` moves
+ * those offsets. `timestamp-pdf` used to save first and so refused every file
+ * `digital-sign-pdf` wrote — the chain its own refusal message asks for.
  *
  * The signature is found through the document structure — `AcroForm /Fields` →
  * the `/Sig` value that carries a `/SubFilter` — never by searching for

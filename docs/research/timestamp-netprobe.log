@@ -1,0 +1,4 @@
+page origin: http://localhost:5299
+POST http://timestamp.digicert.com → threw TypeError: Failed to fetch
+POST https://timestamp.digicert.com → threw TypeError: Failed to fetch
+page context: {"page":"http:","secure":true}

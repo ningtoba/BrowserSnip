@@ -1561,6 +1561,7 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Add timestamp',
     notes: [
       'The timestamp covers the signature, not the whole document, and the authority address is the only thing sent over the network: a digest of the signature, never the pages.',
+      'This is the one PDF tool in BrowserSnip that cannot work offline: without a reachable authority there is no timestamp to add, and the run says so instead of shipping an untimed file with a stamp-shaped promise. The request is made by this page, so an authority that answers only command-line tools - or one the page\'s origin cannot reach - fails with "could not be reached", and the signature is left untouched.',
       'This tool refuses an unsigned file rather than producing a timestamp on nothing.',
     ],
     fields: [
@@ -1572,13 +1573,13 @@ export const securityTools: PdfToolDefinition[] = [
         group: 'Authority',
         required: true,
         pattern: '^https?://',
-        help: 'The only step that needs the network: the timestamp token comes from a trusted third party. Prefer an https address, since the digest travels.',
+        help: 'The only step that needs the network: the token comes from a third party. Prefer https, since the digest travels, and the address must answer this page — not only a command line.',
       },
       { key: 'fieldName', label: 'Signature field to stamp', type: 'text', group: 'Authority', placeholder: 'The only signature, if left blank', help: 'Needed when a document carries more than one signature and only one of them should be stamped.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
-      const { timestampDocument } = await import('../core/signature');
+      const { timestampBytes } = await import('../core/signature');
       // `core/signature` looks for a `/Contents` key to find the signature, and
       // every page has a `/Contents` — so an unsigned file used to come back
       // complaining about its PKCS#7 instead of saying it was never signed.
@@ -1587,9 +1588,13 @@ export const securityTools: PdfToolDefinition[] = [
         throw new Error('This PDF has no digital signature to timestamp. Run Digital Signature on it first, then timestamp the signed file.');
       }
       const tsaUrl = stringValue(context.values, 'tsa', 'http://timestamp.digicert.com');
-      let result: Awaited<ReturnType<typeof timestampDocument>>;
+      let result: Awaited<ReturnType<typeof timestampBytes>>;
       try {
-        result = await timestampDocument(input.doc, {
+        // The bytes as they arrived, not a re-save of the opened document:
+        // `/ByteRange` names offsets in *this* file, and saving moves them, so
+        // going through `input.doc` made the tool refuse the very files
+        // `digital-sign-pdf` writes — the chain its own refusal message asks for.
+        result = await timestampBytes(input.bytes, {
           tsaUrl,
           fieldName: stringValue(context.values, 'fieldName') || undefined,
         });

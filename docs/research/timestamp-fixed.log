@@ -1,0 +1,55 @@
+document in: /tmp/eight/digital-fixed.pdf
+fold: opened
+tsa   : tool-field-tsa=http://timestamp.digicert.com
+state : {"button":"Add timestamp","enabled":true,"note":["A third-party stamp proving the signature existed at a stated moment, so it outlives the certificate that made it.","AUTHORITY","TIMESTAMP AUTHORITY URL","The only step that needs the network: the timestamp token comes from a trusted third party. Prefer an https address, since the digest travels."]}
+run: Add timestamp
+refused with: Timestamp PDF ;; Timestamp PDF ;; A third-party stamp proving the signature existed at a stated moment, so it outlives the certificate that made it. ;; DIGITAL-FIXED.PDFThe timestamp authority at http://timestamp.digicert.com could not be reached (The timestamp authority at http://timestamp.digicert.com could not be reached (Failed to fetch). Timestamping is the one PDF step that needs a connection — go online and retry, or sign without a timestamp.). This is the only step in BrowserSnip that needs the network — the signature digest, never the document, is sent. Try again with a connection, or keep the untimed signature. ;; TIMESTAMP AUTHORITY URL ;; Nothing changed yet · Add an RFC 3161 trusted timestamp to a signature ;; Add timestamp
+body tail: Browser
+Snip
+Video
+PDF
+⌕
+Search tools
+⌘K
+☀
+GitHub
+BrowserSnip
+/
+PDF Tools
+/
+PDF Security
+/
+Timestamp PDF
+☆
+Star
+Timestamp PDF
+
+A third-party stamp proving the signature existed at a stated moment, so it outlives the certificate that made it.
+
+YOUR FILE
+
+digital-fixed.pdf
+
+19.3 KB · 3 pages
+
+STOPPED
+✕
++
+Use another file
+It stays on this device
+
+DIGITAL-FIXED.PDFThe timestamp authority at http://timestamp.digicert.com could not be reached (The timestamp authority at http://timestamp.digicert.com could not be reached (Failed to fetch). Timestamping is the one PDF step that needs a connection — go online and retry, or sign without a timestamp.). This is the only step in BrowserSnip that needs the network — the signature digest, never the document, is sent. Try again with a connection, or keep the untimed signature.
+
+Check the file, adjust the options, then try once more.
+
+Retry
+TIMESTAMP AUTHORITY URL
+▸
+1 MORE OPTION
+
+Nothing changed yet · Add an RFC 3161 trusted timestamp to a signature
+
+HONEST NOTES (2)
+▸
+
+Add timestamp
