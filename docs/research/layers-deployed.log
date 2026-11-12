@@ -1,0 +1,10 @@
+document in: /tmp/eight/two-layers.pdf
+fold: opened "▸\n3 MORE OPTIONS"
+rail: {"groups":[{"label":"Hide these layers","options":[],"boxes":[]},{"label":"Show these layers","options":[],"boxes":[]}],"texts":["tool-field-add=\"\"","tool-field-remove=\"\""],"button":"Change layers","enabled":false}
+hide: no option Red revision among 
+add: tool-field-add=Revision C
+rail after: {"groups":[{"label":"Hide these layers","options":[],"boxes":[]},{"label":"Show these layers","options":[],"boxes":[]}],"texts":["tool-field-add=\"Revision C\"","tool-field-remove=\"\""],"button":"Change layers","enabled":true}
+run: Change layers
+wrote /tmp/eight/layers-deployed.pdf 1426 bytes
+result screen: PDF OCG Layers ;; PDF OCG Layers finished in this tab — nothing was uploaded. ;; Page of two-layers_layers.pdf, drawn in this tab — a picture of the file, not the file itself. ;; two-layers_layers.pdf ;; Added "Revision C" and the document now has 3 layers: Red revision, Blue revision, Revision C, of which "Red revision", "Blue revision", "Revision C" show by default.
+console errors []

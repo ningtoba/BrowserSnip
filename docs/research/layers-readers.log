@@ -1,0 +1,23 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+  /OCGs[0] = 'DrawnLayer' indirect=True
+  /OCGs[1] = 'HiddenLayer' indirect=True
+  /D /ON: (absent)
+  /D /OFF: ['HiddenLayer (copy, not the /OCGs entry)', 'DrawnLayer (copy, not the /OCGs entry)']
+  /D /Order: ['DrawnLayer (copy, not the /OCGs entry)', 'HiddenLayer (copy, not the /OCGs entry)']
+  /Configs: 0 entry(ies)
+
+MuPDF 1.28.2 get_ocgs: {3: {'name': 'DrawnLayer', 'intent': ['View'], 'on': False, 'usage': 'Artwork'}, 2: {'name': 'HiddenLayer', 'intent': ['View'], 'on': False, 'usage': 'Artwork'}}
+MuPDF render: 0 red pixels, 0 blue pixels (a painted block is 220x120 = 26400 at 72 dpi)
+MuPDF text layer: []
+
+poppler render: exit=0 [PosixPath('/tmp/eight/lay-1.png'), PosixPath('/tmp/eight/lay-2.png'), PosixPath('/tmp/eight/lay-3.png')]
+  lay-1.png: 0 red pixels, 0 blue pixels
+  lay-2.png: 0 red pixels, 0 blue pixels
+  lay-3.png: 0 red pixels, 0 blue pixels
+
+# render comparison layers.pdf -> layers-tool-hide.pdf
+  MuPDF page 1: 708 pixels changed, first differing at (0, 0)
+  MuPDF page 2: 1 pixels changed, first differing at (0, 0)
+  MuPDF page 3: 1 pixels changed, first differing at (0, 0)
+  poppler before: exit=0 ink per page [7454, 6905, 6948]
+  poppler after: exit=0 ink per page [6866, 6905, 6948]
