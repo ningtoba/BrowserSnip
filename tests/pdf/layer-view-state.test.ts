@@ -24,7 +24,8 @@
  * MuPDF and poppler and counts the ink that disappeared.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef } from '@maxwbh/pdf-lib';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { decodeTextString } from '@/lib/pdf/core/metadata';
@@ -34,6 +35,18 @@ import { listLayers, setLayerVisibility } from '@/lib/pdf/core/layers';
 const FIXTURE = 'tests/fixtures/foreign/layers.pdf';
 
 const source = () => new Uint8Array(readFileSync(FIXTURE));
+
+/**
+ * Hand a produced file to the outside readers (`verify-layers-read.py`).
+ *
+ * The path is part of the reproduce line in this file's header, so it is created on
+ * demand rather than assumed: a CI runner has no `/tmp/eight`, and a test that only
+ * passes on the machine that wrote it is not a pin.
+ */
+function emit(path: string, produced: Uint8Array): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, Buffer.from(produced));
+}
 
 async function run(values: Record<string, unknown>) {
   const outcome = (await runPdfTool({
@@ -97,7 +110,7 @@ describe('the layer view the tool edits is the one the file carries', () => {
     expect(state.listedByReference, '/OCProperties must name the groups by reference').toBe(true);
     expect(message).toMatch(/DrawnLayer/);
     expect(message + warnings.join(' ')).toMatch(/hidden|off|default view/i);
-    writeFileSync('/tmp/eight/layers-tool-hide.pdf', Buffer.from(bytes));
+    emit('/tmp/eight/layers-tool-hide.pdf', bytes);
   });
 
   it('overrides what the file was saved with when asked to show a hidden group', async () => {
@@ -130,7 +143,7 @@ describe('the layer view the tool edits is the one the file carries', () => {
     expect(removed.message).toMatch(/deleted 1 layer/i);
     expect(removed.message).toMatch(/DrawnLayer/);
     expect(removed.message).not.toMatch(/has .*HiddenLayer/);
-    writeFileSync('/tmp/eight/layers-tool.pdf', Buffer.from(added.bytes));
+    emit('/tmp/eight/layers-tool.pdf', added.bytes);
   });
 
   it('says which named layer the document does not have', async () => {
@@ -161,6 +174,6 @@ describe('the layer view the tool edits is the one the file carries', () => {
       ['DrawnLayer', !viaTool.off.includes('DrawnLayer')],
       ['HiddenLayer', viaTool.on.includes('HiddenLayer')],
     ].sort()).toEqual(direct);
-    writeFileSync('/tmp/eight/layers-tool-toggle.pdf', Buffer.from(await doc.save({ useObjectStreams: false })));
+    emit('/tmp/eight/layers-tool-toggle.pdf', await doc.save({ useObjectStreams: false }));
   });
 });
