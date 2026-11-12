@@ -566,6 +566,7 @@ export const convertToTools: PdfToolDefinition[] = [
     const format = id.replace('-to-pdf', '');
     const label = format.toUpperCase();
     const isTiff = format === 'tiff';
+    const isHeic = format === 'heic';
     return {
       id,
       name: `${label} to PDF`,
@@ -584,8 +585,14 @@ export const convertToTools: PdfToolDefinition[] = [
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
+        // Measured rather than assumed: two real HEIC files (32 KB and 472 B, both
+        // `ftypheic`/hvc1, both decoded by Pillow on this machine) opened in neither
+        // `createImageBitmap` nor `<img>` here, so the whole run is a refusal.
+        isHeic
+          ? 'HEIC is decoded by the browser and the operating system, not by this page. Where that decoder is absent — measured on Chrome for Testing 151 on Linux, which has no HEIC decoder at all — nothing is converted: every file is refused by name and no PDF is produced. Convert the photo to PNG or JPEG first.'
+          : '',
         RASTER_LOSS,
-      ],
+      ].filter((line) => line !== ''),
       fields: [PAGE_FIELD, MARGIN_FIELD, ORIENTATION_FIELD],
       async run(context) {
         const images = await decodeImageBatch(context, {

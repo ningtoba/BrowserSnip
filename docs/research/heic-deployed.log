@@ -1,0 +1,76 @@
+decode probe: {"file":"tiny.heic","bytes":32756,"ftyp":"ftypheic","createImageBitmap":"FAILED InvalidStateError","imgElement":"FAILED (onerror)"}
+decode probe: {"file":"ios.heic","bytes":472,"ftyp":"ftypheic","createImageBitmap":"FAILED InvalidStateError","imgElement":"FAILED (onerror)"}
+files in: /tmp/eight/tiny.heic, /tmp/eight/ios.heic
+state: {"names":["tiny.heic","ios.heic"],"button":"Create PDF","enabled":true,"blocker":[]}
+run: Create PDF
+screen: HEIC to PDF ;; HEIC to PDF ;; Every HEIC you add becomes a PDF page, in the order you added them. ;; tiny.heic ;; 32.0 KB · counting pages… ;; ios.heic ;; 472 B · counting pages… ;; TINY.HEIC"tiny.heic" could not be decoded: This image could not be opened: this browser has no decoder for HEIC/HEIF (The source image could not be decoded.). Convert the file to PNG or JPEG, or open it in Safari or Chrome 130+. ;; PAGE SIZE ;; Nothing changed yet · Create a PDF from one or more HEIC images
+body: Browser
+Snip
+Video
+PDF
+⌕
+Search tools
+⌘K
+☀
+GitHub
+BrowserSnip
+/
+PDF Tools
+/
+Convert to PDF
+/
+HEIC to PDF
+☆
+Star
+HEIC to PDF
+
+Every HEIC you add becomes a PDF page, in the order you added them.
+
+YOUR FILES
+2 IN THIS JOB
+
+tiny.heic
+
+32.0 KB · counting pages…
+
+STOPPED
+←
+→
+✕
+
+ios.heic
+
+472 B · counting pages…
+
+READING
+←
+→
+✕
++
+Add more
+It stays on this device
+⬆
+Drop more images here
+or click to browse — they join this job in order
+
+TINY.HEIC"tiny.heic" could not be decoded: This image could not be opened: this browser has no decoder for HEIC/HEIF (The source image could not be decoded.). Convert the file to PNG or JPEG, or open it in Safari or Chrome 130+.
+
+Re-save it as PNG or JPEG, or use a converter for its real format.
+
+Retry
+PAGE SIZE
+A4
+Letter
+Legal
+A3
+A5
+Tabloid
+▸
+2 MORE OPTIONS
+
+Nothing changed yet · Create a PDF from one or more HEIC images
+
+HONEST NOTES (3)
+▸
+
+Create PDF
