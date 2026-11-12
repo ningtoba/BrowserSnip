@@ -1,0 +1,38 @@
+document in: /tmp/eight/plain.pdf
+sheet: {"x":332,"y":195.5,"w":773,"h":1094,"tag":"canvas"}
+
+— planning applicant.name (Text)
+chip: armed true
+drafts: [{"label":"text field Text1 on page 1","box":{"x":446,"y":908,"w":119,"h":12}}]
+name: Field name=applicant.name
+count line: 1 field
+save button: enabled: Save form
+
+— planning applicant.notes (Text)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field Text1 on page 1","box":{"x":446,"y":830,"w":119,"h":12}}]
+name: Field name=applicant.notes
+count line: 2 fields
+save button: enabled: Save form
+
+— planning agree.terms (Checkbox)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field applicant.notes on page 1","box":{"x":446,"y":830,"w":119,"h":12}},{"label":"checkbox field Check1 on page 1","box":{"x":446,"y":765,"w":9,"h":9}}]
+name: Field name=agree.terms
+count line: 3 fields
+save button: enabled: Save form
+
+— planning country (Dropdown)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field applicant.notes on page 1","box":{"x":446,"y":830,"w":119,"h":12}},{"label":"checkbox field agree.terms on page 1","box":{"x":446,"y":765,"w":9,"h":9}},{"label":"dropdown field Choice1 on page 1","box":{"x":583,"y":681,"w":119,"h":12}}]
+name: Field name=country
+options: Choice options, one per line=Finland
+France
+Germany
+count line: 4 fields
+save button: enabled: Save form
+
+save: Save form
+wrote /tmp/eight/form-fixed.pdf 5254 bytes
+result screen: Create PDF Form ;; The fields you dropped, turned into real AcroForm widgets that any viewer can type into. ;; Create PDF Form finished in this tab — nothing was uploaded. ;; Finished — one file ready to download ;; Page of create-pdf-form.pdf, drawn in this tab — a picture of the file, not the file itself. ;; create-pdf-form.pdf ;; Download
+console errors []

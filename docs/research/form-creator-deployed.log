@@ -1,0 +1,141 @@
+document in: /tmp/eight/plain.pdf
+sheet: {"x":332,"y":195.5,"w":773,"h":1094,"tag":"canvas"}
+
+— planning applicant.name (Text)
+chip: armed true
+drafts: [{"label":"text field Text1 on page 1","box":{"x":446,"y":908,"w":119,"h":12}}]
+name: Field name=applicant.name
+count line: 1 field
+save button: enabled: Save form
+
+— planning applicant.notes (Text)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field Text1 on page 1","box":{"x":446,"y":830,"w":119,"h":12}}]
+name: Field name=applicant.notes
+count line: 2 fields
+save button: enabled: Save form
+
+— planning agree.terms (Checkbox)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field applicant.notes on page 1","box":{"x":446,"y":830,"w":119,"h":12}},{"label":"checkbox field Check1 on page 1","box":{"x":446,"y":765,"w":9,"h":9}}]
+name: Field name=agree.terms
+count line: 3 fields
+save button: enabled: Save form
+
+— planning country (Dropdown)
+chip: armed false
+drafts: [{"label":"text field applicant.name on page 1","box":{"x":446,"y":908,"w":119,"h":12}},{"label":"text field applicant.notes on page 1","box":{"x":446,"y":830,"w":119,"h":12}},{"label":"checkbox field agree.terms on page 1","box":{"x":446,"y":765,"w":9,"h":9}},{"label":"dropdown field Choice1 on page 1","box":{"x":583,"y":681,"w":119,"h":12}}]
+name: Field name=country
+options: Choice options, one per line=Finland
+France
+Germany
+count line: 4 fields
+save button: enabled: Save form
+
+save: Save form
+body: Browser
+Snip
+Video
+PDF
+⌕
+Search tools
+⌘K
+☀
+GitHub
+BrowserSnip
+/
+PDF Tools
+/
+Edit PDF
+/
+Create PDF Form
+☆
+Star
+
+plain.pdf
+
+0.0 MB
+
+Remove
+
+The fields you dropped, turned into real AcroForm widgets that any viewer can type into.
+
+TText
+☑Checkbox
+◉Radio group
+▾Dropdown
+☰List box
+✥ Select
+4 fields
+Save form
+
+No /DA (default appearance) entry found for field: applicant.name
+
+applicant.name
+applicant.notes
+agree.terms
+country
+
+FIELDS — THIS LIST IS THE TAB ORDER
+
+1
+applicant.nametext · p1
+↑
+↓
+⧉
+✕
+2
+applicant.notestext · p1
+↑
+↓
+⧉
+✕
+3
+agree.termscheckbox · p1
+↑
+↓
+⧉
+✕
+4
+countrydropdown · p1
+↑
+↓
+⧉
+✕
+
+DROPDOWN FIELD
+
+NAME
+TOOLTIP
+FONT SIZE (PT)
+MAX LENGTH (0 = NO LIMIT)
+INITIAL VALUE
+OPTIONS (ONE PER LINE)
+Required
+Read-only
+Multiline
+
+155 × 16 pt at x 327, y 447 (bottom-left origin). Arrow keys nudge the box; hold Shift for 10 pt steps.
+
+◂ Prev
+/ 1
+Next ▸
+−
+130%
++
+
+Added a dropdown field named "Choice1" on page 1 — 155 × 16 pt. Pick a type again to place another.
+
+⚠️
+
+Could not finish
+
+No /DA (default appearance) entry found for field: applicant.name
+file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/docs/research/verify-form-creator-run.mjs:93
+  throw new Error('no output blob');
+        ^
+
+Error: no output blob
+    at file:///home/nekophobia/Projects/BrowserSnipRepo/BrowserSnip/docs/research/verify-form-creator-run.mjs:93:9
+
+Node.js v26.12.1

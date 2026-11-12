@@ -1,0 +1,30 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+MuPDF 1.28.2 on form-fixed.pdf: 1 pages, is_form_pdf=3, needs_pass=0, pdf_version=PDF 1.7
+
+page 1 (595x842): 4 widget(s)
+  name='applicant.name' type=Text rect=(148.5,673.5,303.2,689.5) 154.7x16.0 pt value='' options=None maxlen=0 flags=0 appearance=?
+  name='applicant.notes' type=Text rect=(148.5,571.9,303.2,587.9) 154.7x16.0 pt value='' options=None maxlen=0 flags=0 appearance=?
+  name='agree.terms' type=CheckBox rect=(148.5,488.1,160.5,500.1) 12.0x12.0 pt value='' options=None maxlen=0 flags=0 appearance=?
+  name='country' type=ComboBox rect=(326.9,378.8,481.6,394.8) 154.7x16.0 pt value='' options=None maxlen=0 flags=131072 appearance=?
+
+pypdf fields (6):
+  'applicant': /FT=None /V=None /Ff=None /Opt=[] /DA='None'
+  'applicant.name': /FT=/Tx /V=None /Ff=None /Opt=[] /DA='None'
+  'applicant.notes': /FT=/Tx /V=None /Ff=None /Opt=[] /DA='None'
+  'agree': /FT=None /V=None /Ff=None /Opt=[] /DA='None'
+  'agree.terms': /FT=/Btn /V=None /Ff=None /Opt=[] /DA='None'
+  'country': /FT=/Ch /V=None /Ff=131072 /Opt=["['Finland', 'Finland']", "['France', 'France']", "['Germany', 'Germany']"] /DA='None'
+
+pikepdf: /AcroForm=yes /NeedAppearances=None /DA='None'
+pikepdf /DR fonts: []
+filled applicant.name = 'Ada Lovelace' on page 1
+filled agree.terms = True on page 1
+filled country = 'France' on page 1
+
+MuPDF filled 3 field(s) and saved filled.pdf
+  after reload page 1: 'applicant.name' = 'Ada Lovelace'
+  after reload page 1: 'applicant.notes' = ''
+  after reload page 1: 'agree.terms' = 'Yes'
+  after reload page 1: 'country' = 'France'
+pypdf sees: {'applicant': 'None', 'applicant.name': 'Ada Lovelace', 'applicant.notes': 'None', 'agree': 'None', 'agree.terms': 'Yes', 'country': 'France'}
+poppler text contains the filled values: ['Ada Lovelace', 'France']

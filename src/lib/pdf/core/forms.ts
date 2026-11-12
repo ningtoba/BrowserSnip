@@ -581,6 +581,22 @@ function appearanceOptions(spec: CreateFieldSpec) {
  * @returns the 0-based index of the new field in `doc.getForm().getFields()`,
  * or `-1` when nothing was created.
  */
+/**
+ * Give a freshly created field the `/DA` its own size editor demands.
+ *
+ * pdf-lib changes a field's text size by rewriting the last `Tf` in `/DA`, and a field
+ * created a moment ago has no `/DA` at all — so `setFontSize` threw "No /DA (default
+ * appearance) entry found for field: X" and the form designer could not save a form it
+ * had just laid out: the pane printed the library's sentence and produced no file.
+ * Seeding the string the caller asked for is enough, because saving rebuilds the
+ * appearances with the embedded face and replaces it (`PDFForm.updateFieldAppearances`).
+ */
+function seedDefaultAppearance(field: PDFField, size: number): void {
+  if (!field.acroField.getDefaultAppearance()) {
+    field.acroField.setDefaultAppearance(`/Helvetica ${size} Tf 0 g`);
+  }
+}
+
 export function createFormField(
   doc: PDFDocument,
   page: number,
@@ -606,7 +622,10 @@ export function createFormField(
       if (spec.value) field.setText(spec.value);
       if (spec.multiline) field.enableMultiline();
       if (spec.maxLength && spec.maxLength > 0) field.setMaxLength(spec.maxLength);
-      if (spec.fontSize) field.setFontSize(spec.fontSize);
+      if (spec.fontSize) {
+        seedDefaultAppearance(field, spec.fontSize);
+        field.setFontSize(spec.fontSize);
+      }
       field.addToPage(target, options);
       created = field;
       break;
@@ -643,7 +662,10 @@ export function createFormField(
       const field = form.createDropdown(spec.name);
       if (spec.options?.length) field.setOptions(spec.options);
       if (spec.value) field.select(spec.value);
-      if (spec.fontSize) field.setFontSize(spec.fontSize);
+      if (spec.fontSize) {
+        seedDefaultAppearance(field, spec.fontSize);
+        field.setFontSize(spec.fontSize);
+      }
       field.addToPage(target, options);
       created = field;
       break;
@@ -652,7 +674,10 @@ export function createFormField(
       const field = form.createOptionList(spec.name);
       if (spec.options?.length) field.setOptions(spec.options);
       if (spec.value) field.select(spec.value);
-      if (spec.fontSize) field.setFontSize(spec.fontSize);
+      if (spec.fontSize) {
+        seedDefaultAppearance(field, spec.fontSize);
+        field.setFontSize(spec.fontSize);
+      }
       field.addToPage(target, options);
       created = field;
       break;
