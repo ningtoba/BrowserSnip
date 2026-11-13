@@ -2,7 +2,7 @@
 
 One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAMPAIGN.md`).
 
-```
+```text
 001 [ ] merge
 002 [ ] split
 003 [ ] extract-pages
@@ -125,4 +125,4 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 120 [ ] sign
 121 [ ] pdf-crop
 122 [ ] scan-to-pdf
-```
+```text

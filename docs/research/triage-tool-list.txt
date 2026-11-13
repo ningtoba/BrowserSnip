@@ -29,7 +29,6 @@ pdf-to-pdfa
 font-to-outline
 deskew-pdf
 edit-pdf
-edit-pdf-text
 page-numbers
 watermark
 header-footer
