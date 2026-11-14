@@ -216,6 +216,25 @@ function applyFilterToPage(
   ctx.restore();
 }
 
+/**
+ * The id a preview cache keys on.
+ *
+ * `pdf.js`'s own `fingerprint` hashes the **first 1 KiB and nothing else**, so two
+ * documents that differ late share one — exactly the shape a tool produces when it
+ * rewrites page 4 of 4 and leaves pages 1 to 3 copied. Measured on the result card
+ * of a 0° turn: `A-all-30-grow.pdf` and `C-all-0-grow.pdf` share byte-identical
+ * first 1 024 bytes, so the second card painted the first one's tilted page from
+ * the thumbnail cache. The tail — the xref and trailer, which any edit moves — and
+ * the length key it instead, and neither costs a pass over the whole file.
+ */
+export function previewKey(data: Uint8Array, fingerprint: string): string {
+  let hash = 5381;
+  for (let i = Math.max(0, data.length - 1024); i < data.length; i++) {
+    hash = ((hash * 33) ^ data[i]) >>> 0;
+  }
+  return `${fingerprint}:${data.length.toString(36)}-${hash.toString(36)}`;
+}
+
 export async function openRender(
   src: ArrayBuffer | Uint8Array,
   options: OpenRenderOptions = {},
@@ -248,6 +267,7 @@ export async function openRender(
     throw asPasswordError(err);
   }
 
+  const key = previewKey(data, doc.fingerprints?.[0] ?? '');
   let destroyed = false;
   const guard = () => {
     if (destroyed) throw new RenderCancelled('This PDF preview was closed.');
@@ -262,7 +282,7 @@ export async function openRender(
       return doc.numPages;
     },
     get fingerprint() {
-      return doc.fingerprints?.[0] ?? '';
+      return key;
     },
     async page(n: number) {
       guard();
@@ -548,6 +568,12 @@ export async function thumbnails(
      * `/Rotate` — what a *preview* of a turn is. `pdf.js` takes the whole angle
      * as `rotation` and falls back to the page's own otherwise, so this is the
      * same number a viewer would show, not a matrix the caller has to apply.
+     *
+     * `pdf.js`'s `PageViewport` only *honours* 0/90/180/270 — any other angle
+     * falls into its identity branch and the sheet comes back level — so a
+     * right-angle step goes to the viewport and a free angle is turned on the
+     * canvas afterwards (`turnCanvas`). Without that, an arbitrary-angle tool
+     * previewed nothing at all: 45° painted the source.
      */
     rotateBy?: number;
     signal?: AbortSignal;
@@ -560,15 +586,41 @@ export async function thumbnails(
   for (const p of pages) {
     if (options.signal?.aborted) throw new RenderCancelled('Thumbnail generation was cancelled.');
     const page = await session.doc.getPage(p);
-    const base = page.getViewport({ scale: 1, rotation: turned(page.rotate, rotateBy) });
-    const scale = Math.min(maxSide / base.width, maxSide / base.height, 2);
-    const viewport = page.getViewport({ scale, rotation: turned(page.rotate, rotateBy) });
+    const angle = turned(page.rotate, rotateBy);
+    // A page's own `/Rotate` is a multiple of 90, so the turn is "free" exactly
+    // when the extra one is. Only the extra is made by hand: the raster below
+    // already carries the page's own, so handing `turnCanvas` the sum would turn
+    // a `/Rotate 90` sheet twice.
+    const free = rotateBy % 90 !== 0;
+    const own = page.getViewport({ scale: 1, rotation: free ? turned(page.rotate, 0) : angle });
+    // The box has to be the *turned* one — the scale fits it and nothing the turn
+    // pushes outward is cropped.
+    const box = free ? turnedBox(own.width, own.height, rotateBy) : own;
+    const scale = Math.min(maxSide / box.width, maxSide / box.height, 2);
+    const viewport = page.getViewport({ scale, rotation: free ? turned(page.rotate, 0) : angle });
+    const flatWidth = Math.max(1, Math.round(viewport.width));
+    const flatHeight = Math.max(1, Math.round(viewport.height));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(viewport.width));
-    canvas.height = Math.max(1, Math.round(viewport.height));
+    canvas.width = free ? Math.max(1, Math.round(box.width * scale)) : flatWidth;
+    canvas.height = free ? Math.max(1, Math.round(box.height * scale)) : flatHeight;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      if (free) {
+        const flat = document.createElement('canvas');
+        flat.width = flatWidth;
+        flat.height = flatHeight;
+        const flatCtx = flat.getContext('2d');
+        if (flatCtx) {
+          await page.render({ canvasContext: flatCtx, viewport }).promise;
+          turnCanvas(ctx, flat, canvas.width, canvas.height, rotateBy);
+        } else {
+          urls.push('');
+          page.cleanup();
+          continue;
+        }
+      } else {
+        await page.render({ canvasContext: ctx, viewport }).promise;
+      }
       const url = canvas.toDataURL('image/jpeg', 0.72);
       urls.push(url);
       options.onPage?.(p, url, page.rotate);
@@ -589,7 +641,35 @@ export async function thumbnails(
  * rounded and wrapped rather than handed over raw (pdf.js #11835).
  */
 function turned(rotation: number, by: number): number {
-  return ((Math.round((rotation + by) / 90) * 90) % 360 + 360) % 360;
+  return (((rotation + by) % 360) + 360) % 360;
+}
+
+/** The box a `width × height` sheet occupies once turned by `angle`. */
+function turnedBox(width: number, height: number, angle: number): { width: number; height: number } {
+  const radians = (angle * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  return { width: width * cos + height * sin, height: width * sin + height * cos };
+}
+
+/** Paint `source` turned clockwise by `angle` into the middle of `ctx`'s canvas. */
+function turnCanvas(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLCanvasElement,
+  width: number,
+  height: number,
+  angle: number,
+): void {
+  // `toDataURL` is JPEG here, so the transparent corners the turn leaves become
+  // black unless the paper is painted first — the same `#ffffff` the rest of the
+  // rasterisers use for a JPEG background.
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate((angle * Math.PI) / 180);
+  ctx.drawImage(source, -source.width / 2, -source.height / 2);
+  ctx.restore();
 }
 
 /** Rasterise every page to a chosen image format. */

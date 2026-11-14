@@ -1,0 +1,76 @@
+SOURCE: [{"page": 0, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 110031, "dark": 77153, "centroid": [0.474, 0.318], "line": 0.0, "chars": 1779, "annots": 0, "links": 0, "images": 0, "first_line": "01 Quarterly reconciliation of the scanned ledger sheets wit", "ink_x": 276.8}, {"page": 1, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 94882, "dark": 14813, "centroid": [0.208, 0.436], "line": 0.0, "chars": 13, "annots": 0, "links": 0, "images": 0, "first_line": "colour sheet", "ink_x": 121.5}, {"page": 2, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 0, "dark": 0, "centroid": null, "line": null, "chars": 0, "annots": 0, "links": 0, "images": 0, "first_line": "", "ink_x": 0}, {"page": 3, "displayed": [420.0, 595.0], "rendered": [827, 584], "rotate": 90, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 274962, "dark": 46269, "centroid": [0.499, 0.158], "line": null, "chars": 0, "annots": 0, "links": 0, "images": 0, "first_line": "", "ink_x": 412.7}]
+SOURCE /Info title: "colour-tool fixture: bar + copy + band, colour squares, empty"
+A-all-30-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[661.2, 725.3] rot=0 ink=112149 ratio=1.019 dark=76550 cen=(0.568, 0.362) line=30.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[661.2, 725.3] rot=0 ink=95561 ratio=1.007 dark=14951 cen=(0.368, 0.37) line=30.0 chars=13 ann=0 link=0 img=0
+    p2 box=[661.2, 725.3] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[725.3, 661.2] rot=0 ink=275277 ratio=1.001 dark=46283 cen=(0.598, 0.312) line=None chars=0 ann=0 link=0 img=0
+B-all-neg30-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[661.2, 725.3] rot=0 ink=112201 ratio=1.02 dark=76622 cen=(0.404, 0.377) line=-30.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[661.2, 725.3] rot=0 ink=95555 ratio=1.007 dark=14952 cen=(0.311, 0.538) line=-30.0 chars=13 ann=0 link=0 img=0
+    p2 box=[661.2, 725.3] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[725.3, 661.2] rot=0 ink=275257 ratio=1.001 dark=46284 cen=(0.401, 0.312) line=None chars=0 ann=0 link=0 img=0
+C-all-0-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[595.0, 420.0] rot=0 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+E-all-45-keep.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=99946 ratio=0.908 dark=65514 cen=(0.616, 0.347) line=45.0 chars=1730 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=83828 ratio=0.883 dark=14751 cen=(0.364, 0.305) line=None chars=0 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[595.0, 420.0] rot=0 ink=256757 ratio=0.934 dark=38140 cen=(0.717, 0.329) line=None chars=0 ann=0 link=0 img=0
+F-all-90-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[595.0, 420.0] rot=0 ink=108970 ratio=0.99 dark=77354 cen=(0.679, 0.474) line=90.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[595.0, 420.0] rot=0 ink=94613 ratio=0.997 dark=14943 cen=(0.562, 0.208) line=90.0 chars=13 ann=0 link=0 img=0
+    p2 box=[595.0, 420.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=0 ink=274300 ratio=0.998 dark=46270 cen=(0.838, 0.499) line=None chars=0 ann=0 link=0 img=0
+H-p4-0-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[595.0, 420.0] rot=0 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+K-p3-empty-30-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[661.2, 725.3] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+N-annot-p1-30-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[661.2, 725.3] rot=0 ink=112149 ratio=1.019 dark=76550 cen=(0.568, 0.362) line=30.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+O-annot-p1-90-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[595.0, 420.0] rot=0 ink=108970 ratio=0.99 dark=77354 cen=(0.679, 0.474) line=90.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+P-annot-p1-0-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+probe3.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[595.0, 420.0] rot=0 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+
+== annot.pdf (same source) ==
+SOURCE: [{"page": 0, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 110001, "dark": 77240, "centroid": [0.474, 0.318], "line": 0.0, "chars": 1816, "annots": 3, "links": 1, "images": 0, "first_line": "01 Quarterly reconciliation of the scanned ledger sheets wit", "ink_x": 276.8}, {"page": 1, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 94882, "dark": 14813, "centroid": [0.208, 0.436], "line": 0.0, "chars": 13, "annots": 0, "links": 0, "images": 0, "first_line": "colour sheet", "ink_x": 121.5}, {"page": 2, "displayed": [420.0, 595.0], "rendered": [584, 827], "rotate": 0, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 0, "dark": 0, "centroid": null, "line": null, "chars": 0, "annots": 0, "links": 0, "images": 0, "first_line": "", "ink_x": 0}, {"page": 3, "displayed": [420.0, 595.0], "rendered": [827, 584], "rotate": 90, "mediabox": [0.0, 0.0, 420.0, 595.0], "cropbox": [0.0, 0.0, 420.0, 595.0], "ink": 274962, "dark": 46269, "centroid": [0.499, 0.158], "line": null, "chars": 0, "annots": 0, "links": 0, "images": 0, "first_line": "", "ink_x": 412.7}]
+SOURCE /Info title: "colour-tool fixture: bar + copy + band, colour squares, empty"
+N-annot-p1-30-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[661.2, 725.3] rot=0 ink=112149 ratio=1.02 dark=76550 cen=(0.568, 0.362) line=30.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+O-annot-p1-90-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[595.0, 420.0] rot=0 ink=108970 ratio=0.991 dark=77354 cen=(0.679, 0.474) line=90.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0
+P-annot-p1-0-grow.pdf pages=4 title="colour-tool fixture: bar + copy + band, colour squares, empty"
+    p0 box=[420.0, 595.0] rot=0 ink=110031 ratio=1.0 dark=77153 cen=(0.474, 0.318) line=0.0 chars=1779 ann=0 link=0 img=0
+    p1 box=[420.0, 595.0] rot=0 ink=94882 ratio=1.0 dark=14813 cen=(0.208, 0.436) line=0.0 chars=13 ann=0 link=0 img=0
+    p2 box=[420.0, 595.0] rot=0 ink=0 ratio=None dark=0 cen=None line=None chars=0 ann=0 link=0 img=0
+    p3 box=[420.0, 595.0] rot=90 ink=274962 ratio=1.0 dark=46269 cen=(0.499, 0.158) line=None chars=0 ann=0 link=0 img=0

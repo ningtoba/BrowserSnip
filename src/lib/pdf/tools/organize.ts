@@ -681,6 +681,14 @@ const ALL_PAGES: ToolField = pagesField();
  */
 const ROTATE_PAGES: ToolField = pagesField({ previewFrom: 'degrees' });
 
+/**
+ * The custom-angle tool's selection. Same preview, keyed to the free angle: the
+ * strip paints the turn `angle` holds so the pane shows the tilt the file gets
+ * instead of the page as it stands (`pdf.js` cannot paint a free angle, so
+ * `thumbnails` turns the raster — see `core/render.ts`).
+ */
+const TURN_PAGES: ToolField = pagesField({ previewFrom: 'angle' });
+
 const CHUNK_SIZE: ToolField = {
   key: 'chunkSize',
   label: 'Pages per file',
@@ -805,7 +813,7 @@ const ANGLE: ToolField = {
   step: 0.1,
   unit: '°',
   group: 'Rotation',
-  help: 'Positive turns clockwise. Any angle that is not a 90° step re-lays the page as vector content.',
+  help: 'Positive turns clockwise. A 90°, 180° or 270° turn is cheaper and lossless on the Rotate tool, which stores it; any other angle re-lays the page as vector content.',
 };
 
 const DPI: ToolField = {
@@ -1529,8 +1537,9 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Turn',
     promise: 'Pages turned by any angle as vector content — text stays selectable, nothing is rasterised.',
     notes: [
-      'The page box is rewritten, so the stored /Rotate is set to 0 and the turn is baked into the content.',
+      'The page box is rewritten, so the stored /Rotate is set to 0 and the turn is baked into the content of the pages you pick. The pages you do not pick keep their own.',
       FLATTEN_NOTE,
+      PAGE_COPY_INFO_NOTE,
     ],
     fields: [
       ANGLE,
@@ -1546,7 +1555,7 @@ export const organizeTools: PdfToolDefinition[] = [
         ],
       help: 'An angle that is not a right angle turns the corners outside the original sheet.',
     },
-      ALL_PAGES,
+      TURN_PAGES,
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1554,6 +1563,15 @@ export const organizeTools: PdfToolDefinition[] = [
       const angle = numberOf(context.values, ANGLE, notes);
       const grow = stringValue(context.values, 'fit', 'grow') === 'grow';
       const chosen = new Set(selection(context.values, input.pageCount, { verb: 'turn' }));
+      // A straight 0° is not a no-op here: the file is rebuilt whatever the angle,
+      // and the rebuild is what costs the page furniture. The sibling `rotate`
+      // stores the turn instead, so it keeps all of it and says the output is a
+      // copy — this tool has to say the opposite, because it is not one.
+      if (normalise360(angle) === 0) {
+        notes.add(
+          'A 0° turn leaves every page looking as it does, but the file is still re-laid: a stored /Rotate is baked away and each chosen page is drawn into a new one, so its links and annotations do not come along. The Rotate tool turns a right angle without rebuilding.',
+        );
+      }
       // The turn is baked into a freshly sized page instead of added to the old
       // one, so a `/Rotate 90` sheet still displays the way it did before the
       // extra angle (E9) and the pages that were not chosen are copied verbatim.
@@ -1584,9 +1602,14 @@ export const organizeTools: PdfToolDefinition[] = [
       if (cut > 0) {
         notes.add(`Keeping the original page size cut the corners off ${pageCountLabel(cut)} after the turn. Choose "Grow the page" to keep everything.`);
       }
-      if (normalise360(angle) % 90 !== 0) {
-        noteRebuildLoss('A custom-angle turn', input.doc, [...chosen], notes);
-      }
+      // Every angle rebuilds the chosen pages, including a right angle — gating
+      // this on “not a multiple of 90” dropped the count at exactly the angles a
+      // user is most likely to type, while the links and annotations still went.
+      noteRebuildLoss('A custom-angle turn', input.doc, [...chosen], notes);
+      // `pdf-lib` copies pages and nothing else, so the title, author, subject,
+      // keywords, creator and XMP would leave the file even when one sheet of
+      // four is turned and the other three are copied verbatim.
+      carryDocInfo(target, [input], notes);
       const left = input.pageCount - chosen.size;
       return pdfOut(
         target,
