@@ -102,7 +102,7 @@ def judge(label, source_path, output_path, reversed_expected):
     source = pymupdf.open(source_path)
     out = pymupdf.open(output_path)
     print(f"\n== {label}: {source.page_count} -> {out.page_count} pages, "
-          f"info {info(source)} / {info(out)}, producer {out.metadata.get('producer')!r}")
+          f"info {info(source)} / {info(out)}, producer {(out.metadata or {}).get('producer')!r}")
     problems = []
     if out.page_count != source.page_count:
         problems.append(f"page count {out.page_count} != {source.page_count}")
@@ -128,8 +128,8 @@ def judge(label, source_path, output_path, reversed_expected):
                 problems.append(f"sheet {i + 1} {key}: {sheet[key]!r} != {want[key]!r}")
     # The document's identity is not a page: it has to survive whatever the order.
     problems.extend(missing_info(source, out))
-    if out.metadata.get("producer") != "BrowserSnip":
-        problems.append(f"producer {out.metadata.get('producer')!r} is not this app's")
+    if (out.metadata or {}).get("producer") != "BrowserSnip":
+        problems.append(f"producer {(out.metadata or {}).get('producer')!r} is not this app's")
     if len(out.get_xml_metadata() or "") != len(source.get_xml_metadata() or ""):
         problems.append("XMP packet length changed")
     print("   verdict:", "as promised" if not problems else "MISMATCH")

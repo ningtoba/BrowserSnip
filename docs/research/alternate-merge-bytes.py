@@ -56,10 +56,10 @@ def source_labels() -> dict[tuple, str]:
         for page in doc:
             key = fingerprint(page)
             if key in found:
-                print(f"!! source pages {found[key]} and {prefix}{page.number + 1} fingerprint alike: {key}")
-                found[key] = found[key] + '/' + f"{prefix}{page.number + 1}"
+                print(f"!! source pages {found[key]} and {prefix}{(page.number or 0) + 1} fingerprint alike: {key}")
+                found[key] = found[key] + '/' + f"{prefix}{(page.number or 0) + 1}"
             else:
-                found[key] = f"{prefix}{page.number + 1}"
+                found[key] = f"{prefix}{(page.number or 0) + 1}"
     return found
 
 
