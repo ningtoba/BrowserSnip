@@ -3064,6 +3064,39 @@ describe('each tool is checked against its own output file', () => {
     expect(pageTexts(await open(await bytesOf(outcome)))).toEqual(['sheet 1', 'sheet 3', 'sheet 2', 'sheet 4']);
   });
 
+  /** Names an archive has to survive: the cleaning happens in `sanitiseEntryName`. */
+  it('pdfs-to-zip stores dots and paths under a name an unzip tool can open', async () => {
+    const bytes = await sheets(grid(1));
+    const dotted = new File([new Uint8Array(bytes)], '..pdf', { type: 'application/pdf' });
+    const climbed = new File([new Uint8Array(bytes)], '../evil.pdf', { type: 'application/pdf' });
+    const nested = new File([new Uint8Array(bytes)], 'sub/dir/deep.pdf', { type: 'application/pdf' });
+    const spaced = new File([new Uint8Array(bytes)], 'café notes.pdf', { type: 'application/pdf' });
+    const outcome = await run('pdfs-to-zip', { includeReport: true }, [dotted, climbed, nested, spaced]);
+    const entries = await zipEntries(outcome.outputs[0].blob);
+    // Nothing may climb out — no separator, no leading dot-dot — and `..pdf` keeps
+    // an extension, where the dot rule used to eat the whole stem and leave `pdf`.
+    expect(entries).toEqual(['pdf.pdf', 'evil.pdf', 'deep.pdf', 'café notes.pdf', 'manifest.txt']);
+    for (const name of entries) {
+      expect(name).not.toMatch(/^[./]/);
+      expect(name.normalize('NFC')).toBe(name);
+    }
+    expect(outcome.message).toMatch(/Packed 4 PDFs/);
+    expect(warn(outcome)).toMatch(/\.\.pdf" is not a name an unzip tool can keep, so it was stored as "pdf\.pdf"/);
+  });
+
+  it('pdfs-to-zip notices the clash its own cleaning creates, and says so', async () => {
+    const bytes = await sheets(grid(1));
+    const long = (tail: string) =>
+      new File([new Uint8Array(bytes)], `${'a'.repeat(195)}${tail}.pdf`, { type: 'application/pdf' });
+    const outcome = await run('pdfs-to-zip', { includeReport: false }, [long('one'), long('two')]);
+    const entries = await zipEntries(outcome.outputs[0].blob);
+    // Two entries, both openable as PDFs, inside the writer's 180-character cap.
+    expect(entries).toHaveLength(2);
+    expect(new Set(entries).size).toBe(2);
+    expect(entries.every((name) => name.endsWith('.pdf') && name.length <= 180)).toBe(true);
+    expect(warn(outcome)).toMatch(/Two files share the name "a+\.pdf"; the second was stored as "a+-2\.pdf"/);
+  });
+
   it('pdfs-to-zip repairs a name with no extension without claiming a clash (E16, E17)', async () => {
     const bytes = await sheets(grid(1));
     const odd = new File([new Uint8Array(bytes)], 'scan', { type: 'application/pdf' });
@@ -3071,6 +3104,8 @@ describe('each tool is checked against its own output file', () => {
     expect(await zipEntries(single.outputs[0].blob)).toEqual(['scan.pdf']);
     expect(warn(single)).not.toMatch(/share the name/i);
     expect(single.outputs[0].name).toBe('scan-bundle.zip');
+    // One file is "1 PDF", not "1 PDFs".
+    expect(single.message).toMatch(/Packed 1 PDF \(/);
 
     const twin = new File([new Uint8Array(bytes)], 'scan', { type: 'application/pdf' });
     const both = await run('pdfs-to-zip', { includeReport: false }, [odd, twin]);

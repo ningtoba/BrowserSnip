@@ -25,6 +25,7 @@ import { useProcessStore, type ToolPhase } from '@/stores/process-store';
 import { useUIStore } from '@/stores/ui-store';
 import { MemoryWarning } from '@/components/ui/MemoryWarning';
 import type { EngineId } from '@/lib/pdf/engines/provider';
+import { getPdfTool } from '@/lib/pdf/tools/registry';
 import type { UsePdfTool } from '@/hooks/usePdfTool';
 import { ErrorPanel } from './ErrorPanel';
 import { FileCards } from './FileCards';
@@ -85,8 +86,15 @@ export function ToolSurface({ api, before, report, onDone }: ToolSurfaceProps) {
   const isProcessing = useProcessStore((s) => s.isProcessing);
   const outputs = useProcessStore((s) => s.outputBlobs);
 
-  const multiple = Boolean(api.tool?.multiFile);
-  const copy = intakeCopy(api.tool?.accept, multiple);
+  // `api.tool` arrives from a lazy registry import (see `useToolDefinition`), so it
+  // is undefined for the first frames of the page. Reading the definition by id
+  // instead keeps the *first* frame honest: a drop that lands in it used to be
+  // truncated to one file, with a notice telling a multi-document tool it "works
+  // on one file at a time" — three of four files gone, measured. The resolved tool
+  // still wins so an overridden definition is what the page acts on.
+  const definition = api.tool ?? getPdfTool(api.toolId);
+  const multiple = Boolean(definition?.multiFile);
+  const copy = intakeCopy(definition?.accept, multiple);
   // Which fields the user has actually moved. Owned here, not in the bar, because
   // the bar unmounts every time the page changes state and a deliberate choice
   // has to survive a trip back to the drop zone.
@@ -100,7 +108,7 @@ export function ToolSurface({ api, before, report, onDone }: ToolSurfaceProps) {
   });
 
   const intake = useIntake({
-    accept: api.tool?.accept,
+    accept: definition?.accept,
     multiple,
     onFiles: (list) => acceptFiles(list, multiple),
   });

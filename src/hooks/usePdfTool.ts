@@ -41,6 +41,8 @@ import {
 import type { ToolId } from '@/types';
 
 export interface UsePdfTool {
+  /** The id this page is for. Known at once, unlike `tool` — see `useToolDefinition`. */
+  toolId: string | undefined;
   tool: PdfToolDefinition | undefined;
   values: ToolValues;
   setValue: (key: string, value: unknown) => void;
@@ -547,6 +549,7 @@ export function usePdfTool(
   }, [tool]);
 
   return {
+    toolId,
     tool,
     values,
     setValue,

@@ -53,7 +53,7 @@ import { listFormFields } from '../core/forms';
 import { readXmpText, writeXmp } from '../core/metadata';
 import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, normaliseRotation, pageContentsState, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
-import { createZip } from '../core/archive';
+import { createZip, sanitiseEntryName } from '../core/archive';
 import {
   ToolInputError,
   clampNumber,
@@ -2939,7 +2939,7 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Pack ZIP',
     promise: 'One ZIP archive holding every file byte-for-byte, with a text manifest of what is inside unless you switch it off.',
     notes: [
-      'Files are stored byte-for-byte: this is a container, not a compressor, and a password-protected PDF stays protected inside it.',
+      'Files go in byte-for-byte — the archive around them is deflated, but no PDF inside it is recompressed — and a password-protected PDF stays protected inside it.',
     ],
     fields: [
       {
@@ -2966,18 +2966,26 @@ export const organizeTools: PdfToolDefinition[] = [
         );
       }
       const used = new Set<string>();
-      const entries = [];
+      const entries: { name: string; data: Uint8Array | string }[] = [];
       const stem = safeStem(inputs[0].name);
       for (const input of inputs) {
         throwIfAborted(context.signal);
         const leaf = (input.name.split(/[\\/]/).pop() ?? input.name).trim() || 'document.pdf';
+        // The entry name is settled here rather than left to the writer, which
+        // cleans a name and only *then* de-duplicates: a clash the cleaning itself
+        // created was silent. Measured — two 202-character rows whose names differ
+        // in their last three characters became one 180-character entry and an
+        // unannounced `-2`, and `..pdf` became `pdf`, an entry no double-click
+        // opens. Cleaning first means the note below sees the real clash.
         // Only a name this helper had to change is a clash: an extensionless file
         // is stored as `scan.pdf`, and that is a repair, not two files fighting
         // over one entry (E16, E17).
-        const wanted = /\.pdf$/i.test(leaf) ? leaf : `${leaf}.pdf`;
+        const wanted = entryNameFor(leaf);
         const name = uniqueNameIn(used, wanted);
         if (name !== wanted) {
           notes.add(`Two files share the name "${wanted}"; the second was stored as "${name}".`);
+        } else if (wanted !== leaf) {
+          notes.add(`"${leaf}" is not a name an unzip tool can keep, so it was stored as "${wanted}".`);
         }
         entries.push({ name, data: input.bytes.slice() });
       }
@@ -2987,8 +2995,11 @@ export const organizeTools: PdfToolDefinition[] = [
           'BrowserSnip archive',
           `Created ${new Date().toISOString()}`,
           '',
+          // Named as the entries are, not as the queue is: a manifest of "what is
+          // inside" has to match what is inside.
           ...inputs.map(
-            (input, i) => `${i + 1}. ${input.name} — ${pageCountLabel(input.pageCount)} — ${describeSize(input.bytes)}`,
+            (input, i) =>
+              `${i + 1}. ${entries[i].name} — ${pageCountLabel(input.pageCount)} — ${describeSize(input.bytes)}`,
           ),
           '',
           `${pageCountLabel(inputs.reduce((sum, input) => sum + input.pageCount, 0))} in ${inputs.length} files, ${describeSize(total)} before compression.`,
@@ -3005,7 +3016,7 @@ export const organizeTools: PdfToolDefinition[] = [
       return filesOut(
         [{ blob, name: `${stem}-bundle.zip` }],
         notes,
-        `Packed ${inputs.length} PDFs (${describeSize(total)}) into one ZIP.`,
+        `Packed ${inputs.length} ${inputs.length === 1 ? 'PDF' : 'PDFs'} (${describeSize(total)}) into one ZIP.`,
       );
     },
   },
@@ -3164,6 +3175,24 @@ function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes, 
       ? `Only "${first.name}"’s document info travelled: its title, author, subject and keywords are the ${noun} file’s, and ${count} left behind.`
       : `"${first.name}" has no document info, and a ${noun} file has one slot for it, so the ${count} left behind. Put the file whose info you want first.`,
   );
+}
+
+/**
+ * The archive entry name for one input's leaf name.
+ *
+ * This is the writer's own cleaning (`sanitiseEntryName`: path separators and
+ * `<>:"|?*` out, leading dots off, 180 characters), applied here so the note can
+ * name the entry that is really stored. Two consequences the raw leaf got wrong:
+ * a name that *is* dots (`..pdf`) lost its whole stem to the dot rule and came out
+ * as `pdf`, an entry no double-click opens — the extension is put back; and a
+ * clipped name came out truncated with no suffix room left, so the stem is
+ * shortened to leave space for the `-2` the clash path appends.
+ */
+function entryNameFor(leaf: string): string {
+  const cleaned = sanitiseEntryName(leaf);
+  // 180 is the writer's cap; 8 goes to `-N` and `.pdf`.
+  const head = cleaned.length <= 172 ? cleaned : cleaned.slice(0, 172).replace(/\.(p|pd)?$/, '');
+  return /\.pdf$/i.test(head) ? head : `${head}.pdf`;
 }
 
 /** `used` variant for arbitrary extensions (the ZIP entry names). */

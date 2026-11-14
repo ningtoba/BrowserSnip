@@ -803,7 +803,7 @@ Sorted by category, then by the order the dashboard lists them. Ink is the maxim
 | `duplex-collate` | 4 | 4 | 56.93 → 56.93 | 1792 | pdf 4p 2209B | “Collated 4 pages from a 2 + 2 scan.” |
 | `overlay-pdf` | 9 | 4 | 95.73 → 67.83 | 3185 | pdf 4p 8577B | “Overlaid 4 pages with "sheets.pdf".” |
 | `remove-blank-pages` | 8 | 7 | 49.04 → 49.04 | 1900 | pdf 7p 80055B | “Removed 1 page (2), kept 7 pages.” |
-| `pdfs-to-zip` | 9 | 0 | 95.73 → — | 0 | zip 3 entries 5398B | “Packed 2 PDFs (9.1 KB) into one ZIP.” |
+| `pdfs-to-zip` | 9 | 0 | 95.73 → — | 0 | zip 3 entries 5399B | “Packed 2 PDFs (9.1 KB) into one ZIP.” |
 | `pdf-to-cbz` | 4 | 0 | 53.09 → — | 0 | zip 4 entries 944205B | “The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.” |
 | `pdf-compress` | 6 | 6 | 97.05 → 97.06 | 1812 | pdf 6p 37482B | “Compressed 79.6 KB → 36.6 KB (-54%). 1 of 1 image(s) re-encoded, 0 left untouched.” |
 | `optimize-pdf` | 4 | 4 | 56.93 → 56.93 | 1792 | pdf 4p 2294B | “Losslessly tidied 3.8 KB → 2.2 KB (-41%). no uncompressed stream was large enough to be worth compressing; no unreferenced objects were found.” |

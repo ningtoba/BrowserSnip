@@ -636,6 +636,20 @@ describe('the empty page', () => {
     expect(useProcessStore.getState().notice).toMatch(/one file at a time.*"a\.pdf"/);
   });
 
+  it('keeps every file of a drop that lands before the definition has loaded', async () => {
+    // `useToolDefinition` imports the registry in an effect, so the first frames of
+    // a page have no definition. A drop that lands in that window was truncated to
+    // one file and told the user the tool "works on one file at a time".
+    const a = await realPdf('a.pdf');
+    const b = await realPdf('b.pdf');
+    render(<PdfToolPanel toolId="shell-merge" />);
+    // No `await` between the render and the drop: same tick, nothing resolved yet.
+    dropFiles([a, b]);
+    await waitFor(() => expect(useFileStore.getState().files).toHaveLength(2));
+    expect(useFileStore.getState().files.map((file) => file.name)).toEqual(['a.pdf', 'b.pdf']);
+    expect(useProcessStore.getState().notice ?? '').not.toMatch(/one file at a time/);
+  });
+
   it('adds to the queue for a multi-document tool', async () => {
     loadFiles([await realPdf('one.pdf')]);
     render(<PdfToolPanel toolId="shell-merge" />);
