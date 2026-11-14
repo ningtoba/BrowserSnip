@@ -896,6 +896,62 @@ describe('the loaded page', () => {
 });
 
 /**
+ * The page picker, on the tool that is only a page picker.
+ *
+ * The page field renders a strip of page tiles, but the collapsed options row
+ * passes `compact` to its lead control and `compact` drops the strip — and
+ * `remove-pages` declares one field, so there is no disclosure to unfold and no
+ * other way to reach it. The pane offered a text box and two chips for a job the
+ * card describes as picking pages, which the round's screenshots show.
+ */
+describe('the page picker', () => {
+  it('offers the page strip without unfolding anything', async () => {
+    // The file-wide `openRender` double answers with two pages, and the strip
+    // counts from the session it opened, so this is a two-sheet document here.
+    loadFiles([await realPdf('sheets.pdf', 2)]);
+    render(<PdfToolPanel toolId="remove-pages" />);
+
+    expect(await screen.findByLabelText('Pages in this file')).toBeInTheDocument();
+    // Nothing to unfold: if the strip came back behind a disclosure, a one-field
+    // tool would need a click nobody would think to make.
+    expect(screen.queryByRole('button', { name: /more option/ })).toBeNull();
+
+    // The tiles are the control: picking page 2 out of a default of all of them
+    // leaves it as the only sheet to keep, written as the field's complement.
+    expect(screen.getByLabelText('Pages')).toHaveValue('all');
+    fireEvent.click(screen.getByRole('button', { name: 'Page 2' }));
+    expect(screen.getByLabelText('Pages')).toHaveValue('1');
+    // The strip counts the pick in its own footer — once, not beside the field too.
+    expect(screen.getAllByText(/selected$/i)).toHaveLength(1);
+  });
+
+  it('says a bad range once, not on every line that can say it', async () => {
+    loadFiles([await realPdf('sheets.pdf', 3)]);
+    act(() => {
+      useFileStore.setState({
+        metadata: {
+          pageCount: 3,
+          fileSize: 10,
+          fileName: 'sheets.pdf',
+          isEncrypted: false,
+          hasForms: false,
+          hasAnnotations: false,
+          pdfVersion: '1.7',
+        },
+      });
+    });
+    render(<PdfToolPanel toolId="remove-pages" />);
+    await screen.findByLabelText('Pages in this file');
+
+    fireEvent.change(screen.getByLabelText('Pages'), { target: { value: '9' } });
+    // One under the field, and the run button's own "Still needed" — two places,
+    // not three: the picker used to repeat the guard's sentence verbatim.
+    expect(screen.getAllByText(/refers to page 9/)).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Delete pages' })).toBeDisabled();
+  });
+});
+
+/**
  * The locked file on the loaded page.
  *
  * A secret can only be typed where a tool declared a password field — four tools out

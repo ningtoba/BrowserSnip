@@ -649,6 +649,19 @@ const MAX_EDGE_TEXT = '14 400 pt';
 const PAGE_COPY_NOTE =
   'The pages are copied into a new file. The ink, the annotations, the bookmarks that point at pages you kept, the page numbering the reader shows in its toolbar and any attached files travel with them — a numbering is re-pointed at the sheets its pages landed on, so extracting pages 4-6 of a book numbered i, ii, I, II, c, xA still reads II, c, xA. What never travels is the form-field list: a fillable form stops being fillable, so flatten it first if the values have to survive.';
 
+/**
+ * What a page copy does with the document's identity, on the one tool that
+ * carries it.
+ *
+ * The `/Info` fields and the XMP packet sit above the page tree, so `copyPages`
+ * leaves them behind; `remove-pages` carries them (see its `run`), and the note
+ * says so rather than letting the promise "every other page untouched" stand for
+ * a file that came back untitled. The producer is named as the app's own, because
+ * this app wrote the bytes.
+ */
+const PAGE_COPY_INFO_NOTE =
+  'This document’s own info — its title, author, subject, keywords, creator and XMP packet — stays with the file, because that is what a reader knows it by. The producer becomes this app’s, because this app wrote the new file.';
+
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
 
@@ -1288,7 +1301,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'pages',
     actionLabel: 'Delete pages',
     promise: 'Your PDF with the chosen pages taken out; every other page untouched.',
-    notes: [PAGE_COPY_NOTE],
+    notes: [PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [ALL_PAGES],
     validate(values) {
       const spec = stringValue(values, 'pages', '').trim();
@@ -1312,6 +1325,14 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const doc = await collectPages([{ doc: input.doc, pages: keep }]);
       notePageCopy([input.doc], doc.fidelity, notes);
+      // The `/Info` fields and the XMP packet live above the page tree, so
+      // `copyPages` leaves them with the file they came from: the output used to
+      // come back with an empty title and no author, subject, keywords, creator
+      // or packet, silently, on a tool whose promise is that everything but the
+      // chosen pages is untouched. Same carry as `merge` and `rebuildDocument`.
+      carryDocInfo(doc.doc, [input], notes);
+      // Who wrote the file is the app's own claim, not the source's (as `merge`).
+      doc.doc.setProducer('BrowserSnip');
       return pdfOut(
         doc.doc,
         notes,

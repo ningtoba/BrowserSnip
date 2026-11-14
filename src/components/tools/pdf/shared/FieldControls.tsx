@@ -150,7 +150,7 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
           )}
 
           {lead && !open && (
-            <div className={lead.type === 'toggle' ? '' : 'w-[240px]'}>
+            <div className={lead.type === 'toggle' ? '' : lead.type === 'pages' ? 'w-[420px] max-w-full' : 'w-[240px]'}>
               <FieldControl
                 field={lead}
                 values={api.values}
@@ -159,7 +159,13 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
                 issue={api.issues[lead.key]}
                 effective={api.checked[lead.key]}
                 pageCount={api.pageCount}
-                compact
+                // A page picker is the one lead control whose *control* is the
+                // strip, so collapsing it to bar height left these tools with a
+                // text box and no way to pick a page with the pointer. A tool
+                // with no other field (`remove-pages`) has nothing to unfold, so
+                // the strip was unreachable entirely. Everything else still
+                // gives up its heavy parts in the collapsed row.
+                compact={lead.type !== 'pages'}
               />
             </div>
           )}
@@ -389,6 +395,7 @@ export function FieldControl({
         pageCount={pageCount}
         inputId={bound}
         describedBy={bound ? describedBy : undefined}
+        issue={issue ?? undefined}
         compact={compact}
       />
       {notice && <p id={noticeId} className="text-[10px] leading-relaxed text-warn">{notice}</p>}
@@ -475,11 +482,22 @@ interface ControlProps {
    * which is the entire reason the message exists.
    */
   describedBy?: string;
+  /** The field's own error line, already printed by `FieldControl`. */
+  issue?: string;
   /** See `FieldControlProps.compact`. */
   compact?: boolean;
 }
 
-function Control({ field, value, onChange, pageCount, inputId, describedBy, compact = false }: ControlProps) {
+function Control({
+  field,
+  value,
+  onChange,
+  pageCount,
+  inputId,
+  describedBy,
+  issue,
+  compact = false,
+}: ControlProps) {
   switch (field.type) {
     case 'toggle':
       return (
@@ -639,6 +657,10 @@ function Control({ field, value, onChange, pageCount, inputId, describedBy, comp
           pageCount={pageCount}
           inputId={inputId}
           describedBy={describedBy}
+          // The rail already prints a bad range as the field's issue; the picker
+          // says the same sentence again unless it is told, which put it on screen
+          // twice, one line apart, plus the "Still needed:" line.
+          issue={issue}
           compact={compact}
         />
       );
@@ -708,6 +730,7 @@ function PagePicker({
   pageCount,
   inputId,
   describedBy,
+  issue,
   compact = false,
 }: {
   value: unknown;
@@ -716,6 +739,8 @@ function PagePicker({
   inputId?: string;
   /** See `ControlProps.describedBy`. */
   describedBy?: string;
+  /** See `ControlProps.issue`. */
+  issue?: string;
   compact?: boolean;
 }) {
   const file = useFileStore((s) => s.file);
@@ -848,12 +873,21 @@ function PagePicker({
           none
         </button>
       </div>
-      <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
-        {selected.length === total
-          ? `all ${total} ${total === 1 ? 'page' : 'pages'} picked`
-          : `${selected.length} of ${total} pages picked`}
-      </p>
-      {problem && <p className="text-[10px] leading-relaxed text-danger">{problem}</p>}
+      {/* The strip below carries the same count in its own footer, so the picker
+          only says it when there is no strip to say it: the collapsed row, and
+          the fallback input before the file resolves. */}
+      {compact && (
+        <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
+          {selected.length === total
+            ? `all ${total} ${total === 1 ? 'page' : 'pages'} picked`
+            : `${selected.length} of ${total} pages picked`}
+        </p>
+      )}
+      {/* Only when the rail has not already printed this range as the field's
+          issue — it is the same `pageRangeProblem` sentence either way. The
+          picker's line is the fallback for the case the guard cannot judge
+          (no `pageTotal` yet), where this strip is the only thing that knows. */}
+      {problem && !issue && <p className="text-[10px] leading-relaxed text-danger">{problem}</p>}
       {/* The strip is the reason this control is not bar height: a collapsed row
           gets the text field, the count and the error, and the picker comes back
           when the options are expanded. */}

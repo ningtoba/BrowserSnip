@@ -12,6 +12,11 @@
  * The strip is the half of the control that shows state, so its `aria-pressed`
  * tiles are what is asserted — with `all` as the control, because a strip that
  * marks nothing in both states would pass a one-sided test.
+ *
+ * The pick count is the strip's own footer now (the picker's second counting
+ * line was removed from the surface row it shares with this one, round 004), so
+ * the waits below are on that line: it is the text the strip prints for a
+ * cleared field and for a pick.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -59,8 +64,8 @@ describe('a cleared page field', () => {
   it('marks no page, so the strip agrees with the refusal', async () => {
     const { container, findByText } = renderWith('');
     // The session mounts a beat later than the first render, so wait on the tick
-    // that only the pics strip prints.
-    await findByText(/0 of 4 pages picked/i);
+    // that only the strip prints.
+    await findByText(/4 pages · pick pages below/i);
     expect(pressed(container)).toEqual([]);
     expect(container.textContent).not.toMatch(/all 4 pages picked/i);
     // And the caption under the strip says what to do, rather than "4 of 4".
@@ -69,14 +74,14 @@ describe('a cleared page field', () => {
 
   it('still marks every page for `all` (the control)', async () => {
     const { container, findByText } = renderWith('all');
-    await findByText(/all 4 pages picked/i);
+    await findByText(/4 of 4 selected/i);
     expect(pressed(container)).toEqual(['Page 1', 'Page 2', 'Page 3', 'Page 4']);
     expect(container.textContent).toMatch(/4 of 4 selected/i);
   });
 
   it('marks only the pages named when some are picked (the second control)', async () => {
     const { container, findByText } = renderWith('2');
-    await findByText(/1 of 4 pages picked/i);
+    await findByText(/1 of 4 selected/i);
     expect(pressed(container)).toEqual(['Page 2']);
   });
 });

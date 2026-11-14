@@ -1,0 +1,42 @@
+# remove-pages, the build before the fix (HEAD 7865dda), dev :5271, Chromium, port 9826-9851
+
+## The driver
+BASE=http://localhost:5271 SPEC=... PORT=9826 node docs/research/colour-rail.mjs   (fields written as a user event, read back before the click)
+PORT=98xx PDF=... PAGES=... node docs/research/remove-pages-round.mjs            (the same, plus pane and card screenshots)
+
+## The strip: absent on every run
+DOM probe after loading colour.pdf: {"thumbs":0,"strip":false,"stripH":null,"disclosure":[],"panel":"closed","stripHtmlLen":0}
+one field -> nothing to fold -> no disclosure -> the picker's compact branch never draws the strip (screenshots 1, 3, 4)
+
+## The card counts, and the sheets, per case (spec run, port 9826)
+drop2        card "PAGES 4 -> 3 | Removed 1 page, kept 3 pages."   file 3 sheets
+annot-drop2  card "PAGES 4 -> 3 | Removed 1 page, kept 3 pages."   file 3 sheets, 3 annots + 1 link on the kept sheet
+book-drop4   card + "1 of this document's 3 bookmarks ... were dropped; 2 came with the pages."  toc 3 -> 2, re-pointed to 1 and 2
+drop-empty3  card "PAGES 4 -> 3"                                  the empty sheet went, its neighbours did not
+all          run button DISABLED, "Still needed: Choose the pages to delete - deleting every page would leave an empty PDF."
+spelled-all  same sentence from the run: "Deleting pages 1-4 would remove all 4 pages, leaving an empty PDF." + hint
+oob (9 of 4) run button DISABLED, the sentence printed TWICE (picker + field issue) plus "Still needed:"
+reversed 4,2 removed 2 kept 2; dupes 2,2 removed 1 kept 3; one-of-one refused with the same sentence
+
+## The kept sheets, judged by docs/research/remove-pages-bytes.py (PyMuPDF: first text line, ink at 72 dpi, box, /Rotate, annots, links, images)
+instrument-check: blank-sheet ink: [61153, 49569, 0, 142563] (0 is the only pass)
+--- remove-pages__drop2_colour_trimmed.pdf kept 1,3,4
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- remove-pages__drop4_colour_trimmed.pdf kept 1,2,3
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- remove-pages__drop-empty3_colour_trimmed.pdf kept 1,2,4
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- remove-pages__reversed_colour_trimmed.pdf kept 1,3
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- remove-pages__dupes_colour_trimmed.pdf kept 1,3,4
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- /tmp/r/before/remove-pages__annot-drop2_annot_trimmed.pdf kept 1,3,4
+  sheet 1: box 420.0x595.0 media [0.0, 0.0, 420.0, 595.0] crop [0.0, 0.0, 420.0, 595.0] /Rotate 0 ink 60904 annots 3 links 1 images 0 line '01 Quarterly reconciliation of the scanned ledger sheets wit'
+  sheet 1: box 420.0x595.0 media [0.0, 0.0, 420.0, 595.0] crop [0.0, 0.0, 420.0, 595.0] /Rotate 0 ink 60904 annots 3 links 1 images 0 line '01 Quarterly reconciliation of the scanned ledger sheets wit'
+VERDICT: OK — the kept sheets are the source sheets, in order
+--- bookmarked.pdf -> drop4, outline 3 -> 2
+
+## The identity: dropped, silently
+/tmp/rp/meta.pdf {'title': 'meta fixture title', 'author': 'meta author', 'subject': 'meta subject', 'keywords': 'alpha, beta', 'creator': 'meta-creator', 'producer': 'meta-producer'} xmp 381
+/tmp/rp/before-meta.pdf {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} xmp 0
+card for that run: "Removed 1 page, kept 3 pages." — no note about the info that left

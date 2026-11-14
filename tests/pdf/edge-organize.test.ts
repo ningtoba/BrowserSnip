@@ -1367,6 +1367,76 @@ describe('each tool is checked against its own output file', () => {
     expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 3', 'sheet 4']);
   });
 
+  /**
+   * A document with an identity, and a page for each of four sheets.
+   *
+   * The `/Info` fields and the XMP packet sit above the page tree, so
+   * `copyPages` leaves them with the file they came from — which is why this has
+   * to be measured rather than assumed.
+   */
+  async function identified(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (let i = 0; i < 4; i++) {
+      const page = doc.addPage([200, 100]);
+      page.drawText(`sheet ${i + 1}`, { x: 20, y: 40, size: 12, font, color: rgb(0, 0, 0) });
+    }
+    doc.setTitle('a titled document');
+    doc.setAuthor('an author');
+    doc.setSubject('a subject');
+    doc.setKeywords(['alpha', 'beta']);
+    doc.setCreator('a creator');
+    writeXmp(
+      doc,
+      "<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>packet title</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>",
+    );
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('remove-pages keeps the document’s own info and names its own producer (E7)', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    const outcome = await run('remove-pages', { pages: '2' }, [source]);
+    const raw = await bytesOf(outcome);
+    // Read through `openPDF` with `updateMetadata: false`: `PDFDocument.load`
+    // re-stamps the producer with pdf-lib's own name, which would hide both
+    // halves of the claim below.
+    const doc = await openPDF(raw, { updateMetadata: false });
+    // The sheets are still the sheets — the info did not cost a page.
+    expect(doc.getPageCount()).toBe(3);
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 3', 'sheet 4']);
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    // The same claim in the other store: most producers write only this one.
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Whose producer it is: this app wrote the bytes, so that is its own claim.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+  });
+
+  it('the copy primitive alone still drops that info — the carry is this tool’s', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    // Control: `extract-pages` runs the same `collectPages` and carries nothing,
+    // so this test can see the loss the fix closes, and the fix is not a change
+    // to the shared primitive pretending to be one tool’s.
+    const extracted = await openPDF(await bytesOf(await run('extract-pages', { pages: '1-3' }, [source])), {
+      updateMetadata: false,
+    });
+    expect(extracted.getTitle() ?? '').toBe('');
+    expect(extracted.getAuthor() ?? '').toBe('');
+  });
+
+  it('an untitled document invents no info on the way out (E7 control)', async () => {
+    const outcome = await run('remove-pages', { pages: '1' });
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(doc.getPageCount()).toBe(3);
+    expect(doc.getTitle() ?? '').toBe('');
+    expect(doc.getAuthor() ?? '').toBe('');
+    expect(doc.getSubject() ?? '').toBe('');
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeUndefined();
+  });
+
   it('reverse-pages hands back the last sheet first', async () => {
     const outcome = await run('reverse-pages');
     const doc = await open(await bytesOf(outcome));
