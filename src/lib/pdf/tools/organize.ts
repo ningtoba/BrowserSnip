@@ -2304,7 +2304,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_combined.pdf',
     actionLabel: 'Stitch',
     promise: 'One long page (or a few, at the PDF height limit) with every page scaled to the same width.',
-    notes: [FLATTEN_NOTE],
+    notes: [FLATTEN_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       { key: 'gap', label: 'Gap between pages', type: 'slider', default: 12, min: 0, max: 120, step: 1, unit: 'pt', group: 'Layout', help: 'Space between the joined pages, drawn as blank rather than as a hairline.' },
       {
@@ -2345,14 +2345,15 @@ export const organizeTools: PdfToolDefinition[] = [
       // A PDF page edge may not exceed 14 400 units, so a long scroll has to
       // overflow onto another sheet — or say plainly that it was cut.
       const maxHeight = split ? PDF_MAX_EDGE : Infinity;
-      const target = await newPDF();
-      let current: PDFPage | null = null;
-      let yFromTop = 0;
-      let sheets = 0;
-      let blank = 0;
-      let clipped = 0;
+      // The strips are laid out first and drawn second. A sheet grows as it is
+      // filled, and `stamp` bakes its `cm` at call time, so a strip's `y` cannot
+      // be read off a height the sheet has not reached yet: measured, every page
+      // of a 4-page scroll was drawn at the same `y`, on top of the others, with
+      // three quarters of the sheet left as blank paper above them.
+      const layout: { index: number; height: number }[][] = [];
+      let plan: { index: number; height: number }[] = [];
+      let planned = 0;
       for (let i = 0; i < source.length; i++) {
-        throwIfAborted(context.signal);
         const box = boxes[i];
         const scale = width / box.width;
         // The sheet is one width, so a page reaches it from whichever side it
@@ -2361,27 +2362,48 @@ export const organizeTools: PdfToolDefinition[] = [
         if (scale > 1.005) enlarged += 1;
         else if (scale < 0.995) shrunk += 1;
         const drawHeight = box.height * scale;
-        if (!current || yFromTop + drawHeight > maxHeight) {
-          // Each sheet is exactly as tall as the content it carries, capped at
-          // the PDF limit; leaving it any taller would print blank paper.
-          sheets += 1;
-          current = target.addPage([width, Math.min(maxHeight, Math.max(drawHeight, yFromTop - gap))]);
-          yFromTop = 0;
+        if (plan.length > 0 && planned + gap + drawHeight > maxHeight) {
+          layout.push(plan);
+          plan = [];
+          planned = 0;
         }
-        const page = current;
-        page.setSize(width, Math.min(maxHeight, Math.max(page.getHeight(), yFromTop + drawHeight)));
-        // `yFromTop` is measured down the sheet, and the sheet grows as the
-        // scroll goes, so the box is recomputed on every stitch.
-        const ok = await stamp(target, page, input.doc.getPage(source[i]), {
-          x: 0,
-          y: page.getHeight() - yFromTop - drawHeight,
-          width,
-          height: drawHeight,
-        });
-        if (!ok) blank += 1;
-        if (page.getHeight() < yFromTop + drawHeight - 0.5) clipped += 1;
-        yFromTop += drawHeight + gap;
-        context.progress((i + 1) / source.length, `Stitched page ${source[i] + 1}`);
+        planned += drawHeight + (plan.length > 0 ? gap : 0);
+        plan.push({ index: i, height: drawHeight });
+      }
+      if (plan.length > 0) layout.push(plan);
+      const target = await newPDF();
+      let sheets = 0;
+      let blank = 0;
+      let clipped = 0;
+      let stitched = 0;
+      for (const sheet of layout) {
+        // Each sheet is exactly as tall as the content it carries, capped at the
+        // PDF limit; leaving it any taller would print blank paper.
+        sheets += 1;
+        const sheetHeight = Math.min(
+          maxHeight,
+          sheet.reduce((sum, strip, at) => sum + strip.height + (at > 0 ? gap : 0), 0),
+        );
+        const page = target.addPage([width, sheetHeight]);
+        let yFromTop = 0;
+        for (const strip of sheet) {
+          throwIfAborted(context.signal);
+          // `yFromTop` is measured down the finished sheet, so the strip lands in
+          // its own band with the gap between it and the one before.
+          const ok = await stamp(target, page, input.doc.getPage(source[strip.index]), {
+            x: 0,
+            y: Math.max(0, sheetHeight - yFromTop - strip.height),
+            width,
+            height: strip.height,
+          });
+          if (!ok) blank += 1;
+          // Only a strip taller than the whole limit can still be cut, because
+          // every other sheet broke before it overflowed.
+          if (strip.height > sheetHeight + 0.5) clipped += 1;
+          yFromTop += strip.height + gap;
+          stitched += 1;
+          context.progress(stitched / source.length, `Stitched page ${source[strip.index] + 1}`);
+        }
       }
       if (target.getPageCount() === 0) {
         throw new ToolInputError('NO_PAGES', 'There was nothing to stitch together.', {
@@ -2417,6 +2439,12 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       noteMixedSizes('Stitching', input.doc, source, notes);
       noteRebuildLoss('Stitching', input.doc, source, notes);
+      // The `/Info` dictionary and the XMP packet hang off the catalog and this
+      // tool builds a new one around a new page, so without this the title,
+      // author, subject, keywords and packet left in silence and the producer
+      // came out as pdf-lib's (measured: `Triage metadata title` → "").
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       return pdfOut(
         target,
         notes,

@@ -1,0 +1,24 @@
+== after /tmp/r15/csp-base-after.pdf
+source /tmp/triage/colour.pdf: 4 pages 420x595/0 420x595/0 420x595/0 595x420/90
+output: 1 page(s) 595.0x2984.8/rot0
+info  : {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'producer': 'BrowserSnip'}
+ok   sheet is the content height 2984.8 (measured 2984.8)
+  band 1 0..843 first='01 Quarterly reconciliation of the scanned l' ink=109994 of 122731 predicted (0.90) source first='01 Quarterly reconciliation of the scanned l'
+ok   band 1 carries its own page
+ok   band 1 first line is the source page’s
+ok   band 1 draws nothing of another page (no overlap)
+  band 2 855..1698 first='colour sheet' ink=98484 of 99486 predicted (0.99) source first='colour sheet'
+ok   band 2 carries its own page
+ok   band 2 first line is the source page’s
+ok   band 2 draws nothing of another page (no overlap)
+  band 3 1710..2553 first='' ink=0 of 0 predicted (1.00) source first=''
+ok   band 3 carries its own page
+ok   band 3 draws nothing of another page (no overlap)
+  band 4 2565..2985 first='' ink=143541 of 142563 predicted (1.01) source first=''
+ok   band 4 carries its own page
+ok   band 4 draws nothing of another page (no overlap)
+ink rows 84..2909 of 2985 pt
+ok   the scroll starts where the first page starts (84 vs 84 scaled)
+ok   nothing is drawn past the last band
+control: page count 1 == 1 sheet, source ink 253287 vs output ink 352019
+== 0 FAIL line(s)

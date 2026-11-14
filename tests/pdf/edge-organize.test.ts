@@ -614,6 +614,11 @@ describe('organize rail contract', () => {
       expect(/engine|CoherentPDF|PyMuPDF|Ghostscript/i.test(notes), `${id} does not name the optional engine`).toBe(true);
     }
   });
+
+  it('combine-single-page names the info it keeps on the card', () => {
+    const notes = (getPdfTool('combine-single-page')!.notes ?? []).join(' ');
+    expect(/title, author, subject, keywords/i.test(notes), 'the carry is not on the card').toBe(true);
+  });
 });
 
 /* ── E6, E13, E15, E18: page lists and numbers ───────────────────────────── */
@@ -2041,6 +2046,43 @@ describe('each tool is checked against its own output file', () => {
     // 400 pt sheet — and every word is still in the file.
     expect(Math.round(page.getHeight())).toBe(400);
     for (const label of ['sheet 1', 'sheet 4']) expect(drawnText(doc, 0)).toContain(label);
+  });
+
+  /**
+   * The scroll reads top to bottom, so the strip order is a `y`, not a count.
+   *
+   * Each 200 × 100 sheet is one band of the 400 pt sheet: sheet 1 occupies the
+   * top band (y 300), sheet 2 the next (200), sheet 3 (100) and sheet 4 the foot
+   * (0), measured off the drawn `cm` chain. The height assertion above cannot
+   * see this: the strips used to be stamped at a `y` taken from a sheet height
+   * that the page had not reached yet, so all four landed at y 0 on top of each
+   * other — 400 pt of sheet, 100 pt of used paper, and the same words in the
+   * file.
+   */
+  it('combine-single-page puts each page in its own band of the scroll', async () => {
+    const outcome = await run('combine-single-page', { gap: 0, width: 'widest', splitOverflow: true, pages: 'all' });
+    const doc = await open(await bytesOf(outcome));
+    const bands = stampsOf(doc, 0).map((stamp) => Math.round(mappedBox(stamp, [0, 0, 200, 100]).y));
+    expect(bands, 'every strip of the scroll sits in its own band').toEqual([300, 200, 100, 0]);
+  });
+
+  it('combine-single-page keeps the document’s own info on the scroll', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    const outcome = await run('combine-single-page', { gap: 0, width: 'widest', splitOverflow: true }, [source]);
+    // `updateMetadata: false`, because `PDFDocument.load` re-stamps the producer
+    // with pdf-lib's name and would hide what the run actually wrote.
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    // All four sheets are still the scroll's bands; the info did not cost one.
+    expect(doc.getPageCount()).toBe(1);
+    for (const label of ['sheet 1', 'sheet 4']) expect(drawnText(doc, 0)).toContain(label);
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    // The same claim in the other store: most producers write only this one.
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    expect(doc.getProducer()).toBe('BrowserSnip');
   });
 
   it('split by page writes one real file per sheet', async () => {
