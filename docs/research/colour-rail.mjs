@@ -93,13 +93,26 @@ const FIELD_LABELS = {
   sharpen: 'Sharpen edges',
 };
 
+/**
+ * Keys whose printed words are not the same everywhere. Two organize panes both
+ * call a key `size` ("Blank sheet size" on add-blank-page, "Target size" here)
+ * and two call one `fit` ("Fit" on convert-to, "Scaling" here), so a global
+ * rename would break the other panes. Round 018 measured `size=a4` and
+ * `fit=cover` on fix-page-size silently writing nothing — the run went ahead on
+ * the defaults and only the words said otherwise.
+ */
+const TOOL_LABELS = {
+  'fix-page-size': { size: 'Target size', fit: 'Scaling' },
+};
+
 const WANTED = Object.fromEntries(
   (process.env.FIELDS || '')
     .split(/\s+/)
     .filter(Boolean)
     .map((pair) => {
       const at = pair.indexOf('=');
-      return [FIELD_LABELS[pair.slice(0, at)] ?? pair.slice(0, at), pair.slice(at + 1)];
+      const key = pair.slice(0, at);
+      return [TOOL_LABELS[TOOL]?.[key] ?? FIELD_LABELS[key] ?? key, pair.slice(at + 1)];
     }),
 );
 

@@ -23,7 +23,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 015 [x] combine-single-page
 016 [x] posterize
 017 [x] divide-pages
-018 [ ] fix-page-size
+018 [x] fix-page-size
 019 [ ] remove-blank-pages
 020 [ ] pdfs-to-zip
 021 [ ] pdf-to-cbz

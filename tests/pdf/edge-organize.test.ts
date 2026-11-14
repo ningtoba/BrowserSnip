@@ -1159,7 +1159,75 @@ describe('geometry is respected, not flattened', () => {
 
   it('says when filling the page runs content off the edge (E13)', async () => {
     const outcome = await run('fix-page-size', { size: 'a4', orientation: 'portrait', fit: 'cover' });
-    expect(warn(outcome)).toMatch(/fill the page.*up to \d+% of the sheet/i);
+    expect(warn(outcome)).toMatch(/fill the page.*up to \d+% of the page is cropped/i);
+  });
+
+  it('stretches to the sheet instead of letterboxing inside it', async () => {
+    // "Stretch to exactly fit" was contain in disguise: the sheet was handed to
+    // `stamp` pre-scaled and `stamp`'s own default is contain, so a tall page kept
+    // its shape and sat in the middle of the paper. Measured on a 200×500 page the
+    // drawn box stayed 0.474 as wide as tall; a stretch owes the whole sheet.
+    const tall = fileOf(await sheets([{ width: 200, height: 500 }]), 'tall.pdf');
+    const outcome = await run('fix-page-size', { size: 'a4', fit: 'stretch' }, [tall]);
+    const doc = await open(await bytesOf(outcome));
+    const page = doc.getPages()[0];
+    const box = mappedBox(stampsOf(doc, 0)[0], [0, 0, 200, 500]);
+    expect(box.x).toBeCloseTo(0, 0);
+    expect(box.y).toBeCloseTo(0, 0);
+    expect(box.width).toBeCloseTo(page.getWidth(), 0);
+    expect(box.height).toBeCloseTo(page.getHeight(), 0);
+    // Non-uniform: the aspect it was drawn at is not the aspect it holds.
+    expect(box.width / box.height).toBeGreaterThan(0.6);
+    expect(warn(outcome)).toMatch(/stretch to exactly fit.*circles become ovals/i);
+
+    // Control: the same page under "Fit inside" keeps its shape and its margins,
+    // so the assertion above can only be satisfied by a stretch.
+    const kept = await open(await bytesOf(await run('fix-page-size', { size: 'a4' }, [tall])));
+    const fitted = mappedBox(stampsOf(kept, 0)[0], [0, 0, 200, 500]);
+    expect(fitted.x).toBeGreaterThan(1);
+    expect(fitted.width / fitted.height).toBeCloseTo(200 / 500, 2);
+  });
+
+  it('quotes the share of the page that cover actually crops', async () => {
+    // The old note divided the page's area by the sheet's, which ignores the
+    // scale the mode applies: a 200×500 page loses 43% of itself to an A4 fill
+    // and was reported as 96%, while a half-A4 sheet (cropped by nothing) was
+    // reported as 75%.
+    const tall = fileOf(await sheets([{ width: 200, height: 500 }]), 'tall.pdf');
+    const outcome = await run('fix-page-size', { size: 'a4', fit: 'cover' }, [tall]);
+    const share = 1 - 842 / (500 * Math.max(595.28 / 200, 841.89 / 500));
+    expect(warn(outcome)).toContain(`up to ${Math.round(share * 100)}% of the page is cropped`);
+    expect(warn(outcome)).not.toMatch(/up to (96|80)%/);
+
+    // Control: half an A4 at A4's own aspect fills the sheet exactly, so nothing
+    // is cropped and the note must stay away.
+    const half = fileOf(await sheets([{ width: 298, height: 421 }]), 'half.pdf');
+    expect(warn(await run('fix-page-size', { size: 'a4', fit: 'cover' }, [half]))).not.toMatch(/runs content off the edge/i);
+  });
+
+  it('says a page larger than the paper was scaled down', async () => {
+    const big = fileOf(await sheets([{ width: 800, height: 1400 }, { width: 595.28, height: 841.89 }]), 'big.pdf');
+    const outcome = await run('fix-page-size', { size: 'a4', fit: 'contain' }, [big]);
+    expect(warn(outcome)).toMatch(/fit inside scaled 1 page down to \d+% of its own size/i);
+    // Control: the A4 sheet in the same run is already the paper, so it is not
+    // counted — 2 would mean the note fires on every page.
+    expect(warn(outcome)).toMatch(/scaled 1 page down/);
+  });
+
+  it('carries the document info and stamps its own producer (E13)', async () => {
+    const titled = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setTitle('Fixture title');
+      doc.setAuthor('Fixture author');
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    })();
+    // `updateMetadata: false`, or `PDFDocument.load` stamps pdf-lib's own producer
+    // over the one in the file and the assertion cannot fail.
+    const doc = await openPDF(await bytesOf(await run('fix-page-size', { size: 'a4' }, [titled])), { updateMetadata: false });
+    expect(doc.getTitle()).toBe('Fixture title');
+    expect(doc.getAuthor()).toBe('Fixture author');
+    expect(doc.getProducer()).toBe('BrowserSnip');
   });
 });
 

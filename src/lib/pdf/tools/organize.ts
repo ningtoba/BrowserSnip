@@ -2719,7 +2719,9 @@ export const organizeTools: PdfToolDefinition[] = [
       const target = await newPDF();
       let cropped = 0;
       let stretched = 0;
+      let shrunk = 0;
       let worstLoss = 0;
+      let worstShrink = 1;
       let carried = 0;
       for (let index = 0; index < input.pageCount; index++) {
         throwIfAborted(context.signal);
@@ -2743,18 +2745,47 @@ export const organizeTools: PdfToolDefinition[] = [
         // The source is drawn through `stamp`, which applies the page's own
         // /Rotate — scaling a `/Rotate 90` page by its stored box instead would
         // swap the axes and spill the content off the sheet (E9).
-        const ok = await stamp(target, page, input.doc.getPage(index), {
-          x: (sheetWidth - pageBox.width * xScale) / 2,
-          y: (sheetHeight - pageBox.height * yScale) / 2,
-          width: pageBox.width * xScale,
-          height: pageBox.height * yScale,
-        });
+        // `stamp` *itself* defaults to `contain`, so handing it the already
+        // scaled destination did nothing for "Stretch": measured on a 200×500
+        // page onto A4, the ink box stayed 0.474 as wide as it was tall where a
+        // stretch owes 0.838 — the mode letterboxed while the card promised
+        // "circles become ovals". The full sheet is the destination for a
+        // stretch, and the non-uniform scale is `stamp`'s own.
+        const dest =
+          fit === 'stretch'
+            ? { x: 0, y: 0, width: sheetWidth, height: sheetHeight }
+            : {
+                x: (sheetWidth - pageBox.width * xScale) / 2,
+                y: (sheetHeight - pageBox.height * yScale) / 2,
+                width: pageBox.width * xScale,
+                height: pageBox.height * yScale,
+              };
+        const ok = await stamp(
+          target,
+          page,
+          input.doc.getPage(index),
+          dest,
+          fit === 'stretch' ? { fit: 'stretch' } : {},
+        );
         if (!ok) notes.add('A page had no content to draw, so its new sheet is blank.');
         if (fit === 'cover') {
-          const loss = 1 - (pageBox.width * pageBox.height) / (sheetWidth * sheetHeight);
+          // The share of the *page* that falls outside the sheet. Dividing the
+          // page's own area by the sheet's ignored the scale and so answered 83%
+          // on a page that loses 21%, 99% on a business card, and fired at all on
+          // a page cover crops by a single point.
+          const loss = 1 - (sheetWidth * sheetHeight) / ((pageBox.width * xScale) * (pageBox.height * yScale));
           if (loss > 0.005) {
             cropped += 1;
             worstLoss = Math.max(worstLoss, loss);
+          }
+        }
+        if (fit !== 'cover') {
+          // A page larger than the target paper is scaled down to fit, and no
+          // other sentence says so: the type on it prints smaller than it looked.
+          const shrink = Math.min(xScale, yScale);
+          if (shrink < 0.98) {
+            shrunk += 1;
+            worstShrink = Math.min(worstShrink, shrink);
           }
         }
         if (fit === 'stretch' && Math.abs(xScale - yScale) > 0.01) stretched += 1;
@@ -2772,12 +2803,22 @@ export const organizeTools: PdfToolDefinition[] = [
         );
       }
       if (cropped > 0) {
-        notes.add(`"Fill the page" runs content off the edge on ${pageCountLabel(cropped)} — up to ${Math.round(worstLoss * 100)}% of the sheet. Choose "Fit inside" to keep all of it.`);
+        notes.add(`"Fill the page" runs content off the edge on ${pageCountLabel(cropped)} — up to ${Math.round(worstLoss * 100)}% of the page is cropped. Choose "Fit inside" to keep all of it.`);
       }
       if (stretched > 0) {
         notes.add(`"Stretch to exactly fit" changed the aspect ratio of ${pageCountLabel(stretched)}; circles become ovals.`);
       }
+      if (shrunk > 0) {
+        notes.add(`Fit inside scaled ${pageCountLabel(shrunk)} down to ${Math.round(worstShrink * 100)}% of its own size, so the type on it prints smaller.`);
+      }
       noteRebuildLoss('Resizing', input.doc, source, notes);
+      // The rebuild replaces the page tree, so the `/Info` fields and the XMP
+      // packet above it left with the source: measured on `colour.pdf` the output
+      // title was `""` where the file held one, and the producer was still the
+      // source's `pdf-lib`. Same carry as add-blank-page and divide-pages, and the
+      // producer is this app's own.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       return pdfOut(
         target,
         notes,
