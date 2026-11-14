@@ -1,0 +1,36 @@
+# What the tool SAYS about what a rebuild costs — same fixtures, same probe, before (batch3) and after (after2c).
+# Annots and the outline are still dropped and still named; the /Info carry is silent for a single input,
+# as it is in merge / remove-pages / duplex-collate, and the standing card note (PAGE_COPY_INFO_NOTE) says the
+# identity stays. `annots`, `outline`, `/Info` read off each output with PyMuPDF.
+
+== before: annot output carries the annotations?
+
+== annot
+output: annots=0 outline=0 title='' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+card: N-up drew the pages into new ones, so 5 links or annotations could not come along.
+
+== bookmarked
+output: annots=0 outline=0 title='' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+card: N-up rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering — the optional CoherentPDF engine edits bookmarks without a rebuild.
+
+== meta
+output: annots=0 outline=0 title='' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+
+== after
+
+== annot
+output: annots=0 outline=0 title='colour-tool fixture: bar + copy + band, colour squares, empty' producer='BrowserSnip'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+card: N-up drew the pages into new ones, so 5 links or annotations could not come along.
+
+== bookmarked
+output: annots=0 outline=0 title='colour-tool fixture: bar + copy + band, colour squares, empty' producer='BrowserSnip'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+card: N-up rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering — the optional CoherentPDF engine edits bookmarks without a rebuild.
+
+== meta
+output: annots=0 outline=0 title='Triage metadata title' producer='BrowserSnip'
+card: N-up: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.

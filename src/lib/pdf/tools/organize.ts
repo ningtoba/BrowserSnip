@@ -2064,7 +2064,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_nup.pdf',
     actionLabel: 'Lay out',
     promise: 'A new PDF with 2, 4, 6 or 9 source pages scaled into cells on each sheet.',
-    notes: [FLATTEN_NOTE],
+    notes: [FLATTEN_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       {
         key: 'perSheet',
@@ -2152,6 +2152,13 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       noteMixedSizes('N-up', input.doc, source, notes);
       noteRebuildLoss('N-up', input.doc, source, notes);
+      // `/Info` and the XMP packet sit above the page tree, so rebuilding the
+      // pages left them with the file they came from: measured on `colour.pdf`
+      // the output title was `""` under a card that only counted the cells, the
+      // same silent loss `merge`, `remove-pages` and `duplex-collate` had. Same
+      // carry, and the producer is this app's own because this app wrote it.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       const sheets = target.getPageCount();
       const emptyCells = sheets * perSheet - source.length;
       return pdfOut(

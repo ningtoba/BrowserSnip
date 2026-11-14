@@ -2570,6 +2570,32 @@ describe('each tool is checked against its own output file', () => {
     expect(await runOrder('down')).toEqual(['100@0', '200@2', '300@1', '400@3']);
   });
 
+  it('n-up keeps the document’s own info while it lays the pages out (E7)', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    const outcome = await run('n-up', { perSheet: 2, sheetSize: 'a4', landscape: true, gutter: 0, margin: 0, pages: 'all' }, [source]);
+    const raw = await bytesOf(outcome);
+    // `updateMetadata: false`, because `PDFDocument.load` re-stamps the producer
+    // with pdf-lib's name and would hide what the run actually wrote.
+    const doc = await openPDF(raw, { updateMetadata: false });
+    // The imposition is still the imposed one — the info did not cost a cell.
+    expect(doc.getPageCount()).toBe(2);
+    expect(drawnText(doc, 0)).toContain('sheet 1');
+    expect(drawnText(doc, 0)).toContain('sheet 2');
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    // The same claim in the other store, which most producers write alone.
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the bytes is this app's own claim, not the source's.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    // And the card says the info stays, beside the rebuild's other note.
+    const notes = (getPdfTool('n-up')?.notes ?? []).join(' ');
+    expect(notes).toMatch(/title, author, subject.*stays with the file/i);
+    expect(notes).toMatch(/links, form fields and bookmarks.*do not survive/i);
+  });
+
   it('fix-page-size takes the most common sheet, or the largest, as its target', async () => {
     const mixed = fileOf(
       await sheets([
