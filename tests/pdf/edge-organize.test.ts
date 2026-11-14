@@ -55,9 +55,11 @@ import { writeXmp } from '@/lib/pdf/core/metadata';
 import { saveGateOnly } from './gate-harness';
 import { isToolInputError } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
-import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
+import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { openRender } from '@/lib/pdf/core/render';
+import { defaultPlan, planToPageOrder, rotatePlanItem } from '@/components/tools/pdf/organize/plan';
+import { outputRotation } from '@/components/tools/pdf/organize/preview';
 
 /* ── fixtures ─────────────────────────────────────────────────────────────── */
 
@@ -698,6 +700,107 @@ describe('page selections name the real document', () => {
   });
 });
 
+
+/* ── internal links on the copied sheets ─────────────────────────────────── */
+
+/**
+ * Four text sheets; sheet 1 carries a link naming sheet `target` (0-based).
+ *
+ * `viaAction` writes the `/A /S /GoTo /D` shape Acrobat emits, otherwise the
+ * `/Dest` array PyMuPDF and this fork's `drawLink` emit. Both hold an indirect
+ * reference to the *source* page object, which is what a copy leaves dangling.
+ */
+async function linked(target: number, viaAction = false): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = Array.from({ length: 4 }, (_, i) => {
+    const page = doc.addPage([200, 300]);
+    page.drawText(`sheet ${i + 1}`, { x: 10, y: 280, size: 12, font, color: rgb(0, 0, 0) });
+    return page;
+  });
+  const destination = [pages[target].ref, PDFName.of('Fit')];
+  const annot = doc.context.obj({
+    Type: 'Annot',
+    Subtype: 'Link',
+    Rect: [40, 100, 160, 120],
+    Border: [0, 0, 0],
+    ...(viaAction
+      ? { A: doc.context.obj({ S: 'GoTo', D: destination }) }
+      : { Dest: destination }),
+  });
+  pages[0].node.set(PDFName.of('Annots'), doc.context.obj([doc.context.register(annot)]));
+  return doc.save({ useObjectStreams: false });
+}
+
+/**
+ * What each link on `pageIndex` names: the **destination** page index, `'uri'`
+ * for an external link, or `'stale'` for a reference no page in the file matches.
+ */
+function linkTargets(doc: PDFDocument, pageIndex: number): (number | 'uri' | 'stale')[] {
+  const annots = doc.getPages()[pageIndex].node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+  const refs = doc.getPages().map((page) => page.ref.toString());
+  const out: (number | 'uri' | 'stale')[] = [];
+  for (let i = 0; i < (annots?.size() ?? 0); i += 1) {
+    const annot = annots?.lookupMaybe(i, PDFDict);
+    const action = annot?.lookupMaybe(PDFName.of('A'), PDFDict);
+    const holder = action ?? annot;
+    const destination = holder?.lookupMaybe(PDFName.of(action ? 'D' : 'Dest'), PDFArray);
+    const first = destination?.get(0);
+    if (!(first instanceof PDFRef)) {
+      out.push('uri');
+      continue;
+    }
+    const at = refs.indexOf(first.toString());
+    out.push(at < 0 ? 'stale' : at);
+  }
+  return out;
+}
+
+describe('an internal link lands on the sheet it named', () => {
+  it('re-points a /Dest link at the sheet the sheet moved to', async () => {
+    const source = fileOf(await linked(2), 'linked.pdf');
+    const outcome = await run('organize', { pageOrder: '2, 3, 1, 4' }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    // Sheet 1 is now the third output page, and it still names source page 3.
+    expect(linkTargets(doc, 2)).toEqual([1]);
+    expect(linkTargets(doc, 0)).toEqual([]);
+  });
+
+  it('does the same for the /GoTo action Acrobat writes', async () => {
+    const source = fileOf(await linked(2, true), 'goto.pdf');
+    const outcome = await run('organize', { pageOrder: '4, 3, 1, 2' }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    expect(linkTargets(doc, 2)).toEqual([1]);
+  });
+
+  it('keeps an external link as it was', async () => {
+    const source = fileOf(await linked(2), 'linked.pdf');
+    const doc = await open(await bytesOf(await run('organize', { pageOrder: '1, 2, 3, 4' }, [source])));
+    expect(linkTargets(doc, 0)).toEqual([2]);
+  });
+
+  it('drops a link whose target page is not in the plan, and says so', async () => {
+    const source = fileOf(await linked(2), 'linked.pdf');
+    const outcome = await run('organize', { pageOrder: '1, 2' }, [source]);
+    expect(warn(outcome)).toMatch(/1 link pointed at a sheet that is not in this output/i);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPages()).toHaveLength(2);
+    expect(linkTargets(doc, 0)).toEqual([]);
+  });
+});
+
+describe('the pane takes a second document', () => {
+  it('declares multiFile, so the second drop is a source and not a replacement', () => {
+    const tool = getPdfTool('organize');
+    expect(tool?.multiFile, 'the plan pulls pages from file 2 (f2:3) and offers "Use as base"').toBe(true);
+    // A tool without the flag is refused outright for a two-file list, and the
+    // route's input is `multiple === false`, so the second drop only ever
+    // replaced the first — measured: one source tab and 4 cards after it.
+    const two = [fileOf(new Uint8Array([1]), 'a.pdf'), fileOf(new Uint8Array([2]), 'b.pdf')];
+    expect(fileProblem(tool!, two)).toBeNull();
+  });
+});
+
 /* ── E8, E9: rotation and per-page geometry ──────────────────────────────── */
 
 describe('geometry is respected, not flattened', () => {
@@ -736,6 +839,41 @@ describe('geometry is respected, not flattened', () => {
     await expect(run('organize', { pageOrder: '3-1' }, [source])).rejects.toThrow(/runs backwards/i);
     const snapped = await run('organize', { pageOrder: '3r45' }, [source]);
     expect(warn(snapped)).toMatch(/r45 is not a quarter turn.*90° instead/i);
+  });
+
+  it('writes the angle the grid paints for a page that already carries /Rotate 90 (E9)', async () => {
+    // The grid previews source + turn, the plan string is the absolute angle the
+    // tool writes, and both have to agree: the spec used to carry the bare turn,
+    // so the tool wrote 90 while Save and the card showed 180.
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 200, height: 100, rotate: 90 },
+      ]),
+      'two.pdf',
+    );
+    const sources = [{ name: 'two.pdf', pages: 2, rotations: [0, 90] }];
+    const spec = planToPageOrder(rotatePlanItem(defaultPlan(sources, 0), 1, 90), sources);
+    const outcome = await run('organize', { pageOrder: spec }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    expect(outputRotation(90, 90), 'what Save writes for the same card').toBe(180);
+    expect(doc.getPages()[1].getRotation().angle).toBe(180);
+  });
+
+  it('lets straighten reach the tool: the turn back to upright is published as r0 (E9)', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 200, height: 100, rotate: 90 },
+      ]),
+      'two.pdf',
+    );
+    const sources = [{ name: 'two.pdf', pages: 2, rotations: [0, 90] }];
+    const spec = planToPageOrder(rotatePlanItem(defaultPlan(sources, 0), 1, 270), sources);
+    expect(spec).toBe('1, 2r0');
+    const outcome = await run('organize', { pageOrder: spec }, [source]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPages()[1].getRotation().angle).toBe(0);
   });
 
   it('adds the turn to the page’s own rotation instead of overwriting it (E9)', async () => {

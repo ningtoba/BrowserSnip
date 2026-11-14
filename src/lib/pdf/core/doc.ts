@@ -525,6 +525,10 @@ export interface CopyFidelity {
   labels: number;
   /** Ranges the copy left with no sheet to number, so they are gone. */
   labelsDropped: number;
+  /** Internal links re-pointed at the sheet the link named, after the copy. */
+  links: number;
+  /** Internal links dropped because the sheet they named is not in the copy. */
+  linksDropped: number;
 }
 
 /**
@@ -582,6 +586,7 @@ export async function carryPageFurniture(
     target.getPageCount(),
   );
   if (labels.ranges.length > 0) writePageLabelRanges(target, labels.ranges);
+  const links = remapInternalLinks(target, copies);
   return {
     bookmarks: countOutlineNodes(nodes),
     bookmarksDropped,
@@ -589,7 +594,107 @@ export async function carryPageFurniture(
     attachmentsCollided: files.collided,
     labels: labels.ranges.length,
     labelsDropped: labels.dropped,
+    links: links.remapped,
+    linksDropped: links.dropped,
   };
+}
+
+/**
+ * Re-point the internal links on copied sheets at the sheets they now name.
+ *
+ * A `/Dest` — or a `/GoTo` action's `/D` — holds an indirect reference to a page
+ * *object*. `copyPages` brings the annotation dictionary across but leaves the
+ * reference naming the **source** document's page, which the output does not
+ * have; readers fall back to the first sheet, silently. Measured on a sheet
+ * linking to page 3 of 4, the exported file linked to page 1.
+ *
+ * This is the page-level twin of `remapOutline`, over the same source→
+ * destination map and with the same rule: the first copy of a page wins, and a
+ * link whose target did not travel is **dropped** rather than left pointing at
+ * sheet 1 under a rectangle that claims otherwise. A destination naming a page of
+ * another document, or a name/string destination (its name tree does not travel
+ * either), is left as it stands — those are not page references to remap.
+ */
+function remapInternalLinks(
+  target: PDFDocument,
+  copies: PageCopyMap[],
+): { remapped: number; dropped: number } {
+  const out = target.getPages();
+  let remapped = 0;
+  let dropped = 0;
+  for (const { doc, placed } of copies) {
+    const landsAt = firstCopyOf(placed);
+    const sources = doc.getPages();
+    const refs = sources.map((page) => page.ref.toString());
+    for (const { source, dest } of placed) {
+      const from = sources[source]?.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+      const to = out[dest]?.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+      if (!from || !to) continue;
+      const pairs = annotIndexPairs(from, to);
+      const gone: number[] = [];
+      for (const [fromIndex, toIndex] of pairs) {
+        // The copy's own `/Dest` names a **shell copy** of the source page — a
+        // page object with no `/Contents` that the output's page tree does not
+        // contain — so the target has to be read off the source annotation and
+        // resolved through the source's page list.
+        const origin = linkDestination(from.lookupMaybe(fromIndex, PDFDict));
+        const named = origin ? String(origin.get(0)) : null;
+        const at = named === null ? undefined : landsAt.get(refs.indexOf(named));
+        if (at !== undefined) {
+          linkDestination(to.lookupMaybe(toIndex, PDFDict))?.set(0, out[at].ref);
+          remapped += 1;
+          continue;
+        }
+        if (named === null || refs.indexOf(named) < 0) continue;
+        gone.push(toIndex);
+        dropped += 1;
+      }
+      // Descending: every removal shifts the index of what is left.
+      for (const index of gone.sort((a, b) => b - a)) to.remove(index);
+    }
+  }
+  return { remapped, dropped };
+}
+
+/**
+ * Which annotation index in `to` corresponds to which in `from`.
+ *
+ * `copyPages` copies the `/Annots` array whole, so equal lengths mean the same
+ * order. A copy that dropped something is matched by `/NM` (the annotation's own
+ * name) instead, and an annotation with neither is left alone.
+ */
+function annotIndexPairs(from: PDFArray, to: PDFArray): [number, number][] {
+  const pairs: [number, number][] = [];
+  if (from.size() === to.size()) {
+    for (let index = 0; index < from.size(); index += 1) pairs.push([index, index]);
+    return pairs;
+  }
+  const names = new Map<string, number>();
+  for (let index = 0; index < to.size(); index += 1) {
+    const name = to.lookupMaybe(index, PDFDict)?.lookup(PDFName.of('NM'))?.toString();
+    if (name && !names.has(name)) names.set(name, index);
+  }
+  for (let index = 0; index < from.size(); index += 1) {
+    const name = from.lookupMaybe(index, PDFDict)?.lookup(PDFName.of('NM'))?.toString();
+    const hit = name ? names.get(name) : undefined;
+    if (hit !== undefined) pairs.push([index, hit]);
+  }
+  return pairs;
+}
+
+/**
+ * The destination array a link annotation carries — its `/Dest`, or a `/GoTo`
+ * action's `/D` — or `null` for no destination, a name/string destination, or an
+ * annotation that links nowhere. The array is returned live, so the caller can
+ * write the remapped page reference into it.
+ */
+function linkDestination(annot: PDFDict | undefined): PDFArray | null {
+  const action = annot?.lookupMaybe(PDFName.of('A'), PDFDict);
+  const holder = action ?? annot;
+  if (!holder) return null;
+  const array = holder.lookupMaybe(PDFName.of(action ? 'D' : 'Dest'), PDFArray);
+  if (!(array instanceof PDFArray) || !(array.get(0) instanceof PDFRef)) return null;
+  return array;
 }
 
 /**

@@ -130,6 +130,8 @@ export default function PageOrganizer(): JSX.Element {
 
   const [sources, setSources] = useState<SourceState[]>([]);
   const [pageSizes, setPageSizes] = useState<Record<string, PageSize>>({});
+  /** Each page's own `/Rotate`, keyed like `pageSizes` (see `PlanSource.rotations`). */
+  const [pageRotations, setPageRotations] = useState<Record<string, number>>({});
   const [state, dispatch] = useReducer(organizerReducer, undefined, initialWorkspace);
   const [tray, setTray] = useState(0);
   const [traySpec, setTraySpec] = useState('all');
@@ -153,7 +155,15 @@ export default function PageOrganizer(): JSX.Element {
     () => keyForFiles(files.map((f) => ({ name: f.name, size: f.size }))),
     [files],
   );
-  const planSources = useMemo(() => sources.map((s) => ({ name: s.name, pages: s.pages })), [sources]);
+  const planSources = useMemo(
+    () =>
+      sources.map((s, index) => ({
+        name: s.name,
+        pages: s.pages,
+        rotations: Array.from({ length: s.pages }, (_, page) => pageRotations[sizeKey(index, page)]),
+      })),
+    [sources, pageRotations],
+  );
   const statuses = useMemo(() => sources.map((s) => s.status), [sources]);
   const stats = useMemo(() => planStats(state.plan, sources.length), [state.plan, sources.length]);
   const loading = sources.some((s) => s.status === 'loading');
@@ -207,6 +217,7 @@ export default function PageOrganizer(): JSX.Element {
     destroySessions();
     setPasswords({});
     setPageSizes({});
+    setPageRotations({});
     setPlanTextDirty(false);
     if (files.length === 0) {
       setSources([]);
@@ -243,6 +254,12 @@ export default function PageOrganizer(): JSX.Element {
           i === index ? { ...s, thumbs, done: Math.max(s.done, page) } : s,
         );
       });
+    // `thumbnails` reports 1-based pages and the plan is 0-based, like `fillThumb`.
+    const noteRotation = (index: number, page: number, rotation: number) =>
+      setPageRotations((current) => {
+        const key = sizeKey(index, page);
+        return current[key] === rotation ? current : { ...current, [key]: rotation };
+      });
 
     (async () => {
       for (let index = 0; index < files.length; index += 1) {
@@ -259,8 +276,10 @@ export default function PageOrganizer(): JSX.Element {
           patch(index, { pages: session.numPages, thumbs: new Array(session.numPages), done: 0 });
           const urls = await thumbnails(session, {
             maxSide: THUMB_MAX_SIDE,
-            onPage: (page, url) => {
-              if (token.alive) fillThumb(index, page, url);
+            onPage: (page, url, rotation) => {
+              if (!token.alive) return;
+              fillThumb(index, page, url);
+              noteRotation(index, page - 1, rotation);
             },
           });
           if (!token.alive) return;
@@ -360,9 +379,11 @@ export default function PageOrganizer(): JSX.Element {
     }
   }, [docKey, pageOrderParam, planSources]);
 
-  // Publish the plan as the registry's `pageOrder` value.
+  // Publish the plan as the registry's `pageOrder` value. The grammar is
+  // absolute, so the page's own `/Rotate` has to be in `sources` for
+  // `planToPageOrder` to write the angle the output will really carry.
   useEffect(() => {
-    const spec = planToPageOrder(state.plan);
+    const spec = planToPageOrder(state.plan, state.sources);
     if (!planTextDirty) setPlanText(spec);
     const current = useFileStore.getState().params;
     // An emptied grid must not silently mean "the whole document": the registry
@@ -375,7 +396,7 @@ export default function PageOrganizer(): JSX.Element {
       : current.pageOrder === value;
     if (matches) return;
     setParams({ ...current, pageOrder: value });
-  }, [planTextDirty, setParams, state.plan]);
+  }, [planTextDirty, setParams, state.plan, state.sources]);
 
   // Measure the grid once and on resize. Without this the mount window would be
   // computed from a 0×0 viewport, which in a real browser is two cards.
@@ -667,6 +688,11 @@ export default function PageOrganizer(): JSX.Element {
           `PageOrganizer: ${fidelity.bookmarksDropped} bookmark${fidelity.bookmarksDropped === 1 ? '' : 's'} left out because its page is not in the order; ${fidelity.bookmarks} re-pointed.`,
         );
       }
+      if (fidelity.linksDropped > 0) {
+        store.appendLog(
+          `PageOrganizer: ${fidelity.linksDropped} link${fidelity.linksDropped === 1 ? '' : 's'} left out because the sheet it named is not in the order; ${fidelity.links} re-pointed.`,
+        );
+      }
       dispatch({
         type: 'announce',
         message: `Saved a ${planAtStart.length}-page PDF: ${built.pages} page${
@@ -679,7 +705,13 @@ export default function PageOrganizer(): JSX.Element {
                 fidelity.bookmarksDropped === 1 ? 'it was' : 'they were'
               } dropped; ${fidelity.bookmarks} came with the pages.`
             : ''
-        }`,
+        }${fidelity.linksDropped > 0
+          ? ` ${fidelity.linksDropped} link${
+              fidelity.linksDropped === 1 ? '' : 's'
+            } pointed at a sheet that is not in this order, so ${
+              fidelity.linksDropped === 1 ? 'it was' : 'they were'
+            } dropped${fidelity.links > 0 ? `; ${fidelity.links} re-pointed at the sheet ${fidelity.links === 1 ? 'it names' : 'each names'}` : ''}.`
+          : ''}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'The reordered PDF could not be saved.';
@@ -987,7 +1019,7 @@ export default function PageOrganizer(): JSX.Element {
                       applyPlanText();
                     }
                     if (event.key === 'Escape') {
-                      setPlanText(planToPageOrder(stateRef.current.plan));
+                      setPlanText(planToPageOrder(stateRef.current.plan, stateRef.current.sources));
                       setPlanTextDirty(false);
                     }
                   }}
@@ -1011,7 +1043,7 @@ export default function PageOrganizer(): JSX.Element {
                   ? 'The grid is empty, so the plan is published as an explicit empty plan: Run refuses it instead of copying every page.'
                   : multiFile
                     ? 'This plan uses more than one file, so its tokens carry a file prefix (f2:3) and only the Save button above can build it — the sidebar Run reads the first file alone.'
-                    : 'Tokens: 3 = page 3, 3r90 = page 3 rotated 90°, blank = empty sheet.'}
+                    : 'Tokens: 3 = page 3, 3r90 = write /Rotate 90 on page 3 (a page that already came rotated shows what it would be set to), blank = empty sheet.'}
               </p>
               {state.inputError && <p className="mt-1 text-[10px] text-danger">{state.inputError}</p>}
             </div>
@@ -1287,9 +1319,9 @@ function PlanCardBase({ model, handlers }: { model: CardModel; handlers: CardHan
         <span className="absolute left-1 top-1 rounded-full bg-ink/75 px-1.5 py-0.5 text-[9px] font-bold tabular-nums text-white">
           {model.position}
         </span>
-        {model.kind === 'page' && model.rotate !== 0 && (
+        {model.kind === 'page' && model.turnedTo && (
           <span className="absolute right-1 top-1 rounded bg-accent px-1 py-0.5 text-[9px] font-semibold text-white">
-            r{model.rotate}
+            r{model.written}
           </span>
         )}
         {model.kind === 'page' && model.source !== 0 && (

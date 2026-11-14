@@ -37,7 +37,7 @@ const SOURCES: PlanSource[] = [
 ];
 
 /** Tokens the registry's `parsePlan` accepts, verbatim. */
-const REGISTRY_TOKEN = /^(?:\d+(?:r(?:90|180|270))?|blank)$/;
+const REGISTRY_TOKEN = /^(?:\d+(?:r(?:0|90|180|270))?|blank)$/;
 
 describe('defaultPlan', () => {
   it('lists every page of one source in order', () => {
@@ -262,7 +262,7 @@ describe('planToPageOrder / parsePageOrder', () => {
       BLANK_ITEM,
       pageItem(0, 1, 270),
     ];
-    const spec = planToPageOrder(plan);
+    const spec = planToPageOrder(plan, SOURCES);
     expect(spec).toBe('3, 1r90, blank, 2r270');
     for (const token of spec.split(', ')) expect(token).toMatch(REGISTRY_TOKEN);
   });
@@ -271,12 +271,12 @@ describe('planToPageOrder / parsePageOrder', () => {
     const spec = '3, 1r90, blank, 2';
     const plan = parsePageOrder(spec, SOURCES);
     expect(plan).toEqual([pageItem(0, 2), pageItem(0, 0, 90), BLANK_ITEM, pageItem(0, 1)]);
-    expect(planToPageOrder(plan)).toBe(spec);
+    expect(planToPageOrder(plan, SOURCES)).toBe(spec);
   });
 
   it('qualifies pages with their file once a second document is used', () => {
     const plan: Plan = [pageItem(0, 0), pageItem(1, 1, 180), BLANK_ITEM];
-    expect(planToPageOrder(plan)).toBe('f1:1, f2:2r180, blank');
+    expect(planToPageOrder(plan, SOURCES)).toBe('f1:1, f2:2r180, blank');
   });
 
   const cases: Plan[] = [
@@ -290,9 +290,9 @@ describe('planToPageOrder / parsePageOrder', () => {
 
   it('round-trips every plan shape the UI can produce', () => {
     cases.forEach((plan, index) => {
-      const spec = planToPageOrder(plan);
+      const spec = planToPageOrder(plan, SOURCES);
       expect(parsePageOrder(spec, SOURCES), `case ${index}: ${spec}`).toEqual(plan);
-      expect(planToPageOrder(parsePageOrder(spec, SOURCES))).toBe(spec);
+      expect(planToPageOrder(parsePageOrder(spec, SOURCES), SOURCES)).toBe(spec);
     });
   });
 

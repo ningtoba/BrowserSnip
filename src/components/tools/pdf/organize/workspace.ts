@@ -53,12 +53,14 @@ import {
   planWarnings,
   rotatePlanItems,
   samePlan,
+  sourceRotation,
   type Plan,
   type PlanItem,
   type PlanRotation,
   type PlanSource,
   type SourceStatus,
 } from './plan';
+import { normaliseRotation } from '@/lib/pdf/core/pages';
 import { previewBox, sizeKey, type PageSize, type PreviewBox } from './preview';
 
 // ── selection ───────────────────────────────────────────────────────────────
@@ -326,6 +328,10 @@ export interface CardModel {
   /** 1-based source page for the on-card label (blanks: 0, unused). */
   sourcePage: number;
   rotate: PlanRotation;
+  /** The `/Rotate` the output page will carry (the turn on top of its own angle). */
+  written: PlanRotation;
+  /** True when `written` differs from the angle the page already had. */
+  turnedTo: boolean;
   sourcePages: number;
   /** Name of the file this page came from, for the card's tooltip. */
   sourceName: string;
@@ -385,6 +391,11 @@ export function cardModels(state: WorkspaceState, options: CardModelOptions): Ca
     const page = item.kind === 'page' ? item.page : -1;
     const source = item.kind === 'page' ? item.source : -1;
     const natural = item.kind === 'page' ? options.sizes?.[sizeKey(source, page)] : undefined;
+    // What the output page's own `/Rotate` will be: the plan's turn on top of the
+    // angle the page already carries. The badge and the accessible name say this,
+    // so both describe the sheet in the file rather than the keystroke.
+    const own = item.kind === 'page' ? sourceRotation(sources, item.source, item.page) : 0;
+    const written = item.kind === 'page' ? (normaliseRotation(own + item.rotate) as PlanRotation) : 0;
     return {
       key: `slot-${index}`,
       index,
@@ -394,6 +405,11 @@ export function cardModels(state: WorkspaceState, options: CardModelOptions): Ca
       page,
       sourcePage: item.kind === 'page' ? item.page + 1 : 0,
       rotate: item.kind === 'page' ? item.rotate : 0,
+      // What the output page's own `/Rotate` will be: the turn on top of the
+      // page's existing angle. The badge and the accessible name say this, so
+      // they describe the sheet the file will carry rather than the keystroke.
+      written,
+      turnedTo: item.kind === 'page' && written !== own,
       sourcePages: item.kind === 'page' ? (sources[item.source]?.pages ?? 0) : 0,
       sourceName: item.kind === 'page' ? (sources[item.source]?.name ?? `file ${item.source + 1}`) : '',
       selected: isSelected(state.selection, index),
@@ -422,6 +438,8 @@ export function cardModelsEqual(a: CardModel, b: CardModel): boolean {
     a.page === b.page &&
     a.sourcePage === b.sourcePage &&
     a.rotate === b.rotate &&
+    a.written === b.written &&
+    a.turnedTo === b.turnedTo &&
     a.sourcePages === b.sourcePages &&
     a.sourceName === b.sourceName &&
     a.selected === b.selected &&
@@ -753,6 +771,22 @@ function openDocuments(
   };
 }
 
+/**
+ * Whether two source lists describe the same documents.
+ *
+ * The per-page rotations count: the plan string is written in absolute angles, so
+ * a rotation arriving from a finished preview changes what the pane publishes even
+ * though no page was added. Leaving it out of this comparison dropped the update
+ * and the string stayed a turn behind (measured: a 90° source page turned once
+ * still published `r90` while the card and `Save` showed 180).
+ */
+function sameSource(a: PlanSource, b: PlanSource): boolean {
+  if (a.pages !== b.pages || a.name !== b.name) return false;
+  const left = a.rotations ?? [];
+  const right = b.rotations ?? [];
+  return left.length === right.length && left.every((value, i) => value === right[i]);
+}
+
 export function organizerReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   const plan = state.plan;
   switch (action.type) {
@@ -775,7 +809,7 @@ export function organizerReducer(state: WorkspaceState, action: WorkspaceAction)
         action.statuses.length === state.statuses.length &&
         action.statuses.every((s, i) => s === state.statuses[i]) &&
         action.sources.length === state.sources.length &&
-        action.sources.every((s, i) => s.pages === state.sources[i].pages && s.name === state.sources[i].name)
+        action.sources.every((s, i) => sameSource(s, state.sources[i]))
       ) {
         return state;
       }

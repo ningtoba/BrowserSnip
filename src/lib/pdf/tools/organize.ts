@@ -535,6 +535,11 @@ function notePageCopy(sources: PDFDocument[], fidelity: CopyFidelity, notes: Not
     notes,
   );
   noteDroppedLabels(fidelity, notes);
+  if (fidelity.linksDropped > 0) {
+    notes.add(
+      `${countLabel(fidelity.linksDropped, 'link')} pointed at ${fidelity.linksDropped === 1 ? 'a sheet' : 'sheets'} that ${fidelity.linksDropped === 1 ? 'is' : 'are'} not in this output, so ${fidelity.linksDropped === 1 ? 'it was' : 'they were'} dropped${fidelity.links > 0 ? `; the ${countLabel(fidelity.links, 'link')} whose target came along now ${fidelity.links === 1 ? 'points' : 'point'} at the right sheet` : ''}.`,
+    );
+  }
   if (fidelity.attachmentsCollided > 0) {
     notes.add(
       `${countLabel(fidelity.attachmentsCollided, 'attached file')} shared a name with one already carried, so only the first copy is in the output.`,
@@ -1350,11 +1355,19 @@ export const organizeTools: PdfToolDefinition[] = [
     keywords: ['reorder', 'arrange', 'move', 'duplicate'],
     outputSuffix: '_organized.pdf',
     surface: 'custom',
+    /**
+     * The pane plans across every open file: a second document becomes a source
+     * its pages are pulled from (`f2:3`) or that "Use as base" restarts the plan
+     * from. Declaring this is also what lets the route's file input take a second
+     * drop — without it the picker was `multiple === false` and a dropped second
+     * PDF replaced the first without a word.
+     */
+    multiFile: true,
     actionLabel: 'Apply order',
     promise: 'A rebuilt PDF in the order, rotation and duplication you set. The original file is never modified.',
     notes: [
       'Pages are copied, so a page can appear more than once in the output.',
-      'A page with no `r90`/`r180`/`r270` keeps the rotation it already had; `r0` straightens it.',
+      'A page token with no `r` keeps the rotation the page already had; `r0` straightens it and `r180` writes 180 whatever it arrived at.',
       'The page grid writes this plan for you. Type it only if you want to.',
     ],
     fields: [
@@ -1365,7 +1378,7 @@ export const organizeTools: PdfToolDefinition[] = [
         default: '',
         placeholder: 'auto from the page grid',
         group: 'Plan',
-        help: 'Comma-separated source page numbers, optionally suffixed with r90/r180/r270 to rotate, a range like 2-5, or "blank".',
+        help: 'Comma-separated source page numbers, optionally suffixed with r0/r90/r180/r270 for the rotation that page will carry, a range like 2-5, or "blank".',
       },
     ],
     async run(context) {

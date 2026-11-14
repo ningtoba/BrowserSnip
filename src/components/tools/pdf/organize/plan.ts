@@ -16,10 +16,24 @@ import { PageSpecError, normaliseRotation } from '@/lib/pdf/core/pages';
 
 export type PlanRotation = 0 | 90 | 180 | 270;
 
-/** One open document, as far as the plan is concerned. */
+/**
+ * One open document, as far as the plan is concerned.
+ *
+ * `rotations` is each page's own `/Rotate`, as pdf.js reports it while the
+ * thumbnails render. It is optional because a page can be planned before its
+ * preview has painted; an unknown angle reads as 0, and the string the pane
+ * publishes corrects itself when the preview arrives.
+ */
 export interface PlanSource {
   name: string;
   pages: number;
+  rotations?: (number | undefined)[];
+}
+
+/** The `/Rotate` a source page already carries (0 when it is not known yet). */
+export function sourceRotation(sources: PlanSource[], source: number, page: number): PlanRotation {
+  const own = sources[source]?.rotations?.[page];
+  return normaliseRotation(typeof own === 'number' && Number.isFinite(own) ? own : 0) as PlanRotation;
 }
 
 /** How a source file is doing in the previewer, for the pane's honesty lines. */
@@ -334,7 +348,11 @@ export function cardLabel(
   const where = `position ${index + 1} of ${total}`;
   if (item.kind === 'blank') return `Blank sheet, ${where}`;
   const name = sources[item.source]?.name ?? `file ${item.source + 1}`;
-  const turn = item.rotate ? `, rotated ${item.rotate} degrees` : '';
+  // The written angle, not the keystroke: a page that arrived sideways and was
+  // turned once is `180 degrees` on the sheet, and the plan string says `r180`.
+  const own = sourceRotation(sources, item.source, item.page);
+  const written = normaliseRotation(own + item.rotate);
+  const turn = written === own ? '' : `, turned to ${written} degrees`;
   return `${name} page ${item.page + 1}${turn}, ${where}`;
 }
 
@@ -349,14 +367,28 @@ const TOKEN = /^(?:f(\d+):)?(\d+)(?:r(\d{1,3}))?$/i;
  * A plan that touches a second document qualifies every page token with its
  * file (`f2:3`), which the registry's parser rejects — see the note rendered in
  * the pane footer.
+ *
+ * **The grammar is absolute and the model is a turn.** `item.rotate` is degrees
+ * on top of the page's own `/Rotate`, because that is what the card paints and
+ * what `Save` writes; `r<n>` in the grammar is the `/Rotate` the output will
+ * carry, because that is what the registry's `parsePlan` writes and what its
+ * `r0 straightens it` promise means. So a page whose source says 90 and which
+ * the user turned once is published as `r180`, and a page turned back to upright
+ * is published as `r0` rather than dropped — the serialiser used to emit the
+ * bare turn, so the registry wrote the wrong angle and could not straighten at
+ * all. This module is the only place the two readings meet.
  */
-export function planToPageOrder(plan: Plan): string {
+export function planToPageOrder(plan: Plan, sources: PlanSource[]): string {
   const multi = plan.some((item) => item.kind === 'page' && item.source !== 0);
   return plan
     .map((item) => {
       if (item.kind === 'blank') return 'blank';
       const file = multi ? `f${item.source + 1}:` : '';
-      const rotate = item.rotate ? `r${item.rotate}` : '';
+      const own = sourceRotation(sources, item.source, item.page);
+      const absolute = normaliseRotation(own + item.rotate);
+      // A bare token means "keep the rotation the page already had", so only a
+      // deviation is written — that is what makes `r0` reach the tool.
+      const rotate = absolute === own ? '' : `r${absolute}`;
       return `${file}${item.page + 1}${rotate}`;
     })
     .join(', ');
@@ -404,8 +436,11 @@ export function parsePageOrder(spec: string, sources: PlanSource[]): Plan {
         }.`,
       );
     }
-    const rotate = match[3] ? (normaliseRotation(Number(match[3])) as PlanRotation) : 0;
-    out.push(pageItem(fileNumber - 1, page, rotate));
+    // `r<n>` is the absolute `/Rotate` the file will carry; the model wants the
+    // turn on top of the page's own angle.
+    const own = sourceRotation(sources, fileNumber - 1, page);
+    const absolute = match[3] ? normaliseRotation(Number(match[3])) : own;
+    out.push(pageItem(fileNumber - 1, page, normaliseRotation(absolute - own) as PlanRotation));
   }
   if (out.length === 0) throw new PageSpecError('The page order is empty.');
   return out;

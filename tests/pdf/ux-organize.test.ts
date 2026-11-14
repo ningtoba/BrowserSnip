@@ -63,14 +63,14 @@ function filesOf(...docs: { name: string; pages: number; size?: number }[]) {
 
 /** Open documents the way the pane does when the file list resolves. */
 function openDocs(
-  docs: { name: string; pages: number; size?: number }[],
+  docs: { name: string; pages: number; size?: number; rotations?: number[] }[],
   statuses: ('loading' | 'ready' | 'locked' | 'error')[] = [],
 ): WorkspaceState {
   const files = filesOf(...docs);
   return organizerReducer(initialWorkspace(), {
     type: 'sync',
     docKey: documentKey(files),
-    sources: docs.map((d) => ({ name: d.name, pages: d.pages })),
+    sources: docs.map((d) => ({ name: d.name, pages: d.pages, rotations: d.rotations })),
     statuses: statuses.length
       ? statuses
       : docs.map(() => 'ready' as const),
@@ -318,7 +318,7 @@ describe('drag model', () => {
       { type: 'drop', gap: 1 },
     );
     expect(state.plan).toEqual([pageItem(0, 0), pageItem(1, 1), pageItem(0, 1)]);
-    expect(planToPageOrder(state.plan)).toBe('f1:1, f2:2, f1:2');
+    expect(planToPageOrder(state.plan, state.sources)).toBe('f1:1, f2:2, f1:2');
   });
 
   it('clamps a gap to the plan', () => {
@@ -557,7 +557,7 @@ describe('page numbers are 1-based everywhere the user can read them', () => {
     expect(models.map((m) => m.position)).toEqual([1, 2, 3]);
     expect(models.map((m) => m.sourcePage)).toEqual([1, 2, 2]);
     expect(models[2].label).toBe('appendix.pdf page 2, position 3 of 3');
-    expect(planToPageOrder(state.plan)).toBe('f1:1, f1:2, f2:2');
+    expect(planToPageOrder(state.plan, state.sources)).toBe('f1:1, f1:2, f2:2');
   });
 
   it('keeps counting from one when a blank sheet joins in', () => {
@@ -567,7 +567,7 @@ describe('page numbers are 1-based everywhere the user can read them', () => {
     expect(models[0].position).toBe(1);
     expect(models[0].label).toBe('Blank sheet, position 1 of 5');
     expect(models[1].position).toBe(2);
-    expect(planToPageOrder(state.plan)).toBe('blank, 1, 2, 3, 4');
+    expect(planToPageOrder(state.plan, state.sources)).toBe('blank, 1, 2, 3, 4');
   });
 });
 
@@ -941,7 +941,7 @@ describe('plan text', () => {
     ]);
     const edited = run(two, { type: 'useAsBase', source: 1 });
     expect(order(edited.plan)).toEqual([0, 1, 2]);
-    expect(planToPageOrder(edited.plan)).toBe('f2:1, f2:2, f2:3');
+    expect(planToPageOrder(edited.plan, edited.sources)).toBe('f2:1, f2:2, f2:3');
     const back = run(edited, { type: 'resetOrder' });
     expect(order(back.plan)).toEqual([0, 1]);
     const already = run(back, { type: 'resetOrder' });
@@ -1112,36 +1112,40 @@ describe('plan → file', () => {
   it('writes the order the grid built, in the bytes that come back', async () => {
     const state = fourPages();
     const reordered = run(state, { type: 'nudge', index: 3, delta: -3 });
-    const spec = planToPageOrder(reordered.plan);
+    const spec = planToPageOrder(reordered.plan, reordered.sources);
     expect(spec).toBe('4, 1, 2, 3');
     const doc = await organizeWith(spec, await fixture());
     // The fixture's page n is 200 + 10(n-1) wide, so the widths are the order.
     expect(widths(doc)).toEqual([230, 200, 210, 220]);
   });
 
-  it('turns a page further from where the preview says it is going (known gap)', async () => {
+  it('turns a page further from where the preview says it is going', async () => {
     const bytes = await fixture([{ rotate: 90 }, {}, {}, {}]);
-    const state = fourPages();
+    const state = openDocs([{ name: 'report.pdf', pages: 4, rotations: [90, 0, 0, 0] }]);
     const turned = run(state, { type: 'rotate', index: 0, delta: 90 });
     expect(turned.plan[0]).toMatchObject({ kind: 'page', page: 0, rotate: 90 });
     // The preview promises the source angle plus the plan's turn…
     expect(outputRotation(90, 90)).toBe(180);
-    // …and the serialiser writes `r90`, which the tool reads as an absolute
-    // /Rotate. The file therefore lands at 90° — the page appears not to have
-    // moved at all. Pinned here so the fix is visible from both sides.
-    const doc = await organizeWith(planToPageOrder(turned.plan), bytes);
-    expect(rotations(doc)).toEqual([90, 0, 0, 0]);
+    // …so the plan string carries the absolute angle the tool writes: `r180`,
+    // not the `r90` turn the serialiser used to emit, which the tool read as an
+    // absolute /Rotate and wrote straight over the source's own 90.
+    const spec = planToPageOrder(turned.plan, turned.sources);
+    expect(spec).toBe('1r180, 2, 3, 4');
+    const doc = await organizeWith(spec, bytes);
+    expect(rotations(doc)).toEqual([180, 0, 0, 0]);
   });
 
-  it('straightens only when an explicit r0 reaches the tool, which the pane never writes', async () => {
+  it('straightens: a page turned back upright goes out as r0, not as a dropped turn', async () => {
     const bytes = await fixture([{ rotate: 90 }, {}, {}, {}]);
-    const doc = await organizeWith('1r0, 2', bytes);
-    expect(rotations(doc)).toEqual([0, 0]);
-
-    // The pane's serialiser drops a zero turn (`item.rotate ? … : ''`), so the
-    // "straighten" the user performed is silently lost on the way out.
-    const plan: Plan = [pageItem(0, 0, 0), pageItem(0, 1)];
-    expect(planToPageOrder(plan)).toBe('1, 2');
+    const state = openDocs([{ name: 'report.pdf', pages: 4, rotations: [90, 0, 0, 0] }]);
+    const turned = run(state, { type: 'rotate', index: 0, delta: 270 });
+    const spec = planToPageOrder(turned.plan, turned.sources);
+    // A zero turn used to serialise to nothing at all (`item.rotate ? … : ''`),
+    // which the tool reads as "keep the rotation it had" — so straightening was
+    // unreachable through the value the pane publishes.
+    expect(spec).toBe('1r0, 2, 3, 4');
+    const doc = await organizeWith(spec, bytes);
+    expect(rotations(doc)).toEqual([0, 0, 0, 0]);
   });
 
   it('refuses a two-file plan instead of organising the wrong document', async () => {
@@ -1151,7 +1155,7 @@ describe('plan → file', () => {
       { name: 'appendix.pdf', pages: 3 },
     ]);
     const fromSecond = run(state, { type: 'useAsBase', source: 1 });
-    const spec = planToPageOrder(fromSecond.plan);
+    const spec = planToPageOrder(fromSecond.plan, fromSecond.sources);
     expect(spec).toBe('f2:1, f2:2, f2:3');
     await expect(organizeWith(spec, bytes)).rejects.toThrow(/one document at a time/i);
   });

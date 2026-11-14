@@ -534,7 +534,17 @@ export function range(from: number, to: number): number[] {
  */
 export async function thumbnails(
   session: PdfSession,
-  options: { maxSide?: number; pages?: number[]; onPage?: (index: number, url: string) => void; signal?: AbortSignal } = {},
+  options: {
+    maxSide?: number;
+    pages?: number[];
+    /**
+     * Called per painted page. The third argument is the page's own `/Rotate`,
+     * which the caller cannot read from the bitmap: the organizer's plan grammar
+     * is absolute, so it needs the angle each page already carries.
+     */
+    onPage?: (index: number, url: string, rotation: number) => void;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<string[]> {
   const maxSide = options.maxSide ?? 140;
   const pages = options.pages ?? range(1, session.numPages);
@@ -553,7 +563,7 @@ export async function thumbnails(
       await page.render({ canvasContext: ctx, viewport }).promise;
       const url = canvas.toDataURL('image/jpeg', 0.72);
       urls.push(url);
-      options.onPage?.(p, url);
+      options.onPage?.(p, url, page.rotate);
     } else {
       urls.push('');
     }
