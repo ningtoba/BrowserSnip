@@ -437,6 +437,9 @@ const LABELABLE_TYPES = new Set<ToolField['type']>([
   'dimensions',
 ]);
 
+/** `0 pages`, but `180°`: a worded unit takes a space and a symbol does not. */
+const spacedUnit = (unit?: string): string => (unit ? `${/^[a-z]/i.test(unit) ? ' ' : ''}${unit}` : '');
+
 function Label({
   field,
   value,
@@ -452,7 +455,7 @@ function Label({
     typeof value === 'number' &&
     Number.isFinite(value);
   const readout = showValue
-    ? `${trim(value as number)}${field.unit ?? ''}`
+    ? `${trim(value as number)}${spacedUnit(field.unit)}`
     : field.unit
       ? `(${field.unit})`
       : '';

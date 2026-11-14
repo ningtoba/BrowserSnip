@@ -1856,7 +1856,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_collated.pdf',
     actionLabel: 'Collate',
     promise: 'A re-ordered PDF where each front page is followed by its own back page.',
-    notes: [PAGE_COPY_NOTE],
+    notes: [PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       {
         key: 'backReversed',
@@ -1907,6 +1907,14 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const doc = await collectPages([{ doc: input.doc, pages: interleaved }]);
       notePageCopy([input.doc], doc.fidelity, notes);
+      // `pdf-lib` copies pages and nothing else, so the `/Info` fields and the XMP
+      // packet — which sit above the page tree — stayed with the file they came from:
+      // measured on `colour.pdf`, the collated output had `title=""` and pdf-lib's
+      // producer under a card that only said "Collated 4 pages from a 2 + 2 scan".
+      // Same carry as `reverse-pages`, `merge` and `add-blank-page`; the producer is
+      // this app's own, because this app wrote the bytes.
+      carryDocInfo(doc.doc, [input], notes);
+      doc.doc.setProducer('BrowserSnip');
       return pdfOut(
         doc.doc,
         notes,

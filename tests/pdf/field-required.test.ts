@@ -132,3 +132,31 @@ describe('a field message is bound to its control', () => {
     expect(container.querySelector('input')!.getAttribute('aria-describedby')).toBeNull();
   });
 });
+
+/**
+ * The readout beside a number field, measured on the duplex-collate pane: the
+ * unit was concatenated straight onto the value, so "0 pages" rendered `0pages`.
+ */
+describe('a unit readout stays readable', () => {
+  const values = { offset: 3 };
+
+  it('separates a worded unit from the value', () => {
+    const { container } = render(createElement(FieldControl, {
+      field: { key: 'offset', label: 'Back-side page offset', type: 'number', unit: 'pages' },
+      values,
+      onChange: () => {},
+    }));
+    expect(container.textContent).toContain('3 pages');
+    expect(container.textContent).not.toContain('3pages');
+  });
+
+  it('keeps a symbol unit tight to the value', () => {
+    const { container } = render(createElement(FieldControl, {
+      field: { key: 'angle', label: 'Angle', type: 'number', unit: '°' },
+      values: { angle: 45 },
+      onChange: () => {},
+    }));
+    expect(container.textContent).toContain('45°');
+    expect(container.textContent).not.toContain('45 °');
+  });
+});

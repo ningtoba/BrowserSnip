@@ -1057,7 +1057,7 @@ describe('PdfToolPanel', () => {
     fireEvent.change(dpi, { target: { value: '400' } });
     expect(await screen.findByText(/Resolution must be between 72 and 300 dpi: 400 became 300\./)).toBeInTheDocument();
     expect(screen.getByLabelText('Resolution')).toHaveValue(400);
-    expect(screen.getByText('300dpi')).toBeInTheDocument();
+    expect(screen.getByText('300 dpi')).toBeInTheDocument();
     // A clamped value is a notice, not a blocker: the action stays available.
     expect(screen.getByRole('button', { name: 'Compress' })).toBeEnabled();
   });
