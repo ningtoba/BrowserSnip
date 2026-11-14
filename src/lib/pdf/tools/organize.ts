@@ -1192,7 +1192,7 @@ export const organizeTools: PdfToolDefinition[] = [
     surface: 'pages',
     actionLabel: 'Extract',
     promise:
-      'A new PDF with only the pages you picked, in the order you typed them — or one new file per page, in that same order. A page you name twice is copied twice.',
+      'A new PDF with only the pages you picked, in the order you typed — or one file per page, in that order. A page named twice is copied twice.',
     notes: [PAGE_COPY_NOTE],
     fields: [
       ALL_PAGES,
