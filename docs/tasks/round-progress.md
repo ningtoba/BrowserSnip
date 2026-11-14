@@ -1,5 +1,8 @@
 # Round progress — every PDF id, catalogue order
 
+Resume state: rounds 001-007 done and verified (each commit re-run by the parent:
+tsc, typecheck:tests, full suite). Continue at the first `[ ]`.
+
 One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAMPAIGN.md`).
 
 ```text
