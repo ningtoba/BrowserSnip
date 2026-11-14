@@ -57,7 +57,8 @@ BASE=http://localhost:5271 TOOL=<id> PDF=<fixture> LABEL='<button>' \
   `ocr-round-trip.mjs`, …). Write one if yours needs it, following the same
   shape: upload → gesture → capture blob → capture screenshot.
 * Ports: 9810–9811 may still hold a stale Chrome; take a **unique** port from 9820–9899 and
-  clear it first: `pkill -9 -f 'remote-debugging-port=<PORT>'`. A probe is bounded — if a
+  clear it first: `pkill -9 -f 'debugging-port=98' ; sleep 0.5`. The dev server is at :5271 and dies
+  if you kill it — restart with `(nohup npx vite --port 5271 --strictPort >/tmp/vite-5271.log 2>&1 &)`. A probe is bounded — if a
   script has not returned in 120 s, it is hung, not busy: kill it and say so.
 * **A tool that refuses a fixture the corpus considers valid is a finding**, not a
   harness problem — record the sentence and measure whether the refusal is right.
