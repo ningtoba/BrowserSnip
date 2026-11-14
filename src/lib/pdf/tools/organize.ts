@@ -1627,7 +1627,7 @@ export const organizeTools: PdfToolDefinition[] = [
     category: 'organize',
     keywords: ['invert order', 'backwards', 'descending'],
     outputSuffix: '_reversed.pdf',
-    notes: [PAGE_COPY_NOTE],
+    notes: [PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
     actionLabel: 'Reverse',
     promise: 'The same pages in the opposite order, as a new PDF.',
     async run(context) {
@@ -1641,6 +1641,14 @@ export const organizeTools: PdfToolDefinition[] = [
       // reversed file keeps the outline — it just walks the document backwards.
       const doc = await collectPages([{ doc: input.doc, pages: [...pages].reverse() }]);
       notePageCopy([input.doc], doc.fidelity, notes);
+      // The `/Info` fields and the XMP packet sit above the page tree, so the copy
+      // leaves them with the file they came from. Measured on the untouched
+      // fixtures: reversing `meta.pdf` and `annot.pdf` returned `title=""`, no
+      // author, subject, keywords or creator, the creator replaced by pdf-lib's
+      // own name and the 233-byte packet gone, under a card that said only
+      // "Reversed 4 pages." Same carry as `remove-pages` and `merge`.
+      carryDocInfo(doc.doc, [input], notes);
+      doc.doc.setProducer('BrowserSnip');
       return pdfOut(doc.doc, notes, `Reversed ${pageCountLabel(pages.length)}.`);
     },
   },

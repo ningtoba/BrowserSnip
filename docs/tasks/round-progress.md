@@ -13,7 +13,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 005 [x] organize
 006 [x] rotate
 007 [x] rotate-custom
-008 [ ] reverse-pages
+008 [x] reverse-pages
 009 [ ] add-blank-page
 010 [ ] alternate-merge
 011 [ ] duplex-collate

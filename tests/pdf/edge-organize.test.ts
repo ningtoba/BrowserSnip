@@ -1581,6 +1581,40 @@ describe('each tool is checked against its own output file', () => {
     expect(pageTexts(doc)).toEqual(['sheet 4', 'sheet 3', 'sheet 2', 'sheet 1']);
   });
 
+  it('reverse-pages keeps the document’s own info while it turns the order round (E7)', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    const outcome = await run('reverse-pages', {}, [source]);
+    const raw = await bytesOf(outcome);
+    // `updateMetadata: false`, because `PDFDocument.load` re-stamps the producer
+    // with pdf-lib's name and would hide what the run actually wrote.
+    const doc = await openPDF(raw, { updateMetadata: false });
+    // The order is still the reversed one: the info did not cost a sheet.
+    expect(pageTexts(doc)).toEqual(['sheet 4', 'sheet 3', 'sheet 2', 'sheet 1']);
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    // The same claim in the other store, which most producers write alone.
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the bytes is this app's own claim, not the source's.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    // And the card says the info stays, beside the copy's other note.
+    expect((getPdfTool('reverse-pages')?.notes ?? []).join(' ')).toMatch(/title, author, subject.*stays with the file/i);
+  });
+
+  it('an untitled document invents no info on the way out (E7 control)', async () => {
+    // Control: the same run on a file with no `/Info` and no packet. A carry that
+    // wrote defaults would pass the test above and fail here.
+    const outcome = await run('reverse-pages');
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(pageTexts(doc)).toEqual(['sheet 4', 'sheet 3', 'sheet 2', 'sheet 1']);
+    expect(doc.getTitle() ?? '').toBe('');
+    expect(doc.getAuthor() ?? '').toBe('');
+    expect(doc.getSubject() ?? '').toBe('');
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeUndefined();
+  });
+
   it('organize writes the order, rotation and blanks the plan describes', async () => {
     const outcome = await run('organize', { pageOrder: '3, 1, blank' });
     const doc = await open(await bytesOf(outcome));

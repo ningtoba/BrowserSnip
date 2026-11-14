@@ -1,0 +1,113 @@
+
+== colour: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== annot: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110001 annots 3 links [(2, None)] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110001 annots 3 links [(2, None)] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== bookmarked: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== meta: 4 -> 4 pages, info {'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha, beta, gamma', 'creator': 'triage-fixtures-images.py'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'Triage metadata title'
+     - /Info author '' != 'Triage Fixture'
+     - /Info subject '' != 'A subject worth removing'
+     - keywords '' != 'alpha, beta, gamma'
+     - /Info creator 'pdf-lib (https://github.com/Hopding/pdf-lib)' != 'triage-fixtures-images.py'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+     - XMP packet length changed
+
+== attach: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== labels: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label 'App i' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label 'App i' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label 'C-3' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label 'C-3' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label 'C-2' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label 'C-2' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label 'C-1' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label 'C-1' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== link: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [(1, 1)] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [(1, 2)] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== one-page: 1 -> 1 pages, info {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': ''} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 595.0x842.0 rot 0 ink 9761 annots 0 links [] label '' text 'Item' | want box 595.0x842.0 rot 0 ink 9761 annots 0 links [] label '' text 'Item'
+   verdict: MISMATCH
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== two-page: 2 -> 2 pages, info {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': ''} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 2: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   verdict: MISMATCH
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== round-trip: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'pdf-lib (https://github.com/Hopding/pdf-lib)'
+   sheet 1: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   sheet 2: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 3: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 4: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   verdict: MISMATCH
+     - /Info title '' != 'colour-tool fixture: bar + copy + band, colour squares, empty'
+     - producer 'pdf-lib (https://github.com/Hopding/pdf-lib)' is not this app's
+
+== control: colour.pdf against itself (must MISMATCH)
+
+== control: 4 -> 4 pages, info {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} / {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'author': '', 'subject': '', 'keywords': '', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}, producer 'BrowserSnip'
+   sheet 1: box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat'
+   sheet 2: box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text '' | want box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet'
+   sheet 3: box 420.0x595.0 rot 0 ink 94882 annots 0 links [] label '' text 'colour sheet' | want box 420.0x595.0 rot 0 ink 0 annots 0 links [] label '' text ''
+   sheet 4: box 420.0x595.0 rot 0 ink 110031 annots 0 links [] label '' text '01 Quarterly reconciliat' | want box 595.0x420.0 rot 90 ink 274962 annots 0 links [] label '' text ''
+   verdict: MISMATCH
+     - sheet 1 w: 595.0 != 420.0
+     - sheet 1 h: 420.0 != 595.0
+     - sheet 1 rot: 90 != 0
+     - sheet 1 ink: 274962 != 110031
+     - sheet 1 text: '' != '01 Quarterly reconciliation of the scanned ledger sheets with the'
+     - sheet 2 ink: 0 != 94882
+     - sheet 2 text: '' != 'colour sheet'
+     - sheet 3 ink: 94882 != 0
+     - sheet 3 text: 'colour sheet' != ''
+     - sheet 4 w: 420.0 != 595.0
+     - sheet 4 h: 595.0 != 420.0
+     - sheet 4 rot: 0 != 90
+     - sheet 4 ink: 110031 != 274962
+     - sheet 4 text: '01 Quarterly reconciliation of the scanned ledger sheets with the' != ''
+
+RESULT: FAIL
