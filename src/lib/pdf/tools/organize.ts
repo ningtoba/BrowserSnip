@@ -674,6 +674,13 @@ const FLATTEN_NOTE =
 
 const ALL_PAGES: ToolField = pagesField();
 
+/**
+ * The rotate tool's selection: its strip previews the turn the degrees field
+ * holds, so the tiles show the angle the file will carry (E9's sibling — the
+ * rail used to paint the source orientation while the run wrote source + turn).
+ */
+const ROTATE_PAGES: ToolField = pagesField({ previewFrom: 'degrees' });
+
 const CHUNK_SIZE: ToolField = {
   key: 'chunkSize',
   label: 'Pages per file',
@@ -1470,8 +1477,12 @@ export const organizeTools: PdfToolDefinition[] = [
         ],
       help: 'Added to each page’s existing rotation, so 90° four times returns a page to where it started.',
     },
-      ALL_PAGES,
+      ROTATE_PAGES,
     ],
+    validate(values) {
+      if (stringValue(values, 'pages', '').trim() === '') return 'Choose which pages to rotate.';
+      return null;
+    },
     async run(context) {
       const [input] = await openInputs(context);
       const notes = createNotes();
@@ -1499,7 +1510,7 @@ export const organizeTools: PdfToolDefinition[] = [
         context.progress((i + 1) / pages.length, `Rotated page ${pages[i] + 1}`);
       }
       if (straightened > 0) {
-        notes.add(`${straightened} of the selected ${pageCountLabel(pages.length)} were upside-down or sideways before this turn and are now upright.`);
+        notes.add(`${straightened} of the selected ${pageCountLabel(pages.length)} ${straightened === 1 ? 'was' : 'were'} upside-down or sideways before this turn and are now upright.`);
       }
       const doc = await savable(input, notes);
       const untouched = input.pageCount - pages.length;

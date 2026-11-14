@@ -644,7 +644,7 @@ describe('page selections name the real document', () => {
   it('rejects an empty selection and says what to do (E13, E18)', async () => {
     await expect(run('extract-pages', { pages: '  ' })).rejects.toThrow(/choose which pages to extract/i);
     await expect(run('remove-pages', { pages: '' })).rejects.toThrow(/choose the pages to delete/i);
-    await expect(run('rotate', { degrees: 90, pages: '' })).rejects.toThrow(/no pages chosen/i);
+    await expect(run('rotate', { degrees: 90, pages: '' })).rejects.toThrow(/choose which pages to rotate/i);
     await expect(run('split', { mode: 'ranges', ranges: '' })).rejects.toThrow(/enter at least one page range/i);
   });
 

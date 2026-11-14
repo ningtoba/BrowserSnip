@@ -543,18 +543,26 @@ export async function thumbnails(
      * is absolute, so it needs the angle each page already carries.
      */
     onPage?: (index: number, url: string, rotation: number) => void;
+    /**
+     * Extra clockwise degrees to paint every page at, on top of its own
+     * `/Rotate` — what a *preview* of a turn is. `pdf.js` takes the whole angle
+     * as `rotation` and falls back to the page's own otherwise, so this is the
+     * same number a viewer would show, not a matrix the caller has to apply.
+     */
+    rotateBy?: number;
     signal?: AbortSignal;
   } = {},
 ): Promise<string[]> {
   const maxSide = options.maxSide ?? 140;
+  const rotateBy = options.rotateBy ?? 0;
   const pages = options.pages ?? range(1, session.numPages);
   const urls: string[] = [];
   for (const p of pages) {
     if (options.signal?.aborted) throw new RenderCancelled('Thumbnail generation was cancelled.');
     const page = await session.doc.getPage(p);
-    const base = page.getViewport({ scale: 1 });
+    const base = page.getViewport({ scale: 1, rotation: turned(page.rotate, rotateBy) });
     const scale = Math.min(maxSide / base.width, maxSide / base.height, 2);
-    const viewport = page.getViewport({ scale });
+    const viewport = page.getViewport({ scale, rotation: turned(page.rotate, rotateBy) });
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(viewport.width));
     canvas.height = Math.max(1, Math.round(viewport.height));
@@ -572,6 +580,16 @@ export async function thumbnails(
     await new Promise((r) => setTimeout(r, 0));
   }
   return urls;
+}
+
+/**
+ * A page's own `/Rotate` plus an extra clockwise turn, as `getViewport` wants it.
+ *
+ * `PageViewport` throws on anything that is not a multiple of 90, so the sum is
+ * rounded and wrapped rather than handed over raw (pdf.js #11835).
+ */
+function turned(rotation: number, by: number): number {
+  return ((Math.round((rotation + by) / 90) * 90) % 360 + 360) % 360;
 }
 
 /** Rasterise every page to a chosen image format. */

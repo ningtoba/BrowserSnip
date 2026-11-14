@@ -8,7 +8,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 003 [x] extract-pages
 004 [x] remove-pages
 005 [x] organize
-006 [ ] rotate
+006 [x] rotate
 007 [ ] rotate-custom
 008 [ ] reverse-pages
 009 [ ] add-blank-page

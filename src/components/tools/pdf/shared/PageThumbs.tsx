@@ -12,6 +12,12 @@ export interface PageThumbsProps {
   /** Called with the selection and a delta in degrees. */
   onRotate?: (pages: number[], delta: number) => void;
   onDelete?: (pages: number[]) => void;
+  /**
+   * Extra clockwise degrees the *picked* tiles are painted at, so the strip
+   * shows the orientation the run will write instead of the file as it stands.
+   * Unpicked tiles keep their own angle; `undefined` previews nothing.
+   */
+  turn?: number;
   /** Longest edge of a rendered thumbnail, in CSS pixels. */
   maxSide?: number;
   columns?: number;
@@ -59,8 +65,10 @@ export function usePageThumbnail(
   maxSide: number,
   /** Lets a virtualised strip count the tiles still in flight. */
   onStatus?: (page: number, busy: boolean) => void,
+  /** Extra clockwise degrees to paint this page at; part of the cache key. */
+  turn = 0,
 ): PageThumbnail {
-  const key = session ? `${session.fingerprint || 'doc'}:${page}:${maxSide}` : null;
+  const key = session ? `${session.fingerprint || 'doc'}:${page}:${maxSide}:${turn}` : null;
   const [url, setUrl] = useState<string | null>(() => (key ? thumbCache.get(key) ?? null : null));
   const [unavailable, setUnavailable] = useState(false);
 
@@ -73,7 +81,7 @@ export function usePageThumbnail(
     if (!session || !key || url) return;
     let alive = true;
     onStatus?.(page, true);
-    thumbnails(session, { pages: [page], maxSide })
+    thumbnails(session, { pages: [page], maxSide, rotateBy: turn })
       .then((list) => {
         if (!alive) return;
         const next = list[0] ?? '';
@@ -98,9 +106,39 @@ export function usePageThumbnail(
     // the session, page and size, so listing them would restart the raster on
     // every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, key, url, page, maxSide]);
+  }, [session, key, url, page, maxSide, turn]);
 
   return { url, unavailable };
+}
+
+/**
+ * A page's own `/Rotate`, once pdf.js answers.
+ *
+ * The other half of a previewed turn: a delta alone leaves the reader to add it
+ * to an angle nothing on screen states, and the angle the run *writes* is the
+ * sum. `null` until it is known, so the tile can say the delta instead.
+ */
+function usePageRotation(session: PdfSession | null, page: number): number | null {
+  const [rotation, setRotation] = useState<number | null>(null);
+  useEffect(() => {
+    if (!session) {
+      setRotation(null);
+      return;
+    }
+    let alive = true;
+    session
+      .page(page)
+      .then((proxy) => {
+        if (alive) setRotation(((Math.round(proxy.rotate / 90) * 90) % 360 + 360) % 360);
+      })
+      .catch(() => {
+        /* a page that will not open says nothing rather than a wrong angle */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [session, page]);
+  return rotation;
 }
 
 export function PageThumbs({
@@ -109,6 +147,7 @@ export function PageThumbs({
   onSelect,
   onRotate,
   onDelete,
+  turn,
   maxSide = 110,
   columns = 4,
   rowHeight = 150,
@@ -220,6 +259,8 @@ export function PageThumbs({
               page={page}
               maxSide={maxSide}
               selected={selectedSet.has(page)}
+              turn={turn ? (selectedSet.has(page) ? turn : 0) : 0}
+              preview={turn !== undefined}
               onPick={(shift) => pick(page, shift)}
               onStatus={report}
             />
@@ -239,7 +280,7 @@ export function PageThumbs({
       <div className="flex items-center justify-between gap-2 border-t border-cream-border pt-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
           {selected.length === 0
-            ? `${total} pages · ${onRotate || onDelete ? 'pick pages to rotate or delete' : 'pick pages below'}`
+            ? `${total} pages · ${onRotate || onDelete ? 'pick pages to rotate or delete' : turn !== undefined ? 'pick pages to turn' : 'pick pages below'}`
             : `${selected.length} of ${total} selected`}
         </span>
         <span className="flex items-center gap-1">
@@ -276,25 +317,44 @@ interface ThumbCellProps {
   page: number;
   maxSide: number;
   selected: boolean;
+  /** Extra clockwise degrees this tile is painted at (0 = as the file stands). */
+  turn: number;
+  /** The strip is previewing a turn at all, so only a turned tile says its angle. */
+  preview: boolean;
   onPick: (shift: boolean) => void;
   /** Tells the strip this page is waiting for, or has finished, its raster. */
   onStatus: (page: number, busy: boolean) => void;
 }
 
-function ThumbCell({ session, page, maxSide, selected, onPick, onStatus }: ThumbCellProps) {
+function ThumbCell({ session, page, maxSide, selected, turn, preview, onPick, onStatus }: ThumbCellProps) {
   // `unavailable` is the state where the render came back with nothing to show
   // — a headless test, or a browser that refused the 2-D context. The tile then
   // says the image is unavailable instead of pretending it is still arriving.
-  const { url, unavailable: noImage } = usePageThumbnail(session, page, maxSide, onStatus);
+  const { url, unavailable: noImage } = usePageThumbnail(session, page, maxSide, onStatus, turn);
+  const own = usePageRotation(session, page);
+  const turnedTo = turn !== 0 ? (own === null ? null : (own + turn) % 360) : 0;
+  const says = turnedTo === null ? `turned by ${turn}°` : `turned to ${turnedTo}°`;
 
   return (
     <button
       type="button"
-      aria-label={`Page ${page}`}
+      aria-label={preview && turn !== 0 ? `Page ${page}, ${says}` : `Page ${page}`}
       aria-pressed={selected}
       onClick={(event) => onPick(event.shiftKey)}
       data-thumb={url ? 'image' : noImage ? 'unavailable' : 'drawing'}
-      title={url ? `Page ${page}` : noImage ? `Page ${page} — no image in this browser` : `Page ${page} — drawing`}
+      // The angle is what the tile is for while a turn is being previewed: it is
+      // the only place the picked sheet's orientation is said out loud.
+      data-turn={preview ? turn : undefined}
+      data-turn-to={preview && turn !== 0 && turnedTo !== null ? turnedTo : undefined}
+      title={
+        preview && turn !== 0
+          ? `Page ${page} — will be ${says}`
+          : url
+            ? `Page ${page}`
+            : noImage
+              ? `Page ${page} — no image in this browser`
+              : `Page ${page} — drawing`
+      }
       className={`group relative overflow-hidden rounded border transition-colors ${
         selected ? 'border-accent ring-1 ring-accent/40' : 'border-cream-border hover:border-ink-muted'
       } ${FOCUS_RING}`}

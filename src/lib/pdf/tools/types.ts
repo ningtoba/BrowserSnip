@@ -68,6 +68,13 @@ export interface ToolField {
   optional?: boolean;
   /** Rail section this field belongs to; new sections appear in declaration order. */
   group?: string;
+  /**
+   * On a `pages` field: the key of the numeric field whose value the page strip
+   * previews as a clockwise turn on the tiles it has picked. The rail would
+   * otherwise show the file as it stands while the run writes an angle — the
+   * preview and the file disagree by exactly the turn.
+   */
+  previewFrom?: string;
   unit?: string;
   accept?: string;
   /** Let the user pick more than one file for this field. */

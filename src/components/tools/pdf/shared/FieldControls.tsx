@@ -224,7 +224,7 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
               key={group.title || 'general'}
               className="min-w-[200px] max-w-[340px] flex-1 space-y-2.5"
             >
-              {group.title && <GroupHeading title={group.title} />}
+              {group.title && showsHeading(group) && <GroupHeading title={group.title} />}
               {group.fields.map((field) => (
                 <FieldControl
                   key={field.key}
@@ -254,6 +254,20 @@ export function GroupHeading({ title }: { title: string }) {
       {title}
     </h4>
   );
+}
+
+/**
+ * Whether a section prints its heading.
+ *
+ * A section with one field whose own label is the section's words printed the
+ * words twice, one line apart (`ROTATION` over `Rotation`, `PAGES` over
+ * `Pages`) — the field's label is already the heading, so only the border goes.
+ * A section of several fields is untouched, where the heading is the only thing
+ * that names what they have in common.
+ */
+function showsHeading(group: { title?: string; fields: ToolField[] }): boolean {
+  const sole = group.fields.length === 1 ? group.fields[0] : null;
+  return !(sole && sole.label.trim().toLowerCase() === (group.title ?? '').trim().toLowerCase());
 }
 
 /** Collapsible honesty panel — the tool's limits, not a wall of small text. */
@@ -384,6 +398,9 @@ export function FieldControl({
   const noticeId = `${inputId}-notice`;
   const issueId = `${inputId}-issue`;
   const describedBy = [notice ? noticeId : null, issue ? issueId : null].filter(Boolean).join(' ') || undefined;
+  // A `pages` control may preview the turn another field holds (the rotate
+  // tool's degrees), so the strip paints the orientation the run will write.
+  const previewTurn = field.previewFrom ? Number(values[field.previewFrom] ?? 0) || 0 : undefined;
 
   return (
     <motion.div variants={fadeUp} className="space-y-1">
@@ -397,6 +414,7 @@ export function FieldControl({
         describedBy={bound ? describedBy : undefined}
         issue={issue ?? undefined}
         compact={compact}
+        previewTurn={previewTurn}
       />
       {notice && <p id={noticeId} className="text-[10px] leading-relaxed text-warn">{notice}</p>}
       {issue && <p id={issueId} className="text-[10px] leading-relaxed text-danger">{issue}</p>}
@@ -486,6 +504,8 @@ interface ControlProps {
   issue?: string;
   /** See `FieldControlProps.compact`. */
   compact?: boolean;
+  /** Extra clockwise degrees a `pages` strip previews on its picked tiles. */
+  previewTurn?: number;
 }
 
 function Control({
@@ -497,6 +517,7 @@ function Control({
   describedBy,
   issue,
   compact = false,
+  previewTurn,
 }: ControlProps) {
   switch (field.type) {
     case 'toggle':
@@ -662,6 +683,7 @@ function Control({
           // twice, one line apart, plus the "Still needed:" line.
           issue={issue}
           compact={compact}
+          previewTurn={previewTurn}
         />
       );
     case 'password':
@@ -732,6 +754,7 @@ function PagePicker({
   describedBy,
   issue,
   compact = false,
+  previewTurn,
 }: {
   value: unknown;
   onChange: (next: unknown) => void;
@@ -742,6 +765,8 @@ function PagePicker({
   /** See `ControlProps.issue`. */
   issue?: string;
   compact?: boolean;
+  /** See `ControlProps.previewTurn`. */
+  previewTurn?: number;
 }) {
   const file = useFileStore((s) => s.file);
   const [session, setSession] = useState<PdfSession | null>(null);
@@ -897,6 +922,7 @@ function PagePicker({
             session={session}
             selected={selected}
             onSelect={apply}
+            turn={previewTurn}
             columns={4}
             rowHeight={120}
             maxSide={96}
