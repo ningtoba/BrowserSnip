@@ -74,11 +74,20 @@ const FIELD_LABELS = {
   dpi: 'Resolution',
   pages: 'Pages',
   mode: 'Method',
+  // `split`'s chunk mode — `splitMode`, not `mode`, because that key is `Method`
+  // for the colour tools. Used by round 017 to check the divider arithmetic
+  // against `divide-pages`.
+  splitMode: 'Split by',
+  chunkSize: 'Pages per file',
   brightness: 'Brightness',
   contrast: 'Contrast',
   saturation: 'Saturation',
   hue: 'Hue rotate',
   threshold: 'Make black and white',
+  // `divide-pages` names its cut arithmetic in printed words; the keys are not
+  // the labels, so address the control by what the rail prints beside it.
+  axis: 'Direction',
+  parts: 'Number of parts',
   grayscale: 'Greyscale',
   whitening: 'Whiten the background',
   sharpen: 'Sharpen edges',
@@ -422,6 +431,10 @@ async function runTool(run) {
   if (run.waitFor) {
     if (!(await wait(run.waitFor, 60000))) record.waitForMissing = run.waitFor;
   }
+  // `DARK=1` takes the one dark-mode screenshot a UI round owes, tokens only: the
+  // class is what the theme switch sets, so the shot is the same surface a dark
+  // user meets.
+  if (process.env.DARK) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
   // The rail folds everything but its lead field behind "N more options".
   if (run.openOptions !== false) {
     await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
@@ -622,6 +635,10 @@ await ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.crea
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
   await send('DOM.setFileInputFiles', { nodeId, files: [PDF] });
 }
+// `DARK=1` takes the one dark-mode screenshot a UI round owes, tokens only: the
+// class is what the theme switch sets, so the shot is the same surface a dark
+// user meets.
+if (process.env.DARK) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
 // The rail folds everything but its lead field behind "N more options".
 await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
 await sleep(400);
@@ -639,13 +656,27 @@ for (const [label, raw] of Object.entries(WANTED)) {
 if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`, 90000))) {
   console.log('buttons:', JSON.stringify(await ev(`JSON.stringify([...document.querySelectorAll('button')].map(b=>[b.innerText.trim().slice(0,30),!b.disabled]))`)));
   console.log('fields:', JSON.stringify(applied, null, 1));
-  throw new Error(`no enabled button matching ${LABEL || TOOL} after loading ${PDF}`);
+  // A refusal is a result, not a harness bug: keep the screen that produced it.
+  console.log('screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
+  if (process.env.SHOT) {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
+    console.log('screenshot:', process.env.SHOT);
+  }
+  chrome.kill('SIGKILL');
+  process.exit(2);
 }
 console.log('fields:', JSON.stringify(applied, null, 1));
 
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
 if (!(await wait('window.__blobs.length>0', TIMEOUT))) {
   console.log('NO OUTPUT — the screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
+  // A refusal is a result: keep the screen that shows it.
+  if (process.env.SHOT) {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
+    console.log('screenshot:', process.env.SHOT);
+  }
   throw new Error('the tool produced no output blob');
 }
 await sleep(1000);

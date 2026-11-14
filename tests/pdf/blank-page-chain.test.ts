@@ -272,6 +272,43 @@ describe('the seven tools take a blank page', () => {
   });
 });
 
+/* ── the pieces a blank sheet makes ──────────────────────────────────────── */
+
+describe('a blank sheet is named as a blank piece, not counted as ink', () => {
+  /**
+   * `stamp()` answers “this region had an area”, and since the blank-page fix it
+   * also hands a sheet with no `/Contents` the empty one the embedder needs —
+   * so after that fix every piece looked inked, the run's “nothing but blank
+   * sheets” refusal became unreachable, and a mostly-blank scan was divided in
+   * silence (`/tmp/triage/blank.pdf`, 1 sheet, 0 ink: measured *Divided 1 page
+   * into 2 pages.* and no warning at all).
+   */
+  it('divide-pages says which pieces are blank sheets', async () => {
+    const outcome = await run('divide-pages', await withOwnBlank(), VALUES['divide-pages']);
+    const doc = await open(await bytesOf(outcome));
+    // The blank keeps its place — the two pieces of the blank sheet are in the
+    // file, and they are empty.
+    expect(doc.getPageCount()).toBe(10);
+    expect(reachableInk(doc, BLANK_AT * 2)).toBe(0);
+    expect(reachableInk(doc, BLANK_AT * 2 + 1)).toBe(0);
+    expect(reachableInk(doc, 0)).toBeGreaterThan(0);
+    expect(outcome.warnings.join(' ')).toMatch(/had no drawable content, so 2 of the 10 pieces are blank sheets/i);
+  });
+
+  it('divide-pages refuses a selection that is nothing but blanks', async () => {
+    // Worth refusing: two empty pieces of an empty sheet look like a file.
+    const failure = await run('divide-pages', await withOwnBlank(), {
+      ...VALUES['divide-pages'],
+      pages: String(BLANK_AT + 1),
+    }).then(
+      () => null,
+      (error: unknown) => error as Error & { hint?: string },
+    );
+    expect(failure?.message).toMatch(/nothing but blank sheets/i);
+    expect(failure?.hint).toMatch(/Extract Pages/i);
+  });
+});
+
 /* ── no content is fine, unreadable content is not ───────────────────────── */
 
 /** A page whose `/Contents` exists but cannot be read, in the way the file claims. */

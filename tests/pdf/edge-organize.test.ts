@@ -1946,6 +1946,45 @@ describe('each tool is checked against its own output file', () => {
     expect(drawnText(doc, 8)).toContain('sheet 3');
   });
 
+  it('divide-pages carries the document info and calls itself the producer (E7)', async () => {
+    // Measured on `meta.pdf` before this test: the pieces carried title `""`
+    // where the source held its own, and the producer said `pdf-lib`.
+    const doc = await PDFDocument.create();
+    doc.setTitle('Divided round');
+    doc.setAuthor('author of the pieces');
+    doc.setSubject('subject of the pieces');
+    doc.setKeywords(['kw-divide']);
+    writeXmp(doc, "<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>Divided round</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>");
+    // Inked: a blank sheet is refused now, so the identity needs something to cut.
+    doc.addPage([200, 100]).drawRectangle({ x: 0, y: 0, width: 200, height: 40, color: rgb(0, 0, 0) });
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    const outcome = await run('divide-pages', { axis: 'vertical', parts: 2 }, [source]);
+    // `PDFDocument.load` re-stamps the producer unless told not to, so the info is
+    // read through `openPDF`, which leaves the file's own alone.
+    const out = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    // Both pieces are there — the info did not cost a sheet.
+    expect(out.getPageCount()).toBe(2);
+    expect(out.getTitle()).toBe('Divided round');
+    expect(out.getAuthor()).toBe('author of the pieces');
+    expect(out.getSubject()).toBe('subject of the pieces');
+    expect(out.getKeywords()).toBe('kw-divide');
+    expect(out.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who cut the file is this app's claim, not the source's.
+    expect(out.getProducer()).toBe('BrowserSnip');
+  });
+
+  it('invents no document info when the source has none (E7 control)', async () => {
+    const source = fileOf(await sheets(grid(2)), 'bare.pdf');
+    const outcome = await run('divide-pages', { axis: 'vertical', parts: 2 }, [source]);
+    const out = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(out.getPageCount()).toBe(4);
+    expect(out.getTitle()).toBeUndefined();
+    expect(out.getAuthor()).toBeUndefined();
+    // The producer is written whatever the source held; only the identity is
+    // the source's to give.
+    expect(out.getProducer()).toBe('BrowserSnip');
+  });
+
   it('fix-page-size resizes the chosen pages and carries the others through', async () => {
     const source = fileOf(
       await sheets([

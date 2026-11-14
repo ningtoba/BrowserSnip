@@ -51,7 +51,7 @@ import { countOutlineNodes, readOutline } from '../core/bookmarks';
 import { listAttachments } from '../core/attachments';
 import { listFormFields } from '../core/forms';
 import { readXmpText, writeXmp } from '../core/metadata';
-import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
+import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, normaliseRotation, pageContentsState, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
 import { createZip } from '../core/archive';
 import {
@@ -2560,7 +2560,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_divided.pdf',
     actionLabel: 'Divide',
     promise: 'A new PDF where each page is cut into halves, thirds or a grid, one piece per page.',
-    notes: [FLATTEN_NOTE],
+    notes: [FLATTEN_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       {
         key: 'axis',
@@ -2607,6 +2607,12 @@ export const organizeTools: PdfToolDefinition[] = [
         const size = visibleBox(page);
         const tileWidth = size.width / columns;
         const tileHeight = size.height / rows;
+        // Read once per sheet, before the first copy: `stamp()` gives a sheet
+        // with no `/Contents` the empty one the embedder needs, so from the
+        // second tile on every page looks like it has content. `stamp()`'s own
+        // `false` only means the region had no area. A page that draws nothing
+        // at all is the blank sheet.
+        const empty = pageContentsState(page) === 'absent';
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < columns; col++) {
             const newPage = target.addPage([tileWidth, tileHeight]);
@@ -2614,13 +2620,13 @@ export const organizeTools: PdfToolDefinition[] = [
             const ok = await stamp(target, newPage, page, { x: 0, y: 0, width: tileWidth, height: tileHeight }, { region });
             // The sheet is in the file whether or not it had ink to draw, so the
             // count the message reports is the page count of the bytes (E13).
-            if (!ok) blank += 1;
+            if (!ok || empty) blank += 1;
           }
         }
         context.progress((index + 1) / source.length, `Page ${index + 1}`);
       }
       if (blank > 0) {
-        notes.add(`A page had no drawable content, so ${pageCountLabel(blank)} of the ${pageCountLabel(planned)} pieces are blank sheets in the output.`);
+        notes.add(`A page had no drawable content, so ${blank} of the ${planned} pieces ${blank === 1 ? 'is a blank sheet' : 'are blank sheets'} in the output.`);
       }
       if (blank === planned) {
         throw new ToolInputError('NO_PAGES', 'Dividing these pages produced nothing but blank sheets.', {
@@ -2628,6 +2634,12 @@ export const organizeTools: PdfToolDefinition[] = [
         });
       }
       noteRebuildLoss('Dividing', input.doc, source, notes);
+      // `/Info` and the XMP packet sit above the page tree and this tool rebuilds
+      // the page tree, so the identity left silently: measured on `meta.pdf` the
+      // pieces carried title `""` where the source held `Triage metadata title`.
+      // Same carry as posterize/n-up/merge, and the producer is this app's.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       return pdfOut(target, notes, `Divided ${pageCountLabel(source.length)} into ${pageCountLabel(planned)}.`);
     },
   },
