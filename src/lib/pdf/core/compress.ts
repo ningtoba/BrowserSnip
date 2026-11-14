@@ -28,7 +28,7 @@
  * never downsampled, and the report names it instead of claiming a resolution cap
  * it did not apply.
  */
-import { PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFArray, PDFStream } from './doc';
+import { PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFArray, PDFStream, PDFString, PDFHexString } from './doc';
 import type { PDFDocument } from './doc';
 import { openPDF, savePDF, toBytes } from './doc';
 import { pageContentOps, parseContentStream, streamBytes } from './content';
@@ -234,7 +234,9 @@ async function runCompression(
   }
   if (result.undecodable > 0) {
     notes.push(
-      `${result.undecodable} image${result.undecodable === 1 ? '' : 's'} use a format this browser cannot decode, so they were left untouched.`,
+      result.undecodable === 1
+        ? '1 image uses a format this browser cannot decode, so it was left untouched.'
+        : `${result.undecodable} images use a format this browser cannot decode, so they were left untouched.`,
     );
   }
   // Only say this when a dpi cap was actually in play: lossless mode downsamples
@@ -726,11 +728,16 @@ async function recompressImage(
   const stream = doc.context.lookup(image.ref);
   if (!(stream instanceof PDFRawStream)) return 'skipped';
   const originalBytes = stream.contents instanceof Uint8Array ? stream.contents : new Uint8Array(stream.contents as ArrayLike<number>);
-  const filter = readName(image.dict, 'Filter');
+  const filters = filterNames(image.dict);
+  // Only the *last* filter produces samples. When a wrapper sits in front of it
+  // (ASCII85, RunLength) the samples cannot be reached without undoing that
+  // wrapper too, so those stay untouched instead of being called undecodable.
+  const filter = filters.length > 0 ? filters[filters.length - 1] : null;
   if (filter && !['DCTDecode', 'JPXDecode', 'FlateDecode'].includes(filter)) {
     // CCITT / JBIG2 are fax encodings that a canvas cannot decode losslessly.
     return 'skipped';
   }
+  if (filters.length > 1) return 'skipped';
 
   const decoded = await decodeRaster(originalBytes, filter, image.dict, doc);
   if (!decoded) return 'undecodable';
@@ -851,31 +858,48 @@ async function decodeRaster(
   if (filter !== 'FlateDecode' && filter !== null) return null;
   if (bits !== 8) return null; // 1/2/4-bit bitmaps and 16-bit need unpacking
 
-  const inflated = await inflate(bytes);
+  // `/Filter` may be absent, and an image stored like that is not a format a
+  // browser cannot read: the stream *is* the samples. Inflating it anyway asked
+  // zlib to deflate-check raw bytes, failed, and every unfiltered image in the
+  // file came back as "a format this browser cannot decode" (measured on a
+  // 26 MB scan: nothing touched, `undecodable: 1`).
+  const inflated = filter === null ? bytes : await inflate(bytes);
   if (!inflated) return null;
   const colorSpace = resolveColorSpace(dict, doc);
+  // A predictor is not a pixel format: `/FlateDecode` with `/DecodeParms` stores
+  // each row as a difference from the row above, and handing those bytes to the
+  // raster read turned a photo into diagonal moiré — a smaller file with the
+  // picture destroyed. Undo it before anything looks at a sample.
+  const samples = unpredict(inflated, decodeParms(dict, doc));
+  if (!samples) return null;
   const channels = colorSpace === 'DeviceGray' || colorSpace === 'Indexed' ? 1 : colorSpace === 'DeviceCMYK' ? 4 : 3;
   const expected = width * height * channels;
-  if (inflated.length < expected) return null;
+  if (samples.length < expected) return null;
+  const palette = colorSpace === 'Indexed' ? readPalette(dict, doc) : null;
 
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let i = 0; i < width * height; i++) {
     const src = i * channels;
     const dst = i * 4;
-    if (channels === 1) {
-      const v = colorSpace === 'Indexed' ? paletteLookup(inflated[src], dict, doc, inflated) : inflated[src];
+    if (palette) {
+      const [r, g, b] = paletteLookup(samples[src], palette);
+      rgba[dst] = r;
+      rgba[dst + 1] = g;
+      rgba[dst + 2] = b;
+    } else if (channels === 1) {
+      const v = samples[src];
       rgba[dst] = v;
       rgba[dst + 1] = v;
       rgba[dst + 2] = v;
     } else if (channels === 3) {
-      rgba[dst] = inflated[src];
-      rgba[dst + 1] = inflated[src + 1];
-      rgba[dst + 2] = inflated[src + 2];
+      rgba[dst] = samples[src];
+      rgba[dst + 1] = samples[src + 1];
+      rgba[dst + 2] = samples[src + 2];
     } else {
-      const k = inflated[src + 3];
-      rgba[dst] = 255 * (1 - Math.min(1, inflated[src] / 255 + k / 255));
-      rgba[dst + 1] = 255 * (1 - Math.min(1, inflated[src + 1] / 255 + k / 255));
-      rgba[dst + 2] = 255 * (1 - Math.min(1, inflated[src + 2] / 255 + k / 255));
+      const k = samples[src + 3];
+      rgba[dst] = 255 * (1 - Math.min(1, samples[src] / 255 + k / 255));
+      rgba[dst + 1] = 255 * (1 - Math.min(1, samples[src + 1] / 255 + k / 255));
+      rgba[dst + 2] = 255 * (1 - Math.min(1, samples[src + 2] / 255 + k / 255));
     }
     rgba[dst + 3] = 255;
   }
@@ -906,7 +930,11 @@ async function loadSoftMask(
   const raw = stream.contents instanceof Uint8Array ? stream.contents : new Uint8Array(stream.contents as ArrayLike<number>);
   const filter = readName(dict, 'Filter');
   if (filter !== 'FlateDecode' && filter !== null) return null;
-  const inflated = await inflate(raw);
+  // A mask stored unfiltered has to be read the same way its picture is: asking
+  // zlib to inflate raw samples failed, the mask came back `null`, and the
+  // re-encode dropped the transparency it was asked to keep — the logo on the
+  // page turned into its own black box.
+  const inflated = filter === null ? raw : await inflate(raw);
   if (!inflated || inflated.length < width * height) return null;
   return inflated.subarray(0, width * height);
 }
@@ -935,14 +963,158 @@ function resolveColorSpace(dict: PDFDict, doc: PDFDocument): string {
   return 'DeviceRGB';
 }
 
-function paletteLookup(index: number, dict: PDFDict, doc: PDFDocument, inflated: Uint8Array): number {
-  // Approximate the palette by luminance of the index; a full Indexed decode
-  // would need the /Decode array and the base colour space, and the savings
-  // are small compared with getting the alpha channel right.
-  void dict;
-  void doc;
-  void inflated;
-  return Math.round((index / 255) * 255);
+/**
+ * An `/Indexed` image's palette, resolved through its base colour space.
+ *
+ * The old decode returned the *index* as a grey level, so an indexed picture
+ * — a logo, a screenshot, an export from anything that quantises — came back
+ * with palette indices 0/1/2 at grey levels 0/40/8, i.e. black, on a page that
+ * otherwise looked complete. PDF gives the palette as a string of base-space
+ * samples at `/ColorSpace [/Indexed base hival lookup]`, so the base space has
+ * to be honoured, not guessed.
+ */
+interface Palette {
+  base: 'DeviceRGB' | 'DeviceGray' | 'DeviceCMYK';
+  table: Uint8Array;
+}
+
+function readPalette(dict: PDFDict, doc: PDFDocument): Palette | null {
+  const value = dict.lookup(PDFName.of('ColorSpace'));
+  if (!(value instanceof PDFArray) || value.size() < 4) return null;
+  const baseValue = value.get(1);
+  const base = String(baseValue instanceof PDFRef ? doc.context.lookup(baseValue) : baseValue)
+    .replace(/^\//, '');
+  if (base !== 'DeviceRGB' && base !== 'DeviceGray' && base !== 'DeviceCMYK') return null;
+  // `[/Indexed base hival lookup]`: the table is the *fourth* entry.
+  const lookup = value.get(3);
+  const resolved = lookup instanceof PDFRef ? doc.context.lookup(lookup) : lookup;
+  let table: Uint8Array | null = null;
+  if (resolved instanceof PDFRawStream) {
+    const filter = readName(resolved.dict, 'Filter');
+    if (filter === null) table = resolved.contents instanceof Uint8Array ? resolved.contents : null;
+  } else if (resolved instanceof PDFStream) {
+    try {
+      table = streamBytes(resolved);
+    } catch {
+      table = null;
+    }
+  } else if (resolved instanceof PDFString || resolved instanceof PDFHexString) {
+    // The usual spelling: the palette is a string literal or a hex string.
+    table = resolved.asBytes();
+  }
+  return table && table.length > 0 ? { base, table } : null;
+}
+
+/** One palette entry as RGB, through the palette's own base colour space. */
+function paletteLookup(index: number, palette: Palette): [number, number, number] {
+  const stride = palette.base === 'DeviceRGB' ? 3 : palette.base === 'DeviceGray' ? 1 : 4;
+  const at = index * stride;
+  if (at + stride > palette.table.length) return [255, 255, 255];
+  if (stride === 1) {
+    const v = palette.table[at];
+    return [v, v, v];
+  }
+  if (stride === 3) return [palette.table[at], palette.table[at + 1], palette.table[at + 2]];
+  const k = palette.table[at + 3];
+  return [
+    255 * (1 - Math.min(1, palette.table[at] / 255 + k / 255)),
+    255 * (1 - Math.min(1, palette.table[at + 1] / 255 + k / 255)),
+    255 * (1 - Math.min(1, palette.table[at + 2] / 255 + k / 255)),
+  ];
+}
+
+/** The `/Filter` of an image as the list it may be: a name, or an array. */
+function filterNames(dict: PDFDict): string[] {
+  const value = dict.get(PDFName.of('Filter'));
+  const name = (item: unknown): string => String(item ?? '').replace(/^\//, '');
+  if (value instanceof PDFArray) {
+    return Array.from({ length: value.size() }, (_, i) => name(value.get(i))).filter(Boolean);
+  }
+  const single = name(value);
+  return single ? [single] : [];
+}
+
+interface Predictor {
+  predictor: number;
+  colors: number;
+  columns: number;
+  bits: number;
+}
+
+/** The `/DecodeParms` that describe a predictor, or none when there are none. */
+function decodeParms(dict: PDFDict, doc: PDFDocument): Predictor {
+  const none: Predictor = { predictor: 1, colors: 1, columns: 1, bits: 8 };
+  const value = dict.get(PDFName.of('DecodeParms'));
+  const resolved = value instanceof PDFRef ? doc.context.lookup(value) : value;
+  const parms = Array.isArray(resolved)
+    ? (resolved[0] as unknown)
+    : resolved;
+  if (!(parms instanceof PDFDict)) return none;
+  const number = (key: string, fallback: number): number => {
+    const entry = parms.get(PDFName.of(key));
+    const parsed = entry ? Number(entry.toString()) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  return {
+    predictor: number('Predictor', 1),
+    colors: number('Colors', 1),
+    columns: number('Columns', 1),
+    bits: number('BitsPerComponent', 8),
+  };
+}
+
+/**
+ * Undo a TIFF or PNG predictor, or hand the bytes back when there is none.
+ *
+ * Both predictors are row differencing: predictor 2 takes each sample from the
+ * one `colors` back in the same row, and predictors 10–15 lead every row with
+ * the PNG filter byte that says *which* neighbour the row was differenced
+ * against. Only 8-bit samples are handled, because that is the only depth the
+ * rest of this decode handles; `null` means "this build cannot read it" and the
+ * image is left alone rather than written out as noise.
+ */
+function unpredict(data: Uint8Array, parms: Predictor): Uint8Array | null {
+  if (parms.predictor <= 1) return data;
+  if (parms.bits !== 8) return null;
+  const row = parms.colors * parms.columns;
+  if (row <= 0) return null;
+  const out = new Uint8Array(data);
+  if (parms.predictor === 2) {
+    for (let start = 0; start + row <= out.length; start += row) {
+      for (let i = parms.colors; i < row; i++) {
+        out[start + i] = (out[start + i] + out[start + i - parms.colors]) & 0xff;
+      }
+    }
+    return out;
+  }
+  if (parms.predictor < 10) return null;
+  const stride = row + 1;
+  const rows = Math.floor(out.length / stride);
+  const plain = new Uint8Array(rows * row);
+  for (let y = 0; y < rows; y++) {
+    const from = y * stride;
+    const to = y * row;
+    const kind = out[from];
+    for (let i = 0; i < row; i++) {
+      const raw = out[from + 1 + i];
+      const left = i >= parms.colors ? plain[to + i - parms.colors] : 0;
+      const up = y > 0 ? plain[to - row + i] : 0;
+      const upLeft = y > 0 && i >= parms.colors ? plain[to - row + i - parms.colors] : 0;
+      let value = raw;
+      if (kind === 1) value = raw + left;
+      else if (kind === 2) value = raw + up;
+      else if (kind === 3) value = raw + ((left + up) >> 1);
+      else if (kind === 4) {
+        const guess = left + up - upLeft;
+        const dl = Math.abs(guess - left);
+        const du = Math.abs(guess - up);
+        const dul = Math.abs(guess - upLeft);
+        value = raw + (dl <= du && dl <= dul ? left : du <= dul ? up : upLeft);
+      }
+      plain[to + i] = value & 0xff;
+    }
+  }
+  return plain;
 }
 
 function readReference(dict: PDFDict, key: string, doc: PDFDocument): PDFRef | null {

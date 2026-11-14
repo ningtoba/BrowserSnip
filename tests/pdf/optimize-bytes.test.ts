@@ -39,6 +39,7 @@ import type { PDFPage } from '@maxwbh/pdf-lib';
 import {
   PDFArray,
   PDFDict,
+  PDFHexString,
   PDFName,
   PDFNumber,
   PDFRawStream,
@@ -560,6 +561,18 @@ interface RasterOptions {
   alpha?: 'none' | 'half';
   /** Wrap the placement in a `q … cm` group that scales by this factor. */
   scaleGroup?: number;
+  /**
+   * How the samples are stored. `raw` leaves `/Filter` off entirely (the stream
+   * *is* the samples); `predictor` flate-compresses PNG-`Up`-differenced rows
+   * with a `/DecodeParms /Predictor`.
+   */
+  store?: 'flate' | 'raw' | 'predictor';
+  /**
+   * Store one channel of indices into a palette built from these four colours,
+   * as an `/Indexed` image. Each quadrant gets nine near-variants so the index
+   * stream is not flat and a JPEG re-encode can honestly come out smaller.
+   */
+  indexedBlocks?: Array<[number, number, number]>;
 }
 
 /**
@@ -579,16 +592,34 @@ async function rasterFixture(options: RasterOptions): Promise<Uint8Array> {
 
   const px = options.px;
   const quadrants: Quadrants = options.quadrants ?? [0, 255, 90, 200];
-  const samples = new Uint8Array(px * px * 3);
+  const blocks = options.indexedBlocks;
+  const palette: Array<[number, number, number]> = [];
+  if (blocks) {
+    for (const block of blocks) {
+      for (let step = 0; step < 9; step++) {
+        palette.push([
+          Math.max(0, Math.min(255, block[0] + step * 3 - 12)),
+          Math.max(0, Math.min(255, block[1] + step * 3 - 12)),
+          Math.max(0, Math.min(255, block[2] + step * 3 - 12)),
+        ]);
+      }
+    }
+  }
+  const channels = blocks ? 1 : 3;
+  const samples = new Uint8Array(px * px * channels);
   for (let y = 0; y < px; y++) {
     for (let x = 0; x < px; x++) {
-      const at = (y * px + x) * 3;
       const which = (y < px / 2 ? 0 : 2) + (x < px / 2 ? 0 : 1);
+      if (blocks) {
+        samples[y * px + x] = which * 9 + (Math.abs(noiseAt(y * px + x, 9)) % 9);
+        continue;
+      }
+      const at = (y * px + x) * 3;
       const value = quadrants[which];
-      const channels = Array.isArray(value) ? value : [value, value, value];
+      const colors = Array.isArray(value) ? value : [value, value, value];
       const jitter = noiseAt(y * px + x, 36);
       for (let c = 0; c < 3; c++) {
-        samples[at + c] = Math.max(0, Math.min(255, (channels[c] as number) + jitter));
+        samples[at + c] = Math.max(0, Math.min(255, (colors[c] as number) + jitter));
       }
     }
   }
@@ -599,11 +630,45 @@ async function rasterFixture(options: RasterOptions): Promise<Uint8Array> {
     Height: px,
     BitsPerComponent: 8,
     ColorSpace: 'DeviceRGB',
-    Filter: 'FlateDecode',
   }) as PDFDict;
-  const ref = doc.context.register(
-    PDFRawStream.of(dict, new Uint8Array(deflateSync(Buffer.from(samples)))),
-  );
+  if (blocks) {
+    dict.set(
+      PDFName.of('ColorSpace'),
+      doc.context.obj([
+        'Indexed',
+        'DeviceRGB',
+        palette.length - 1,
+        PDFHexString.of(palette.map((entry) => entry.map((v) => v.toString(16).padStart(2, '0')).join('')).join('')),
+      ]),
+    );
+  }
+  const store = options.store ?? 'flate';
+  let payload: Uint8Array;
+  if (store === 'raw') {
+    payload = samples;
+  } else if (store === 'predictor') {
+    // Every row differenced against the row above, PNG `Up` (2), and compressed.
+    const row = px * channels;
+    const differenced = new Uint8Array((row + 1) * px);
+    for (let y = 0; y < px; y++) {
+      differenced[y * (row + 1)] = 2;
+      for (let i = 0; i < row; i++) {
+        const here = samples[y * row + i];
+        const above = y > 0 ? samples[(y - 1) * row + i] : 0;
+        differenced[y * (row + 1) + 1 + i] = (here - above) & 0xff;
+      }
+    }
+    dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    dict.set(
+      PDFName.of('DecodeParms'),
+      doc.context.obj({ Predictor: 15, Colors: channels, Columns: px, BitsPerComponent: 8 }),
+    );
+    payload = new Uint8Array(deflateSync(Buffer.from(differenced)));
+  } else {
+    dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    payload = new Uint8Array(deflateSync(Buffer.from(samples)));
+  }
+  const ref = doc.context.register(PDFRawStream.of(dict, payload));
 
   if (options.alpha === 'half') {
     const mask = new Uint8Array(px * px);
@@ -617,11 +682,12 @@ async function rasterFixture(options: RasterOptions): Promise<Uint8Array> {
       Height: px,
       BitsPerComponent: 8,
       ColorSpace: 'DeviceGray',
-      Filter: 'FlateDecode',
     }) as PDFDict;
-    const maskRef = doc.context.register(
-      PDFRawStream.of(maskDict, new Uint8Array(deflateSync(Buffer.from(mask)))),
-    );
+    // The mask follows the picture's own storage: an unfiltered image is paired
+    // with an unfiltered mask in the wild, and the two decoding paths differ.
+    if (store !== 'raw') maskDict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    const maskPayload = store === 'raw' ? mask : new Uint8Array(deflateSync(Buffer.from(mask)));
+    const maskRef = doc.context.register(PDFRawStream.of(maskDict, maskPayload));
     dict.set(PDFName.of('SMask'), maskRef);
   }
 
@@ -1165,6 +1231,22 @@ describe('core/compress re-encodes pixels that can be measured', () => {
     expect(report.notes.join(' ')).toContain(`${report.images.replaced} image re-encoded as greyscale.`);
   });
 
+  it('keeps a soft mask that is stored without a /Filter', async () => {
+    // The mask was read through `inflate` unconditionally, so an unfiltered mask
+    // failed to load, `hasAlpha` stayed false and the re-encode dropped the
+    // transparency it had been asked to keep: the logo became a black box.
+    const bytes = await rasterFixture({ px: 64, boxPt: 64, alpha: 'half', store: 'raw' });
+    const { bytes: out, report } = await compressPDF({ bytes }, { preset: 'balanced', keepTransparency: true });
+    expect(report.images.replaced).toBe(1);
+    const [image] = imageObjects(await openPDF(out));
+    expect(image.dict.get(PDFName.of('SMask')) instanceof PDFRef, 'the /SMask reference did not survive').toBe(true);
+    const decoded = decodeStubJpeg(image.bytes);
+    const means = quadrantMeans(decoded.rgb, decoded.width, decoded.height);
+    // The masked bottom half composites onto paper, not onto black.
+    expect(Math.round(means[2])).toBeGreaterThan(240);
+    expect(Math.round(means[3])).toBeGreaterThan(240);
+  });
+
   it('multiplies the transforms when measuring the box on the page', async () => {
     // The image is drawn 16 pt wide inside a 2× group, so it occupies 32 pt:
     // 144 dpi, halved by the ask. Reading only the innermost `cm` would call it
@@ -1190,6 +1272,90 @@ describe('core/compress re-encodes pixels that can be measured', () => {
     expect(dictName(image.dict, 'Filter')).toBe('FlateDecode');
   });
 
+  it('reads an image stored with no /Filter at all instead of calling it a format', async () => {
+    // Raw samples are the simplest encoding there is and `/Filter` is optional.
+    // Asking zlib to inflate them failed, so a 26 MB unfiltered scan came back
+    // under the sentence "1 image uses a format this browser cannot decode" —
+    // nothing touched, nothing written, on a file built to be compressed.
+    const bytes = await rasterFixture({ px: 64, boxPt: 32, store: 'raw' });
+    const { bytes: out, report } = await compressPDF({ bytes }, { preset: 'balanced', maxDpi: 72 });
+
+    expect(report.images.undecodable).toBe(0);
+    expect(report.images.replaced).toBe(1);
+    expect(report.notes.join(' ')).not.toContain('cannot decode');
+    expect(out.byteLength).toBeLessThan(bytes.byteLength);
+    const [image] = imageObjects(await openPDF(out));
+    expect(dictName(image.dict, 'Filter')).toBe('DCTDecode');
+    expect(dictNumber(image.dict, 'Width')).toBe(32);
+    // The samples that came out are the four quadrants that went in, not noise.
+    const decoded = decodeStubJpeg(image.bytes);
+    const means = quadrantMeans(decoded.rgb, decoded.width, decoded.height);
+    expect(Math.round(means[0])).toBeLessThan(12);
+    expect(Math.round(means[1])).toBeGreaterThan(240);
+    expect(Math.round(means[2])).toBeGreaterThan(70);
+    expect(Math.round(means[2])).toBeLessThan(110);
+    expect(Math.round(means[3])).toBeGreaterThan(180);
+  });
+
+  it('applies the /DecodeParms predictor before reading a sample', async () => {
+    // A PNG-predicted Flate image stores each row as its difference from the row
+    // above. Handing those bytes straight to the raster read re-encoded a photo
+    // into diagonal moiré — the file opened, had the right page count and was
+    // smaller.
+    const predicted = await rasterFixture({ px: 64, boxPt: 32, store: 'predictor' });
+    const plain = await rasterFixture({ px: 64, boxPt: 32, store: 'flate' });
+
+    const fromPredicted = decodeStubJpeg(
+      imageObjects(await openPDF((await compressPDF({ bytes: predicted }, { preset: 'balanced', maxDpi: 72 })).bytes))[0].bytes,
+    );
+    const fromPlain = decodeStubJpeg(
+      imageObjects(await openPDF((await compressPDF({ bytes: plain }, { preset: 'balanced', maxDpi: 72 })).bytes))[0].bytes,
+    );
+    const predictedMeans = quadrantMeans(fromPredicted.rgb, fromPredicted.width, fromPredicted.height);
+    // The control: the same fixture stored plainly is read the same way. Without
+    // the unfilter the predicted picture is noise, and its quadrants are nowhere
+    // near these four.
+    const plainMeans = quadrantMeans(fromPlain.rgb, fromPlain.width, fromPlain.height);
+    for (let i = 0; i < 4; i++) expect(Math.abs(predictedMeans[i] - plainMeans[i])).toBeLessThan(8);
+    expect(Math.round(predictedMeans[0])).toBeLessThan(18);
+    expect(Math.round(predictedMeans[1])).toBeGreaterThan(235);
+    expect(Math.round(predictedMeans[3])).toBeGreaterThan(175);
+  });
+
+  it('maps an /Indexed image through its palette instead of its index', async () => {
+    // The index was used as a grey level, so palette entry 1 (green) came out at
+    // grey 40 and a three-colour picture was written almost black.
+    const bytes = await rasterFixture({
+      px: 256,
+      boxPt: 128,
+      indexedBlocks: [
+        [0, 0, 0],
+        [250, 250, 250],
+        [0, 160, 0],
+        [200, 30, 30],
+      ],
+    });
+    const { bytes: out, report } = await compressPDF({ bytes }, { preset: 'balanced', maxDpi: 72 });
+
+    expect(report.images.replaced).toBe(1);
+    const [image] = imageObjects(await openPDF(out));
+    const decoded = decodeStubJpeg(image.bytes);
+    const means = quadrantMeans(decoded.rgb, decoded.width, decoded.height);
+    // Top-left stays dark, top-right stays white, bottom-left stays green-dominant
+    // and the bottom-right stays red-dominant: the palette, not the index.
+    expect(Math.round(means[0])).toBeLessThan(30);
+    expect(Math.round(means[1])).toBeGreaterThan(220);
+    const green = (await (async () => {
+      const at = ((Math.floor(decoded.height * 0.75)) * decoded.width + Math.floor(decoded.width * 0.25)) * 3;
+      return [decoded.rgb[at], decoded.rgb[at + 1], decoded.rgb[at + 2]];
+    })());
+    expect(green[1]).toBeGreaterThan(green[0] + 60);
+    const red = (await (async () => {
+      const at = ((Math.floor(decoded.height * 0.75)) * decoded.width + Math.floor(decoded.width * 0.75)) * 3;
+      return [decoded.rgb[at], decoded.rgb[at + 1], decoded.rgb[at + 2]];
+    })());
+    expect(red[0]).toBeGreaterThan(red[1] + 60);
+  });
 });
 
 /* ── images nested in Form XObjects ───────────────────────────────── */
