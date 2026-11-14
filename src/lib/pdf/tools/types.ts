@@ -164,7 +164,9 @@ type ToolResultCommon = {
   warnings?: string[];
   /**
    * Pages in the primary output — the first entry of `files`, or the whole PDF
-   * for `kind: 'pdf'`.
+   * for `kind: 'pdf'`. A tool whose files are parts of one job (a split) counts
+   * every part, because the card prints this as "in → out" and one part's count
+   * would read as the pages the other parts lost.
    *
    * Set it where the document is in hand, at the moment it is saved: reading the
    * number back off the bytes costs a second full parse of a 500-page output,

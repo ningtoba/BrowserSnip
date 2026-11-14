@@ -1885,6 +1885,67 @@ describe('each tool is checked against its own output file', () => {
     ]);
   });
 
+  it('split numbers a long document to its own width, so the files sort the way they were cut', async () => {
+    const dozen = fileOf(await sheets(grid(12)), 'dozen.pdf');
+    const outcome = await run('split', { mode: 'every' }, [dozen]);
+    const names = outcome.outputs.map((output) => output.name);
+    expect(names).toEqual(Array.from({ length: 12 }, (_, i) => `dozen_page-${String(i + 1).padStart(2, '0')}.pdf`));
+    // The property that matters is the sort, not the padding: an archive listed by
+    // name used to read 1, 10, 11, 12, 2, … and every part after the ninth landed
+    // in the wrong place. Plain string order is what a file manager uses.
+    expect(names).toEqual([...names].sort());
+
+    // Measured where a user meets it: the card's "Download as zip" writes the
+    // entries in output order, and the archive has to keep both that order and
+    // the `.pdf` container.
+    const JSZip = (await import('jszip')).default;
+    const archive = new JSZip();
+    for (const output of outcome.outputs) archive.file(output.name, output.blob);
+    const zip = await JSZip.loadAsync(
+      await archive.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }),
+    );
+    expect(Object.keys(zip.files)).toEqual(names);
+    for (const [index, name] of names.entries()) {
+      const stored = await zip.file(name)!.async('uint8array');
+      expect(Buffer.from(stored.subarray(0, 5)).toString('latin1')).toBe('%PDF-');
+      expect(pageTexts(await open(stored))).toEqual([`sheet ${index + 1}`]);
+    }
+
+    // Control: nine pages or fewer are untouched, so the short documents keep the
+    // names they always had.
+    const five = fileOf(await sheets(grid(5)), 'five.pdf');
+    const short = await run('split', { mode: 'every' }, [five]);
+    expect(short.outputs.map((output) => output.name)).toEqual([
+      'five_page-1.pdf',
+      'five_page-2.pdf',
+      'five_page-3.pdf',
+      'five_page-4.pdf',
+      'five_page-5.pdf',
+    ]);
+  });
+
+  it('split counts the pages it produced, so the card can say in → out', async () => {
+    const outcome = await run('split', { mode: 'every' });
+    // The number the card prints, measured against the sheets actually in the
+    // files rather than repeated from the message.
+    let sheetsWritten = 0;
+    for (const output of outcome.outputs) {
+      sheetsWritten += (await open(new Uint8Array(await output.blob.arrayBuffer()))).getPageCount();
+    }
+    expect(sheetsWritten).toBe(4);
+    expect(outcome.pagesOut).toBe(sheetsWritten);
+
+    // Overlap makes the two numbers differ, and the produced-sheet count is the
+    // one the card means: page 2 is in two files, so four sheets came out of a
+    // three-page selection.
+    const overlap = await run('split', { mode: 'ranges', ranges: '1-2,2-3' });
+    expect(overlap.outputs).toHaveLength(2);
+    expect(overlap.pagesOut).toBe(4);
+    // Control: a single-part run reports that part's pages, not the document's.
+    const one = await run('split', { mode: 'ranges', ranges: '3' });
+    expect(one.pagesOut).toBe(1);
+  });
+
   it('merge’s spacer sheet belongs beside the file it follows, and bookmarks can be switched off', async () => {
     const a = fileOf(await sheets(grid(2)), 'a.pdf');
     const b = fileOf(await sheets(Array.from({ length: 2 }, () => ({ width: 300, height: 200 }))), 'b.pdf');

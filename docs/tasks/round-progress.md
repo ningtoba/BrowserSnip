@@ -4,7 +4,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 
 ```text
 001 [x] merge
-002 [ ] split
+002 [x] split
 003 [ ] extract-pages
 004 [ ] remove-pages
 005 [ ] organize

@@ -569,9 +569,16 @@ const safeStem = downloadStem;
  * What a split file's name says about its contents: one sheet is `page-5`,
  * several are `pages-2-7`. `pages-5-5` named a single sheet as if it were a
  * range, which reads like a mistake in a folder full of downloads (E17).
+ *
+ * The numbers are padded to the width of the document's own page count, so an
+ * archive of a 12-page split reads `page-01` … `page-12`. Unpadded, `page-10`
+ * sorted between `page-1` and `page-2` in every name-ordered listing — the
+ * "Download as zip" entries came out of order in the folder they were
+ * extracted to. A document of nine pages or fewer is unaffected (E17).
  */
-function rangeName(first: number, last: number): string {
-  return first === last ? `page-${first}` : `pages-${first}-${last}`;
+function rangeName(first: number, last: number, width = 1): string {
+  const pad = (n: number) => String(n).padStart(width, '0');
+  return first === last ? `page-${pad(first)}` : `pages-${pad(first)}-${pad(last)}`;
 }
 
 /** Make `name` unique within `used` by suffixing `-2`, `-3`, … */
@@ -1037,10 +1044,15 @@ export const organizeTools: PdfToolDefinition[] = [
       const notes = createNotes();
       const mode = stringValue(context.values, 'mode', 'ranges');
       const total = input.pageCount;
+      // Page numbers in the output names are padded to the document's own width,
+      // so the files sort the way they were cut (see `rangeName`).
+      const width = String(total).length;
       const groups: { name: string; pages: number[] }[] = [];
 
       if (mode === 'every') {
-        for (let i = 0; i < total; i++) groups.push({ name: `page-${i + 1}`, pages: [i] });
+        for (let i = 0; i < total; i++) {
+          groups.push({ name: rangeName(i + 1, i + 1, width), pages: [i] });
+        }
       } else if (mode === 'oddEven') {
         const which = stringValue(context.values, 'oddEven', 'both');
         const sides = [
@@ -1066,7 +1078,7 @@ export const organizeTools: PdfToolDefinition[] = [
           const pages: number[] = [];
           for (let p = i; p < Math.min(i + size, total); p++) pages.push(p);
           groups.push({
-            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1),
+            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1, width),
             pages,
           });
         }
@@ -1079,7 +1091,7 @@ export const organizeTools: PdfToolDefinition[] = [
           // page count that makes it wrong (E6, E15).
           const pages = selection({ pages: trimmed }, total, { verb: 'split out' });
           groups.push({
-            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1),
+            name: rangeName(pages[0] + 1, pages[pages.length - 1] + 1, width),
             pages,
           });
         }
@@ -1105,6 +1117,10 @@ export const organizeTools: PdfToolDefinition[] = [
       const files: { blob: Blob; name: string }[] = [];
       const used = new Set<string>();
       const stem = safeStem(input.name);
+      // Every sheet the job is about to hand over. The card's `in → out` line
+      // said "out not counted" for a split while this was already known here:
+      // the parts are chosen before a byte is written.
+      const producedPages = groups.reduce((n, group) => n + group.pages.length, 0);
       // A bookmark belongs to exactly one output file, so counting what every
       // file carried says what the *job* lost — and the ranges are disjoint, so
       // no bookmark is counted twice.
@@ -1129,7 +1145,12 @@ export const organizeTools: PdfToolDefinition[] = [
         notes,
       );
       noteFormFields(listFormFields(input.doc).length, notes);
-      return filesOut(files, notes, `Created ${files.length} file${files.length === 1 ? '' : 's'} from ${pageCountLabel(total)}.`);
+      const result = filesOut(
+        files,
+        notes,
+        `Created ${files.length} file${files.length === 1 ? '' : 's'} from ${pageCountLabel(total)}.`,
+      );
+      return { ...result, pages: producedPages };
     },
   },
 
