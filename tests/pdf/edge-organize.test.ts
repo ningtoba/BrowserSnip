@@ -37,6 +37,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { OPS } from 'pdfjs-dist';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import {
   PDFArray,
   PDFDict,
@@ -50,7 +51,7 @@ import {
 } from '@maxwbh/pdf-lib';
 import { organizeTools } from '@/lib/pdf/tools/organize';
 import { resolvePages } from '@/lib/pdf/core/pages';
-import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
+import { openPDF } from '@/lib/pdf/core/doc';
 import { writeXmp } from '@/lib/pdf/core/metadata';
 import { saveGateOnly } from './gate-harness';
 import { isToolInputError } from '@/lib/pdf/core/guard';
@@ -285,22 +286,45 @@ const TINY_JPEG = Uint8Array.from(
 
 /**
  * Two real 4×4 PNGs that differ only in what they paint: the render double
- * hands out the inked one once `PageRender.finished` has resolved and the blank
+ * hands out a stamped one once `PageRender.finished` has resolved and the blank
  * one before that, so a rasteriser that encodes an unpainted canvas is caught by
  * the bytes in the archive rather than by a call count.
+ *
+ * `pngOf` builds the stamped one: the red channel carries a byte the double was
+ * told, so each archived entry can be judged against the page it *names* (and
+ * the quality the encoder was handed) by decoding the bytes. A single shared
+ * image was the gap that let an archive of page 1 repeated four times pass.
  */
-const INKED_PNG = Uint8Array.from(
-  Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAADElEQVR4nGNgIB0AAAA0AAF2Xq7DAAAAAElFTkSuQmCC',
-    'base64',
-  ),
-);
 const BLANK_PNG = Uint8Array.from(
   Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAE0lEQVR4nGP8//8/AwwwwVl4OQCWbgMF7ZjH1AAAAABJRU5ErkJggg==',
     'base64',
   ),
 );
+
+function pngOf(red: number): Uint8Array {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(4, 0);
+  ihdr.writeUInt32BE(4, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const raw = Buffer.alloc(4 * (1 + 4 * 3)); // filter byte + 4 RGB pixels per row
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) raw[y * 13 + 1 + x * 3] = red;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 /** A dictionary, whether it is inline or behind a reference. */
 function dictOf(doc: PDFDocument, value: unknown): PDFDict | null {
@@ -577,7 +601,7 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           // until `finished` resolves. A caller that encodes before that ships a
           // blank sheet — which is what `pdf-to-cbz` did — so the double has to
           // model the ordering, not just the sizes.
-          const canvas = { painted: false } as unknown as HTMLCanvasElement;
+          const canvas = { painted: false, page: n } as unknown as HTMLCanvasElement;
           const finished = new Promise<void>((resolve) => {
             setTimeout(() => {
               (canvas as unknown as { painted: boolean }).painted = true;
@@ -610,10 +634,17 @@ vi.mock('@/lib/pdf/core/raster', async (importOriginal) => {
     ...real,
     // The painted flag is what the `finished` promise flips: encoding a canvas
     // that was never awaited yields the blank sheet, and the archive keeps it.
-    canvasToBlob: async (canvas: unknown, format: string) => {
-      const painted = (canvas as { painted?: boolean } | null)?.painted === true;
-      const bytes = format === 'png' ? (painted ? INKED_PNG : BLANK_PNG) : TINY_JPEG;
-      return new Blob([bytes], { type: format === 'png' ? 'image/png' : 'image/jpeg' });
+    // A painted canvas is stamped with its own page number (`red`) and, for
+    // JPEG, with the quality the run passed — so entry identity and the quality
+    // control are both readable out of the archived bytes.
+    canvasToBlob: async (canvas: unknown, format: string, quality?: number) => {
+      const state = canvas as { painted?: boolean; page?: number } | null;
+      const painted = state?.painted === true;
+      if (format === 'png') {
+        return new Blob([painted ? pngOf(state?.page ?? 1) : BLANK_PNG], { type: 'image/png' });
+      }
+      const qualityByte = Math.round((quality ?? 0.92) * 100);
+      return new Blob([painted ? pngOf(qualityByte) : BLANK_PNG], { type: 'image/jpeg' });
     },
   };
 });
@@ -2634,17 +2665,59 @@ describe('each tool is checked against its own output file', () => {
     // Three sheets, not the whole document, numbered in reading order. The
     // archive layer flattens `/` in entry names, so the tool names them flat.
     expect(entries).toEqual(['comic-001.png', 'comic-002.png', 'comic-003.png']);
-    for (const entry of entries) {
+    const written: number[][] = [];
+    for (const [i, entry] of entries.entries()) {
       const bytes = await zip.file(entry)!.async('uint8array');
       expect([...bytes.slice(0, 4)], `${entry} is not a PNG`).toEqual([0x89, 0x50, 0x4e, 0x47]);
-      // And not a PNG of *nothing*: the page has to be encoded after pdf.js
-      // painted it. Measured on the deployed site, the shipped archive held six
-      // identical 23 690-byte blank JPEGs while the tool reported success.
-      expect([...bytes], `${entry} is a blank sheet — the canvas was encoded before it was painted`).toEqual([
-        ...INKED_PNG,
+      // Not a PNG of *nothing*: the page has to be encoded after pdf.js painted
+      // it. Measured on the deployed site, the shipped archive held six identical
+      // 23 690-byte blank JPEGs while the tool reported success.
+      expect([...bytes], `${entry} is a blank sheet — the canvas was encoded before it was painted`).not.toEqual([
+        ...BLANK_PNG,
       ]);
+      // And the picture is *that page's*: the double stamps each canvas with its
+      // own page number, so entry 1 must decode to page 2, entry 2 to page 3,
+      // entry 3 to page 4. One shared image for every entry used to pass here.
+      expect([...bytes], `${entry} is not a picture of page ${i + 2}`).toEqual([...pngOf(i + 2)]);
+      written.push([...bytes]);
     }
+    // The check bites only if the entries differ at all.
+    expect(new Set(written.map((bytes) => bytes.join(','))).size).toBe(3);
     expect(outcome.outputs[0].name).toBe('comic.cbz');
+  });
+
+  it('pdf-to-cbz spends the JPEG quality on the archived bytes and ignores it for PNG', async () => {
+    const source = fileOf(await sheets(grid(2)), 'comic.pdf');
+    const JSZip = (await import('jszip')).default;
+    const entryBytes = async (values: Record<string, unknown>): Promise<number[]> => {
+      const outcome = await run('pdf-to-cbz', values, [source]);
+      const zip = await JSZip.loadAsync(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+      const entry = Object.keys(zip.files).sort()[0];
+      return [...(await zip.file(entry)!.async('uint8array'))];
+    };
+    // The encoder is handed 0.4 / 0.9 and stamps that byte into the picture, so
+    // a run that drops the field (the old literal 0.92) matches neither.
+    expect(await entryBytes({ quality: 0.4 })).toEqual([...pngOf(40)]);
+    expect(await entryBytes({ quality: 0.9 })).toEqual([...pngOf(90)]);
+    // The default is still 0.92, and PNG is lossless: the same bytes whatever
+    // the slider says, because the rail hides the field for that format.
+    expect(await entryBytes({})).toEqual([...pngOf(92)]);
+    expect(await entryBytes({ format: 'png', quality: 0.4 })).toEqual(
+      await entryBytes({ format: 'png', quality: 0.9 }),
+    );
+  });
+
+  it('pdf-to-cbz refuses an emptied page list instead of converting the document (the “none” chip)', async () => {
+    const source = fileOf(await sheets(grid(3)), 'comic.pdf');
+    // Clicking “none” on the strip clears the field; `selection`'s fallback used
+    // to turn that into "all", so the preset produced a byte-identical archive
+    // to “all” and reached nothing.
+    await expect(run('pdf-to-cbz', { pages: '' }, [source])).rejects.toThrow(/No pages chosen/i);
+    // The untouched field still means all three sheets.
+    const outcome = await run('pdf-to-cbz', {}, [source]);
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    expect(Object.keys(zip.files)).toHaveLength(3);
   });
 
   it('a spaced page range selects the pages it names, not the document (E15)', async () => {

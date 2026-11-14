@@ -64,6 +64,7 @@ import {
   pageRangeProblem,
   pagesField,
   pdfResult,
+  qualityField,
   rebuildDocument,
   throwIfAborted,
   withRender,
@@ -831,6 +832,26 @@ const DPI: ToolField = {
   group: 'Images',
   help: 'Higher means a bigger archive and more memory in this tab.',
 };
+
+/**
+ * The JPEG quality `pdf-to-cbz` encodes at.
+ *
+ * It was a literal `0.92` inside the run, so the one control a page-image
+exporter is expected to have did not exist: a scan came back at a fixed size
+per page with no way to ask for less, which is the opposite of what the card's
+JPEG/PNG help is about. `rasterizePages` already took a `quality`; nothing read
+it. PNG is lossless, so the rail hides the field for that format (`when`).
+ */
+const JPEG_QUALITY: ToolField = qualityField('jpeg', {
+  default: 0.92,
+  step: 0.01,
+  group: 'Images',
+  help: 'Lower makes a smaller archive and blocks up around speech bubbles and line art. PNG is lossless and ignores this.',
+  // This tool spells its other format `jpg`, not `jpeg`, so the shared
+  // predicate (which compares against `jpeg`) would hide the slider for the
+  // default format — the field would exist and never be drawn.
+  when: (values) => values.format !== 'png',
+});
 
 /**
  * The counting fields of the two cutting tools.
@@ -3049,6 +3070,7 @@ export const organizeTools: PdfToolDefinition[] = [
         ],
       help: 'PNG keeps line art and speech bubbles crisp at the cost of a much bigger archive; JPG is what most comic readers expect.',
     },
+      JPEG_QUALITY,
       DPI,
       ALL_PAGES,
     ],
@@ -3056,7 +3078,7 @@ export const organizeTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const notes = createNotes();
       const dpi = numberOf(context.values, DPI, notes);
-      const pages = selection(context.values, input.pageCount, { fallback: 'all', verb: 'convert' });
+      const pages = selection(context.values, input.pageCount, { verb: 'convert' });
       // A rough uncompressed pixel budget: this tab holds every rasterised page
       // in memory before the archive is written (E7, E12).
       const boxes = pages.map((index) => visibleBox(input.doc.getPage(index)));
@@ -3071,8 +3093,11 @@ export const organizeTools: PdfToolDefinition[] = [
       try {
         const { rasterizePages } = await import('../core/render');
         const format = stringValue(context.values, 'format', 'jpg') === 'png' ? 'png' : 'jpeg';
+        // JPEG quality only: `png` is lossless and the encoder ignores the arg.
+        const quality = format === 'png' ? undefined : numberOf(context.values, { ...JPEG_QUALITY, key: 'quality' }, notes);
         const rendered = await rasterizePages(session, {
           format,
+          quality,
           scale: dpi / 72,
           // The selection, not the whole document: rendering every page while the
           // archive was described as the chosen pages produced a CBZ with the

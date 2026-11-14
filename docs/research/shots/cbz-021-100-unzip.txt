@@ -1,0 +1,305 @@
+archive /tmp/cbz/after100.cbz: 100 entries, 10033571 B uncompressed
+  pages100-001.jpg         method=8 107040 B
+  pages100-002.jpg         method=8 107169 B
+  pages100-003.jpg         method=8 107116 B
+  pages100-004.jpg         method=8 107025 B
+  pages100-005.jpg         method=8 107190 B
+  pages100-006.jpg         method=8 106871 B
+  pages100-007.jpg         method=8 106390 B
+  pages100-008.jpg         method=8 106550 B
+  pages100-009.jpg         method=8 106416 B
+  pages100-010.jpg         method=8 106432 B
+  pages100-011.jpg         method=8 106228 B
+  pages100-012.jpg         method=8 106547 B
+  pages100-013.jpg         method=8 106421 B
+  pages100-014.jpg         method=8 106385 B
+  pages100-015.jpg         method=8 106531 B
+  pages100-016.jpg         method=8 106551 B
+  pages100-017.jpg         method=8 106067 B
+  pages100-018.jpg         method=8 106272 B
+  pages100-019.jpg         method=8 106002 B
+  pages100-020.jpg         method=8 106149 B
+  pages100-021.jpg         method=8 105871 B
+  pages100-022.jpg         method=8 106151 B
+  pages100-023.jpg         method=8 105827 B
+  pages100-024.jpg         method=8 105577 B
+  pages100-025.jpg         method=8 105607 B
+  pages100-026.jpg         method=8 105668 B
+  pages100-027.jpg         method=8 105390 B
+  pages100-028.jpg         method=8 105357 B
+  pages100-029.jpg         method=8 104990 B
+  pages100-030.jpg         method=8 104696 B
+  pages100-031.jpg         method=8 104531 B
+  pages100-032.jpg         method=8 104986 B
+  pages100-033.jpg         method=8 104827 B
+  pages100-034.jpg         method=8 104781 B
+  pages100-035.jpg         method=8 104773 B
+  pages100-036.jpg         method=8 104613 B
+  pages100-037.jpg         method=8 104288 B
+  pages100-038.jpg         method=8 103954 B
+  pages100-039.jpg         method=8 103777 B
+  pages100-040.jpg         method=8 103511 B
+  pages100-041.jpg         method=8 103265 B
+  pages100-042.jpg         method=8 103332 B
+  pages100-043.jpg         method=8 103139 B
+  pages100-044.jpg         method=8 103017 B
+  pages100-045.jpg         method=8 102559 B
+  pages100-046.jpg         method=8 102623 B
+  pages100-047.jpg         method=8 102584 B
+  pages100-048.jpg         method=8 102997 B
+  pages100-049.jpg         method=8 102680 B
+  pages100-050.jpg         method=8 102188 B
+  pages100-051.jpg         method=8 101818 B
+  pages100-052.jpg         method=8 102118 B
+  pages100-053.jpg         method=8 102059 B
+  pages100-054.jpg         method=8 101908 B
+  pages100-055.jpg         method=8 101529 B
+  pages100-056.jpg         method=8 101419 B
+  pages100-057.jpg         method=8 100726 B
+  pages100-058.jpg         method=8 100913 B
+  pages100-059.jpg         method=8 100568 B
+  pages100-060.jpg         method=8 100304 B
+  pages100-061.jpg         method=8 100071 B
+  pages100-062.jpg         method=8 100203 B
+  pages100-063.jpg         method=8 99797 B
+  pages100-064.jpg         method=8 99401 B
+  pages100-065.jpg         method=8 99262 B
+  pages100-066.jpg         method=8 99301 B
+  pages100-067.jpg         method=8 98568 B
+  pages100-068.jpg         method=8 98412 B
+  pages100-069.jpg         method=8 98227 B
+  pages100-070.jpg         method=8 12146 B
+  pages100-071.jpg         method=8 97320 B
+  pages100-072.jpg         method=8 97157 B
+  pages100-073.jpg         method=8 96702 B
+  pages100-074.jpg         method=8 96371 B
+  pages100-075.jpg         method=8 96328 B
+  pages100-076.jpg         method=8 96166 B
+  pages100-077.jpg         method=8 95838 B
+  pages100-078.jpg         method=8 95980 B
+  pages100-079.jpg         method=8 95918 B
+  pages100-080.jpg         method=8 95817 B
+  pages100-081.jpg         method=8 95395 B
+  pages100-082.jpg         method=8 95312 B
+  pages100-083.jpg         method=8 95448 B
+  pages100-084.jpg         method=8 95256 B
+  pages100-085.jpg         method=8 95102 B
+  pages100-086.jpg         method=8 94797 B
+  pages100-087.jpg         method=8 94684 B
+  pages100-088.jpg         method=8 94695 B
+  pages100-089.jpg         method=8 94780 B
+  pages100-090.jpg         method=8 99207 B
+  pages100-091.jpg         method=8 94420 B
+  pages100-092.jpg         method=8 94214 B
+  pages100-093.jpg         method=8 93984 B
+  pages100-094.jpg         method=8 93923 B
+  pages100-095.jpg         method=8 94002 B
+  pages100-096.jpg         method=8 93795 B
+  pages100-097.jpg         method=8 93518 B
+  pages100-098.jpg         method=8 93500 B
+  pages100-099.jpg         method=8 93326 B
+  pages100-100.jpg         method=8 92955 B
+ComicInfo.xml: ABSENT
+size table — entry px vs the page its name claims, measured the same way
+  pages100-001.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-002.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-003.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-004.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-005.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-006.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-007.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-008.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-009.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-010.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-011.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-012.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-013.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-014.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-015.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-016.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-017.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-018.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-019.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-020.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-021.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-022.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-023.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-024.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-025.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-026.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-027.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-028.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-029.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-030.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-031.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-032.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-033.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-034.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-035.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-036.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-037.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-038.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-039.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-040.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-041.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-042.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-043.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-044.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-045.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-046.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-047.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-048.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-049.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-050.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-051.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-052.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-053.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-054.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-055.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-056.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-057.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-058.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-059.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-060.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-061.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-062.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-063.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-064.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-065.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-066.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-067.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-068.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-069.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-070.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-071.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-072.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-073.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-074.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-075.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-076.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-077.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-078.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-079.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-080.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-081.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-082.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-083.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-084.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-085.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-086.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-087.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-088.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-089.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-090.jpg         1652x1166 vs 1653x1167 (Δ -1,-1)
+  pages100-091.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-092.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-093.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-094.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-095.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-096.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-097.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-098.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-099.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+  pages100-100.jpg         1166x1652 vs 1167x1653 (Δ -1,-1)
+ink table — entry vs the page its name claims vs that source page's own ink
+  pages100-001.jpg         names page 1: alike 0.999 · ink  9.06% vs  9.04% · best match page 1 (0.999)
+  pages100-002.jpg         names page 2: alike 1.000 · ink  9.64% vs  9.63% · best match page 2 (1.000)
+  pages100-003.jpg         names page 3: alike 1.000 · ink 10.22% vs 10.21% · best match page 3 (1.000)
+  pages100-004.jpg         names page 4: alike 1.000 · ink 10.79% vs 10.78% · best match page 4 (1.000)
+  pages100-005.jpg         names page 5: alike 1.000 · ink 11.37% vs 11.37% · best match page 5 (1.000)
+  pages100-006.jpg         names page 6: alike 1.000 · ink 11.95% vs 11.95% · best match page 6 (1.000)
+  pages100-007.jpg         names page 7: alike 1.000 · ink 12.52% vs 12.52% · best match page 7 (1.000)
+  pages100-008.jpg         names page 8: alike 1.000 · ink 13.11% vs 13.10% · best match page 8 (1.000)
+  pages100-009.jpg         names page 9: alike 1.000 · ink 13.69% vs 13.69% · best match page 9 (1.000)
+  pages100-010.jpg         names page 10: alike 1.000 · ink 14.28% vs 14.27% · best match page 10 (1.000)
+  pages100-011.jpg         names page 11: alike 1.000 · ink 14.86% vs 14.85% · best match page 11 (1.000)
+  pages100-012.jpg         names page 12: alike 1.000 · ink 15.44% vs 15.43% · best match page 12 (1.000)
+  pages100-013.jpg         names page 13: alike 1.000 · ink 16.02% vs 16.01% · best match page 13 (1.000)
+  pages100-014.jpg         names page 14: alike 1.000 · ink 16.60% vs 16.59% · best match page 14 (1.000)
+  pages100-015.jpg         names page 15: alike 1.000 · ink 17.18% vs 17.17% · best match page 15 (1.000)
+  pages100-016.jpg         names page 16: alike 1.000 · ink 17.76% vs 17.75% · best match page 16 (1.000)
+  pages100-017.jpg         names page 17: alike 1.000 · ink 18.33% vs 18.32% · best match page 17 (1.000)
+  pages100-018.jpg         names page 18: alike 1.000 · ink 18.92% vs 18.91% · best match page 18 (1.000)
+  pages100-019.jpg         names page 19: alike 1.000 · ink 19.50% vs 19.49% · best match page 19 (1.000)
+  pages100-020.jpg         names page 20: alike 1.000 · ink 20.07% vs 20.08% · best match page 20 (1.000)
+  pages100-021.jpg         names page 21: alike 1.000 · ink 20.65% vs 20.64% · best match page 21 (1.000)
+  pages100-022.jpg         names page 22: alike 1.000 · ink 21.24% vs 21.24% · best match page 22 (1.000)
+  pages100-023.jpg         names page 23: alike 1.000 · ink 21.81% vs 21.82% · best match page 23 (1.000)
+  pages100-024.jpg         names page 24: alike 1.000 · ink 22.39% vs 22.40% · best match page 24 (1.000)
+  pages100-025.jpg         names page 25: alike 1.000 · ink 22.97% vs 22.98% · best match page 25 (1.000)
+  pages100-026.jpg         names page 26: alike 1.000 · ink 23.55% vs 23.56% · best match page 26 (1.000)
+  pages100-027.jpg         names page 27: alike 1.000 · ink 24.12% vs 24.13% · best match page 27 (1.000)
+  pages100-028.jpg         names page 28: alike 1.000 · ink 24.71% vs 24.73% · best match page 28 (1.000)
+  pages100-029.jpg         names page 29: alike 1.000 · ink 25.29% vs 25.31% · best match page 29 (1.000)
+  pages100-030.jpg         names page 30: alike 1.000 · ink 25.87% vs 25.89% · best match page 30 (1.000)
+  pages100-031.jpg         names page 31: alike 1.000 · ink 26.45% vs 26.46% · best match page 31 (1.000)
+  pages100-032.jpg         names page 32: alike 1.000 · ink 27.04% vs 27.05% · best match page 32 (1.000)
+  pages100-033.jpg         names page 33: alike 1.000 · ink 27.62% vs 27.63% · best match page 33 (1.000)
+  pages100-034.jpg         names page 34: alike 1.000 · ink 28.19% vs 28.21% · best match page 34 (1.000)
+  pages100-035.jpg         names page 35: alike 1.000 · ink 28.77% vs 28.80% · best match page 35 (1.000)
+  pages100-036.jpg         names page 36: alike 1.000 · ink 29.35% vs 29.38% · best match page 36 (1.000)
+  pages100-037.jpg         names page 37: alike 1.000 · ink 29.94% vs 29.96% · best match page 37 (1.000)
+  pages100-038.jpg         names page 38: alike 1.000 · ink 30.52% vs 30.55% · best match page 38 (1.000)
+  pages100-039.jpg         names page 39: alike 1.000 · ink 31.09% vs 31.12% · best match page 39 (1.000)
+  pages100-040.jpg         names page 40: alike 1.000 · ink 31.67% vs 31.70% · best match page 40 (1.000)
+  pages100-041.jpg         names page 41: alike 1.000 · ink 32.24% vs 32.27% · best match page 41 (1.000)
+  pages100-042.jpg         names page 42: alike 1.000 · ink 32.82% vs 32.85% · best match page 42 (1.000)
+  pages100-043.jpg         names page 43: alike 1.000 · ink 33.40% vs 33.43% · best match page 43 (1.000)
+  pages100-044.jpg         names page 44: alike 1.000 · ink 33.99% vs 34.01% · best match page 44 (1.000)
+  pages100-045.jpg         names page 45: alike 1.000 · ink 34.57% vs 34.59% · best match page 45 (1.000)
+  pages100-046.jpg         names page 46: alike 1.000 · ink 35.14% vs 35.17% · best match page 46 (1.000)
+  pages100-047.jpg         names page 47: alike 1.000 · ink 35.72% vs 35.74% · best match page 47 (1.000)
+  pages100-048.jpg         names page 48: alike 1.000 · ink 36.31% vs 36.33% · best match page 48 (1.000)
+  pages100-049.jpg         names page 49: alike 1.000 · ink 36.89% vs 36.91% · best match page 49 (1.000)
+  pages100-050.jpg         names page 50: alike 1.000 · ink 37.47% vs 37.50% · best match page 50 (1.000)
+  pages100-051.jpg         names page 51: alike 1.000 · ink 38.05% vs 38.06% · best match page 51 (1.000)
+  pages100-052.jpg         names page 52: alike 1.000 · ink 38.64% vs 38.66% · best match page 52 (1.000)
+  pages100-053.jpg         names page 53: alike 1.000 · ink 39.21% vs 39.25% · best match page 53 (1.000)
+  pages100-054.jpg         names page 54: alike 1.000 · ink 39.79% vs 39.82% · best match page 54 (1.000)
+  pages100-055.jpg         names page 55: alike 1.000 · ink 40.38% vs 40.41% · best match page 55 (1.000)
+  pages100-056.jpg         names page 56: alike 1.000 · ink 40.96% vs 40.99% · best match page 56 (1.000)
+  pages100-057.jpg         names page 57: alike 1.000 · ink 41.53% vs 41.56% · best match page 57 (1.000)
+  pages100-058.jpg         names page 58: alike 1.000 · ink 42.13% vs 42.16% · best match page 58 (1.000)
+  pages100-059.jpg         names page 59: alike 1.000 · ink 42.70% vs 42.73% · best match page 59 (1.000)
+  pages100-060.jpg         names page 60: alike 1.000 · ink 43.28% vs 43.31% · best match page 60 (1.000)
+  pages100-061.jpg         names page 61: alike 1.000 · ink 43.85% vs 43.88% · best match page 61 (1.000)
+  pages100-062.jpg         names page 62: alike 1.000 · ink 44.43% vs 44.47% · best match page 62 (1.000)
+  pages100-063.jpg         names page 63: alike 1.000 · ink 45.01% vs 45.05% · best match page 63 (1.000)
+  pages100-064.jpg         names page 64: alike 1.000 · ink 45.59% vs 45.62% · best match page 64 (1.000)
+  pages100-065.jpg         names page 65: alike 1.000 · ink 46.16% vs 46.20% · best match page 65 (1.000)
+  pages100-066.jpg         names page 66: alike 1.000 · ink 46.74% vs 46.79% · best match page 66 (1.000)
+  pages100-067.jpg         names page 67: alike 1.000 · ink 47.32% vs 47.36% · best match page 67 (1.000)
+  pages100-068.jpg         names page 68: alike 1.000 · ink 47.91% vs 47.95% · best match page 68 (1.000)
+  pages100-069.jpg         names page 69: alike 1.000 · ink 48.48% vs 48.53% · best match page 69 (1.000)
+  pages100-070.jpg         names page 70: alike 1.000 · ink  0.00% vs  0.00% · best match page 70 (1.000)
+  pages100-071.jpg         names page 71: alike 1.000 · ink 49.63% vs 49.66% · best match page 71 (1.000)
+  pages100-072.jpg         names page 72: alike 1.000 · ink 50.21% vs 50.25% · best match page 72 (1.000)
+  pages100-073.jpg         names page 73: alike 1.000 · ink 50.79% vs 50.83% · best match page 73 (1.000)
+  pages100-074.jpg         names page 74: alike 1.000 · ink 51.36% vs 51.40% · best match page 74 (1.000)
+  pages100-075.jpg         names page 75: alike 1.000 · ink 51.94% vs 51.99% · best match page 75 (1.000)
+  pages100-076.jpg         names page 76: alike 1.000 · ink 52.52% vs 52.57% · best match page 76 (1.000)
+  pages100-077.jpg         names page 77: alike 1.000 · ink 53.09% vs 53.14% · best match page 77 (1.000)
+  pages100-078.jpg         names page 78: alike 1.000 · ink 53.68% vs 53.73% · best match page 78 (1.000)
+  pages100-079.jpg         names page 79: alike 1.000 · ink 54.25% vs 54.31% · best match page 79 (1.000)
+  pages100-080.jpg         names page 80: alike 1.000 · ink 54.83% vs 54.89% · best match page 80 (1.000)
+  pages100-081.jpg         names page 81: alike 1.000 · ink 55.40% vs 55.46% · best match page 81 (1.000)
+  pages100-082.jpg         names page 82: alike 1.000 · ink 55.98% vs 56.04% · best match page 82 (1.000)
+  pages100-083.jpg         names page 83: alike 1.000 · ink 56.56% vs 56.63% · best match page 83 (1.000)
+  pages100-084.jpg         names page 84: alike 1.000 · ink 57.14% vs 57.20% · best match page 84 (1.000)
+  pages100-085.jpg         names page 85: alike 1.000 · ink 57.71% vs 57.78% · best match page 85 (1.000)
+  pages100-086.jpg         names page 86: alike 1.000 · ink 58.29% vs 58.36% · best match page 86 (1.000)
+  pages100-087.jpg         names page 87: alike 1.000 · ink 58.86% vs 58.93% · best match page 87 (1.000)
+  pages100-088.jpg         names page 88: alike 1.000 · ink 59.45% vs 59.52% · best match page 88 (1.000)
+  pages100-089.jpg         names page 89: alike 1.000 · ink 60.03% vs 60.10% · best match page 89 (1.000)
+  pages100-090.jpg         names page 90: alike 1.000 · ink 60.62% vs 60.72% · best match page 90 (1.000)
+  pages100-091.jpg         names page 91: alike 1.000 · ink 61.17% vs 61.24% · best match page 91 (1.000)
+  pages100-092.jpg         names page 92: alike 1.000 · ink 61.76% vs 61.83% · best match page 92 (1.000)
+  pages100-093.jpg         names page 93: alike 1.000 · ink 62.35% vs 62.42% · best match page 93 (1.000)
+  pages100-094.jpg         names page 94: alike 1.000 · ink 62.93% vs 63.01% · best match page 94 (1.000)
+  pages100-095.jpg         names page 95: alike 1.000 · ink 63.51% vs 63.59% · best match page 95 (1.000)
+  pages100-096.jpg         names page 96: alike 1.000 · ink 64.10% vs 64.17% · best match page 96 (1.000)
+  pages100-097.jpg         names page 97: alike 1.000 · ink 64.67% vs 64.74% · best match page 97 (1.000)
+  pages100-098.jpg         names page 98: alike 1.000 · ink 65.25% vs 65.33% · best match page 98 (1.000)
+  pages100-099.jpg         names page 99: alike 1.000 · ink 65.82% vs 65.90% · best match page 99 (1.000)
+  pages100-100.jpg         names page 100: alike 1.000 · ink 66.41% vs 66.49% · best match page 100 (1.000)
+OK
