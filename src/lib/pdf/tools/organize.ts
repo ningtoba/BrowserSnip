@@ -178,11 +178,21 @@ function pageCountLabel(n: number): string {
  * refused before any work. `all`/`odd`/`even` and the `1,3,5-7` grammar still
  * work, and a repeated page is applied once — rotating page 2 twice by 90° is
  * never what a selection that lists it twice means.
+ *
+ * `keepDuplicates` is for the tools whose output is a *list of sheets* rather
+ * than a set of pages to touch: `extract-pages` hands the typed order straight to
+ * a page copy, which writes a repeated page twice, so collapsing `1-2,2-3` into
+ * three sheets silently took a sheet the user typed.
  */
 function selection(
   values: ToolValues,
   total: number,
-  options: { key?: string; fallback?: string | null; verb?: string } = {},
+  options: {
+    key?: string;
+    fallback?: string | null;
+    verb?: string;
+    keepDuplicates?: boolean;
+  } = {},
 ): number[] {
   const key = options.key ?? 'pages';
   const verb = options.verb ?? 'run this on';
@@ -197,7 +207,8 @@ function selection(
     const asText = given.join(',');
     const problem = pageRangeProblem(asText, total);
     if (problem) throw new ToolInputError('OUT_OF_RANGE', problem, { hint });
-    return dedupe(resolvePages(given, total));
+    const resolved = resolvePages(given, total);
+    return options.keepDuplicates ? resolved : dedupe(resolved);
   }
 
   const text = typeof raw === 'string' ? raw.trim() : '';
@@ -219,11 +230,10 @@ function selection(
   } catch (error) {
     throw new ToolInputError('OUT_OF_RANGE', error instanceof Error ? error.message : String(error), { hint });
   }
-  const unique = dedupe(pages);
-  if (unique.length === 0) {
+  if (pages.length === 0) {
     throw new ToolInputError('NO_PAGES', `"${text}" matched no page in this document.`, { hint });
   }
-  return unique;
+  return options.keepDuplicates ? pages : dedupe(pages);
 }
 
 function dedupe(pages: number[]): number[] {
@@ -481,6 +491,23 @@ function noteDroppedBookmarks(
   if (dropped <= 0 || total <= 0) return;
   notes.add(
     `${dropped} of this document's ${countLabel(total, 'bookmark')} pointed at ${dropped === 1 ? 'a page that is' : 'pages that are'} not in this output, so ${dropped === 1 ? 'it was' : 'they were'} dropped; ${carried > 0 ? `${carried} came with the pages` : 'none came with the pages'}.`,
+  );
+}
+
+/**
+ * Name the sheets a selection asked for twice.
+ *
+ * A copy honours a repeated page, and the card's "Extracted 4 pages of 4 pages"
+ * then reads as a contradiction unless the repeat is on screen: page 2 twice and
+ * page 4 absent is `4` sheets out of a `4`-page file.
+ */
+function noteRepeatedSheets(pages: number[], notes: Notes): void {
+  const counts = new Map<number, number>();
+  for (const page of pages) counts.set(page, (counts.get(page) ?? 0) + 1);
+  const repeated = [...counts.entries()].filter(([, n]) => n > 1).map(([page]) => page);
+  if (repeated.length === 0) return;
+  notes.add(
+    `${repeated.length === 1 ? 'Page' : 'Pages'} ${formatPages(repeated)} ${repeated.length === 1 ? 'appears' : 'appear'} more than once in the selection, so ${repeated.length === 1 ? 'that sheet is' : 'those sheets are'} copied as many times as typed.`,
   );
 }
 
@@ -1164,7 +1191,8 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_extracted.pdf',
     surface: 'pages',
     actionLabel: 'Extract',
-    promise: 'A new PDF with only the pages you picked, in the order you typed them.',
+    promise:
+      'A new PDF with only the pages you picked, in the order you typed them — or one new file per page, in that same order. A page you name twice is copied twice.',
     notes: [PAGE_COPY_NOTE],
     fields: [
       ALL_PAGES,
@@ -1184,17 +1212,23 @@ export const organizeTools: PdfToolDefinition[] = [
     async run(context) {
       const [input] = await openInputs(context);
       const notes = createNotes();
-      const pages = selection(context.values, input.pageCount, { verb: 'extract' });
+      // A list of sheets, not a set of pages to touch: a page the selection names
+      // twice is a sheet the user typed twice, so it is copied twice.
+      const pages = selection(context.values, input.pageCount, {
+        verb: 'extract',
+        keepDuplicates: true,
+      });
+      noteRepeatedSheets(pages, notes);
       // Every sheet, in order: nothing was taken out of anything, so the sentence
       // says what happened rather than "Extracted 4 pages of 4 pages" beside its
-      // own contradiction. The note keeps to the page order and page count, which
-      // is what this run does hold — `notePageCopy` below names whatever else the
-      // rebuild left behind.
+      // own contradiction. Each branch words it for the shape it writes — one new
+      // file, or one file per page — because "the new file holds 4 pages" was on
+      // screen over four separate files.
       const whole = pages.length === input.pageCount && pages.every((entry, index) => entry === index);
-      if (whole) {
-        notes.add(`You selected every page, so the new file holds ${pageCountLabel(pages.length)} in the original order.`);
-      }
       if (booleanValue(context.values, 'mergeIntoOne', true)) {
+        if (whole) {
+          notes.add(`You selected every page, so the new file holds ${pageCountLabel(pages.length)} in the original order.`);
+        }
         const built = await collectPages([{ doc: input.doc, pages }]);
         notePageCopy([input.doc], built.fidelity, notes);
         return pdfOut(
@@ -1205,8 +1239,15 @@ export const organizeTools: PdfToolDefinition[] = [
             : `Extracted ${pageCountLabel(pages.length)} of ${pageCountLabel(input.pageCount)}.`,
         );
       }
+      if (whole) {
+        notes.add(`You selected every page, so there is one file per page, ${pageCountLabel(pages.length)} of them, in the original order.`);
+      }
       const stem = safeStem(input.name);
       const used = new Set<string>();
+      // The numbers carry the document's own width so a folder sort agrees with
+      // the page order: unpadded, `page-10` landed between `page-1` and `page-2`
+      // in the card's own zip. Nine pages or fewer are unaffected (E17).
+      const width = String(input.pageCount).length;
       const files: { blob: Blob; name: string }[] = [];
       let carriedBookmarks = 0;
       for (let i = 0; i < pages.length; i++) {
@@ -1216,7 +1257,7 @@ export const organizeTools: PdfToolDefinition[] = [
         const bytes = await savePDF(doc.doc);
         files.push({
           blob: new Blob([bytes], { type: 'application/pdf' }),
-          name: uniqueName(used, `${stem}_page-${pages[i] + 1}.pdf`),
+          name: uniqueName(used, `${stem}_page-${String(pages[i] + 1).padStart(width, '0')}.pdf`),
         });
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
@@ -1228,7 +1269,11 @@ export const organizeTools: PdfToolDefinition[] = [
         notes,
       );
       noteFormFields(listFormFields(input.doc).length, notes);
-      return filesOut(files, notes, `Created ${files.length} single-page files.`);
+      // Every file is one sheet and the sheets are chosen before a byte is
+      // written, so the count the card used to decline (`out not counted`) is
+      // already here. `pagesOut` means the job's sheets for a multi-file run
+      // (`split` set the precedent); none of these files is "the" output.
+      return { ...filesOut(files, notes, `Created ${files.length} single-page files.`), pages: pages.length };
     },
   },
 

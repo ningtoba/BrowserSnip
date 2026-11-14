@@ -1297,6 +1297,70 @@ describe('each tool is checked against its own output file', () => {
     expect(each).toEqual(['sheet 1', 'sheet 3']);
   });
 
+  it('extract-pages keeps the sheets a repeated selection names, and says so', async () => {
+    // `Extracted N pages of M pages` beside a file that lost a typed sheet: the
+    // range grammar preserves duplicates and the page copy already writes them
+    // (`organize` above), but the extract field collapsed them, so `1-2,2-3` came
+    // out 3 sheets and nothing on the card said page 2 had been dropped.
+    const outcome = await run('extract-pages', { pages: '1-2,2-3', mergeIntoOne: true });
+    const doc = await open(await bytesOf(outcome));
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 2', 'sheet 2', 'sheet 3']);
+    expect(outcome.pagesOut).toBe(4);
+    expect(warn(outcome)).toMatch(/page 2 appears more than once/i);
+
+    // Control: a selection with no repeat is unchanged and gets no note.
+    const plain = await run('extract-pages', { pages: '1-3', mergeIntoOne: true });
+    expect(pageTexts(await open(await bytesOf(plain)))).toEqual(['sheet 1', 'sheet 2', 'sheet 3']);
+    expect(warn(plain)).not.toMatch(/more than once/i);
+  });
+
+  it('extract-pages counts the pages it wrote one file at a time', async () => {
+    // The per-page branch said `out not counted` while it held every document it
+    // saved — the one number a user can check is the one the card declined.
+    const outcome = await run('extract-pages', { pages: '1,3', mergeIntoOne: false });
+    expect(outcome.outputs).toHaveLength(2);
+    let counted = 0;
+    for (const output of outcome.outputs) {
+      counted += (await open(new Uint8Array(await output.blob.arrayBuffer()))).getPageCount();
+    }
+    expect(counted).toBe(2);
+    expect(outcome.pagesOut).toBe(counted);
+  });
+
+  it('extract-pages numbers a long run to the document’s own width (E17)', async () => {
+    // Unpadded, `page-10` sorts between `page-1` and `page-2`, and the card's own
+    // "Download as zip" is where the entries meet a folder (`split` was fixed the
+    // same way; this path built its names by hand and was missed).
+    const twelve = fileOf(await sheets(grid(12)), 'dozen.pdf');
+    const outcome = await run('extract-pages', { pages: 'all', mergeIntoOne: false }, [twelve]);
+    expect(outcome.outputs.map((output) => output.name)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `dozen_page-${String(i + 1).padStart(2, '0')}.pdf`),
+    );
+    // The names still describe the sheets: file 10 holds sheet 10, not the step.
+    expect(drawnText(await open(await bytesOf(outcome, 9)), 0)).toBe('sheet 10');
+
+    // Control: nine pages or fewer keeps the short name — same run, 4-page file.
+    const four = await run('extract-pages', { pages: '1,3', mergeIntoOne: false });
+    expect(four.outputs.map((output) => output.name)).toEqual([
+      'fixture_page-1.pdf',
+      'fixture_page-3.pdf',
+    ]);
+  });
+
+  it('extract-pages describes the whole selection in the shape the run made', async () => {
+    // With the combine toggle off there are four files, and the note went on
+    // saying "the new file holds 4 pages".
+    const separate = await run('extract-pages', { pages: 'all', mergeIntoOne: false });
+    expect(separate.outputs).toHaveLength(4);
+    expect(warn(separate)).toMatch(/one file per page/i);
+    expect(warn(separate)).not.toMatch(/the new file/i);
+
+    // Control: the combined run still says "new file", because there is one.
+    const merged = await run('extract-pages', { pages: 'all', mergeIntoOne: true });
+    expect(merged.outputs).toHaveLength(1);
+    expect(warn(merged)).toMatch(/the new file holds 4 pages/i);
+  });
+
   it('remove-pages takes out the sheet it names and leaves the rest in order', async () => {
     const outcome = await run('remove-pages', { pages: '2' });
     const doc = await open(await bytesOf(outcome));

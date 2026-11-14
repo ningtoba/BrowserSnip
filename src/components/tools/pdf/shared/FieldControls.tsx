@@ -753,6 +753,11 @@ function PagePicker({
   const total = session?.numPages ?? pageCount ?? 0;
   const selected = useMemo(() => {
     if (!total) return [] as number[];
+    // Blank is not "all" — the tools' own `selection` refuses it — so the strip
+    // must mark nothing here. Resolved through `tryResolvePages`, the empty string
+    // read as every page, and pressing the strip's own `none` chip left
+    // "all 4 pages picked" over a disabled run button that asked for a selection.
+    if (spec.trim() === '') return [] as number[];
     const resolved = tryResolvePages(spec, total);
     return (resolved ?? []).map((index) => index + 1);
   }, [spec, total]);

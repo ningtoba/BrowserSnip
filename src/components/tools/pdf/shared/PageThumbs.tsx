@@ -239,7 +239,7 @@ export function PageThumbs({
       <div className="flex items-center justify-between gap-2 border-t border-cream-border pt-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted tabular-nums">
           {selected.length === 0
-            ? `${total} pages · pick pages to rotate or delete`
+            ? `${total} pages · ${onRotate || onDelete ? 'pick pages to rotate or delete' : 'pick pages below'}`
             : `${selected.length} of ${total} selected`}
         </span>
         <span className="flex items-center gap-1">
