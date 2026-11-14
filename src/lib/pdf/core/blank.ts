@@ -1,9 +1,16 @@
 /**
  * Blank-page detection and page-content measurement.
  *
- * A page is blank when it paints nothing: no text runs, no image or path
- * operators, no visible annotations. Testing only for text would wrongly drop
- * a page holding a scanned image or a signature.
+ * A page is blank when it paints nothing a reader can see: no image, no mark,
+ * no visible text, no visible annotation. Testing only for text would wrongly
+ * drop a page holding a scanned image or a signature; testing only for *runs* of
+ * anything wrongly keeps a sheet of paper, because a white glyph on white paper
+ * and an invisible OCR layer both put nothing on the screen.
+ *
+ * Both halves of that need the display list's graphics state, not only its
+ * operator ids: the render mode says whether a text run is drawn at all, and the
+ * fill/stroke colour says whether what it draws is white. Nothing here renders a
+ * pixel, so the answer is exact per operator and cheap per page.
  */
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import { PDFName } from '@maxwbh/pdf-lib';
@@ -17,11 +24,15 @@ export interface PageContentProfile {
   /** Text runs with an invisible render mode (an existing OCR layer). */
   invisibleTextItems: number;
   paintOps: number;
+  /** Paint operators that laid down a colour — the ones a viewer can see. */
+  inkOps: number;
+  /** Paint operators that laid down white, so they show nothing on paper. */
+  whitePaintOps: number;
   images: number;
   annotationRects: number;
   inkArea: number;
   blankByContent: boolean;
-  /** True when the page holds only invisible OCR text. */
+  /** True when the page draws only things that show nothing (see above). */
   blankByAppearance: boolean;
 }
 
@@ -56,18 +67,75 @@ const PAINTING_OPS: Set<number> = operatorIds([
   'showText', 'showSpacedText', 'nextLineShowText', 'nextLineSetSpacingShowText',
 ]);
 
-/** Operators that lay down a vector shape — a signature, a rule, a chart line. */
-const STROKE_OR_FILL_OPS: Set<number> = operatorIds([
-  'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke',
-  'closeFillStroke', 'closeEOFillStroke', 'shadingFill',
-]);
-
 /** Operators that paint raster — a scanned page is ink, not a blank sheet. */
 const IMAGE_OPS: Set<number> = operatorIds([
   'paintXObject', 'beginInlineImage', 'paintImageXObject', 'paintInlineImageXObject',
   'paintImageMaskXObject', 'paintImageXObjectRepeat', 'paintInlineImageXObjectGroup',
   'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat', 'paintSolidColorImageMask',
 ]);
+
+/** Text-showing operators: the ones a render mode decides the visibility of. */
+const TEXT_OPS: Set<number> = operatorIds([
+  'showText', 'showSpacedText', 'nextLineShowText', 'nextLineSetSpacingShowText',
+]);
+
+/** The halves of `fillStroke` and its variants, so each reads its own colour. */
+const FILL_OPS: Set<number> = operatorIds([
+  'fill', 'eoFill', 'fillStroke', 'eoFillStroke', 'closeFillStroke', 'closeEOFillStroke',
+]);
+const STROKE_OPS: Set<number> = operatorIds(['stroke', 'closeStroke']);
+
+/**
+ * The graphics state the walk below reads each paint operator through.
+ *
+ * `fill`/`stroke` are "this colour is white", so an op that paints a colour a
+ * viewer cannot see it is not ink. The render mode is `ISO 32000-1` Table 106:
+ * 3 and 7 show nothing, and the rest split into fill, stroke or both.
+ */
+interface PaintState {
+  fill: boolean;
+  stroke: boolean;
+  mode: number;
+}
+
+const initialPaintState = (): PaintState => ({ fill: false, stroke: false, mode: 0 });
+
+/**
+ * The ones `OPS` ids the walk needs. `OPS` is the table the *worker* builds the
+ * display list from, so a name here is the id that arrives in `fnArray`.
+ */
+const SAVE_STATE = OPS.save;
+const RESTORE_STATE = OPS.restore;
+const SHADING_FILL = OPS.shadingFill;
+/**
+ * Every colour operator the worker normalises to. `rg`/`RG`, `g`/`G`,
+ * `k`/`K`, `sc`/`scn` and a bare colour array all arrive as one of these two
+ * ids with three `0`–`255` components (`PartialEvaluator` calls `getRgb`), so a
+ * DeviceN or ICC space is already resolved by the time the list is handed over.
+ * A tiling pattern keeps `setFillColorN` and counts as ink, which is right: a
+ * pattern is a texture, not paper.
+ */
+const SET_FILL_WHITE = OPS.setFillRGBColor;
+const SET_STROKE_WHITE = OPS.setStrokeRGBColor;
+const SET_RENDER_MODE = OPS.setTextRenderingMode;
+
+/**
+ * Three sRGB components at or above paper: a white fill or stroke.
+ *
+ * The components are a `Uint8ClampedArray`, not a JS array — the worker builds
+ * them with `getRgb` into a typed buffer and the display list carries it as one
+ * (measured). `Array.isArray` answers false for it, so a rule written against
+ * arrays alone read every colour as "not white" and kept the white-on-white
+ * sheet in the browser while the test's plain-array double said it went.
+ */
+function isWhite(value: unknown): boolean {
+  const channels = value as ArrayLike<number> | null | undefined;
+  if (!channels || channels.length !== 3) return false;
+  for (let i = 0; i < 3; i++) {
+    if (typeof channels[i] !== 'number' || channels[i] < 254.5) return false;
+  }
+  return true;
+}
 
 /**
  * Profile one page from pdf.js. `getOperatorList` gives the display list the
@@ -96,40 +164,28 @@ export async function profilePage(
       const size = Math.hypot(item.transform[0], item.transform[1]);
       if (size === 0) invisible += 1;
     }
-    let paintOps = 0;
-    let strokesOrFills = 0;
-    let images = 0;
-    let inkArea = 0;
-    const ops = operators.fnArray;
-    for (let i = 0; i < ops.length; i++) {
-      const id = ops[i];
-      if (PAINTING_OPS.has(id)) paintOps += 1;
-      if (STROKE_OR_FILL_OPS.has(id)) strokesOrFills += 1;
-      if (IMAGE_OPS.has(id)) {
-        images += 1;
-        const args = operators.argsArray[i];
-        inkArea += estimateImageArea(args, viewport.width, viewport.height);
-      }
-    }
+    const seen = readDisplayList(operators.fnArray, operators.argsArray, viewport);
+    invisible += seen.invisibleTextOps;
     const annotationRects = options.annotationRects ?? 0;
-    const visibleText = textItems - invisible;
     profile = {
       page,
       textItems,
       invisibleTextItems: invisible,
-      paintOps,
-      images,
+      paintOps: seen.paintOps,
+      inkOps: seen.inkOps,
+      whitePaintOps: seen.whitePaintOps,
+      images: seen.images,
       annotationRects,
-      inkArea,
-      blankByContent: paintOps === 0 && visibleText === 0 && annotationRects === 0,
-      // The second branch is for a page that runs painting operators yet shows
-      // nothing a reader would call ink — an existing OCR layer's invisible text
-      // is the case it exists for. A stroke or a fill is ink (a signature, a
-      // ruled line, a chart), so it now holds that branch shut; without that
-      // guard a page whose only content is a 0.1 pt line was deleted.
-      blankByAppearance:
-        (paintOps === 0 || (images === 0 && visibleText === 0 && strokesOrFills === 0)) &&
-        annotationRects === 0,
+      inkArea: seen.inkArea,
+      // `inkOps` is the whole answer: it counts what a reader can see, so a page
+      // of painting operators that are all invisible or all white is as blank as
+      // one that runs none. Before it, "runs a painting operator" was read as
+      // "is inked", and two sheets of the eight-page fixture came back as blank
+      // paper under a success line (measured, both kept: 0 non-white px each).
+      blankByContent: seen.inkOps === 0 && annotationRects === 0,
+      // Kept as its own field because the result card's sentences key on it —
+      // "looks blank but is searchable" is this predicate plus invisible text.
+      blankByAppearance: seen.inkOps === 0 && annotationRects === 0,
     };
   } finally {
     proxy.cleanup();
@@ -142,6 +198,96 @@ function estimateImageArea(args: unknown, fallbackW: number, fallbackH: number):
   const width = typeof record?.width === 'number' ? record.width : fallbackW;
   const height = typeof record?.height === 'number' ? record.height : fallbackH;
   return width * height;
+}
+
+/** What a page's display list does to a reader, counted operator by operator. */
+interface DisplayListInk {
+  paintOps: number;
+  inkOps: number;
+  whitePaintOps: number;
+  invisibleTextOps: number;
+  images: number;
+  inkArea: number;
+}
+
+/**
+ * Walk a display list through its graphics state and count only what shows.
+ *
+ * The state is the point. A page is not inked because it *runs* a paint operator:
+ * a `1 1 1 rg` fill and a `3 Tr` glyph both run one and lay down nothing a
+ * reader can see. The colour arrives as three sRGB components the worker already
+ * resolved (see `SET_FILL_WHITE`), and the render mode as a number, so both the
+ * white question and the invisible one are answered exactly, per operator, with
+ * no raster in sight.
+ *
+ * `q`/`Q` are followed because readability is per operator: a document that
+ * sets white inside a `q … Q` and paints black after it is not white. `sh`
+ * (shading) and every raster count as ink unconditionally — a gradient is a
+ * texture and a scan is a photograph of paper, so neither can be judged by a
+ * single colour. An operator whose colour is a pattern keeps `setFillColorN`,
+ * which is not one of the two white-capable ids, so it counts as ink too.
+ */
+function readDisplayList(
+  ops: number[],
+  args: unknown[],
+  viewport: { width: number; height: number },
+): DisplayListInk {
+  const seen: DisplayListInk = {
+    paintOps: 0, inkOps: 0, whitePaintOps: 0, invisibleTextOps: 0, images: 0, inkArea: 0,
+  };
+  // A page's initial state is black fill, black stroke, render mode 0
+  // (`ISO 32000-1` 8.4, Table 106), so an operator that sets no colour is ink.
+  let paint = initialPaintState();
+  const saved: PaintState[] = [];
+  for (let i = 0; i < ops.length; i++) {
+    const id = ops[i];
+    const arg = args[i];
+    if (id === SAVE_STATE) {
+      saved.push(paint);
+      paint = { ...paint };
+      continue;
+    }
+    if (id === RESTORE_STATE) {
+      // An unbalanced `Q` keeps the state it had: the file is malformed, and the
+      // colours already read are better evidence than a reset to black.
+      paint = saved.pop() ?? paint;
+      continue;
+    }
+    if (id === SET_FILL_WHITE) paint.fill = isWhite(arg);
+    else if (id === SET_STROKE_WHITE) paint.stroke = isWhite(arg);
+    else if (id === SET_RENDER_MODE) paint.mode = Number(arg) || 0;
+    if (PAINTING_OPS.has(id)) seen.paintOps += 1;
+    if (IMAGE_OPS.has(id)) {
+      // A raster is ink whatever its colours: a white scan still shows the paper
+      // it photographed, which the tool's own note promises.
+      seen.inkOps += 1;
+      seen.images += 1;
+      seen.inkArea += estimateImageArea(arg, viewport.width, viewport.height);
+      continue;
+    }
+    if (id === SHADING_FILL) {
+      seen.inkOps += 1;
+      continue;
+    }
+    if (TEXT_OPS.has(id)) {
+      // Modes 3 and 7 lay no ink at all; the rest paint with the fill colour,
+      // the stroke colour, or both — `ISO 32000-1` Table 106.
+      if (paint.mode === 3 || paint.mode === 7) {
+        seen.invisibleTextOps += 1;
+        continue;
+      }
+      const fills = paint.mode === 0 || paint.mode === 2 || paint.mode === 4 || paint.mode === 6;
+      const strokes = paint.mode === 1 || paint.mode === 2 || paint.mode === 5 || paint.mode === 6;
+      if ((fills && !paint.fill) || (strokes && !paint.stroke)) seen.inkOps += 1;
+      else if (fills || strokes) seen.whitePaintOps += 1;
+      continue;
+    }
+    if (FILL_OPS.has(id) || STROKE_OPS.has(id)) {
+      if ((FILL_OPS.has(id) && !paint.fill) || (STROKE_OPS.has(id) && !paint.stroke)) seen.inkOps += 1;
+      else seen.whitePaintOps += 1;
+    }
+  }
+  return seen;
 }
 
 /**

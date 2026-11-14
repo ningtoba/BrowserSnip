@@ -419,6 +419,42 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
   const imagePaint = OPS.paintImageXObject;
   const paintable = new Set<number>([...Object.values(ids), imagePaint]);
   /**
+   * The graphics-state operators, which a display list carries among the paint
+   * ops and which the blank rule reads each paint op *through*.
+   *
+   * The colour spaces are normalised here the way the pdf.js worker normalises
+   * them (`PartialEvaluator` resolves `rg`, `g`, `k` and `sc`/`scn` through
+   * `ColorSpace.getRgb` and emits `setFillRGBColor`/`setStrokeRGBColor` with
+   * 0–255 components), so a `g 1`, a `k 0 0 0 0` and an `rg 1 1 1` all arrive as
+   * the white the rule has to recognise. A double that skipped this would hand
+   * every sheet a default black fill and could not fail on white-on-white.
+   */
+  // Not a plain array: the worker builds the three components into a
+  // `Uint8ClampedArray` and that is what the display list holds (measured). A
+  // double that hands out `number[]` reads fine against a rule written with
+  // `every()` and passed while the browser kept every white sheet.
+  const rgbBuffer = (n: number[]): Uint8ClampedArray =>
+    Uint8ClampedArray.from(n.slice(0, 3).map((v) => Math.round(v * 255)));
+  const cmykToRgb = (n: number[]): Uint8ClampedArray => {
+    const [c, m, y, k] = n;
+    // The simple DeviceCMYK conversion: white (`0 0 0 0`) is 255 on every
+    // channel, which is all the rule asks. pdf.js's own polynomial only differs
+    // by a few counts mid-range.
+    return rgbBuffer([1 - c, 1 - m, 1 - y].map((v) => v * (1 - k)));
+  };
+  const gray = (n: number[]): Uint8ClampedArray => rgbBuffer([n[0], n[0], n[0]]);
+  const stateOps: Record<string, (n: number[]) => [number, unknown]> = {
+    rg: (n) => [OPS.setFillRGBColor, rgbBuffer(n)],
+    RG: (n) => [OPS.setStrokeRGBColor, rgbBuffer(n)],
+    g: (n) => [OPS.setFillRGBColor, gray(n)],
+    G: (n) => [OPS.setStrokeRGBColor, gray(n)],
+    k: (n) => [OPS.setFillRGBColor, cmykToRgb(n)],
+    K: (n) => [OPS.setStrokeRGBColor, cmykToRgb(n)],
+    Tr: (n) => [OPS.setTextRenderingMode, n[0]],
+    q: () => [OPS.save, undefined],
+    Q: () => [OPS.restore, undefined],
+  };
+  /**
    * A `Do` is not one operator. pdf.js resolves the named XObject's `/Subtype`
    * and emits `paintImageXObject` for an image, `paintFormXObjectBegin/End`
    * around a form — the id the display list carries, not the token the content
@@ -463,12 +499,32 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
         const argsArray: unknown[] = [];
         const subtypes = xObjectSubtypes(page, doc.context, { PDFDict, PDFName });
         let pendingName = '';
+        // The operands of the operator token in front of them, dropped once it
+        // has been emitted: `1 1 1 rg` is one colour, not three numbers.
+        const operand: number[] = [];
         for (const token of content.split(/[\s\n]+/)) {
           // A PDF name is anything after `/` up to whitespace or a delimiter —
           // pdf-lib names its images `/Image-7098480789`, and a stricter pattern
           // silently lost the operand, so `Do` resolved to the wrong id.
           if (/^\/[^\s\]>]+$/.test(token)) {
             pendingName = token.slice(1);
+            continue;
+          }
+          if (/^-?\d*\.?\d+$/.test(token)) {
+            operand.push(Number(token));
+            continue;
+          }
+          const state = stateOps[token];
+          // Every non-number, non-name token is an operator, so its operands are
+          // finished here even when the operator is one the double ignores
+          // (`/F1 12 Tf` would otherwise leave `12` in front of the next
+          // operator's own operand and the render mode would arrive as 12).
+          const operands = operand.slice();
+          operand.length = 0;
+          if (state) {
+            const [stateId, arg] = state(operands);
+            fnArray.push(stateId);
+            argsArray.push(arg);
             continue;
           }
           let id = ids[token];
@@ -2412,6 +2468,147 @@ describe('each tool is checked against its own output file', () => {
       await keptByAnnotation(await annotate({ rect: [180, 90, 260, 130] })),
       'a clipped annotation is still on the page',
     ).toBe(true);
+  });
+
+  /**
+   * Sheets whose content is one raw stream each, written the way a producer
+   * writes them. `drawText` sets neither a render mode nor a fill colour, and
+   * those two are exactly what the blank rule has to read, so the fixture cannot
+   * be assembled from the drawing API. An empty string makes an empty sheet.
+   */
+  const streamed = async (contents: string[]): Promise<Uint8Array> => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (const content of contents) {
+      const page = doc.addPage([200, 100]);
+      if (content === '') continue;
+      page.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: font.ref } }));
+      page.node.set(PDFName.of('Contents'), doc.context.stream(content));
+    }
+    return doc.save({ useObjectStreams: false });
+  };
+  /** A readable run: black fill, render mode 0. */
+  const readable = 'q 0 0 0 rg BT /F1 12 Tf 1 0 0 1 20 50 Tm (readable) Tj ET Q';
+  /** An OCR layer's run: `3 Tr` is Table 106's "neither fill nor stroke". */
+  const hidden = 'q BT /F1 12 Tf 3 Tr 1 0 0 1 20 50 Tm (searchable) Tj ET Q';
+  /** White words on a white wash — a sheet a viewer shows as paper. */
+  const whiteOnWhite = 'q 1 1 1 rg 0 0 200 100 re f 1 1 1 rg BT /F1 12 Tf 1 0 0 1 20 50 Tm (pale) Tj ET Q';
+  /** Nothing but the wash itself. */
+  const whiteWash = 'q 1 1 1 rg 0 0 200 100 re f Q';
+
+  /**
+   * The sheet that is kept keeps what it was kept *for*.
+   *
+   * `collectPages` copies `/Annots` and `remapInternalLinks` only re-points the
+   * destinations, so a kept sheet has to arrive with its marks on it: a run that
+   * keeps a page because of its link and hands back a page without one has kept
+   * the paper and thrown away the reason. The row's own history is why this is
+   * written down — it recorded `annots = 0` for every download, from a reader
+   * (`page.annots()` in PyMuPDF) that lists `/Link` marks under `get_links()`
+   * instead, so a real loss was never proved either way.
+   */
+  it('remove-blank-pages keeps the annotations of the sheet it keeps', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 100]);
+    doc.addPage([200, 100]);
+    doc.getPage(0).drawText('inked', {
+      x: 10, y: 40, size: 12, font: await doc.embedFont(StandardFonts.Helvetica),
+    });
+    const marks = [
+      { Type: 'Annot', Subtype: 'Link', Rect: [20, 20, 60, 30], A: { S: 'URI', URI: 'https://example.com' } },
+      { Type: 'Annot', Subtype: 'Text', Rect: [100, 40, 116, 56], Contents: 'A sticky note' },
+    ].map((mark) => doc.context.register(doc.context.obj(mark)));
+    doc.getPage(0).node.set(PDFName.of('Annots'), doc.context.obj(marks));
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'noted.pdf');
+
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const kept = await open(await bytesOf(outcome));
+    expect(kept.getPageCount(), 'the empty sheet still went').toBe(1);
+    const annots = kept.getPages()[0].node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+    expect(annots?.size(), 'both marks came with the sheet').toBe(2);
+    const subtypes = [0, 1].map((i) => String(annots?.lookupMaybe(i, PDFDict)?.get(PDFName.of('Subtype'))));
+    expect(subtypes).toEqual(['/Link', '/Text']);
+    // Not only present: still where they were, still pointing where they did.
+    const rect = annots?.lookupMaybe(0, PDFDict)?.lookupMaybe(PDFName.of('Rect'), PDFArray);
+    expect([0, 1, 2, 3].map((i) => Number(String(rect?.get(i))))).toEqual([20, 20, 60, 30]);
+    // pdf-lib writes these as names, so the escapes have to be undone first:
+    // `#2F` is a slash and `#20` a space.
+    const nameText = (value: unknown): string =>
+      String(value).replace(/#([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    expect(
+      nameText(annots?.lookupMaybe(0, PDFDict)?.lookupMaybe(PDFName.of('A'), PDFDict)?.get(PDFName.of('URI'))),
+      'the link still points where it did',
+    ).toContain('https://example.com');
+    expect(nameText(annots?.lookupMaybe(1, PDFDict)?.get(PDFName.of('Contents')))).toContain('sticky note');
+  });
+
+  it('remove-blank-pages drops a sheet whose only text is drawn invisibly, and names it', async () => {
+    const source = fileOf(await streamed([readable, hidden]), 'ocr-layer.pdf');
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const kept = await open(await bytesOf(outcome));
+    // Both directions in one file: an invisible run lays no ink, and the readable
+    // sheet next to it must not be swept up by "nothing is blank any more".
+    expect(kept.getPageCount(), 'invisible glyphs paint nothing').toBe(1);
+    expect(pageTexts(kept), 'the survivor is the readable sheet').toEqual(['readable']);
+    expect(warn(outcome), 'the searchable text it cost is said out loud').toMatch(/invisible OCR text/i);
+    expect(warn(outcome)).toMatch(/1 page \(2\)/);
+  });
+
+  it('remove-blank-pages drops white-on-white and keeps the same words in black', async () => {
+    // The control runs first, because the rule that drops a wash could as easily
+    // drop every page with a fill in it.
+    const control = fileOf(await streamed(['q 1 1 1 rg 0 0 200 100 re f 0 0 0 rg BT /F1 12 Tf 1 0 0 1 20 50 Tm (readable) Tj ET Q']), 'wash-black.pdf');
+    const unfiltered = await run('remove-blank-pages', { keepAnnotated: true }, [control]);
+    expect(unfiltered.message, 'black words on a white wash are content').toMatch(/No blank pages were found/i);
+
+    // Now the two shapes that show nothing, beside a sheet that does.
+    const source = fileOf(await streamed([whiteOnWhite, readable, whiteWash]), 'white.pdf');
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const kept = await open(await bytesOf(outcome));
+    expect(kept.getPageCount(), 'a white fill and white text are not ink').toBe(1);
+    expect(pageTexts(kept)).toEqual(['readable']);
+    expect(warn(outcome)).toMatch(/white on white/i);
+    expect(warn(outcome), 'both sheets are named').toMatch(/2 pages \(1,3\)/);
+  });
+
+  it('remove-blank-pages keeps the document info beside the sheets it keeps', async () => {
+    const doc = await PDFDocument.create();
+    doc.setTitle('Quarterly review');
+    doc.setAuthor('The ledger team');
+    doc.addPage([200, 100]);
+    doc.addPage([200, 100]);
+    doc.getPage(0).drawText('inked', {
+      x: 10, y: 40, size: 12, font: await doc.embedFont(StandardFonts.Helvetica),
+    });
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    const kept = await open(await bytesOf(outcome));
+    expect(kept.getPageCount()).toBe(1);
+    expect(kept.getTitle(), 'a copy moves pages and nothing else').toBe('Quarterly review');
+    expect(kept.getAuthor()).toBe('The ledger team');
+  });
+
+  /**
+   * The double's own vocabulary again, for the two operators this rule now reads
+   * *through*. It is the same trap as `paintXObject`: an invented display list
+   * that leaves the default black fill in place can never fail on white-on-white,
+   * and one with no render mode can never fail on an OCR layer.
+   */
+  it('the render double carries the render mode and the fill colour pdf.js emits', async () => {
+    const session = await openRender(await streamed([hidden, whiteOnWhite]));
+    const ops = await (await session.page(1)).getOperatorList();
+    const modeAt = ops.fnArray.indexOf(OPS.setTextRenderingMode);
+    expect(modeAt, 'the `Tr` operator reached the display list').toBeGreaterThan(-1);
+    expect(ops.argsArray[modeAt]).toBe(3);
+
+    const white = await (await session.page(2)).getOperatorList();
+    const fills = white.fnArray.flatMap((id, i) => (id === OPS.setFillRGBColor ? [white.argsArray[i]] : []));
+    // pdf.js normalises every colour space to 0–255 components before the list
+    // leaves the worker, so white is 255 three times — not `1 1 1` — and it is a
+    // `Uint8ClampedArray`, which is what the rule's reader has to accept.
+    expect(Array.from(fills[0] as Uint8ClampedArray)).toEqual([255, 255, 255]);
+    expect(fills[0], 'the shape the browser hands over').toBeInstanceOf(Uint8ClampedArray);
+    await session.destroy();
   });
 
   it('remove-blank-pages keeps a document whose pages all have content', async () => {

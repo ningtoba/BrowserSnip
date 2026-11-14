@@ -2830,7 +2830,7 @@ export const organizeTools: PdfToolDefinition[] = [
   {
     id: 'remove-blank-pages',
     name: 'Remove Blank Pages',
-    description: 'Detect and delete pages that contain no ink, text or images',
+    description: 'Detect and delete pages that show nothing: no image, no mark, no visible text',
     icon: '🧹',
     category: 'organize',
     keywords: ['empty', 'scrub', 'clean', 'detect'],
@@ -2839,6 +2839,7 @@ export const organizeTools: PdfToolDefinition[] = [
     promise: 'Your PDF with the pages that paint nothing deleted, and a list of which ones went.',
     notes: [
       'Detection reads each page’s display list, so a scanned image or a signature counts as ink.',
+      'A sheet that shows nothing is blank whatever it holds: text in an invisible OCR layer, or white text on a white fill, is content but not ink — it is removed, and named in the result.',
     ],
     fields: [
       {
@@ -2870,10 +2871,22 @@ export const organizeTools: PdfToolDefinition[] = [
         // A `Set`, not `blank.includes()` per page: a 500-page scan would
         // otherwise re-scan the blank list for every sheet (E7).
         const keep = resolvePages('all', input.pageCount).filter((p) => !blankSet.has(p + 1));
-        const ocrOnly = found.profiles.filter((profile) => profile.blankByAppearance && profile.invisibleTextItems > 0);
+        const removed = found.profiles.filter((profile) => blankSet.has(profile.page));
+        // The two ways a sheet can hold something and still show nothing. Both go
+        // ("the pages that paint nothing"), and both take something a reader could
+        // reach but not see with them, so both are counted out loud.
+        const ocrOnly = removed.filter((profile) => profile.invisibleTextItems > 0);
         if (ocrOnly.length > 0) {
+          const it = ocrOnly.length === 1;
           notes.add(
-            `${pageCountLabel(ocrOnly.length)} (${formatPages(ocrOnly.map((profile) => profile.page - 1))}) hold only invisible OCR text — they look blank but are searchable, and were treated as blank.`,
+            `${pageCountLabel(ocrOnly.length)} (${formatPages(ocrOnly.map((profile) => profile.page - 1))}) held only invisible OCR text, so nothing showed on ${it ? 'it' : 'them'} and ${it ? 'it was' : 'they were'} removed — the searchable text went with ${it ? 'it' : 'them'}.`,
+          );
+        }
+        const whiteOnly = removed.filter((profile) => profile.whitePaintOps > 0);
+        if (whiteOnly.length > 0) {
+          const it = whiteOnly.length === 1;
+          notes.add(
+            `${pageCountLabel(whiteOnly.length)} (${formatPages(whiteOnly.map((profile) => profile.page - 1))}) painted white on white, so nothing showed on ${it ? 'it' : 'them'} and ${it ? 'it was' : 'they were'} removed — any text ${it ? 'it holds is' : 'they hold is'} selectable but was never visible.`,
           );
         }
         if (blank.length === 0) {
@@ -2893,6 +2906,11 @@ export const organizeTools: PdfToolDefinition[] = [
         }
         const doc = await collectPages([{ doc: input.doc, pages: keep }]);
         notePageCopy([input.doc], doc.fidelity, notes);
+        // The copy moves pages and nothing else, so the title, author, subject,
+        // keywords, creator and XMP would leave the file even though seven sheets
+        // of eight are copied verbatim. Measured: the output's `/Info` title came
+        // back empty against the fixture's "colour-tool fixture: …".
+        carryDocInfo(doc.doc, [input], notes);
         return pdfOut(
           doc.doc,
           notes,

@@ -103,6 +103,11 @@ const FIELD_LABELS = {
  */
 const TOOL_LABELS = {
   'fix-page-size': { size: 'Target size', fit: 'Scaling' },
+  // `remove-blank-pages` has one control and it is a toggle, so the key alone
+  // finds nothing: measured, `FIELDS='keepAnnotated=toggle'` reported NO CONTROL
+  // and the run went ahead on the default. The value is the words the rail prints
+  // beside the box, which is what a person clicks.
+  'remove-blank-pages': { keepAnnotated: 'Keep pages that only hold annotations' },
 };
 
 const WANTED = Object.fromEntries(
