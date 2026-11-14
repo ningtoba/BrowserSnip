@@ -19,7 +19,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 011 [x] duplex-collate
 012 [x] overlay-pdf
 013 [x] n-up
-014 [ ] booklet
+014 [x] booklet
 015 [ ] combine-single-page
 016 [ ] posterize
 017 [ ] divide-pages

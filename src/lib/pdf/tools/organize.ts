@@ -2180,8 +2180,9 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Build booklet',
     promise: 'Fold-ready sheets in saddle-stitch order, padded to a whole number of sheets.',
     notes: [
-      'Print duplex, flip on the long edge, then fold in half.',
+      'Print duplex, then fold in half. Flip on the short edge for a landscape sheet and on the long edge for a portrait one: the flip has to run the same way as the fold, or the back of every sheet comes out upside down.',
       FLATTEN_NOTE,
+      PAGE_COPY_INFO_NOTE,
     ],
     fields: [
       { key: 'sheetSize', label: 'Sheet size', type: 'select', default: 'a4', options: PAGE_SIZE_OPTIONS.slice(1), group: 'Sheet', help: 'The paper you print on. Two booklet pages go on each side of a sheet, so A4 paper makes an A5 booklet — pick A3 paper for a finished A4 booklet.' },
@@ -2236,14 +2237,21 @@ export const organizeTools: PdfToolDefinition[] = [
           `A booklet imposes whole sheets, so it carries ${pageCountLabel(source.length)} of this document's ${pageCountLabel(input.pageCount)} — pages ${formatPages(left)} are not in the print run.`,
         );
       }
+      // The fold runs down the middle of the sheet, so *both* cells put the
+      // fold allowance (gutter) on the middle edge and the margin on the outer
+      // one. Read as `inset` for the left cell and `rightInset` for the right,
+      // the left half's middle edge and the right half's middle edge are the
+      // two the allowance has to be on: measuring `colour.pdf` at gutter 40 /
+      // margin 10, the right-hand page's content sat 40 pt from the trim edge
+      // and 10 pt from the fold, the mirror image of the left page's pair.
       const box = (cell: number): Box => {
         const half = sheet[0] / 2;
-        const inset = cell === 0 ? margin : gutter;
-        const rightInset = cell === 0 ? gutter : margin;
+        const inset = gutter;
+        const outer = margin;
         return {
-          x: cell === 0 ? inset : half + rightInset,
+          x: cell === 0 ? outer : half + inset,
           y: margin,
-          width: half - inset - rightInset,
+          width: half - inset - outer,
           height: sheet[1] - margin * 2,
         };
       };
@@ -2271,10 +2279,17 @@ export const organizeTools: PdfToolDefinition[] = [
       const target = await sheetDocument(input.doc, sheet, cells, 2, box, notes);
       noteMixedSizes('The booklet', input.doc, source, notes);
       noteRebuildLoss('The booklet', input.doc, source, notes);
+      // Same carry as `n-up`: the `/Info` dictionary and the XMP packet hang off
+      // the catalog and this tool builds a new one around new pages, so without
+      // it the title, author, subject, keywords and packet left in silence and
+      // the producer came out as pdf-lib's.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
+      const edge = booleanValue(context.values, 'landscape', true) ? 'short' : 'long';
       return pdfOut(
         target,
         notes,
-        `Imposed ${pageCountLabel(source.length)} onto ${target.getPageCount()} printed sides on ${Math.ceil(target.getPageCount() / 2)} double-sided sheet${target.getPageCount() > 2 ? 's' : ''}${blanks > 0 ? ` with ${pageCountLabel(blanks)} added` : ''}. Print duplex, flip on long edge.`,
+        `Imposed ${pageCountLabel(source.length)} onto ${target.getPageCount()} printed sides on ${Math.ceil(target.getPageCount() / 2)} double-sided sheet${target.getPageCount() > 2 ? 's' : ''}${blanks > 0 ? ` with ${pageCountLabel(blanks)} added` : ''}. Print duplex, flip on ${edge} edge, then fold.`,
       );
     },
   },

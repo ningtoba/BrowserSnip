@@ -1,0 +1,27 @@
+booklet — harness notes, round 014
+
+Fixture: /tmp/bk/xmp12.pdf (twelve texted sheets, /Info title+author+subject+
+keywords+creator and an XMP packet) for the signature, geometry and identity;
+/tmp/triage/colour.pdf for the empty page and the 595x420 /Rotate 90 sheet;
+/tmp/bk/s5.pdf and /tmp/bk/s6.pdf for the remainder. 8 of 8 real Chromium runs on
+http://localhost:5271 (colour-rail.mjs, per-run port, every field written the way
+a user's event reaches React and read back out of the DOM before the click; the
+a3/portrait case through the same script's SPEC form because two field labels
+hold a space).
+
+Checker: docs/research/booklet-round.py, 72 dpi, per cell: first text line read
+inside the cell rect, non-white px, aspect against the same source page's
+displayed aspect, and the ink bbox centre against the cell centre derived from the
+source ink's own offset — the two cells are half a sheet (210 pt) apart, the
+antialiased edge is under 2 pt, so the 2 pt band is derived. No object counts.
+
+Controls (docs/research/booklet-round-control.log): (1) the same after file judged
+with both cells slid half a cell sideways — 42 FAIL; (2) the source judged as if it
+were already imposed, i.e. reader order 1|2, 3|4 — 3 of 4 rows FAIL (the fourth is
+a blank page, which matches by construction). Both instruments are red on paper
+that is not in signature order.
+
+Wrong before: right-hand cell took the fold allowance as its outer inset and the
+trim margin against the fold (30 pt mirror image at gutter 40 / margin 10); /Info
+and the XMP packet left silently with the producer at pdf-lib's; the card and the
+sentence said "flip on the long edge" over landscape sheets.

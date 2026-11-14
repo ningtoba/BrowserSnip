@@ -1,0 +1,26 @@
+=== control 1: the after file judged with the cells slid half a cell sideways ===
+FAIL side 6 cell 1 inked like its source (got 0, want > 0)
+FAIL control: side 1 cell 0 in reader order (got 'SHEET 12', want 'SHEET 01')
+FAIL control: side 1 cell 1 in reader order (got 'SHEET 01', want 'SHEET 02')
+FAIL control: side 2 cell 0 in reader order (got 'SHEET 02', want 'SHEET 03')
+FAIL control: side 2 cell 1 in reader order (got 'SHEET 11', want 'SHEET 04')
+FAIL control: side 3 cell 0 in reader order (got 'SHEET 10', want 'SHEET 05')
+FAIL control: side 3 cell 1 in reader order (got 'SHEET 03', want 'SHEET 06')
+FAIL control: side 4 cell 0 in reader order (got 'SHEET 04', want 'SHEET 07')
+FAIL control: side 4 cell 1 in reader order (got 'SHEET 09', want 'SHEET 08')
+FAIL control: side 5 cell 0 in reader order (got 'SHEET 08', want 'SHEET 09')
+FAIL control: side 5 cell 1 in reader order (got 'SHEET 05', want 'SHEET 10')
+FAIL control: side 6 cell 0 in reader order (got 'SHEET 06', want 'SHEET 11')
+FAIL control: side 6 cell 1 in reader order (got 'SHEET 07', want 'SHEET 12')
+PASS /Info title carried (got 'Twelve sheet booklet fixture', want 'Twelve sheet booklet fixture')
+PASS /Info author carried (got 'triage author', want 'triage author')
+PASS /Info subject carried (got 'booklet imposition', want 'booklet imposition')
+PASS producer (got 'BrowserSnip', want BrowserSnip)
+PASS XMP packet carried like the source (got True, want True)
+
+42 failure(s) [ctl-slide]
+=== control 2: the source judged as if already imposed (reader order 1|2, 3|4) ===
+FAIL control: side 1 cell 0 in reader order (got '', want '01 Quarterly reconciliation of the')
+FAIL control: side 1 cell 1 in reader order (got '01 Quarterly reconciliation of the', want 'colour sheet')
+FAIL control: side 2 cell 0 in reader order (got 'colour sheet', want '')
+PASS control: side 2 cell 1 in reader order (got '', want '')

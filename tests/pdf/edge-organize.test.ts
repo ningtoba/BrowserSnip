@@ -2541,6 +2541,69 @@ describe('each tool is checked against its own output file', () => {
     expect(warn(outcome)).not.toMatch(/planned cells stayed blank/i);
   });
 
+  it('booklet puts the fold allowance against the fold on both leaves', async () => {
+    // The fold runs down the middle of the sheet, so the allowance the field
+    // calls "extra space at the fold" belongs on the *middle* edge of both
+    // cells and the trim margin on the outer edge of both. The right cell used
+    // to take them the other way round: its page sat a gutter from the trim
+    // edge and a margin from the fold, the mirror image of the left page.
+    const four = fileOf(await sheets(grid(4)), 'four.pdf');
+    const outcome = await run('booklet', { sheetSize: 'a4', landscape: true, gutter: 40, margin: 10 }, [four]);
+    const doc = await open(await bytesOf(outcome));
+    const width = doc.getPage(0).getWidth();
+    const cell = width / 2 - 50;
+    const drawn = stampsOf(doc, 0)
+      .map((stamp) => mappedBox(stamp, [0, 0, stamp.bbox[2], stamp.bbox[3]]))
+      .sort((a, b) => a.x - b.x);
+    expect(drawn).toHaveLength(2);
+    const [left, right] = drawn;
+    // Each page is centred in its own cell, so the cell is what the ink centre
+    // names — the two cells are half a sheet apart, 30 pt being the difference
+    // the swap moved it by.
+    expect(left.x + left.width / 2).toBeCloseTo(10 + cell / 2, 1);
+    expect(right.x + right.width / 2).toBeCloseTo(width / 2 + 40 + cell / 2, 1);
+    // Margin outside, gutter against the fold, on both.
+    expect(left.x).toBeCloseTo(10, 1);
+    expect(width / 2 - (left.x + left.width)).toBeCloseTo(40, 1);
+    expect(right.x - width / 2).toBeCloseTo(40, 1);
+    expect(width - (right.x + right.width)).toBeCloseTo(10, 1);
+  });
+
+  it('booklet keeps the document’s own info while it imposes the pages (E7)', async () => {
+    const source = fileOf(await identified(), 'titled.pdf');
+    const outcome = await run('booklet', { sheetSize: 'a4', landscape: true, gutter: 12, margin: 12 }, [source]);
+    const raw = await bytesOf(outcome);
+    // `updateMetadata: false`, because `PDFDocument.load` re-stamps the producer
+    // with pdf-lib's name and would hide what the run actually wrote.
+    const doc = await openPDF(raw, { updateMetadata: false });
+    // The imposition is still the imposed one — the info did not cost a cell.
+    expect(doc.getPageCount()).toBe(2);
+    expect(drawnText(doc, 0)).toContain('sheet 4');
+    expect(drawnText(doc, 0)).toContain('sheet 1');
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the bytes is this app's own claim, not the source's.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    // And the card says so, beside the rebuild's other note.
+    const notes = (getPdfTool('booklet')?.notes ?? []).join(' ');
+    expect(notes).toMatch(/title, author, subject.*stays with the file/i);
+    expect(notes).toMatch(/links, form fields and bookmarks.*do not survive/i);
+  });
+
+  it('booklet names the duplex edge the fold runs with', async () => {
+    // A landscape sheet folds across its short edges, so the flip has to be the
+    // short one: with the long edge the back of every sheet prints upside down.
+    const landscape = await run('booklet', { sheetSize: 'a4', landscape: true }, [fileOf(await sheets(grid(4)), 'four.pdf')]);
+    expect(landscape.message).toMatch(/flip on short edge, then fold/i);
+    const portrait = await run('booklet', { sheetSize: 'a4', landscape: false }, [fileOf(await sheets(grid(4)), 'four.pdf')]);
+    expect(portrait.message).toMatch(/flip on long edge, then fold/i);
+    expect((getPdfTool('booklet')?.notes ?? []).join(' ')).toMatch(/flip on the short edge for a landscape sheet/i);
+  });
+
   it('n-up fills the cells in the order the field names', async () => {
     const varied = fileOf(
       await sheets([
