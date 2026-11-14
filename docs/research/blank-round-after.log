@@ -1,0 +1,79 @@
+# add-blank-page, after — same fixture, same probe, same judge, fix in `organize.ts`
+# The whole 19-case set is page-for-page identical to the before run (box,
+# /MediaBox, /CropBox, /Rotate, ink, annots, links, text, page count). The one
+# thing that moved is the document's identity: title in, producer `BrowserSnip`.
+
+== DIFF (before dir -> after dir), every produced file
+== add-blank-page__01-default_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__02-start1_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__02b-repeat_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__03-end1_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__04-after4_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__05-before4_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__06-end3_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__07-before4x3_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__08-after0_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__09-after99_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__10-after5_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__11-after1_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__12-before1_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__13-count0_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__14-count300_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__15-after4-a4_colour_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__16-annots_annot_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__17-bookmarked_bookmarked_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== add-blank-page__18-attach_attach_with_blanks.pdf CHANGED
+-   INFO title='' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
++   INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='BrowserSnip'
+== SOURCE, measured the same way
+== /tmp/triage/colour.pdf pages=4
+  p1 disp=420.0x595.0 rot=0 mb=[0.0, 0.0, 420.0, 595.0] cb=[0.0, 0.0, 420.0, 595.0] ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l'
+  p2 disp=420.0x595.0 rot=0 mb=[0.0, 0.0, 420.0, 595.0] cb=[0.0, 0.0, 420.0, 595.0] ink=24021 annots=0 links=0 text='colour sheet'
+  p3 disp=420.0x595.0 rot=0 mb=[0.0, 0.0, 420.0, 595.0] cb=[0.0, 0.0, 420.0, 595.0] ink=0 annots=0 links=0 text=''
+  p4 disp=595.0x420.0 rot=90 mb=[0.0, 0.0, 420.0, 595.0] cb=[0.0, 0.0, 420.0, 595.0] ink=69334 annots=0 links=0 text=''
+  INFO title='colour-tool fixture: bar + copy + band, colour squares, empty' author='' subject='' keywords='' creator='pdf-lib (https://github.com/Hopding/pdf-lib)' producer='pdf-lib (https://github.com/Hopding/pdf-lib)'
+  DOC xmp=0 outline=[] emb=0 widgets=0
+
+
+== CARD, both notes expanded, holding colour.pdf (screenshot shots/blank-notes.png)
+
+eval: 1
+read: HONEST NOTES (2)
+▾
+The pages are copied into a new file. The ink, the annotations, the bookmarks that point at pages you kept, the page numbering the reader sho

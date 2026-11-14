@@ -1663,7 +1663,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_with_blanks.pdf',
     actionLabel: 'Add blanks',
     promise: 'Your PDF with blank sheets inserted where you choose, sized to the page beside them or to the sheet size you pick.',
-    notes: [PAGE_COPY_NOTE],
+    notes: [PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       {
         key: 'position',
@@ -1724,6 +1724,14 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const fidelity = await carryPageFurniture(target, [{ doc: input.doc, placed }]);
       notePageCopy([input.doc], fidelity, notes);
+      // `pdf-lib` copies pages and nothing else, so the `/Info` fields and the XMP
+      // packet — which sit above the page tree — stayed with the file they came
+      // from: measured on `colour.pdf`, the output title was `""` under a card
+      // that said only "Inserted 1 page at position 5", on a tool whose promise is
+      // "your PDF with blank sheets inserted". Same carry as `remove-pages`,
+      // `reverse-pages` and `merge`, and the producer is this app's own.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       return pdfOut(
         target,
         notes,

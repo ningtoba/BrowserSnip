@@ -966,6 +966,83 @@ describe('geometry is respected, not flattened', () => {
     expect(warn(outcome)).toMatch(/mixes page sizes.*page 4 beside them/i);
   });
 
+  it('sizes every blank sheet to the neighbour it prints beside, rotated or not (E8)', async () => {
+    // The neighbour here is the file's LAST sheet, turned a quarter: it prints
+    // 400 × 300, so an "after" blank has to be 400 × 300 too, and the three of a
+    // multi-blank run each have to be. A "before" blank belongs to the sheet it
+    // follows instead — the page before it — which is still portrait.
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 420, height: 595 },
+        { width: 420, height: 595 },
+        { width: 300, height: 400, rotate: 90 },
+      ]),
+      'mixed.pdf',
+    );
+    const after = await run('add-blank-page', { position: 'after', anchor: 4, count: 3, size: 'same' }, [source]);
+    const afterDoc = await open(await bytesOf(after));
+    expect(afterDoc.getPageCount()).toBe(7);
+    expect([4, 5, 6].map((at) => afterDoc.getPage(at).getSize())).toEqual([
+      { width: 400, height: 300 },
+      { width: 400, height: 300 },
+      { width: 400, height: 300 },
+    ]);
+    // Control: the neighbour keeps its own box and its own turn, and every blank
+    // is still an empty sheet rather than a copy of anything.
+    expect(afterDoc.getPage(3).getSize()).toEqual({ width: 300, height: 400 });
+    expect(afterDoc.getPage(3).getRotation().angle).toBe(90);
+    expect(pageTexts(afterDoc)).toEqual(['sheet 1', 'sheet 2', 'sheet 3', 'sheet 4', '', '', '']);
+
+    const before = await run('add-blank-page', { position: 'before', anchor: 4, count: 3, size: 'same' }, [source]);
+    const beforeDoc = await open(await bytesOf(before));
+    expect(beforeDoc.getPageCount()).toBe(7);
+    // Sheets 4, 5 and 6 are the blanks; the sheet they precede is 7.
+    expect([3, 4, 5].map((at) => beforeDoc.getPage(at).getSize())).toEqual([
+      { width: 420, height: 595 },
+      { width: 420, height: 595 },
+      { width: 420, height: 595 },
+    ]);
+    expect(pageTexts(beforeDoc)).toEqual(['sheet 1', 'sheet 2', 'sheet 3', '', '', '', 'sheet 4']);
+    // Control: the typed size still wins over the neighbour when it is not "same".
+    const letter = await run('add-blank-page', { position: 'after', anchor: 4, count: 1, size: 'letter' }, [source]);
+    const letterDoc = await open(await bytesOf(letter));
+    expect(letterDoc.getPage(4).getSize()).toEqual({ width: 612, height: 792 });
+  });
+
+  it('carries the document info it was given and calls itself the producer (E7)', async () => {
+    const doc = await PDFDocument.create();
+    doc.setTitle('Blank round');
+    doc.setAuthor('author of the blanks');
+    doc.setSubject('subject of the blanks');
+    doc.setKeywords(['kw-blank']);
+    writeXmp(doc, "<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>Blank round</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>");
+    doc.addPage([200, 100]);
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    const outcome = await run('add-blank-page', { position: 'end', count: 1, size: 'same' }, [source]);
+    // `PDFDocument.load` re-stamps the producer unless told not to, so the info is
+    // read through `openPDF`, which leaves the file's own alone.
+    const out = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    // Both sheets are there — the info did not cost a page.
+    expect(out.getPageCount()).toBe(2);
+    expect(out.getTitle()).toBe('Blank round');
+    expect(out.getAuthor()).toBe('author of the blanks');
+    expect(out.getSubject()).toBe('subject of the blanks');
+    expect(out.getKeywords()).toBe('kw-blank');
+    expect(out.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the new file is this app's claim, not the source's.
+    expect(out.getProducer()).toBe('BrowserSnip');
+  });
+
+  it('invents no document info when the source has none (E7 control)', async () => {
+    const source = fileOf(await sheets(grid(2)), 'bare.pdf');
+    const outcome = await run('add-blank-page', { position: 'end', count: 1, size: 'same' }, [source]);
+    const out = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(out.getPageCount()).toBe(3);
+    expect(out.getTitle()).toBeUndefined();
+    expect(out.getAuthor()).toBeUndefined();
+  });
+
   it('keeps each page’s own size when merging, and says so (E8)', async () => {
     const small = fileOf(await sheets([{ width: 200, height: 100 }]), 'a.pdf');
     const large = fileOf(await sheets([{ width: 400, height: 300 }]), 'b.pdf');

@@ -1,0 +1,252 @@
+[
+ {
+  "tool": "add-blank-page",
+  "tag": "01-default",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {}
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "02-start1",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "Before the first page",
+   "Blank pages to add": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "02b-repeat",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "Before the first page",
+   "Blank pages to add": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "03-end1",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After the last page",
+   "Blank pages to add": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "04-after4",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "4",
+   "Blank pages to add": "1"
+  },
+  "shot": true,
+  "shotName": "after4"
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "05-before4",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "Before a specific page",
+   "Page number": "4",
+   "Blank pages to add": "1"
+  },
+  "shot": true,
+  "shotName": "before4"
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "06-end3",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After the last page",
+   "Blank pages to add": "3"
+  },
+  "shot": true,
+  "shotName": "end3"
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "07-before4x3",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "Before a specific page",
+   "Page number": "4",
+   "Blank pages to add": "3"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "08-after0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "0"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "09-after99",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "99"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "10-after5",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "5"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "11-after1",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "12-before1",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "Before a specific page",
+   "Page number": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "13-count0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After the last page",
+   "Blank pages to add": "0"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "14-count300",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After the last page",
+   "Blank pages to add": "300"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "15-after4-a4",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "4",
+   "Blank sheet size": "A4 (210"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "16-annots",
+  "files": [
+   "/tmp/triage/in/annot.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "17-bookmarked",
+  "files": [
+   "/tmp/triage/in/bookmarked.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "18-attach",
+  "files": [
+   "/tmp/triage/in/attach.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "1"
+  }
+ },
+ {
+  "tool": "add-blank-page",
+  "tag": "19-dark",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "label": "Add blanks",
+  "fields": {
+   "Position": "After a specific page",
+   "Page number": "4"
+  },
+  "shot": true,
+  "shotName": "after4-dark",
+  "dark": true
+ }
+]

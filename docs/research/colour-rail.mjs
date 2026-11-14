@@ -369,7 +369,10 @@ async function runTool(run) {
     outputs: [],
     errors: [],
   };
-  const url = `${BASE}/#${run.route ?? `/tool/${run.tool}`}`;
+  // One query per run, because navigating to the same hash is not a reload: the
+  // rail keeps its state and a `count` typed by the previous run silently sizes the
+  // next one (measured: 1 blank became 3 between runs).
+  const url = `${BASE}/?probe=${encodeURIComponent(run_prefix)}#${run.route ?? `/tool/${run.tool}`}`;
   await send('Page.navigate', { url });
   const loaded = await wait(`document.readyState==='complete' && !!document.querySelector('#tool-process-btn, input[type=file], [data-intake]')`, 120000);
   if (!loaded) {
@@ -459,6 +462,14 @@ async function runTool(run) {
   for (const expr of run.readback ?? []) {
     record.readback.push(`read: ${String(await ev(expr).catch((e) => `threw ${e}`)).slice(0, 160)}`);
   }
+  // The card's own words — the promise and the standing notes — are only on the
+  // screen *before* the run, so a probe that wants to read them asks for this.
+  if (run.shotBefore) {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    const path = join(OUTDIR, `${run_prefix}_${sanitize(run.shotBefore)}.png`);
+    writeFileSync(path, Buffer.from(shot.data, 'base64'));
+    record.shotBefore = path;
+  }
   // Blob index before the click: a video pane makes an object URL of the *input*
   // for its preview, so "the biggest blob" would hand back the file it started with.
   const blobsBefore = await ev(`window.__blobs.length`).catch(() => 0);
@@ -491,6 +502,17 @@ async function runTool(run) {
   );
   await sleep(900);
   record.screen = await screen();
+  // A run may ask for the screen as well as the bytes (`shot: true`): the brief's
+  // screen half is judged by a PNG a human looks at, and the batch form otherwise
+  // only keeps the words. Written under the run's own prefix.
+  if (run.shot) {
+    // `dark` flips the shell's own token class first, the way merge-round.mjs does.
+    if (run.dark) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('theme','dark')}catch{}return 1})()`);
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    const path = join(OUTDIR, `${run_prefix}_${sanitize(run.shotName ?? 'shot')}.png`);
+    writeFileSync(path, Buffer.from(shot.data, 'base64'));
+    record.shot = path;
+  }
   record.errors = [...new Set(errors.slice(beforeErrorCount))].slice(0, 4);
   if (!finished) {
     record.fail = 'timed out with no output and no error';
