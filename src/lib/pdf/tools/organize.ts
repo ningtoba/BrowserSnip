@@ -1804,8 +1804,12 @@ export const organizeTools: PdfToolDefinition[] = [
         const detail = inputs
           .map((input, index) => `"${input.name}" ${queues[index].length}`)
           .join(', ');
+        // Two files where one is longer is one longer file, not "longer files":
+        // the count is over the files that actually reach the tail, not over the
+        // longest run length.
+        const longer = queues.filter((queue) => queue.length === longest).length;
         notes.add(
-          `The files are unequal (pages per file: ${detail}), so the tail of the mix comes from the longer file${longest === 1 ? '' : 's'} only.`,
+          `The files are unequal (pages per file: ${detail}), so the tail of the mix comes from the longer ${longer === 1 ? 'file' : 'files'} only.`,
         );
       }
       const target = await newPDF();
@@ -1828,6 +1832,16 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       const fidelity = await carryPageFurniture(target, copies);
       notePageCopy(copies.map((copy) => copy.doc), fidelity, notes);
+      // The `/Info` fields and the XMP packet sit above the page tree, so
+      // `copyPages` leaves them with the file they came from: the mix came out
+      // with an empty title and no author, subject, keywords, creator or packet,
+      // silently, on a tool whose promise is a copy of pages. Measured on
+      // `colour.pdf`: title `colour-tool fixture: …` → `""`, creator replaced by
+      // pdf-lib's own name. Same carry as `merge`, and the first file's wins
+      // because a file has one slot for it.
+      carryDocInfo(target, inputs, notes, 'mixed');
+      // Who wrote the file is the app's own claim, not the source's.
+      target.setProducer('BrowserSnip');
       return pdfOut(target, notes, `Mixed ${pageCountLabel(plan.length)} from ${inputs.length} files.`);
     },
   },
@@ -2971,7 +2985,7 @@ function noteRepeated(inputs: OpenedInput[], notes: Notes): void {
  * note says whose was left behind. The producer is the merge's own, because this
  * app wrote the file.
  */
-function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes): void {
+function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes, noun = 'merged'): void {
   const [first, ...rest] = inputs;
   if (!first) return;
   const title = first.doc.getTitle();
@@ -2998,8 +3012,8 @@ function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes):
   const count = `${differing.length} other ${differing.length === 1 ? 'file’s was' : 'files’ were'}`;
   notes.add(
     carried
-      ? `Only "${first.name}"’s document info travelled: its title, author, subject and keywords are the merged file’s, and ${count} left behind.`
-      : `"${first.name}" has no document info, and a merged file has one slot for it, so the ${count} left behind. Put the file whose info you want first.`,
+      ? `Only "${first.name}"’s document info travelled: its title, author, subject and keywords are the ${noun} file’s, and ${count} left behind.`
+      : `"${first.name}" has no document info, and a ${noun} file has one slot for it, so the ${count} left behind. Put the file whose info you want first.`,
   );
 }
 

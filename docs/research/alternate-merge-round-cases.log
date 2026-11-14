@@ -1,0 +1,426 @@
+tray before reorder: ["colour.pdf","sheets.pdf",null]
+reorder click: "Move sheets.pdf earlier"
+tray after reorder: ["sheets.pdf","colour.pdf",null]
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+screenshot: /tmp/alt/before-swapped-pane.png
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "sheets_alternated.pdf\n\nREADY\nSIZE\n9.1 KB → 5.1 KB · 44% smaller\nPAGES\n9 → 9\n\nMixed 9 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nThe files are unequal (pages per file: \"sheets.pdf\" 5, \"colour.pdf\" 4), so the tail of the mix comes from the longer files only.\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "9",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+downloads: {"how":"one","names":["sheets_alternated.pdf"]}
+saved /tmp/alt/before-swapped.pdf 5234 bytes
+console errors: []
+tray before reorder: ["colour.pdf","sheets.pdf",null]
+tray after reorder: ["colour.pdf","sheets.pdf",null]
+pattern readback: "2-2 | Two pages from each file in turn"
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n9.1 KB → 5.1 KB · 44% smaller\nPAGES\n9 → 9\n\nMixed 9 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nThe files are unequal (pages per file: \"colour.pdf\" 4, \"sheets.pdf\" 5), so the tail of the mix comes from the longer files only.\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "9",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+screenshot: /tmp/alt/before-2-2-card.png
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/before-2-2.pdf 5229 bytes
+console errors: []
+tray before reorder: ["colour.pdf","sheets.pdf",null]
+tray after reorder: ["colour.pdf","sheets.pdf",null]
+pattern readback: "reverse-alternate | Alternate, later files reversed"
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+screenshot: /tmp/alt/before-rev-pane.png
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n9.1 KB → 5.1 KB · 44% smaller\nPAGES\n9 → 9\n\nMixed 9 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nThe files are unequal (pages per file: \"colour.pdf\" 4, \"sheets.pdf\" 5), so the tail of the mix comes from the longer files only.\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "9",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/before-rev.pdf 5238 bytes
+console errors: []
+tray before reorder: ["colour.pdf","bookmarked.pdf",null]
+tray after reorder: ["colour.pdf","bookmarked.pdf",null]
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n8.0 KB → 3.8 KB · 53% smaller\nPAGES\n8 → 8\n\nMixed 8 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (1)\n\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/before-book.pdf 3843 bytes
+console errors: []
+tray before reorder: ["colour.pdf","annot.pdf",null]
+tray after reorder: ["colour.pdf","annot.pdf",null]
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n9.5 KB → 5.0 KB · 47% smaller\nPAGES\n8 → 8\n\nMixed 8 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (1)\n\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/after-annot.pdf 5130 bytes
+console errors: []
+tray before reorder: ["colour.pdf",null]
+tray after reorder: ["colour.pdf",null]
+before run: {"run":{"text":"Mix pages","disabled":true},"still":"Still needed: "}
+screenshot: /tmp/alt/before-one.png
+console errors: []
+tray before reorder: ["zero.pdf","colour.pdf",null]
+tray after reorder: ["zero.pdf","colour.pdf",null]
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": "ZERO.PDF\"zero.pdf\" has no pages.\n\nNothing to convert, and a repair will not add pages.\n\nRetry",
+ "result": null,
+ "run": {
+  "text": "Mix pages",
+  "disabled": false
+ },
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "←",
+   false
+  ],
+  [
+   "→",
+   true
+  ],
+  [
+   "✕",
+   true
+  ],
+  [
+   "←",
+   true
+  ],
+  [
+   "→",
+   false
+  ],
+  [
+   "✕",
+   true
+  ],
+  [
+   "+\nAdd more\nIt stays on this device",
+   true
+  ],
+  [
+   "⬆\nDrop more PDFs here\nor click to browse",
+   true
+  ],
+  [
+   "Retry",
+   true
+  ],
+  [
+   "HONEST NOTES (1)\n▸",
+   true
+  ],
+  [
+   "Mix pages",
+   true
+  ]
+ ]
+}
+screenshot: /tmp/alt/before-zero-card.png
+REFUSED — "ZERO.PDF\"zero.pdf\" has no pages.\n\nNothing to convert, and a repair will not add pages.\n\nRetry"
+console errors: []

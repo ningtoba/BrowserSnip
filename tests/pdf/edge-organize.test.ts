@@ -1733,8 +1733,71 @@ describe('each tool is checked against its own output file', () => {
     expect(turnedTexts[1], 'the back block starts at the last page of the later file').toBe('sheet 3');
   });
 
-  it('duplex-collate places each back page beside its own front page', async () => {
-    const outcome = await run('duplex-collate', { backReversed: true, offset: 0 });
+  it('alternate-merge carries the first file’s info and says whose was left behind', async () => {
+    // `pdf-lib` copies pages and nothing else, so the mix used to come back with an
+    // empty title, no author, subject, keywords or creator, pdf-lib's own producer
+    // and no packet — silently, under a card that only said "Mixed 6 pages".
+    const withInfo = async (title: string, name: string): Promise<File> => {
+      const doc = await PDFDocument.create();
+      doc.setTitle(title);
+      doc.setAuthor(`author of ${title}`);
+      doc.setSubject(`subject of ${title}`);
+      doc.setKeywords([`kw-${title}`]);
+      writeXmp(doc, `<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>${title}</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>`);
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), name);
+    };
+    const outcome = await run('alternate-merge', { pattern: '1-1' }, [
+      await withInfo('First', 'a.pdf'),
+      await withInfo('Second', 'b.pdf'),
+    ]);
+    // `PDFDocument.load` re-stamps the producer unless told not to.
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    // The interleave did not cost a page: both sheets are still there.
+    expect(doc.getPageCount()).toBe(2);
+    expect(doc.getTitle()).toBe('First');
+    expect(doc.getAuthor()).toBe('author of First');
+    expect(doc.getSubject()).toBe('subject of First');
+    expect(doc.getKeywords()).toBe('kw-First');
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the mix is the app's own claim, not the source's.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    expect(warn(outcome)).toMatch(/only "a\.pdf"’s document info travelled/i);
+    expect(warn(outcome)).toMatch(/1 other file’s was left behind/i);
+  });
+
+  it('alternate-merge invents no info when the first file has none (control)', async () => {
+    const bare = fileOf(await sheets(grid(1)), 'bare.pdf');
+    const titled = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setTitle('Second only');
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    })();
+    const outcome = await run('alternate-merge', { pattern: '1-1' }, [bare, titled]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getTitle()).toBeUndefined();
+    expect(warn(outcome)).toMatch(/has no document info.*put the file whose info you want first/i);
+  });
+
+  it('the unequal-files note names one longer file as one (E9 control)', async () => {
+    // 2 files against 3: exactly one file reaches the tail, so "the longer files
+    // only" was wrong — the plural was taken from the longest run, not the count.
+    const short = fileOf(await sheets(grid(2)), 'short.pdf');
+    const long = fileOf(await sheets(grid(3)), 'long.pdf');
+    const outcome = await run('alternate-merge', { pattern: '1-1' }, [short, long]);
+    expect(warn(outcome)).toMatch(/the tail of the mix comes from the longer file only/i);
+    // Two files are equally long, so the plural is right there and the note must
+    // keep it — the pairing that makes the singular above a measurement.
+    const a = fileOf(await sheets(grid(3)), 'a.pdf');
+    const b = fileOf(await sheets(grid(3)), 'b.pdf');
+    const even = await run('alternate-merge', { pattern: '1-1' }, [a, b]);
+    expect(warn(even), 'equal files have no tail').not.toMatch(/the files are unequal/i);
+    const three = await run('alternate-merge', { pattern: '1-1' }, [short, long, long]);
+    expect(warn(three)).toMatch(/the tail of the mix comes from the longer files only/i);
+  });
+
+  it('duplex-collate places each back page beside its own front page', async () => {    const outcome = await run('duplex-collate', { backReversed: true, offset: 0 });
     const doc = await open(await bytesOf(outcome));
     // 4 pages: fronts 1,2 and backs 4,3 → sheets 1|4 and 2|3.
     expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 4', 'sheet 2', 'sheet 3']);

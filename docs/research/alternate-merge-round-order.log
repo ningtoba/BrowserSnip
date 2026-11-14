@@ -1,0 +1,147 @@
+### before
+tray before reorder: ["colour.pdf","sheets.pdf",null]
+tray after reorder: ["colour.pdf","sheets.pdf",null]
+pattern readback: "1-1 | One page from each file in turn"
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+screenshot: /tmp/alt/before-pane.png
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n9.1 KB → 5.1 KB · 44% smaller\nPAGES\n9 → 9\n\nMixed 9 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nThe files are unequal (pages per file: \"colour.pdf\" 4, \"sheets.pdf\" 5), so the tail of the mix comes from the longer files only.\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "9",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+screenshot: /tmp/alt/before-card.png
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/before-1-1.pdf 5232 bytes
+console errors: []
+### after
+tray before reorder: ["colour.pdf","sheets.pdf",null]
+tray after reorder: ["colour.pdf","sheets.pdf",null]
+pattern readback: "1-1 | One page from each file in turn"
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "colour_alternated.pdf\n\nREADY\nSIZE\n9.1 KB → 5.2 KB · 43% smaller\nPAGES\n9 → 9\n\nMixed 9 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nThe files are unequal (pages per file: \"colour.pdf\" 4, \"sheets.pdf\" 5), so the tail of the mix comes from the longer file only.\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "9",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+screenshot: /tmp/alt/after-card.png
+downloads: {"how":"one","names":["colour_alternated.pdf"]}
+saved /tmp/alt/after-1-1.pdf 5332 bytes
+console errors: []

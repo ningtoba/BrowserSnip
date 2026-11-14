@@ -1,0 +1,35 @@
+# alternate-merge byte reader — AFTER the fix, same fixtures, same 50 dpi
+--- after-1-1.pdf expect c1,s1,c2,s2,c3,s3,c4,s4,s5 (+ info of colour.pdf)
+exit=0
+source fingerprints: {'c1': (420.0, 595.0, 0, 33011, 1778, 0, 0, 0), 'c2': (420.0, 595.0, 0, 24021, 12, 0, 0, 0), 'c3': (420.0, 595.0, 0, 0, 0, 0, 0, 0), 'c4': (595.0, 420.0, 90, 69335, 0, 0, 0, 0), 's1': (420.0, 595.0, 0, 43824, 0, 0, 0, 0), 's2': (595.0, 842.0, 0, 68059, 0, 0, 0, 0), 's3': (300.0, 700.0, 0, 21908, 1392, 0, 0, 0), 's4': (640.0, 360.0, 0, 108649, 0, 1, 0, 0), 's5': (500.0, 500.0, 0, 0, 0, 0, 0, 0)}
+  [0]     c1  box (0.0, 0.0, 420.0, 595.0) rot 0 ink 33011 chars 1778 images 0 annots 0 links 0 first-line '01 Quarterly reconciliation of the scanned ledger sheets with the'
+  [1]     s1  box (0.0, 0.0, 420.0, 595.0) rot 0 ink 43824 chars 0 images 0 annots 0 links 0 first-line ''
+  [2]     c2  box (0.0, 0.0, 420.0, 595.0) rot 0 ink 24021 chars 12 images 0 annots 0 links 0 first-line 'colour sheet'
+  [3]     s2  box (0.0, 0.0, 595.0, 842.0) rot 0 ink 68059 chars 0 images 0 annots 0 links 0 first-line ''
+  [4]     c3  box (0.0, 0.0, 420.0, 595.0) rot 0 ink 0 chars 0 images 0 annots 0 links 0 first-line ''
+  [5]     s3  box (0.0, 0.0, 300.0, 700.0) rot 0 ink 21908 chars 1392 images 0 annots 0 links 0 first-line '01 Quarterly reconciliation of the scanned ledger she'
+  [6]     c4  box (0.0, 0.0, 595.0, 420.0) rot 90 ink 69335 chars 0 images 0 annots 0 links 0 first-line ''
+  [7]     s4  box (0.0, 0.0, 640.0, 360.0) rot 0 ink 108649 chars 0 images 1 annots 0 links 0 first-line ''
+  [8]     s5  box (0.0, 0.0, 500.0, 500.0) rot 0 ink 0 chars 0 images 0 annots 0 links 0 first-line ''
+sequence: c1,s1,c2,s2,c3,s3,c4,s4,s5
+expected: c1,s1,c2,s2,c3,s3,c4,s4,s5
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+--- after-info.pdf (meta.pdf first) expect meta1..: read by box+ink for meta.pdf's sheets, info of meta.pdf
+exit=1
+info source: {'format': 'PDF 1.7', 'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha, beta, gamma', 'creator': 'triage-fixtures-images.py'}
+info output: {'format': 'PDF 1.7', 'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha beta gamma', 'creator': 'triage-fixtures-images.py'} | xmp True / True
+FAIL info keywords: source 'alpha, beta, gamma', output 'alpha beta gamma'
+RESULT 1 failure(s)
+--- after-book.pdf: the outline of bookmarked.pdf, re-pointed onto the mixed sheets
+src toc [[1, 'Chapter One', 1], [2, 'Section One.A', 2], [1, 'Chapter Two', 4]]
+out toc [[1, 'Chapter One', 2], [2, 'Section One.A', 4], [1, 'Chapter Two', 8]]
+out title colour-tool fixture: bar + copy + band, colour squares, empty | producer BrowserSnip
+--- after-annot.pdf: annotations and links on the sheet they belong to
+pages 8 [(0, 0, 0), (1, 3, 1), (2, 0, 0), (3, 0, 0), (4, 0, 0), (5, 0, 0), (6, 0, 0), (7, 0, 0)]
+
+# The single FAIL above is the known shared one, not this row's: `setKeywords`
+# takes a list, so `alpha, beta, gamma` comes back space-separated. `merge`
+# records the same and it is left open there; the values do travel.

@@ -1,0 +1,68 @@
+tray before reorder: ["meta.pdf","colour.pdf",null]
+tray after reorder: ["meta.pdf","colour.pdf",null]
+pattern readback: "1-1 | One page from each file in turn"
+before run: {"run":{"text":"Mix pages","disabled":false},"still":""}
+run button: "Mix pages"
+finished: true screen: {
+ "alert": null,
+ "result": "meta_alternated.pdf\n\nREADY\nSIZE\n7.5 KB → 4.0 KB · 46% smaller\nPAGES\n8 → 8\n\nMixed 8 pages from 2 files.\n\nWHAT YOU SHOULD KNOW (2)\n\nEach page kept its own size, so the mixed file has mixed page sizes. \"Fix page size\" can even them out afterwards.\nOnly \"meta.pdf\"’s document info travelled: its title, author, subject and keywords are the mixed file’s, and 1 other file’s was left behind.\nDownload",
+ "run": null,
+ "buttons": [
+  [
+   "⌕\nSearch tools\n⌘K",
+   true
+  ],
+  [
+   "☀",
+   true
+  ],
+  [
+   "☆\nStar",
+   true
+  ],
+  [
+   "1",
+   true
+  ],
+  [
+   "2",
+   true
+  ],
+  [
+   "3",
+   true
+  ],
+  [
+   "4",
+   true
+  ],
+  [
+   "5",
+   true
+  ],
+  [
+   "6",
+   true
+  ],
+  [
+   "7",
+   true
+  ],
+  [
+   "8",
+   true
+  ],
+  [
+   "Download",
+   true
+  ],
+  [
+   "Do another",
+   true
+  ]
+ ]
+}
+screenshot: /tmp/alt/after-info-card.png
+downloads: {"how":"one","names":["meta_alternated.pdf"]}
+saved /tmp/alt/after-info.pdf 4100 bytes
+console errors: []

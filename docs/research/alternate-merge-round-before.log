@@ -1,0 +1,41 @@
+# alternate-merge byte reader — BEFORE the fix (organize.ts at HEAD), same fixtures, same 50 dpi
+# instrument control first: a plain stack of the two files must FAIL an interleaved expectation
+--- control: before-1-1.pdf expect c1,c2,c3,c4,s1,s2,s3,s4,s5 (a plain stack)
+exit=1
+sequence: c1,s1,c2,s2,c3,s3,c4,s4,s5
+RESULT 1 failure(s)
+--- before-1-1.pdf expect c1,s1,c2,s2,c3,s3,c4,s4,s5 (+ info of colour.pdf)
+exit=1
+sequence: c1,s1,c2,s2,c3,s3,c4,s4,s5
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+FAIL info title: source 'colour-tool fixture: bar + copy + band, colour squares, empty', output None
+RESULT 1 failure(s)
+--- before-2-2.pdf expect c1,c2,s1,s2,c3,c4,s3,s4,s5 (+ info of colour.pdf)
+exit=1
+sequence: c1,c2,s1,s2,c3,c4,s3,s4,s5
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+FAIL info title: source 'colour-tool fixture: bar + copy + band, colour squares, empty', output None
+RESULT 1 failure(s)
+--- before-rev.pdf expect c1,s5,c2,s4,c3,s3,c4,s2,s1 (+ info of colour.pdf)
+exit=1
+sequence: c1,s5,c2,s4,c3,s3,c4,s2,s1
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+FAIL info title: source 'colour-tool fixture: bar + copy + band, colour squares, empty', output None
+RESULT 1 failure(s)
+--- before-swapped.pdf expect s1,c1,s2,c2,s3,c3,s4,c4,s5 (+ info of colour.pdf)
+exit=1
+sequence: s1,c1,s2,c2,s3,c3,s4,c4,s5
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+FAIL info title: source 'colour-tool fixture: bar + copy + band, colour squares, empty', output None
+RESULT 1 failure(s)
+--- before-twice.pdf expect c1,c1,c2,c2,c3,c3,c4,c4 (+ info of colour.pdf)
+exit=1
+sequence: c1,c1,c2,c2,c3,c3,c4,c4
+info source: {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+info output: {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'} | xmp False / False
+FAIL info title: source 'colour-tool fixture: bar + copy + band, colour squares, empty', output None
+RESULT 1 failure(s)
