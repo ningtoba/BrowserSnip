@@ -53,6 +53,7 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  degrees,
   PDFName,
   PDFStream,
   StandardFonts,
@@ -204,6 +205,22 @@ function formGeometry(doc: PDFDocument, object: PDFStream): { box: Rect; matrix:
   const raw = object.dict.get(PDFName.of('Matrix'));
   const matrix = raw instanceof PDFArray ? (coordsOf(raw).slice(0, 6) as Matrix) : IDENTITY;
   return { box: { x: bx, y: by, width: bw - bx, height: bh - by }, matrix };
+}
+
+/** The source rect (`/BBox`) of the one form a page draws, in source space. */
+function bboxOf(doc: PDFDocument, index: number): Rect {
+  const forms = xobjectsOf(doc, doc.getPages()[index]);
+  expect(forms, `page ${index + 1} draws a form`).toBeTruthy();
+  for (const stream of pageContentStreams(doc.getPages()[index])) {
+    for (const op of parseContentStream(stream.bytes)) {
+      if (op.name !== 'Do') continue;
+      const name = nameOf(op.operands);
+      const object = name ? formNamed(doc, forms!, name) : null;
+      const geometry = object ? formGeometry(doc, object) : null;
+      if (geometry) return geometry.box;
+    }
+  }
+  throw new Error(`page ${index + 1} draws no form`);
 }
 
 function coordsOf(array: PDFArray): number[] {
@@ -665,6 +682,69 @@ describe('the other grid tools keep their content on the page', () => {
       expect(round(sheet.width), 'the sheet is one tile wide').toBe(source / 2 + 6);
       expect(round(placed[0].rect.width), 'and the crop fills it edge to edge').toBe(source / 2 + 6);
     });
+  });
+
+  /**
+   * The `/Rotate 90` frame (E9, and this round's finding): a 420×595 sheet that
+   * *displays* as 595×420 must be cut along the lines the user sees, so a 2×2
+   * grid of 10 pt overlap is four 307.5 × 220 sheets — a half of the displayed
+   * width plus the overlap, a half of the displayed height plus it — and each
+   * tile draws the quarter its grid cell names, in the source's own stored
+   * coordinates (`displayRegion`'s 90° map: stored x = displayed y).
+   *
+   * Reading the sizes alone would pass a tool that cut the sheet the long way
+   * and landed the wrong quarter on each tile, so the form's `/BBox` is checked
+   * against the cell it must come from.
+   */
+  it('posterize: a /Rotate 90 sheet splits in the frame it is shown in', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([420, 595]);
+    page.setRotation(degrees(90));
+    page.drawText('rotated sheet', { x: 20, y: 400, size: 14, font, color: rgb(0, 0, 0) });
+    for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]] as const) {
+      page.drawRectangle({ x: 420 * fx - 8, y: 595 * fy - 8, width: 16, height: 16, color: rgb(0, 0, 0) });
+    }
+    const out = await produce('posterize', await doc.save({ useObjectStreams: false }), { columns: 2, rows: 2, bleed: 10 }, 4);
+    const cellW = 595 / 2;
+    const cellH = 420 / 2;
+    out.getPages().forEach((sheet, index) => {
+      const [r, c] = [Math.floor(index / 2), index % 2];
+      expect([round(sheet.getWidth()), round(sheet.getHeight())], `tile ${index + 1} is one displayed cell plus its overlap`)
+        .toEqual([round(cellW + 10), round(cellH + 10)]);
+      const placed = placedOn(out, index);
+      expect(placed.length, `tile ${index + 1} draws its own quarter`).toBe(1);
+      expect(rasterise(out, index).inside, `tile ${index + 1} carries ink`).toBeGreaterThan(10);
+      const at = { x: c * cellW - (c > 0 ? 10 : 0), y: r * cellH - (r > 0 ? 10 : 0) };
+      // Stored coordinates of that displayed corner: x = displayed y, y = displayed x.
+      expect(placed[0].source.width, `tile ${index + 1} takes the cell's height across`).toBeCloseTo(cellH + 10, 2);
+      expect(placed[0].source.height, `tile ${index + 1} takes the cell's width down`).toBeCloseTo(cellW + 10, 2);
+      const bbox = bboxOf(out, index);
+      expect([round(bbox.x), round(bbox.y)], `tile ${index + 1} starts at its own corner`)
+        .toEqual([round(at.y), round(at.x)]);
+    });
+  });
+
+  /**
+   * The document's identity is above the page tree, so a rebuild drops it unless
+   * it is carried: measured on `colour.pdf` every tile came back with title `""`.
+   */
+  it('posterize: the tiles keep the document information', async () => {
+    const doc = await PDFDocument.create();
+    doc.setTitle('Posterize info fixture');
+    doc.setAuthor('the lab');
+    const page = doc.addPage([400, 300]);
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    page.drawText('info', { x: 20, y: 200, size: 18, font, color: rgb(0, 0, 0) });
+    const outcome = await runTool('posterize', await doc.save({ useObjectStreams: false }), { columns: 2, rows: 1, bleed: 4 });
+    expect(outcome.outputs.length, 'posterize wrote a file').toBeGreaterThan(0);
+    // Read through `openPDF` with `updateMetadata: false`: `PDFDocument.load`
+    // re-stamps the producer with pdf-lib's own name and would hide that half.
+    const out = await openPDF(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()), { updateMetadata: false });
+    expect(out.getPageCount(), 'two tiles were written').toBe(2);
+    expect(out.getTitle(), 'the title came along').toBe('Posterize info fixture');
+    expect(out.getAuthor(), 'and so did the author').toBe('the lab');
+    expect(out.getProducer(), 'the producer is the app that wrote it').toBe('BrowserSnip');
   });
 
   it('divide-pages: every piece of a grid cut', async () => {

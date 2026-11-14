@@ -21,7 +21,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 013 [x] n-up
 014 [x] booklet
 015 [x] combine-single-page
-016 [ ] posterize
+016 [x] posterize
 017 [ ] divide-pages
 018 [ ] fix-page-size
 019 [ ] remove-blank-pages

@@ -1,0 +1,11 @@
+fields: [
+ "Tiles across: \"number=2\" -> \"number=2\"",
+ "Tiles down: \"number=2\" -> \"number=2\""
+]
+clicked "Make poster"
+screen: {"result":"colour_poster.pdf\n\nREADY\nSIZE\n3.8 KB → 19.3 KB · 407% larger\nPAGES\n4 → 16\n\nSplit 4 pages into 4 tiles each — 16 pages total.\n\nThe file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.\n\nWHAT YOU SHOULD KNOW (1)\n\nPosterizing: this selection holds 2 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.\nDownload\nKeep original","alert":null,"status":"Finished — one file ready to download"}
+shot: /tmp/poster/after-all.png
+download: one
+files: ["colour_poster.pdf"]
+output {"type":"application/pdf","bytes":19787,"file":"/tmp/poster/after-all.pdf"}
+console errors: []

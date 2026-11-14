@@ -2463,7 +2463,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_poster.pdf',
     actionLabel: 'Make poster',
     promise: 'Tiles that print at one scale and overlap by the amount you set, ready to trim and paste.',
-    notes: [FLATTEN_NOTE],
+    notes: [FLATTEN_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       POSTER_ACROSS,
       POSTER_DOWN,
@@ -2536,6 +2536,12 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       noteMixedSizes('Posterizing', input.doc, source, notes);
       noteRebuildLoss('Posterizing', input.doc, source, notes);
+      // `/Info` and the XMP packet sit above the page tree and this tool rebuilds
+      // the page tree, so the identity left silently: measured on `colour.pdf` the
+      // tiles carried title `""` where the source held its own. Same carry as
+      // n-up/merge/remove-pages, and the producer is this app's because it wrote it.
+      carryDocInfo(target, [input], notes);
+      target.setProducer('BrowserSnip');
       return pdfOut(
         target,
         notes,

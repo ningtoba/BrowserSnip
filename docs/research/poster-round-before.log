@@ -1,0 +1,51 @@
+fields: [
+ "Pages: \"text=all\" -> \"text=1\"",
+ "Tiles across: \"number=2\" -> \"number=2\"",
+ "Tiles down: \"number=2\" -> \"number=2\"",
+ "Overlap for trimming: \"range=10\" -> \"range=0\""
+]
+clicked "Make poster"
+screen: {"result":"colour_poster.pdf\n\nREADY\nSIZE\n3.8 KB → 10.8 KB · 183% larger\nPAGES\n4 → 4\n\nSplit 1 page into 4 tiles each — 4 pages total.\n\nThe file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.\n\nDownload\nKeep original","alert":null,"status":"Finished — one file ready to download"}
+shot: /tmp/poster/before-p1-b0.png
+download: one
+files: ["colour_poster.pdf"]
+output {"type":"application/pdf","bytes":11062,"file":"/tmp/poster/before-p1-b0.pdf"}
+console errors: []
+shot-before: /tmp/poster/before-card.png
+fields: [
+ "Pages: \"text=all\" -> \"text=1\"",
+ "Tiles across: \"number=2\" -> \"number=2\"",
+ "Tiles down: \"number=2\" -> \"number=2\""
+]
+clicked "Make poster"
+screen: {"result":"colour_poster.pdf\n\nREADY\nSIZE\n3.8 KB → 10.8 KB · 183% larger\nPAGES\n4 → 4\n\nSplit 1 page into 4 tiles each — 4 pages total.\n\nThe file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.\n\nDownload\nKeep original","alert":null,"status":"Finished — one file ready to download"}
+shot: /tmp/poster/before-p1-2x2-b10.png
+download: one
+files: ["colour_poster.pdf"]
+output {"type":"application/pdf","bytes":11064,"file":"/tmp/poster/before-p1-2x2-b10.pdf"}
+console errors: []
+fields: [
+ "Pages: \"text=all\" -> \"text=1\"",
+ "Tiles across: \"number=2\" -> \"number=2\"",
+ "Tiles down: \"number=2\" -> \"number=2\"",
+ "Overlap for trimming: \"range=10\" -> \"range=60\""
+]
+clicked "Make poster"
+screen: {"result":"colour_poster.pdf\n\nREADY\nSIZE\n3.8 KB → 10.8 KB · 183% larger\nPAGES\n4 → 4\n\nSplit 1 page into 4 tiles each — 4 pages total.\n\nThe file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.\n\nDownload\nKeep original","alert":null,"status":"Finished — one file ready to download"}
+shot: /tmp/poster/before-p1-b60.png
+download: one
+files: ["colour_poster.pdf"]
+output {"type":"application/pdf","bytes":11062,"file":"/tmp/poster/before-p1-b60.pdf"}
+console errors: []
+fields: [
+ "Pages: \"text=all\" -> \"text=4\"",
+ "Tiles across: \"number=2\" -> \"number=2\"",
+ "Tiles down: \"number=2\" -> \"number=2\""
+]
+clicked "Make poster"
+screen: {"result":"colour_poster.pdf\n\nREADY\nSIZE\n3.8 KB → 3.8 KB · unchanged\nPAGES\n4 → 4\n\nSplit 1 page into 4 tiles each — 4 pages total.\n\nDownload","alert":null,"status":"Finished — one file ready to download"}
+shot: /tmp/poster/before-p4.png
+download: one
+files: ["colour_poster.pdf"]
+output {"type":"application/pdf","bytes":3889,"file":"/tmp/poster/before-p4.pdf"}
+console errors: []
