@@ -1,0 +1,20 @@
+### what a merge does with annotations, links, embedded files and page labels
+== /tmp/triage/in/annot.pdf
+   pages 4  encrypted False
+   xmp False  outline 0  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1816 ink 32780 annots 3 links 1 images 0
+== /tmp/merge/annot.pdf
+   pages 9  encrypted False
+   xmp False  outline 2  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1816 ink 32780 annots 3 links 1 images 0
+== /tmp/triage/in/attach.pdf
+   pages 4  encrypted False
+   xmp False  outline 0  labels []  embfiles 1
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1779 ink 33011 annots 0 links 0 images 0
+== /tmp/merge/attach.pdf
+   pages 9  encrypted False
+   xmp False  outline 2  labels []  embfiles 1
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1779 ink 33011 annots 0 links 0 images 0
+## page labels: source, then the merged file the same 6 sheets went into
+tests/fixtures/readers/labels-kids-mixed.pdf [{'startpage': 0, 'prefix': '', 'firstpagenum': 1, 'style': 'r'}, {'startpage': 2, 'prefix': '', 'firstpagenum': 1, 'style': 'R'}, {'startpage': 4, 'prefix': '', 'firstpagenum': 3, 'style': 'a'}, {'startpage': 5, 'prefix': 'x', 'firstpagenum': 1, 'style': 'A'}]
+/tmp/merge/labels.pdf [{'startpage': 4, 'prefix': '', 'firstpagenum': 1, 'style': 'r'}, {'startpage': 6, 'prefix': '', 'firstpagenum': 1, 'style': 'R'}, {'startpage': 8, 'prefix': '', 'firstpagenum': 3, 'style': 'a'}, {'startpage': 9, 'prefix': 'x', 'firstpagenum': 1, 'style': 'A'}]

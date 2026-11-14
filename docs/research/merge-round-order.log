@@ -1,0 +1,48 @@
+### sources (untouched)
+== /tmp/triage/colour.pdf
+   pages 4  encrypted False
+   info {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'creationDate': 'D:20261113163454Z', 'modDate': 'D:20261113163454Z'}
+   xmp False  outline 0  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1779 ink 33011 annots 0 links 0 images 0
+   [1] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 13 ink 24021 annots 0 links 0 images 0
+   [2] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 90 chars 0 ink 69335 annots 0 links 0 images 0
+== /tmp/triage/sheets.pdf
+   pages 5  encrypted False
+   info {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'creationDate': 'D:20261113163454Z', 'modDate': 'D:20261113163454Z'}
+   xmp False  outline 0  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 43824 annots 0 links 0 images 0
+   [1] box (0.0, 0.0, 595.0, 842.0) media (0.0, 0.0, 595.0, 842.0) crop (0.0, 0.0, 595.0, 842.0) rot 0 chars 0 ink 68059 annots 0 links 0 images 0
+   [2] box (0.0, 0.0, 300.0, 700.0) media (0.0, 0.0, 300.0, 700.0) crop (0.0, 0.0, 300.0, 700.0) rot 0 chars 1393 ink 21908 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 640.0, 360.0) media (0.0, 0.0, 640.0, 360.0) crop (0.0, 0.0, 640.0, 360.0) rot 0 chars 0 ink 108649 annots 0 links 0 images 1
+   [4] box (0.0, 0.0, 500.0, 500.0) media (0.0, 0.0, 500.0, 500.0) crop (0.0, 0.0, 500.0, 500.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+
+### before the fix: default merge of the tray order
+== /tmp/merge/before.pdf
+   pages 9  encrypted False
+   info {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261113164207Z', 'modDate': 'D:20261113164207Z'}
+   xmp False  outline 2  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1779 ink 33011 annots 0 links 0 images 0
+   [1] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 13 ink 24021 annots 0 links 0 images 0
+   [2] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 90 chars 0 ink 69335 annots 0 links 0 images 0
+   [4] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 43824 annots 0 links 0 images 0
+   [5] box (0.0, 0.0, 595.0, 842.0) media (0.0, 0.0, 595.0, 842.0) crop (0.0, 0.0, 595.0, 842.0) rot 0 chars 0 ink 68059 annots 0 links 0 images 0
+   [6] box (0.0, 0.0, 300.0, 700.0) media (0.0, 0.0, 300.0, 700.0) crop (0.0, 0.0, 300.0, 700.0) rot 0 chars 1393 ink 21908 annots 0 links 0 images 0
+   [7] box (0.0, 0.0, 640.0, 360.0) media (0.0, 0.0, 640.0, 360.0) crop (0.0, 0.0, 640.0, 360.0) rot 0 chars 0 ink 108649 annots 0 links 0 images 1
+   [8] box (0.0, 0.0, 500.0, 500.0) media (0.0, 0.0, 500.0, 500.0) crop (0.0, 0.0, 500.0, 500.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+
+### after the fix: same probe, same fixtures, same order
+== /tmp/merge/after.pdf
+   pages 9  encrypted False
+   info {'format': 'PDF 1.7', 'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261114002230Z', 'modDate': 'D:20261114002230Z'}
+   xmp False  outline 2  labels []  embfiles 0
+   [0] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 1779 ink 33011 annots 0 links 0 images 0
+   [1] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 13 ink 24021 annots 0 links 0 images 0
+   [2] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 90 chars 0 ink 69335 annots 0 links 0 images 0
+   [4] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 43824 annots 0 links 0 images 0
+   [5] box (0.0, 0.0, 595.0, 842.0) media (0.0, 0.0, 595.0, 842.0) crop (0.0, 0.0, 595.0, 842.0) rot 0 chars 0 ink 68059 annots 0 links 0 images 0
+   [6] box (0.0, 0.0, 300.0, 700.0) media (0.0, 0.0, 300.0, 700.0) crop (0.0, 0.0, 300.0, 700.0) rot 0 chars 1393 ink 21908 annots 0 links 0 images 0
+   [7] box (0.0, 0.0, 640.0, 360.0) media (0.0, 0.0, 640.0, 360.0) crop (0.0, 0.0, 640.0, 360.0) rot 0 chars 0 ink 108649 annots 0 links 0 images 1
+   [8] box (0.0, 0.0, 500.0, 500.0) media (0.0, 0.0, 500.0, 500.0) crop (0.0, 0.0, 500.0, 500.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0

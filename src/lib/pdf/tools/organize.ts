@@ -48,6 +48,7 @@ import {
 import { countOutlineNodes, readOutline } from '../core/bookmarks';
 import { listAttachments } from '../core/attachments';
 import { listFormFields } from '../core/forms';
+import { readXmpText, writeXmp } from '../core/metadata';
 import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, mediaBox, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
 import { createZip } from '../core/archive';
@@ -872,7 +873,8 @@ export const organizeTools: PdfToolDefinition[] = [
     actionLabel: 'Merge',
     promise: 'One PDF with every file’s pages in your order, and — while bookmarks are switched on — one entry per source file.',
     notes: [
-      'Pages are copied rather than redrawn, so the source files are untouched and their link annotations and attached files come with them. The catalogue’s form field list does not, so a fillable form needs filling before it is merged.',
+      'Pages are copied rather than redrawn, so the source files are untouched and their link annotations, attached files and page numbering come with them — and the first file’s title, author and keywords travel as the merged file’s own. The catalogue’s form field list does not, so a fillable form needs filling before it is merged.',
+      'A blank spacer takes the size and orientation of the page it follows, so a mixed-size file still prints as it did.',
       'With “Add a bookmark for each file” on, one entry is written for the first page of each file and the bookmarks *inside* a source file are not carried over. Switch it off and the original trees are re-pointed at the merged pages instead — use the bookmark editor to combine the two.',
     ],
     fields: [
@@ -890,7 +892,7 @@ export const organizeTools: PdfToolDefinition[] = [
         type: 'toggle',
         default: false,
         group: 'Output',
-        help: 'The spacer takes the size and orientation of the page before it, so mixed-size files still print correctly.',
+        help: 'The spacer matches the last page of the file before it, as `add blank page` does.',
       },
     ],
     validate: (_values, { fileCount }) =>
@@ -922,8 +924,12 @@ export const organizeTools: PdfToolDefinition[] = [
           sheetSizes.add(`${Math.round(box.width)}x${Math.round(box.height)}`);
         }
         if (booleanValue(context.values, 'blankBetween') && i < inputs.length - 1) {
-          const size = visibleBox(target.getPage(start));
-          target.addPage([size.width, size.height]);
+          // The spacer belongs with the sheet it follows, not with the file's
+          // first page: a mixed-size file prints landscape at its end and
+          // portrait at its start, so page 1's size is the wrong sheet to
+          // match, and the help text and `add-blank-page` both say neighbour.
+          const neighbour = visibleBox(target.getPage(target.getPageCount() - 1));
+          target.addPage([neighbour.width, neighbour.height]);
         }
         context.progress((i + 1) / inputs.length, `Added ${input.name}`);
       }
@@ -957,6 +963,7 @@ export const organizeTools: PdfToolDefinition[] = [
           notes.add('Bookmarks could not be written for these files, so the merge continued without them.');
         }
       }
+      carryDocInfo(target, inputs, notes);
       target.setProducer('BrowserSnip');
       return pdfOut(
         target,
@@ -2801,6 +2808,49 @@ function noteRepeated(inputs: OpenedInput[], notes: Notes): void {
       );
     }
   }
+}
+
+/**
+ * The document info a merge keeps, and whose it is.
+ *
+ * `pdf-lib` copies pages and nothing else, so a merged file used to come out
+ * with no title, author, subject, keywords or XMP at all: the identity of the
+ * first file was thrown away and nothing said so. A copy has to keep it —
+ * `rebuildDocument` already carries the same fields for repair and unlock — and
+ * with several sources there is one slot, so the **first** file's wins and the
+ * note says whose was left behind. The producer is the merge's own, because this
+ * app wrote the file.
+ */
+function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes): void {
+  const [first, ...rest] = inputs;
+  if (!first) return;
+  const title = first.doc.getTitle();
+  const author = first.doc.getAuthor();
+  const subject = first.doc.getSubject();
+  const keywords = first.doc.getKeywords();
+  const creator = first.doc.getCreator();
+  if (title) target.setTitle(title);
+  if (author) target.setAuthor(author);
+  if (subject) target.setSubject(subject);
+  if (keywords) target.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
+  if (creator) target.setCreator(creator);
+  // The XMP packet is the same claim in the other store; a file whose `/Info` is
+  // empty but whose packet is not (most MuPDF and Word output) has only this one.
+  const packet = readXmpText(first.doc);
+  if (packet) writeXmp(target, packet);
+  // The identity fields, and the packet that repeats them: a producer and a
+  // creation date are not what a reader recognises the document by.
+  const carried = Boolean(title || author || subject || keywords || packet);
+  const differing = rest
+    .map((input) => input.doc.getTitle())
+    .filter((value): value is string => Boolean(value) && value !== title);
+  if (differing.length === 0) return;
+  const count = `${differing.length} other ${differing.length === 1 ? 'file’s was' : 'files’ were'}`;
+  notes.add(
+    carried
+      ? `Only "${first.name}"’s document info travelled: its title, author, subject and keywords are the merged file’s, and ${count} left behind.`
+      : `"${first.name}" has no document info, and a merged file has one slot for it, so the ${count} left behind. Put the file whose info you want first.`,
+  );
 }
 
 /** `used` variant for arbitrary extensions (the ZIP entry names). */

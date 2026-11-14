@@ -1,0 +1,14 @@
+### metadata: source, before-fix output (meta.pdf first), after-fix output
+== /tmp/triage/in/meta.pdf
+   info {'format': 'PDF 1.7', 'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha, beta, gamma', 'creator': 'triage-fixtures-images.py', 'producer': 'PyMuPDF', 'creationDate': "D:20260101010101Z00'00'", 'modDate': "D:20260102010101Z00'00'"}
+   xmp True  outline 0  labels []  embfiles 0
+== /tmp/merge/meta.pdf
+   info {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261114001144Z', 'modDate': 'D:20261114001144Z'}
+   xmp False  outline 2  labels []  embfiles 0
+== /tmp/merge/after-meta.pdf
+   info {'format': 'PDF 1.7', 'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha beta gamma', 'creator': 'triage-fixtures-images.py', 'producer': 'BrowserSnip', 'creationDate': 'D:20261114002204Z', 'modDate': 'D:20261114002204Z'}
+   xmp True  outline 2  labels []  embfiles 0
+
+### metadata control: sheets.pdf (untitled) first, meta.pdf second — must invent nothing
+== /tmp/merge/meta2.pdf
+   info {'format': 'PDF 1.7', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261114001521Z', 'modDate': 'D:20261114001521Z'}

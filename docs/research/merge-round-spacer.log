@@ -1,0 +1,11 @@
+### spacer: 'Blank page between files' on, colour.pdf (ends 595x420 /Rotate 90) then sheets.pdf
+## before the fix — the spacer took the file's FIRST page (420x595, portrait), 4th page is the neighbour:
+   pages 10  encrypted False
+   [2] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 90 chars 0 ink 69335 annots 0 links 0 images 0
+   [4] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+## after the fix — the spacer is the neighbour's displayed size (595x420):
+   pages 10  encrypted False
+   [2] box (0.0, 0.0, 420.0, 595.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0
+   [3] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 420.0, 595.0) crop (0.0, 0.0, 420.0, 595.0) rot 90 chars 0 ink 69335 annots 0 links 0 images 0
+   [4] box (0.0, 0.0, 595.0, 420.0) media (0.0, 0.0, 595.0, 420.0) crop (0.0, 0.0, 595.0, 420.0) rot 0 chars 0 ink 0 annots 0 links 0 images 0

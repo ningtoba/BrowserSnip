@@ -1,0 +1,8 @@
+### each control on the rail, flipped, diffed in the produced bytes
+## 'Add a bookmark for each file' ON (default) — one entry per file
+ pages 9 toc [[1, 'colour.pdf', 1], [1, 'sheets.pdf', 5]]
+## the same pair, OFF — the source tree is re-pointed instead, and no per-file entries
+ pages 9 toc [[1, 'Chapter One', 1], [2, 'Section One.A', 2], [1, 'Chapter Two', 4]]
+## 'Blank page between files' OFF (default) vs ON, same pair
+  /tmp/merge/after.pdf pages 9 sizes [(0, 0, 420, 595), (0, 0, 420, 595), (0, 0, 420, 595), (0, 0, 595, 420), (0, 0, 420, 595), (0, 0, 595, 842), (0, 0, 300, 700), (0, 0, 640, 360), (0, 0, 500, 500)]
+  /tmp/merge/after-blank.pdf pages 10 sizes [(0, 0, 420, 595), (0, 0, 420, 595), (0, 0, 420, 595), (0, 0, 595, 420), (0, 0, 595, 420), (0, 0, 420, 595), (0, 0, 595, 842), (0, 0, 300, 700), (0, 0, 640, 360), (0, 0, 500, 500)]

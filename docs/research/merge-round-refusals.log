@@ -1,0 +1,20 @@
+### refusal sentences printed by the pane, one case each (chrome 9846-9851, one case per port)
+## one file only — run button disabled, reason printed under it
+run button: "DISABLED"
+surfaceText: "Merge PDF\n\nOne PDF with every file’s pages in your order, and — while bookmarks are switched on — one entry per source file.\n\nYOUR FILE\n\ncolour.pdf\n\n3.8 KB · 4 pages\n\nREADY\n✕\n+\nAdd more\nIt stays on this device\n⬆\nDrop more PDFs here\nor click to browse — they join this job in order\n▾\nFEWER OPTIONS\nOUTPUT\nAdd a bookmark for each file\n\nCreates a top-level outline entry pointing at the first page of every merged file. Switch it off for a merge that adds nothing but pages.\n\nBlank page between files\n\nThe spacer matches the last page of the file before it, as `add blank page` does.\n\nHONEST NOTES (3)\n▸\n\nMerge\n\nStill needed: Add at least two PDF files to merge."
+## a locked file (AES-256, libqpdf) — refused by name, password box offered
+ "alert": "LOCKED.PDF\"locked.pdf\" is password protected.\n\nEnter the password for \"locked.pdf\" and run again.\n\nRetry",
+ "result": null,
+## a 0-page file — the whole job is refused
+ "alert": "ZERO.PDF\"zero.pdf\" has no pages.\n\nNothing to convert, and a repair will not add pages.\n\nRetry",
+## the same file twice — runs, and the card says so
+ "result": "colour_merged.pdf\n\nREADY\nSIZE\n7.6 KB → 3.8 KB · 51% smaller\nPAGES\n8 → 8\n\nMerged 2 files into 8 pages.\n\nWHAT YOU SHOULD KNOW (2)\n\n\"colour.pdf\" appears twice in the queue, so its 4 pages are used twice. Remove the repeat if that is not what you meant.\nThe merged file keeps 2 different page sizes, because each source page kept its own. Choose \"Fix page size\" afterwar
+## an encrypted file with the password typed on its own row — merges, and keeps the cipher
+password typed: "hunter2"
+saved /tmp/merge/enc-ok.pdf 9738 bytes
+output pages 8 cipher Standard V5 R6 256-bit AES p0 Lighthouse Inventory 1887 page 1
+output pages 8 cipher Standard V5 R6 256-bit AES first line 'Lighthouse Inventory 1887 page 1'
+## carry table (bytes): what survives a merge of a file that has each thing
+   annots+link  source annot.pdf p0 = 3 annots / 1 link -> output p0 = 3 / 1 (docs/research/merge-round-carry.log)
+   embedded file source attach.pdf = 1 -> output = 1  (same log)
+   page labels   source labels-kids-mixed.pdf i,ii,I,II,c,xA -> output ranges re-based to the sheets it landed on (same log)

@@ -3,7 +3,7 @@
 One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAMPAIGN.md`).
 
 ```text
-001 [ ] merge
+001 [x] merge
 002 [ ] split
 003 [ ] extract-pages
 004 [ ] remove-pages

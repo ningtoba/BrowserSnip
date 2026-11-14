@@ -51,6 +51,7 @@ import {
 import { organizeTools } from '@/lib/pdf/tools/organize';
 import { resolvePages } from '@/lib/pdf/core/pages';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
+import { writeXmp } from '@/lib/pdf/core/metadata';
 import { saveGateOnly } from './gate-harness';
 import { isToolInputError } from '@/lib/pdf/core/guard';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
@@ -837,6 +838,80 @@ describe('geometry is respected, not flattened', () => {
       { width: 400, height: 300 },
     ]);
     expect(warn(outcome)).toMatch(/2 different page sizes/i);
+  });
+
+  it('sizes the blank between files to the page it follows, not the file’s first page (E8)', async () => {
+    // A file that ends landscape and starts portrait: the spacer after it belongs
+    // with the sheet it prints beside, which is the last one, not page 1.
+    const mixed = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 400, height: 300 },
+        { width: 300, height: 400, rotate: 90 },
+      ]),
+      'a.pdf',
+    );
+    const other = fileOf(await sheets(grid(1)), 'b.pdf');
+    const outcome = await run('merge', { blankBetween: true }, [mixed, other]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getPageCount()).toBe(5);
+    // Sizes as displayed: the neighbour is a 300x400 sheet turned a quarter, so
+    // it prints 400x300, and the blank has to match that rather than page 1's.
+    expect(doc.getPage(3).getSize()).toEqual({ width: 400, height: 300 });
+    // Control: the page either side is untouched, and the spacer is still blank.
+    expect(doc.getPage(2).getSize()).toEqual({ width: 300, height: 400 });
+    expect(doc.getPage(3).getRotation().angle).toBe(0);
+    expect(doc.getPage(4).getSize()).toEqual({ width: 200, height: 100 });
+    // Control: a uniform file has nothing to get wrong — the one page's size.
+    const uniform = await run('merge', { blankBetween: true }, [fileOf(await sheets(grid(2, { width: 350, height: 250 })), 'u.pdf'), other]);
+    const uniformDoc = await open(await bytesOf(uniform));
+    expect(uniformDoc.getPage(2).getSize()).toEqual({ width: 350, height: 250 });
+  });
+
+  it('carries the first file’s document info and names whose was left behind (E7)', async () => {
+    const withInfo = async (title: string, name: string): Promise<File> => {
+      const doc = await PDFDocument.create();
+      doc.setTitle(title);
+      doc.setAuthor(`author of ${title}`);
+      doc.setSubject(`subject of ${title}`);
+      doc.setKeywords([`kw-${title}`]);
+      // XMP says the same thing in the other store, and MuPDF/Word write only this.
+      writeXmp(doc, `<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>${title}</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>`);
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), name);
+    };
+    const outcome = await run('merge', {}, [await withInfo('First', 'a.pdf'), await withInfo('Second', 'b.pdf')]);
+    // `PDFDocument.load` re-stamps the producer with its own name unless told not
+    // to, so the info is read through `openPDF`, which leaves the file's alone.
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    // The pages are both there — the info did not cost a page.
+    expect(doc.getPageCount()).toBe(2);
+    expect(doc.getTitle()).toBe('First');
+    expect(doc.getAuthor()).toBe('author of First');
+    expect(doc.getSubject()).toBe('subject of First');
+    expect(doc.getKeywords()).toBe('kw-First');
+    // The XMP packet is the same claim in the other store, and it travelled too.
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    // Who wrote the merge is the merge's own claim, not the source's.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    expect(warn(outcome)).toMatch(/only "a\.pdf"’s document info travelled/i);
+    expect(warn(outcome)).toMatch(/1 other file’s was left behind/i);
+  });
+
+  it('invents no document info when the first file has none (E7 control)', async () => {
+    const bare = fileOf(await sheets(grid(1)), 'bare.pdf');
+    const titled = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setTitle('Second only');
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'titled.pdf');
+    })();
+    const outcome = await run('merge', {}, [bare, titled]);
+    const doc = await open(await bytesOf(outcome));
+    expect(doc.getTitle()).toBeUndefined();
+    // Nothing of the first file's travelled, so the note says that instead of
+    // claiming an identity the merged file does not have.
+    expect(warn(outcome)).toMatch(/has no document info.*put the file whose info you want first/i);
   });
 
   it('standardises a mixed document without losing any page (E8)', async () => {
