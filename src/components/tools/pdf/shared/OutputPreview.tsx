@@ -135,7 +135,9 @@ export function previewCaption(input: {
   name: string;
   files: number;
 }): string {
-  const of = input.total > 1 ? ` ${input.page} of ${input.total}` : '';
+  // "Page 3 of 40"; a one-page result still names its page, or the line reads
+  // "Page of file.pdf" — which is what a one-sheet overlay produced.
+  const of = input.total > 1 ? ` ${input.page} of ${input.total}` : ` ${input.page}`;
   const more = input.files > 1 ? ` (${input.files} files)` : '';
   return `Page${of} of ${input.name}${more}, drawn in this tab — a picture of the file, not the file itself.`;
 }

@@ -1386,21 +1386,80 @@ describe('empty results are reported, not downloaded', () => {
 /* ── the compromises the brief asks to be reported ────────────────────────── */
 
 describe('compromises reach the result card', () => {
-  it('really draws an underlay behind the page (E13 honesty)', async () => {
+  it('really draws an underlay behind the page, and keeps the page (E13 honesty)', async () => {
     const base = fileOf(await sheets([{ width: 200, height: 100 }]), 'base.pdf');
     const stamp = fileOf(await sheets([{ width: 300, height: 100 }]), 'stamp.pdf');
-    const behind = await run('overlay-pdf', { mode: 'underlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp]);
-    const inFront = await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp]);
+    const behind = await open(
+      await bytesOf(await run('overlay-pdf', { mode: 'underlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp])),
+    );
+    const inFront = await open(
+      await bytesOf(await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp])),
+    );
 
-    // Underlay: the stamp first, then the page's own content re-laid on top.
-    const behindStamps = stampsOf(await open(await bytesOf(behind)), 0).map((s) => s.bbox.join(' '));
-    expect(behindStamps).toEqual(['0 0 300 100', '0 0 200 100']);
-    // Overlay: the base page keeps its own content and only gains the stamp.
-    const frontStamps = stampsOf(await open(await bytesOf(inFront)), 0).map((s) => s.bbox.join(' '));
-    expect(frontStamps).toEqual(['0 0 300 100']);
-    // And the underlaid page is still the original page object: same rotation.
-    const doc = await open(await bytesOf(behind));
-    expect(doc.getPageCount()).toBe(1);
+    // The base's own words are still in the file. The first underlay emptied the
+    // page's `/Contents` and redrew a form snapshot of it — but `embedPage` only
+    // queues the embed and the snapshot is read at `save()`, by then *after* the
+    // mutation, so the output was the stamp alone: on the live fixture every word,
+    // rule and fill of all four sheets was gone (page 1: ink 90,216 px, 0 of them
+    // the base's, text 0 characters). A `Do` count could not see it.
+    expect(drawnText(behind, 0)).toContain('sheet 1');
+    expect(drawnText(inFront, 0)).toContain('sheet 1');
+
+    // Draw order is what "behind" means in a PDF: the streams are painted in
+    // `/Contents` order, so the stamp's `Do` has to precede the page's own ink.
+    const order = (doc: PDFDocument): { stamp: number; ink: number } => {
+      const streams = pageContentStreams(doc.getPages()[0]).map((stream) =>
+        Buffer.from(stream.bytes).toString('latin1'),
+      );
+      return {
+        stamp: streams.findIndex((s) => /\bDo\b/.test(s)),
+        ink: streams.findIndex((s) => /Tj|TJ/.test(s)),
+      };
+    };
+    const behindOrder = order(behind);
+    expect(behindOrder.stamp).toBeGreaterThanOrEqual(0);
+    expect(behindOrder.ink).toBeGreaterThan(behindOrder.stamp);
+    // Control: the same two pages the other way round must read the other way.
+    const frontOrder = order(inFront);
+    expect(frontOrder.stamp).toBeGreaterThan(frontOrder.ink);
+    expect(stampsOf(behind, 0)).toHaveLength(1);
+    expect(behind.getPageCount()).toBe(1);
+  });
+
+  it('places an overlay in the frame the reader sees on a rotated base', async () => {
+    // 420 × 595 with `/Rotate 90` is a 595 × 420 landscape sheet on screen; the
+    // stamp is an upright portrait page. Fitted to the displayed frame it has to
+    // fill the visible height (420) and be turned with the sheet.
+    const base = fileOf(await sheets([{ width: 420, height: 595, rotate: 90 }]), 'rot.pdf');
+    const stamp = fileOf(await sheets([{ width: 420, height: 595 }]), 'stamp.pdf');
+    const turned = await open(
+      await bytesOf(await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp])),
+    );
+    const [drawn] = stampsOf(turned, 0);
+    const box = mappedBox(drawn, [0, 0, 420, 595]);
+    // 420 / 595 of the stored width, centred: the whole displayed height.
+    expect(box.width).toBeCloseTo(420, 1);
+    expect(box.height).toBeCloseTo(296.5, 1);
+    expect(box.x).toBeCloseTo(0, 1);
+    expect(box.y).toBeCloseTo(149.25, 1);
+    // The turn is in the file, not only in the box: a quarter turn composed of
+    // the form's `/Matrix` and the `cm` chain, scaled by that same 0.706 — and
+    // *counter*-clockwise, because the viewer will apply the sheet's own turn. On
+    // the live fixture the wrong sign left 8.7 % of the stamp's ink where the
+    // reader sees the stamp, the right one 100.0 % of it; the row below is that
+    // sign held still.
+    const linear = multiply(drawn.ctm, drawn.matrix);
+    expect(linear[0]).toBeCloseTo(0, 2);
+    expect(linear[1]).toBeCloseTo(0.706, 2);
+
+    // Control: the same stamp on an unrotated sheet of the same size covers it.
+    const flat = fileOf(await sheets([{ width: 420, height: 595 }]), 'flat.pdf');
+    const upright = await open(
+      await bytesOf(await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [flat, stamp])),
+    );
+    const flatBox = mappedBox(stampsOf(upright, 0)[0], [0, 0, 420, 595]);
+    expect(flatBox.width).toBeCloseTo(420, 1);
+    expect(flatBox.height).toBeCloseTo(595, 1);
   });
 
   it('admits that a rebuild leaves bookmarks behind (E20)', async () => {
@@ -1950,6 +2009,13 @@ describe('each tool is checked against its own output file', () => {
     expect(warn(outcome)).toMatch(/stamp pages 2-3 were never used/i);
     const doc = await open(await bytesOf(outcome));
     expect(doc.getPageCount()).toBe(1);
+  });
+
+  it('counts a single dropped stamp page in the singular', async () => {
+    const base = fileOf(await sheets(grid(1)), 'base.pdf');
+    const stamp = fileOf(await sheets(grid(2)), 'stamp.pdf');
+    const outcome = await run('overlay-pdf', { mode: 'overlay', mapping: 'same', opacity: 1, scale: 1 }, [base, stamp]);
+    expect(warn(outcome)).toMatch(/stamp page 2 was never used/i);
   });
 
   it('n-up lays the pages on one sheet and keeps them as text', async () => {

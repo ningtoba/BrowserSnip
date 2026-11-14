@@ -25,15 +25,17 @@
  *   because `embedPage` captures pre-rotation MediaBox content (E8, E9);
  * - anything that had to compromise lands in `result.warnings` (E5, E14, E20).
  */
-import type { PDFDocument, PDFEmbeddedPage, PDFPage } from '@maxwbh/pdf-lib';
+import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import {
   PDFArray,
   PDFDict,
   PDFHexString,
   PDFName,
   PDFRef,
+  PDFStream,
   degrees,
   rgb,
+  type PDFObject,
 } from '../core/doc';
 import {
   carryPageFurniture,
@@ -49,7 +51,7 @@ import { countOutlineNodes, readOutline } from '../core/bookmarks';
 import { listAttachments } from '../core/attachments';
 import { listFormFields } from '../core/forms';
 import { readXmpText, writeXmp } from '../core/metadata';
-import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, mediaBox, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
+import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, normaliseRotation, pageSize as resolvePageSize, resolvePages } from '../core/pages';
 import { findBlankPages } from '../core/blank';
 import { createZip } from '../core/archive';
 import {
@@ -1999,9 +2001,21 @@ export const organizeTools: PdfToolDefinition[] = [
         const stampIndex = stampPageIndex(mapping, i, stampTotal);
         if (mapping === 'same' && i >= stampTotal) shortBy += 1;
         const source = stampDoc.doc.getPage(stampIndex);
-        // The box is in the base page's own space: a `/Rotate 90` sheet is
-        // centred on what the viewer sees, not on the raw MediaBox (E9).
+        // The frame is the base page's own crop box — the sheet as the format
+        // stores it — and the stamp is pre-turned by the sheet's `/Rotate` so that
+        // the fit is measured on what the reader sees and the stamp's words stay
+        // upright. Without the turn the stamp was fitted to the stored box and
+        // driven round with the sheet: on a 595 × 420 `/Rotate 90` base (a
+        // landscape sheet) a portrait stamp came out as a narrow band of sideways
+        // type, fitted as if the paper were portrait.
+        //
+        // The sign is negative because the viewer applies the page's own turn: the
+        // content has to be turned the other way to come out upright, so a `/Rotate
+        // 90` sheet pre-turns the stamp 90° counter-clockwise in page space. `stamp`
+        // adds it to the *source* page's rotation, which is the same cancellation
+        // the imposition tools rely on (E8, E9).
         const box = sourceBox(page);
+        const angle = -rotationOf(page);
         const width = box.width * scale;
         const height = box.height * scale;
         const dest: Box = {
@@ -2011,8 +2025,8 @@ export const organizeTools: PdfToolDefinition[] = [
           height,
         };
         const drew = mode === 'underlay'
-          ? await stampBehind(target, page, () => stamp(target, page, source, dest, { opacity }))
-          : await stamp(target, page, source, dest, { opacity });
+          ? await stampBehind(target, page, () => stamp(target, page, source, dest, { opacity, angle }))
+          : await stamp(target, page, source, dest, { opacity, angle });
         if (!drew) skipped += 1;
         context.progress((i + 1) / pages.length, `Page ${i + 1}`);
       }
@@ -2026,7 +2040,7 @@ export const organizeTools: PdfToolDefinition[] = [
         // never drawn, and a letterhead whose back side lives on page 2 would
         // look applied while only page 1 ever was.
         notes.add(
-          `The stamp has ${pageCountLabel(stampTotal)} but the base has ${pageCountLabel(pages.length)}, so stamp pages ${formatPages(resolvePages('all', stampTotal).slice(pages.length))} were never used. Choose "Always the last stamp page" to stamp with the final one.`,
+          `The stamp has ${pageCountLabel(stampTotal)} but the base has ${pageCountLabel(pages.length)}, so stamp page${stampTotal - pages.length === 1 ? '' : 's'} ${formatPages(resolvePages('all', stampTotal).slice(pages.length))} ${stampTotal - pages.length === 1 ? 'was' : 'were'} never used. Choose "Always the last stamp page" to stamp with the final one.`,
         );
       }
       if (skipped === pages.length && pages.length > 0) {
@@ -3132,32 +3146,42 @@ function gridBox(
  * Draw a stamp *behind* a page's own content.
  *
  * `pdf-lib` appends new operators into the page's last content stream, which is
- * the topmost thing drawn, so there is nothing to re-order afterwards. The page
- * is snapshotted as a form XObject, its content is cleared, the stamp is drawn,
- * and the snapshot goes back on top. The page object itself survives, so its
- * `/Rotate`, crop box and annotations keep working (E9).
+ * the topmost thing drawn, so there is nothing to re-order afterwards. The page's
+ * own `/Contents` are set aside, the stamp is drawn into their place, and the
+ * originals go back *after* it: a viewer draws the stream last, so the page's ink
+ * ends up on top of the stamp. The page object itself survives, so its `/Rotate`,
+ * crop box and annotations keep working (E9), and so do its fonts — the streams
+ * are the page's own and still resolve against its resources.
+ *
+ * The first version snapshotted the page as a form XObject with `embedPage` and
+ * redrew it on top. Measured on `colour.pdf` that shipped the stamp and nothing
+ * else: `embedPage` only *queues* the embedder, and `PDFPageEmbedder.embedIntoContext`
+ * reads the page's `/Contents` at `save()` — by which time they are the empty list
+ * this function wrote, with the stamp already appended behind it. Underlay lost
+ * every word, rule and fill of the base on all four sheets (page 1 ink 90,216 px
+ * with 0 of them the base's, text 0 characters), while the unit test that counted
+ * `Do` operators passed, because two form draws were indeed present.
  */
 async function stampBehind(
   target: PDFDocument,
   page: PDFPage,
   draw: () => Promise<boolean>,
 ): Promise<boolean> {
-  const media = mediaBox(page);
-  let snapshot: PDFEmbeddedPage | null = null;
-  try {
-    snapshot = await target.embedPage(page, {
-      left: media.x,
-      bottom: media.y,
-      right: media.x + media.width,
-      top: media.y + media.height,
-    });
-  } catch {
-    // A page with no content stream: an underlay on it is just the stamp.
-    snapshot = null;
+  const { context } = target;
+  const raw = page.node.get(PDFName.of('Contents'));
+  const value = raw instanceof PDFRef ? context.lookup(raw) : raw;
+  const kept: PDFObject[] = [];
+  if (value instanceof PDFArray) {
+    for (let index = 0; index < value.size(); index++) kept.push(value.get(index));
+  } else if (value instanceof PDFStream) {
+    kept.push(raw instanceof PDFRef ? raw : value);
   }
-  page.node.set(PDFName.of('Contents'), target.context.obj([]) as PDFArray);
+  // A page with no content stream is blank, not damaged: an underlay on it is
+  // just the stamp, and `draw` needs the empty array to draw into.
+  const contents = PDFArray.withContext(context);
+  page.node.set(PDFName.of('Contents'), contents);
   const drew = await draw();
-  if (snapshot) page.drawPage(snapshot, { x: media.x, y: media.y, xScale: 1, yScale: 1 });
+  for (const item of kept) contents.push(item);
   return drew;
 }
 

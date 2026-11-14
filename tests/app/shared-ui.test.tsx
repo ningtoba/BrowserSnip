@@ -1173,6 +1173,10 @@ describe('preview bounds', () => {
     expect(line).toMatch(/not the file itself/);
     // A multi-file result says so, because the picture is only of the first.
     expect(previewCaption({ page: 1, total: 4, name: 'part-1.pdf', files: 3 })).toContain('(3 files)');
+    // A one-page result still names its page: the line used to read "Page of
+    // base_overlaid.pdf" for every single-sheet output.
+    expect(previewCaption({ page: 1, total: 1, name: 'base_overlaid.pdf', files: 1 }))
+      .toContain('Page 1 of base_overlaid.pdf');
   });
 
   it('points at the download for every kind it cannot draw', () => {
