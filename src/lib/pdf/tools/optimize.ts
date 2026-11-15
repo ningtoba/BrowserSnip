@@ -1074,7 +1074,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           { value: 'png', label: 'PNG (lossless)' },
         ],
         group: 'Quality',
-      help: 'JPEG is smaller for photographs; PNG keeps flat colour and text edges exactly, at a much larger size.',
+      help: 'JPEG keeps photographs small; PNG is lossless, with exact edges and flat colour. Size follows the page — on a smooth photograph PNG can be the smaller of the two, so compare the figure below.',
     },
       qualityField('jpeg', { default: 0.85, min: 0.3, max: 1, step: 0.05, group: 'Quality', when: (v) => v.format === 'jpeg' }),
       {
@@ -1089,6 +1089,8 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'Pages are rendered by the same pdf.js engine as the preview, in this tab.',
       'A rasterised page cannot be searched, selected, or read by a screen reader.',
+      'Annotations, links and form fields are painted into the picture: they still show, but they stop being clickable or fillable, and the report counts them.',
+      'The title, author, subject, keywords and creator travel to the new file; an XMP packet does not.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1098,13 +1100,21 @@ export const optimizeTools: PdfToolDefinition[] = [
       const format = stringValue(values, 'format', 'jpeg') === 'png' ? 'png' : 'jpeg';
       const quality = readBound(values, { key: 'quality', label: 'JPEG quality', min: 0.3, max: 1, fallback: 0.85 }, warnings);
       const keepPageSize = booleanValue(values, 'keepPageSize', true);
-      if (format === 'png') warnings.push('PNG is lossless, so quality is ignored and the file will be larger than the JPEG path.');
+      if (format === 'png') warnings.push('PNG is lossless, so the JPEG quality setting is ignored and every page is exact. Compare the size below: a smooth page can come out smaller as PNG.');
 
       const source = input.doc.getPages();
       const withText = source.filter(pageShowsText).length;
+      const occupied = annotLayers(source);
       const session = await openRender(input.bytes, { password: context.password });
       try {
         const target = await newPDF();
+        // `pdf-lib` moves pages and nothing else, so this rebuild used to hand
+        // back an empty `/Info`: the identity of the file was thrown away and
+        // the report did not say. Measured on the dev build, a source titled
+        // "Reconciliation packet" (author, subject and keywords set too) came
+        // back with all four empty. `carrySourceInfo` is the narrow fix; the XMP
+        // packet is not carried and the card's notes say so.
+        carrySourceInfo(input.doc, target);
         const scale = dpi / 72;
         let encodedAs: 'jpeg' | 'png' = format;
         for (let i = 0; i < source.length; i++) {
@@ -1151,6 +1161,18 @@ export const optimizeTools: PdfToolDefinition[] = [
             ? `${withText} of ${source.length} page(s) carried text and are now pictures: nothing in the output can be selected or searched.`
             : `No page carried a text layer before this run, so nothing searchable was lost.`,
         );
+        // Painted, so the *sight* of an annotation survives (measured: a text
+        // note's 639 yellow px became 612 under the resample, a form box's 8 735
+        // dark px became 8 847) — what does not survive is that it can still be
+        // clicked or filled. Nothing said so before, so a signature panel sailed
+        // into the picture under a line about text.
+        if (occupied.total > 0) {
+          warnings.push(
+            occupied.widgets > 0
+              ? `${occupied.total} annotation(s), ${occupied.widgets} of them form fields, were painted into the picture: they are still visible, but no longer clickable, fillable or editable.`
+              : `${occupied.total} annotation(s) were painted into the picture: they are still visible, but no longer clickable or editable.`,
+          );
+        }
         if (!keepPageSize) {
           warnings.push(
             `Page size follows the pixels at ${dpi} dpi, so a 595 pt page becomes ${Math.round(595 * scale)} pt wide.`,
@@ -1925,6 +1947,43 @@ export const optimizeTools: PdfToolDefinition[] = [
     },
   },
 ];
+
+/**
+ * Carry the source's `/Info` identity onto a page-by-page rebuild.
+ *
+ * The same fields `rebuildDocument` and the merge path keep, and for the same
+ * reason: a rebuild that drops them changes what the file says it is, silently.
+ * The producer stays pdf-lib's because this app wrote the new file.
+ */
+function carrySourceInfo(source: PDFDocument, target: PDFDocument): void {
+  const title = source.getTitle();
+  const author = source.getAuthor();
+  const subject = source.getSubject();
+  const keywords = source.getKeywords();
+  const creator = source.getCreator();
+  if (title) target.setTitle(title);
+  if (author) target.setAuthor(author);
+  if (subject) target.setSubject(subject);
+  if (keywords) target.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
+  if (creator) target.setCreator(creator);
+}
+
+/** `/Annots` on each page, and how many of them are form widgets. */
+function annotLayers(pages: PDFPage[]): { total: number; widgets: number } {
+  let total = 0;
+  let widgets = 0;
+  for (const page of pages) {
+    const raw = page.node.get(PDFName.of('Annots'));
+    const deref = raw instanceof PDFRef ? page.node.context.lookup(raw) : raw;
+    if (!(deref instanceof PDFArray)) continue;
+    total += deref.size();
+    for (let i = 0; i < deref.size(); i++) {
+      const entry = deref.lookupMaybe(i, PDFDict);
+      if (entry && `${entry.get(PDFName.of('Subtype'))}` === '/Widget') widgets += 1;
+    }
+  }
+  return { total, widgets };
+}
 
 /**
  * Embed one rendered page in the format the user chose.

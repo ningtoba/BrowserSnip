@@ -34,6 +34,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deflateSync, inflateSync } from 'node:zlib';
 import {
+  PDFArray,
   PDFDict,
   PDFDocument,
   PDFName,
@@ -664,5 +665,82 @@ describe.each(['jpeg', 'png'] as const)('rasterize-pdf to %s', (format) => {
     expect(result.warnings?.join(' ')).toMatch(/1 of 4 page\(s\) carried text/);
     expect((await import('@/lib/pdf/core/content')).pageContentOps(doc.getPage(0)))
       .toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Do' })]));
+  });
+});
+
+/**
+ * What the picture costs besides the pixels, and what it does not.
+ *
+ * A rasterisation paints the annotation layer: measured on the dev build, a text
+ * note's 639 yellow px came back as 612 (JPEG: 609) and a form box's 8 735 dark
+ * px as 8 847 — the *sight* survives the resample. What the file loses is that
+ * any of it can still be clicked or filled, and the report said nothing, so a
+ * signature panel or a fillable form vanished under a sentence about text. Both
+ * cases are counted off `/Annots`, and the empty control is a file that carries
+ * none.
+ */
+async function annotatedFixture(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setTitle('Reconciliation packet');
+  doc.setAuthor('Records desk');
+  doc.setSubject('Q3 ledger');
+  doc.setKeywords(['ledger', 'q3']);
+  doc.setCreator('scan rig');
+  doc.setProducer('scan rig');
+  const note = doc.addPage(SHEET);
+  const form = doc.addPage(SHEET);
+  note.node.set(
+    PDFName.of('Annots'),
+    doc.context.obj([{ Type: 'Annot', Subtype: 'Text', Rect: [20, 20, 40, 40], Contents: 'a note' }]),
+  );
+  form.node.set(
+    PDFName.of('Annots'),
+    doc.context.obj([{ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', Rect: [20, 20, 160, 44], V: 'River' }]),
+  );
+  return doc.save({ useObjectStreams: false });
+}
+
+const annotsOf = (doc: PDFDocument, index: number): number => {
+  const raw = doc.getPage(index).node.get(PDFName.of('Annots'));
+  const deref = raw instanceof PDFRef ? doc.context.lookup(raw) : raw;
+  return deref instanceof PDFArray ? deref.size() : 0;
+};
+
+describe('rasterize-pdf keeps the file identity and says what it flattened', () => {
+  it('carries the source /Info and leaves the producer to this app', async () => {
+    const { doc } = await runRasterize({}, await annotatedFixture());
+    // The identity fields, not a rewrite of the producer: this app wrote the file.
+    expect(doc.getTitle()).toBe('Reconciliation packet');
+    expect(doc.getAuthor()).toBe('Records desk');
+    expect(doc.getSubject()).toBe('Q3 ledger');
+    // The comma separator is normalised the way `rebuildDocument` does it; the
+    // two words survive.
+    expect(doc.getKeywords()).toBe('ledger q3');
+    expect(doc.getCreator()).toBe('scan rig');
+    expect(doc.getProducer()).not.toBe('scan rig');
+  });
+
+  it('counts the annotations and form fields it painted, and drops the layer', async () => {
+    const { result, doc } = await runRasterize({}, await annotatedFixture());
+    expect(result.warnings?.join(' ')).toMatch(
+      /2 annotation\(s\), 1 of them form fields, were painted into the picture: they are still visible, but no longer clickable, fillable or editable\./,
+    );
+    // The count describes a real loss: no page of the output carries a layer.
+    expect(doc.getPages().map((_, index) => annotsOf(doc, index))).toEqual([0, 0]);
+  });
+
+  it('says nothing about annotations when the file carries none (the control)', async () => {
+    const { result } = await runRasterize({}, await inkFixture());
+    expect(result.warnings?.join(' ')).not.toMatch(/annotation\(s\)/);
+    expect(result.warnings?.join(' ')).toMatch(/carried text and are now pictures/);
+  });
+
+  it('does not claim PNG will be the larger file', async () => {
+    const { result, doc } = await runRasterize({ format: 'png' }, await inkFixture());
+    const words = result.warnings?.join(' ') ?? '';
+    expect(words).toMatch(/quality setting is ignored/);
+    expect(words, 'measured: PNG 552 629 B against JPEG 777 063 B').not.toMatch(/will be larger/);
+    // And the branch the note is about still encodes PNG, not a fallback.
+    expect(doc.getPages()).toHaveLength(SHEETS.length);
   });
 });

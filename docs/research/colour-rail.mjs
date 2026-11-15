@@ -117,6 +117,14 @@ const TOOL_LABELS = {
     dropOrphans: 'Remove unreferenced objects',
     stripMetadata: 'Remove metadata',
   },
+  // `rasterize-pdf`'s format is a segmented field labelled "File format" and its
+  // size toggle is a sentence: addressed by the key alone both read NO CONTROL and
+  // the run went ahead on JPEG, which is why the PNG branch had never been driven.
+  'rasterize-pdf': {
+    format: 'File format',
+    quality: 'JPEG quality',
+    keepPageSize: 'Keep the original page size',
+  },
 };
 
 const WANTED = Object.fromEntries(

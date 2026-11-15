@@ -29,7 +29,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 021 [x] pdf-to-cbz
 022 [x] pdf-compress
 023 [x] optimize-pdf
-024 [ ] rasterize-pdf
+024 [x] rasterize-pdf
 025 [ ] repair
 026 [ ] sanitize-pdf
 027 [ ] linearize-pdf
