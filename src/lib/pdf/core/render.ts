@@ -158,12 +158,18 @@ export interface ExtractedTextItem {
   dir: 'ltr' | 'rtl' | string;
   /** 1-based page. */
   page: number;
-  /** Bounding box in PDF user space, origin top-left of the *rotated* page. */
+  /** Bounding box in viewer space: the page as the canvas draws it. */
   x: number;
   y: number;
   w: number;
   h: number;
   hasEOL: boolean;
+  /**
+   * Glyph size in points, from the run's own text matrix. The box height `h` is
+   * not this: under a quarter turn the box is laid along the page and its height
+   * is the run's *length*.
+   */
+  fontSize: number;
   /** 1 when the run is hidden render mode 3 (the OCR/searchable-layer case). */
   isInvisible: boolean;
 }
@@ -376,7 +382,7 @@ export async function openRender(
       try {
         const viewport = page.getViewport({ scale: 1 });
         const content = await page.getTextContent();
-        return toExtractedItems(content, n, viewport.height);
+        return toExtractedItems(content, n, viewport);
       } finally {
         page.cleanup();
       }
@@ -446,23 +452,40 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * Convert pdf.js text runs into PDF user-space boxes with a top-left origin.
- * pdf.js reports `transform` in PDF user space (bottom-left origin, already
- * including the page's /Rotate); the y-flip below produces coordinates that
- * line up with a rendered canvas at scale 1.
+ * Convert pdf.js text runs into **viewer**-space boxes: the page as the canvas
+ * draws it, origin top-left, one unit per displayed point.
+ *
+ * pdf.js reports each run in PDF user space (bottom-left origin) and knows
+ * nothing of how the page is shown, so the run's own box is pushed through the
+ * page's viewport transform — which already carries the `/Rotate` quarter turn
+ * and the y-flip — and the result is its bounding box. Flipping by the
+ * viewport's *height* alone, as this did, is only right at `/Rotate 0`: on a
+ * `595x842 /Rotate 90` sheet a run at the top of the page came back at viewer
+ * `y = -118`, off the page entirely, so every box built on it missed its words.
  */
 export function toExtractedItems(
   content: TextContent,
   page: number,
-  viewportHeight: number,
+  viewport: { transform: ArrayLike<number>; width: number; height: number },
 ): ExtractedTextItem[] {
+  const [a0 = 0, b0 = 0, c0 = 0, d0 = 0, e0 = 0, f0 = 0] = Array.from(viewport.transform, Number);
+  const place = (x: number, y: number) => ({ x: a0 * x + c0 * y + e0, y: b0 * x + d0 * y + f0 });
   const out: ExtractedTextItem[] = [];
   for (const item of content.items) {
     if (!isTextItem(item)) continue;
     const [a = 0, b = 0, , , e = 0, f = 0] = item.transform.map(Number);
-    const w = item.width;
-    const h = Math.hypot(b, a) || Math.abs(item.height) || 0;
+    const runWidth = item.width;
+    const runHeight = Math.hypot(b, a) || Math.abs(item.height) || 0;
     const fontSize = Math.hypot(a, b);
+    // All four corners: a quarter turn swaps and mirrors the box, so the axis
+    // ranges have to be taken from the placed corners, not assumed.
+    const corners = [place(e, f), place(e + runWidth, f), place(e, f + runHeight), place(e + runWidth, f + runHeight)];
+    const xs = corners.map((corner) => corner.x);
+    const ys = corners.map((corner) => corner.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const w = Math.max(...xs) - x;
+    const h = Math.max(...ys) - y;
     out.push({
       str: item.str,
       transform: item.transform,
@@ -471,10 +494,11 @@ export function toExtractedItems(
       fontName: item.fontName,
       dir: item.dir,
       page,
-      x: e,
-      y: viewportHeight - (f + h),
+      x,
+      y,
       w,
       h,
+      fontSize,
       hasEOL: item.hasEOL,
       // A zero font matrix means the run was drawn invisibly (mode 3), which
       // is exactly what an OCR text layer looks like.

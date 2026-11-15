@@ -559,6 +559,8 @@ export interface ApplyOutcome {
   substituted: { id: string; from: string; to: string; reason: string }[];
   /** Blocks whose new text no longer fits the source line structure. */
   reflowed: string[];
+  /** Blocks that had to be set smaller to stay in the space they came from. */
+  fitted: { id: string; from: number; to: number }[];
   /**
    * Every piece the writer laid down, in the page's own displayed points: text,
    * the x and baseline it was written at, its size, and the face that paints it.
@@ -606,6 +608,7 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
     covered: [],
     substituted: [],
     reflowed: [],
+    fitted: [],
     placed: [],
   };
   const images = new Map<string, PDFImage>();
@@ -706,6 +709,7 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
         });
       }
       if (prepared.reflowed) outcome.reflowed.push(object.id);
+      if (object.fitFrom) outcome.fitted.push({ id: object.id, from: object.fitFrom, to: object.style.size });
       outcome.written += 1;
     }
   }
@@ -748,6 +752,11 @@ function userRectToBox(rect: QuadRect, frame: PageFrame): TopLeftBox {
   const xs = corners.map((corner) => corner.x);
   const ys = corners.map((corner) => corner.y);
   return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+}
+
+/** One decimal, for sentences that quote a type size. */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function num(value: number): number {
@@ -821,9 +830,18 @@ export function exportReport(
       `Page ${pageOf(entry.id) ?? '?'}: ${entry.from} could not be kept (${entry.reason}), so this text is set in ${entry.to}.`,
     );
   }
-  if (outcome.reflowed.length > 0) {
+  // Fitted blocks are named with both sizes: the shrink is the honest answer to
+  // "there was no room", so it must not be silent either.
+  for (const entry of outcome.fitted ?? []) {
+    const page = pageOf(entry.id);
     warnings.push(
-      `${outcome.reflowed.length} block${outcome.reflowed.length === 1 ? '' : 's'} no longer fit${outcome.reflowed.length === 1 ? 's' : ''} the lines they came from and were re-flowed — check where the text lands.`,
+      `Page ${page ?? '?'}: the new text did not fit the space this block had, so it was set at ${round1(entry.to)} pt instead of ${round1(entry.from)} pt to stay clear of the paragraph below.`,
+    );
+  }
+  const grew = outcome.reflowed.length - (outcome.fitted?.length ?? 0);
+  if (grew > 0) {
+    warnings.push(
+      `${grew} block${grew === 1 ? '' : 's'} no longer fit${grew === 1 ? 's' : ''} the lines they came from and were re-flowed past them — check where the text lands.`,
     );
   }
   if (outcome.raster.length > 0) {

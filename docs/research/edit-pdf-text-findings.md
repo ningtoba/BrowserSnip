@@ -85,9 +85,22 @@ out words the file then drops.
    Repro: `docs/research/text-edit-proof.mjs /tmp/tf/type3.pdf`, or
    `page.drawText` one character at a time with a `getFont(..., 'noto')` face and
    count ink per word with PyMuPDF.
-2. **Re-flow is reported, not fitted.** A block whose new text needs more lines
-   than it came from is announced (`no longer fit the lines they came from`) and
-   drawn downward from its origin; it can run past the space the producer had.
+2. **Re-flow is reported, not fitted** — *closed in round 032; it was worse than
+   "can run past".* Measured on `/tmp/rf/reflow.pdf`, a two-line block replaced
+   with ten lines' worth: the pane printed 46 px of the new text over the next
+   paragraph and the file 28.8 pt (3 of 7 lines on its first two), so both texts
+   were unreadable — while the report merely said "check where the text lands".
+   The type is now fitted to the space the page has under the block (6.81 pt from
+   10, 5 lines, last baseline 13.2 pt clear of the paragraph, which keeps its own
+   words and place), and the sentence names both sizes. On the way there, the
+   same rig found that a block on a `/Rotate 90` page **could not be written at
+   all** — `toExtractedItems` flipped user space by the viewport height instead of
+   applying the viewport transform, so every box on a turned page was in the
+   wrong frame (viewer `y = -118` for a run at the top of the sheet): the overlay
+   sat mid-page, the deletion rects missed, the block was skipped and the export
+   was a byte-for-byte no-op (5 438 B in, 5 438 B out). Fixed at the transform;
+   the run also carries its own `fontSize`, because on a turned page the box
+   height is the run's length. `docs/research/text-reflow-{fixture.py,probe.mjs,measure.py}`.
 3. **A form reached through an inherited `/Resources` is copied per page.**
    Correct, and 300 copies on a 300-page document.
 

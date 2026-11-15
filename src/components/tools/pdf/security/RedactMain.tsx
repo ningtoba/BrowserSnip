@@ -198,7 +198,7 @@ export function RedactMain() {
         const page = await doc.getPage(pageIdx + 1);
         const natVp = page.getViewport({ scale: 1 });
         _pageW = natVp.width; _pageH = natVp.height;
-        itemsRef.current = toExtractedItems(await page.getTextContent(), pageIdx + 1, natVp.height);
+        itemsRef.current = toExtractedItems(await page.getTextContent(), pageIdx + 1, natVp);
         const vp = page.getViewport({ scale: DISPLAY_SCALE });
         canvasRef.current!.width = vp.width;
         canvasRef.current!.height = vp.height;
@@ -222,7 +222,7 @@ export function RedactMain() {
         canvasRef.current!.width = vp.width;
         canvasRef.current!.height = vp.height;
         setCanvasDims({ w: vp.width, h: vp.height });
-        itemsRef.current = toExtractedItems(await page.getTextContent(), pageIdx + 1, vp.height);
+        itemsRef.current = toExtractedItems(await page.getTextContent(), pageIdx + 1, vp);
         await page.render({ canvasContext: canvasRef.current!.getContext('2d')!, viewport: vp }).promise;
       } catch { /* render error */ }
     })();

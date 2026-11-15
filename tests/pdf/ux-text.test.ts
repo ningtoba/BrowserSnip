@@ -149,6 +149,9 @@ function item(overrides: Partial<ExtractedTextItem> & { str: string }): Extracte
     y: 0,
     w: overrides.str.length * size * 0.5,
     h: size,
+    // A turned page's box height is the run's length, so the size is its own
+    // field; these fixtures are upright and the two are the same.
+    fontSize: size,
     hasEOL: false,
     isInvisible: false,
     ...overrides,
@@ -214,6 +217,7 @@ function outcome(overrides: Partial<ApplyOutcome> = {}): ApplyOutcome {
     covered: [],
     substituted: [],
     reflowed: [],
+    fitted: [],
     placed: [],
     ...overrides,
   };

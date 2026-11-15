@@ -39,7 +39,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 029 [x] font-to-outline
 030 [x] deskew-pdf
 031 [x] edit-pdf
-032 [ ] edit-pdf-text
+032 [x] edit-pdf-text
 033 [ ] page-numbers
 034 [ ] watermark
 035 [ ] header-footer

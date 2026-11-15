@@ -94,6 +94,8 @@ import {
   DEFAULT_STYLE,
   MIN_BLOCK_SIZE,
   RESIZE_HANDLES,
+  fitToSpace,
+  spaceBelow,
   amendHistory,
   BLOCKED_STATES,
   blockOverlayBackground,
@@ -128,6 +130,7 @@ import {
   type EditScope,
   type EditorAction,
   type CommitState,
+  type DocParagraph,
   type EditorStyle,
   type ExtractedParagraph,
   type FindOptions,
@@ -698,10 +701,7 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
     const actions: EditorAction[] =
       text.length === 0
         ? [{ type: 'text', id, paragraphs: paragraphsFromText('') }]
-        : [
-            { type: 'text', id, paragraphs },
-            { type: 'set-box', id, box: growBox(current, node, zoom) },
-          ];
+        : commitActions(current, node, paragraphs);
     applyAll(actions);
     // Find & replace indexes the page as it was read. After a rewrite its offsets
     // point at text that no longer exists, so the index goes with it.
@@ -715,7 +715,27 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
       );
     }
     return actions.reduce<EditObject[]>((list, action) => editObjects(list, action), objects);
-  }, [applyAll, objects, toast, zoom]);
+  }, [applyAll, objects, toast, zoom, blocks, pageSize.height]);
+
+  /**
+   * The committed block: its text, its height, and — when the rewrite needs more
+   * room than the page has under it — a type size small enough to stay in it.
+   *
+   * The block used to grow straight over whatever paragraph sat below, because
+   * nothing measured that space. `spaceBelow` reads it off the page's own
+   * paragraphs, and `fitToSpace` scales the type instead of overprinting; the
+   * box is then sized from the *fitted* content, so screen and file agree.
+   */
+  function commitActions(current: TextObject, node: HTMLElement, paragraphs: DocParagraph[]): EditorAction[] {
+    const contentHeight = node.scrollHeight / Math.max(0.05, zoom);
+    const pageBlocks = blocks.filter((block) => block.page === current.page && block.id !== current.sourceId).map((block) => block.box);
+    const fitted = fitToSpace({ ...current, paragraphs }, spaceBelow(current.box, pageBlocks, pageSize.height), contentHeight);
+    const height = contentHeight * (fitted.style.size / Math.max(0.01, current.style.size)) + BLOCK_PADDING * 2;
+    return [
+      { type: 'replace', id: current.id, object: { ...fitted, state: 'draft' } },
+      { type: 'set-box', id: current.id, box: { ...fitted.box, height: Math.max(MIN_BLOCK_SIZE, height) } },
+    ];
+  }
 
   const stopEditing = useCallback(() => {
     commitEdit();
@@ -858,12 +878,6 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
     },
     [armMode, file, numPages, toast],
   );
-
-  /** The on-screen box grows with the typed text, so the overlay never clips. */
-  function growBox(object: TextObject, node: HTMLElement, scale: number): TopLeftBox {
-    const height = node.scrollHeight / Math.max(0.05, scale);
-    return { ...object.box, height: Math.max(MIN_BLOCK_SIZE, height + BLOCK_PADDING * 2) };
-  }
 
   // ── pointer handling on the page ──────────────────────────────────────────
   function toViewerPoint(event: React.MouseEvent): Point {
@@ -1498,6 +1512,12 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
       anchor.download = `${baseName(source.name)}_edited.pdf`;
       anchor.click();
       setExportResult({ headline: report.headline, lines: report.warnings });
+      // The pane is replaced by the result screen the moment this resolves, so the
+      // sentences above it — a skipped block, a re-flow, a fitted size — have to
+      // travel in the store or the user never sees them (they were rendered into
+      // a pane that had already unmounted).
+      process.setWarnings(report.warnings);
+      process.complete(report.headline);
       toast(report.warnings.length > 0 ? 'warn' : 'success', report.headline);
       for (const line of report.warnings) process.appendLog(line);
       if (pdfa) toast('warn', `${pdfa} conformance may break: the rewrite embeds new fonts and an added content stream.`);

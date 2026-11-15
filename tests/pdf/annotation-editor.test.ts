@@ -123,6 +123,7 @@ function word(
     transform: [h, 0, 0, h, x, yTop],
     width: w,
     height: h,
+    fontSize: h,
     fontName: 'F1',
     dir: 'ltr',
     page: 1,

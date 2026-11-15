@@ -84,6 +84,9 @@ function item(overrides: Partial<ExtractedTextItem> & { str: string }): Extracte
     y: 0,
     w: overrides.str.length * size * 0.5,
     h: size,
+    // The box height is not the type size on a turned page, so the size travels
+    // as its own field; these fixtures are upright and the two are the same.
+    fontSize: size,
     hasEOL: false,
     isInvisible: false,
     ...overrides,

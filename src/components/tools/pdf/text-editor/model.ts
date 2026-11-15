@@ -264,6 +264,77 @@ export interface HandleSpec {
 /** A block never shrinks below this, in points — smaller and the text is gone. */
 export const MIN_BLOCK_SIZE = 8;
 
+/** Clear paper kept between a block fitted to its space and the one under it. */
+export const FIT_GAP = 2;
+
+/** A fit never takes the type below this many points. */
+export const MIN_FIT_SIZE = 1;
+
+/**
+ * How much of the measured room a fit aims at.
+ *
+ * The square-root model below is exactly right only while the face's average
+ * advance stays the same as the type shrinks, and re-wrapping changes the mix of
+ * characters per line — measured 9 % short on a Noto face, which put the last
+ * line 5 pt into the paragraph under the block. Aiming inside the space rather
+ * than at its edge costs a fraction of a point of type and keeps the promise.
+ */
+const FIT_SAFETY = 0.9;
+
+/**
+ * How many points of clear column a block has before the next paragraph of the
+ * page, so a rewrite that grows knows what it may use.
+ *
+ * `others` are the page's *source* paragraph boxes: only the ones sharing a
+ * column (`x` ranges intersect) and starting below the block can be landed on,
+ * and the nearest one is the boundary. With nothing below, the page's own foot
+ * is the boundary. Points, viewer frame — the frame the writer draws in.
+ */
+export function spaceBelow(box: TopLeftBox, others: TopLeftBox[], pageHeight: number): number {
+  const right = box.x + box.width;
+  let limit = pageHeight - box.y;
+  for (const other of others) {
+    if (other.y <= box.y + 1) continue;
+    if (other.x + other.width <= box.x + 1 || other.x >= right - 1) continue;
+    limit = Math.min(limit, other.y - box.y);
+  }
+  return Math.max(MIN_BLOCK_SIZE, limit);
+}
+
+/**
+ * Fit a block to the space it has, by making the type smaller.
+ *
+ * A rewrite that needs more lines than the block came from used to be drawn
+ * downward from the block's origin whatever was underneath, so it printed over
+ * the next paragraph. Wrapped text costs height on *both* axes — smaller type
+ * means a smaller line box and fewer lines — so the height falls with the
+ * square of the scale and `room / contentHeight` is that squared factor. A
+ * block with room is returned untouched; when the type is scaled `fitFrom`
+ * keeps the size the user typed, so the report can name both sizes rather than
+ * leave the shrink silent.
+ */
+export function fitToSpace<T extends TextObject>(object: T, allowed: number, contentHeight: number): T {
+  const room = Math.max(MIN_BLOCK_SIZE, (allowed - FIT_GAP) * FIT_SAFETY);
+  if (!(contentHeight > room) || !(object.style.size > 0)) return { ...object, fitFrom: undefined };
+  const scale = Math.max(MIN_FIT_SIZE / object.style.size, Math.sqrt(room / contentHeight));
+  if (scale >= 0.995) return { ...object, fitFrom: undefined };
+  const shrink = (size: number) => Math.max(MIN_FIT_SIZE, round(size * scale, 2));
+  const fit = <S extends object>(style: S): S => {
+    const size = (style as { size?: number }).size;
+    return typeof size === 'number' ? ({ ...style, size: shrink(size) } as S) : style;
+  };
+  return {
+    ...object,
+    fitFrom: object.style.size,
+    style: fit(object.style),
+    paragraphs: object.paragraphs.map((paragraph) => ({
+      ...paragraph,
+      style: fit(paragraph.style),
+      runs: paragraph.runs.map((run) => ({ ...run, style: fit(run.style) })),
+    })),
+  };
+}
+
 export const RESIZE_HANDLES: HandleSpec[] = [
   { id: 'nw', label: 'Top left corner', cursor: 'nwse-resize', left: 0, top: 0 },
   { id: 'n', label: 'Top edge', cursor: 'ns-resize', left: 0.5, top: 0 },
@@ -389,7 +460,7 @@ export function clusterLines(items: ExtractedTextItem[], options: ClusterOptions
     for (const item of sorted) {
       const previous = group[group.length - 1];
       if (previous) {
-        const size = Math.max(previous.h, item.h, 1);
+        const size = Math.max(previous.fontSize, item.fontSize, 1);
         if (item.x - (previous.x + previous.w) > opts.columnGapEm * size) flush();
       }
       group.push(item);
@@ -402,7 +473,7 @@ export function clusterLines(items: ExtractedTextItem[], options: ClusterOptions
 function lineFromItems(items: ExtractedTextItem[]): ExtractedLine | null {
   const kept = items.filter(isUsable);
   if (kept.length === 0) return null;
-  const size = Math.max(...kept.map((i) => Math.abs(i.h) || Math.abs(i.height) || 0), 1);
+  const size = Math.max(...kept.map((i) => Math.abs(i.fontSize) || Math.abs(i.h) || Math.abs(i.height) || 0), 1);
   let raw = '';
   for (let i = 0; i < kept.length; i += 1) {
     const item = kept[i];
@@ -1309,6 +1380,8 @@ export interface TextObject extends BaseObject {
   sourceId: string;
   /** Source paragraph was an invisible OCR layer. */
   fromInvisibleLayer: boolean;
+  /** Size the block was typed at, when it had to be set smaller to fit its space. */
+  fitFrom?: number;
 }
 
 export interface ImageObject extends BaseObject {

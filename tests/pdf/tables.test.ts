@@ -50,6 +50,7 @@ function item(seed: ItemSeed): ExtractedTextItem {
     transform: [size, 0, 0, size, seed.x, 841.89 - seed.y],
     width: seed.w,
     height: h,
+    fontSize: size,
     fontName: seed.fontName ?? 'F0',
     dir: 'ltr',
     page: seed.page ?? 1,

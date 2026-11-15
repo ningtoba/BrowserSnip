@@ -890,11 +890,13 @@ describe('redact-pdf deletes the words, and proves it from the saved file', () =
     // The bar is painted in unrotated user space, where page content lives: the
     // mark's y becomes x and its x becomes y, each with the other's extent.
     expect(streams).toMatch(/50 685 240 60 re/);
-    expect(outcome.message).toMatch(/deleting the glyphs themselves/i);
-    // The word-level re-check works in the space the text layer reports, and a
-    // turned page reports its runs in unrotated user space — so on this page the
-    // tool can only claim what the content stream says, and has to say that.
-    expect(outcome.message).toMatch(/no whole word under the marks could be located|none of the \d+ word\(s\) that were under the marks still extracts/);
+    // The word-level re-check runs in the space the text layer reports. Until
+    // `toExtractedItems` applied the viewport transform it reported a turned
+    // page's runs in the *unrotated* frame, so nothing on this page ever matched
+    // the mark and the tool could not check its own work here at all. It matches
+    // now, and it finds the truth: the mark stops a character short of the line's
+    // end, so the tail still extracts while the words under the bar are gone.
+    expect(outcome.message).toMatch(/Deleted 1 text run\(s\) under 1 area\(s\) and painted the fill, but 1 word\(s\) under those areas still extract/);
   }, 300_000);
 
   it('with the metadata option on, the words go from the properties, the packet and the outline', async () => {

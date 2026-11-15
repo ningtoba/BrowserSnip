@@ -131,6 +131,7 @@ function word(str: string, x: number, y: number, w: number, h: number): Extracte
     transform: [h, 0, 0, h, x, y],
     width: w,
     height: h,
+    fontSize: h,
     fontName: 'F1',
     dir: 'ltr',
     page: 1,
