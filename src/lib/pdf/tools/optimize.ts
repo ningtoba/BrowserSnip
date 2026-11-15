@@ -1391,7 +1391,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Sanitize',
     promise: 'Scripts, attachments and optional metadata removed, with a count of everything actually taken out.',
     fields: [
-      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes the JavaScript a document runs by itself: a /OpenAction that is script, the /A and /AA script actions on annotations and form fields, and named scripts. A /OpenAction that only names a view stays. Some forms stop calculating.' },
+      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes the scripts a document runs by itself: a script /OpenAction, /A and /AA actions, named scripts. A view-only /OpenAction stays. Some forms stop calculating.' },
       { key: 'attachments', label: 'Remove embedded files', type: 'toggle', default: true, group: 'What to remove', help: 'Deletion is final in the output copy; extract them first if the file is the payload.' },
       { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove', help: 'XMP is what desktop search indexes. Without it the document stops describing itself to those tools.' },
       { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove', help: 'The info dictionary holds title, author and dates — most readers show it as blank afterwards.' },
