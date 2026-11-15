@@ -230,6 +230,13 @@ async function ocrRun(tag, { mode, pages, dpi, language, skip, file = `${DIR}/sc
   const info = res.got ? await lastBlob(out) : { bytes: 0, file: out };
   const text = await screenText();
   writeFileSync(`${DIR}/ocr-${tag}.txt`, text);
+  // The notes the run admitted, as painted — with the header's own count, so the
+  // count can be held against the number of bullets rather than trusted.
+  const notes = await ev(`(()=>{
+    const heads=[...document.querySelectorAll('[data-result-warnings] p')].map(p=>p.textContent.trim());
+    const bullets=[...document.querySelectorAll('[data-result-warnings] li')].map(li=>li.textContent.trim());
+    return JSON.stringify({ heads, bullets, blocks: document.querySelectorAll('[data-result-warnings]').length });
+  })()`);
   // The screen half of the campaign's rule: the card, holding the result, as an
   // image — not only the text read out of the DOM. Scrolled to the report/preview
   // block first, because what has to be visible is the recognised text.
@@ -237,7 +244,19 @@ async function ocrRun(tag, { mode, pages, dpi, language, skip, file = `${DIR}/sc
   await sleep(300);
   const image = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(`${DIR}/ocr-${tag}.png`, Buffer.from(image.data, 'base64'));
-  writeFileSync(`${DIR}/ocr-${tag}.json`, JSON.stringify({ fields: applied, output: info, clicked: res.clicked }, null, 2));
+  // The report block is UI, so it is read in dark mode too — tokens only, and the
+  // notes have to stay legible on their own surface there.
+  if (tag === 'report') {
+    log.push(`dark mode: ${await ev(`(()=>{const b=document.querySelector('button[aria-label*="dark mode" i]');if(!b)return 'NO TOGGLE';b.click();return 'toggled='+document.documentElement.classList.contains('dark')})()`)}`);
+    await sleep(400);
+    const dark = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(`${DIR}/ocr-report-dark.png`, Buffer.from(dark.data, 'base64'));
+    log.push(`dark note colours: ${await ev(`(()=>{const li=document.querySelector('[data-result-warnings] li');const p=document.querySelector('[data-result-warnings] p');const cs=getComputedStyle;return JSON.stringify({li:li?cs(li).color+' on '+cs(li).backgroundColor:null,p:p?cs(p).color:null,body:cs(document.body).backgroundColor})})()`)}`);
+    await ev(`(()=>{const b=document.querySelector('button[aria-label*="light mode" i]');if(b)b.click();return 1})()`);
+    await sleep(200);
+  }
+  writeFileSync(`${DIR}/ocr-${tag}.json`, JSON.stringify({ fields: applied, output: info, clicked: res.clicked, notes: JSON.parse(notes) }, null, 2));
+  log.push(`ocr ${tag} notes: ${notes}`);
   log.push(`ocr ${tag} output: ${JSON.stringify(info)}`);
   log.push(`ocr ${tag} screen tail: ${JSON.stringify(text.slice(-1400))}`);
   return info;

@@ -1,0 +1,6 @@
+# ocr-pdf report mode, BEFORE the shared-UI fix (dev build :5271, 2026-11-16)
+# Two notes were in the store; the screen painted none of them, and the pane said
+# 'Nothing produced yet' over a report. Run: docs/research/ocr-round-trip.mjs.
+
+ocr report screen tail: "Browser\nSnip\nVideo\nPDF\n⌕\nSearch tools\n⌘K\n☀\nGitHub\nBrowserSnip\n/\nPDF Tools\n/\nEdit PDF\n/\nOCR PDF\n☆\nStar\n✓\nYour file is ready\n\nOCR PDF finished in this tab — nothing was uploaded.\n\nFinished — nothing to download, the answer is in the report\n\n📦\n\nNothing produced yet\n\nSet the options and run the tool — the result lands here.\n\nDo another\nBack to all tools\n\nRead 203 characters across 3 pages.\n\nPage 1\nLighthouse Inventory 1887 Quartermaster Peverell kept the glass Eleven brass candles and one spare wick The harbour master signed at Bristol Nineteen crates of salted cod A storm took the west stair away\nPage 2\n(no letters found, and it is not a blank sheet: 35.46 % of the rendered page is ink. A picture, handwriting, or a scan too faint to resolve — try a higher Resolution.)\nPage 3\n(blank — the rendered sheet measures 0.00 % ink, so there was nothing on it to read.)"
+attached scanned.pdf: the rail names it

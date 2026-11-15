@@ -96,8 +96,12 @@ def screen_body(path: Path) -> str:
 
 
 def block_for(body: str, page: int) -> str:
-    """The text the report card shows under `Page N`, up to the next page header."""
-    match = re.search(rf"^Page {page}\n(.*?)(?=^Page \d+$|\Z)", body, re.S | re.M)
+    """The text the report card shows under `Page N`, up to the next page header.
+
+    The notes block comes after the last page, so it is a terminator too — else the
+    last page's block would swallow the run's warnings and stop reading like a page.
+    """
+    match = re.search(rf"^Page {page}\n(.*?)(?=^Page \d+$|^WHAT YOU SHOULD KNOW|\Z)", body, re.S | re.M)
     return match.group(1).strip() if match else ""
 
 
@@ -216,6 +220,42 @@ def main() -> int:
         "the old blur is gone from the screen",
         "neither card says 'Nothing was recognised on the N page you selected'",
     )
+
+    # ── 4b. a report-only result carries its notes ──────────────────────────
+    # The report is the whole result here: there is no file card, so the notes
+    # have nowhere to live unless the report block paints them. Measured before
+    # the fix — the run put 2 notes in the store and the screen showed none.
+    notes = json.loads((root / "ocr-report.json").read_text())["notes"]
+    check(
+        notes["blocks"] == 1 and len(notes["heads"]) == 1,
+        "a report-only result paints its notes",
+        f"{notes['blocks']} notes block(s), header {notes['heads']}",
+    )
+    count = re.search(r"what you should know \((\d+)\)", " ".join(notes["heads"]).lower())
+    check(
+        bool(count) and int(count.group(1)) == len(notes["bullets"]),
+        "the note count is the number of notes",
+        f"header says {count.group(1) if count else 'nothing'}, {len(notes['bullets'])} bullet(s)",
+    )
+    check(
+        len(notes["bullets"]) >= 2
+        and any("yielded no text at all" in line for line in notes["bullets"])
+        and any("0.00 %" in line for line in notes["bullets"]),
+        "the notes are the run's own admissions, not boilerplate",
+        "; ".join(notes["bullets"])[:220],
+    )
+    # Control: the file-producing run paints the same kind of block, so a passing
+    # report is not the only place notes appear — and its count is its own.
+    with_file = json.loads((root / "ocr-layer.json").read_text())["notes"]
+    check(
+        with_file["blocks"] == 1 and len(with_file["heads"]) == 1
+        and re.search(r"what you should know \((\d+)\)", with_file["heads"][0].lower()).group(1) == str(len(with_file["bullets"])),
+        "the same run with a file paints its notes the same way",
+        f"header {with_file['heads']}, {len(with_file['bullets'])} bullet(s)",
+    )
+    # And the empty control: a report with nothing to admit paints nothing.
+    quiet = json.loads((root / "ocr-pick.json").read_text())["notes"]
+    check(quiet["blocks"] == 0, "a report with no admissions paints no notes block", f"{quiet['blocks']} block(s)")
 
     # ── 5. what the rail asked for is what ran ───────────────────────────────
     pick = screen_body(root / "ocr-pick.txt")

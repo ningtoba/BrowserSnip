@@ -1,0 +1,8 @@
+# digitize-document, BEFORE the blank-vs-inked split (dev build :5271, 2026-11-16)
+# Page 3 is a sheet 84.40 % covered in flat grey, page 4 is bare paper; the card gave
+# both one sentence. Run: docs/research/ocr-digitize-round.mjs.
+
+attached: page-letters.png, page-gradient.png, page-block.png, page-blank.png
+clicked "Recognise text" → phase done, finished true
+card: {"heads":[],"bullets":[],"output":"page-letters_digitized.pdf"}
+screen tail: "Browser\nSnip\nVideo\nPDF\n⌕\nSearch tools\n⌘K\n☀\nGitHub\nBrowserSnip\n/\nPDF Tools\n/\nConvert to PDF\n/\nDigitize Document\n☆\nStar\n✓\nYour file is ready\n\nDigitize Document finished in this tab — nothing was uploaded.\n\nFinished — one file ready to download\n\n1\n2\n3\n4\n\nPage 1 of 4 of page-letters_digitized.pdf, drawn in this tab — a picture of the file, not the file itself.\n\npage-letters_digitized.pdf\n\nREADY\nSIZE\n82.7 KB → 77.9 KB · 6% smaller\nPAGES\n4\n\n4 page(s) digitised with 34 recognised words on 2 page(s) behind the images — now selectable and searchable.\n\nWHAT YOU SHOULD KNOW (2)\n\nPages were composited onto a white background; skew and perspective are not corrected.\nPage 3, 4 had no text layer: the recogniser found nothing to write on it.\nDownload\nDo another\nBack to all tools"

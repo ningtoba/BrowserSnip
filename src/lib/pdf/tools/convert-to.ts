@@ -24,6 +24,7 @@
 import { drawPageInto, newPDF, savePDF } from '../core/doc';
 import { decodeImage, decodeImagePages, sniffImageMime, type DecodedImage } from '../core/images';
 import { pdfFromImages } from '../core/pack';
+import { ocrSilentPageOf, type OcrPageResult, type OcrSilentPage } from '../core/ocr';
 import { pageSize } from '../core/pages';
 import {
   ToolInputError,
@@ -1597,12 +1598,12 @@ export const convertToTools: PdfToolDefinition[] = [
       const layered = await openPDF(bytes);
       const added = await addSearchableTextLayer(layered, results, { invisible: true });
       await session.destroy();
-      const empty = results
-        .filter((result) => !result.alreadySearchable && result.words.length === 0)
-        .map((result) => result.page);
-      if (empty.length > 0) {
-        warnings.push(`Page ${empty.join(', ')} had no text layer: the recogniser found nothing to write on it.`);
-      }
+      // E10: "no text" is three findings, not one — a sheet with nothing on it, a
+      // sheet whose ink is not letters, and a page this run never measured. The
+      // split comes from `core/ocr`'s reading of the **painted** bitmap; one
+      // sentence used to cover all three (measured on a sheet 84.40 % covered in
+      // grey and a sheet of bare paper).
+      warnings.push(...silentPageWarnings(results));
       const skipped = results.filter((result) => result.alreadySearchable).length;
       if (skipped > 0) warnings.push(`${skipped} page(s) already had a text layer and were left untouched.`);
       const digitised = added.words > 0
@@ -1791,6 +1792,38 @@ function splitNdjson(text: string): string[] {
   }
   const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean);
   return lines.length > 0 ? lines : [trimmed];
+}
+
+/**
+ * What to say about the pages the recogniser read and found no words on.
+ *
+ * A page nothing was written on is not one finding: bare paper and a picture are
+ * different documents to a user, and the ink the reader measured is what tells
+ * them apart. A page whose bitmap was never measured keeps the vaguer sentence
+ * rather than borrowing either claim.
+ */
+function silentPageWarnings(results: readonly OcrPageResult[]): string[] {
+  const silent = results
+    .filter((result) => !result.alreadySearchable && result.words.length === 0)
+    .map((result) => ocrSilentPageOf(result))
+    .filter((entry): entry is OcrSilentPage => entry !== null);
+  const of = (kind: OcrSilentPage['kind']) => silent.filter((entry) => entry.kind === kind);
+  const named = (list: OcrSilentPage[]) => `Page ${list.map((entry) => entry.page).join(', ')}`;
+  const measured = (list: OcrSilentPage[]) => list.map((entry) => `${entry.percent?.toFixed(2)} %`).join(', ');
+  const out: string[] = [];
+  const blank = of('blank');
+  if (blank.length > 0) {
+    out.push(`${named(blank)} ${blank.length === 1 ? 'is' : 'are'} blank — the rendered ${blank.length === 1 ? 'sheet measures' : 'sheets measure'} ${measured(blank)} ink, so there was nothing on ${blank.length === 1 ? 'it' : 'them'} to read.`);
+  }
+  const inked = of('unreadable');
+  if (inked.length > 0) {
+    out.push(`${named(inked)} had no text layer: ${measured(inked)} of the rendered ${inked.length === 1 ? 'page is' : 'pages are'} ink, but the recogniser found no letters on ${inked.length === 1 ? 'it' : 'them'} — a picture, handwriting or a scan too faint to resolve.`);
+  }
+  const unmeasured = of('unexamined');
+  if (unmeasured.length > 0) {
+    out.push(`${named(unmeasured)} had no text layer: the recogniser found nothing to write on it.`);
+  }
+  return out;
 }
 
 /**

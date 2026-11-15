@@ -59,6 +59,8 @@ import {
   zipBytes,
   contextFor,
   pageFonts,
+  PAGE,
+  pageInk,
 } from './convert-to-harness';
 
 /* ------------------------------------------------------------------ *
@@ -83,6 +85,10 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
           width: Math.round(595 * scale),
           height: Math.round(842 * scale),
           cancel: () => undefined,
+          // `PAGE.ink` decides whether the reader left an ink reading behind; the
+          // default keeps the bare stub, so every other test in this file still
+          // exercises the "never measured" path.
+          ...pageInk(PAGE.ink(_n)),
         }),
         metadata: async () => ({ numPages: count, info: {}, metadata: {} }),
         destroy: async () => undefined,
@@ -385,6 +391,37 @@ describe('images-only input is described as images-only (E10)', () => {
     expect(outcome.warnings.join(' ')).toMatch(/Page 1 had no text layer/);
     expect(outcome.message).not.toMatch(/selectable and searchable/);
     expect((await PDFDocument.load(await firstPdf(outcome))).getPageCount()).toBe(1);
+  });
+
+  it('calls bare paper blank and a sheet covered in ink something else', async () => {
+    // Same run, two silent pages, two different measurements: the first sheet is
+    // paper (0 % ink), the second is 10 % dark pixels with no letters on them.
+    // The sentence used to be one sentence for both.
+    PAGE.ink = (page) => (page === 1 ? 'blank' : 'inked');
+    const outcome = await run('digitize-document', {}, [
+      fileFrom(PNG_1PX, 'bare.png', 'image/png'),
+      fileFrom(PNG_1PX, 'picture.png', 'image/png'),
+    ]);
+    const said = outcome.warnings.join(' ');
+    const blank = outcome.warnings.find((line) => /is blank/.test(line)) ?? '';
+    const inked = outcome.warnings.find((line) => /is ink, but the recogniser found no letters/.test(line)) ?? '';
+    expect(blank, said).toMatch(/Page 1 is blank/);
+    expect(blank).toMatch(/0\.00 % ink/);
+    expect(inked, said).toMatch(/Page 2 had no text layer: 10\.00 % of the rendered page is ink/);
+    // Controls: the two claims are not the same sentence, and neither one leaks
+    // into the other's page, which is what "one sentence for both" did.
+    expect(blank).not.toMatch(/no letters/);
+    expect(inked).not.toMatch(/blank/);
+    expect(blank).toMatch(/Page 1/);
+    expect(blank).not.toMatch(/Page 2/);
+  });
+
+  it('keeps the vaguer sentence for a page nobody measured', async () => {
+    // `PAGE.ink` is `unmeasured` here: no `finished`, no readable canvas, so the
+    // reader left no ink reading and neither claim can be borrowed.
+    const outcome = await run('digitize-document', {}, [fileFrom(PNG_1PX, 'bare.png', 'image/png')]);
+    expect(outcome.warnings.join(' ')).toMatch(/Page 1 had no text layer: the recogniser found nothing to write on it\./);
+    expect(outcome.warnings.join(' ')).not.toMatch(/blank|is ink/);
   });
 
   it('degrades honestly when the recogniser cannot load (E20)', async () => {

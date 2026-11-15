@@ -37,6 +37,44 @@ export const OCR = {
 export const CANVAS = { width: 8, height: 10, fills: 0 };
 
 /**
+ * What the *page* a mocked `renderPage` hands back is made of.
+ *
+ * `core/ocr` reads an ink figure off the painted bitmap and the tool splits a
+ * silent page by it, so a double that answers neither `finished` nor a readable
+ * `ctx` silently degrades every page to "never analysed" — which is how the two
+ * halves of E10 stayed untested. These are the three states it can be in:
+ * `unmeasured` is the bare stub, `blank` is bare paper, `inked` is 10 % dark
+ * pixels with no letters on them.
+ */
+export const PAGE = { ink: (() => 'unmeasured') as (page: number) => 'unmeasured' | 'blank' | 'inked' };
+
+/** The `finished`/`ctx` half of a mocked page render, per {@link PAGE}.ink. */
+export function pageInk(ink: string): Record<string, unknown> {
+  if (ink === 'unmeasured') return {};
+  const tone = ink === 'inked' ? 30 : 255;
+  return {
+    // `renderPage` settles when the paint is *scheduled*; the pixels belong to
+    // `finished`, so a double that resolves it in the same tick is the honest
+    // ordering even though jsdom cannot race it.
+    finished: Promise.resolve(),
+    ctx: {
+      getImageData: (_x: number, _y: number, w: number, h: number) => {
+        const data = new Uint8ClampedArray(w * h * 4);
+        for (let i = 0; i < data.length; i += 4) {
+          const dark = ink === 'inked' && i % 40 === 0;
+          const level = dark ? tone : 255;
+          data[i] = level;
+          data[i + 1] = level;
+          data[i + 2] = level;
+          data[i + 3] = 255;
+        }
+        return { data, width: w, height: h };
+      },
+    },
+  };
+}
+
+/**
  * The options each `createImageBitmap` call was made with.
  *
  * EXIF orientation is a browser behaviour, so the part this app controls — and
@@ -146,6 +184,7 @@ export function resetConvertToEnv(): void {
   FONTS.cdnReachable = true;
   FONTS.monoReachable = true;
   DECODE.calls = [];
+  PAGE.ink = () => 'unmeasured';
 }
 
 export function restoreConvertToEnv(): void {

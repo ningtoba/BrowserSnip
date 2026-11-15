@@ -33,7 +33,7 @@ import { FileIntake, intakeCopy, intakeFootNote, useIntake, type IntakeControls,
 import { GroupHeading, OptionsPanel, useTouchedFields } from './FieldControls';
 import { OutputPreview, type PreviewMode } from './OutputPreview';
 import { ProgressBar } from './ProgressBar';
-import { ResultCard, type ResultItem } from './ResultCard';
+import { ResultCard, ResultWarnings, type ResultItem } from './ResultCard';
 import { runStatusText } from './toolForm';
 import { FOCUS_RING } from './focusRing';
 
@@ -612,17 +612,22 @@ export function ResultPane({
             mode={room.mode}
             className="mb-4"
           />
-          <ResultCard
-            hero
-            outputs={outputs}
-            sizeBefore={sizeBefore}
-            pagesIn={pagesIn}
-            pages={pagesOut}
-            warnings={warnings}
-            message={statusMessage || undefined}
-            declared={engines}
-            original={file ? { name: file.name, blob: file } : null}
-          />
+          {/* A report is the whole result and it is right below, so the empty
+              card ("Nothing produced yet — set the options and run the tool")
+              would contradict it. Only a run with nothing to say gets the card. */}
+          {(outputs.length > 0 || !report) && (
+            <ResultCard
+              hero
+              outputs={outputs}
+              sizeBefore={sizeBefore}
+              pagesIn={pagesIn}
+              pages={pagesOut}
+              warnings={warnings}
+              message={statusMessage || undefined}
+              declared={engines}
+              original={file ? { name: file.name, blob: file } : null}
+            />
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -641,7 +646,15 @@ export function ResultPane({
           </a>
         </div>
 
-        {report && <div className="mt-6 text-left">{report}</div>}
+        {report && (
+          <div className="mt-6 text-left">
+            {report}
+            {/* A report carries no file, so the card above is an empty state and
+                its warnings block never mounts: the run's notes are painted here
+                instead of being kept in the store and shown to nobody. */}
+            {outputs.length === 0 && <ResultWarnings warnings={warnings} className="mt-4" />}
+          </div>
+        )}
       </motion.div>
     </div>
   );

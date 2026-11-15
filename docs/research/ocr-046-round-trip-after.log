@@ -1,0 +1,45 @@
+# ocr-pdf round trip AFTER the fixes (dev build :5271, 2026-11-16) — ocr-check.py
+OK   rasterise kept the page count: 3 -> 3
+OK   rasterised PDF carries no text layer: pages with text: none
+OK   one image XObject per sheet: [1, 1, 1]
+OK   the planted sheet still carries ink after rasterising: source 2.88 % -> rasterised 3.35 %
+OK   the empty sheet is still empty in the file: source 0.00 % -> rasterised 0.00 %
+OK   the gradient sheet kept its coverage: source 35.45 % -> rasterised 35.61 %
+OK   report mode printed page 1: 203 chars
+OK   recognised text matches the planted words: similarity 1.000 (>= 0.9), word F1 1.000 (>= 0.9)
+     recognised: 'Lighthouse Inventory 1887 Quartermaster Peverell kept the glass Eleven brass candles and one spare wick The harbour master signed at Bristol Nineteen crates of salted cod A storm took the west stair away'
+OK   the invisible layer carries the planted words: similarity 1.000, word F1 1.000
+     in the file: 'Lighthouse Inventory 1887 Quartermaster Peverell kept the glass Eleven brass candles and one spare wick The harbour master signed at Bristol Nineteen crates of salted cod A storm took the west stair a'
+OK   page 2 was not answered with page 1's words: page 2 layer text: ''
+OK   page 3 carries no text at all: page 3 layer text: ''
+OK   the layer run kept every sheet: 3 -> 3
+OK   page 1's content stream draws text: ['traced', 'none', 'none']
+OK   the inked page with no letters says it is not blank: (no letters found, and it is not a blank sheet: 35.46 % of the rendered page is ink. A picture, handwriting, or a scan too faint to resolve — try a hi
+OK   the empty page is named blank with a measured 0.00 %: (blank — the rendered sheet measures 0.00 % ink, so there was nothing on it to read.)
+OK   the two are not the same sentence: 167 vs 85 chars
+OK   the ink the tool speaks matches the file: tool 35.46 % vs PyMuPDF 35.61 % (tolerance 3.0 pp)
+OK   the old blur is gone from the screen: neither card says 'Nothing was recognised on the N page you selected'
+OK   a report-only result paints its notes: 1 notes block(s), header ['What you should know (2)']
+OK   the note count is the number of notes: header says 2, 2 bullet(s)
+OK   the notes are the run's own admissions, not boilerplate: 1 page yielded no text at all because there is nothing on it: page 3 at 0.00 % of the rendered sheet is ink.; 1 page yielded no text at all, though it carries ink — page 2 at 35.46 % of the rendered sheet is not paper. A
+OK   the same run with a file paints its notes the same way: header ['What you should know (3)'], 3 bullet(s)
+OK   a report with no admissions paints no notes block: 0 block(s)
+OK   the page selection reached the run: report says 'across 1 page'
+OK   only the picked page was read: no Page 2/3 block
+OK   the language hint changed what was read: German on page 1 returned byte-identical text to English — the bundled reader is one dictionary
+OK   a skipped page is counted apart from a silent one: ded no text at all, though it carries ink — page 2 at 35.35 % of the rendered sheet is not paper. A picture, handwriting or a faint scan is what that measures; try a higher Resolution, or scan again at 300 dpi or better.
+OK   the page it never read is not called blank: Page 1 block: ''
+OK   a skipped page is not folded into the count of pages read: the card counts 1 read + 1 left alone, not 3 unread
+OK   rail field 'dpi' holds what was typed: 300 == 300
+OK   rail field 'pages' holds what was typed: all == all
+OK   rail field 'dpi' holds what was typed: 300 == 300
+OK   rail field 'pages' holds what was typed: all == all
+OK   rail field 'dpi' holds what was typed: 300 == 300
+OK   rail field 'pages' holds what was typed: 1 == 1
+OK   rail field 'language' holds what was typed: de == de
+OK   rail field 'dpi' holds what was typed: 300 == 300
+OK   rail field 'pages' holds what was typed: 1 == 1
+OK   the resolution the probe asked for is the one the rail holds: dpi=300 read back
+OK   no console error in any run: console errors: []
+
+OK: rasterise → OCR round trip returned the planted words, page for page, and told the three silences apart

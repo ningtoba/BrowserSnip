@@ -1,0 +1,337 @@
+{
+  "word": "Lighthouse Inventory 1887",
+  "steps": [
+    {
+      "name": "uniform-white",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 255,
+        "max": 255,
+        "span": 0,
+        "mean": 255,
+        "inked": 0,
+        "of": 1414000,
+        "pct": 0
+      },
+      "beforeBox": null,
+      "processed": {
+        "min": 0,
+        "max": 0,
+        "span": 0,
+        "mean": 0,
+        "inked": 1414000,
+        "of": 1414000,
+        "pct": 100
+      },
+      "afterBox": null,
+      "read": {
+        "text": "",
+        "lines": 0
+      }
+    },
+    {
+      "name": "uniform-grey-200",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 200,
+        "max": 200,
+        "span": 0,
+        "mean": 200,
+        "inked": 0,
+        "of": 1414000,
+        "pct": 0
+      },
+      "beforeBox": null,
+      "processed": {
+        "min": 0,
+        "max": 0,
+        "span": 0,
+        "mean": 0,
+        "inked": 1414000,
+        "of": 1414000,
+        "pct": 100
+      },
+      "afterBox": null,
+      "read": {
+        "text": "",
+        "lines": 0
+      }
+    },
+    {
+      "name": "blank-noise-2",
+      "jitter": 2,
+      "specks": null,
+      "raw": {
+        "min": 250,
+        "max": 253.99999999999997,
+        "span": 3.9999999999999716,
+        "mean": 252,
+        "inked": 0,
+        "of": 1414000,
+        "pct": 0
+      },
+      "beforeBox": null,
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 127.42,
+        "inked": 883592,
+        "of": 1414000,
+        "pct": 62.489
+      },
+      "afterBox": null,
+      "read": {
+        "text": "",
+        "lines": 0
+      }
+    },
+    {
+      "name": "blank-noise-8",
+      "jitter": 8,
+      "specks": null,
+      "raw": {
+        "min": 242,
+        "max": 255,
+        "span": 13,
+        "mean": 249.72,
+        "inked": 0,
+        "of": 1414000,
+        "pct": 0
+      },
+      "beforeBox": null,
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 151.04,
+        "inked": 574112,
+        "of": 1414000,
+        "pct": 40.602
+      },
+      "afterBox": null,
+      "read": {
+        "text": "",
+        "lines": 0
+      }
+    },
+    {
+      "name": "blank-rare-speck",
+      "jitter": 0,
+      "specks": 225,
+      "raw": {
+        "min": 224.99999999999997,
+        "max": 255,
+        "span": 30.00000000000003,
+        "mean": 254.95,
+        "inked": 2494,
+        "of": 1414000,
+        "pct": 0.176
+      },
+      "beforeBox": null,
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 254.58,
+        "inked": 2291,
+        "of": 1414000,
+        "pct": 0.162
+      },
+      "afterBox": null,
+      "read": {
+        "text": "",
+        "lines": 0
+      }
+    },
+    {
+      "name": "faint-250",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 250,
+        "max": 255,
+        "span": 5,
+        "mean": 254.95,
+        "inked": 0,
+        "of": 1414000,
+        "pct": 0
+      },
+      "beforeBox": {
+        "px": 0,
+        "of": 105600,
+        "pct": 0
+      },
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 252.34,
+        "inked": 14804,
+        "of": 1414000,
+        "pct": 1.047
+      },
+      "afterBox": {
+        "px": 14804,
+        "of": 105600,
+        "pct": 14.019
+      },
+      "read": {
+        "text": "Lighthouse Inventory 1887",
+        "lines": 1
+      }
+    },
+    {
+      "name": "faint-240",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 240,
+        "max": 255,
+        "span": 15,
+        "mean": 254.84,
+        "inked": 13538,
+        "of": 1414000,
+        "pct": 0.957
+      },
+      "beforeBox": {
+        "px": 13538,
+        "of": 105600,
+        "pct": 12.82
+      },
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 252.34,
+        "inked": 14804,
+        "of": 1414000,
+        "pct": 1.047
+      },
+      "afterBox": {
+        "px": 14804,
+        "of": 105600,
+        "pct": 14.019
+      },
+      "read": {
+        "text": "Lighthouse Inventory 1887",
+        "lines": 1
+      }
+    },
+    {
+      "name": "faint-225",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 224.99999999999997,
+        "max": 255,
+        "span": 30.00000000000003,
+        "mean": 254.69,
+        "inked": 15023,
+        "of": 1414000,
+        "pct": 1.062
+      },
+      "beforeBox": {
+        "px": 15023,
+        "of": 105600,
+        "pct": 14.226
+      },
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 252.34,
+        "inked": 14851,
+        "of": 1414000,
+        "pct": 1.05
+      },
+      "afterBox": {
+        "px": 14851,
+        "of": 105600,
+        "pct": 14.063
+      },
+      "read": {
+        "text": "Lighthouse Inventory 1887",
+        "lines": 1
+      }
+    },
+    {
+      "name": "line-180-control",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 180,
+        "max": 255,
+        "span": 75,
+        "mean": 254.22,
+        "inked": 15841,
+        "of": 1414000,
+        "pct": 1.12
+      },
+      "beforeBox": {
+        "px": 15841,
+        "of": 105600,
+        "pct": 15.001
+      },
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 252.36,
+        "inked": 14726,
+        "of": 1414000,
+        "pct": 1.041
+      },
+      "afterBox": {
+        "px": 14726,
+        "of": 105600,
+        "pct": 13.945
+      },
+      "read": {
+        "text": "Lighthouse Inventory 1887",
+        "lines": 1
+      }
+    },
+    {
+      "name": "grey-paper-line-190",
+      "jitter": 0,
+      "specks": null,
+      "raw": {
+        "min": 189.99999999999997,
+        "max": 210,
+        "span": 20.00000000000003,
+        "mean": 209.79,
+        "inked": 14186,
+        "of": 1414000,
+        "pct": 1.003
+      },
+      "beforeBox": {
+        "px": 14186,
+        "of": 105600,
+        "pct": 13.434
+      },
+      "processed": {
+        "min": 0,
+        "max": 255,
+        "span": 255,
+        "mean": 252.35,
+        "inked": 14809,
+        "of": 1414000,
+        "pct": 1.047
+      },
+      "afterBox": {
+        "px": 14809,
+        "of": 105600,
+        "pct": 14.024
+      },
+      "read": {
+        "text": "Lighthouse Inventory 1887",
+        "lines": 1
+      }
+    }
+  ],
+  "status": "ready"
+}
+console errors: []

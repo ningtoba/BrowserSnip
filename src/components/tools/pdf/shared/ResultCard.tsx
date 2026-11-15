@@ -170,6 +170,35 @@ export function honestSummary(
 }
 
 /**
+ * "What you should know (N)" — everything the run admitted, counted and listed.
+ *
+ * Exported because a report-only result has nothing to hang it on: the card it
+ * normally lives in renders an empty state when the run produced no file, so
+ * `ResultPane` paints this beside the report instead (`ocr-pdf`'s report mode
+ * lost its notes that way — measured: 2 in the store, 0 on the screen).
+ */
+export function ResultWarnings({ warnings, className = '' }: { warnings: string[]; className?: string }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div data-result-warnings={warnings.length} className={`space-y-1 text-left ${className}`}>
+      <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
+        What you should know ({warnings.length})
+      </p>
+      <ul className="space-y-1">
+        {warnings.map((warning) => (
+          <li
+            key={warning}
+            className="rounded-doodle border border-warn/25 bg-cream-light/70 px-2 py-1 text-[10px] leading-relaxed text-warn"
+          >
+            {warning}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * The result summary every tool surface shares: what it is called, what it
  * weighs now, how many pages, which engine made it, what went sideways, and
  * the download affordances.
@@ -304,23 +333,7 @@ export function ResultCard({
         </p>
       )}
 
-      {warnings.length > 0 && (
-        <>
-          <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-ink-muted">
-            What you should know ({warnings.length})
-          </p>
-          <ul className="space-y-1">
-            {warnings.map((warning) => (
-              <li
-                key={warning}
-                className="rounded-doodle border border-warn/25 bg-cream-light/70 px-2 py-1 text-[10px] leading-relaxed text-warn"
-              >
-                {warning}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <ResultWarnings warnings={warnings} />
 
       {multi && (
         <ul className="space-y-1">

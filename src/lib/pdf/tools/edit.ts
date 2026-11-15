@@ -27,7 +27,8 @@ import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
 import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
-import type { OcrPageResult } from '../core/ocr';
+import { ocrSilentPageOf } from '../core/ocr';
+import type { OcrPageResult, OcrSilentKind, OcrSilentPage } from '../core/ocr';
 import { canvasToBlob } from '../core/render';
 import { embedImageBytes } from '../core/pack';
 import { newPDF } from '../core/doc';
@@ -2334,14 +2335,11 @@ async function textOnlyPdf(source: PDFDocument, results: { page: number; text: s
  * never from the word list: an empty word list is also what an absent reader
  * produces.
  */
-type OcrQuietKind = 'blank' | 'unreadable' | 'unexamined';
-
-interface OcrQuietPage {
-  page: number;
-  kind: OcrQuietKind;
-  /** Non-white coverage of the rendered sheet, in percent; null if unmeasured. */
-  percent: number | null;
-}
+// The rule itself lives in `core/ocr` beside the measurement it reads, because
+// `digitize-document` needs the same three-way split and a second copy of it
+// would drift.
+type OcrQuietKind = OcrSilentKind;
+type OcrQuietPage = OcrSilentPage;
 
 interface OcrQuiet {
   pages: OcrQuietPage[];
@@ -2370,15 +2368,7 @@ function ocrQuietPages(results: OcrPageResult[]): OcrQuiet {
 }
 
 /** Classify one silent page from the reading the recogniser left behind. */
-function ocrQuietPageOf(result: OcrPageResult): OcrQuietPage | null {
-  if (result.alreadySearchable) return null;
-  if (!result.ink) return { page: result.page, kind: 'unexamined', percent: null };
-  return {
-    page: result.page,
-    kind: result.ink.blank ? 'blank' : 'unreadable',
-    percent: Math.round(result.ink.ratio * 10000) / 100,
-  };
-}
+const ocrQuietPageOf = ocrSilentPageOf;
 
 function ocrQuietSentence(entry: OcrQuietPage): string {
   if (entry.kind === 'blank') {

@@ -450,6 +450,37 @@ export function ocrCounts(results: readonly OcrPageResult[]): {
 // Internals
 // ---------------------------------------------------------------------------
 
+/** What a silent page's own bitmap says. Three outcomes, not one sentence. */
+export type OcrSilentKind = 'blank' | 'unreadable' | 'unexamined';
+
+export interface OcrSilentPage {
+  page: number;
+  kind: OcrSilentKind;
+  /** Non-white coverage of the rendered sheet, in percent; null if unmeasured. */
+  percent: number | null;
+}
+
+/**
+ * Classify one silent (wordless) page from the reading left behind by the
+ * recogniser, never from the word count alone — an empty word list is also what
+ * a page nobody rendered produces.
+ *
+ * One place for the rule, because two tools speak it: `ocr-pdf` splits a silent
+ * page three ways in its report, and `digitize-document` used to collapse all of
+ * it into "the recogniser found nothing to write on it" — measured there on a
+ * sheet 84.40 % covered in grey and a sheet of bare paper, both given the same
+ * sentence.
+ */
+export function ocrSilentPageOf(result: OcrPageResult): OcrSilentPage | null {
+  if (result.alreadySearchable) return null;
+  if (!result.ink) return { page: result.page, kind: 'unexamined', percent: null };
+  return {
+    page: result.page,
+    kind: result.ink.blank ? 'blank' : 'unreadable',
+    percent: Math.round(result.ink.ratio * 10000) / 100,
+  };
+}
+
 /**
  * Non-white coverage of a painted page bitmap, or `undefined` when the bitmap
  * cannot be read at all.

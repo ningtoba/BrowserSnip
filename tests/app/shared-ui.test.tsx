@@ -17,7 +17,8 @@ import { useProcessStore } from '@/stores/process-store';
 import { useFileStore } from '@/stores/file-store';
 import { ToolInputError } from '@/lib/pdf/core/guard';
 import { usePdfTool } from '@/hooks/usePdfTool';
-import { PdfToolPanel } from '@/components/tools/pdf/shared/PdfToolPanel';
+import { PdfToolPanel, ReportView } from '@/components/tools/pdf/shared/PdfToolPanel';
+import { ResultPane } from '@/components/tools/pdf/shared/ToolSurface';
 import { FieldControl } from '@/components/tools/pdf/shared/FieldControls';
 import { EmptyState } from '@/components/tools/pdf/shared/EmptyState';
 import { ErrorPanel } from '@/components/tools/pdf/shared/ErrorPanel';
@@ -1151,6 +1152,77 @@ describe('PdfToolPanel', () => {
     expect(alert.textContent).toContain('doc.pdf');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(useProcessStore.getState().error).toContain('truncated'));
+  });
+});
+
+// ── a result with no file ───────────────────────────────────────────────────
+
+/**
+ * A report-only run produces no file, so `ResultPane`'s card is an empty state
+ * and its warnings block never mounts. The notes were still put in the store, so
+ * `ocr-pdf`'s report mode showed its blocks and kept every caveat to itself
+ * (measured live: 2 in the store, 0 on the screen). The report block paints them
+ * now, and the count is the number of bullets.
+ */
+describe('a report-only result', () => {
+  const report = {
+    message: 'Read nothing — the file is unchanged.',
+    sections: [
+      { title: 'Page 3', text: '(blank — the rendered sheet measures 0.00 % ink, so there was nothing on it to read.)' },
+    ],
+  };
+  const notes = [
+    '1 page yielded no text at all because there is nothing on it: page 3 at 0.00 % of the rendered sheet is ink.',
+    'The file is unchanged, so download nothing.',
+  ];
+
+  function show(withFile: boolean): void {
+    useProcessStore.setState({
+      phase: 'done',
+      statusMessage: report.message,
+      report,
+      warnings: notes,
+      ...(withFile
+        ? { outputBlobs: [blobFor('application/pdf')], outputNames: ['doc.pdf'], outputUrls: ['blob:doc.pdf'] }
+        : {}),
+    });
+    render(
+      <ResultPane
+        toolName="OCR PDF"
+        pagesIn={3}
+        onDoAnother={() => undefined}
+        report={<ReportView report={report} />}
+      />,
+    );
+  }
+
+  it('paints the notes beside the report and counts them', () => {
+    show(false);
+    const block = document.querySelector('[data-result-warnings]');
+    expect(block).not.toBeNull();
+    expect(block).toHaveAttribute('data-result-warnings', '2');
+    expect(block?.textContent).toContain('What you should know (2)');
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText(/0.00 % ink/)).toBeInTheDocument();
+  });
+
+  it('keeps them beside the report, not twice, when a file came too', () => {
+    show(true);
+    // The card's own list is the only one: the report block does not repeat it.
+    expect(document.querySelectorAll('[data-result-warnings]')).toHaveLength(1);
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('does not claim nothing was produced over a report', () => {
+    show(false);
+    expect(screen.queryByText(/Nothing produced yet/)).toBeNull();
+  });
+
+  it('paints nothing at all when the run admitted nothing', () => {
+    useProcessStore.setState({ phase: 'done', report, warnings: [] });
+    render(<ResultPane toolName="OCR PDF" pagesIn={1} onDoAnother={() => undefined} report={<ReportView report={report} />} />);
+    expect(document.querySelector('[data-result-warnings]')).toBeNull();
+    expect(screen.queryByText(/What you should know/)).toBeNull();
   });
 });
 
