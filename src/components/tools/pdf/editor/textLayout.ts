@@ -16,7 +16,15 @@
  * out through two documents must break in the same places.
  */
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
-import { freeTextInset, stampLabelPlacement, type LaidOutLine, type StyledText } from '@/lib/pdf/core/annotations';
+import {
+  freeTextInset,
+  pageRotationOf,
+  stampBox,
+  stampLabel,
+  stampLabelPlacement,
+  type LaidOutLine,
+  type StyledText,
+} from '@/lib/pdf/core/annotations';
 import { carriesPosture, type FaceStyle } from '@/lib/pdf/core/text-style';
 import { prepareTextObject } from '../text-editor/draw';
 import { resolveFace } from '../text-editor/faces';
@@ -251,7 +259,9 @@ export interface MarkPreview {
 function markBody(spec: AnnotationSpec): { kind: TextMarkKind; body: string } | null {
   if (spec.kind === 'FreeText') return { kind: 'freetext', body: spec.freeText?.text ?? '' };
   if (spec.kind === 'Stamp' && spec.stampName && !spec.stampImage && !spec.stampXObject) {
-    return { kind: 'stamp', body: spec.stampName };
+    // The label, not the `/S` token: a stamp named `NotApproved` reads "Not
+    // approved" on the page, the same words the inspector offered.
+    return { kind: 'stamp', body: stampLabel(spec.stampName) };
   }
   return null;
 }
@@ -269,11 +279,14 @@ export async function prepareSpecTexts(doc: PDFDocument, specs: AnnotationSpec[]
     const style = spec.textStyle?.style;
     const body = markBody(spec);
     if (!style || !body || body.body.length === 0) continue;
+    // A quarter-turned page swaps the rect's axes; the label is set into the box
+    // as it is displayed, which is the box the appearance stream now draws in.
+    const box = stampBox(spec.rect, pageRotationOf(doc, spec.page));
     const layout = await layoutMarkText(doc, {
       ...body,
       style,
-      width: spec.rect.width,
-      height: spec.rect.height,
+      width: box.width,
+      height: box.height,
     });
     spec.textStyle = styledText(layout, style);
     if (layout.note) notices.push(layout.note);

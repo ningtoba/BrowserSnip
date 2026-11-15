@@ -130,12 +130,9 @@ describe('a stamp lands on every page counted, in the corner named', () => {
       const [mark] = marks;
       const displayW = SHEETS[index][2] === 90 || SHEETS[index][2] === 270 ? height : width;
       const displayH = SHEETS[index][2] === 90 || SHEETS[index][2] === 270 ? width : height;
-      // The name this app writes is the word from the picker, upper-cased. PDF's own
-      // standard appearance names are spelled `/Confidential` (32000 Table 265), so
-      // the key is present but is not the canonical token — pinned as the truth here,
-      // and written up rather than changed, because `/S` and the drawn label share one
-      // string in `core/annotations.ts`.
-      expect(mark.name, `page ${index + 1} carries no /S stamp name`).toBe('/CONFIDENTIAL');
+      // `/S` is the standard Table 265 name — a reader that knows the table
+      // recognises this one; the drawn label is the spaced words beside it.
+      expect(mark.name, `page ${index + 1} carries no /S stamp name`).toBe('/Confidential');
       expect(mark.opacity, `page ${index + 1} ignored the opacity`).toBeCloseTo(1, 3);
       // Inside the sheet as shown, and in the top-right of it.
       expect([mark.x >= 0, mark.y >= 0, mark.x + mark.width <= displayW + 0.5, mark.y + mark.height <= displayH + 0.5],
@@ -165,6 +162,41 @@ describe('a stamp lands on every page counted, in the corner named', () => {
     const [mark] = stampsOn(doc, 0);
     expect(mark.x).toBeLessThan(80);
     expect(mark.y + mark.height).toBeGreaterThan(842 * 0.7);
+  });
+
+  it('puts each named anchor in its own ninth of the sheet, turned sheets included', async () => {
+    const anchors: Array<[string, (x: number) => number, (y: number) => number]> = [
+      ['top-left', (x) => x, (y) => y],
+      ['top-center', (x) => x, (y) => y],
+      ['top-right', (x) => x, (y) => y],
+      ['center-left', (x) => x, (y) => y],
+      ['center', (x) => x, (y) => y],
+      ['center-right', (x) => x, (y) => y],
+      ['bottom-left', (x) => x, (y) => y],
+      ['bottom-center', (x) => x, (y) => y],
+      ['bottom-right', (x) => x, (y) => y],
+    ];
+    for (const page of [1, 2]) {
+      const [width, height, rotation] = SHEETS[page - 1];
+      const shownW = rotation === 90 || rotation === 270 ? height : width;
+      const shownH = rotation === 90 || rotation === 270 ? width : height;
+      for (const [anchor] of anchors) {
+        const { bytes } = await stamp({ pages: String(page), position: anchor, width: 60 });
+        const doc = await PDFDocument.load(bytes);
+        const [mark] = stampsOn(doc, page - 1);
+        expect(mark, `${anchor} on page ${page}: nothing placed`).toBeTruthy();
+        const cx = mark.x + mark.width / 2;
+        const cy = mark.y + mark.height / 2;
+        // `top-left` names the vertical edge first, the horizontal one second.
+        const [wantY, wantX] = anchor.split('-');
+        const third = (value: number, at: string, span: number) =>
+          at === 'left' || at === 'top' ? value < span / 3 : at === 'right' || at === 'bottom' ? value > (span * 2) / 3 : Math.abs(value - span / 2) <= span / 6;
+        expect(third(cx, wantX, shownW), `${anchor} on page ${page}: x ${cx} in ${shownW}`).toBe(true);
+        expect(third(cy, wantY, shownH), `${anchor} on page ${page}: y ${cy} in ${shownH}`).toBe(true);
+        expect([mark.x >= 0, mark.y >= 0, mark.x + mark.width <= shownW + 0.5, mark.y + mark.height <= shownH + 0.5],
+          `${anchor} on page ${page}: off the sheet`).toEqual([true, true, true, true]);
+      }
+    }
   });
 
   it('shrinks a stamp wider than the sheet instead of painting past the edge', async () => {

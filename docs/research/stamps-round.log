@@ -1,0 +1,46 @@
+== add-stamps round 036 — before, dev :5271, /tmp/triage/colour.pdf (sheet 4 = 595x420 /Rotate 90)
+-- driver: docs/research/stamps-round.mjs, pane, click on every sheet, label Draft
+   (surface census in the earlier verify-stamps-pane run: armed=stamp, extent 420x595@0)
+   no label text element was missing; the box on sheet 4 is 44 px wide × 140 px tall on screen,
+   the type inside it upright: preview and file already disagreed.
+-- checker: docs/research/stamps-check.py /tmp/r36/before-pane.pdf --source /tmp/triage/colour.pdf
+-- page 1: displayed 420x595 rot 0, 1 stamp(s), 0 link(s), 1785 chars
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+-- page 4: displayed 595x420 rot 90, 1 stamp(s), 0 link(s), 6 chars
+   ink bbox 43x140 px at (466,0); from right 86, from top 0, from bottom 280; inside=True; w/h=0.31
+   /AP text: 'Draft' at 14 pt
+
+== opacity: /CA only, 1 vs 0.4, rendered
+   after-op1: CA 1 md5 d12437b49988ff9e592fbec6faa33401 px (170, 0, 0)
+   after-op04: CA .4 md5 d12437b49988ff9e592fbec6faa33401 px (170, 0, 0)
+   poppler agrees (both identical): pop1 / pop04 pixels were equal.
+
+== after the fix
+-- same driver, pages 1-4, label Draft
+-- page 1: displayed 420x595 rot 0, 1 stamp(s), 0 link(s), 1785 chars
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+   ink bbox 140x43 px at (274,26); from right 6, from top 26, from bottom 526; inside=True; w/h=3.26
+   /AP text: 'Draft' at 14 pt
+-- page 4: displayed 595x420 rot 90, 1 stamp(s), 0 link(s), 6 chars
+   ink bbox 139x44 px at (418,12); from right 38, from top 12, from bottom 364; inside=True; w/h=3.16
+   /AP text: 'Draft' at 14 pt
+-- opacity now rides the appearance:
+   fix-op1: CA 1 px (170, 0, 0)
+   fix-op04: CA 1 px (221, 154, 154)
+   poppler: (181,33,33) at 100 % vs (225,166,166) at 40 % — single application.
+
+== /S, rail route (before → after)
+   before: /CONFIDENTIAL /ASIS /NOTAPPROVED /PRELIMINARYRESULTS (sanitizeName folds the space)
+   after:  /Confidential /AsIs /NotApproved; label drawn "Not approved"; EXPRESS stays /EXPRESS
+
+== untouched furniture (annots.pdf, 1 Text annot + 1 link + 2 outline entries + /Info)
+  /tmp/triage/annots.pdf (1, 1, 2) annots+outline fixture
+  /tmp/r36/fix-annots.pdf (2, 1, 2) annots+outline fixture

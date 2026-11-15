@@ -495,6 +495,9 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
   // everything drawn inside the appearance starts from `shape` and is turned.
   const shape = normaliseRect(spec.rect, spec.kind);
   const angle = normaliseAngle(spec.rotation ?? 0);
+  // The page's own turn, not the mark's: a stamp's words are drawn upright in the
+  // frame the reader shows, so the appearance has to cancel it.
+  const pageTurn = pageRotationOf(doc, spec.page);
   const bounds = rotatedRectBounds(shape, angle);
   // Exactly one reader applies the turn. Where PDF has an entry that can carry
   // it, the angle is *declared* and the geometry and stream stay in the shape's
@@ -508,7 +511,7 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
   const stroke = spec.borderColor ? hexToRgb01(spec.borderColor, 'borderColor') : color;
   const strokeWidth = spec.borderWidth ?? defaultStrokeWidth(spec.kind, shape);
 
-  const appearanceRef = appearance(context, doc, spec, shape, bounds, baked, color, fill, stroke, strokeWidth);
+  const appearanceRef = appearance(context, doc, spec, shape, bounds, baked, color, fill, stroke, strokeWidth, pageTurn);
 
   const entries: ObjDict = {
     // Names are written without the leading slash: `PDFName.of` only unescapes
@@ -527,7 +530,10 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
     // when it resolves.
     P: context.getObjectRef(page.node) ?? context.obj([round(bounds.x), round(bounds.y)]),
     C: stroke,
-    CA: clamp01(spec.opacity ?? 1),
+    // A stamp carries its alpha in the appearance (see `stampOps`): MuPDF and
+    // poppler were both measured to paint a Form-XObject `/AP` fully opaque and
+    // ignore /CA, so leaving the alpha only here faded nothing.
+    CA: spec.kind === 'Stamp' ? 1 : clamp01(spec.opacity ?? 1),
     BM: 'Normal',
     NM: context.addRandomSuffix('snip', 8),
     F: flagsValue(spec.flags),
@@ -567,7 +573,9 @@ export function addAnnotation(doc: PDFDocument, spec: AnnotationSpec): number {
     entries.DR = { Font: { [style.resourceKey]: style.font.ref } };
   }
   if (spec.kind === 'Stamp' && spec.stampName) {
-    entries.S = sanitizeName(spec.stampName);
+    // The standard token, never the picker's spacing: `/NOT APPROVED` is unknown
+    // to a reader that knows Table 265.
+    entries.S = sanitizeName(stampNameOf(spec.stampName));
   }
   if (spec.redact) entries.Redact = true;
   if (declared) entries.Rotate = declared;
@@ -1133,6 +1141,11 @@ function registerAppearance(
   return context.register(stream);
 }
 
+/** Constant alpha for a stamp's appearance, which every reader paints. */
+function stampAlphaState(context: PDFContext, alpha: number): PDFRef {
+  return context.register(context.obj({ Type: 'ExtGState', CA: alpha, ca: alpha }));
+}
+
 /** `/Type /ExtGState /BM /Multiply` — highlight ink must darken, not cover. */
 function multiplyState(context: PDFContext): PDFRef {
   return context.register(context.obj({ Type: 'ExtGState', BM: 'Multiply' }));
@@ -1152,6 +1165,7 @@ function appearance(
   fill: [number, number, number] | null,
   stroke: [number, number, number],
   strokeWidth: number,
+  pageTurn = 0,
 ): PDFRef {
   const rect = shape;
   const w = round(rect.width);
@@ -1219,7 +1233,7 @@ function appearance(
       ap.ops = lineOps(spec, rect, stroke, strokeWidth);
       break;
     case 'Stamp':
-      ap.ops = stampOps(doc, spec, rect, fill ?? color, stroke, ap);
+      ap.ops = stampOps(doc, spec, rect, fill ?? color, stroke, ap, pageTurn);
       break;
   }
 
@@ -1430,55 +1444,64 @@ function stampOps(
   body: [number, number, number],
   edge: [number, number, number],
   ap: Appearance,
+  pageTurn: number,
 ): string {
+  // The mark is drawn in the frame the reader shows and the page's own turn is
+  // cancelled inside the stream, so the label is upright on a turned sheet and the
+  // user's width is the width they see.
+  const box = stampBox(rect, pageTurn);
+  const w = round(box.width);
+  const h = round(box.height);
+  const matrix = uprightMatrix(rect, pageTurn);
+  const turned = matrix.join(' ') !== '1 0 0 1 0 0';
+  const alpha = clamp01(spec.opacity ?? 1);
+  if (alpha < 1) ap.extGState = { [GS_KEY]: stampAlphaState(doc.context, alpha) };
+  // The alpha rides on the stream, so it is applied wherever the mark is painted
+  // and whoever paints it; the dictionary /CA stays at 1 so no reader doubles it.
+  const fade = alpha < 1 ? `/${GS_KEY} gs\n` : '';
+  const wrap = (ops: string) =>
+    turned ? `q\n${fade}${matrix.join(' ')} cm\n${ops}\nQ` : `q\n${fade}${ops}\nQ`;
+
   if (spec.stampXObject) {
     ap.images = { [IMAGE_KEY]: spec.stampXObject.ref };
-    // Image space is the unit square; scale it onto the whole rect.
-    return [
-      'q',
-      `${round(rect.width)} 0 0 ${round(rect.height)} 0 0 cm`,
-      `/${IMAGE_KEY} Do`,
-      'Q',
-    ].join('\n');
+    // Image space is the unit square; scale it onto the whole box.
+    return wrap([`${w} 0 0 ${h} 0 0 cm`, `/${IMAGE_KEY} Do`].join('\n'));
   }
   if (spec.stampImage && spec.stampImage.length > 0) {
     const image = embedRasterImage(doc, spec.stampImage);
     ap.images = { [IMAGE_KEY]: image.ref };
-    // Image space is the unit square; scale it onto the whole rect.
-    return [
-      'q',
-      `${round(rect.width)} 0 0 ${round(rect.height)} 0 0 cm`,
-      `/${IMAGE_KEY} Do`,
-      'Q',
-    ].join('\n');
+    // Image space is the unit square; scale it onto the whole box.
+    return wrap([`${w} 0 0 ${h} 0 0 cm`, `/${IMAGE_KEY} Do`].join('\n'));
   }
   const font = textFace(doc, spec);
   const shared = spec.textStyle?.style;
-  const label = textForFace(font, spec.stampName ?? 'Stamp');
+  const label = textForFace(font, stampLabel(spec.stampName ?? 'Stamp'));
   ap.fonts = { [FONT_KEY]: font };
   // One placement for the file and the preview: the label is sized to the box the
   // user dragged, and the annotation editor hands the same numbers down
   // `textStyle.lines` so the shrink is on screen before it is in the file.
-  const placed = stampLabelPlacement(font, label, rect, shared);
+  const placed = stampLabelPlacement(font, label, { x: 0, y: 0, ...box }, shared);
   const first = spec.textStyle?.lines?.[0];
   const size = first?.size ? fitStampSize(first.size, placed.size) : placed.size;
   const x = first ? round(first.x) : placed.x;
   const y = first ? round(first.baseline) : placed.baseline;
   const ink = shared?.color ? hexToRgb01(shared.color, 'textStyle.style.color') : body;
-  return [
-    'q',
-    paint(edge, false),
-    '1 w',
-    rectPath(0.5, 0.5, Math.max(rect.width - 1, 0.5), Math.max(rect.height - 1, 0.5)),
-    'S',
-    paint(ink, true),
-    'BT',
-    `/${FONT_KEY} ${round(size)} Tf`,
-    `1 0 0 1 ${x} ${y} Tm`,
-    `${showOperand(font, label)} Tj`,
-    'ET',
-    'Q',
-  ].join('\n');
+  return wrap(
+    [
+      'q',
+      paint(edge, false),
+      '1 w',
+      rectPath(0.5, 0.5, Math.max(w - 1, 0.5), Math.max(h - 1, 0.5)),
+      'S',
+      paint(ink, true),
+      'BT',
+      `/${FONT_KEY} ${round(size)} Tf`,
+      `1 0 0 1 ${x} ${y} Tm`,
+      `${showOperand(font, label)} Tj`,
+      'ET',
+      'Q',
+    ].join('\n'),
+  );
 }
 
 /**
@@ -1960,6 +1983,99 @@ function strokesOf(spec: AnnotationSpec, rect: QuadRect): number[][][] {
 
 function sanitizeName(name: string): string {
   return String(name ?? '').replace(/[^\x21-\x7e]/g, '').replace(/[#%()/<>[\]{}]/g, '') || 'Stamp';
+}
+
+/**
+ * PDF 32000-1 Table 265 — the standard stamp names, and the words a reader shows
+ * for them.
+ *
+ * `/S` is a *name*, so every one of them is one word: a picker that offers "Not
+ * approved" cannot write its label into `/S`, and a picker that offers
+ * `NOT APPROVED` cannot either — `sanitizeName` folds the space away and leaves
+ * `/NOTAPPROVED`, which is not in the table and so is not a stamp another reader
+ * recognises, which is the whole promise of a standard stamp. The words the mark
+ * draws are the label beside the name, never the token.
+ */
+const STANDARD_STAMPS: Array<[name: string, label: string]> = [
+  ['Approved', 'Approved'],
+  ['Experimental', 'Experimental'],
+  ['NotApproved', 'Not approved'],
+  ['AsIs', 'As is'],
+  ['Expired', 'Expired'],
+  ['NotForPublicRelease', 'Not for public release'],
+  ['Confidential', 'Confidential'],
+  ['Final', 'Final'],
+  ['Sold', 'Sold'],
+  ['Departmental', 'Departmental'],
+  ['ForComment', 'For comment'],
+  ['TopSecret', 'Top secret'],
+  ['Draft', 'Draft'],
+  ['ForPublicRelease', 'For public release'],
+  ['Void', 'Void'],
+];
+
+/** A stamp's own words with the spaces and case taken off, for matching. */
+const stampToken = (value: string) => String(value ?? '').toLowerCase().replace(/[^a-z]/g, '');
+
+/** The standard stamp row a picker's value names, or null for a custom name. */
+function standardStamp(value: string): [string, string] | null {
+  const token = stampToken(value);
+  if (!token) return null;
+  return STANDARD_STAMPS.find(([name, label]) => stampToken(name) === token || stampToken(label) === token) ?? null;
+}
+
+/**
+ * The `/S` a stamp should carry: the Table 265 name where the picker's value is
+ * one of them (whatever case or spacing it was offered in), else the value.
+ */
+export function stampNameOf(value: string): string {
+  return standardStamp(value)?.[0] ?? String(value ?? '');
+}
+
+/** The words a stamp draws: the standard label, else the value as given. */
+export function stampLabel(value: string): string {
+  return standardStamp(value)?.[1] ?? String(value ?? '');
+}
+
+/**
+ * A stamp's box as it is *displayed*. A quarter turn swaps the rect's axes, so a
+ * label has to be laid out — and a user's width honoured — against the box a
+ * person sees rather than the stored one.
+ */
+export function stampBox(rect: QuadRect, rotation: number): { width: number; height: number } {
+  const turn = normaliseAngle(rotation);
+  return turn === 90 || turn === 270
+    ? { width: rect.height, height: rect.width }
+    : { width: rect.width, height: rect.height };
+}
+
+/**
+ * The matrix that puts a box drawn as *displayed* into the appearance's own space,
+ * so the page's turn carries the mark's frame but not its words.
+ *
+ * The appearance stream is painted in unrotated user space and a viewer then turns
+ * the whole page, which leaves a label on a `/Rotate 90` sheet reading down the
+ * edge (measured: 44 pt wide display box, text 35 pt wide crossing its border).
+ * The inverse turn inside the stream cancels the page's, so the label sits upright
+ * in the corner the user aimed at.
+ */
+function uprightMatrix(rect: QuadRect, rotation: number): number[] {
+  switch (normaliseAngle(rotation)) {
+    case 90:
+      return [0, 1, -1, 0, round(rect.width), 0];
+    case 180:
+      return [-1, 0, 0, -1, round(rect.width), round(rect.height)];
+    case 270:
+      return [0, -1, 1, 0, 0, round(rect.height)];
+    default:
+      return [1, 0, 0, 1, 0, 0];
+  }
+}
+
+/** A page's own `/Rotate`, as a multiple of 90, read from the page node. */
+export function pageRotationOf(doc: PDFDocument, page: number): number {
+  const turn = resolvePage(doc, page).node.Rotate();
+  return normaliseAngle(turn ? turn.asNumber() : 0);
 }
 
 /* ------------------------------------------------------------------ *

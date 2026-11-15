@@ -1089,7 +1089,14 @@ export function rectFromDrag(input: BuildInput): QuadRect | null {
     geom,
   );
   const size = DEFAULT_BOX[tool] ?? { width: 120, height: 60 };
-  return clampRectToPage(centeredRect(centre, size.width, size.height), geom);
+  // The default box is what the user will see, so on a quarter-turned page its
+  // width has to become the stored height: a 140 pt stamp wider than the previous
+  // default's display would otherwise arrive 140 pt *tall* and look turned.
+  const swap = geom.rotation === 90 || geom.rotation === 270;
+  return clampRectToPage(
+    centeredRect(centre, swap ? size.height : size.width, swap ? size.width : size.height),
+    geom,
+  );
 }
 /** Convenience for the in-progress preview of a drag tool. */
 export function dragFromPoints(from: Point, to: Point): CssRect {

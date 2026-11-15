@@ -25,7 +25,7 @@ import { useProcessStore } from '@/stores/process-store';
 import { openRender, type ExtractedTextItem, type PdfSession } from '@/lib/pdf/core/render';
 import { normaliseRotation } from '@/lib/pdf/core/pages';
 import { decodeImage, encodeImageBytes, resolveImageMime, sniffImageMime } from '@/lib/pdf/core/images';
-import { addAnnotations, applyRedactions, rasterisePageToImage } from '@/lib/pdf/core/annotations';
+import { addAnnotations, applyRedactions, rasterisePageToImage, stampLabel } from '@/lib/pdf/core/annotations';
 import {
   PasswordRequiredError,
   clonePDF,
@@ -2031,7 +2031,7 @@ export function AnnotationEditor({
   const [previews, setPreviews] = useState<Record<string, MarkPreview>>({});
   const styledSignature = pageAnnotations
     .filter((mark) => mark.textStyle)
-    .map((mark) => `${mark.id}:${mark.text ?? mark.stampName ?? ''}:${Math.round(mark.rect.width)}x${Math.round(mark.rect.height)}:${JSON.stringify(mark.textStyle)}`)
+    .map((mark) => `${mark.id}:${mark.text ?? mark.stampName ?? ''}:${Math.round(mark.rect.width)}x${Math.round(mark.rect.height)}:${geom?.rotation ?? 0}:${JSON.stringify(mark.textStyle)}`)
     .join('|');
   useEffect(() => {
     let cancelled = false;
@@ -2042,12 +2042,16 @@ export function AnnotationEditor({
         cancelled = true;
       };
     }
+    // A stamp is set into its box as the reader shows it, so on a quarter-turned
+    // page the box's axes are the displayed ones — the same numbers the appearance
+    // stream writes, which is what keeps the preview and the file one sentence.
+    const swap = geom?.rotation === 90 || geom?.rotation === 270;
     previewMarkTexts(styled, (mark) => ({
       kind: mark.kind === 'FreeText' ? 'freetext' : 'stamp',
-      body: mark.text ?? mark.stampName ?? '',
+      body: mark.kind === 'Stamp' && mark.stampName ? stampLabel(mark.stampName) : mark.text ?? mark.stampName ?? '',
       style: mark.textStyle!,
-      width: mark.rect.width,
-      height: mark.rect.height,
+      width: swap ? mark.rect.height : mark.rect.width,
+      height: swap ? mark.rect.width : mark.rect.height,
     })).then((map) => {
       if (!cancelled) setPreviews(map);
     });

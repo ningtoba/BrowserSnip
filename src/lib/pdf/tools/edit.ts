@@ -1331,12 +1331,12 @@ export const editTools: PdfToolDefinition[] = [
     ],
     notes: [
       'Standard stamps are written as PDF Stamp annotations, so other readers show, move and delete them.',
-      'A stamp placed on a rotated page sits in the corner you see; its label follows the page orientation.',
+      'A stamp placed on a rotated page sits in the corner you see and its label is drawn upright on that page, not turned with it.',
     ],
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
-      const { addAnnotations } = await import('../core/annotations');
+      const { addAnnotations, stampLabel } = await import('../core/annotations');
       const name = stringValue(context.values, 'stamp', 'APPROVED');
       const custom = name === 'custom' ? firstFileBytes(context.values, 'image') : null;
       if (name === 'custom' && !custom) throw new Error('Choose the image to stamp.');
@@ -1382,7 +1382,9 @@ export const editTools: PdfToolDefinition[] = [
           // A labelled stamp is type set into a box, so it carries the model and the
           // face the model answered with.
           textStyle: embedded ? undefined : { style: labelStyle, ...(labelFace ? { font: labelFace } : {}) },
-          contents: name,
+          // The words the mark draws, so a `/Contents` search finds "Not approved"
+          // rather than `NotApproved` and a reader's tooltip says the same.
+          contents: stampLabel(name),
         })),
       );
       return pdfOutput(

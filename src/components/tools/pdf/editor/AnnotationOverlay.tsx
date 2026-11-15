@@ -249,8 +249,15 @@ export function AnnotationOverlay({
                 line.text === '' ? null : (
                   <text
                     key={`${annotation.id}-${index}`}
-                    x={round(pdfToScreenPoint({ x: annotation.rect.x + line.x, y: annotation.rect.y + line.baseline }, geom).x)}
-                    y={round(pdfToScreenPoint({ x: annotation.rect.x + line.x, y: annotation.rect.y + line.baseline }, geom).y)}
+                    /*
+                     * The box as the reader shows it (`pdfToScreenRect` is the
+                     * displayed, axis-aligned box), because the appearance stream
+                     * draws the label upright in the displayed frame: the line's
+                     * `x` runs across that box and its `baseline` up from its
+                     * bottom, whatever the page's `/Rotate` is.
+                     */
+                    x={round(pdfToScreenRect(annotation.rect, geom).x + line.x * geom.zoom)}
+                    y={round(pdfToScreenRect(annotation.rect, geom).y + (pdfToScreenRect(annotation.rect, geom).height - line.baseline) * geom.zoom)}
                     fontFamily={familyPreview(style.fontFamily)}
                     fontSize={Math.max(round(line.size * geom.zoom), 1)}
                     fontWeight={style.bold ? 700 : 400}
