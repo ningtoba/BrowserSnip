@@ -48,12 +48,14 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deflateSync, inflateSync } from 'node:zlib';
 import {
+  PDFArray,
   PDFDict,
   PDFDocument,
   PDFName,
   PDFNumber,
   PDFRawStream,
   PDFRef,
+  PDFString,
   StandardFonts,
   openPDF,
   rgb,
@@ -576,7 +578,7 @@ function paintRegion(surface: Bitmap, name: RegionName, colour: [number, number,
 /** Index of the cropped sheet when the fixture carries one: the fourth page. */
 const CROP_SHEET = 3;
 
-async function colourFixture(options: { cropBar?: boolean; info?: boolean } = {}): Promise<Uint8Array> {
+async function colourFixture(options: { cropBar?: boolean; info?: boolean; annots?: boolean } = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   if (options.info) {
     doc.setTitle('Quarterly ledger, scanned');
@@ -622,6 +624,21 @@ async function colourFixture(options: { cropBar?: boolean; info?: boolean } = {}
     page.setCropBox(crop.x, crop.y, crop.width, crop.height);
     VIEW[CROP_SHEET] = { width: crop.width, height: crop.height };
   }
+  if (options.annots) {
+    // A sticky note on the colour sheet. The tool rebuilds the document from the
+    // rendered pages, so the annotation is *painted* — it still shows — and the
+    // `/Annots` entry that made it clickable is gone. The card's own note has to name
+    // that, and until round 044 it did not: `invert-colors` says so, this tool's
+    // sibling sentence was missing.
+    const annot = doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Text',
+      Rect: [20, SHEET[1] - 60, 36, SHEET[1] - 44],
+      Contents: PDFString.of('note here'),
+      F: 4,
+    });
+    doc.getPage(1).node.set(PDFName.of('Annots'), doc.context.obj([doc.context.register(annot)]));
+  }
   return doc.save({ useObjectStreams: false });
 }
 
@@ -636,7 +653,7 @@ function fileOf(bytes: Uint8Array): ToolFile {
 }
 
 /** Runs a shipped tool and reads its page 1 back as RGB samples. */
-async function runTool(id: string, values: ToolValues, fixture: { cropBar?: boolean; info?: boolean } = {}) {
+async function runTool(id: string, values: ToolValues, fixture: { cropBar?: boolean; info?: boolean; annots?: boolean } = {}) {
   const tool = getPdfTool(id);
   expect(tool, `${id} is not registered`).toBeTruthy();
   const result = (await tool!.run!({
@@ -758,6 +775,13 @@ function expectedRaster(spec: { filter?: string; whitening?: boolean; threshold?
   if (spec.threshold !== undefined) thresholdPixels(data, spec.threshold);
   if (spec.sharpen) sharpenPixels(data, bitmap.width, bitmap.height, 0.7);
   return { width: bitmap.width, height: bitmap.height, data };
+}
+
+/** The paint cut first, then whatever the caller filters it through — the other order. */
+function thresholdFirst(source: Bitmap, cutoff: number): Bitmap {
+  const data = new Uint8ClampedArray(source.data);
+  thresholdPixels(data, cutoff);
+  return { width: source.width, height: source.height, data };
 }
 
 /**
@@ -1096,6 +1120,103 @@ describe('adjust-colors: every control the rail offers, measured where it must m
     const { raster } = await runTool('adjust-colors', { dpi: 72, pages: '1', threshold: 0.5 });
     expect(populations(raster).dark, 'the cutoff left no ink on the page').toBeGreaterThan(0);
     expect(populations(raster).light, 'the cutoff left no paper on the page').toBeGreaterThan(0);
+  });
+
+  /*
+   * Round 044. The `threshold` field was labelled "Make black and white" and said
+   * nothing about where it sat, so the card read as if the page were cut from the
+   * original. Measured on the dev server, the cutoff runs *after* the colour settings
+   * (brightness 1.6 lifted the 89-luma grey over a 0.5 cut: black → white, 0 mid tones
+   * in both runs), which is the order a scan chain wants — a cutoff applied first and
+   * then brightened would stop being black and white. The order is kept and the words
+   * now say it; the test below fails if the order is ever swapped, and the copy test
+   * fails if the words go back to being silent about it.
+   */
+  it('cuts after the colour settings, so brightness moves where the cut falls', async () => {
+    const cut = await runTool('adjust-colors', { ...COLOUR, threshold: 0.5 });
+    const lifted = await runTool('adjust-colors', { ...COLOUR, threshold: 0.5, brightness: 1.6 });
+    expect(lumaOf(regionMean(cut.raster, 'grey')), 'the grey square survived the cut').toBeLessThanOrEqual(8);
+    expect(lumaOf(regionMean(lifted.raster, 'grey')), 'brightness did not move the cut').toBeGreaterThanOrEqual(247);
+    // Both pages are still exactly two tones — that is what makes "after" the right
+    // order rather than a detail: cut first, brightened, would be a grey page.
+    for (const bitmap of [cut.raster, lifted.raster]) {
+      const tones = new Set<number>();
+      for (let i = 0; i + 3 < bitmap.data.length; i += 4) tones.add(bitmap.data[i]);
+      expect([...tones].sort((a, b) => a - b), 'the cut page is not two tones').toEqual([0, 255]);
+    }
+    // The other order — cut the paint, then brighten it — is a different page: the
+    // binarised grey stays black and the whole sheet is multiplied. With no colour
+    // setting at all there is no order to tell, so the plain cut *is* the cut-first
+    // page; the brightness run is where the two orders part.
+    const swapped = filterPixels(thresholdFirst(painted(2), 128), 'brightness(1.6)');
+    expect(samplesEqual(lifted.raster, swapped), 'the cutoff ran before the filter').toBe(false);
+    expect(samplesEqual(cut.raster, thresholdFirst(painted(2), 128)), 'the plain cut is not the cut itself').toBe(true);
+  });
+
+  it('says in its own words that the cutoff comes after the colour settings', () => {
+    const tool = getPdfTool('adjust-colors')!;
+    const field = (tool.fields ?? []).find((f) => f.key === 'threshold')!;
+    expect(`${field.label} ${field.help}`).toMatch(/after the colour settings/i);
+    expect(`${field.label} ${field.help}`).toMatch(/brightness/i);
+  });
+
+  it('composes two controls into the formula of both, not into one of them', async () => {
+    const pair = await runTool('adjust-colors', { ...COLOUR, brightness: 1.6, contrast: 1.5 });
+    expect(
+      samplesEqual(pair.raster, expectedRaster({ filter: 'brightness(1.6) contrast(1.5)' }, 2)),
+      'the pair did not write the composition of the two controls',
+    ).toBe(true);
+    // Neither control on its own explains the page, and the greys land where only the
+    // pair puts them: a run that silently dropped one slider would fail both.
+    const brightOnly = filterPixels(painted(2), 'brightness(1.6)');
+    const contrastOnly = filterPixels(painted(2), 'contrast(1.5)');
+    expect(samplesEqual(pair.raster, brightOnly), 'the pair wrote brightness alone').toBe(false);
+    expect(samplesEqual(pair.raster, contrastOnly), 'the pair wrote contrast alone').toBe(false);
+    const grey = lumaOf(regionMean(pair.raster, 'grey'));
+    expect(Math.abs(grey - lumaOf(regionMean(brightOnly, 'grey'))), 'the grey is brightness alone').toBeGreaterThan(3);
+    expect(Math.abs(grey - lumaOf(regionMean(contrastOnly, 'grey'))), 'the grey is contrast alone').toBeGreaterThan(3);
+  });
+
+  it('sizes a cropped sheet from its /CropBox, so the picture is not stretched', async () => {
+    const { doc, raster } = await runTool('adjust-colors', { dpi: 72, pages: `${CROP_SHEET + 1}` }, { cropBar: true });
+    const size = doc.getPage(0).getSize();
+    expect([Math.round(size.width * 10), Math.round(size.height * 10)], 'the produced page is not the crop box')
+      .toEqual([1600, 312]);
+    expect(Math.abs(raster.width / raster.height / (size.width / size.height) - 1), 'the picture is stretched').toBeLessThan(0.02);
+    // …and the crop really is ink, not paper with a picture in a corner.
+    expect(lumaOf(regionMean(raster, 'bar')), 'the cropped band was not rendered').toBeLessThanOrEqual(8);
+  });
+
+  it('carries the document title, author, subject and keywords into the copy', async () => {
+    const plain = await runTool('adjust-colors', COLOUR);
+    expect([plain.doc.getTitle(), plain.doc.getAuthor()], 'the control fixture already has an author')
+      .toEqual([undefined, undefined]);
+    const { doc } = await runTool('adjust-colors', COLOUR, { info: true });
+    expect(doc.getTitle()).toBe('Quarterly ledger, scanned');
+    expect(doc.getAuthor()).toBe('Accounts');
+    expect(doc.getSubject()).toBe('Reconciliation');
+    expect(doc.getKeywords()).toBe('ledger scan');
+  });
+
+  it('paints the annotation into the picture, drops the /Annots entry, and says so', async () => {
+    const { doc, raster, result } = await runTool('adjust-colors', COLOUR, { annots: true });
+    const annots = (page: PDFPage) => {
+      const raw = page.node.get(PDFName.of('Annots'));
+      const deref = raw instanceof PDFRef ? page.node.context.lookup(raw) : raw;
+      return deref instanceof PDFArray ? deref.size() : 0;
+    };
+    const source = await openPDF(await colourFixture({ annots: true }));
+    // The control: the fixture without the option carries no annotation to lose.
+    const bare = await openPDF(await colourFixture());
+    expect(annots(bare.getPage(1)), 'the control page has annots').toBe(0);
+    expect(annots(source.getPage(1)), 'the fixture lost its annot').toBe(1);
+    expect(annots(doc.getPage(0)), 'the copy kept a clickable annot').toBe(0);
+    expect(result.kind).toBe('pdf');
+    const tool = getPdfTool('adjust-colors')!;
+    expect(tool.notes?.join(' '), 'the card does not name the annotations it drops').toMatch(/annotation/i);
+    expect(tool.notes?.join(' '), 'the card does not name the links it drops').toMatch(/link/i);
+    // "They are part of the picture now" is the claim, so the note icon has to be ink.
+    expect(distinctTones(raster), 'the note icon was not painted').toBeGreaterThan(1);
   });
 });
 

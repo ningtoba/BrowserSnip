@@ -51,7 +51,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 041 [x] background-color
 042 [x] text-color
 043 [x] invert-colors
-044 [ ] adjust-colors
+044 [x] adjust-colors
 045 [ ] scanner-effect
 046 [ ] ocr-pdf
 047 [ ] form-filler

@@ -1609,13 +1609,22 @@ export const editTools: PdfToolDefinition[] = [
       { key: 'saturation', label: 'Saturation', type: 'slider', default: 1, min: 0, max: 3, step: 0.02, group: 'Colour', help: 'How strong the colours are. 0 is already greyscale, so the switch below is the extreme case.' },
       { key: 'hue', label: 'Hue rotate', type: 'slider', default: 0, min: -180, max: 180, step: 1, unit: '°', group: 'Colour', help: 'Rotates every colour round the wheel by this angle. 180 turns a blue seal orange.' },
       { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: false, group: 'Colour', help: 'Removes colour entirely and overrides the saturation slider.' },
-      { key: 'threshold', label: 'Make black and white', type: 'slider', default: 0, min: 0, max: 1, step: 0.02, help: '0 keeps colour. Drag up to binarise a scan — this is a real pixel cutoff, not a contrast boost.', group: 'Output' },
+      // The cutoff is the *last* pass: the colour settings above have already been
+      // burned into the pixels by the time it runs, so brightness, contrast,
+      // saturation and hue all move where the cut falls. That order is the useful one
+      // — a cutoff applied first and then brightened would stop being black and white —
+      // but it was unspoken, and the label alone read as if the page were cut from the
+      // original. Measured on the colour fixture: brightness 1.6 lifts the 89-luma grey
+      // over a 0.5 cut, so the grey square comes back white where it came back black
+      // without it, and the page is still two tones (0 mid tones in both runs).
+      { key: 'threshold', label: 'Make black and white', type: 'slider', default: 0, min: 0, max: 1, step: 0.02, help: '0 keeps colour. The cut falls after the colour settings above, so brightness, contrast, saturation and hue all move where it lands — a real pixel cutoff, not a contrast boost.', group: 'Output' },
       { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: 'The page is rendered at this resolution and re-embedded as an image, so higher means sharper and much bigger.' },
       pagesField(),
     ],
     notes: [
       'The output is images: text stops being selectable, and pages you did not select are not carried over.',
-      'Each page is rendered at its own displayed size and rotation, so mixed and rotated documents keep their shape.',
+      'Each page is re-rendered at its displayed size, including its /Rotate and its /CropBox, so mixed, rotated and cropped documents keep their shape.',
+      'The title, author, subject and keywords are carried over; links and annotations are not — they are part of the picture now, so a link stops being clickable and a form field stops being fillable.',
     ],
     async run(context) {
       const notes: string[] = [];

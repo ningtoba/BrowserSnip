@@ -22,6 +22,20 @@ against a number this script invents. Each ask is also scored against an
 **identity** prediction (the control did nothing) and an **opposite** prediction
 (the control moved the wrong way), and prints `VACUOUS` if no region can tell the
 three apart. Exits 1 on any failed ask.
+
+Two parts of the prediction were wrong before round 044, and both were measured
+against the engine rather than argued:
+
+* **Each function is clamped to 8 bits on its way to the next.** Chrome rasterises a
+  canvas filter chain in 8-bit steps, not as one float chain: a 1x1 canvas painting
+  `rgb(229,26,26)` with `saturate(2) hue-rotate(90deg)` reads back `(0,91,0)`, which is
+  the two functions applied *with the clamp between them* — the unclamped chain is
+  `(0,127,0)`. Without this, a correct two-control composition scored "FAIL" on every
+  colour region for arithmetic the engine never does.
+* **The cutoff is rec.709 luma, not the 0.299/0.587/0.114 one.** `thresholdPixels`
+  decides with `luma255` (`core/colour.ts`), whose weights sum to 1. The fixture's green
+  square sits at 136.3 under them and 117.8 under the old ones, so a 0.5 cutoff put it
+  on opposite sides of the decision and looked like a tool defect.
 """
 import argparse
 import colorsys
@@ -133,27 +147,44 @@ def m_whiten(c, level=0.45):
     return tuple(255 * ((ch / 255.0) ** gamma) for ch in c)
 
 
+# The weights `thresholdPixels` decides with (`core/colour.ts` `luma255`).
+REC709 = (0.2126, 0.7152, 0.0722)
+
+
+def cutoff_luma(rgb):
+    return sum(REC709[i] * rgb[i] for i in range(3))
+
+
 def apply_ask(src_rgb, ask):
-    """The colour the tool *promises* for a source pixel, in cssFilterString order."""
+    """The colour the tool *promises* for a source pixel, in cssFilterString order.
+
+    Every function is clamped to 8 bits before the next one sees it, because that is
+    what the canvas does (see the module docstring). Clamping is a no-op for a single
+    control and only bites on an out-of-gamut intermediate, which is the pair case.
+    """
     c = tuple(ch / 255 for ch in src_rgb)
+
+    def step(value):
+        return tuple(min(255.0, max(0.0, ch * 255)) / 255 for ch in value)
+
     if ask.get("grayscale"):
-        c = m_grayscale(c)
+        c = step(m_grayscale(c))
     if ask.get("invert"):
-        c = m_invert(c)
+        c = step(m_invert(c))
     if "brightness" in ask:
-        c = m_brightness(c, ask["brightness"])
+        c = step(m_brightness(c, ask["brightness"]))
     if "contrast" in ask:
-        c = m_contrast(c, ask["contrast"])
+        c = step(m_contrast(c, ask["contrast"]))
     if "saturation" in ask:
-        c = m_saturate(c, ask["saturation"])
+        c = step(m_saturate(c, ask["saturation"]))
     if "hue" in ask:
-        c = m_hue(c, ask["hue"])
+        c = step(m_hue(c, ask["hue"]))
     out = tuple(clamp255(ch * 255) for ch in c)
     if "whitening" in ask and ask["whitening"]:
         out = m_whiten(out)
     if "threshold" in ask:
         cutoff = ask["threshold"] * 255
-        v = 0.0 if luma(out) < cutoff else 255.0
+        v = 0.0 if cutoff_luma(out) < cutoff else 255.0
         out = (v, v, v)
     return out
 
