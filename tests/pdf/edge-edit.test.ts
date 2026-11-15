@@ -888,6 +888,100 @@ describe('headers and footers (E8, E9, E13)', () => {
     expect(outcome.warnings.join('\n')).toMatch(/header text is wider than a 105 pt page/i);
   });
 
+  it('keeps the hairline below the descenders when the font is taller than the margin', async () => {
+    // `margin + size + 4` measured the rule from the em box: with the embedded
+    // face (forced here by the accented string) the ink is 49 pt tall at 36 pt, so
+    // the hairline landed 9 pt above the descenders and was drawn through them.
+    const bytes = await fixture([{ size: A4 }], 'descenders');
+    const outcome = await run('header-footer', {
+      headerLeft: 'Łódź gypsy',
+      headerCenter: '',
+      headerRight: '',
+      footerLeft: '',
+      footerCenter: '',
+      footerRight: '',
+      fontSize: 36,
+      margin: 4,
+      rule: true,
+    }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    const page = doc.getPage(0);
+    const runUnder = stampedRun(page);
+    expect(runUnder.text).toBe('Łódź gypsy');
+    const baseline = viewPoint(page, runUnder.x, runUnder.y).y;
+    // The face's own lower bound is under a fifth of the em; take the shallower
+    // reach so the estimate can only be generous to a rule that is too low.
+    const inkBottom = baseline - 0.2 * 36;
+    const stream = pageContentStreams(page).map(({ bytes: raw }) => Buffer.from(raw).toString('latin1')).join('\n');
+    const rule = [...stream.matchAll(/([-\d.]+) ([-\d.]+) (?:m|l)/g)]
+      .map((m) => viewPoint(page, Number(m[1]), Number(m[2])))
+      // The header rule is the higher one; the footer rule is drawn from the
+      // other formula and would otherwise stand in for it.
+      .reduce((high, point) => Math.max(high, point.y), Number.NEGATIVE_INFINITY);
+    expect(rule, 'the hairline rule was not drawn').toBeGreaterThan(Number.NEGATIVE_INFINITY);
+    expect(rule, 'the rule crosses the descenders').toBeLessThanOrEqual(inkBottom - 2);
+    expect(rule).toBeGreaterThan(0);
+  });
+
+  it('pulls both bands in and names the new margin when the page cannot hold them', async () => {
+    // 400×260 at 36 pt with the 120 pt margin: each band fitted on its own, so
+    // `placeRun` halved the margin for each separately and the header printed on
+    // top of the footer (both bands landed on the same 43 pt of paper).
+    const bytes = await fixture([{ size: [400, 260] }], 'short');
+    const outcome = await run('header-footer', {
+      headerLeft: 'gypsy head',
+      headerCenter: '',
+      headerRight: '',
+      footerLeft: '',
+      footerCenter: '',
+      footerRight: 'ggyy foot',
+      fontSize: 36,
+      margin: 120,
+      rule: true,
+    }, [bytes]);
+    expect(outcome.warnings.join('\n')).toMatch(/cannot hold a 260 pt page|A 260 pt page cannot hold/i);
+    expect(outcome.warnings.join('\n')).toMatch(/margin becomes \d+ pt/);
+    const doc = await openPDF(await outputBytes(outcome));
+    const page = doc.getPage(0);
+    const runs = drawnRuns(page);
+    const head = runs.find((entry) => entry.text === 'gypsy head')!;
+    const foot = runs.find((entry) => entry.text === 'ggyy foot')!;
+    expect(head && foot, 'a band is missing').toBeTruthy();
+    const headBaseline = viewPoint(page, head.x, head.y).y;
+    const footBaseline = viewPoint(page, foot.x, foot.y).y;
+    // One clear line apart, not the same line twice.
+    expect(headBaseline - footBaseline, 'the bands printed over each other').toBeGreaterThan(36);
+    expect(footBaseline).toBeGreaterThan(0);
+    // And the two hairlines stay in the gap, each clear of the ink they belong
+    // to: measured without them, the header rule landed inside the footer's
+    // ascenders.
+    const stream = pageContentStreams(page).map(({ bytes: raw }) => Buffer.from(raw).toString('latin1')).join('\n');
+    const ruleYs = [...stream.matchAll(/([-\d.]+) ([-\d.]+) (?:m|l)/g)]
+      .map((m) => viewPoint(page, Number(m[1]), Number(m[2])).y);
+    expect(ruleYs.length, 'the hairline rules were not drawn').toBeGreaterThan(1);
+    const headRule = Math.max(...ruleYs);
+    const footRule = Math.min(...ruleYs);
+    expect(headRule, 'the header rule runs into the footer').toBeGreaterThan(footRule);
+    expect(headRule, 'the header rule crosses the header ink').toBeLessThanOrEqual(headBaseline - 0.2 * 36);
+    expect(footRule, 'the footer rule crosses the footer ink').toBeGreaterThanOrEqual(footBaseline + 0.6 * 36);
+  });
+
+  it('says when a band is taller than the margin it was given', async () => {
+    const bytes = await fixture([{ size: A4 }], 'tall band');
+    const outcome = await run('header-footer', {
+      headerLeft: 'gypsy',
+      headerCenter: '',
+      headerRight: '',
+      footerLeft: '',
+      footerCenter: '',
+      footerRight: '',
+      fontSize: 36,
+      margin: 4,
+      rule: false,
+    }, [bytes]);
+    expect(outcome.warnings.join('\n')).toMatch(/header text is \d+ pt tall, taller than the 4 pt margin/);
+  });
+
   it('refuses to run with nothing to draw (E13)', async () => {
     await expect(run('header-footer', {
       headerLeft: '',

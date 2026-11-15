@@ -52,6 +52,13 @@ interface RunRect {
   height: number;
 }
 
+/** Where a stamped run's ink ended up, in displayed coordinates (see `stamp`). */
+interface StampedBox {
+  width: number;
+  inkBottom: number;
+  inkTop: number;
+}
+
 /**
  * The page as the reader sees it.
  *
@@ -192,7 +199,7 @@ async function stamp(
     margin?: number;
     notes?: string[];
   },
-): Promise<number> {
+): Promise<StampedBox> {
   const notes = options.notes ?? [];
   const style = options.style;
   const size = style.size;
@@ -227,7 +234,8 @@ async function stamp(
     / (faceFont?.unitsPerEm ?? 1000);
   const ascent = measured.font.heightAtSize(size, { descender: false });
   const descent = Math.max(0, measured.font.heightAtSize(size) - ascent, Math.min(declared, 0.35) * size);
-  const run = placeRun(frame, width, Math.max(ascent + descent, 1), angle, options.anchor, options.margin ?? 24);
+  const height = Math.max(ascent + descent, 1);
+  const run = placeRun(frame, width, height, angle, options.anchor, options.margin ?? 24);
   if (run.overflow) {
     // Name it as an excerpt: the first 18 characters alone would fit the page, so
     // quoting them bare read as a run that *does* fit and does not.
@@ -263,7 +271,10 @@ async function stamp(
       rotation: pageAngle,
     });
   }
-  return width;
+  // The ink box the run actually occupies, in the same displayed coordinates the
+  // anchor was asked in, so a caller can put something a fixed distance from the
+  // *ink* — a header rule 4 pt below the descenders, not below the em box.
+  return { width, inkBottom: run.y, inkTop: run.y + height };
 }
 
 /**
@@ -867,20 +878,21 @@ export const editTools: PdfToolDefinition[] = [
         },
         color: { default: '#55554e', help: 'Applied to the text and to the rule together.' },
       }),
-      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, step: 1, unit: 'pt', half: true, group: 'Style', help: 'How far inside each page the text and its rule sit.' },
+      { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 4, max: 120, step: 1, unit: 'pt', half: true, group: 'Style', help: 'How far inside each page the text sits; its rule follows 4 pt behind. A page too short for both bands gets a smaller margin, and the new one is reported.' },
       {
         key: 'rule',
         label: 'Draw a hairline rule',
         type: 'toggle',
         default: true,
         group: 'Style',
-        help: 'A hairline under the header and above the footer, drawn to the same margins.',
+        help: 'A hairline 4 pt below the header ink and 4 pt above the footer ink, drawn to the same side margins.',
       },
       pagesField({ group: 'Style' }),
     ],
     notes: [
       'Tokens: {page} {total} {title} {author} {subject} {date} {file}. They are filled in per page.',
       'Every page is measured on its own, so a mixed-size or rotated document keeps its rules inside the visible area.',
+      'A page too short for the margin and a tall font gets a smaller margin, so the bands stay apart instead of printing over each other; the new margin is reported.',
     ],
     validate: (values) =>
       [...HEADER_SLOTS, ...FOOTER_SLOTS].every((key) => stringValue(values, key).trim() === '')
@@ -908,40 +920,83 @@ export const editTools: PdfToolDefinition[] = [
         { label: 'header', keys: HEADER_SLOTS, anchors: ['top-left', 'top-center', 'top-right'] as Anchor[], above: true },
         { label: 'footer', keys: FOOTER_SLOTS, anchors: ['bottom-left', 'bottom-center', 'bottom-right'] as Anchor[], above: false },
       ];
+      // A band's height is its tallest run's line height, and a header hangs its ink
+      // *down* from the top margin while a footer hangs it *up* from the bottom one.
+      // Measured on a 400×260 sheet at 36 pt with the 120 pt margin: `placeRun`
+      // halved the margin for each band on its own (they get 108.5 pt of a 260 pt
+      // page) and the two printed straight over each other — header ink 110.4–159.8
+      // from the top, footer 108.5–151.5 — with nothing said. They now share one
+      // margin calculated from both heights, and the rule hangs off the ink box.
+      const bandGap = 4;
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
         const page = input.doc.getPage(pages[i]);
         const frame = frameOf(page);
         const values = { ...meta, page: String(pages[i] + 1) };
-        for (const row of rows) {
-          const texts = row.keys.map((key) => expand(stringValue(context.values, key), values).trim());
-          const widths = await Promise.all(texts.map((text) => (text
-            ? measureText(input.doc, {
-                text,
-                x: 0,
-                y: 0,
-                size,
-                bold: style.bold,
-                italic: style.italic,
-                fontFamily: style.fontFamily || undefined,
-              }).then((m) => m.width)
-            : Promise.resolve(0))));
+        const texts = rows.map((row) => row.keys.map((key) => expand(stringValue(context.values, key), values).trim()));
+        const measured = await Promise.all(texts.map((slots) => Promise.all(slots.map((text) => (text
+          ? measureText(input.doc, {
+              text,
+              x: 0,
+              y: 0,
+              size,
+              bold: style.bold,
+              italic: style.italic,
+              fontFamily: style.fontFamily || undefined,
+            })
+          : null)))));
+        const bandHeights = measured.map((slots) => Math.max(0, ...slots.map((m) => (m ? m.font.heightAtSize(size) : 0))));
+        let bandMargin = margin;
+        // Two hairline rules also live in the gap, 4 pt clear of each band: a
+        // margin worked out without them put the header's rule through the
+        // footer's ascenders on a 400×260 sheet (measured: rule at 127.4 and
+        // 132.6 from the top, each inside the other band's ink box).
+        const ruleReserve = rule ? 2 * 4 : 0;
+        const needed = bandHeights[0]! + bandHeights[1]! + ruleReserve + bandGap + margin * 2;
+        if (needed > frame.height) {
+          // Clamped, and the new margin named: the alternative was two bands on the
+          // same paper, which is what the unadmitted sentence let happen.
+          bandMargin = Math.max(0, (frame.height - bandHeights[0]! - bandHeights[1]! - ruleReserve - bandGap) / 2);
+          note(notes, `A ${Math.round(frame.height)} pt page cannot hold a ${Math.round(bandHeights[0]!)} pt header and a ${Math.round(bandHeights[1]!)} pt footer ${margin} pt from both edges, so the margin becomes ${Math.round(bandMargin)} pt.`);
+        }
+        for (let r = 0; r < rows.length; r++) {
+          if (bandHeights[r]! > bandMargin + 0.5) {
+            note(notes, `The ${rows[r]!.label} text is ${Math.round(bandHeights[r]!)} pt tall, taller than the ${Math.round(bandMargin)} pt margin, so it reaches that far into the page.`);
+          }
+        }
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r]!;
+          const widths = measured[r]!.map((m) => m?.width ?? 0);
           const used = widths.reduce((sum, width) => sum + width, 0);
-          if (texts.filter(Boolean).length > 1 && used + margin * 2 > frame.width) {
+          if (texts[r]!.filter(Boolean).length > 1 && used + bandMargin * 2 > frame.width) {
             note(notes, `The ${row.label} text is wider than a ${Math.round(frame.width)} pt page, so its left, centre and right parts overlap.`);
           }
+          let inkBottom = Number.POSITIVE_INFINITY;
+          let inkTop = Number.NEGATIVE_INFINITY;
           for (let s = 0; s < row.anchors.length; s++) {
-            if (!texts[s]) continue;
-            await stamp(input.doc, page, texts[s], { anchor: row.anchors[s], style, margin, notes });
+            if (!texts[r]![s]) continue;
+            const box = await stamp(input.doc, page, texts[r]![s]!, {
+              anchor: row.anchors[s]!,
+              style,
+              margin: bandMargin,
+              notes,
+            });
+            inkBottom = Math.min(inkBottom, box.inkBottom);
+            inkTop = Math.max(inkTop, box.inkTop);
           }
-          if (rule) {
+          if (rule && Number.isFinite(inkBottom)) {
             // The rule is drawn where the reader sees it, then turned with the
             // page: on a /Rotate 90 sheet a page-space horizontal line runs off
             // the side of the paper.
-            const y = row.above ? frame.height - margin - size - 4 : margin + size + 4;
+            //
+            // Four points clear of the *ink*, not of the em box: `margin + size +
+            // 4` measured 44 pt from the top under a 36 pt header whose descenders
+            // reach 47, so the hairline crossed every `g` and `y` at a margin of 4.
+            const edge = row.above ? inkBottom - 4 : inkTop + 4;
+            const y = Math.min(Math.max(edge, 0.5), frame.height - 0.5);
             const { strokeLine } = await import('../core/content');
-            const start = toUserSpace(frame, margin, y);
-            const end = toUserSpace(frame, Math.max(margin, frame.width - margin), y);
+            const start = toUserSpace(frame, bandMargin, y);
+            const end = toUserSpace(frame, Math.max(bandMargin, frame.width - bandMargin), y);
             strokeLine(page, start, end, { thickness: 0.5, color });
           }
         }

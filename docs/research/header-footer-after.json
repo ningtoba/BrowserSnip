@@ -1,0 +1,124 @@
+[
+ {
+  "tool": "header-footer",
+  "tag": "base",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Header left": "{page} of {total} \u2014 {title} \u2014 {nope}"
+  },
+  "shot": true,
+  "shotName": "base"
+ },
+ {
+  "tool": "header-footer",
+  "tag": "edge-margin0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Margin": 0,
+   "Header left": "gypsy \u0141\u00f3d\u017a gy",
+   "Header centre": "acc\u00e9nt",
+   "Header right": "fg",
+   "Footer left": "gypsy",
+   "Footer centre": "gjpqy",
+   "Footer right": "P\u00e1gina {page} \u2014 \u0141\u00f3d\u017a gy"
+  },
+  "shot": true,
+  "shotName": "edge-margin0"
+ },
+ {
+  "tool": "header-footer",
+  "tag": "big-font",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Margin": 4,
+   "Font size": 36,
+   "Header left": "gypsy \u0141\u00f3d\u017a",
+   "Footer right": "ggyy"
+  },
+  "shot": true,
+  "shotName": "big-font"
+ },
+ {
+  "tool": "header-footer",
+  "tag": "overlap",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Margin": 120,
+   "Font size": 36,
+   "Header left": "gypsy \u0141\u00f3d\u017a",
+   "Footer right": "ggyy"
+  }
+ },
+ {
+  "tool": "header-footer",
+  "tag": "short-overlap",
+  "files": [
+   "/tmp/triage/hf-short.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Margin": 120,
+   "Font size": 36,
+   "Header left": "gypsy head",
+   "Footer right": "ggyy foot"
+  },
+  "shot": true,
+  "shotName": "short-overlap"
+ },
+ {
+  "tool": "header-footer",
+  "tag": "style",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Font size": 20,
+   "Colour": "#C00000",
+   "Typeface": "std:times",
+   "Header left": "H",
+   "Footer right": "F"
+  }
+ },
+ {
+  "tool": "header-footer",
+  "tag": "pages4",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Pages": "4",
+   "Header left": "gypsy",
+   "Footer right": "ggyy"
+  }
+ },
+ {
+  "tool": "header-footer",
+  "tag": "dark",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 120000,
+  "fields": {
+   "Margin": 4,
+   "Header left": "gypsy gy",
+   "Footer centre": "\u0141\u00f3d\u017a gy"
+  },
+  "shot": true,
+  "dark": true,
+  "shotName": "dark"
+ }
+]
