@@ -268,6 +268,11 @@ const CONTROL = (label) => `(()=>{
 })()`;
 
 /** Address the control `CONTROL` just described, by the same words. */
+// A `file` field is a group wrapping a hidden picker: `CONTROL` names the group but
+// the picker is what receives a file, and returning the group handed the caller a
+// bare div — measured on `watermark`'s image field, where the marker landed on the
+// div, no file was set, and the run button stayed disabled while the pane still
+// read "No attachment yet". So a group resolves to its picker.
 const AT = (label) => {
   const want = JSON.stringify(String(label).toLowerCase());
   return `(()=>{const want=${want};const norm=(s)=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();
@@ -279,7 +284,7 @@ const AT = (label) => {
     const box=[...document.querySelectorAll('label')].find((l)=>norm(l.innerText)===want&&l.querySelector('input[type=checkbox]'));
     if(box) return box.querySelector('input[type=checkbox]');
     const g=[...document.querySelectorAll('[role=group][aria-label]')].find((x)=>norm(x.getAttribute('aria-label'))===want);
-    if(g) return g;
+    if(g) return g.querySelector('input[type=file]') ?? g;
     const near=[...document.querySelectorAll('label')].find((l)=>norm(l.innerText).startsWith(want)&&!l.querySelector('input'));
     if(near){
       const scope=near.parentElement;
@@ -498,12 +503,28 @@ async function runTool(run) {
       // re-read here because the pane re-rendered when the field was touched, and a
       // stale nodeId writes into a detached element: the DOM looks set, React's
       // onChange never fires, and the tool still says "choose at least one file".
-      const fresh = await send('DOM.getDocument', { depth: -1 });
-      let selector = 'input[type=file]';
-      if (result.marker) selector = 'input[data-triage-file]';
-      else if (result.id) selector = `#${result.id}`;
-      const node = await send('DOM.querySelector', { nodeId: fresh.root.nodeId, selector });
-      if (node.nodeId) await send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [result.file] });
+      //
+      // The marker is *re-applied* on every try, because a re-render between the tag
+      // and the write replaces the input and the write lands on a detached node —
+      // measured on the image watermark, which took the file on one run and silently
+      // did not on the next with the pane still reading "No attachment yet". A try
+      // only counts when the input's own `files` list has the file in it.
+      let taken = false;
+      for (let attempt = 0; attempt < 4 && !taken; attempt++) {
+        await ev(`(()=>{const c=${AT(result.label)};if(!c) return 0;c.setAttribute('data-triage-file','1');return 1})()`);
+        const fresh = await send('DOM.getDocument', { depth: -1 });
+        let selector = 'input[type=file]';
+        if (result.marker) selector = 'input[data-triage-file]';
+        else if (result.id) selector = `#${result.id}`;
+        const node = await send('DOM.querySelector', { nodeId: fresh.root.nodeId, selector });
+        if (!node.nodeId) continue;
+        await send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [result.file] });
+        taken = await wait(
+          `(()=>{const i=document.querySelector('input[data-triage-file]');return !!i && i.files.length>0})()`,
+          4000,
+        );
+      }
+      record.fileTaken = taken;
     }
   }
   await sleep(200);

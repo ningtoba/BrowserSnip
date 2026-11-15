@@ -705,6 +705,130 @@ describe('watermark (E9, E11, E13, E15, E18)', () => {
     expect(a.x).toBeLessThan(b.x);
     expect(Math.abs(a.x - 0)).toBeLessThan(1);
   });
+
+  // ── the repeating pattern (E7/E9) ─────────────────────────────────────────
+
+  /**
+   * The advance the tool measures for itself, taken independently: the same
+   * standard face at the same size. A pitch is only "the one chosen" if it is a
+   * multiple of *this*, not if it happens to look spaced.
+   */
+  async function advance(text: string, size: number): Promise<number> {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.HelveticaBold);
+    return font.widthOfTextAtSize(text, size);
+  }
+
+  /** The gaps between distinct drawn column positions, in points. */
+  const pitches = (runs: DrawnRun[]): number[] => {
+    const xs = [...new Set(runs.map((run) => Math.round(run.x * 100) / 100))].sort((a, b) => a - b);
+    return xs.slice(1).map((x, i) => x - xs[i]!);
+  };
+
+  /** The four corners of a run's em box, in the coordinates a reader sees. */
+  const viewCorners = (mark: DrawnRun, width: number, height: number, page: PDFPage): { x: number; y: number }[] => {
+    const rad = (mark.angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    return [[0, 0], [width, 0], [width, height], [0, height]].map(([dx, dy]) =>
+      viewPoint(page, mark.x + dx! * cos - dy! * sin, mark.y + dx! * sin + dy! * cos));
+  };
+
+  it('spaces the pattern by the mark it repeats, not by a fixed 24 pt', async () => {
+    const text = 'CONF';
+    const size = 40;
+    const width = await advance(text, size);
+    const bytes = await fixture([{ size: LANDSCAPE }], 'pitch');
+    const tiled = (tileGap: number) => run('watermark', {
+      type: 'text', text, fontSize: size, rotation: 0, tile: true, tileGap, opacity: 1,
+    }, [bytes]);
+
+    const wide = await openPDF(await outputBytes(await tiled(1.5)));
+    const steps = pitches(drawnRuns(wide.getPage(0)));
+    expect(steps.length, 'the pattern drew no second column').toBeGreaterThan(2);
+    // 1.5 × the run's own width: a 24 pt pitch for a 288 pt word is the bug.
+    for (const step of steps) expect(step).toBeCloseTo(width * 1.5, 0);
+    expect(width * 1.5).toBeGreaterThan(100);
+
+    // The spacing is what moves it: twice the gap is twice the pitch.
+    const wider = await openPDF(await outputBytes(await tiled(3)));
+    expect(pitches(drawnRuns(wider.getPage(0)))[0]!).toBeCloseTo(steps[0]! * 2, 1);
+  });
+
+  it('leaves every tiled mark whole inside the page, turned sheet too (E9)', async () => {
+    const text = 'CONF';
+    const size = 30;
+    const width = await advance(text, size);
+    const bytes = await fixture([{ size: LANDSCAPE }, { size: A4, rotation: 90 }], 'tile-inside');
+    const outcome = await run('watermark', {
+      type: 'text', text, fontSize: size, rotation: 45, tile: true, tileGap: 1.2, opacity: 1,
+    }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    for (const page of doc.getPages()) {
+      const view = geometry(page);
+      const marks = drawnRuns(page);
+      expect(marks.length, `rotation ${view.rotation}`).toBeGreaterThan(4);
+      for (const mark of marks) {
+        // The em box, not the ink: 0.9 em stands in for the glyphs' own reach, so a
+        // mark hanging over an edge cannot pass on antialiasing alone.
+        for (const corner of viewCorners(mark, width, size * 0.9, page)) {
+          expect(corner.x, `rotation ${view.rotation} left`).toBeGreaterThanOrEqual(-2);
+          expect(corner.y, `rotation ${view.rotation} bottom`).toBeGreaterThanOrEqual(-2);
+          expect(corner.x, `rotation ${view.rotation} right`).toBeLessThanOrEqual(view.viewWidth + 2);
+          expect(corner.y, `rotation ${view.rotation} top`).toBeLessThanOrEqual(view.viewHeight + 2);
+        }
+      }
+    }
+  });
+
+  it('leaves a tiled image whole inside the page too', async () => {
+    const bytes = await fixture([{ size: LANDSCAPE }], 'image-tile');
+    const outcome = await run('watermark', {
+      type: 'image',
+      image: { name: 'square.png', mimeType: 'image/png', bytes: base64(PNG_1PX), size: 70 },
+      scale: 0.15,
+      rotation: 45,
+      tile: true,
+      tileGap: 1.5,
+      opacity: 1,
+    }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    const page = doc.getPage(0);
+    const view = geometry(page);
+    const stream = pageContentStreams(page).map(({ bytes: raw }) => Buffer.from(raw).toString('latin1')).join('\n');
+    // translate → rotate → scale before each `Do`, in that order.
+    const draws = [...stream.matchAll(
+      /1 0 0 1 ([\d.-]+) ([\d.-]+) cm\s*\n?(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) 0 0 cm\s*\n?([\d.-]+) 0 0 ([\d.-]+) 0 0 cm/g,
+    )];
+    expect(draws.length, 'the pattern drew no images').toBeGreaterThan(2);
+    for (const [, x, y, a, b, , , w, h] of draws) {
+      const ox = Number(x);
+      const oy = Number(y);
+      const cos = Number(a);
+      const sin = Number(b);
+      const bw = Number(w);
+      const bh = Number(h);
+      for (const [dx, dy] of [[0, 0], [bw, 0], [bw, bh], [0, bh]]) {
+        const px = ox + dx! * cos - dy! * sin;
+        const py = oy + dx! * sin + dy! * cos;
+        expect(px).toBeGreaterThanOrEqual(-1);
+        expect(py).toBeGreaterThanOrEqual(-1);
+        expect(px).toBeLessThanOrEqual(view.viewWidth + 1);
+        expect(py).toBeLessThanOrEqual(view.viewHeight + 1);
+      }
+    }
+  });
+
+  it('admits an over-long mark as an excerpt of the words asked for', async () => {
+    const text = 'CONFIDENTIAL DRAFT COPY NOT FOR CIRCULATION';
+    const bytes = await fixture([{ size: CARD }], 'long-mark');
+    const outcome = await run('watermark', { type: 'text', text, fontSize: 40, rotation: 0 }, [bytes]);
+    // 18 characters alone would fit the card, so quoting them bare said a string
+    // that fits does not: the note now says which part of the mark it is quoting.
+    expect(outcome.warnings.join('\n')).toMatch(
+      new RegExp(`“CONFIDENTIAL DRAFT” — the first 18 of ${[...text].length} characters — does not fit`),
+    );
+  });
 });
 
 describe('headers and footers (E8, E9, E13)', () => {

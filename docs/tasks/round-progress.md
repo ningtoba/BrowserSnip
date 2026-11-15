@@ -41,7 +41,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 031 [x] edit-pdf
 032 [x] edit-pdf-text
 033 [x] page-numbers
-034 [ ] watermark
+034 [x] watermark
 035 [ ] header-footer
 036 [ ] bates-numbering
 037 [ ] add-page-labels

@@ -225,7 +225,12 @@ async function stamp(
   const descent = Math.max(0, measured.font.heightAtSize(size) - ascent, Math.min(declared, 0.35) * size);
   const run = placeRun(frame, width, Math.max(ascent + descent, 1), angle, options.anchor, options.margin ?? 24);
   if (run.overflow) {
-    note(notes, `“${[...text].slice(0, 18).join('')}” does not fit inside a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so it runs past the edges.`);
+    // Name it as an excerpt: the first 18 characters alone would fit the page, so
+    // quoting them bare read as a run that *does* fit and does not.
+    const shown = [...text].slice(0, 18).join('');
+    const total = [...text].length;
+    const quoted = total > [...shown].length ? `“${shown}” — the first ${[...shown].length} of ${total} characters —` : `“${shown}”`;
+    note(notes, `${quoted} does not fit inside a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so it runs past the edges.`);
   }
   const origin = toUserSpace(frame, run.x, run.y + descent);
   // Text is turned by the page's own /Rotate on top of the requested angle, so
@@ -735,10 +740,15 @@ export const editTools: PdfToolDefinition[] = [
       const style = mergeFaceStyle(readTextStyle(context.values, 'watermark'), { size });
       rememberTextStyle('watermark', style);
       const scale = readNumber(context, notes, { key: 'scale', label: 'Image scale', fallback: 0.35, min: 0.02, max: 2 });
-      // Measured once: the face is cached, and a 500-page document must not
-      // re-measure the same string five hundred times (E7).
-      const textWidth = type === 'image' || !tile
-        ? (await measureText(input.doc, {
+      // A tiled text mark needs the run's own advance and height: the pitch is a
+      // multiple of the mark and the grid has to stop where a *whole* mark still fits.
+      // This used to be measured only when tiling was off — one `!tile` — so the
+      // column pitch fell to the 24 pt floor whatever the size or spacing was, and a
+      // 217 pt word at 64 pt repeated every 24 pt. The face is cached, so it is one
+      // measurement however many pages the run covers (E7).
+      const mark = type === 'image' || !tile
+        ? null
+        : await measureText(input.doc, {
             text,
             x: 0,
             y: 0,
@@ -746,8 +756,13 @@ export const editTools: PdfToolDefinition[] = [
             bold: style.bold,
             italic: style.italic,
             fontFamily: style.fontFamily || undefined,
-          })).width
-        : 0;
+          });
+      const markHeight = mark ? Math.max(mark.font.heightAtSize(size), 1) : 0;
+      // The draw point is the baseline, so the ink hangs `descent` below the box the
+      // footprint measures: both the fit and the draw point have to carry it, or a
+      // descender is the part left outside the page.
+      const markAscent = mark ? mark.font.heightAtSize(size, { descender: false }) : 0;
+      const markDescent = mark ? Math.max(0, markHeight - markAscent) : 0;
 
       for (let i = 0; i < pages.length; i++) {
         const page = input.doc.getPage(pages[i]);
@@ -757,10 +772,25 @@ export const editTools: PdfToolDefinition[] = [
           if (type === 'image' && embedded) {
             const width = frame.width * scale;
             const height = (embedded.height / Math.max(1, embedded.width)) * width;
-            const spots = tile
-              ? tilePoints(frame, width * gap, height * gap, notes)
-              : [placeRun(frame, width, height, rotation, anchor, 0)];
-            for (const spot of spots) {
+            if (tile) {
+              // The image is turned about the point it is drawn at, so the pattern is
+              // laid out on the *turned* box and each mark is drawn from that box's
+              // lower corner: without it a 45° pattern walked up and to the right of
+              // its own grid and the last column and row hung off the page.
+              const bounds = runBounds(width, height, rotation);
+              for (const spot of tilePoints(frame, width * gap, height * gap, bounds, notes)) {
+                const origin = toUserSpace(frame, spot.x - bounds.minX, spot.y - bounds.minY);
+                page.drawImage(embedded, {
+                  x: origin.x,
+                  y: origin.y,
+                  width,
+                  height,
+                  opacity,
+                  rotate: degrees(rotation + frame.rotation),
+                });
+              }
+            } else {
+              const spot = placeRun(frame, width, height, rotation, anchor, 0);
               const origin = toUserSpace(frame, spot.x, spot.y);
               page.drawImage(embedded, {
                 x: origin.x,
@@ -771,9 +801,15 @@ export const editTools: PdfToolDefinition[] = [
                 rotate: degrees(rotation + frame.rotation),
               });
             }
-          } else if (tile) {
-            for (const spot of tilePoints(frame, textWidth * gap, size * gap * 2, notes)) {
-              await stampText(page, text, spot, { style, opacity, rotation });
+          } else if (tile && mark) {
+            const bounds = runBounds(mark.width, markHeight, rotation);
+            for (const spot of tilePoints(frame, mark.width * gap, markHeight * gap * 2, bounds, notes)) {
+              await stampText(
+                page,
+                text,
+                { x: spot.x - bounds.minX, y: spot.y - bounds.minY + markDescent },
+                { style, opacity, rotation },
+              );
             }
           } else {
             await stamp(input.doc, page, text, {
@@ -2285,11 +2321,21 @@ function anchorRect(
 /**
  * A displayed-space grid of tile origins, capped so a tight spacing on a big
  * sheet cannot ask for thousands of draws per page (E7/E15).
+ *
+ * `bounds` is the mark's own *turned* footprint, given as the offsets a rotated
+ * run occupies around its draw point. The grid stops where a whole mark still
+ * fits inside the visible page and every origin is shifted by the footprint's own
+ * lower corner, so the last column and row are not cut by the crop box (measured
+ * before: ink to 0.002 and 1.000 of the width, 1 083 ink px in the last two pixel
+ * columns and rows of a 420×595 sheet). The leftover is split evenly so the
+ * pattern is anchored rather than pinned to the corner, and a mark bigger than
+ * the page is reported instead of overhanging in silence.
  */
 function tilePoints(
   frame: PageFrame,
   stepX: number,
   stepY: number,
+  bounds: { minX: number; minY: number; width: number; height: number },
   notes: string[],
 ): { x: number; y: number }[] {
   const dx = Math.max(24, stepX);
@@ -2298,9 +2344,14 @@ function tilePoints(
   if (planned > MAX_TILES) {
     note(notes, `This spacing would repeat the watermark ${planned} times per page; it is limited to ${MAX_TILES} repeats.`);
   }
+  if (bounds.width > frame.width + 0.5 || bounds.height > frame.height + 0.5) {
+    note(notes, `A single mark is ${Math.round(bounds.width)}×${Math.round(bounds.height)} pt on a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so the pattern still runs past the edges.`);
+  }
+  const limitX = Math.max(0, frame.width - bounds.width);
+  const limitY = Math.max(0, frame.height - bounds.height);
   const out: { x: number; y: number }[] = [];
-  for (let y = 0; y < frame.height && out.length < MAX_TILES; y += dy) {
-    for (let x = 0; x < frame.width && out.length < MAX_TILES; x += dx) out.push({ x, y });
+  for (let y = (limitY % dy) / 2; y <= limitY && out.length < MAX_TILES; y += dy) {
+    for (let x = (limitX % dx) / 2; x <= limitX && out.length < MAX_TILES; x += dx) out.push({ x, y });
   }
   return out;
 }
