@@ -125,6 +125,15 @@ const TOOL_LABELS = {
     quality: 'JPEG quality',
     keepPageSize: 'Keep the original page size',
   },
+  // `table-of-contents`' four controls all print two or three words, so the keys
+  // split `FIELDS` at their spaces and read NO CONTROL (round 039). Only `Font
+  // size` is already global.
+  'table-of-contents': {
+    insertAt: 'Insert at page',
+    title: 'Heading',
+    leader: 'Leader',
+    showPageNumbers: 'Show page numbers',
+  },
   // `deskew-pdf`'s `threshold` is a *confidence*, not a black-and-white cutoff, so
   // the global label above finds nothing on its rail (round 029).
   'deskew-pdf': {

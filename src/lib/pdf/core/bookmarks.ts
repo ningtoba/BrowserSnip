@@ -783,9 +783,15 @@ export async function generateTocPage(
   const rightAlign = opts.rightAlignPageNumbers ?? true;
   const heading = opts.title === undefined ? 'Contents' : opts.title;
   const template = doc.getPage(Math.min(startPage, Math.max(0, pageCount - 1)));
+  // The inserted sheet **is** the template's visible box, so the layout runs in
+  // that box's own frame: measured on a page whose `/CropBox` starts at (40,40),
+  // sizing the sheet from `/MediaBox` while insetting from the crop put every
+  // entry 40 pt right and 40 pt up, on a sheet 80 pt wider than its neighbours.
   const box = template ? cropBox(template) : { x: 0, y: 0, width: PAGE_SIZES.a4[0], height: PAGE_SIZES.a4[1] };
-  const width = template?.getWidth() ?? PAGE_SIZES.a4[0];
-  const height = template?.getHeight() ?? PAGE_SIZES.a4[1];
+  // The generated page carries no `/CropBox` of its own, so the crop's origin is
+  // dropped here and its size becomes the sheet's.
+  const width = box.width;
+  const height = box.height;
 
   const allText = `${rows.map((row) => row.title).join('\n')}\n${heading}`;
   const [bodyFont, headFont] = await Promise.all([
@@ -794,10 +800,10 @@ export async function generateTocPage(
   ]);
 
   const margin = 48;
-  const left = box.x + margin;
-  const right = box.x + Math.max(margin * 2, box.width - margin);
-  const top = box.y + box.height - margin;
-  const bottom = box.y + margin;
+  const left = margin;
+  const right = Math.max(margin * 2, width - margin);
+  const top = height - margin;
+  const bottom = margin;
   const lineHeight = Math.max(fontSize * 1.8, 16);
   const indent = fontSize * 1.4;
   const gap = fontSize * 0.6;
@@ -860,8 +866,9 @@ export async function generateTocPage(
       color: rgb(0, 0, 0),
     });
 
+    let labelX = x + titleWidth;
     if (label) {
-      const labelX = rightAlign ? right - labelWidth : x + titleWidth + gap;
+      labelX = rightAlign ? right - labelWidth : x + titleWidth + gap;
       if (leader === 'dots') {
         const leaderStart = x + titleWidth + gap / 2;
         const leaderEnd = Math.max(leaderStart, labelX - gap / 2);
@@ -886,10 +893,13 @@ export async function generateTocPage(
       const target = row.page + shiftedBy(row.page);
       if (target >= 0 && target < doc.getPageCount()) {
         const targetRef = doc.context.getObjectRef(doc.getPage(target).node);
+        // The whole row is the target, not just the words: the number sits at the
+        // right margin, so a rect as wide as the title left the leader and the
+        // number — the two things a reader aims at — dead to the click.
         const link = node.drawLink({
           x,
           y: item.y - fontSize * 0.25,
-          width: Math.max(titleWidth, 1),
+          width: Math.max((label ? labelX + labelWidth : x + titleWidth) - x, 1),
           height: lineHeight * 0.8,
           pageNumber: target,
         });

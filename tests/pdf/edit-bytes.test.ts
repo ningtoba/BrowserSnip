@@ -741,6 +741,60 @@ describe('table-of-contents inserts a contents page that still points correctly'
   it('refuses to invent a contents page for a document with no outline', async () => {
     await expect(runPdf('table-of-contents', {})).rejects.toThrow(/no bookmarks/iu);
   });
+
+  it('lays the contents inside the visible box of the sheet it copies', async () => {
+    // A page whose visible box is inset — the shape a scan with a black margin
+    // has. The sheet written for a contents page carries no `/CropBox` of its
+    // own, so a layout measured in crop coordinates but drawn from the media
+    // origin lands 40 pt right and 40 pt up, on a sheet 80 pt wider than the
+    // page it was copied from.
+    const { writeOutline } = await import('@/lib/pdf/core/bookmarks');
+    const src = await PDFDocument.create();
+    src.addPage([420, 595]);
+    src.addPage([420, 595]).setCropBox(40, 40, 340, 515);
+    writeOutline(src, [{ title: 'One', page: 0 }, { title: 'Two', page: 1 }]);
+    const outcome = await run('table-of-contents', { insertAt: 2, title: 'Contents' }, [
+      pdfFile(await src.save({ useObjectStreams: false }), 'cropped.pdf'),
+    ]);
+    const doc = await reopen(outcome);
+    const toc = doc.getPage(1);
+    const { width, height } = toc.getSize();
+    expect([width, height]).toEqual([340, 515]);
+    const runs = pageRuns(toc);
+    expect(runs.map((run) => run.text)).toContain('One');
+    expect(Math.min(...runs.map((run) => run.rect.x))).toBeCloseTo(48, 5);
+    const numbers = runs.filter((run) => /^\d+$/u.test(run.text));
+    expect(numbers).toHaveLength(2);
+    expect(Math.max(...numbers.map((run) => run.rect.x + run.rect.width))).toBeCloseTo(340 - 48, 5);
+    expect(Math.max(...runs.map((run) => run.rect.y + run.rect.height))).toBeLessThanOrEqual(height);
+    expect(Math.min(...runs.map((run) => run.rect.y))).toBeGreaterThanOrEqual(0);
+  });
+
+  it('makes the whole row the link, so the leader and the number answer a click', async () => {
+    const fixture = pdfFile(await pdfFixture([{ text: 'a' }, { text: 'b' }]), 'fixture.pdf');
+    const marked = await run('bookmarks', { outline: 'Alpha :: 2', replace: true }, [fixture]);
+    const outcome = await run('table-of-contents', { insertAt: 1, title: 'Contents' }, [
+      pdfFile(await outBytes(marked), 'fixture.pdf'),
+    ]);
+    const doc = await reopen(outcome);
+    const toc = doc.getPages()[0];
+    const annots = arrayOf(doc, toc.node.get(PDFName.of('Annots')));
+    expect(annots?.size()).toBe(1);
+    const rect = arrayOf(doc, dictOf(doc, annots?.get(0))?.get(PDFName.of('Rect')));
+    const [x0, y0, x1, y1] = (rect?.asArray() ?? []).map((value) => Number(value.toString()));
+    const runs = pageRuns(toc);
+    const title = runs.find((run) => run.text === 'Alpha');
+    const number = runs.find((run) => run.text === '3');
+    expect(title && number).toBeTruthy();
+    // The rect starts where the words do and reaches past the number at the
+    // right margin — not the title's own width, which left 255 pt of dead row.
+    expect(x0).toBeCloseTo(title!.rect.x, 1);
+    expect(x1).toBeGreaterThanOrEqual(number!.rect.x + number!.rect.width - 0.5);
+    // A row, not the page: the height stays one line.
+    expect(y1 - y0).toBeLessThan(20);
+    expect(y0).toBeLessThan(title!.rect.y);
+    expect(y1).toBeGreaterThan(title!.rect.y);
+  });
 });
 
 describe('add-stamps writes standard annotations', () => {
