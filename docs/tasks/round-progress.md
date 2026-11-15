@@ -47,7 +47,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 037 [ ] add-page-labels
 038 [ ] bookmarks
 039 [ ] table-of-contents
-040 [ ] add-stamps
+040 [x] add-stamps
 041 [ ] background-color
 042 [ ] text-color
 043 [ ] invert-colors
