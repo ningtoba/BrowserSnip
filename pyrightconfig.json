@@ -1,0 +1,18 @@
+{
+  "//": "The Python in this repo is fixture generation and byte-checking beside the campaign, not shipped code: it is run by hand, against one corpus, and read as evidence. Its dicts are deliberately loose, so the type rules that matter for a program are demoted to warnings here and JSON-shaped access stays readable. Syntax errors and undefined names are still errors.",
+  "include": ["scripts", "docs/research"],
+  "exclude": ["**/__pycache__"],
+  "typeCheckingMode": "basic",
+  "reportArgumentType": "warning",
+  "reportAssignmentType": "warning",
+  "reportOperatorIssue": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "reportOptionalOperand": "warning",
+  "reportPossiblyUnbound": "warning",
+  "reportIndexIssue": "warning",
+  "reportCallIssue": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportUnknownArgumentType": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportUnknownVariableType": "warning"
+}
