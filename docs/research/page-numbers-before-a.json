@@ -1,0 +1,152 @@
+[
+ {
+  "tool": "page-numbers",
+  "tag": "base",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "shot": true,
+  "shotName": "base"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-top-left",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "top-left"
+  },
+  "shot": false,
+  "shotName": "pos-top-left"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-top-center",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "top-center"
+  },
+  "shot": false,
+  "shotName": "pos-top-center"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-top-right",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "top-right"
+  },
+  "shot": false,
+  "shotName": "pos-top-right"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-center-left",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "center-left"
+  },
+  "shot": false,
+  "shotName": "pos-center-left"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-center",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "center"
+  },
+  "shot": false,
+  "shotName": "pos-center"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-center-right",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "center-right"
+  },
+  "shot": false,
+  "shotName": "pos-center-right"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-bottom-left",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "bottom-left"
+  },
+  "shot": false,
+  "shotName": "pos-bottom-left"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "pos-bottom-right",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Position": "bottom-right"
+  },
+  "shot": true,
+  "shotName": "pos-bottom-right"
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "margin0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Margin": 0,
+   "Pages": "1"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "margin200",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Margin": 200,
+   "Pages": "1"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "margin24",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Margin": 24,
+   "Pages": "1"
+  }
+ }
+]

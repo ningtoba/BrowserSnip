@@ -450,9 +450,17 @@ describe('page numbers (E6, E7, E8, E9, E11, E13, E15)', () => {
     doc.getPages().forEach((page) => {
       const mark = stampedRun(page);
       const point = viewPoint(page, mark.x, mark.y);
-      expect(point.x, `rotation ${geometry(page).rotation}`).toBeCloseTo(24, 1);
-      expect(point.y, `rotation ${geometry(page).rotation}`).toBeCloseTo(24, 1);
-      expect(angleError(mark, page), `rotation ${geometry(page).rotation}`).toBeCloseTo(0, 3);
+      const where = `rotation ${geometry(page).rotation}`;
+      const room = geometry(page).viewHeight;
+      // The margin is measured to the *ink*, and `point` is the baseline: it
+      // clears the (clamped) margin by the face's descender, no more — nothing
+      // descends a quarter em, so clearance … clearance + 2.75 pt at 11 pt is the
+      // whole window.
+      const clearance = Math.min(24, (room - mark.size) / 2);
+      expect(point.x, where).toBeCloseTo(24, 1);
+      expect(point.y, where).toBeGreaterThan(clearance);
+      expect(point.y, where).toBeLessThan(clearance + mark.size * 0.25);
+      expect(angleError(mark, page), where).toBeCloseTo(0, 3);
     });
   });
 
@@ -462,13 +470,17 @@ describe('page numbers (E6, E7, E8, E9, E11, E13, E15)', () => {
     const doc = await openPDF(await outputBytes(outcome));
     const marks = doc.getPages().map((page) => {
       const mark = stampedRun(page);
-      return { page, point: viewPoint(page, mark.x, mark.y), view: geometry(page) };
+      return { page, point: viewPoint(page, mark.x, mark.y), view: geometry(page), size: mark.size };
     });
     // Centred means "half of *that* page": three widths, three positions.
     expect(marks[1]!.point.x).toBeLessThan(marks[0]!.point.x);
     expect(marks[2]!.point.x).toBeGreaterThan(marks[0]!.point.x);
     for (const mark of marks) {
-      expect(mark.point.y, `rotation ${geometry(mark.page).rotation}`).toBeCloseTo(8, 1);
+      // Ink to the (clamped) margin: the baseline clears it by the descender only.
+      const where = `rotation ${geometry(mark.page).rotation}`;
+      const clearance = Math.min(8, (mark.view.viewHeight - mark.size) / 2);
+      expect(mark.point.y, where).toBeGreaterThan(clearance);
+      expect(mark.point.y, where).toBeLessThan(clearance + mark.size * 0.25);
     }
     for (const mark of [marks[0]!, marks[2]!]) {
       expect(mark.point.x).toBeGreaterThanOrEqual(0);
@@ -509,6 +521,24 @@ describe('page numbers (E6, E7, E8, E9, E11, E13, E15)', () => {
     expect(outcome.message).toMatch(/no page was numbered/i);
     expect(outcome.report?.sections?.[0]?.text).toMatch(/skip first 1/i);
     expect(outcome.warnings.join('\n')).toMatch(/Skip first N pages must be between 0 and 1: 9 became 1/i);
+  });
+
+  it('measures the margin to the ink, so margin 0 keeps the descender on the page', async () => {
+    // Before the fix the em box was placed at the margin: at `margin: 0` the
+    // baseline sat on the crop edge and 3.3 pt of an 11 pt folio fell outside it
+    // (measured in a viewer as a bbox bottom of -3.29 pt, inked to the last
+    // pixel row, on both an upright and a /Rotate 90 sheet) — where it is clipped.
+    const bytes = await fixture([{ size: A4 }, { size: A4, rotation: 90 }], 'flush');
+    const outcome = await run('page-numbers', { position: 'bottom-center', margin: 0, fontSize: 11, pages: 'all' }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    for (const page of doc.getPages()) {
+      const mark = stampedRun(page);
+      const point = viewPoint(page, mark.x, mark.y);
+      const where = `rotation ${geometry(page).rotation}`;
+      // The baseline is the descender above the edge, so the glyph bottoms are in.
+      expect(point.y, where).toBeGreaterThan(0);
+      expect(point.y, where).toBeLessThan(mark.size * 0.25);
+    }
   });
 
   it('clamps nonsense values, reports each, and draws with the fixed ones (E15)', async () => {
@@ -698,7 +728,10 @@ describe('headers and footers (E8, E9, E13)', () => {
       const mark = stampedRun(page);
       const point = viewPoint(page, mark.x, mark.y);
       expect(point.x, `rotation ${view.rotation}`).toBeCloseTo(30, 1);
-      expect(point.y, `rotation ${view.rotation}`).toBeCloseTo(view.viewHeight - 30 - 9, 1);
+      // The margin is measured to the ink, so the rule's baseline sits one
+      // ascender (less than the em) under `viewHeight - margin`.
+      expect(point.y, `rotation ${view.rotation}`).toBeLessThan(view.viewHeight - 30);
+      expect(point.y, `rotation ${view.rotation}`).toBeGreaterThan(view.viewHeight - 30 - mark.size);
       expect(angleError(mark, page), `rotation ${view.rotation}`).toBeCloseTo(0, 3);
 
       const stream = pageContentStreams(page).map(({ bytes: raw }) => Buffer.from(raw).toString('latin1')).join('\n');

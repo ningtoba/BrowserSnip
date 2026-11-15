@@ -399,6 +399,44 @@ describe('page-numbers writes real folios', () => {
     expect(texts.map((text) => /\d+ of 3/.exec(text)?.[0])).toEqual(['1 of 3', '2 of 3', '3 of 3']);
   });
 
+  it('replaces every {total} and {page} the suffix holds, not just the first', async () => {
+    // Measured on the shipped build: a suffix of `X{total}/{total}` wrote
+    // "Page 001X002/{total}" into the page while the card reported the numbers.
+    const outcome = await runPdf('page-numbers', { pages: '1-2', prefix: '', suffix: 'X{total}/{total}/{page}' }, [
+      { text: 'a' },
+      { text: 'b' },
+    ]);
+    const doc = await reopen(outcome);
+    const texts = await Promise.all(doc.getPages().map(pageText));
+    expect(texts.map((text) => text.replace(/^[ab]/, '')).map((text) => text.trim())).toEqual(['1X2/2/1', '2X2/2/2']);
+  });
+
+  it('pads to the width the picker shows, not to a hard-coded three digits', async () => {
+    // The option reads "01, 02, 03"; the shipped build wrote "Page 001 of 004".
+    const outcome = await runPdf('page-numbers', { pages: 'all', style: 'padded', prefix: '', suffix: '' }, [
+      { text: 'a' },
+      { text: 'b' },
+      { text: 'c' },
+      { text: 'd' },
+    ]);
+    const doc = await reopen(outcome);
+    const texts = await Promise.all(doc.getPages().map(pageText));
+    expect(texts.map((text) => text.replace(/^[abcd]/, '').trim())).toEqual(['01', '02', '03', '04']);
+  });
+
+  it('widens the padding when the last number needs the room', async () => {
+    // Reaching 100 makes the width three, so the whole run is written 098–100
+    // rather than a two-digit 98 next to a three-digit 100.
+    const outcome = await runPdf('page-numbers', { pages: 'all', style: 'padded', prefix: '', suffix: '', startAt: 98 }, [
+      { text: 'a' },
+      { text: 'b' },
+      { text: 'c' },
+    ]);
+    const doc = await reopen(outcome);
+    const texts = await Promise.all(doc.getPages().map(pageText));
+    expect(texts.map((text) => text.replace(/^[abc]/, '').trim())).toEqual(['098', '099', '100']);
+  });
+
   it('draws roman and letter styles as text, in the face the picker chose', async () => {
     const outcome = await runPdf('page-numbers', { pages: 'all', style: 'roman-upper', prefix: '', suffix: '', font: 'std:times' }, [
       { text: 'a' },

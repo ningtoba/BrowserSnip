@@ -203,14 +203,31 @@ async function stamp(
   // slanted regular), and anything past that goes through `core/fonts`, which embeds
   // a subset and is reported. A posture the answering face cannot carry is said.
   const face = await railFace(doc, style, text, notes);
-  const width = face
-    ? face.widthOfTextAtSize(text, size)
-    : (await measureText(doc, { text, x: 0, y: 0, size, bold: style.bold, italic: style.italic })).width;
-  const run = placeRun(frame, width, size, angle, options.anchor, options.margin ?? 24);
+  const measured = face
+    ? { width: face.widthOfTextAtSize(text, size), font: face }
+    : await measureText(doc, { text, x: 0, y: 0, size, bold: style.bold, italic: style.italic });
+  const width = measured.width;
+  // The margin is measured to the *ink*, not to the em box. A descender hangs
+  // below the baseline, so an em-box run placed at `margin: 0` hung 3.3 pt of an
+  // 11 pt folio outside the crop box — measured on an upright sheet (bbox bottom
+  // -3.29 pt, inked to the last pixel row) and on a /Rotate 90 one (bbox past the
+  // crop's right edge at 423.29 of 420) — where the viewer clips it.
+  //
+  // The reach is the face's own declared lower bound — an AFM `/FontBBox` or the
+  // outline font's bbox in font units — because the nominal AFM descender stops
+  // 0.02 em above what a `g` actually draws and left its tip on the edge.
+  const faceFont = (measured.font as unknown as {
+    embedder?: { font?: { bbox?: { minY?: number }; FontBBox?: number[]; descent?: number; unitsPerEm?: number } };
+  }).embedder?.font;
+  const declared = Math.abs(faceFont?.bbox?.minY ?? faceFont?.FontBBox?.[1] ?? faceFont?.descent ?? 0)
+    / (faceFont?.unitsPerEm ?? 1000);
+  const ascent = measured.font.heightAtSize(size, { descender: false });
+  const descent = Math.max(0, measured.font.heightAtSize(size) - ascent, Math.min(declared, 0.35) * size);
+  const run = placeRun(frame, width, Math.max(ascent + descent, 1), angle, options.anchor, options.margin ?? 24);
   if (run.overflow) {
     note(notes, `“${[...text].slice(0, 18).join('')}” does not fit inside a ${Math.round(frame.width)}×${Math.round(frame.height)} pt page, so it runs past the edges.`);
   }
-  const origin = toUserSpace(frame, run.x, run.y);
+  const origin = toUserSpace(frame, run.x, run.y + descent);
   // Text is turned by the page's own /Rotate on top of the requested angle, so
   // what the user sees as "45°" reads as 45° in a viewer whatever /Rotate is.
   const pageAngle = angle + frame.rotation;
@@ -607,13 +624,17 @@ export const editTools: PdfToolDefinition[] = [
         );
       }
       const total = targets[targets.length - 1].number;
+      // Every `{total}`/`{page}` is replaced, not just the first: a suffix of
+      // `X{total}/{total}` shipped a literal `{total}` into the page while the
+      // result card said the numbers were filled in.
+      const pad = Math.max(2, String(total).length);
       for (let i = 0; i < targets.length; i++) {
         const { page, number } = targets[i];
         const text = stringValue(context.values, 'prefix', 'Page ')
-          + formatNumber(number, style)
+          + formatNumber(number, style, pad)
           + stringValue(context.values, 'suffix', ' of {total}')
-            .replace('{total}', formatNumber(total, style))
-            .replace('{page}', formatNumber(number, style));
+            .split('{total}').join(formatNumber(total, style, pad))
+            .split('{page}').join(formatNumber(number, style, pad));
         await stamp(input.doc, pages[page], text, {
           anchor: anchor as Anchor,
           style: textStyle,
@@ -625,7 +646,7 @@ export const editTools: PdfToolDefinition[] = [
       return pdfOutput(
         input.doc,
         notes,
-        `Numbered ${countLabel(targets.length, 'page')}, ${formatNumber(targets[0].number, style)} to ${formatNumber(total, style)}.`,
+        `Numbered ${countLabel(targets.length, 'page')}, ${formatNumber(targets[0].number, style, pad)} to ${formatNumber(total, style, pad)}.`,
       );
     },
   },
@@ -2315,11 +2336,14 @@ function expand(template: string, values: Record<string, string | number>): stri
   );
 }
 
-function formatNumber(value: number, style: string): string {
+function formatNumber(value: number, style: string, width = 1): string {
   if (style === 'roman-upper') return toRoman(value);
   if (style === 'roman-lower') return toRoman(value).toLowerCase();
   if (style === 'letters') return toLetters(value);
-  if (style === 'padded') return String(value).padStart(3, '0');
+  // The picker shows "01, 02, 03", so the padding is the width this run needs —
+  // never fewer than two digits. A hard-coded three drew "Page 001 of 004" on a
+  // four-sheet file.
+  if (style === 'padded') return String(value).padStart(width, '0');
   return String(value);
 }
 

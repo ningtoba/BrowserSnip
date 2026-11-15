@@ -1,0 +1,156 @@
+[
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-start7",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1",
+   "First number": 7,
+   "Suffix": " of {total}"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-start0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1",
+   "First number": 0,
+   "Suffix": " of {total}"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-roman",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1-2",
+   "Number style": "roman-upper"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-padded",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1-2",
+   "Number style": "padded",
+   "First number": 8
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-letters",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1-2",
+   "Number style": "letters"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "fmt-page-token",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1-2",
+   "Suffix": " / {page} of {total}"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "skip1",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "all",
+   "Skip first N pages": 1
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "skipstep",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "all",
+   "Skip first N pages": 1,
+   "Count every": 2
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "range24",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "2-4"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "clamp",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "4",
+   "Margin": 200,
+   "Font size": 72
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "big-rot",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "4",
+   "Font size": 48
+  },
+  "shot": true,
+  "shotName": "big-rot",
+  "dark": false
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "big-rot-dark",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "4",
+   "Font size": 48
+  },
+  "shot": true,
+  "shotName": "big-rot-dark",
+  "dark": true
+ }
+]

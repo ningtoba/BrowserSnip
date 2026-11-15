@@ -1,0 +1,44 @@
+[
+ {
+  "tool": "page-numbers",
+  "tag": "after-base",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "after-margin0",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Margin": 0
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "after-padded",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Number style": "padded"
+  }
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "after-tokens",
+  "files": [
+   "/tmp/triage/colour.pdf"
+  ],
+  "timeout": 90000,
+  "fields": {
+   "Pages": "1-2",
+   "Suffix": "X{total}/{total}/{page}"
+  }
+ }
+]

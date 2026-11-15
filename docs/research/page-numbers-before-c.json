@@ -1,0 +1,18 @@
+[
+ {
+  "tool": "page-numbers",
+  "tag": "annots",
+  "files": [
+   "/tmp/triage/annots.pdf"
+  ],
+  "timeout": 90000
+ },
+ {
+  "tool": "page-numbers",
+  "tag": "outline",
+  "files": [
+   "/tmp/triage/in/bookmarked.pdf"
+  ],
+  "timeout": 90000
+ }
+]
