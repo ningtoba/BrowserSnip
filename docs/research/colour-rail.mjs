@@ -108,6 +108,15 @@ const TOOL_LABELS = {
   // and the run went ahead on the default. The value is the words the rail prints
   // beside the box, which is what a person clicks.
   'remove-blank-pages': { keepAnnotated: 'Keep pages that only hold annotations' },
+  // `optimize-pdf`'s four toggles read as sentences, so the key alone finds no
+  // control either: measured, `FIELDS='stripMetadata=toggle'` reported NO CONTROL
+  // and the run went ahead with metadata stripping off.
+  'optimize-pdf': {
+    compressStreams: 'Flate-compress uncompressed streams',
+    objectStreams: 'Pack objects into object streams',
+    dropOrphans: 'Remove unreferenced objects',
+    stripMetadata: 'Remove metadata',
+  },
 };
 
 const WANTED = Object.fromEntries(
