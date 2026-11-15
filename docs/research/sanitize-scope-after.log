@@ -1,0 +1,19 @@
+af-on, "Remove embedded files" on (expect removed)
+  ok   payload left the file
+  ok   /AF gone
+  ok   /Names gone
+  ok   no file specification left
+  ok   no annotation /FS left
+  ok   page count unchanged
+  ok   page 1 content bytes untouched
+  ok   page 1 ink unchanged
+passed: 0 mismatch(es)
+exit=0
+af-off, the same file with the switch off (control) (expect kept)
+  ok   payload is still in the file
+  ok   /AF kept
+  ok   page count unchanged
+  ok   page 1 content bytes untouched
+  ok   page 1 ink unchanged
+passed: 0 mismatch(es)
+exit=0

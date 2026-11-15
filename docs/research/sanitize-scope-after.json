@@ -1,0 +1,9 @@
+[
+ {"tool":"sanitize-pdf","tag":"attach-on","files":["/tmp/triage/in/attach.pdf"],"fields":{"Remove JavaScript and automatic actions":"0","Remove embedded files":"1","Remove XMP metadata":"0"}},
+ {"tool":"sanitize-pdf","tag":"af-on","files":["/tmp/r026/fx/af.pdf"],"fields":{"Remove embedded files":"1","Remove JavaScript and automatic actions":"0","Remove XMP metadata":"0"},"shotBefore":"form","shot":true,"shotName":"af-on"},
+ {"tool":"sanitize-pdf","tag":"af-off","files":["/tmp/r026/fx/af.pdf"],"fields":{"Remove embedded files":"0","Remove JavaScript and automatic actions":"0","Remove XMP metadata":"0"}},
+ {"tool":"sanitize-pdf","tag":"js-defaults","files":["/tmp/triage/in/js.pdf"],"fields":{}},
+ {"tool":"sanitize-pdf","tag":"annot-off","files":["/tmp/triage/in/annot.pdf"],"fields":{"Remove JavaScript and automatic actions":"0","Remove embedded files":"0","Remove XMP metadata":"0","Remove annotations and form fields":"0"}},
+ {"tool":"sanitize-pdf","tag":"layers-on","files":["/tmp/triage/in/layers.pdf"],"fields":{"Remove hidden layer content":"1","Remove JavaScript and automatic actions":"0","Remove embedded files":"0","Remove XMP metadata":"0"}},
+ {"tool":"sanitize-pdf","tag":"dark","files":["/tmp/triage/in/attach.pdf"],"fields":{"Remove embedded files":"1"},"shot":true,"shotName":"dark","dark":true}
+]

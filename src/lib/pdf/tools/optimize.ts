@@ -40,6 +40,7 @@ import {
   stripEmbeddedFiles,
 } from '../core/content';
 import { inspectScript, stripScript } from '../core/sanitize';
+import { embeddedFileCount } from '../core/attachments';
 import { readXmp, srgbIccProfile } from '../core/metadata';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { listLayers, removeHiddenLayerContent } from '../core/layers';
@@ -1382,7 +1383,7 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'sanitize-pdf',
     name: 'Sanitize PDF',
-    description: 'Strip scripts, embedded files, annotations, metadata and hidden layers',
+    description: 'Strip scripts, embedded files, XMP metadata, annotations and hidden layers',
     icon: '🧪',
     category: 'optimize',
     keywords: ['clean', 'privacy', 'remove javascript', 'strip', 'hidden layers', 'cad export'],
@@ -1390,7 +1391,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Sanitize',
     promise: 'Scripts, attachments and optional metadata removed, with a count of everything actually taken out.',
     fields: [
-      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes what a document runs by itself: the /OpenAction it runs when it opens, the /A and /AA actions on annotations and form fields, and named scripts. Some forms stop calculating.' },
+      { key: 'javascript', label: 'Remove JavaScript and automatic actions', type: 'toggle', default: true, group: 'What to remove', help: 'Removes the JavaScript a document runs by itself: a /OpenAction that is script, the /A and /AA script actions on annotations and form fields, and named scripts. A /OpenAction that only names a view stays. Some forms stop calculating.' },
       { key: 'attachments', label: 'Remove embedded files', type: 'toggle', default: true, group: 'What to remove', help: 'Deletion is final in the output copy; extract them first if the file is the payload.' },
       { key: 'metadata', label: 'Remove XMP metadata', type: 'toggle', default: true, group: 'What to remove', help: 'XMP is what desktop search indexes. Without it the document stops describing itself to those tools.' },
       { key: 'info', label: 'Remove the document info dictionary', type: 'toggle', default: false, group: 'What to remove', help: 'The info dictionary holds title, author and dates — most readers show it as blank afterwards.' },
@@ -1450,6 +1451,15 @@ export const optimizeTools: PdfToolDefinition[] = [
         const stripped = stripEmbeddedFiles(doc);
         actions.push(stripped > 0 ? `${stripped} embedded file(s) removed` : 'no embedded files were present');
         if (stripped > 0) removed.push('attachments');
+      } else {
+        // The same courtesy the script switch gets: a payload is the part a
+        // sanitiser is usually run for, so "nothing to remove" over a file that
+        // still carries one is the wrong bill of health.
+        const kept = embeddedFileCount(doc);
+        if (kept > 0) {
+          leftAlone.push(`${kept} embedded file(s) left in place`);
+          warnings.push(`${kept} embedded file(s) stay in the output and are still extractable: "Remove embedded files" is off.`);
+        }
       }
       if (booleanValue(values, 'metadata', true)) {
         const had = xmpPacket(doc) !== null;
@@ -1473,9 +1483,10 @@ export const optimizeTools: PdfToolDefinition[] = [
         doc.catalog.delete(PDFName.of('AcroForm'));
         doc.catalog.delete(PDFName.of('XFA'));
         actions.push(
-          `${annotations} annotation(s)${fields > 0 ? ` including ${fields} form field(s)` : ''} removed`,
-        );
-        if (annotations > 0 || fields > 0) removed.push('annotations and form fields');
+          annotations === 0 && fields === 0
+            ? 'no annotations were present'
+            : `${annotations} annotation(s)${fields > 0 ? ` including ${fields} form field(s)` : ''} removed`,
+        );        if (annotations > 0 || fields > 0) removed.push('annotations and form fields');
         if (fields > 0) {
           warnings.push(`${fields} form field value(s) were removed with their widgets; filled-in answers typed into a form can live in the page content and stay visible.`);
         }

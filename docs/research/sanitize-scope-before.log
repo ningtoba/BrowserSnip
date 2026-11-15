@@ -1,0 +1,17 @@
+# before (HEAD) — checker on the produced file
+af-on, "Remove embedded files" on (expect removed)
+  FAIL payload left the file — still in xref(s) [6]
+  FAIL /AF gone — 
+  ok   /Names gone
+  FAIL no file specification left — still at [5]
+  ok   no annotation /FS left
+  ok   page count unchanged
+  ok   page 1 content bytes untouched
+  ok   page 1 ink unchanged
+FAILED: 3 mismatch(es)
+exit=1
+
+# the card, same run
+card: "Nothing to remove: no embedded files were present."
+/AF: ('array', '[5 0 R]')
+payload xref: [6]

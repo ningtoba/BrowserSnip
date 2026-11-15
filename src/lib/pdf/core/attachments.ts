@@ -595,7 +595,43 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
     return stored !== undefined && wanted.has(stored);
   });
   if (sites.length === 0) return 0;
+  return removeSites(doc, sites);
+}
 
+/** How many embedded files the document names, without reading any payload. */
+export function embeddedFileCount(doc: PDFDocument): number {
+  return filespecSites(doc).length;
+}
+
+/**
+ * Remove every embedded file the document carries, from every place one can be
+ * named, and delete the payload with the reference.
+ *
+ * This is the sanitiser's shape of the same job — no name filter — and it exists
+ * because the flat `stripEmbeddedFiles` it replaces knew one store out of three:
+ * it emptied the `/Names → /EmbeddedFiles` tree and left the PDF 2.0 catalogue
+ * `/AF` array alone, so an associated file (a ZUGFeRD invoice, a PDF/A-3 payload)
+ * stayed named and readable in the “sanitized” output while the card printed
+ * “no embedded files were present”. It also left the `/EmbeddedFile` stream behind
+ * even when it did remove the reference, so a name-tree payload was still in the
+ * file after the sentence said it was removed — and the field's own help says the
+ * deletion is final in the copy.
+ * @returns how many embedded files were removed.
+ */
+export function stripAllAttachments(doc: PDFDocument): number {
+  const sites = filespecSites(doc);
+  if (sites.length === 0) return 0;
+  const removed = removeSites(doc, sites);
+  tidyEmbeddedFileTrees(doc);
+  // `/UseAttachments` opens the attachments pane; with none left it opens empty.
+  if (doc.catalog.lookupMaybe(PDFName.of('PageMode'), PDFName)?.asString() === '/UseAttachments') {
+    doc.catalog.delete(PDFName.of('PageMode'));
+  }
+  return removed;
+}
+
+/** Unlink every site from wherever it hangs and collect the objects it alone held. */
+function removeSites(doc: PDFDocument, sites: FilespecSite[]): number {
   for (const site of sites) {
     if (site.tree) {
       splicePair(doc, site.tree, site);
@@ -625,4 +661,26 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
   // `filespecSites` already de-duplicates by reference, so one file counts once
   // even when the name tree, `/AF` and an annotation all point at it.
   return sites.length;
+}
+
+/**
+ * Drop what the removal emptied: an `/EmbeddedFiles` tree with no entry left, its
+ * `/Names` holder when that is empty too, and an `/AF` array whose members all went.
+ *
+ * An emptied container is not a wrong file, but it is the difference between a
+ * reader seeing no attachments and a reader seeing an attachments pane with
+ * nothing in it — and a `/Names <<>>` left behind reads as "filed somewhere".
+ */
+function tidyEmbeddedFileTrees(doc: PDFDocument): void {
+  const tidy = (host: PDFDict) => {
+    const af = resolve(doc, host.get(PDFName.of('AF')));
+    if (af instanceof PDFArray && af.size() === 0) host.delete(PDFName.of('AF'));
+    const names = asDict(resolve(doc, host.get(PDFName.of('Names'))));
+    if (!names) return;
+    const tree = asDict(resolve(doc, names.get(PDFName.of('EmbeddedFiles'))));
+    if (tree && collectTreePairs(doc, tree).length === 0) names.delete(PDFName.of('EmbeddedFiles'));
+    if (names.entries().length === 0) host.delete(PDFName.of('Names'));
+  };
+  tidy(doc.catalog);
+  for (const page of doc.getPages()) tidy(page.node);
 }

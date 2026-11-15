@@ -38,6 +38,7 @@ import {
 } from '@maxwbh/pdf-lib';
 import type { PDFDocument, PDFPage } from '@maxwbh/pdf-lib';
 import { fontkit } from './doc';
+import { stripAllAttachments } from './attachments';
 import { asDict, descend, dictAt, followRef } from './tree';
 import type { DescentEdge } from './tree';
 import { luma01 } from './colour';
@@ -3744,42 +3745,14 @@ export function inlineFormXObject(
   return true;
 }
 
-function countNameTreeEntries(tree: PDFDict | undefined): number {
-  if (!tree) return 0;
-  const names = tree.lookupMaybe(PDFName.of('Names'), PDFArray);
-  if (names) return Math.floor(names.size() / 2);
-  const kids = tree.lookupMaybe(PDFName.of('Kids'), PDFArray);
-  if (!kids) return 0;
-  let total = 0;
-  for (let i = 0; i < kids.size(); i++) {
-    total += countNameTreeEntries(contextOf(kids).lookup(kids.get(i), PDFDict));
-  }
-  return total;
-}
-
 /**
- * Remove embedded files (`/EmbeddedFiles` name tree and per-page attachments).
- * Returns the number of attachment entries that went away.
+ * Remove embedded files (`/Names → /EmbeddedFiles` name trees and per-page
+ * attachments). The walk lives in `core/attachments` now: this export kept the
+ * name and the flat tree it used to read knew only one of the three places a
+ * payload can be named, so it is a delegate.
  */
 export function stripEmbeddedFiles(doc: PDFDocument): number {
-  let removed = 0;
-  const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
-  const tree = names?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict);
-  if (tree) {
-    removed += countNameTreeEntries(tree);
-    names?.delete(PDFName.of('EmbeddedFiles'));
-    if (names && names.entries().length === 0) doc.catalog.delete(PDFName.of('Names'));
-  }
-  for (const page of doc.getPages()) {
-    const perPage = page.node.get(PDFName.of('EmbeddedFiles'));
-    if (perPage) {
-      const dict = page.doc.context.lookup(perPage as PDFRef, PDFDict);
-      removed += Math.max(1, countNameTreeEntries(dict));
-      // SAFETY: `delete` is inherited from `PDFDict` on the page node.
-      (page.node as unknown as { delete(key: PDFName): boolean }).delete(PDFName.of('EmbeddedFiles'));
-    }
-  }
-  return removed;
+  return stripAllAttachments(doc);
 }
 
 const VIEWER_PREF_KEYS = [
