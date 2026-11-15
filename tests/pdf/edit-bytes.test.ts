@@ -204,6 +204,9 @@ afterEach(() => {
 
 const A4: [number, number] = [595.28, 841.89];
 
+/** `/Contents`, the key these tests read and write directly. */
+const CONTENTS_NAME = PDFName.of('Contents');
+
 interface PageSpec {
   size?: [number, number];
   rotation?: number;
@@ -848,13 +851,82 @@ describe('background-color paints an artifact under the page', () => {
     expect(streams.length).toBeGreaterThan(1);
     const head = Buffer.from(streams[0].bytes).toString('latin1');
     expect(head).toContain('/Artifact');
-    expect(head).toContain('/Background');
+    // The artifact **type** is `Background`. `/Artifact` is the tag of the marked
+    // content sequence, not a value the property list may carry: ISO 32000-1
+    // §14.8.2.2.1 Table 331 allows Pagination / Layout / Page / Background, and
+    // ISO 32000-2 Table 363 keeps `/Subtype` for Pagination only. The stream used
+    // to say `/Type /Artifact /Subtype /Background`, which no consumer that reads
+    // `Type` recognises.
+    expect(head).toContain('/Type /Background');
+    expect(head).not.toContain('/Type /Artifact');
+    expect(head).not.toContain('/Subtype');
     expect(head).toContain(' BDC');
     expect(head).toContain('EMC');
     expect(head).toMatch(/[\d.-]+ [\d.-]+ [\d.-]+ [\d.-]+ re/);
     // The claim in the promise: extraction still sees the page's own words.
     expect(await pageText(page)).toContain('Body text');
     expect(outcome.message).toMatch(/Painted a #f7f7f4 background/u);
+  });
+
+  it('keeps a page whose /Contents is an indirect array, and fills it', async () => {
+    // Acrobat writes `/Contents 12 0 R` where 12 is an array of streams. Treated
+    // as a single stream it resolved to nothing, so the page was read as empty and
+    // four things went wrong at once: the fill became `/Contents`'s only entry and
+    // every stream of the page's own drawing was orphaned behind a nested array —
+    // measured on the dev server, that page lost **all** its text (1779 chars → 0,
+    // 14.81 % dark px → 0.00 %) and the app's own preview drew a flat rectangle.
+    const source = await openPDF(await pdfFixture([{ text: 'Body text' }]));
+    const page = source.getPages()[0];
+    const own = arrayOf(source, page.node.get(CONTENTS_NAME));
+    expect(own, 'the fixture should carry a /Contents array').toBeTruthy();
+    const indirect = source.context.register(PDFArray.withContext(source.context));
+    for (const entry of own!.asArray()) (source.context.lookup(indirect) as PDFArray).push(entry);
+    page.node.set(CONTENTS_NAME, indirect);
+    const edited = await outBytes(await run('background-color', { pages: '1' }, [
+      pdfFile(await source.save({ useObjectStreams: false }), 'indirect.pdf'),
+    ]));
+    const reloaded = await openPDF(edited);
+    const outPage = reloaded.getPages()[0];
+    // `/Contents` is still an array of streams — never an array holding an array.
+    for (const entry of arrayOf(reloaded, outPage.node.get(CONTENTS_NAME))!.asArray()) {
+      expect(reloaded.context.lookup(entry), 'a /Contents entry resolved to a non-stream').toBeInstanceOf(PDFStream);
+    }
+    expect(await pageText(outPage)).toContain('Body text');
+    const streams = pageContentStreams(outPage);
+    expect(streams.length).toBe(2);
+    expect(Buffer.from(streams[0].bytes).toString('latin1')).toContain('/Type /Background');
+    // The control: the page's own stream is still there, and still draws its text.
+    expect(Buffer.from(streams[1].bytes).toString('latin1')).toContain('Tj');
+  });
+
+  it('fills a page that had no /Contents at all', async () => {
+    const source = await openPDF(await pdfFixture([{}]));
+    const edited = await outBytes(await run('background-color', { color: '#3366ff', pages: '1' }, [
+      pdfFile(await source.save({ useObjectStreams: false }), 'empty.pdf'),
+    ]));
+    const stream = streamText((await openPDF(edited)).getPages()[0]);
+    // Not white paper: the empty sheet becomes the fill, and only the fill.
+    expect(stream).toContain('0.2 0.4 1 rg');
+    expect(stream.match(/ re/g)?.length).toBe(1);
+  });
+
+  it('lays the fill down semi-transparent only when opacity asks for it', async () => {
+    const opaque = streamText((await reopen(await runPdf('background-color', { pages: '1' }))).getPages()[0]);
+    expect(opaque).not.toMatch(/gs\b/);
+    const outcome = await runPdf('background-color', { color: '#3366ff', opacity: 0.4, pages: '1' });
+    const doc = await reopen(outcome);
+    const page = doc.getPages()[0];
+    const stream = streamText(page);
+    // A fill at 1 turned the page into a repaint; at 0.4 the paper has to keep
+    // showing through, which is a `/ca` graphics state on the fill alone.
+    const states = dictOf(doc, page.node.get(PDFName.of('Resources')))?.lookup(PDFName.of('ExtGState'), PDFDict);
+    const name = stream.match(/\/(\S+) gs/)?.[1];
+    expect(name, 'the fill should reference a named graphics state').toBeTruthy();
+    const state = states && dictOf(doc, states.get(PDFName.of(name!)));
+    expect(state?.lookupMaybe(PDFName.of('ca'), PDFNumber)?.asNumber()).toBe(0.4);
+    // Inside the `q Q` pair XObject-style fills are wrapped in, so it cannot leak.
+    expect(stream.indexOf('gs')).toBeLessThan(stream.indexOf(' re'));
+    expect(outcome.message).toMatch(/40 % opacity/u);
   });
 
   it('leaves a page with an empty crop box alone and says so', async () => {

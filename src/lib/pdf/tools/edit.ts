@@ -1445,19 +1445,21 @@ export const editTools: PdfToolDefinition[] = [
   {
     id: 'background-color',
     name: 'Background Colour',
-    description: 'Paint a solid colour behind the content of every page',
+    description: 'Paint a colour wash behind the content of the pages you choose',
     icon: '🎨',
     category: 'edit',
     keywords: ['page colour', 'behind content', 'tint', 'reading tint'],
     outputSuffix: '_background.pdf',
     actionLabel: 'Paint background',
-    promise: 'A flat colour laid under each selected page, tagged as a background artifact so text extraction ignores it.',
+    promise: 'A flat colour laid under each selected page, tagged as a background artifact so text extraction ignores it; below full opacity it is a wash.',
     fields: [
       { key: 'color', label: 'Colour', type: 'color', default: '#f7f7f4', group: 'Paint', help: 'A flat fill behind the page content. Text stays selectable and extraction ignores the rectangle.' },
+      { key: 'opacity', label: 'Opacity', type: 'slider', default: 1, min: 0.05, max: 1, step: 0.05, group: 'Paint', help: 'Below 1 the fill is a wash over the paper rather than a repaint: the page\u2019s own black and white still reads through it.' },
       pagesField({ group: 'Pages' }),
     ],
     notes: [
-      'Solid colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
+      'Flat colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
+      'Opacity below 1 lets the page\u2019s own paper show through, which is what a reading tint wants; at 1 the fill repaints every white pixel it covers.',
       'The rectangle covers each page\u2019s own crop box, so mixed sizes stay covered edge to edge.',
       'A page that declares an empty /CropBox is left unpainted and named: painting its media box would cover an area the file says is not there.',
     ],
@@ -1467,6 +1469,7 @@ export const editTools: PdfToolDefinition[] = [
       const { prependBackground } = await import('../core/content');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const color = stringValue(context.values, 'color', '#f7f7f4');
+      const opacity = readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 1, min: 0.05, max: 1 });
       let painted = 0;
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
@@ -1480,7 +1483,7 @@ export const editTools: PdfToolDefinition[] = [
           note(notes, `Page ${pages[i] + 1} has an empty crop box, so it was left unpainted.`);
           continue;
         }
-        prependBackground(page, { x: box.x, y: box.y, width: box.width, height: box.height }, color);
+        prependBackground(page, { x: box.x, y: box.y, width: box.width, height: box.height }, color, { opacity });
         painted += 1;
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
@@ -1488,7 +1491,7 @@ export const editTools: PdfToolDefinition[] = [
       return pdfOutput(
         input.doc,
         notes,
-        `Painted a ${color} background behind ${countLabel(painted, 'page')}`
+        `Painted a ${color} background${opacity < 1 ? ` at ${Math.round(opacity * 100)} % opacity` : ''} behind ${countLabel(painted, 'page')}`
           + `${skipped > 0 ? `, not ${countLabel(skipped, 'page')} of the ${countLabel(pages.length, 'page')} selected` : ''}.`,
       );
     },

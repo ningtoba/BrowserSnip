@@ -1085,6 +1085,10 @@ export function pageContentStreams(page: PDFPage): { bytes: Uint8Array; ref: PDF
   // the generated accessors rely on internally; it always exists at runtime.
   const { context } = page.node as unknown as { context: PDFPage['doc']['context'] };
   const raw = page.node.get(PDFName.of(CONTENTS));
+  // An array of streams may itself be **behind a reference** — Acrobat writes
+  // `/Contents 12 0 R` where 12 is an array. Read as a stream it resolves to
+  // nothing, and the page looks blank to every reader here.
+  const contents = raw instanceof PDFRef ? context.lookup(raw) : raw;
   const out: { bytes: Uint8Array; ref: PDFRef }[] = [];
   const pushOne = (value: unknown): void => {
     if (value === undefined || value === null) return;
@@ -1093,10 +1097,10 @@ export function pageContentStreams(page: PDFPage): { bytes: Uint8Array; ref: PDF
     if (!stream) return;
     out.push({ bytes: streamBytes(stream), ref });
   };
-  if (raw instanceof PDFArray) {
-    for (let i = 0; i < raw.size(); i++) pushOne(raw.get(i));
+  if (contents instanceof PDFArray) {
+    for (let i = 0; i < contents.size(); i++) pushOne(contents.get(i));
   } else {
-    pushOne(raw);
+    pushOne(contents);
   }
   return out;
 }
@@ -1118,7 +1122,10 @@ function contentsArray(page: PDFPage): PDFArray {
     set(key: PDFName, value: PDFArray): void;
   };
   const existing = node.get(PDFName.of(CONTENTS));
-  if (existing instanceof PDFArray) return existing;
+  // The same indirect array: appending to it means appending to the object it
+  // points at, not nesting an array inside `/Contents`, which no reader unwraps.
+  const resolved = existing instanceof PDFRef ? node.context.lookup(existing) : existing;
+  if (resolved instanceof PDFArray) return resolved;
   const array = PDFArray.withContext(node.context);
   if (existing !== undefined && existing !== null) array.push(existing as never);
   node.set(PDFName.of(CONTENTS), array);
@@ -3525,13 +3532,29 @@ export function pageUsesColor(page: PDFPage): boolean {
  * a tagged background artifact so assistive technology and reflow tools ignore
  * it. The original content streams are not rewritten: the artifact goes into
  * a new stream at the head of `/Contents`.
+ *
+ * The property list says `/Type /Background`: ISO 32000-1 §14.8.2.2.1 (Table 331)
+ * and ISO 32000-2 (Table 363) allow `Pagination`, `Layout`, `Page` and, since
+ * PDF 1.7, `Background` — `/Artifact` is the *tag* of the marked-content
+ * sequence, not one of its `Type` values, and `/Subtype` is reserved for
+ * `Pagination`. A background tint is exactly the case the spec describes:
+ * "coloured blocks that run the entire length and/or width of the page".
+ *
+ * `@param options.opacity` below 1 lays the fill down through a `/ca`-only
+ * graphics state, so the paper and any content behind it show through; at 1 the
+ * stream is written with no `gs` at all.
  */
-export function prependBackground(page: PDFPage, rect: ContentRect, color: string): void {
+export function prependBackground(
+  page: PDFPage,
+  rect: ContentRect,
+  color: string,
+  options: { opacity?: number } = {},
+): void {
   const rgbValue = parseHexColor(color, 'color');
+  const opacity = Math.min(1, Math.max(0.02, options.opacity ?? 1));
   const bbox = [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height].map((n) => Number(n.toFixed(4)));
   const properties = operand.dict([
-    ['Type', operand.name('Artifact')],
-    ['Subtype', operand.name('Background')],
+    ['Type', operand.name('Background')],
     ['BBox', operand.array(bbox.map((n) => operand.number(n)))],
     ['Attached', operand.array(['/Top', '/Bottom', '/Left', '/Right'].map((n) => operand.name(n)))],
   ]);
@@ -3541,11 +3564,19 @@ export function prependBackground(page: PDFPage, rect: ContentRect, color: strin
     ? [makeOp('g', [operand.number(Number(grey.toFixed(5)))])]
     : [makeOp('rg', rgbValue.map((value) => operand.number(Number(value.toFixed(5)))))];
 
+  // `CA` as well as `ca`: a viewer drawing the fill neither strokes nor fills
+  // text here, but the pair is what an ExtGState for a wash normally carries and
+  // one entry costs nothing.
+  const state = opacity < 1
+    ? page.doc.context.register(page.doc.context.obj({ Type: 'ExtGState', CA: opacity, ca: opacity }))
+    : null;
+
   const ops: ContentOp[] = [
     // Acrobat's own artifact streams put the tag name first; viewers accept
     // either order, and the contract specifies this one verbatim.
     makeOp('BDC', [operand.name('Artifact'), properties]),
     makeOp('q'),
+    ...(state ? [makeOp('gs', [operand.name(bare(page.node.newExtGState('BSBg', state).asString()))])] : []),
     ...colourOps,
     makeOp('re', [
       operand.number(Number(rect.x.toFixed(4))),
