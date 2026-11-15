@@ -97,7 +97,7 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
  */
 function describeFace(bytes: Uint8Array): { flavour: FaceFlavour; appSeesCff: boolean; name: string } {
   try {
-    const tag = [...bytes.slice(0, 4)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const tag = Array.from(bytes.slice(0, 4)).map((b) => b.toString(16).padStart(2, '0')).join('');
     // SAFETY: the probe only reads `cff`, `'CFF '`, `postScriptName` and
     // `numGlyphs`, all present on every fontkit face; pdf-lib publishes no type
     // for them.

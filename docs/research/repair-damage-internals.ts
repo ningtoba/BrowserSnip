@@ -89,7 +89,7 @@ export async function internals(name: string, bytes: Uint8Array): Promise<Intern
     lenient,
     lenientError,
     rawPageObjects: pageObjects,
-    rawPageCount: counts.length ? Math.max(...counts) : null,
+    rawPageCount: counts.length ? Math.max(...Array.from(counts)) : null,
     rawStreams: streams,
     pdfjs,
     pdfjsError,
