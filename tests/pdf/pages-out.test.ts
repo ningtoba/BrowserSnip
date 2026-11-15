@@ -118,8 +118,8 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/engine-ops')>();
   return {
     ...real,
-    linearizeWithCpdf: async () => {
-      if (!engine.linearize) throw new Error('test double: no CoherentPDF output configured');
+    linearizeWithQpdf: async () => {
+      if (!engine.linearize) throw new Error('test double: no qpdf output configured');
       return engine.linearize;
     },
   };
@@ -299,14 +299,14 @@ describe('a result that is not a PDF', () => {
 
 describe('an engine-produced PDF nobody could count', () => {
   it('still prints the honest wording instead of a number it did not read', async () => {
-    // CoherentPDF wrote this file; the run holds its bytes and no document, and
+    // the engine wrote this file; the run holds its bytes and no document, and
     // a cheap inspection of those bytes cannot answer "how many pages" (guard.ts
     // says so). Inventing one here would be the lie this pass exists to remove.
     const written = await textPdf(4);
     engine.linearize = written;
     session.pages = 4;
     const outcome = await run('linearize-pdf', {}, [pdfFile(await textPdf(4), 'read-me.pdf')]);
-    expect(outcome.message).toMatch(/CoherentPDF/);
+    expect(outcome.message).toMatch(/qpdf/);
     expect(outcome.outputs).toHaveLength(1);
     expect(outcome.pagesOut).toBeNull();
     expect(describePages(4, outcome.pagesOut)).toBe('4 in · out not counted');

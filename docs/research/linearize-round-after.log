@@ -1,0 +1,21 @@
+fields: []
+clicked "Linearize"
+screenshot: /tmp/r/lin-after3.png
+output {"type":"application/pdf","bytes":4518,"file":"/tmp/r/lin-after3.pdf"}
+report line: colour_linearized.pdf
+
+READY
+SIZE
+3.8 KB → 4.4 KB · 16% larger
+PAGES
+4 in · out not counted
+ENGINE
+qpdf
+
+Linearized with qpdf: 3.8 KB → 4.4 KB (+16%), page 1 first, and its own checker found no errors.
+
+The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.
+
+Download
+Keep original
+console errors: []

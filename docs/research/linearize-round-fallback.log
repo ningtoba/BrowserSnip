@@ -1,0 +1,7 @@
+# `linearize-fallback-rail.mjs` with cdn.jsdelivr.net mapped to a dead port:
+# the tool's own rebuild path, measured on /tmp/triage/uncompressed.pdf.
+# card: "ENGINE local path · qpdf not used"
+# "Rebuilt with object streams and 0 newly compressed stream(s): 3.7 KB → 2.3 KB (-38%). This is not a conforming linearized PDF."
+# warning: "qpdf could not be reached (Failed to load qpdf from https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/: Failed to fetch), so this file was rebuilt locally and is not linearized."
+# output 2371 B; pikepdf is_linearized False; ink 61153 / 49571 / 0 / 142563 = the source's;
+# linearize-check.py --before exit 1 on "no /Linearized dictionary at all; expected one xref section, found 0".

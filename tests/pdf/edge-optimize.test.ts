@@ -12,7 +12,7 @@
  * document), E9 (rotation values stay legal), E10 (pages with and without a text
  * layer), E12 (no base64 detour), E13 (nothing to do), E14 (output larger than
  * input), E15 (dpi/quality/angle out of range, clamped *and* announced),
- * E16 (a page listed twice), E20 (Ghostscript / CoherentPDF unreachable).
+ * E16 (a page listed twice), E20 (Ghostscript / qpdf unreachable).
  *
  * jsdom has no canvas, so the two tools that render pages drive a stubbed
  * pdf.js session; the assertions are about the file each one writes.
@@ -50,7 +50,7 @@ const engine = vi.hoisted(() => ({
 
 vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/engine-ops')>();
-  const guard = (id: 'ghostscript' | 'cpdf', what: string): void => {
+  const guard = (id: 'ghostscript' | 'cpdf' | 'qpdf', what: string): void => {
     // Every row that sets `engine.failure` simulates a transport failure ("no
     // address answered", "Failed to load …"), which is what the loader reports
     // as `EngineUnavailable`. Tools read that difference: a module that never
@@ -61,9 +61,9 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   return {
     ...real,
     engineReady: () => engine.ready,
-    linearizeWithCpdf: async (bytes: Uint8Array) => {
-      guard('cpdf', 'could not load CoherentPDF');
-      if (!engine.linearize) throw new Error('test double: CoherentPDF result not configured');
+    linearizeWithQpdf: async (bytes: Uint8Array) => {
+      guard('qpdf', 'could not load qpdf');
+      if (!engine.linearize) throw new Error('test double: qpdf result not configured');
       return engine.linearize(bytes);
     },
     convertToPdfA: async (bytes: Uint8Array, part: string) => {
@@ -793,10 +793,17 @@ describe('sanitize-pdf counts what it removed and no more', () => {
 
 /* ── linearize-pdf ───────────────────────────────────────────────────────── */
 
-/** A hand-built PDF whose first object declares `/Linearized`. */
+/**
+ * A hand-built PDF whose first object declares `/Linearized`.
+ *
+ * The `/L` entry is filled in with the file's real length: a dict that merely
+ * *says* `/Linearized` is not a linearized file, and qpdf (like every reader)
+ * throws the hints away when `/L` disagrees with the byte count. The length is
+ * padded to a fixed width so writing it does not move the number it records.
+ */
 function linearizedFixture(pageCount = 1, version = '1.5'): Uint8Array {
   const objects = [
-    '<< /Linearized 1 /L 700 /O 3 /H [ 15 5 ] /T 600 >>',
+    '<< /Linearized 1 /L 0000000 /O 3 /H [ 15 5 ] /T 600 >>',
     '<< /Type /Catalog /Pages 3 0 R >>',
     `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${4 + i} 0 R`).join(' ')}] /Count ${pageCount} >>`,
   ];
@@ -813,7 +820,13 @@ function linearizedFixture(pageCount = 1, version = '1.5'): Uint8Array {
   body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   body += offsets.map((at) => `${String(at).padStart(10, '0')} 00000 n \n`).join('');
   body += `trailer\n<< /Size ${objects.length + 1} /Root 2 0 R >>\nstartxref\n${start}\n%%EOF\n`;
-  return new Uint8Array(Buffer.from(body, 'latin1'));
+  // `/L` is the whole file, this dictionary included, to the byte.
+  return new Uint8Array(
+    Buffer.from(
+      body.replace('/L 0000000', `/L ${String(body.length).padStart(7, '0')}`),
+      'latin1',
+    ),
+  );
 }
 
 describe('linearize-pdf says which kind of file it produced (E20)', () => {
@@ -822,7 +835,7 @@ describe('linearize-pdf says which kind of file it produced (E20)', () => {
     engine.linearize = () => linearizedFixture(2);
     const outcome = await run('linearize-pdf', {}, [pdfFile(source, 'lin.pdf')]);
     expect(isLinearized(outcome.bytes)).toBe(true);
-    expect(outcome.message).toMatch(/Linearized with CoherentPDF/);
+    expect(outcome.message).toMatch(/Linearized with qpdf/);
     expect(outcome.warnings).toEqual([]);
     expectMeasuredSizes(outcome.message ?? '', source.byteLength, outcome.bytes.byteLength);
     engine.linearize = null;
@@ -834,15 +847,15 @@ describe('linearize-pdf says which kind of file it produced (E20)', () => {
     const outcome = await run('linearize-pdf', {}, [pdfFile(source, 'lin.pdf')]);
     expect(isLinearized(outcome.bytes)).toBe(false);
     expect(outcome.message).toMatch(/but not linearized/i);
-    expect(outcome.warnings.join(' ')).toMatch(/without a \/Linearized dictionary/i);
+    expect(outcome.warnings.join(' ')).toMatch(/\/Linearized dictionary is missing/i);
     engine.linearize = null;
   });
 
   it('degrades to a local rebuild, loudly, when the engine cannot be reached', async () => {
     const source = await textPdf(2);
-    engine.failure = 'Failed to load CoherentPDF from https://cdn.invalid/ (HTTP 404)';
+    engine.failure = 'Failed to load qpdf from https://cdn.invalid/ (HTTP 404)';
     const outcome = await run('linearize-pdf', {}, [pdfFile(source, 'offline.pdf')]);
-    expect(outcome.warnings.join(' ')).toMatch(/CoherentPDF could not be reached/i);
+    expect(outcome.warnings.join(' ')).toMatch(/qpdf could not be reached/i);
     expect(outcome.message).toMatch(/is not a conforming linearized PDF/i);
     const after = await inspectPdf(outcome.bytes, 'offline.pdf');
     expect(after.pages).toBe(2);
@@ -856,7 +869,7 @@ describe('linearize-pdf says which kind of file it produced (E20)', () => {
     // engine always tries it, through the runner or straight from a caller.
     engine.failure = 'no address answered';
     const result = (await directRun('linearize-pdf', {}, [pdfFile(source, 'noengine.pdf')]))!;
-    expect((result.warnings ?? []).join(' ')).toMatch(/CoherentPDF could not be reach.*no address answered/i);
+    expect((result.warnings ?? []).join(' ')).toMatch(/qpdf could not be reach.*no address answered/i);
     expect(result.message).toMatch(/not a conforming linearized PDF/i);
     const outcome = await runPdfTool({
       toolId: 'linearize-pdf',
@@ -864,7 +877,7 @@ describe('linearize-pdf says which kind of file it produced (E20)', () => {
       values: {},
     });
     expect(outcome.outputs).toHaveLength(1);
-    expect(outcome.warnings.join(' ')).toMatch(/CoherentPDF could not be reach/i);
+    expect(outcome.warnings.join(' ')).toMatch(/qpdf could not be reach/i);
     expect(`${outcome.message} ${outcome.warnings.join(' ')}`).not.toMatch(/settings|enable/i);
     engine.failure = null;
   });

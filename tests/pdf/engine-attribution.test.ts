@@ -42,6 +42,7 @@ import { render, screen, within } from '@testing-library/react';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import { openPDF, PDFName } from '@/lib/pdf/core/doc';
 import { resetEngines } from '@/lib/pdf/engines/auto';
+import { EngineUnavailable } from '@/lib/pdf/engines/provider';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import type { ByteSource, PdfToolDefinition } from '@/lib/pdf/tools/types';
 import { useProcessStore } from '@/stores/process-store';
@@ -79,6 +80,20 @@ const cpdfDouble = vi.hoisted(() => ({
     deletePdf(doc: object): void;
   },
   unreachable: null as string | null,
+}));
+
+/**
+ * Stand-in for the qpdf module. `runQpdf` is doubled rather than the binary: the
+ * answer under test is what the seam and the card do with a linearizer's file, and
+ * the two commands it makes (`--linearize`, then its own `--check-linearization`)
+ * are told apart by their argument vector.
+ */
+const qpdfDouble = vi.hoisted(() => ({
+  reply: null as Uint8Array | null,
+  /** The checker's line; the seam only credits a file when it says "no errors". */
+  check: 'no linearization errors',
+  unreachable: null as string | null,
+  calls: [] as string[][],
 }));
 
 const repair = vi.hoisted(() => ({ throws: false }));
@@ -134,6 +149,30 @@ vi.mock('@/lib/pdf/engines/cpdf', async (importOriginal) => {
       if (cpdfDouble.unreachable) throw new Error(cpdfDouble.unreachable);
       if (!cpdfDouble.api) throw new Error('test double: no CoherentPDF api configured');
       return cpdfDouble.api;
+    },
+  };
+});
+
+vi.mock('@/lib/pdf/engines/qpdf', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/engines/qpdf')>();
+  return {
+    ...real,
+    runQpdf: async (
+      args: string[],
+      _files: Record<string, Uint8Array> = {},
+      options: { outputs?: string[] } = {},
+    ) => {
+      qpdfDouble.calls.push(args.slice());
+      if (qpdfDouble.unreachable) throw new EngineUnavailable('qpdf', qpdfDouble.unreachable);
+      if (args[0] === '--check-linearization') {
+        return { exitCode: 0, outputs: {} as Record<string, Uint8Array>, log: [qpdfDouble.check] };
+      }
+      const out = options.outputs?.[0];
+      return {
+        exitCode: 0,
+        outputs: qpdfDouble.reply && out ? { [out]: qpdfDouble.reply } : {},
+        log: [] as string[],
+      };
     },
   };
 });
@@ -255,6 +294,10 @@ beforeEach(() => {
   gs.calls = [];
   cpdfDouble.api = null;
   cpdfDouble.unreachable = null;
+  qpdfDouble.reply = null;
+  qpdfDouble.check = 'no linearization errors';
+  qpdfDouble.unreachable = null;
+  qpdfDouble.calls.length = 0;
   repair.throws = false;
   gs.stub = true;
   resetEngines();
@@ -336,26 +379,26 @@ describe('a fallback run refuses the engine’s name', () => {
     expect(Buffer.from(local).equals(Buffer.from(gs.reply!))).toBe(false);
   });
 
-  it('says the same thing for a CoherentPDF run that had to be rebuilt', async () => {
-    cpdfDouble.api = fakeCpdf(await junkPdf());
+  it('says the same thing for a qpdf run that had to be rebuilt', async () => {
+    qpdfDouble.reply = await junkPdf();
     const outcome = await run('linearize-pdf', [pdfFileOf(await pdfBytes(2, 'input'), 'doc.pdf')]);
-    expect(outcome.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'cpdf' });
+    expect(outcome.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'qpdf' });
     expect(outcome.warnings.join(' ')).toMatch(/does not reopen cleanly/);
 
-    cpdfDouble.unreachable = 'Failed to load CoherentPDF: 404';
+    qpdfDouble.unreachable = 'Failed to load qpdf: 404';
     const offline = await run('linearize-pdf', [pdfFileOf(await pdfBytes(2, 'input'), 'doc.pdf')]);
-    expect(offline.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'cpdf' });
+    expect(offline.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'qpdf' });
   });
 
   it('keeps an engine run credited when its file is kept but not linearized', async () => {
-    // CoherentPDF ran, the file reopens, and `/Linearized` is simply absent: the
-    // engine still wrote the bytes the user is handed, and the sentence says which.
+    // qpdf ran, the file reopens, and `/Linearized` is simply absent: the engine
+    // still wrote the bytes the user is handed, and the sentence says which.
     const kept = await enginePdf();
-    cpdfDouble.api = fakeCpdf(kept);
+    qpdfDouble.reply = kept;
     const outcome = await run('linearize-pdf', [pdfFileOf(await pdfBytes(2, 'input'), 'doc.pdf')]);
-    expect(outcome.outputs[0].producedBy).toEqual({ via: 'engine', engine: 'cpdf' });
-    expect(outcome.message).toMatch(/Rewritten by CoherentPDF/);
-    expect(outcome.message).not.toMatch(/Linearized with CoherentPDF/);
+    expect(outcome.outputs[0].producedBy).toEqual({ via: 'engine', engine: 'qpdf' });
+    expect(outcome.message).toMatch(/Rewritten by qpdf/);
+    expect(outcome.message).not.toMatch(/Linearized with qpdf/);
   });
 
   it('claims nothing for a tool that refused outright', async () => {
@@ -462,7 +505,7 @@ describe('the run’s answer reaches the screen as data', () => {
     gs.reply = await enginePdf();
     const engineRun = await run('pdf-to-pdfa', [pdfFileOf(source, 'doc.pdf')]);
     const outlineRun = await run('font-to-outline', [pdfFileOf(source, 'doc.pdf')]);
-    cpdfDouble.api = fakeCpdf(await enginePdf());
+    qpdfDouble.reply = await enginePdf();
     const linearRun = await run('linearize-pdf', [pdfFileOf(source, 'doc.pdf')]);
     const repairRun = await run('repair', [pdfFileOf(source, 'doc.pdf')]);
     expect([
@@ -473,17 +516,17 @@ describe('the run’s answer reaches the screen as data', () => {
     ]).toEqual([
       { via: 'engine', engine: 'ghostscript' },
       { via: 'engine', engine: 'ghostscript' },
-      { via: 'engine', engine: 'cpdf' },
+      { via: 'engine', engine: 'qpdf' },
       { via: 'core' },
     ]);
 
     gs.unreachable = 'Failed to load Ghostscript: no address answered';
-    cpdfDouble.unreachable = 'Failed to load CoherentPDF: no address answered';
+    qpdfDouble.unreachable = 'Failed to load qpdf: no address answered';
     resetEngines();
     const offline = await run('pdf-to-pdfa', [pdfFileOf(source, 'doc.pdf')]);
     const offlineLinear = await run('linearize-pdf', [pdfFileOf(source, 'doc.pdf')]);
     expect(offline.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'ghostscript' });
-    expect(offlineLinear.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'cpdf' });
+    expect(offlineLinear.outputs[0].producedBy).toEqual({ via: 'fallback', engine: 'qpdf' });
   });
 });
 
@@ -562,12 +605,3 @@ function items(outcome: RunOutcome): ResultItem[] {
   return outcome.outputs.map((output) => ({ name: output.name, blob: output.blob, producedBy: output.producedBy }));
 }
 
-/** A stand-in for `window.coherentpdf`, holding only what `linearizeWithCpdf` calls. */
-function fakeCpdf(reply: Uint8Array) {
-  const handle = { cpdf: true };
-  return {
-    fromMemory: () => handle,
-    toMemory: () => reply,
-    deletePdf: () => {},
-  } as unknown as NonNullable<typeof cpdfDouble.api>;
-}

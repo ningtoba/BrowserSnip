@@ -1,0 +1,7 @@
+structure: {'bytes': 5177, 'dict_at': 27, 'dict_within_1024': True, 'L': 5177, 'L_matches_length': True, 'H': (663, 157), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 14, 'O_offset': 820, 'E': 3222, 'T': 4838, 'O_before_second_group': True, 'xref_sections': 2, 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 4 -> 4
+  page 1 ink 61317 -> 61317  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+  page 3 ink 0 -> 0  text 0 -> 0
+  page 4 ink 142563 -> 142563  text 0 -> 0
+VERDICT PASS

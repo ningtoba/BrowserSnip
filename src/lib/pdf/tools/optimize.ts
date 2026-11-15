@@ -491,18 +491,24 @@ function versionWarning(doc: PDFDocument, objectStreams: boolean): string | null
 /* ── linearization probe ─────────────────────────────────────────────────── */
 
 /**
- * Does the file open with a linearization dictionary?
+ * Is this file linearized, by the two facts a reader acts on?
  *
- * A conforming linearized PDF puts `/Linearized n` in the first page object,
- * within the first few hundred bytes. Checking the bytes is the only way this
- * app can tell a real CoherentPDF result from a rebuild that merely came from
- * the engine.
+ * Checking for the *name* alone was this probe's first version, over a 64 KB
+ * window, and it is too generous on both counts: `/Linearized` anywhere in the
+ * first 64 KB reads as linearized even when it sits a page in, and the `/L`
+ * entry — the file length a reader compares before it trusts any of the hints —
+ * was never looked at. ISO 32000-1 Annex F.3.3 puts the parameter dictionary
+ * entirely inside the first 1024 bytes, and qpdf treats a `/L` that disagrees
+ * with the real size as "not linearized, ignore every hint". So: the dictionary
+ * has to start in the first 1024 bytes, and its `/L` has to be this file's
+ * length to the byte.
  */
 export function isLinearized(bytes: Uint8Array): boolean {
-  const window = new TextDecoder('latin1').decode(
-    bytes.subarray(0, Math.min(bytes.length, 65536)),
-  );
-  return /\/Linearized\s+[\d.]+/.test(window);
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 1024)));
+  const dict = head.search(/\/Linearized\s+[\d.]+/);
+  if (dict < 0) return false;
+  const length = /\/L\s+(\d+)/.exec(head.slice(dict));
+  return length !== null && Number(length[1]) === bytes.length;
 }
 
 /* ── deskew geometry ─────────────────────────────────────────────────────── */
@@ -1519,35 +1525,41 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'linearize-pdf',
     name: 'Linearize PDF',
-    description: 'Reorder objects so a browser can show page 1 before the file finishes downloading',
+    description:
+      'Lay the file out for a browser: page 1 and its hint tables first, so it can paint before the download finishes',
     icon: '⚡',
     category: 'optimize',
     keywords: ['fast web view', 'optimize for web', 'progressive'],
     outputSuffix: '_linearized.pdf',
-    engines: ['cpdf'],
+    engines: ['qpdf'],
     actionLabel: 'Linearize',
-    promise: 'A file whose first page loads first — or a clear statement that this build only rebuilt it.',
+    promise:
+      'A conforming linearized (Fast Web View) file, checked by qpdf’s own linearization checker — or a clear statement that this build only rebuilt it.',
     notes: [
-      'True linearization is performed by CoherentPDF (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser). If it cannot be reached, BrowserSnip rebuilds the file with object streams, which helps some viewers but is not a conforming linearized PDF.',
-      'The output is checked for a /Linearized dictionary, so the result never claims more than the file contains.',
+      'The linearization is written by qpdf (12.x, Apache-2.0, compiled to WebAssembly, fetched from a CDN the first time this tool runs and cached by your browser). Nothing is uploaded. CoherentPDF cannot do it: since its 1.8 the writer shells out to an external `cpdflin` binary that a browser tab does not have, and the build here throws “Linearization not supported since v1.8”.',
+      'What qpdf writes is what the format asks for: the parameter dictionary in the first 1024 bytes, the first page’s objects before the rest, the two cross-reference sections and the hint tables that tell a reader which byte ranges belong to page 1. The output is then verified two ways before the card calls it linearized — the dictionary has to be inside those 1024 bytes with a /L equal to the file length to the byte, and `qpdf --check-linearization` has to report no errors. If either fails the file is thrown away, not credited.',
+      'Fast Web View also needs the host to answer byte-range requests (HTTP 206). A linearized file served by something that ignores ranges downloads whole and only paints in order — which is the same as a plain file.',
+      'If qpdf cannot be reached the tool rebuilds the file with object streams instead. That helps some viewers, and the card says plainly that it is not linearized.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const warnings: string[] = [];
-      const { linearizeWithCpdf } = await import('../core/engine-ops');
+      const { linearizeWithQpdf } = await import('../core/engine-ops');
 
       try {
-        const out = await linearizeWithCpdf(input.bytes, context.password, { onStatus: context.log });
+        const out = await linearizeWithQpdf(input.bytes, context.password, { onStatus: context.log });
         const check = await verifyOutput(out, input.name, input.pageCount);
         if (check.problem) {
-          warnings.push(`CoherentPDF returned a file that does not reopen cleanly (${check.problem}); the local rebuild below is used instead.`);
+          warnings.push(`qpdf returned a file that does not reopen cleanly (${check.problem}); the local rebuild below is used instead.`);
         } else {
           const linear = isLinearized(out);
           if (!linear) {
-            warnings.push('CoherentPDF returned the file without a /Linearized dictionary, so it is a plain rebuild rather than a linearized PDF.');
+            warnings.push(
+              'qpdf returned a file whose /Linearized dictionary is missing, not in the first 1024 bytes, or names a /L that disagrees with the file length — a reader would ignore every hint in it, so it does not count as linearized.',
+            );
           }
           const change = sizeChange(input.bytes.byteLength, out.byteLength);
-          context.progress(1, 'Linearized with CoherentPDF');
+          context.progress(1, 'Linearized with qpdf');
           return {
             kind: 'pdf',
             bytes: out,
@@ -1555,18 +1567,20 @@ export const optimizeTools: PdfToolDefinition[] = [
             // ran, so the engine is credited. Where it ran and its file was thrown
             // away (`check.problem` above) the run falls through to the local rebuild
             // and is credited to that instead.
-            producedBy: { via: 'engine', engine: 'cpdf' },
-            // CoherentPDF gave back a finished file and no document: the honest
-            // answer is "out not counted", not a re-derived guess.
+            producedBy: { via: 'engine', engine: 'qpdf' },
+            // qpdf gave back a finished file and no document: the honest answer is
+            // "out not counted", not a re-derived guess.
             message: linear
-              ? `Linearized with CoherentPDF: ${sizeSentence(change)}, page 1 first.`
-              : `Rewritten by CoherentPDF: ${sizeSentence(change)}, but not linearized.`,
+              ? `Linearized with qpdf: ${sizeSentence(change)}, page 1 first, and its own checker found no errors.`
+              : `Rewritten by qpdf: ${sizeSentence(change)}, but not linearized.`,
             warnings,
           };
         }
       } catch (error) {
         warnings.push(
-          `CoherentPDF could not be reached (${engineReason(error)}), so this file was rebuilt locally and is not linearized.`,
+          error instanceof EngineUnavailable
+            ? `qpdf could not be reached (${engineReason(error)}), so this file was rebuilt locally and is not linearized.`
+            : `qpdf ran but refused this file (${engineReason(error)}), so it was rebuilt locally and is not linearized.`,
         );
       }
 
@@ -1579,21 +1593,23 @@ export const optimizeTools: PdfToolDefinition[] = [
       if (check.problem) {
         throw new ToolInputError('CORRUPT', `The rebuilt file did not reopen cleanly: ${check.problem}.`, {
           fileName: input.name,
-          hint: 'Run again while online: CoherentPDF can linearize this file without a rebuild.',
+          hint: 'Run again while online: qpdf can linearize this file without a rebuild.',
         });
       }
       const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
       if (isLinearized(bytes)) {
-        warnings.push('The local rebuild happened to keep a /Linearized dictionary; it is not verified against the spec.');
+        warnings.push(
+          'The local rebuild kept a /Linearized dictionary, but with one cross-reference section and no hint tables, so a reader gets no benefit from it and the card does not count it as linearized.',
+        );
       }
       context.progress(1, 'Rebuilt with object streams');
       return {
         kind: 'pdf',
         bytes,
-        // Reached with CoherentPDF unreachable, and with CoherentPDF having run and
-        // produced a file this tool discarded: either way the bytes the user is being
-        // handed are this app's, so that is what the card says.
-        producedBy: { via: 'fallback', engine: 'cpdf' },
+        // Reached with qpdf unreachable, and with qpdf having run and produced a
+        // file this tool discarded: either way the bytes the user is being handed
+        // are this app's, so that is what the card says.
+        producedBy: { via: 'fallback', engine: 'qpdf' },
         pages: input.doc.getPageCount(),
         message: `Rebuilt with object streams and ${deflated.converted} newly compressed stream(s): ${sizeSentence(change)}. This is not a conforming linearized PDF.`,
         warnings,

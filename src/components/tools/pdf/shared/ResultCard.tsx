@@ -64,6 +64,7 @@ const ENGINE_LABELS: Record<string, string> = {
   pymupdf: 'PyMuPDF',
   ghostscript: 'Ghostscript',
   cpdf: 'cpdf',
+  qpdf: 'qpdf',
 };
 
 /**

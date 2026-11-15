@@ -75,7 +75,7 @@ import {
 /* ── doubles ──────────────────────────────────────────────────────────────── */
 
 const engine = vi.hoisted(() => ({
-  /** When set, `linearizeWithCpdf` returns these bytes instead of refusing. */
+  /** When set, `linearizeWithQpdf` returns these bytes instead of refusing. */
   linearized: null as Uint8Array | null,
 }));
 
@@ -86,7 +86,7 @@ const engine = vi.hoisted(() => ({
  */
 vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/core/engine-ops')>();
-  const refuse = (id: 'ghostscript' | 'cpdf' | 'pymupdf'): never => {
+  const refuse = (id: 'ghostscript' | 'cpdf' | 'pymupdf' | 'qpdf'): never => {
     throw new EngineUnavailable(id, 'test double: the CDN is not contacted');
   };
   return {
@@ -101,8 +101,8 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
     readBookmarksWithCpdf: async () => refuse('cpdf'),
     listFontsWithCpdf: async () => refuse('cpdf'),
     compressWithCpdf: async () => refuse('cpdf'),
-    linearizeWithCpdf: async () => {
-      if (!engine.linearized) refuse('cpdf');
+    linearizeWithQpdf: async () => {
+      if (!engine.linearized) refuse('qpdf');
       return engine.linearized;
     },
   };
@@ -1743,17 +1743,22 @@ describe('optimize tools print numbers the output bytes agree with', () => {
 
   it('linearize-pdf does not count pages it never opened', async () => {
     const source = await textPdf(2);
-    // A file with a linearization dictionary in its first kilobyte, which is the
-    // only thing the tool is allowed to read a verdict from.
+    // A file with a linearization dictionary in its first kilobyte carrying the
+    // real file length, which is the only thing the tool is allowed to read a
+    // verdict from.
+    const whole = Buffer.concat([
+      Buffer.from('%PDF-1.7\n1 0 obj <</Linearized 1 /L 0000000>> endobj\n', 'latin1'),
+      Buffer.from(source),
+    ]);
     engine.linearized = Uint8Array.from(
-      Buffer.concat([
-        Buffer.from('%PDF-1.7\n1 0 obj <</Linearized 1>> endobj\n', 'latin1'),
-        Buffer.from(source),
-      ]),
+      Buffer.from(
+        whole.toString('latin1').replace('/L 0000000', `/L ${String(whole.length).padStart(7, '0')}`),
+        'latin1',
+      ),
     );
     const outcome = await runTool('linearize-pdf');
     engine.linearized = null;
-    expect(outcome.message).toContain('Linearized with CoherentPDF');
+    expect(outcome.message).toContain('Linearized with qpdf');
     // The standing ruling: the engine returned bytes, not a document, so the
     // count stays "not counted" — no re-parse, no regex, no invented number.
     expect(outcome.pagesOut).toBeNull();
@@ -1761,7 +1766,7 @@ describe('optimize tools print numbers the output bytes agree with', () => {
 
   it('linearize-pdf says plainly that the local rebuild is not linearized', async () => {
     const outcome = await runTool('linearize-pdf');
-    expect(outcome.warnings.join(' ')).toMatch(/CoherentPDF could not be reached/);
+    expect(outcome.warnings.join(' ')).toMatch(/qpdf could not be reached/);
     expect(outcome.message).toMatch(/not a conforming linearized PDF/);
     expect(latin1.decode(outcome.bytes.subarray(0, 2048))).not.toMatch(/\/Linearized\s/);
     expect(outcome.pagesOut).toBe(2);

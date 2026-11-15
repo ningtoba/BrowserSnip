@@ -21,6 +21,9 @@ const loaders = vi.hoisted(() => ({
   ghostscript: vi.fn<() => Promise<unknown>>(),
   cpdf: vi.fn<() => Promise<unknown>>(),
   pymupdf: vi.fn<() => Promise<unknown>>(),
+  qpdf: vi.fn<() => Promise<unknown>>(),
+  /** What `loaders.qpdf` resolved to, so a second run reuses it. */
+  qpdfModule: null as unknown,
   /** Stands in for Ghostscript's `run`, so a provisioned engine can "convert". */
   gsRun: vi.fn<() => Promise<{ exitCode: number; outputs: Record<string, Uint8Array>; log: string[] }>>(),
 }));
@@ -35,6 +38,37 @@ vi.mock('@/lib/pdf/engines/cpdf', async (importOriginal) => {
   return { ...real, cpdf: loaders.cpdf, loadCpdf: loaders.cpdf };
 });
 
+vi.mock('@/lib/pdf/engines/qpdf', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/engines/qpdf')>();
+  return {
+    ...real,
+    qpdf: loaders.qpdf,
+    // `runQpdf` is the seam the tools actually call, and it reaches the loader
+    // through its own module binding rather than the namespace — so it is
+    // doubled too, and it performs the load so "one download, two runs" stays
+    // the property under test.
+    runQpdf: async (
+      args: string[],
+      files: Record<string, Uint8Array> = {},
+      options: { outputs?: string[]; onLog?: (line: string) => void } = {},
+    ) => {
+      loaders.qpdfModule ??= await loaders.qpdf();
+      const module = loaders.qpdfModule as {
+        FS: { readFile(path: string): Uint8Array; stat(path: string): { size: number } };
+        callMain(args: string[]): number;
+      } | null;
+      if (!module) throw new Error('test double: qpdf did not load');
+      void files;
+      void args;
+      const out = options.outputs?.[0];
+      return {
+        exitCode: 0,
+        outputs: out ? { [out]: module.FS.readFile(out) } : {},
+        log: ['no linearization errors'],
+      };
+    },
+  };
+});
 vi.mock('@/lib/pdf/engines/pymupdf', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/engines/pymupdf')>();
   return { ...real, pymupdf: loaders.pymupdf };
@@ -81,6 +115,7 @@ function sourceFiles(dir: string): string[] {
 
 beforeEach(() => {
   resetEngines();
+  loaders.qpdfModule = null;
   vi.clearAllMocks();
   localStorage.clear();
 });
@@ -201,14 +236,16 @@ describe('an operation provisions its own engine', () => {
 });
 
 describe('a run degrades instead of asking the user to enable something', () => {
-  it('hands back a locally rebuilt file with one warning when CoherentPDF cannot be fetched', async () => {
+  it('hands back a locally rebuilt file with one warning when qpdf cannot be fetched', async () => {
     const file = await pdfFile('linearize-me.pdf', 2);
-    loaders.cpdf.mockRejectedValue(new Error('Failed to fetch'));
+    // The real loader wraps a transport failure in `EngineUnavailable`; the
+    // tool words that as "could not be reached" rather than "refused this file".
+    loaders.qpdf.mockRejectedValue(new EngineUnavailable('qpdf', 'Failed to fetch'));
 
     const outcome = await runPdfTool({ toolId: 'linearize-pdf', files: [file], values: {} });
 
     expect(outcome.outputs).toHaveLength(1);
-    expect(outcome.warnings.join(' ')).toMatch(/CoherentPDF could not be reach.*Failed to fetch/i);
+    expect(outcome.warnings.join(' ')).toMatch(/qpdf could not be reach.*Failed to fetch/i);
     expect(outcome.warnings.join(' ')).toMatch(/rebuilt locally and is not linearized/i);
     expect(outcome.message).toMatch(/not a conforming linearized PDF/i);
     expect(`${outcome.message} ${outcome.warnings.join(' ')}`).not.toMatch(/settings|enable/i);
@@ -235,16 +272,20 @@ describe('a run degrades instead of asking the user to enable something', () => 
 
   it('never downloads twice for two runs of the same tool', async () => {
     const file = await pdfFile('linearize-me.pdf', 1);
-    loaders.cpdf.mockResolvedValue({
-      fromMemory: () => ({}),
-      toMemory: () => new Uint8Array([1]),
-      deletePdf: () => {},
+    loaders.qpdf.mockResolvedValue({
+      FS: {
+        writeFile: () => {},
+        readFile: () => new Uint8Array([1]),
+        stat: () => ({ size: 1 }),
+        unlink: () => {},
+      },
+      callMain: () => 0,
     });
 
     await runPdfTool({ toolId: 'linearize-pdf', files: [file], values: {} }).catch(() => undefined);
     await runPdfTool({ toolId: 'linearize-pdf', files: [file], values: {} }).catch(() => undefined);
 
-    expect(loaders.cpdf).toHaveBeenCalledTimes(1);
+    expect(loaders.qpdf).toHaveBeenCalledTimes(1);
   });
 });
 

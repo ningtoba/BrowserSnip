@@ -1,0 +1,21 @@
+fields: []
+clicked "Linearize"
+screenshot: /tmp/r/lin-after2.png
+output {"type":"application/pdf","bytes":2293,"file":"/tmp/r/lin-after2.pdf"}
+report line: colour_linearized.pdf
+
+READY
+SIZE
+3.8 KB → 2.2 KB · 41% smaller
+PAGES
+4 → 4
+ENGINE
+local path · qpdf not used
+
+Rebuilt with object streams and 0 newly compressed stream(s): 3.8 KB → 2.2 KB (-41%). This is not a conforming linearized PDF.
+
+WHAT YOU SHOULD KNOW (1)
+
+qpdf ran but refused this file (qpdf reported the output as not linearized: ), so it was rebuilt locally and is not linearized.
+Download
+console errors: []

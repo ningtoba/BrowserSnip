@@ -19,7 +19,7 @@ export type PdfToolCategory =
   | 'security';
 
 /** Optional CDN engines, mirroring BentoPDF's `wasm-provider` design. */
-export type EngineId = 'pymupdf' | 'ghostscript' | 'cpdf';
+export type EngineId = 'pymupdf' | 'ghostscript' | 'cpdf' | 'qpdf';
 
 export type FieldType =
   | 'text'

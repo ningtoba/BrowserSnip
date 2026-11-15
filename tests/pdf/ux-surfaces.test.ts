@@ -30,6 +30,7 @@ import {
 const loaders = vi.hoisted(() => ({
   ghostscript: vi.fn<() => Promise<unknown>>(),
   cpdf: vi.fn<() => Promise<unknown>>(),
+  qpdf: vi.fn<() => Promise<unknown>>(),
   pymupdf: vi.fn<() => Promise<unknown>>(),
   /** Stands in for Ghostscript's `run`, so a provisioned engine can "convert". */
   gsRun: vi.fn<
@@ -50,6 +51,10 @@ vi.mock('@/lib/pdf/engines/cpdf', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/pdf/engines/cpdf')>();
   return { ...real, cpdf: loaders.cpdf, loadCpdf: loaders.cpdf };
 });
+vi.mock('@/lib/pdf/engines/qpdf', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/engines/qpdf')>();
+  return { ...real, qpdf: loaders.qpdf };
+});
 vi.mock('@/lib/pdf/engines/pymupdf', async (importOriginal) => {
   const real =
     await importOriginal<typeof import('@/lib/pdf/engines/pymupdf')>();
@@ -66,7 +71,7 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
     await importOriginal<typeof import('@/lib/pdf/core/engine-ops')>();
   const auto = await import('@/lib/pdf/engines/auto');
   const provider = await import('@/lib/pdf/engines/provider');
-  const stall = async (engine: 'cpdf' | 'ghostscript') => {
+  const stall = async (engine: 'cpdf' | 'qpdf' | 'ghostscript') => {
     const provision = await auto.ensureEngine(engine, { timeoutMs: 25 });
     if (!provision.ok)
       throw new provider.EngineUnavailable(engine, provision.reason);
@@ -74,8 +79,8 @@ vi.mock('@/lib/pdf/core/engine-ops', async (importOriginal) => {
   };
   return {
     ...real,
-    linearizeWithCpdf: async () => {
-      await stall('cpdf');
+    linearizeWithQpdf: async () => {
+      await stall('qpdf');
       return new Uint8Array(0);
     },
   };
@@ -109,6 +114,7 @@ beforeEach(() => {
   resetEngines();
   loaders.ghostscript.mockReset();
   loaders.cpdf.mockReset();
+  loaders.qpdf.mockReset();
   loaders.pymupdf.mockReset();
   loaders.gsRun.mockReset();
 });
@@ -160,18 +166,18 @@ describe('engine provisioning is bounded', () => {
     // `linearize-pdf` has a local fallback, which is exactly the case the brief
     // demands an honest sentence for: the run finishes, and admits what it did
     // not do.
-    loaders.cpdf.mockReturnValue(never());
+    loaders.qpdf.mockReturnValue(never());
     const outcome = await runPdfTool({
       toolId: 'linearize-pdf',
       files: [await pdfFile()],
       values: {},
     });
     const warnings = outcome.warnings.join(' ');
-    expect(warnings).toMatch(/CoherentPDF could not be reached/);
+    expect(warnings).toMatch(/qpdf could not be reached/);
     expect(warnings).toMatch(/did not finish loading from [^ ]+ within \d+s/);
     expect(warnings).toMatch(/not linearized|not a conforming linearized PDF/i);
     expect(outcome.outputs.length).toBe(1);
-    expect(loaders.cpdf).toHaveBeenCalledTimes(1);
+    expect(loaders.qpdf).toHaveBeenCalledTimes(1);
   }, 30_000);
 });
 

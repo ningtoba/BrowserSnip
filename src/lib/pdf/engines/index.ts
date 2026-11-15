@@ -9,4 +9,5 @@ export * from './provider';
 export * from './pymupdf';
 export * from './ghostscript';
 export * from './cpdf';
+export * from './qpdf';
 export * from './auto';

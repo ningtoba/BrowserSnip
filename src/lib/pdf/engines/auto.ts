@@ -22,6 +22,7 @@
  */
 import { cpdf, resetCpdf } from './cpdf';
 import { ghostscript, resetGhostscript } from './ghostscript';
+import { qpdf, resetQpdf } from './qpdf';
 import { ENGINE_DOWNLOAD_SIZE, ENGINE_LABELS, EngineUnavailable, engines } from './provider';
 import { pymupdf, resetPymupdf } from './pymupdf';
 import type { EngineId } from './provider';
@@ -68,6 +69,7 @@ const LOADER: Record<EngineId, () => Promise<unknown>> = {
   pymupdf,
   ghostscript,
   cpdf,
+  qpdf,
 };
 
 const inFlight = new Map<EngineId, Promise<EngineProvision>>();
@@ -220,5 +222,6 @@ export function resetEngines(): void {
   modules.clear();
   resetGhostscript();
   resetCpdf();
+  resetQpdf();
   resetPymupdf();
 }

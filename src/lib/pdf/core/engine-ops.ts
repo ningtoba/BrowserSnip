@@ -33,6 +33,7 @@ import {
   run as gsRun,
 } from '../engines';
 import type { CpdfApi, CpdfDocument, EngineId, PyMuPDFInstance } from '../engines';
+import { runQpdf } from '../engines/qpdf';
 import { srgbIccProfile } from './metadata';
 import type { ByteSource } from '../tools/types';
 
@@ -55,7 +56,9 @@ export function enginePurpose(id: EngineId): string {
       pymupdf:
         'PyMuPDF — high-fidelity text, table and image extraction, plus advanced conversion.',
       ghostscript: 'Ghostscript — PDF/A conversion and turning fonts into vector outlines.',
-      cpdf: 'CoherentPDF — conforming linearization, bookmark and permission editing.',
+      cpdf: 'CoherentPDF — bookmark, metadata and permission editing.',
+      qpdf:
+        'qpdf — conforming linearization (Fast Web View), checked by qpdf’s own linearization checker.',
     } as Record<EngineId, string>
   )[id];
 }
@@ -315,15 +318,53 @@ async function withCpdf<T>(
 /**
  * Conforming linearized ("Optimize for fast Web view") output.
  *
- * Returns raw bytes rather than a `GsOutcome`: the caller stamps the attribution on
- * the branch that keeps them, which is the branch that knows whether it did.
+ * CoherentPDF used to do this and cannot any more: its writer shells out to the
+ * external `cpdflin` binary since v1.8, so `toMemory(pdf, true, …)` throws
+ * `Linearization not supported since v1.8` on every file this app hands it.
+ * qpdf writes the dictionary, the two xref sections and the hint tables itself.
+ *
+ * The result is checked before it is returned — with qpdf's own checker, which
+ * is the same code `pikepdf.check_linearization` runs — because "the writer
+ * succeeded" is not the same fact as "the file is linearized". A file that
+ * fails the check is thrown away rather than credited here.
+ *
+ * Returns raw bytes rather than an outcome object: the caller stamps the
+ * attribution on the branch that keeps them, which is the branch that knows
+ * whether it did.
  */
-export async function linearizeWithCpdf(
+export async function linearizeWithQpdf(
   bytes: Uint8Array,
   password?: string,
-  hooks?: EngineHooks,
+  hooks: EngineHooks = {},
 ): Promise<Uint8Array> {
-  return withCpdf(bytes, password, (api, pdf) => api.toMemory(pdf, true, false), hooks);
+  const name = '/tmp/linearize-in.pdf';
+  const out = '/tmp/linearize-out.pdf';
+  const args = ['--linearize'];
+  if (password) args.push(`--password=${password}`);
+  args.push(name, out);
+
+  const written = await runQpdf(
+    args,
+    { [name]: bytes },
+    { outputs: [out], onLog: hooks.onStatus },
+  );
+  const linearized = written.outputs[out];
+  if (!linearized || linearized.byteLength === 0) {
+    throw new Error('qpdf wrote no output file for --linearize.');
+  }
+
+  // The checker needs the file back inside the sandbox, and `runQpdf` unlinks
+  // everything it is given, so the bytes go in again as a fresh input.
+  const checked = await runQpdf(['--check-linearization', out], { [out]: linearized }).catch(
+    (err: unknown) => {
+      throw new Error(`qpdf could not check its own output: ${String(err)}`);
+    },
+  );
+  const verdict = checked.log.join('\n');
+  if (!/no linearization errors/.test(verdict)) {
+    throw new Error(`qpdf reported the output as not linearized: ${verdict.slice(0, 300)}`);
+  }
+  return linearized;
 }
 
 /** Compress + remove duplicate objects, without touching the image pixels. */

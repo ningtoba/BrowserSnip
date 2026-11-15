@@ -1,0 +1,7 @@
+structure: {'bytes': 2293, 'dict_at': -1, 'dict_within_1024': False, 'xref_sections': 0, 'pikepdf_is_linearized': False, 'pikepdf_check': 'FAILED: called readLinearizationData for file that is not linearized'}
+preservation: pages 4 -> 4
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+  page 3 ink 0 -> 0  text 0 -> 0
+  page 4 ink 142563 -> 142563  text 0 -> 0
+VERDICT FAIL: --before: no /Linearized dictionary at all; --before: expected one xref section, found 0

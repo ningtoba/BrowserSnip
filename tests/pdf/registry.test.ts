@@ -92,7 +92,7 @@ describe('pdf tool registry', () => {
   });
 
   it('only declares engines that the provider knows', () => {
-    const known = new Set(['pymupdf', 'ghostscript', 'cpdf']);
+    const known = new Set(['pymupdf', 'ghostscript', 'cpdf', 'qpdf']);
     const unknown = PDF_TOOLS.flatMap((tool) => tool.engines ?? []).filter((id) => !known.has(id));
     expect(unknown).toEqual([]);
   });

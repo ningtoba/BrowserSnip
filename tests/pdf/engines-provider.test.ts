@@ -87,6 +87,7 @@ describe('defaults', () => {
       pymupdf: 'https://cdn.jsdelivr.net/npm/@bentopdf/pymupdf-wasm@0.11.16/',
       ghostscript: 'https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/',
       cpdf: 'https://cdn.jsdelivr.net/npm/coherentpdf@2.5.5/dist/',
+      qpdf: 'https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/',
     });
     for (const id of ENGINE_IDS) {
       expect(provider.getUrl(id)).toBe(ENGINE_DEFAULTS[id]);
@@ -99,6 +100,7 @@ describe('defaults', () => {
       pymupdf: 'dist/index.js',
       ghostscript: 'gs.js',
       cpdf: 'coherentpdf.browser.min.js',
+      qpdf: 'qpdf.js',
     });
   });
 

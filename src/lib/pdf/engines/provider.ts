@@ -1,12 +1,14 @@
 /**
- * The three optional CDN engines: PyMuPDF, Ghostscript and CoherentPDF.
+ * The four optional CDN engines: PyMuPDF, Ghostscript, CoherentPDF and qpdf.
  *
  * None of them can be bundled. PyMuPDF is a Pyodide runtime plus Python WASM
- * wheels, Ghostscript is a large `gs.js` / `gs.wasm` pair, and CoherentPDF is
- * OCaml compiled to JavaScript — and all three are AGPL-3.0 while BrowserSnip
- * is MIT. They are therefore fetched from the default address below, lazily,
- * the first time a tool actually needs one (see `auto.ts`); the browser cache
- * covers every run after that. There is no engine UI and nothing to enable.
+ * wheels, Ghostscript is a large `gs.js` / `gs.wasm` pair, CoherentPDF is
+ * OCaml compiled to JavaScript, and qpdf is a 2 MB pthread WASM build of the
+ * qpdf CLI. The first three are AGPL-3.0 while BrowserSnip is MIT; qpdf is
+ * Apache-2.0 but far too big to inline. They are therefore fetched from the
+ * default address below, lazily, the first time a tool actually needs one (see
+ * `auto.ts`); the browser cache covers every run after that. There is no engine
+ * UI and nothing to enable.
  *
  * A mirror can still live in `localStorage`, written by an older build or by an
  * advanced user. Because the loaders hand that string to `import()` /
@@ -22,7 +24,7 @@
  */
 
 /** Every engine id, in display order. */
-export const ENGINE_IDS = ['pymupdf', 'ghostscript', 'cpdf'] as const;
+export const ENGINE_IDS = ['pymupdf', 'ghostscript', 'cpdf', 'qpdf'] as const;
 
 export type EngineId = (typeof ENGINE_IDS)[number];
 
@@ -38,6 +40,7 @@ export const ENGINE_DOWNLOAD_SIZE: Record<EngineId, string> = {
   pymupdf: 'about 54 MB',
   ghostscript: 'about 15 MB',
   cpdf: 'about 0.5 MB',
+  qpdf: 'about 2.2 MB',
 };
 
 /** Default addresses, verified against BentoPDF's shipped bundles. */
@@ -45,6 +48,7 @@ export const ENGINE_DEFAULTS: Record<EngineId, string> = {
   pymupdf: 'https://cdn.jsdelivr.net/npm/@bentopdf/pymupdf-wasm@0.11.16/',
   ghostscript: 'https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/',
   cpdf: 'https://cdn.jsdelivr.net/npm/coherentpdf@2.5.5/dist/',
+  qpdf: 'https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/',
 };
 
 /**
@@ -56,12 +60,14 @@ export const ENGINE_TEST_FILES: Record<EngineId, string> = {
   pymupdf: 'dist/index.js',
   ghostscript: 'gs.js',
   cpdf: 'coherentpdf.browser.min.js',
+  qpdf: 'qpdf.js',
 };
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
   pymupdf: 'PyMuPDF',
   ghostscript: 'Ghostscript',
   cpdf: 'CoherentPDF',
+  qpdf: 'qpdf',
 };
 
 /** One-line role: what the engine is for, used in the sentences a run prints. */
@@ -69,6 +75,7 @@ export const ENGINE_ROLES: Record<EngineId, string> = {
   pymupdf: 'document conversion and high-quality text extraction',
   ghostscript: 'PDF/A conversion and font outlining',
   cpdf: 'bookmarks, metadata, page labels and attachments',
+  qpdf: 'linearization (Fast Web View) and its own linearization checker',
 };
 
 /** How long a single `validateUrl` probe may take before it is abandoned. */
