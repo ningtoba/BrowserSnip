@@ -489,11 +489,14 @@ describe('redact-pdf alsoMetadata is reachable from its own surface', () => {
     });
 
     // The switch on the panel is the definition's own field, labelled from it.
+    // `waitFor`'s one-second default is tight here: the pane mounts after an
+    // async file read, and under a full-suite worker this file has gone red on
+    // that alone (the switch arrives; the clock does not).
     const box = (await waitFor(() => {
       const found = document.querySelector('input[type=checkbox]') as HTMLInputElement | null;
       if (!found) throw new Error('the panel offers no metadata switch');
       return found;
-    })) as HTMLInputElement;
+    }, { timeout: 5000 })) as HTMLInputElement;
     expect(box.checked, 'the switch keeps its default-on').toBe(true);
     expect(document.body.textContent).toMatch(/Also clear matching text from metadata and bookmarks/);
 
