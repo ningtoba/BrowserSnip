@@ -44,7 +44,7 @@ import {
   rgb,
 } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
-import { pageContentStreams, textRects } from '@/lib/pdf/core/content';
+import { pageContentStreams, recolourText, textRects } from '@/lib/pdf/core/content';
 import { addAnnotations, listAnnotations } from '@/lib/pdf/core/annotations';
 import { clearFontCache, drawTextU } from '@/lib/pdf/core/fonts';
 import { openPDF } from '@/lib/pdf/core/doc';
@@ -969,6 +969,198 @@ describe('text-color rewrites colour operators, not pixels', () => {
     const outcome = await runPdf('text-color', { to: '#00ff00', from: '#ff0000', pages: 'all' }, [{ text: 'plain' }]);
     expect(outcome.outputs.length).toBe(0);
     expect(outcome.message).toMatch(/file is unchanged/u);
+  });
+});
+
+/* ── text-color: which run changed, and what did not ──────────────────────── */
+
+/**
+ * A page whose content stream is the test's own text, so every operator sits
+ * exactly where the case needs it. `/F1` in the body is the fixture's own face;
+ * `form`/`pattern` add the resource the case is about.
+ */
+interface RawPage {
+  rotation?: number;
+  /** Operators for a Form XObject, registered as `/Fx1`. */
+  form?: string;
+  /** Operators for a tiling pattern, registered as `/P1`. */
+  pattern?: string;
+}
+
+async function rawPage(body: string, options: RawPage = {}): Promise<Uint8Array> {
+  const doc = await openPDF(await pdfFixture([{ text: 'seed', rotation: options.rotation }]));
+  const page = doc.getPages()[0];
+  const resources = dictOf(doc, page.node.get(PDFName.of('Resources')));
+  const fonts = resources?.lookup(PDFName.of('Font'), PDFDict);
+  const face = fonts && [...fonts.keys()][0]?.asString();
+  if (!resources || !face) throw new Error('the fixture page carries no font resource');
+  const fill = (text: string) => text.split('/F1').join(face);
+  if (options.pattern) {
+    resources.set(PDFName.of('Pattern'), doc.context.obj({
+      P1: doc.context.register(doc.context.stream(options.pattern, {
+        Type: 'Pattern', PatternType: 1, PaintType: 1, TilingType: 1,
+        BBox: [0, 0, 300, 20], XStep: 300, YStep: 20,
+      })),
+    }));
+  }
+  if (options.form) {
+    resources.set(PDFName.of('XObject'), doc.context.obj({
+      Fx1: doc.context.register(doc.context.stream(fill(options.form), {
+        Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 400, 20],
+      })),
+    }));
+  }
+  page.node.set(CONTENTS_NAME, doc.context.register(doc.context.stream(fill(body))));
+  return doc.save({ useObjectStreams: false });
+}
+
+/**
+ * The fill and stroke colour in force at every text-showing operator, replayed
+ * from the produced stream with `q`/`Q` restored — the state a viewer would be
+ * in, so an assertion here is about what the file draws, not about which
+ * operator a helper chose to look at.
+ */
+function coloursAtShows(stream: string): { fill: string; stroke: string }[] {
+  let fill = 'default';
+  let stroke = 'default';
+  const stack: [string, string][] = [];
+  const out: { fill: string; stroke: string }[] = [];
+  for (const line of stream.split('\n').map((entry) => entry.trim()).filter(Boolean)) {
+    const parts = line.split(' ');
+    const op = parts[parts.length - 1] ?? '';
+    const saved = stack[stack.length - 1];
+    switch (op) {
+      case 'q': stack.push([fill, stroke]); break;
+      case 'Q':
+        if (saved) [fill, stroke] = saved;
+        stack.pop();
+        break;
+      case 'g': case 'rg': case 'k': case 'sc': case 'scn': fill = line; break;
+      case 'G': case 'RG': case 'K': case 'SC': case 'SCN': stroke = line; break;
+      case 'cs': fill = `space ${line}`; break;
+      case 'CS': stroke = `space ${line}`; break;
+      case 'Tj': case 'TJ': case "'": case '"': out.push({ fill, stroke }); break;
+      default: break;
+    }
+  }
+  return out;
+}
+
+describe('text-color recolours the run, and nothing else', () => {
+  it('recolours a run that inherits the colour a rule was painted with', async () => {
+    // Word and every print driver write a ruled line this way: set the colour,
+    // paint the rule, then show the run with no colour of its own. Reading the
+    // colour off the operator before the run saw the rule's `f` and gave up, so
+    // the run stayed black while the card said it had been recoloured.
+    const bytes = await rawPage('q\n0 0 0 rg\n40 470 300 3 re\nf\nBT\n/F1 12 Tf\n72 450 Td\n(Ruled) Tj\nET\nQ\n');
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [pdfFile(bytes, 'rule.pdf')]);
+    const page = (await reopen(outcome)).getPages()[0];
+    const stream = streamText(page);
+    // The control: the rule keeps the black it was painted with.
+    expect(stream).toMatch(/0 0 0 rg\n40 470 300 3 re/);
+    expect(coloursAtShows(stream).map((show) => show.fill)).toEqual(['1 0 0 rg']);
+    expect(await pageText(page)).toContain('Ruled');
+  });
+
+  it('recolours a run set through a pattern space and puts the space back', async () => {
+    // `/Pattern cs /P1 scn` is a colour, but `scn` is not a `rg`: the run was
+    // skipped, and a plain `rg` written into a pattern space is ignored by a
+    // reader, so the colour has to be stated in a DeviceRGB space and restored.
+    const bytes = await rawPage(
+      '/Pattern cs\n/P1 scn\nBT\n/F1 12 Tf\n72 500 Td\n(Pat) Tj\nET\nq\n0 0 0 rg\n40 470 300 3 re\nf\nQ\n',
+      { pattern: '0 0 300 20 re f' },
+    );
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [pdfFile(bytes, 'pat.pdf')]);
+    const stream = streamText((await reopen(outcome)).getPages()[0]);
+    // Stated in a DeviceRGB space, and closed again straight after the show.
+    expect(stream).toMatch(/q\n\/DeviceRGB cs\n1 0 0 scn\n\(Pat\) Tj\nQ/);
+    // Restored before the rule, so the rule is not painted inside the wrapper.
+    expect(stream.indexOf('Q', stream.indexOf('scn'))).toBeLessThan(stream.match(/^f$/mu)?.[0] ? stream.indexOf('\nf\n') : -1);
+    expect(stream).toMatch(/0 0 0 rg\n40 470 300 3 re/);
+  });
+
+  it('counts the runs it recoloured, not the colour operators', async () => {
+    // One `rg` in front of two shows used to count 1 for 2 changed runs.
+    const bytes = await rawPage('BT\n/F1 12 Tf\n0 0 0 rg\n72 500 Td\n(One) Tj\n(Two) Tj\nET\n');
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [pdfFile(bytes, 'two.pdf')]);
+    expect(outcome.message).toMatch(/Recoloured 2 text runs to #ff0000/u);
+    expect(coloursAtShows(streamText((await reopen(outcome)).getPages()[0]))).toHaveLength(2);
+  });
+
+  it('leaves an image and a Form XObject to themselves', async () => {
+    const form = 'BT\n/F1 12 Tf\n0 0 0 rg\n10 5 Td\n(In form) Tj\nET\n';
+    const bytes = await rawPage('q\n40 0 0 40 40 280 cm\n/Im1 Do\nQ\nq\n1 0 0 1 0 370 cm\n/Fx1 Do\nQ\n', { form });
+    const doc = await openPDF(bytes);
+    const resources = dictOf(doc, doc.getPages()[0].node.get(PDFName.of('Resources')))!;
+    const xobjects = resources.lookup(PDFName.of('XObject'), PDFDict)!;
+    xobjects.set(PDFName.of('Im1'), doc.context.register(
+      doc.context.stream(JPEG_1PX, { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1 }),
+    ));
+    const before = await doc.save({ useObjectStreams: false });
+
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [pdfFile(before, 'form.pdf')]);
+    // The page's own stream holds no text, so there is nothing to recolour and
+    // the count must not be invented from the words the XObject draws.
+    expect(outcome.outputs).toHaveLength(0);
+    expect(outcome.message).toMatch(/file is unchanged/u);
+    const reloaded = await openPDF(before);
+    const page = reloaded.getPages()[0];
+    const outXObjects = dictOf(reloaded, page.node.get(PDFName.of('Resources')))?.lookup(PDFName.of('XObject'), PDFDict);
+    const formStream = reloaded.context.lookup(outXObjects?.get(PDFName.of('Fx1'))!);
+    expect(formStream).toBeInstanceOf(PDFStream);
+    // The XObject's own operators still say black (the documented limit)…
+    expect(Buffer.from((formStream as PDFStream).getContents()).toString('latin1')).toContain('0 0 0 rg');
+    // …while the image is still an image, not a repainted operator.
+    const image = dictOf(reloaded, outXObjects?.get(PDFName.of('Im1')));
+    expect(image?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.asString()).toBe('/Image');
+  });
+
+  it('paints a stroke-only run with the stroke colour, not the fill', async () => {
+    const bytes = await rawPage('BT\n/F1 12 Tf\n1 Tr\n0 0 0 RG\n72 480 Td\n(Outline) Tj\nET\n');
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [pdfFile(bytes, 'stroke.pdf')]);
+    const shows = coloursAtShows(streamText((await reopen(outcome)).getPages()[0]));
+    expect(shows).toHaveLength(1);
+    expect(shows[0].stroke).toBe('1 0 0 RG');
+    expect(shows[0].fill).not.toBe('1 0 0 rg');
+  });
+
+  it('gives a faux bold the stroke colour it strokes with', async () => {
+    // `opts.bold` strokes the glyph, so it has to set the stroke as well as the
+    // fill, and the width has to be in force before the show.
+    const bytes = await rawPage('BT\n/F1 12 Tf\n0 0 0 rg\n72 500 Td\n(Bold) Tj\nET\n');
+    const doc = await openPDF(bytes);
+    recolourText(doc.getPages()[0], 'any', '#ff0000', { bold: true });
+    const stream = streamText(doc.getPages()[0]);
+    expect(stream).toMatch(/1 0 0 rg\n1 0 0 RG\n[\d.]+ w\n\(Bold\) Tj\n2 Tr/);
+  });
+
+  it('reports the run even when the text is already the chosen colour', async () => {
+    const bytes = await rawPage('BT\n/F1 12 Tf\n0 0 0 rg\n72 500 Td\n(Same) Tj\nET\n');
+    const outcome = await run('text-color', { from: 'any', to: '#000000', pages: 'all' }, [pdfFile(bytes, 'same.pdf')]);
+    expect(outcome.outputs).toHaveLength(1);
+    expect(outcome.message).toMatch(/Recoloured 1 text run to #000000/u);
+    expect(await pageText((await reopen(outcome)).getPages()[0])).toContain('Same');
+  });
+
+  it('recolours a turned sheet and a /Contents that is an indirect array', async () => {
+    const source = await openPDF(await rawPage('BT\n/F1 12 Tf\n0 0 0 rg\n72 200 Td\n(Turned) Tj\nET\n', { rotation: 90 }));
+    const page = source.getPages()[0];
+    // `/Contents 12 0 R` where 12 is an array of streams — what Acrobat writes.
+    const own = page.node.get(CONTENTS_NAME)!;
+    const indirect = source.context.register(source.context.obj([own]));
+    page.node.set(CONTENTS_NAME, indirect);
+    const outcome = await run('text-color', { from: 'any', to: '#ff0000', pages: 'all' }, [
+      pdfFile(await source.save({ useObjectStreams: false }), 'turned.pdf'),
+    ]);
+    const reloaded = await reopen(outcome);
+    const outPage = reloaded.getPages()[0];
+    expect(outPage.getRotation().angle).toBe(90);
+    expect(await pageText(outPage)).toContain('Turned');
+    expect(coloursAtShows(streamText(outPage)).map((show) => show.fill)).toEqual(['1 0 0 rg']);
+    // Never an array nested inside `/Contents`: every entry resolves to a stream.
+    for (const entry of arrayOf(reloaded, outPage.node.get(CONTENTS_NAME))?.asArray() ?? []) {
+      expect(reloaded.context.lookup(entry)).toBeInstanceOf(PDFStream);
+    }
   });
 });
 

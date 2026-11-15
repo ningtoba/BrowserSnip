@@ -134,6 +134,11 @@ const TOOL_LABELS = {
     leader: 'Leader',
     showPageNumbers: 'Show page numbers',
   },
+  // `text-color`'s two colour fields split `FIELDS` at the space in their printed
+  // labels ("New colour", "Replace which colour"), so both read NO CONTROL and the
+  // run went ahead with the default `to` — measured in round 042, where a run asked
+  // for `#ff0000` shipped 27 black runs and said "to #000000".
+  'text-color': { to: 'New colour', from: 'Replace which colour' },
   // `deskew-pdf`'s `threshold` is a *confidence*, not a black-and-white cutoff, so
   // the global label above finds nothing on its rail (round 029).
   'deskew-pdf': {

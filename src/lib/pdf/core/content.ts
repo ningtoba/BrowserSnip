@@ -3412,12 +3412,52 @@ function toHex(color: RGB): string {
   return `#${color.map((channel) => Math.round(channel * 255).toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** CMYK for an RGB triple — the operands of a `k`/`K` in a DeviceCMYK space. */
+function toCmyk(color: RGB): number[] {
+  const black = 1 - Math.max(...color);
+  if (black >= 1) return [0, 0, 0, 1];
+  return color.map((channel) => (1 - channel - black) / (1 - black)).concat(black);
+}
+
+/** The colour an `sc`/`scn` states, read in the space it was stated in. */
+function colourFromSpace(op: ContentOp, space: string | undefined): ColorValue {
+  const values = numbersOf(op);
+  if (space === '/DeviceGray' && values.length >= 1) return { space: 'gray', value: values[0] };
+  if (space === '/DeviceCMYK' && values.length >= 4) return { space: 'cmyk', value: values.slice(0, 4) };
+  if (values.length === 1) return { space: 'gray', value: values[0] };
+  if (values.length === 3) return { space: 'rgb', value: [values[0], values[1], values[2]] };
+  if (values.length === 4) return { space: 'cmyk', value: values.slice(0, 4) };
+  return { space: 'other' };
+}
+
 /**
- * Reword the colour operators that paint text.
+ * Recolour the text a page draws.
  *
- * @param from `#rrggbb` to match the current colour, or `'any'`.
+ * What paints a run is the colour **in force** at the operator that shows it, so
+ * that is what this walks — `q`/`Q` save and restore `cs`/`CS` (the colour
+ * spaces), `g`/`rg`/`k`/`G`/`RG`/`K`, `sc`/`scn`/`SC`/`SCN` and `Tr` (which says
+ * whether the fill, the stroke, both or neither is visible). The previous version
+ * instead looked for a colour operator with a text-show before the next path
+ * paint, which got two shapes wrong that a producer emits all the time:
+ *
+ * - a page that sets a colour, paints a rule and then draws a run *inheriting*
+ *   that colour (Word and every print driver write a rule this way) left the run
+ *   black, because the rule's `f` consumed the operator;
+ * - a run coloured through `/Pattern cs /P1 scn`, an `/ICCBased` space or any
+ *   other `cs`+`scn` pair was left black, because `scn` is not a `rg` and the
+ *   match was taken from the operator's own name.
+ *
+ * The colour is therefore **inserted in front of the run** and never written over
+ * the operator that precedes it, so no path or rule is repainted. In a device RGB
+ * space that is one `rg`. In a Pattern, ICC or other non-device space it is a
+ * `q … /DeviceRGB cs … scn … Q` wrapper, because `rg` is ignored while the fill
+ * space is a pattern and `Q` puts that space back for whatever the page draws
+ * next. Text inside a Form XObject is not in the page's own operator list and is
+ * left alone, as the card says.
+ *
+ * @param from `#rrggbb` to match the colour in force, or `'any'`.
  * @param to   `#rrggbb` to write.
- * @returns the number of operators changed.
+ * @returns the number of text runs recoloured.
  */
 export function recolourText(
   page: PDFPage,
@@ -3428,62 +3468,128 @@ export function recolourText(
   const target = parseHexColor(to, 'to');
   const match = from === 'any' ? null : parseHexColor(from, 'from');
   const ops = pageContentOps(page);
-  const walk = walkText(page, ops);
-  const shows: number[] = [];
-  ops.forEach((op, index) => {
-    if (TEXT_SHOW_OPS.has(op.name)) shows.push(index);
-  });
-  if (shows.length === 0) return 0;
+  if (!ops.some((op) => TEXT_SHOW_OPS.has(op.name))) return 0;
+  // The walk is only needed for the font size a faux bold is measured against.
+  const state = opts.bold ? walkText(page, ops).stateAtOp : null;
 
-  // A colour operator paints text when the next text-showing operator comes
-  // before any path-painting operator (which would have consumed it).
-  const PATH_PAINT = new Set(['f', 'f*', 'F', 'B', 'B*', 'S', 's', 'n', 'W', 'W*']);
-  const textColourOps = new Set<number>();
-  ops.forEach((op, index) => {
-    const isFill = op.name in FILL_OPS;
-    const isStroke = op.name in STROKE_OPS;
-    if (!isFill && !isStroke) return;
-    if (match !== null && !colorsMatch(colorFromOp(op, (isFill ? FILL_OPS : STROKE_OPS)[op.name]), match)) return;
-    for (let i = index + 1; i < ops.length; i++) {
-      const later = ops[i];
-      if (later.name in FILL_OPS || later.name in STROKE_OPS) break;
-      if (PATH_PAINT.has(later.name)) break;
-      if (isFill && TEXT_SHOW_OPS.has(later.name)) {
-        textColourOps.add(index);
+  interface Colour { space?: string; value: ColorValue }
+  const fill: Colour = { value: { space: 'gray', value: 0 } };
+  const stroke: Colour = { value: { space: 'gray', value: 0 } };
+  let renderMode = 0;
+  const stack: { fill: Colour; stroke: Colour; renderMode: number }[] = [];
+
+  const out: ContentOp[] = [];
+  let runs = 0;
+
+  const numberOp = (name: string, values: number[]): ContentOp =>
+    makeOp(name, values.map((value) => operand.number(Number(value.toFixed(5)))));
+
+  /** Whether `colour` needs an RGB space pushed first to be stated at all. */
+  const needsSpace = (space: string | undefined, colour: RGB): boolean => {
+    if (space === undefined || space === '/DeviceRGB' || space === '/DeviceCMYK') return false;
+    if (space === '/DeviceGray') {
+      const grey = luminance(colour);
+      return !colour.every((channel) => Math.abs(channel - grey) < 0.5 / 255);
+    }
+    return true;
+  };
+
+  const paint = (role: 'fill' | 'stroke', space: string | undefined, wrapped: boolean): ContentOp[] => {
+    const strokeRole = role === 'stroke';
+    if (wrapped) {
+      return [
+        makeOp(strokeRole ? 'CS' : 'cs', [operand.name('/DeviceRGB')]),
+        numberOp(strokeRole ? 'SCN' : 'scn', target),
+      ];
+    }
+    if (space === '/DeviceGray') return [numberOp(strokeRole ? 'G' : 'g', [luminance(target)])];
+    if (space === '/DeviceCMYK') return [numberOp(strokeRole ? 'K' : 'k', toCmyk(target))];
+    return colorOps(target, strokeRole);
+  };
+
+  for (let index = 0; index < ops.length; index++) {
+    const op = ops[index];
+    switch (op.name) {
+      case 'q':
+        stack.push({ fill: { ...fill }, stroke: { ...stroke }, renderMode });
+        break;
+      case 'Q': {
+        const restored = stack.pop();
+        if (restored) {
+          fill.space = restored.fill.space;
+          fill.value = restored.fill.value;
+          stroke.space = restored.stroke.space;
+          stroke.value = restored.stroke.value;
+          renderMode = restored.renderMode;
+        }
         break;
       }
-      if (isStroke && TEXT_SHOW_OPS.has(later.name) && walk.segments.some((s) => s.opIndex === i && s.renderMode >= 1)) {
-        textColourOps.add(index);
+      case 'cs':
+      case 'CS': {
+        const named = op.operands.find((value): value is NameOperand => value.kind === 'name');
+        if (!named) break;
+        if (op.name === 'cs') fill.space = `/${named.value}`;
+        else stroke.space = `/${named.value}`;
         break;
       }
+      case 'g':
+      case 'rg':
+      case 'k':
+        fill.value = colorFromOp(op, FILL_OPS[op.name]);
+        break;
+      case 'G':
+      case 'RG':
+      case 'K':
+        stroke.value = colorFromOp(op, STROKE_OPS[op.name]);
+        break;
+      case 'sc':
+      case 'scn':
+        fill.value = colourFromSpace(op, fill.space);
+        break;
+      case 'SC':
+      case 'SCN':
+        stroke.value = colourFromSpace(op, stroke.space);
+        break;
+      case 'Tr':
+        renderMode = numbersOf(op)[0] ?? renderMode;
+        break;
+      default:
+        break;
     }
-  });
-
-  const changed = new Set<number>();
-  ops.forEach((op, index) => {
-    if (!textColourOps.has(index)) return;
-    const stroke = op.name in STROKE_OPS;
-    ops[index] = colorOps(target, stroke)[0];
-    changed.add(index);
-  });
-
-  if (opts.bold && changed.size > 0) {
-    // Faux bold: fill then stroke the same colour. `Tr` is text state, so it
-    // goes inside the text block, right after the colour operator.
-    const insertions: { at: number; op: ContentOp }[] = [];
-    for (const index of changed) {
-      const snapshot = walk.stateAtOp[index];
-      const width = Math.max(0.15, (snapshot?.size ?? 10) * 0.02);
-      insertions.push({ at: index + 1, op: makeOp('w', [operand.number(Number(width.toFixed(3)))]) });
-      insertions.push({ at: index + 2, op: makeOp('Tr', [operand.number(2)]) });
+    if (!TEXT_SHOW_OPS.has(op.name)) {
+      out.push(op);
+      continue;
     }
-    insertions.sort((a, b) => b.at - a.at);
-    for (const insertion of insertions) ops.splice(insertion.at, 0, insertion.op);
+
+    // Which of the two colours this run actually paints with (Table 106).
+    const paintsFill = renderMode !== 1 && renderMode !== 5;
+    const paintsStroke = renderMode === 1 || renderMode === 2 || renderMode === 5 || renderMode === 6;
+    const matches = match === null
+      || (paintsFill && colorsMatch(fill.value, match))
+      || (paintsStroke && colorsMatch(stroke.value, match));
+    if (!matches) {
+      out.push(op);
+      continue;
+    }
+
+    const wrapped = needsSpace(fill.space, target) || (paintsStroke && needsSpace(stroke.space, target));
+    const pre: ContentOp[] = wrapped ? [makeOp('q')] : [];
+    if (paintsFill) pre.push(...paint('fill', fill.space, wrapped));
+    // Faux bold strokes the glyph, so the stroke needs the colour too, and the
+    // width is graphics state that has to be set before the show.
+    if (paintsStroke || opts.bold) pre.push(...paint('stroke', stroke.space, wrapped));
+    if (opts.bold) pre.push(makeOp('w', [operand.number(Number(Math.max(0.15, (state?.[index]?.size ?? 10) * 0.02).toFixed(3)))]));
+    const post: ContentOp[] = opts.bold ? [makeOp('Tr', [operand.number(2)])] : [];
+    if (wrapped) post.push(makeOp('Q'));
+    out.push(...pre, op, ...post);
+    runs += 1;
   }
 
-  if (changed.size === 0) return 0;
-  const before = pageContentOps(page);
-  return rewritePageContent(page, () => ops.map((op, i) => (i < before.length ? op : op)).concat(ops.length > before.length ? [] : []));
+  if (runs === 0) return 0;
+  // `rewritePageContent` counts operators, which is not the same thing as runs:
+  // two runs may share one colour operator, and a plain `rg` inserted in front of
+  // each run makes that difference visible in the count the card prints.
+  return rewritePageContent(page, () => out) > 0 ? runs : 0;
 }
 
 /**

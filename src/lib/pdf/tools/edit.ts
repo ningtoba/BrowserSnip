@@ -1506,9 +1506,9 @@ export const editTools: PdfToolDefinition[] = [
     keywords: ['recolour', 'black text', 'colour swap'],
     outputSuffix: '_recoloured.pdf',
     actionLabel: 'Recolour text',
-    promise: 'The colour operators in front of existing text are rewritten — no page is rasterised, so the text stays selectable.',
+    promise: 'The colour in force at each run of existing text is rewritten in front of it — no page is rasterised, so the text stays selectable.',
     fields: [
-      { key: 'to', label: 'New colour', type: 'color', default: '#000000', group: 'Recolour', help: 'Every matching run is repainted this colour, including text in headers, footers and annotation labels.' },
+      { key: 'to', label: 'New colour', type: 'color', default: '#000000', group: 'Recolour', help: 'Every matching text run is repainted this colour, including runs in headers and footers. Text drawn inside an image is part of the picture and keeps its colour.' },
       { key: 'from', label: 'Replace which colour', group: 'Recolour', type: 'select', default: 'any', options: [
         { value: 'any', label: 'Any colour' },
         { value: '#000000', label: 'Black only' },
@@ -1518,7 +1518,8 @@ export const editTools: PdfToolDefinition[] = [
       pagesField({ group: 'Pages' }),
     ],
     notes: [
-      'Only text drawn in the page\u2019s own content streams is recoloured. Text inside an image is part of the picture, and text carried inside a Form XObject stays in that XObject.',
+      'Only text drawn in the page\u2019s own content streams is recoloured. Text inside an image is part of the picture, and text carried inside a Form XObject stays in that XObject \u2014 the run keeps the colour the XObject paints it with.',
+      'A run whose colour comes from a pattern or an ICC colour space is recoloured too: the colour is stated in a device RGB space for that run alone, so the space the page set is back for the next one.',
       'Pages with no matching text are reported, not quietly skipped.',
     ],
     async run(context) {
@@ -1543,7 +1544,7 @@ export const editTools: PdfToolDefinition[] = [
             [{
               title: 'Nothing was recoloured',
               text: from === 'any'
-                ? `None of the ${countLabel(pages.length, 'page')} you selected draws text with a colour operator — scanned pages, or text painted inside an image, look like this.`
+                ? `None of the ${countLabel(pages.length, 'page')} you selected draws text of its own \u2014 scanned pages, or text painted inside an image, look like this.`
                 : `No text painted in ${from} was found on the ${countLabel(pages.length, 'page')} you selected. Try "Any colour", which changes every text run.`,
             }],
             { message: 'No text matched, so the file is unchanged.' },
@@ -1556,7 +1557,7 @@ export const editTools: PdfToolDefinition[] = [
       if (untouched.length > 0 && untouched.length < pages.length) {
         const list = untouched.slice(0, 8).join(', ') + (untouched.length > 8 ? ', …' : '');
         const where = untouched.length === 1 ? `page ${list}` : `pages ${list}`;
-        note(notes, `Nothing on ${where} was drawn in ${from === 'any' ? 'a colour operator' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
+        note(notes, `No text on ${where} was painted in ${from === 'any' ? 'a colour of its own' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
       }
       return pdfOutput(input.doc, notes, `Recoloured ${countLabel(changed, 'text run')} to ${to}.`);
     },

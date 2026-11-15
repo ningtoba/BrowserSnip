@@ -152,7 +152,7 @@ export function parseContentStream(bytes: Uint8Array): ContentOp[];
 export function serialiseContentStream(ops: ContentOp[]): Uint8Array;
 export function pageContentStreams(page: PDFPage): { bytes: Uint8Array; ref: PDFRef }[];
 export function rewritePageContent(page: PDFPage, fn: (ops: ContentOp[]) => ContentOp[]): number; // ops changed
-export function recolourText(page: PDFPage, from: string | 'any', to: string, opts?: { bold?: boolean }): number; // operator rg/RG/g/G/k/K
+export function recolourText(page: PDFPage, from: string | 'any', to: string, opts?: { bold?: boolean }): number; // runs recoloured; colour in force from q/Q, cs/CS, g/rg/k/G/RG/K, sc/scn/SC/SCN, Tr
 export function prependBackground(page: PDFPage, rect: QuadRect, color: string, opts?: { opacity?: number }): void;  // /Artifact <</Type/Background>> BDC..EMC, under a /ca state below opacity 1
 export function removeTextInRects(page: PDFPage, rects: QuadRect[]): { removedGlyphRuns: number; needsRasterFallback: boolean }; // TJ/Tj inside rect, incl. cross-BT blocks
 export function textRects(page: PDFPage): { rect: QuadRect; text: string }[];      // from Tm/Td/TD/Tz/TL + TJ arrays
