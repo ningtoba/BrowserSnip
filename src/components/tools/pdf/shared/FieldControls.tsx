@@ -919,8 +919,15 @@ function PagePicker({
       {/* The strip is the reason this control is not bar height: a collapsed row
           gets the text field, the count and the error, and the picker comes back
           when the options are expanded. */}
+      {/* `h-52` is the strip's *viewport*, so this has to be a flex column: as a plain
+          block the strip answered it with its content height (222 px on an eight-page
+          sheet: two 120 px thumbnail rows plus its footer), spilled 12 px past the box
+          and was painted over the field's own help line, which begins 4 px after it —
+          measured in Chromium on `scanner-effect`'s pane, strip bottom 768 against box
+          bottom 756 and help top 760. Bounded, the strip's inner scroller scrolls and
+          its footer stays inside the box. */}
       {!compact && (
-        <div className="h-52">
+        <div className="flex h-52 min-h-0 flex-col">
           <PageThumbs
             session={session}
             selected={selected}

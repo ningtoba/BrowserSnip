@@ -18,6 +18,7 @@ import { useFileStore } from '@/stores/file-store';
 import { ToolInputError } from '@/lib/pdf/core/guard';
 import { usePdfTool } from '@/hooks/usePdfTool';
 import { PdfToolPanel } from '@/components/tools/pdf/shared/PdfToolPanel';
+import { FieldControl } from '@/components/tools/pdf/shared/FieldControls';
 import { EmptyState } from '@/components/tools/pdf/shared/EmptyState';
 import { ErrorPanel } from '@/components/tools/pdf/shared/ErrorPanel';
 import { FileQueue, type FileQueueItem } from '@/components/tools/pdf/shared/FileQueue';
@@ -615,6 +616,45 @@ describe('PageThumbs', () => {
   it('shows an empty state when there is no document', () => {
     render(<PageThumbs session={null} />);
     expect(screen.getByText('No pages to show')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The pages field's strip is a scroll viewport, and it has to be one.
+ *
+ * Measured in Chromium on the `scanner-effect` pane with an eight-page file: the strip
+ * answered its `h-52` (208 px) box with 222 px of content — two 120 px thumbnail rows plus
+ * its own footer — so it ended 12 px *below* the box while the field's help line began 4 px
+ * after it (strip bottom 768, box bottom 756, help top 760). The help was painted under
+ * thumbnails 5–8 and the strip's footer crossed its second line: the pane read as clipped.
+ * jsdom has no layout, so the pin is the structure that bounds it — a flex column — and the
+ * arithmetic that overflows any other shape is in this comment.
+ */
+describe('pages field viewport', () => {
+  it('bounds the page strip in its own box instead of letting it spill over the help line', async () => {
+    const { openRender } = await import('@/lib/pdf/core/render');
+    vi.mocked(openRender).mockResolvedValueOnce(fakeSession(9) as never);
+    useFileStore.setState({ file: pdfFile() });
+    const help = 'Leave as "all", or use 1,3,5-7, odd, even.';
+    render(
+      <FieldControl
+        field={{ ...pagesField, help }}
+        values={{ pages: 'all' }}
+        onChange={() => {}}
+        pageCount={9}
+      />,
+    );
+    const strip = await screen.findByLabelText('Pages in this file');
+    const box = strip.closest('div.h-52');
+    expect(box, 'the strip is no longer inside a fixed-height viewport').not.toBeNull();
+    // A plain block lets the strip answer with its content height; only a flex column
+    // shrinks the strip to the box so its inner scroller scrolls.
+    expect(box!.className, 'the viewport is not a flex column').toMatch(/\bflex\b/);
+    expect(box!.className, 'the viewport cannot shrink its child').toMatch(/min-h-0/);
+    // …and the help line the spill landed on is still the next thing after the box.
+    expect(box!.parentElement?.nextElementSibling?.textContent, 'the structure moved, re-read this pin')
+      .toContain(help);
+    useFileStore.setState({ file: null });
   });
 });
 

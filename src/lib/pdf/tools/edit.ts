@@ -1653,7 +1653,11 @@ export const editTools: PdfToolDefinition[] = [
     description: 'Make a PDF look like a clean greyscale scan',
     icon: '📄',
     category: 'edit',
-    keywords: ['scan look', 'whitening', 'binarise', 'photocopy'],
+    // "binarise" was the one keyword the pass cannot answer: it is a greyscale look, not
+    // a cutoff — measured at default 220 dpi, the text sheet keeps 2 213 mid tones and
+    // the colour sheet 54 180 (against 64 288 in a plain rasterisation of the same
+    // sheet), and there is no cutoff field on this card to set. `adjust-colors` has one.
+    keywords: ['scan look', 'whitening', 'black and white look', 'photocopy'],
     outputSuffix: '_scanned.pdf',
     actionLabel: 'Apply scan effect',
     promise: 'The pages you choose, whitened and sharpened into a clean greyscale scan — a real pixel pass, not just a colour filter.',
@@ -1668,6 +1672,14 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'Whitening and sharpening are applied per pixel, so they are the slowest of the colour tools — a 500-page document is a lot of canvases.',
       'The output is images; selectable text is lost, and only the selected pages are written into it.',
+      // Measured, because the name suggests otherwise: a sheet photographed at 3.00°
+      // comes back at 3.00° — the passes are grade, not geometry, and the copy that is
+      // going to say "clean scan" has to say which half it does not do.
+      'It grades the page; it does not straighten it. A sheet tilted by 3° comes back tilted by 3°, so run Deskew PDF first if the tilt matters.',
+      // The same sentence its two sibling cards carry, for the same measured reason:
+      // the note is painted into the picture (469 → 514 non-white px at its own place)
+      // and its `/Annots` entry is gone, so the card must not leave it unspoken.
+      'Links and annotations are not carried over: they end up part of the picture, so a note stops opening and a link stops being clickable.',
     ],
     async run(context) {
       const notes: string[] = [];

@@ -128,9 +128,11 @@ const held = vi.hoisted(() => {
       painted: (Bitmap | null)[];
       /** Filter strings that reached a canvas draw operation, with the page they touched. */
       applied: { page: number; filter: string }[];
+      /** Paint the bar sheared, the way a sheet fed in crooked lands on the glass. */
+      tilt: boolean;
     };
   };
-  scope.__colour ??= { earlyReads: 0, painted: [], applied: [] };
+  scope.__colour ??= { earlyReads: 0, painted: [], applied: [], tilt: false };
   return scope.__colour;
 });
 
@@ -526,7 +528,9 @@ vi.mock('pdfjs-dist', () => {
 function paintPage(canvas: HTMLCanvasElement): void {
   const surface = surfaceOf(canvas);
   const names = PAGES[pageCanvases.get(canvas)! - 1] ?? [];
+  if (held.tilt) paintTiltedBar(surface);
   for (const name of names) {
+    if (held.tilt && name === 'bar') continue;
     // `band` is paper, and paper is the background fill's job — that is the whole point
     // of the test below: a filter set before the paint reaches that fill and nothing else.
     if (name !== 'copy' && name !== 'band') paintRegion(surface, name, INK[name]);
@@ -544,6 +548,32 @@ function paintPage(canvas: HTMLCanvasElement): void {
     putRow(surface, left, right, y, 0);
     putRow(surface, left, right, y + 1, 128);
     putRow(surface, left, right, y - 1, 200);
+  }
+}
+
+/**
+ * The `bar` region on the glass crooked — 1 px down per 20 px across, about 2.9°.
+ *
+ * The double otherwise paints axis-aligned rectangles, so "the tool does not straighten
+ * anything" would pass on a straight sheet whatever the tool did. A sheared bar makes the
+ * angle something the tool's own output can disagree with.
+ */
+function paintTiltedBar(surface: Bitmap): void {
+  const region = REGIONS.bar;
+  const left = Math.round(region.x0 * surface.width);
+  const right = Math.round(region.x1 * surface.width);
+  const top = Math.round(region.y0 * surface.height);
+  const height = Math.round((region.y1 - region.y0) * surface.height);
+  for (let x = left; x < right; x++) {
+    const shift = Math.round((x - left) / 20);
+    for (let y = top + shift; y < top + shift + height; y++) {
+      if (y < 0 || y >= surface.height) continue;
+      const at = (y * surface.width + x) * 4;
+      surface.data[at] = 0;
+      surface.data[at + 1] = 0;
+      surface.data[at + 2] = 0;
+      surface.data[at + 3] = 255;
+    }
   }
 }
 
@@ -578,7 +608,7 @@ function paintRegion(surface: Bitmap, name: RegionName, colour: [number, number,
 /** Index of the cropped sheet when the fixture carries one: the fourth page. */
 const CROP_SHEET = 3;
 
-async function colourFixture(options: { cropBar?: boolean; info?: boolean; annots?: boolean } = {}): Promise<Uint8Array> {
+async function colourFixture(options: { cropBar?: boolean; info?: boolean; annots?: boolean; tilt?: boolean } = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   if (options.info) {
     doc.setTitle('Quarterly ledger, scanned');
@@ -653,7 +683,7 @@ function fileOf(bytes: Uint8Array): ToolFile {
 }
 
 /** Runs a shipped tool and reads its page 1 back as RGB samples. */
-async function runTool(id: string, values: ToolValues, fixture: { cropBar?: boolean; info?: boolean; annots?: boolean } = {}) {
+async function runTool(id: string, values: ToolValues, fixture: { cropBar?: boolean; info?: boolean; annots?: boolean; tilt?: boolean } = {}) {
   const tool = getPdfTool(id);
   expect(tool, `${id} is not registered`).toBeTruthy();
   const result = (await tool!.run!({
@@ -833,6 +863,7 @@ beforeEach(() => {
   held.earlyReads = 0;
   held.painted = [];
   held.applied = [];
+  held.tilt = false;
 });
 
 describe('the pdf.js double keeps the two facts the fix turns on', () => {
@@ -1261,6 +1292,102 @@ describe('scanner-effect: a real pixel pass, not the page re-imaged', () => {
     const { raster } = await runTool('scanner-effect', { dpi: 72, pages: '3' });
     expect(populations(raster).middle, 'the passes invented mid tones on a blank sheet').toBe(0);
     expect(lumaOf(regionMean(raster, 'band'))).toBeGreaterThanOrEqual(247);
+  });
+});
+
+/**
+ * What the card says the pass does — and the two things it does that the card did not say.
+ *
+ * The card read as a complete description of a scan cleanup and was neither complete nor
+ * accurate at the edges: the two properties a reader is most likely to assume from
+ * "Scanner Effect" are the two this pipeline does not have — it does not straighten, and it
+ * does not remove dust — while the property it does have and drops silently is the
+ * annotation it paints over. Measured on the dev build (220 dpi, `colour-rail.mjs` +
+ * `colour-fixture.mjs`'s sheets): a 3.00° bar comes back at 3.00°, 40 isolated 1 pt dots
+ * come back as 40, and the note icon moves from `/Annots` into the picture (469 → 514
+ * non-white px at its own place, no `/Annots` left).
+ */
+describe('scanner-effect card: the properties a reader assumes, measured', () => {
+  const COLOUR: ToolValues = { dpi: 72, pages: '2' };
+
+  /** Where the top edge of the `bar` sits, in degrees, off the produced pixels. */
+  function topEdgeAngle(bitmap: Bitmap): number {
+    const points: [number, number][] = [];
+    for (let x = Math.round(bitmap.width * 0.15); x < bitmap.width * 0.8; x++) {
+      for (let y = Math.round(bitmap.height * 0.04); y < bitmap.height * 0.45; y++) {
+        const at = (y * bitmap.width + x) * 4;
+        if (bitmap.data[at] + bitmap.data[at + 1] + bitmap.data[at + 2] < 330) {
+          points.push([x, y]);
+          break;
+        }
+      }
+    }
+    expect(points.length, 'no bar edge was found to measure').toBeGreaterThan(bitmap.width * 0.5);
+    const mx = points.reduce((sum, [x]) => sum + x, 0) / points.length;
+    const my = points.reduce((sum, [, y]) => sum + y, 0) / points.length;
+    const slope
+      = points.reduce((sum, [x, y]) => sum + (x - mx) * (y - my), 0)
+        / points.reduce((sum, [x]) => sum + (x - mx) ** 2, 0);
+    return (Math.atan(slope) * 180) / Math.PI;
+  }
+
+  it('leaves a crook in the sheet where it found it, and says so', async () => {
+    held.tilt = true;
+    const { raster } = await runTool('scanner-effect', { dpi: 72, pages: '1' });
+    const crook = topEdgeAngle(painted(1));
+    const shipped = topEdgeAngle(raster);
+    // The fixture really is crooked, or "unchanged" would be the straight sheet over again.
+    expect(Math.abs(crook), 'the control sheet is not tilted').toBeGreaterThan(2);
+    expect(Math.abs(shipped - crook), 'the effect moved the angle it was given').toBeLessThan(0.3);
+    const notes = getPdfTool('scanner-effect')!.notes?.join(' ') ?? '';
+    expect(notes, 'the card never says the pass does not straighten').toMatch(/does not straighten/i);
+    expect(notes, 'the card does not name the tool that does').toMatch(/deskew/i);
+  });
+
+  it('keeps the dust it was given, so it does not claim to clean it', () => {
+    // Measured on the dev build: 40 isolated 1 pt dots on paper come back as 40 (blob
+    // count inside the dot grid at 220 dpi, 40 → 40; blot sizes shrink a pixel at the
+    // anti-aliased fringe but none is deleted). No speckle stage exists here, so the card
+    // must not advertise one — and there is no control for it either.
+    const tool = getPdfTool('scanner-effect')!;
+    const words = `${tool.description} ${tool.promise} ${(tool.notes ?? []).join(' ')}`;
+    expect(words).not.toMatch(/dust|speckle/i);
+    const keys = (tool.fields ?? []).map((f) => f.key);
+    expect(keys, 'a dust control appeared without the pin being updated').toEqual([
+      'whitening', 'sharpen', 'grayscale', 'contrast', 'dpi', 'pages',
+    ]);
+  });
+
+  it('paints the note into the picture, drops the /Annots entry, and names both', async () => {
+    const { doc, result } = await runTool('scanner-effect', COLOUR, { annots: true });
+    const annots = (page: PDFPage) => {
+      const raw = page.node.get(PDFName.of('Annots'));
+      const deref = raw instanceof PDFRef ? page.node.context.lookup(raw) : raw;
+      return deref instanceof PDFArray ? deref.size() : 0;
+    };
+    const source = await openPDF(await colourFixture({ annots: true }));
+    // The control: the fixture without the option carries no annotation to lose.
+    const bare = await openPDF(await colourFixture());
+    expect(annots(bare.getPage(1)), 'the control page has annots').toBe(0);
+    expect(annots(source.getPage(1)), 'the fixture lost its annot').toBe(1);
+    expect(annots(doc.getPage(0)), 'the copy kept a clickable annot').toBe(0);
+    expect(result.kind).toBe('pdf');
+    const tool = getPdfTool('scanner-effect')!;
+    expect(tool.notes?.join(' '), 'the card does not name the annotations it drops').toMatch(/annotation/i);
+    expect(tool.notes?.join(' '), 'the card does not name the links it drops').toMatch(/link/i);
+  });
+
+  it('is a greyscale look, not a cutoff — and its search words no longer say binarise', async () => {
+    const tool = getPdfTool('scanner-effect')!;
+    expect(tool.keywords ?? [], 'the card still offers "binarise" as a search word').not.toContain('binarise');
+    expect(tool.keywords ?? []).toContain('black and white look');
+    expect((tool.fields ?? []).some((f) => f.key === 'threshold'), 'the card grew a cutoff field').toBe(false);
+    // The measurement behind the word: a binarised page has no mid tones left, and this
+    // one keeps them at the default settings — 2 213 on the same sheet in Chromium, and
+    // 48 in this double, whose paint models anti-aliasing with three fixed rows (`threshold`
+    // would leave 0). Anything above zero says the page is still a tone away from two.
+    const { raster } = await runTool('scanner-effect', { dpi: 72, pages: '1' });
+    expect(populations(raster).middle, 'the page was binarised after all').toBeGreaterThan(0);
   });
 });
 
