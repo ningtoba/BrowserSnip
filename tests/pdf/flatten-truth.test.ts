@@ -398,7 +398,9 @@ describe('flatten-pdf puts each mark in the page and takes it out of the comment
     const fields = acro ? doc.context.lookupMaybe(acro.get(PDFName.of('Fields')), PDFArray) : undefined;
     expect(fields?.size() ?? 0, 'AcroForm still lists fields').toBe(0);
     expect(await liveKinds(bytes)).not.toContain('Widget');
-    expect(acro?.has(PDFName.of('NeedAppearances')), 'a viewer is still told to draw the values').toBe(false);
+    // `flattenForm` now deletes the empty `/AcroForm` with the last field, so the
+    // dictionary may be absent altogether; either way no viewer is told to draw.
+    expect(acro?.has(PDFName.of('NeedAppearances')) ?? false, 'a viewer is still told to draw the values').toBe(false);
     // The signature's own strokes, at the box it was signed in, with no annotation
     // left for a reader to point at.
     const content = await pageContent(bytes, 0);

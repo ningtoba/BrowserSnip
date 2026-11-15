@@ -101,6 +101,14 @@ export interface RenderOptions {
    */
   filter?: string;
   background?: string;
+  /**
+   * Whether pdf.js paints annotations — widgets included — into the bitmap.
+   * Default `true`, which is what a viewer wants. A pane that draws its own live
+   * control over every widget wants `false`: pdf.js otherwise paints the
+   * widget's stored appearance underneath, so a form that already carried
+   * "Alpha" shows "Alpha" through the answer "Beta" typed beside it.
+   */
+  annotations?: boolean;
 }
 
 export interface PageRender {
@@ -336,7 +344,11 @@ export async function openRender(
         ctx.fillStyle = renderOptions.background;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-      const task: RenderTask = page.render({ canvasContext: ctx, viewport });
+      const task: RenderTask = page.render({
+        canvasContext: ctx,
+        viewport,
+        annotationMode: renderOptions.annotations === false ? 0 : undefined,
+      });
       const filter = renderOptions.filter && renderOptions.filter !== 'none' ? renderOptions.filter : null;
       // pdf.js paints asynchronously; this promise is the only evidence the
       // bitmap holds anything. The extra `catch` marks the rejection as observed

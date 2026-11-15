@@ -229,6 +229,66 @@ export function fillPayload(
   return out;
 }
 
+/**
+ * What the result card says about one save: how many answers reached the file,
+ * how many did not and why, and which required fields are still empty.
+ *
+ * Built outside `save` so it can be read back without a rendered pane — the
+ * pane unmounts as soon as it sets an output, so this sentence *is* the whole
+ * of what the user is told once the file exists.
+ */
+export function saveReport(
+  result: { filled: number; missing: string[] },
+  requiredEmpty: string[],
+): string {
+  let report = `Filled ${result.filled} field${result.filled === 1 ? '' : 's'}`;
+  if (result.missing.length > 0) {
+    const shown = result.missing.slice(0, 4).join(', ');
+    report += `; ${result.missing.length} could not be written (${shown}${
+      result.missing.length > 4 ? ', …' : ''
+    })`;
+  }
+  report += '.';
+  if (requiredEmpty.length > 0) {
+    report += ` ${requiredEmpty.length} required field${requiredEmpty.length === 1 ? '' : 's'} still empty (${requiredEmpty
+      .slice(0, 3)
+      .join(', ')}${requiredEmpty.length > 3 ? ', …' : ''}).`;
+  }
+  return report;
+}
+
+/**
+ * Paint one page for the overlay.
+ *
+ * `annotations: false` keeps pdf.js from painting the widgets' *stored*
+ * appearances under the live controls this pane puts at the same coordinates: a
+ * form that already held "Alpha" showed that word through the "Beta" answered
+ * beside it, and a checkbox drew its old tick under the new one.
+ */
+export function paintOverlayPage(session: Pick<PdfSession, 'renderPage'>, page: number, scale: number) {
+  return session.renderPage(page, scale, { annotations: false });
+}
+
+/**
+ * The rows of the flat field list: every field in the form, narrowed by the
+ * filter box.
+ *
+ * Not `fillable` — a signature or a push button takes no typed answer, but the
+ * header counts it (`fields.length` fields · `fillable.length` fillable), so
+ * leaving it out put a number on screen with no row to explain it and no name
+ * for the field the form carries.
+ */
+export function listedFields(fields: FormFieldInfo[], filter: string): FormFieldInfo[] {
+  const needle = filter.trim().toLowerCase();
+  if (!needle) return fields;
+  return fields.filter((field) =>
+    [field.name, field.alternateName ?? '', field.type, `page ${field.page + 1}`]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle),
+  );
+}
+
 /** Font size (pt) to draw a value with, derived from the widget height. */
 export function drawSizeFor(field: FormFieldInfo): number {
   const height = field.rect.height || 12;
@@ -399,7 +459,7 @@ export default function FormFillMain(): JSX.Element {
           const box = rectToOverlay(field.rect, (x, y) => viewport.convertToViewportPoint(x, y));
           next[field.name] = box;
         }
-        render = await session.renderPage(geometry.page, scale);
+        render = await paintOverlayPage(session, geometry.page, scale);
         if (cancelled) return;
         render.canvas.className = 'block shadow-doodle-card rounded-md';
         host.replaceChildren(render.canvas);
@@ -461,16 +521,7 @@ export default function FormFillMain(): JSX.Element {
     [],
   );
 
-  const visibleFields = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return fillable;
-    return fillable.filter((field) =>
-      [field.name, field.alternateName ?? '', field.type, `page ${field.page + 1}`]
-        .join(' ')
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [fillable, filter]);
+  const visibleFields = useMemo(() => listedFields(fields, filter), [fields, filter]);
 
   const onThisPage = useMemo(
     () => (geometry ? fields.filter((f) => f.page === geometry.page - 1) : []),
@@ -486,35 +537,27 @@ export default function FormFillMain(): JSX.Element {
     setSaveError(null);
     const store = useProcessStore.getState();
     store.startProcessing('Fill Form', '_filled.pdf');
+    store.setWarnings([]);
     store.setPercent(6, 'Applying your answers…');
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const doc = await openPDF(bytes, { password: password || undefined });
       const result = fillForm(doc, fillPayload(values, fields));
-      let report = `Filled ${result.filled} field${result.filled === 1 ? '' : 's'}`;
-      if (result.missing.length > 0) {
-        const shown = result.missing.slice(0, 4).join(', ');
-        report += `; ${result.missing.length} could not be written (${shown}${
-          result.missing.length > 4 ? ', …' : ''
-        })`;
-      }
-      report += '.';
-      if (requiredMissing.length > 0) {
-        const shown = requiredMissing.slice(0, 3).map((field) => field.alternateName || field.name);
-        report += ` ${requiredMissing.length} required field${
-          requiredMissing.length === 1 ? '' : 's'
-        } still empty (${shown.join(', ')}${requiredMissing.length > 3 ? ', …' : ''}).`;
-      }
+      const report = saveReport(
+        result,
+        requiredMissing.map((field) => field.alternateName || field.name),
+      );
 
+      let full = report;
       if (flatten) {
         store.setPercent(55, 'Flattening the form…');
         const baked = await flattenForm(doc, sessionRef.current ?? undefined);
         const leftovers = listFormFields(doc).filter(isFillable);
         const drawn = await bakeRemainingText(doc, leftovers);
-        report += ` Flattened ${baked.flattened + drawn.drawn} field${
+        full += ` Flattened ${baked.flattened + drawn.drawn} field${
           baked.flattened + drawn.drawn === 1 ? '' : 's'
         } into the page`;
-        report +=
+        full +=
           drawn.skipped > 0
             ? `; ${drawn.skipped} stayed interactive (no value to draw, a rotated page, or a signature).`
             : '.';
@@ -524,8 +567,13 @@ export default function FormFillMain(): JSX.Element {
       const out = await savePDF(doc);
       const blob = new Blob([out as BlobPart], { type: 'application/pdf' });
       store.setOutput(blob, URL.createObjectURL(blob));
-      store.appendLog(`FormFillMain: ${report}`);
-      setStatus(report);
+      // The pane is replaced by the result card the moment an output exists, so
+      // the report is written where the card reads it: the card otherwise shows
+      // a name and a size and nothing about how many answers reached the file,
+      // which one did not, or which required field is still empty.
+      store.setWarnings([full]);
+      store.appendLog(`FormFillMain: ${full}`);
+      setStatus(full);
     } catch (err) {
       const text = err instanceof Error ? err.message : 'The filled PDF could not be saved.';
       store.setError(text);
@@ -917,12 +965,18 @@ async function bakeRemainingText(
       skipped += 1;
     }
   }
+  // Same reason as in `flattenForm`: an /AcroForm with no fields left in it is
+  // still a form as far as a reader is concerned.
+  if (form.getFields().length === 0) {
+    const { PDFName } = await import('@maxwbh/pdf-lib');
+    doc.catalog.delete(PDFName.of('AcroForm'));
+  }
   return { drawn, skipped };
 }
 
 // ── one field, in either the overlay or the flat list ───────────────────────
 
-interface FieldControlProps {
+export interface FieldControlProps {
   field: FormFieldInfo;
   value: FormValue | undefined;
   onChange: (value: FormValue) => void;
@@ -937,7 +991,7 @@ interface FieldControlProps {
   inputId: string;
 }
 
-function FieldControl(props: FieldControlProps): JSX.Element {
+export function FieldControl(props: FieldControlProps): JSX.Element {
   const { field, inputId, invalid, onBlur, onChange, onFocus, variant } = props;
   const overlay = variant === 'overlay';
   const name = field.alternateName || field.name;
@@ -1048,7 +1102,12 @@ function FieldControl(props: FieldControlProps): JSX.Element {
               <input
                 id={overlay ? `${inputId}-${safeId(option)}` : inputId}
                 type="radio"
-                name={`radio-${field.name}`}
+                // One name per *copy* of the group. The overlay and the flat
+                // list render the same options twice, and radios that share a
+                // name are one native group: only the copy rendered last could
+                // ever stay checked, so clicking the overlay circle left the
+                // list row ticked and the overlay ring empty.
+                name={`radio-${variant}-${field.name}`}
                 value={option}
                 checked={text === option}
                 onFocus={onFocus}

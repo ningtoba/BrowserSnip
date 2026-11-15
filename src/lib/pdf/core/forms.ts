@@ -322,7 +322,12 @@ function applyValue(field: PDFField, value: string | boolean): boolean {
       return true;
     }
     if (!wanted.every((option) => available.includes(option))) return false;
-    field.select(wanted, true);
+    // Replace, not merge. `merge: true` concatenates onto whatever `/V` the
+    // field already carries and switches the choice on to MultiSelect, so a
+    // dropdown that held "Alpha" and was answered "Beta" kept both, drew the
+    // *first* of them into the appearance stream — the old value on screen and
+    // on the flattened page — and read back as two answers.
+    field.select(wanted);
     return true;
   }
   // Push buttons and signature fields hold no settable value.
@@ -492,7 +497,13 @@ export async function flattenForm(
         );
       }
       form.removeField(field);
-      for (const { page, widgetRef } of planned) page.node.removeAnnot(widgetRef);
+      for (const { page, widgetRef } of planned) {
+        page.node.removeAnnot(widgetRef);
+        // `removeAnnot` leaves an empty `/Annots []` behind; a page with no
+        // annotations at all should not carry the key.
+        const remaining = page.node.Annots();
+        if (remaining && remaining.size() === 0) page.node.delete(PDFName.of('Annots'));
+      }
       flattened++;
     } catch {
       needsRender = true;
@@ -504,6 +515,11 @@ export async function flattenForm(
   // them from the rasterised page.
   if (session && session.numPages < doc.getPageCount()) needsRender = true;
   setNeedAppearances(doc, false);
+  // A flattened page is not a form. Deleting every field leaves an empty
+  // `/AcroForm` behind, which still makes a reader open the document in form
+  // mode, still lists a form in its panel and still offers to tab through
+  // fields that are now ink — so the dictionary goes with the last field.
+  if (form.getFields().length === 0) doc.catalog.delete(PDFName.of('AcroForm'));
   return { flattened, needsRender };
 }
 
