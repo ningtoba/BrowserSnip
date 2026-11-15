@@ -35,7 +35,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 025 [x] repair
 026 [x] sanitize-pdf
 027 [x] linearize-pdf
-028 [ ] pdf-to-pdfa
+028 [x] pdf-to-pdfa
 029 [ ] font-to-outline
 030 [ ] deskew-pdf
 031 [ ] edit-pdf

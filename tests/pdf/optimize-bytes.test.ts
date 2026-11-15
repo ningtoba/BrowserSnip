@@ -1672,7 +1672,11 @@ describe('optimize tools print numbers the output bytes agree with', () => {
     expect(n instanceof PDFNumber, `/N was written as a ${n?.constructor.name ?? 'nothing'}`).toBe(true);
     expect((n as PDFNumber).asNumber()).toBe(0);
     expect(dictName(stream!.dict, 'Subtype')).toBe('XML');
-    expect(latin1.decode(inflateSync(Buffer.from(stream!.contents)))).toMatch(/pdfaid:part="2"/);
+    // Uncompressed on purpose: a validator sniffs the packet's encoding on the bytes
+    // it is handed, and a Flate stream reads as "encoding null" until it is inflated
+    // (measured with veraPDF 1.28.2, docs/research/pdfa-validator-round.log).
+    expect(stream!.dict.get(PDFName.of('Filter'))).toBeUndefined();
+    expect(new TextDecoder('utf-8', { fatal: true }).decode(stream!.contents)).toMatch(/pdfaid:part="2"/);
     // The identification is not bought with an unreadable file.
     expect(doc.getPageCount()).toBe(2);
     expect((await extractableText(outcome.bytes)).join(' ')).toContain('Body text page 1');

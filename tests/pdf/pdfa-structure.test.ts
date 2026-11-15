@@ -572,6 +572,56 @@ describe('the structures PDF/A names, in the file each path writes', () => {
     expect(outcome.message).toContain('pdfaid:part=2, conformance=B');
   });
 
+  it('store the packet as UTF-8 and mirror every /Info entry, so a validator can read it', async () => {
+    // Measured on this path's bytes with veraPDF 1.28.2, PDFA-2B profile: four
+    // failed rules, three of them this app's own — §6.6.2.1 test 5 ("The XMP
+    // package must be encoded as UTF-8"), §6.1.3 (no trailer /ID) and §6.6.4 (no
+    // identification, because the packet could not be read at all). The packet left
+    // through pdf-lib's latin1 string encoder, so the BOM byte became one 0xFF, and
+    // it mirrored only the title, the author and the producer: §6.6.2.2 asks for
+    // every /Info entry that has an XMP analogue, and a creator, a creation date and
+    // a modification date were left behind. `readXmp` read the old packet anyway —
+    // which is why the card said the identification had been written.
+    const { bytes } = await pdfaRun(await textPdf(), 'type.pdf', { part: '2b' });
+    const doc = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
+
+    const packet = streamOf(doc, doc.catalog.get(PDFName.of('Metadata')));
+    expect(packet).toBeDefined();
+    // `fatal` is the assertion: a latin1-encoded BOM throws here and nowhere else.
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(decodePDFRawStream(packet!).decode());
+    expect(text.startsWith('<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>')).toBe(true);
+    // …and it is uncompressed, so a reader that sniffs the bytes can see them.
+    expect(packet!.dict.get(PDFName.of('Filter'))).toBeUndefined();
+
+    const info = dictOf(doc, doc.context.trailerInfo.Info);
+    expect(text).toContain('<dc:title>');
+    const mirrors: Array<[string, string, string]> = [
+      ['Creator', 'xmp:CreatorTool', 'pdf-lib'],
+      ['Producer', 'pdf:Producer', 'BrowserSnip'],
+      ['CreationDate', 'xmp:CreateDate', '2026'],
+      ['ModDate', 'xmp:ModifyDate', '2026'],
+    ];
+    for (const [entry, property, sample] of mirrors) {
+      const raw = info?.get(PDFName.of(entry));
+      const value = raw !== undefined && 'decodeText' in (raw as object)
+        ? (raw as unknown as { decodeText: () => string }).decodeText()
+        : `${raw ?? ''}`;
+      expect(value).not.toBe('');
+      if (sample) expect(value).toContain(sample);
+      expect(text).toContain(`${property}`);
+    }
+    expect(text).toContain('dc:format="application/pdf"');
+    expect(text).toContain('pdfaid:part="2"');
+
+    const ids = doc.context.trailerInfo.ID;
+    expect(ids).toBeInstanceOf(PDFArray);
+    const list = ids as PDFArray;
+    expect(list.size()).toBe(2);
+    for (let i = 0; i < list.size(); i += 1) {
+      expect(`${list.get(i)}`).toMatch(/^<[0-9a-f]{32}>$/i);
+    }
+  });
+
   it('name the part that was asked for, not the default one', async () => {
     const source = await textPdf();
     for (const [part, number] of [['1b', 1], ['3b', 3]] as const) {

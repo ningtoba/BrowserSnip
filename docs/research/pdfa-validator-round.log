@@ -1,0 +1,121 @@
+pdf-to-pdfa — validators, one command each, verdicts verbatim (round 028)
+veraPDF 1.28.2 (greenfield, OpenJDK 27) — the validator this repo's ledger said did not exist.
+engine output: colour.pdf through the rail's own 'Convert to PDF/A' (default 2b), dev :5271.
+local output: the tool's own fallback, through runPdfTool with Ghostscript refused.
+
+== 1. control: the untouched source, PDFA-2B profile (must fail) ==
+$ java -cp verapdf-gui.jar org.verapdf.apps.GreenfieldCliWrapper -f 2b -v /tmp/triage/colour.pdf
+      <validationReport jobEndStatus="normal" profileName="PDF/A-2B validation profile" statement="PDF file is not compliant with Validation Profile requirements." isCompliant="false">
+        <details passedRules="140" failedRules="4" passedChecks="1159" failedChecks="75">
+            <description>The Catalog dictionary of a conforming file shall contain the Metadata key whose value is a metadata stream as defined in ISO 32000-1:2008, 14.3.2. The metadata stream dictionary shall contain entry Type with value /Metadata and entry Subtype with value /XML</description>
+            <description>The file trailer dictionary shall contain the ID keyword whose value shall be File Identifiers as defined in ISO 32000-1:2008, 14.4</description>
+            <description>DeviceRGB shall only be used if a device independent DefaultRGB colour space has been set when the DeviceRGB colour space is used, or if the file has a PDF/A OutputIntent that contains an RGB destination profile</description>
+            <description>The font programs for all fonts used for rendering within a conforming file shall be embedded within that file, as defined in ISO 32000-1:2008, 9.9</description>
+      </validationReport>
+    <validationReports compliant="0" nonCompliant="1" failedJobs="0">1</validationReports>
+
+== 2. engine output (the path a browser with the engine takes), PDFA-2B ==
+$ java -cp verapdf-gui.jar ... -f 2b -v /tmp/r28/before.pdf
+      <validationReport jobEndStatus="normal" profileName="PDF/A-2B validation profile" statement="PDF file is compliant with Validation Profile requirements." isCompliant="true">
+        <details passedRules="144" failedRules="0" passedChecks="882" failedChecks="0"></details>
+      </validationReport>
+    <validationReports compliant="1" nonCompliant="0" failedJobs="0">1</validationReports>
+
+== 3. control of the instrument: the same 2b file judged against the 1b profile (must fail) ==
+$ java -cp verapdf-gui.jar ... -f 1b /tmp/r28/before.pdf
+      <validationReport jobEndStatus="normal" profileName="PDF/A-1B validation profile" statement="PDF file is not compliant with Validation Profile requirements." isCompliant="false">
+        <details passedRules="127" failedRules="2" passedChecks="859" failedChecks="2">
+      </validationReport>
+    <validationReports compliant="0" nonCompliant="1" failedJobs="0">1</validationReports>
+
+== 4. local fallback BEFORE (each rule with its clause and error) ==
+$ java -cp verapdf-gui.jar ... -f 2b -v /tmp/r28/fallback-before.pdf
+      <validationReport jobEndStatus="normal" profileName="PDF/A-2B validation profile" statement="PDF file is not compliant with Validation Profile requirements." isCompliant="false">
+        <details passedRules="140" failedRules="4" passedChecks="350" failedChecks="4">
+          <rule specification="ISO 19005-2:2011" clause="6.1.3" testNumber="1" status="failed" failedChecks="1">
+              <errorMessage>Missing or empty ID in the document trailer</errorMessage>
+          <rule specification="ISO 19005-2:2011" clause="6.2.11.4.1" testNumber="1" status="failed" failedChecks="1">
+              <errorMessage>The font program is not embedded</errorMessage>
+          <rule specification="ISO 19005-2:2011" clause="6.6.4" testNumber="1" status="failed" failedChecks="1">
+              <errorMessage>The document metadata stream doesn't contain PDF/A Identification Schema</errorMessage>
+          <rule specification="ISO 19005-2:2011" clause="6.6.2.1" testNumber="5" status="failed" failedChecks="1">
+              <errorMessage>The XMP package uses encoding null different from UTF-8</errorMessage>
+      </validationReport>
+    <validationReports compliant="0" nonCompliant="1" failedJobs="0">1</validationReports>
+
+== 5. local fallback AFTER (same command, same fixture) ==
+      <validationReport jobEndStatus="normal" profileName="PDF/A-2B validation profile" statement="PDF file is not compliant with Validation Profile requirements." isCompliant="false">
+        <details passedRules="143" failedRules="1" passedChecks="391" failedChecks="1">
+          <rule specification="ISO 19005-2:2011" clause="6.2.11.4.1" testNumber="1" status="failed" failedChecks="1">
+              <errorMessage>The font program is not embedded</errorMessage>
+      </validationReport>
+    <validationReports compliant="0" nonCompliant="1" failedJobs="0">1</validationReports>
+
+
+== 6. readers that did not write the file, same fixture, before/after ==
+$ pdfinfo; pypdf; PyMuPDF per page (text chars, images, annots, ink at 72 dpi, boxes)
+--- /tmp/triage/colour.pdf
+Producer:        pdf-lib (https://github.com/Hopding/pdf-lib)
+Metadata Stream: no
+Tagged:          no
+Form:            none
+JavaScript:      no
+Pages:           4
+Encrypted:       no
+pages 4 trailer/ID no
+ pg 0 420.0 595.0 rot 0 chars 1779 imgs 0 annots 0 ink 61153
+ pg 1 420.0 595.0 rot 0 chars 13 imgs 0 annots 0 ink 49569
+ pg 2 420.0 595.0 rot 0 chars 0 imgs 0 annots 0 ink 0
+ pg 3 595.0 420.0 rot 90 chars 0 imgs 0 annots 0 ink 142563
+--- /tmp/r28/before.pdf
+Producer:        GPL Ghostscript 10.06.0
+Metadata Stream: yes
+Tagged:          yes
+Form:            none
+JavaScript:      no
+Pages:           4
+Encrypted:       no
+pages 4 trailer/ID yes
+ pg 0 420.0 595.0 rot 0 chars 1779 imgs 0 annots 0 ink 61153
+ pg 1 420.0 595.0 rot 0 chars 13 imgs 0 annots 0 ink 49569
+ pg 2 420.0 595.0 rot 0 chars 0 imgs 0 annots 0 ink 0
+ pg 3 595.0 420.0 rot 0 chars 0 imgs 0 annots 0 ink 142563
+ xmp utf8: yes b"<?xpacket begin='\xef"
+--- /tmp/r28/fallback-before.pdf
+Producer:        BrowserSnip
+Metadata Stream: yes
+Tagged:          yes
+Form:            none
+JavaScript:      no
+Pages:           2
+Encrypted:       no
+pages 2 trailer/ID no
+ pg 0 595.3 841.9 rot 0 chars 24 imgs 0 annots 0 ink 998
+ pg 1 612.0 792.0 rot 0 chars 24 imgs 0 annots 0 ink 998
+ xmp utf8: NO — 'utf-8' codec can't decode byte 0xff in position 17: invalid start byte
+--- /tmp/r28/fallback-after.pdf
+Producer:        BrowserSnip
+Metadata Stream: yes
+Tagged:          yes
+Form:            none
+JavaScript:      no
+Pages:           2
+Encrypted:       no
+pages 2 trailer/ID yes
+ pg 0 595.3 841.9 rot 0 chars 24 imgs 0 annots 0 ink 998
+ pg 1 612.0 792.0 rot 0 chars 24 imgs 0 annots 0 ink 998
+ xmp utf8: yes b'<?xpacket begin="\xef'
+
+== 7. structure of the engine output, as an outside reader finds it ==
+catalog ['/MarkInfo', '/Metadata', '/OutputIntents', '/Pages', '/Type']
+intent {'/RegistryName': 'http://www.color.org', '/Info': 'sRGB IEC61966-2.1 (minimal profile written by Br', '/Type': '/OutputIntent', '/DestOutputProfile': "{'/Filter': '/FlateDecode', '/N': 3}", '/OutputConditionIdentifier': 'sRGB IEC61966-2.1', '/S': '/GTS_PDFA1'} profile bytes 476 acsp b'acsp' space b'RGB '
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+  File "/home/nekophobia/.local/lib/python3.14/site-packages/PIL/ImageCms.py", line 249, in __init__
+    self.profile = core.profile_open(profile)
+                   ~~~~~~~~~~~~~~~~~^^^^^^^^^
+OSError: cannot open profile file
+lcms parses the intent: sRGB IEC61966-2.1 (BrowserSnip minimal)
+xmp well-formed: {adobe:ns:meta/}xmpmeta
+bytes carrying /JS /JavaScript /URI /AF /Launch: none
+fonts p1: [('LVNTJP+Helvetica', 'R9')]

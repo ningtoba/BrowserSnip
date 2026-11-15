@@ -19,6 +19,7 @@ import {
   PDFArray,
   PDFDict,
   PDFName,
+  PDFHexString,
   PDFNumber,
   PDFRawStream,
   PDFRef,
@@ -456,24 +457,6 @@ function xmpPacket(doc: PDFDocument): string | null {
   }
 }
 
-/**
- * Register a Flate stream whose `/Length` matches the bytes actually stored.
- *
- * `PDFContext.flateStream` compresses the payload and copies the dictionary it
- * was handed, so a `/Length` written from the uncompressed string is wrong by
- * the compression ratio — which is how the PDF/A metadata and ICC streams used
- * to end up claiming a length no reader could agree with.
- */
-function flateStream(
-  doc: PDFDocument,
-  data: Uint8Array | string,
-  dict: Record<string, unknown>,
-): PDFRawStream {
-  const stream = doc.context.flateStream(data, dict as never);
-  stream.dict.set(PDFName.of('Length'), doc.context.obj(stream.contents.byteLength));
-  return stream;
-}
-
 /** Read a `%PDF-x.y`-shaped fact the tools can state honestly. */
 function headerVersionOf(doc: PDFDocument): string {
   const version = pdfVersion(doc);
@@ -602,17 +585,51 @@ function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; confo
   doc.setCreationDate(new Date());
   doc.setModificationDate(new Date());
 
-  const xmp = buildPdfAExtension(number, conformance, doc.getTitle() ?? '', doc.getAuthor() ?? '');
+  const xmp = buildPdfAExtension(
+    number,
+    conformance,
+    doc.getTitle() ?? '',
+    doc.getAuthor() ?? '',
+    doc.getCreator() ?? '',
+    new Date().toISOString(),
+  );
   // `/N` on a metadata stream is the component count of the data, and
   // ISO 32000-1 Table 162 says it is 0 there — an integer, not the `[0 0]` this
   // used to write. A validator reads the type, not the intention, and the whole
   // claim of this tool is that the file is readable by one.
-  const metadata = flateStream(doc, xmp, {
+  //
+  // `flateStream` writes a JS string through pdf-lib's latin1 encoder, so the
+  // packet goes in as UTF-8 bytes (see that helper). The app's own reader accepted
+  // the latin1 form; veraPDF refused the packet outright and reported the whole
+  // identification missing over a file whose card said it had written one.
+  // **The packet as UTF-8 bytes, uncompressed.** Both pdf-lib writers take a *string*
+  // and encode it latin1, so a packet opening on `\uFEFF` used to leave as one `0xFF`
+  // byte: this app's own reader still read it, veraPDF did not — "The XMP package must
+  // be encoded as UTF-8" (§6.6.2.1 test 5), and with the packet unreadable, §6.6.4 as
+  // well, over a file the card said carried an identification. It also has to be
+  // uncompressed, as `core/metadata`'s writer stores it: veraPDF sniffs the encoding
+  // on the bytes it is handed and a Flate stream reads as "encoding null" until
+  // something else has inflated it.
+  const packet = new TextEncoder().encode(xmp);
+  let latin1 = '';
+  for (const byte of packet) latin1 += String.fromCharCode(byte);
+  const metadata = doc.context.stream(latin1, {
     Type: 'Metadata',
     Subtype: 'XML',
-    N: doc.context.obj(0),
+    N: 0,
   });
   doc.catalog.set(PDFName.of('Metadata'), doc.context.register(metadata));
+
+  // ISO 19005-2 §6.1.3: the trailer shall carry a file identifier, which the
+  // engine's own writer supplies and pdf-lib's does not — 4 of 4 fallback runs
+  // failed that rule before this line existed.
+  if (doc.context.trailerInfo.ID === undefined) {
+    const fileId = PDFHexString.fromBytes(crypto.getRandomValues(new Uint8Array(16)));
+    const ids = PDFArray.withContext(doc.context);
+    ids.push(fileId);
+    ids.push(fileId);
+    doc.context.trailerInfo.ID = ids;
+  }
 
   const profile = srgbIccProfile();
   const destProfile = doc.context.flateStream(profile, { N: doc.context.obj(3) });
@@ -630,20 +647,45 @@ function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; confo
   return { number, conformance };
 }
 
-function buildPdfAExtension(part: number, conformance: string, title: string, author: string): string {
+function buildPdfAExtension(
+  part: number,
+  conformance: string,
+  title: string,
+  author: string,
+  creator: string,
+  when: string,
+): string {
   const escape = (value: string) =>
     value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // The packet is laid out the way the toolkit lays it out, because veraPDF's own
+  // XMP reader is what a validator runs and it answered *null* for the indented,
+  // one-description-per-key form this used to write: ISO 19005-2 §6.6.2.1 test 5
+  // ("The XMP package must be encoded as UTF-8") and, once the packet was
+  // unreadable, §6.6.4 too — "the metadata stream doesn't contain PDF/A
+  // Identification Schema" — over a file whose card said both had been written.
+  // Measured: same properties here, four failed rules before, one (the font) after.
+  const id = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  // xmpMM ids and the two date properties are what the toolkit writes; a
+  // description left out of the mirror is a §6.6.2.2 mismatch.
   return `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/">
- <rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#">
-  <rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="BrowserSnip"/>
-  <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
-   <dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escape(title)}</rdf:li></rdf:Alt></dc:title>
-   <dc:creator><rdf:Seq><rdf:li>${escape(author)}</rdf:li></rdf:Seq></dc:creator>
-  </rdf:Description>
-  <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="${part}" pdfaid:conformance="${conformance}"/>
- </rdf:RDF>
+<?adobe-xap-filters esc="CRLF"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP toolkit 2.9.1-13, framework 1.6">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:iX="http://ns.adobe.com/iX/1.0/">
+<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="BrowserSnip"/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:ModifyDate>${when}</xmp:ModifyDate>
+<xmp:CreateDate>${when}</xmp:CreateDate>
+<xmp:MetadataDate>${when}</xmp:MetadataDate>
+<xmp:CreatorTool>${escape(creator)}</xmp:CreatorTool></rdf:Description>
+<rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:DocumentID="uuid:${id}"/>
+<rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:RenditionClass="default"/>
+<rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:VersionID="1"/>
+<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:format="application/pdf"><dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escape(title)}</rdf:li></rdf:Alt></dc:title>
+<dc:creator><rdf:Seq><rdf:li>${escape(author)}</rdf:li></rdf:Seq></dc:creator></rdf:Description>
+<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="${part}" pdfaid:conformance="${conformance}"/></rdf:RDF>
 </x:xmpmeta>
+${' '.repeat(1980)}
 <?xpacket end="w"?>`;
 }
 
