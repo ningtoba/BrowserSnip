@@ -19,6 +19,16 @@
 //               square cannot show which way a contrast setting turned a page.
 //  · `empty`  — the control: nothing on it, so a pass that invents paper noise is
 //               caught rather than averaged away.
+//  · `black` / `white` — a sheet of one tone each, the two ends of the inverse. A
+//               black sheet inverted is paper, and paper on the produced page's own
+//               white sheet is indistinguishable from margins: this pair is the only
+//               way to see that the produced page is the *size of the sheet* rather
+//               than the size of its ink.
+//  · `turned-landscape` — a stored 595×420 box carrying `/Rotate 90`, so the
+//               displayed sheet is portrait. A tool that copies the stored box
+//               instead of the displayed one answers 595×420 here, which is the
+//               opposite of the 420×595 sheet 4 (`stored portrait`, displayed
+//               landscape) and cannot be passed by copying either.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -186,6 +196,43 @@ async function colourFixture() {
   turned.drawRectangle({ ...displayedRect(REGIONS.bar), color: rgb(0, 0, 0) });
   turned.drawRectangle({ ...displayedRect(REGIONS.copy), color: rgb(0.1, 0.7, 0.2) });
   turned.drawRectangle({ ...displayedRect(REGIONS.band), color: rgb(1, 1, 1) });
+
+  // Sheets 5 and 6: one whole tone each, edge to edge, so there is no white margin
+  // anywhere on the source and the whole produced page's tone is the answer.
+  doc.addPage(BOX).drawRectangle({ x: 0, y: 0, width: BOX[0], height: BOX[1], color: rgb(0, 0, 0) });
+  doc.addPage(BOX).drawRectangle({ x: 0, y: 0, width: BOX[0], height: BOX[1], color: rgb(1, 1, 1) });
+
+  // Sheet 7: the same turn the other way round. It stores a *landscape* box and
+  // carries `/Rotate 90`, so the displayed sheet is 420×595 — portrait from a
+  // landscape store. Sheet 4 is portrait stored and landscape displayed, so the two
+  // together say the produced box follows the display and not the store.
+  const wide = doc.addPage([BOX[1], BOX[0]]);
+  wide.setRotation(degrees(90));
+  // In this page's own (turned) coordinates: `/Rotate 90` sends the stored left edge
+  // to the displayed top and the stored bottom edge to the displayed left, so a
+  // displayed rectangle (u across, v down) is written at stored `x = v × stored
+  // width`, `y = u × stored height` — the same rule `displayedRect` applies with the
+  // stored box swapped. The bar is the displayed top band, so it runs down the
+  // stored left side.
+  const W = BOX[1];
+  const H = BOX[0];
+  wide.drawRectangle({
+    x: REGIONS.bar.y0 * W,
+    y: REGIONS.bar.x0 * H,
+    width: (REGIONS.bar.y1 - REGIONS.bar.y0) * W,
+    height: (REGIONS.bar.x1 - REGIONS.bar.x0) * H,
+    color: rgb(0, 0, 0),
+  });
+
+  // Sheet 8: a cropped sheet. The 420×595 box is still the /MediaBox, but the page is
+  // *displayed* and printed as its /CropBox, so a rasteriser that sizes the output
+  // from the media box answers 420×595 here and pads the crop margin into the picture.
+  // The crop is exactly the bar region, so every fraction of this sheet is ink and a
+  // reader with the wrong box reads the margin as part of the sheet.
+  const cropped = doc.addPage(BOX);
+  cropped.drawRectangle({ ...rectOf(REGIONS.bar), color: rgb(0, 0, 0) });
+  const crop = rectOf(REGIONS.bar);
+  cropped.setCropBox(crop.x, crop.y, crop.width, crop.height);
   return doc.save({ useObjectStreams: false });
 }
 

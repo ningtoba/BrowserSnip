@@ -187,9 +187,26 @@ export function cropBox(page: PDFPage): PageBox {
   return mediaBox(page);
 }
 
-/** Visible size after the page's own /Rotate, in viewer space. */
+/**
+ * Visible size after the page's own /Rotate, in viewer space.
+ *
+ * The displayed box is the **view** box — the /CropBox clipped to the /MediaBox
+ * (ISO 32000-1 §14.11.2) — and not the media box: pdf.js's `getViewport` uses
+ * `page.view`, which is that intersection, so a rasteriser that sized its output
+ * page from the media box drew its crop-box-sized picture stretched over the
+ * untrimmed sheet. A sheet cropped to a 336×71 band came back as a 420×595 page.
+ */
 export function displayedSize(page: PDFPage): { width: number; height: number } {
-  const { width, height } = page.getSize();
+  const media = mediaBox(page);
+  const crop = cropBox(page);
+  const left = Math.max(media.x, crop.x);
+  const bottom = Math.max(media.y, crop.y);
+  const right = Math.min(media.x + media.width, crop.x + crop.width);
+  const top = Math.min(media.y + media.height, crop.y + crop.height);
+  // A crop box outside the media box intersects to nothing; the media box is then
+  // what is left to show, which is also what a viewer falls back to.
+  const width = right > left ? right - left : media.width;
+  const height = top > bottom ? top - bottom : media.height;
   const rot = ((page.getRotation().angle % 360) + 360) % 360;
   return rot % 180 === 90 ? { width: height, height: width } : { width, height };
 }

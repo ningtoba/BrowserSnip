@@ -89,6 +89,15 @@ const PAGES: RegionName[][] = [
   ['band'],
 ];
 
+/**
+ * The *displayed* size of each sheet, which is what pdf.js's `getViewport` answers with
+ * (`page.view` — the /CropBox clipped to the /MediaBox). It is not always the media box:
+ * the cropped sheet below is 160×31.2 displayed inside a 200×260 media box, and a tool
+ * that sizes its output page from the media box writes its crop-sized picture stretched
+ * over the untrimmed sheet.
+ */
+const VIEW: { width: number; height: number }[] = [];
+
 /** The flat colour each region's ink rasterises to. */
 const INK: Record<RegionName, [number, number, number]> = {
   bar: [0, 0, 0],
@@ -443,11 +452,14 @@ vi.mock('pdfjs-dist', () => {
       requestedPage = n;
       return {
         rotate: 0,
-        getViewport: ({ scale }: { scale: number }) => ({
-          width: Math.floor(SHEET[0] * scale),
-          height: Math.floor(SHEET[1] * scale),
-          scale,
-        }),
+        getViewport: ({ scale }: { scale: number }) => {
+          const view = VIEW[requestedPage - 1] ?? { width: SHEET[0], height: SHEET[1] };
+          return {
+            width: Math.floor(view.width * scale),
+            height: Math.floor(view.height * scale),
+            scale,
+          };
+        },
         getTextContent: async () => ({ items: [] }),
         cleanup: () => {},
         /**
@@ -561,11 +573,24 @@ function paintRegion(surface: Bitmap, name: RegionName, colour: [number, number,
 
 /* ── the document the tools open ────────────────────────────────────────────── */
 
-async function colourFixture(): Promise<Uint8Array> {
+/** Index of the cropped sheet when the fixture carries one: the fourth page. */
+const CROP_SHEET = 3;
+
+async function colourFixture(options: { cropBar?: boolean; info?: boolean } = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
+  if (options.info) {
+    doc.setTitle('Quarterly ledger, scanned');
+    doc.setAuthor('Accounts');
+    doc.setSubject('Reconciliation');
+    doc.setKeywords(['ledger', 'scan']);
+  }
   const font = await doc.embedFont(StandardFonts.Helvetica);
+  PAGES.length = 3;
+  VIEW.length = 0;
+  if (options.cropBar) PAGES.push(['bar']);
   for (const names of PAGES) {
     const page = doc.addPage(SHEET);
+    VIEW.push({ width: SHEET[0], height: SHEET[1] });
     for (const name of names) {
       if (name === 'band' || name === 'copy') continue;
       const region = REGIONS[name];
@@ -589,6 +614,14 @@ async function colourFixture(): Promise<Uint8Array> {
       }
     }
   }
+  if (options.cropBar) {
+    // The cropped sheet is the last page the loop just built: /MediaBox 200×260,
+    // /CropBox the bar band. A viewer shows — and pdf.js rasterises — the 160×31.2 crop.
+    const page = doc.getPage(CROP_SHEET);
+    const crop = { x: 20, y: SHEET[1] - 0.22 * SHEET[1], width: 160, height: 0.12 * SHEET[1] };
+    page.setCropBox(crop.x, crop.y, crop.width, crop.height);
+    VIEW[CROP_SHEET] = { width: crop.width, height: crop.height };
+  }
   return doc.save({ useObjectStreams: false });
 }
 
@@ -603,11 +636,11 @@ function fileOf(bytes: Uint8Array): ToolFile {
 }
 
 /** Runs a shipped tool and reads its page 1 back as RGB samples. */
-async function runTool(id: string, values: ToolValues) {
+async function runTool(id: string, values: ToolValues, fixture: { cropBar?: boolean; info?: boolean } = {}) {
   const tool = getPdfTool(id);
   expect(tool, `${id} is not registered`).toBeTruthy();
   const result = (await tool!.run!({
-    inputs: [fileOf(await colourFixture())],
+    inputs: [fileOf(await colourFixture(fixture))],
     values: { ...defaultValues(tool!.fields), ...values },
     progress: () => {},
     log: () => {},
@@ -922,6 +955,39 @@ describe('invert-colors: the negative, asserted as two populations with the role
     expect(middle, 'an empty sheet has nothing to invert into a mid tone').toBe(0);
     expect(lumaOf(regionMean(raster, 'band'))).toBeLessThanOrEqual(8);
     expect(total).toBe(raster.width * raster.height);
+  });
+
+  it('sizes a cropped sheet from its /CropBox, so the picture is not stretched', async () => {
+    const { doc, raster } = await runTool('invert-colors', { dpi: 72, pages: `${CROP_SHEET + 1}` }, { cropBar: true });
+    const page = doc.getPage(0);
+    const size = page.getSize();
+    // The source is a 200x260 media box cropped to the 160x31.2 bar band: 6.4:1 on screen,
+    // 0.77:1 if the media box is copied. The produced page has to be the displayed one,
+    // or the crop-box-sized picture is drawn stretched over the untrimmed sheet.
+    expect([Math.round(size.width * 10), Math.round(size.height * 10)], 'the produced page is not the crop box')
+      .toEqual([1600, 312]);
+    const boxAspect = size.width / size.height;
+    const rasterAspect = raster.width / raster.height;
+    expect(
+      Math.abs(rasterAspect / boxAspect - 1),
+      `the picture is ${raster.width}x${raster.height} on a ${size.width}x${size.height} page: it is stretched`,
+    ).toBeLessThan(0.02);
+    // …and it is the inverted picture that covers the page, not paper with ink in a corner.
+    expect(lumaOf(regionMean(raster, 'bar')), 'the cropped band was not inverted').toBeGreaterThanOrEqual(247);
+  });
+
+  it('carries the document title, author, subject and keywords into the copy', async () => {
+    const plain = await runTool('invert-colors', { dpi: 72, pages: '1' });
+    // The control: the fixture without `/Info` must not read as if it had any, or the
+    // assertion below is about pdf-lib's defaults rather than about carrying.
+    expect([plain.doc.getTitle(), plain.doc.getAuthor(), plain.doc.getKeywords()]).toEqual([undefined, undefined, undefined]);
+    const { doc } = await runTool('invert-colors', { dpi: 72, pages: '1' }, { info: true });
+    expect(doc.getTitle()).toBe('Quarterly ledger, scanned');
+    expect(doc.getAuthor()).toBe('Accounts');
+    expect(doc.getSubject()).toBe('Reconciliation');
+    // `setKeywords` takes a list and pdf-lib joins it with a space, so the separator is
+    // the only thing that changes; the keywords themselves are the source's.
+    expect(doc.getKeywords()).toBe('ledger scan');
   });
 
   it('fails the polarity assertion in both shapes this defect ships', () => {

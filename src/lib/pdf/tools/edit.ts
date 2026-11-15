@@ -1578,9 +1578,9 @@ export const editTools: PdfToolDefinition[] = [
       pagesField({ group: 'Pages' }),
     ],
     notes: [
-      'The output is images, so text stops being selectable and the file usually grows. Links and annotations are not carried over.',
+      'The output is images, so text stops being selectable and the file usually grows. The title, author, subject and keywords are carried over; links and annotations are not.',
       'Only the selected pages are in the result: a narrower selection produces a shorter document, not the same document with some pages untouched.',
-      'Each page is re-rendered at its own displayed size, including its /Rotate, so mixed and rotated documents keep their shape.',
+      'Each page is re-rendered at its displayed size, including its /Rotate and its /CropBox, so mixed, rotated and cropped documents keep their shape.',
     ],
     async run(context) {
       const notes: string[] = [];
@@ -2216,6 +2216,21 @@ async function rerasterise(
   try {
     const { cssFilterString, thresholdPixels, whitenPixels, sharpenPixels } = await import('../core/measure');
     const doc = await newPDF();
+    // The output is a new document, so its `/Info` is empty unless it is carried. A
+    // dark-mode copy that drops the title is not a copy of the document, and the rail
+    // does not say metadata goes: same field list as `helpers.ts` `rebuildDocument`,
+    // because two notions of "the document's own metadata" is how one of them drifts.
+    for (const [value, set] of [
+      [input.doc.getTitle(), doc.setTitle],
+      [input.doc.getAuthor(), doc.setAuthor],
+      [input.doc.getSubject(), doc.setSubject],
+      [input.doc.getCreator(), doc.setCreator],
+      [input.doc.getProducer(), doc.setProducer],
+    ] as const) {
+      if (value) set.call(doc, value);
+    }
+    const keywords = input.doc.getKeywords();
+    if (keywords) doc.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
     const filter = cssFilterString({
       brightness: job.filter?.brightness,
       contrast: job.filter?.contrast,

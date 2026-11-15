@@ -34,6 +34,10 @@ import pymupdf
 DPI = 100
 STRIDE = 7
 TOL = 8.0            # per channel: a 0.9-quality JPEG of the sheet, resampled
+# `--tol` narrows that where the claim is exact. The default 8 is a whole-filter
+# tolerance (it has to survive a re-render at a different density, hue matrices and
+# clipping); a single `invert=1` through one JPEG is measured in tenths, so the
+# invert cases run at 2 and a filter that half-worked cannot hide inside 8.
 MIN_MOVE = 8.0       # a region must be predicted to move at least this to judge an ask
 INK_WHITE = 245      # "non-white" exactly as rail-measure.py counts it
 
@@ -59,6 +63,10 @@ PAGE_REGIONS = {
     2: ("red", "green", "blue", "grey", "wash", "band"),
     3: ("band",),                                # the empty control
     4: ("bar", "copy", "band"),                  # the same three, on a turned sheet
+    5: ("bar", "copy", "band"),                  # one whole tone: black, edge to edge
+    6: ("bar", "copy", "band"),                  # the other end: white, edge to edge
+    7: ("bar", "band"),                          # stored 595x420 + /Rotate 90: displays 420x595
+    8: ("bar",),                                 # cropped to the bar: displays 336x71.4, not 420x595
 }
 
 
@@ -275,6 +283,25 @@ def edge_transition(pix, name):
     return sum(1 for y in range(max(top - 8, 0), top + 8) if lo + band < luma(pixel(pix, x, y)) < hi - band)
 
 
+def page_mean(pix):
+    """The whole page's own mean, sampled the same strided way `ink_pct` walks it.
+
+    Used only for the single-tone sheets, where there are no regions to name — a page
+    of one colour has to be judged on the page's mean, and a sheet whose ink is the
+    whole page must not be judged on a named rectangle that happens to sit inside it.
+    """
+    buf = pix.samples
+    step = pix.n * STRIDE
+    total = [0.0, 0.0, 0.0]
+    n = 0
+    for i in range(0, max(len(buf) - (pix.n - 1), 0), step):
+        total[0] += buf[i]
+        total[1] += buf[i + 1]
+        total[2] += buf[i + 2]
+        n += 1
+    return tuple(ch / max(n, 1) for ch in total)
+
+
 def midtones(pix):
     """Sampled pixels sitting between the two tones a bilevel cutoff leaves."""
     buf = pix.samples
@@ -340,6 +367,11 @@ def main():
     ap.add_argument("--same-as", metavar="PDF", help="the output must match this file region for region (the identity case)")
     ap.add_argument("--blank", action="store_true", help="assert the page stayed empty of ink")
     ap.add_argument("--inked", action="store_true", help="assert the page carries the source sheet's ink rather than paper")
+    ap.add_argument("--tol", type=float, default=None,
+                    help="per-channel tolerance for every comparison (default 8)")
+    ap.add_argument("--solid", action="store_true",
+                    help="assert the produced page is ONE tone: no mid tones left, and the "
+                         "page's own mean is the ask applied to the sheet's own mean")
     ap.add_argument("--label", default="")
     args = ap.parse_args()
 
@@ -355,6 +387,7 @@ def main():
               f"{sorted(PAGE_REGIONS)}; add that sheet's regions to PAGE_REGIONS first")
         return 2
 
+    tol = TOL if args.tol is None else args.tol
     out_index = (args.out_page or args.page) - 1
     out_doc, out_page, out_pix = check_page(args.out, out_index)
     out_native = native_raster(out_doc, out_page)
@@ -433,7 +466,7 @@ def main():
         worst = max((spread(region_mean(out_pix, n)) for n in names if n in ("red", "green", "blue")), default=None)
         if worst is None:
             failures.append("achromatic: this sheet has no colour region to judge")
-        elif worst > TOL * 2:
+        elif worst > tol * 2:
             failures.append(f"achromatic: the most colourful region still carries a channel spread of {worst:.1f}")
         else:
             print(f"   ACHROMATIC ok: worst channel spread {worst:.1f}")
@@ -445,6 +478,26 @@ def main():
 
     if args.blank and out_dark:
         failures.append(f"the empty control page carries {out_dark} non-white px")
+
+    if args.solid:
+        # A sheet of one tone has to come back as a sheet of the *other* tone. Both
+        # ends matter: a black sheet inverted is paper, and a white one is ink, so a
+        # page shrunk into a corner, tinted, or left alone lands here instead of the
+        # prediction. Judged on the page's own mean, with no mid tones left — a filter
+        # that half-worked leaves a grey page that neither end can pass.
+        ask = asks[0] if asks else {"invert": True}
+        pred = apply_ask(page_mean(src_pix), ask)
+        got = page_mean(out_pix)
+        out_mid = midtones(out_pix)
+        print(f"   SOLID page: src mean ({page_mean(src_pix)[0]:.1f}) → predicted {luma(pred):.1f}, "
+              f"measured {luma(got):.1f}; mid tones {out_mid}")
+        worst = max(abs(got[i] - pred[i]) for i in range(3))
+        if worst > tol:
+            failures.append(f"solid: the page's mean is {luma(got):.1f}, the ask predicts "
+                            f"{luma(pred):.1f} (Δ{worst:.1f})")
+        if out_mid:
+            failures.append(f"solid: {out_mid} mid tones on a sheet that carries one tone — "
+                            "the page is mottled, not a page of the inverse")
 
     for ask in asks:
         judged = 0
@@ -467,7 +520,7 @@ def main():
             # `hue-rotate(180)` and `hue-rotate(-180)` are the same turn.
             distinct_opposite = max(abs(opp[i] - pred[i]) for i in range(3)) >= MIN_MOVE
             beats_opposite = (not distinct_opposite) or d_pred < d_opp
-            verdict = "ok" if d_pred <= TOL and d_pred < d_ident and beats_opposite else "FAIL"
+            verdict = "ok" if d_pred <= tol and d_pred < d_ident and beats_opposite else "FAIL"
             note = "" if distinct_opposite else " (the opposite ask is the same turn here)"
             print(f"   {' '.join(f'{k}={v}' for k, v in sorted(ask.items()))} on {name}: "
                   f"predicted ({pred[0]:5.1f},{pred[1]:5.1f},{pred[2]:5.1f}) measured ({o[0]:5.1f},{o[1]:5.1f},{o[2]:5.1f}) "
@@ -495,7 +548,7 @@ def main():
         worst = max(d for _, d in drift)
         print("   same as " + os.path.basename(args.same_as) + ": "
               + ", ".join(f"{n} Δ{d:.1f}" for n, d in drift))
-        if worst > TOL:
+        if worst > tol:
             failures.append(f"the identity case is not the identity: {worst:.1f} of drift from "
                             f"{os.path.basename(args.same_as)} — a filter applied twice lands here")
         same_doc.close()
@@ -526,7 +579,7 @@ def main():
         # distribution and the edge — either moving is the effect being applied.
         crisper = out_mid <= base_mid * 0.6 or any(
             a is not None and b is not None and b < a for _, a, b in sharps)
-        if worst <= TOL * 2 and not crisper:
+        if worst <= tol * 2 and not crisper:
             failures.append(
                 f"the effect is not applied: every region is within {worst:.1f} of a plain "
                 f"rasterisation of the same page, the mid tones did not collapse "
