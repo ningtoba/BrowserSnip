@@ -125,6 +125,12 @@ const TOOL_LABELS = {
     quality: 'JPEG quality',
     keepPageSize: 'Keep the original page size',
   },
+  // `deskew-pdf`'s `threshold` is a *confidence*, not a black-and-white cutoff, so
+  // the global label above finds nothing on its rail (round 029).
+  'deskew-pdf': {
+    maxAngle: 'Largest angle to correct',
+    threshold: 'Confidence needed before turning a page',
+  },
 };
 
 const WANTED = Object.fromEntries(

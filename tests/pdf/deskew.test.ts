@@ -23,7 +23,7 @@
  * calls the page straight.
  */
 import { describe, beforeEach, expect, it, vi } from 'vitest';
-import { PDFDocument, PDFName, StandardFonts, rgb } from '@maxwbh/pdf-lib';
+import { PDFDocument, PDFName, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import type { PageRender, PdfSession } from '@/lib/pdf/core/render';
 import { openPDF } from '@/lib/pdf/core/doc';
@@ -42,6 +42,10 @@ const PAGE: [number, number] = [595, 842];
 const fake = vi.hoisted(() => ({
   /** Bitmap tilt (y-down degrees) each fake page paints; index = page - 1. */
   tilts: [] as number[],
+  /** `/Rotate` each fake page carries, painted on top of the tilt; index = page - 1. */
+  rotations: [] as number[],
+  /** Paint paper only — a page the estimator cannot judge. */
+  blank: false,
   /** Reads taken while the canvas was still only its background fill. */
   earlyReads: 0,
 }));
@@ -104,7 +108,13 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
         const ctx = {
           getImageData: (_x: number, _y: number, w: number, h: number) => {
             if (!painted) fake.earlyReads += 1;
-            const data = painted ? inkMask(w, h, fake.tilts[n - 1] ?? 0) : new Uint8ClampedArray(w * h * 4).fill(255);
+            // The double paints the **displayed** page, which is what pdf.js hands
+            // `getImageData`: a `/Rotate` turns the ink as well as the sheet, so a
+            // page carrying one is painted with its text on its side.
+            const tilt = (fake.tilts[n - 1] ?? 0) + (fake.rotations[n - 1] ?? 0);
+            const data = painted && !fake.blank
+              ? inkMask(w, h, tilt)
+              : new Uint8ClampedArray(w * h * 4).fill(255);
             return { data, width: w, height: h, colorSpace: 'srgb' };
           },
         };
@@ -130,6 +140,8 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
 
 beforeEach(() => {
   fake.tilts = [];
+  fake.rotations = [];
+  fake.blank = false;
   fake.earlyReads = 0;
 });
 
@@ -144,7 +156,7 @@ beforeEach(() => {
  * estimator reports. The fake session above is handed `-alphaDegrees` so the
  * bytes and the paint describe the same page.
  */
-async function tiltedPdf(alphaDegrees: number, pages = 1): Promise<Uint8Array> {
+async function tiltedPdf(alphaDegrees: number, pages = 1, rotation = 0): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const rad = (alphaDegrees * Math.PI) / 180;
@@ -171,6 +183,9 @@ async function tiltedPdf(alphaDegrees: number, pages = 1): Promise<Uint8Array> {
       doc.context.register(doc.context.stream(body)),
     );
     page.drawRectangle({ x: 20, y: 20, width: 40, height: 8, color: rgb(0, 0, 0) });
+    // `pdf.js` paints a rotated sheet turned, so the double is told the same angle
+    // its paint must carry (`fake.rotations`, next to this in the caller).
+    if (rotation) page.setRotation(degrees(rotation));
   }
   return doc.save({ useObjectStreams: false });
 }
@@ -290,7 +305,9 @@ describe.each([-6, -3, 3, 6])('deskew-pdf on a page turned %i° in user space', 
     const { result } = await runDeskew(await tiltedPdf(alpha));
     const turn = alpha > 0 ? `${Math.abs(alpha).toFixed(2)}° clockwise` : `${Math.abs(alpha).toFixed(2)}° counterclockwise`;
     const tilt = `${alpha > 0 ? '-' : '+'}${Math.abs(alpha).toFixed(2)}°`;
-    expect(result.message).toContain(`1 (tilt ${tilt}, turned ${turn})`);
+    expect(result.message).toContain(`1 (tilt ${tilt}, turned ${turn}, page `);
+    // The card promises "the page size it had to grow", so the line has to name it.
+    expect(result.message).toMatch(/page \d+×\d+ → \d+×\d+ pt/);
     expect(result.warnings?.join(' ') ?? '').not.toMatch(/Not straightened/);
   });
 });
@@ -303,5 +320,79 @@ describe('deskew-pdf on a page that is already straight', () => {
     expect(result.message).toMatch(/Nothing to do/);
     expect(contentRotation(doc.getPage(0))).toBeCloseTo(0, 6);
     expect(doc.getPage(0).getSize()).toEqual({ width: PAGE[0], height: PAGE[1] });
+  });
+});
+
+/* ── a page that carries a /Rotate (round 029) ──────────────────────────────
+ *
+ * Measured on a 90/180/270 fixture in a real tab: the estimator searched ±10°
+ * around 0 only. Under `/Rotate 90` the text is painted *vertical*, so that
+ * window aligns columns, the peakiness collapses to 0.133 confidence (against
+ * 0.734 for the same page upright), the estimator's own 0.15 floor zeroed the
+ * answer, and pages 1 and 3 were left alone **and unnamed** while the report
+ * said "Straightened 1 page(s)" — page 2 happened to be `/Rotate 180`, where the
+ * window is the right one by accident.
+ */
+
+describe('the estimator over a page turned on its side', () => {
+  it('finds nothing in the ±angle window around 0', async () => {
+    const { alphaMaskFromPixels, skewFromProjectionProfile } = await import('@/lib/pdf/core/measure');
+    // 90° of display rotation over a 3° tilt: what a `/Rotate 90` sheet paints.
+    const mask = alphaMaskFromPixels(inkMask(595, 842, 87), 595, 842);
+    const flat = skewFromProjectionProfile(mask, 595, 842, 10);
+    expect(Math.abs(flat.angle)).toBeLessThan(0.5);
+    expect(flat.confidence).toBeLessThan(0.35);
+  });
+
+  it('answers the tilt against the page’s own axes when the quarter turns are swept', async () => {
+    const { alphaMaskFromPixels, skewFromProjectionProfile } = await import('@/lib/pdf/core/measure');
+    const mask = alphaMaskFromPixels(inkMask(595, 842, 87), 595, 842);
+    const swept = skewFromProjectionProfile(mask, 595, 842, 10, { searchQuarterTurns: true });
+    expect(swept.angle).toBeCloseTo(-3, 1);
+    expect(swept.confidence).toBeGreaterThan(0.6);
+    // The 0° control under the same rotation must not invent a correction.
+    const level = skewFromProjectionProfile(alphaMaskFromPixels(inkMask(595, 842, 90), 595, 842), 595, 842, 10, {
+      searchQuarterTurns: true,
+    });
+    expect(Math.abs(level.angle)).toBeLessThan(0.3);
+    expect(level.confidence).toBeGreaterThan(0.6);
+  });
+});
+
+describe.each([{ rotation: 90 }, { rotation: 270 }])('deskew-pdf on a 3° page carrying /Rotate $rotation', ({ rotation }) => {
+  it('straightens it across its own axes, keeps the /Rotate and names the page', async () => {
+    // The upright bitmap tilt of a +3° content page is −3; the display rotation
+    // is added by the double on top (θ_bitmap = /Rotate − tilt).
+    fake.tilts = [-3];
+    fake.rotations = [rotation];
+    const { result, doc } = await runDeskew(await tiltedPdf(3, 1, rotation), {
+      maxAngle: 10,
+      threshold: 0.35,
+      pages: 'all',
+    });
+    const page = doc.getPage(0);
+    expect(Math.abs(contentRotation(page)), 'residual content rotation').toBeLessThan(0.2);
+    expect(page.getRotation().angle).toBe(rotation);
+    expect(result.message).toMatch(/Straightened 1 page\(s\)/);
+    expect(result.warnings?.join(' ') ?? '').not.toMatch(/could not be judged/);
+    // The same instrument, in the same frame, calls the result straight.
+    const { alphaMaskFromPixels, skewFromProjectionProfile } = await import('@/lib/pdf/core/measure');
+    const after = skewFromProjectionProfile(
+      alphaMaskFromPixels(inkMask(595, 842, rotation), 595, 842),
+      595,
+      842,
+      10,
+      { searchQuarterTurns: true },
+    );
+    expect(Math.abs(after.angle), `residual ${after.angle}°`).toBeLessThan(0.2);
+  });
+});
+
+describe('a page the estimator cannot judge', () => {
+  it('is named in the warnings instead of skipped in silence', async () => {
+    fake.blank = true;
+    const { result } = await runDeskew(await tiltedPdf(3));
+    expect(result.message).toMatch(/Nothing to do/);
+    expect(result.warnings?.join(' ') ?? '').toMatch(/page 1 could not be judged/);
   });
 });

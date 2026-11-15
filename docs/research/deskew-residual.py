@@ -17,12 +17,15 @@ rises to the right (counterclockwise as it is viewed, i.e. a positive PDF
 user-space rotation) reports a **negative** angle. That is the same convention
 ``core/measure.ts:detectSkew`` answers in, and the sign the deskew bug turned on.
 
-On a page carrying ``/Rotate 90`` or ``270`` the two halves measure different
-things and are expected to disagree: PyMuPDF reports text directions in the
-*content* frame while the pixels are the *displayed* page, so a 3°-tilted fixture
-rotated 90° reads ``lines=+3.00`` and ``profile=-7.80`` (the profile is pinned at
-the edge of its ±8° window because the lines run vertically). Read the pixels
-there; deskew's own estimate reads them too.
+Both halves are measured in the **content** frame, which is the frame the
+correction is written into: ``lines`` comes from PyMuPDF's ``dir`` vectors, which
+are content-frame already, and the raster is taken from a copy of the document
+with every ``/Rotate`` set to 0. They therefore agree on a rotated page too. Until
+round 029 the pixels were the *displayed* page, so on a ``/Rotate 90`` sheet the
+text ran vertically and the profile pinned at its ±8° window edge (a 3° fixture
+rotated 90° read ``lines=-3.00`` against ``profile=7.80``) — a disagreement by
+construction that hid whether a rotated page had been turned at all. The page's
+own ``/Rotate`` is printed beside the row so the two frames stay distinguishable.
 
 ``--straight`` exits 1 unless every page measures within ``--tol`` degrees of 0;
 ``--expect`` exits 1 unless every page measures within ``--tol`` of DEG. It is a
@@ -94,20 +97,26 @@ def profile_angle(gray) -> float:
 
 def describe(path: str):
     doc = pymupdf.open(path)
+    # Pixels in the content frame: the raster is taken from a copy whose every
+    # /Rotate is zeroed, the same frame `line_angles` reports in.
+    flat = pymupdf.open(path)
+    for one in flat:
+        one.set_rotation(0)
     report = []
     for index in range(doc.page_count):
         page = doc[index]
         angles = line_angles(page)
-        gray = raster(page)
+        gray = raster(flat[index])
         ink = float((gray < 245).mean() * 100.0)
         med = float(np.median(angles)) if angles else float("nan")
         prof = profile_angle(gray)
         spread = (max(angles) - min(angles)) if angles else float("nan")
         report.append({"page": index + 1, "lines": med, "spread": spread, "profile": prof, "ink": ink,
                        "count": len(angles)})
-        print(f"  p{index + 1:<3} lines={med:6.2f} spread={spread:5.2f} n={len(angles):<4} "
+        print(f"  p{index + 1:<3} rot={page.rotation:<4} lines={med:6.2f} spread={spread:5.2f} n={len(angles):<4} "
               f"profile={prof:6.2f} ink={ink:5.2f}%")
     doc.close()
+    flat.close()
     return report
 
 

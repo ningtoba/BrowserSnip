@@ -1065,7 +1065,9 @@ describe('deskew-pdf turns the page without breaking it (E6, E9, E15, E16)', () 
     expect(content).toMatch(/cm/);
     expect(content).toMatch(/Q/);
     expect(outcome.message).toMatch(
-      /Straightened 1 page\(s\): 1 \(tilt \+2\.50°, turned 2\.50° counterclockwise\)/,
+      // The grown box is part of the line: the card promises it, and it is the one
+      // number a reader needs to know nothing was cropped.
+      /Straightened 1 page\(s\): 1 \(tilt \+2\.50°, turned 2\.50° counterclockwise, page 595×842 → \d+×\d+ pt\)/,
     );
     expect(outcome.warnings.join(' ')).toMatch(/page 3 \(45\.00° is past the 10° limit\)/);
     expect(doc.getPage(1).getSize()).toEqual({ width: 595, height: 842 });

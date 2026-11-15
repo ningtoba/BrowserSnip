@@ -526,8 +526,11 @@ export interface SkewCorrection {
  * just another rotation, so a turn of N degrees is a visible N degrees whatever
  * multiple of 90 the page carries — what a rotated page costs is the
  * *measurement*, not the matrix: the estimate reads the rendered bitmap, where
- * text under `/Rotate 90` runs vertically and sits outside the searched window
- * (measured: a `/Rotate 90` copy of the 3° fixture is left alone).
+ * text under `/Rotate 90` runs vertically and used to fall outside the searched
+ * window (measured: a `/Rotate 90` copy of the 3° fixture was left alone). The
+ * measurement now sweeps the quarter turns too (`detectSkew`'s
+ * `searchQuarterTurns`), so the turn handed here is the tilt against the page's
+ * own axes and this matrix stays the same for a rotated sheet.
  */
 export function applySkew(page: PDFPage, turn: number): SkewCorrection {
   const size = page.getSize();
@@ -1951,6 +1954,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'The tilt is measured by rendering each page with pdf.js, in this tab; the report names the tilt it found and turns the page back by exactly that much.',
       'Correction is written into the page content, not into /Rotate, because /Rotate can only hold multiples of 90°.',
+      'A page already carrying a /Rotate of 90, 180 or 270 is measured across its own axes, so a rotated scan is straightened rather than skipped — and its /Rotate is left as it was.',
       'Annotations and form fields keep their old coordinates, so a marked-up page is better deskewed before it is annotated.',
     ],
     async run(context) {
@@ -1970,7 +1974,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
 
       const session = await openRender(input.bytes, { password: context.password });
-      const corrected: { page: number; tilt: number; turn: number }[] = [];
+      const corrected: { page: number; tilt: number; turn: number; box: { before: [number, number]; after: [number, number] } }[] = [];
       const skipped: string[] = [];
       let movedAnnotations = 0;
       try {
@@ -1980,17 +1984,31 @@ export const optimizeTools: PdfToolDefinition[] = [
           const index = pageNumber - 1;
           let estimate: { angle: number; confidence: number };
           try {
-            estimate = await detectSkew(session, pageNumber, { maxAngle });
+            // `searchQuarterTurns`: the render is the *displayed* page, so a
+            // `/Rotate 90` sheet puts its text on its side and the ±`maxAngle`
+            // window around 0 aligns columns instead of rows. Measured here, a
+            // 3° page under `/Rotate 90` answered 0.133 confidence against 0.734
+            // upright, fell under the estimator's own 0.15 floor and came back
+            // `{ angle: 0 }` — pages 1 and 3 of a 90/180/270/90 fixture were left
+            // alone and *unnamed* while the report said "Straightened 1 page(s)".
+            // The quarter turn is taken back out of the answer, so what the rest
+            // of this loop sees is still the tilt against the page's own axes.
+            estimate = await detectSkew(session, pageNumber, { maxAngle, searchQuarterTurns: true });
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             skipped.push(`page ${pageNumber} could not be measured (${reason})`);
             continue;
           }
           const angle = estimate.angle;
-          if (Math.abs(angle) <= 0.15 || estimate.confidence < confidence) {
-            if (Math.abs(angle) > 0.15) {
-              skipped.push(`page ${pageNumber} (${angle.toFixed(2)}° below the ${confidence} confidence you asked for)`);
-            }
+          if (estimate.confidence < confidence) {
+            // Not "nothing to do" — nothing could be *judged*. The old test was
+            // `|angle| <= 0.15 || confidence < threshold` and only spoke when the
+            // angle was over 0.15, so a page the estimator had zeroed came back as
+            // silence. A straight page (angle 0, high confidence) stays quiet; a
+            // page that could not be read is named.
+            skipped.push(`page ${pageNumber} could not be judged (${angle.toFixed(2)}° at ${estimate.confidence} confidence, below the ${confidence} you asked for)`);
+          } else if (Math.abs(angle) <= 0.15) {
+            // Measured straight. Quiet, and no correction is invented.
           } else if (Math.abs(angle) > maxAngle) {
             skipped.push(`page ${pageNumber} (${angle.toFixed(2)}° is past the ${maxAngle}° limit)`);
           } else {
@@ -2001,9 +2019,15 @@ export const optimizeTools: PdfToolDefinition[] = [
             // raw estimate — what this call site used to do — turned the page the
             // way it was already leaning: measured on the deployed build, a page
             // at -6° came back at -12° and the line still said "Straightened".
+            const before = input.doc.getPage(index).getSize();
             const result = applySkew(input.doc.getPage(index), deskewAngleFor(estimate, maxAngle));
             if (result.applied) {
-              corrected.push({ page: pageNumber, tilt: estimate.angle, turn: result.angle });
+              corrected.push({
+                page: pageNumber,
+                tilt: estimate.angle,
+                turn: result.angle,
+                box: { before: [before.width, before.height], after: [result.width, result.height] },
+              });
               movedAnnotations += result.annotations;
             }
           }
@@ -2045,7 +2069,9 @@ export const optimizeTools: PdfToolDefinition[] = [
           ? `Straightened ${corrected.length} page(s): ${corrected
               .map((c) =>
                 `${c.page} (tilt ${c.tilt >= 0 ? '+' : '-'}${Math.abs(c.tilt).toFixed(2)}°, turned `
-                + `${Math.abs(c.turn).toFixed(2)}° ${c.turn > 0 ? 'clockwise' : 'counterclockwise'})`,
+                + `${Math.abs(c.turn).toFixed(2)}° ${c.turn > 0 ? 'clockwise' : 'counterclockwise'}, `
+                + `page ${Math.round(c.box.before[0])}×${Math.round(c.box.before[1])} → `
+                + `${Math.round(c.box.after[0])}×${Math.round(c.box.after[1])} pt)`,
               )
               .join(', ')}. ${sizeSentence(change)}.`
           : `Nothing to do: no page was tilted past ${maxAngle}° at a confidence of ${confidence}. ${sizeSentence(change)}.`,
