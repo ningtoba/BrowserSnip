@@ -43,6 +43,7 @@ import {
 import { inspectScript, stripScript } from '../core/sanitize';
 import { embeddedFileCount } from '../core/attachments';
 import { readXmp, srgbIccProfile } from '../core/metadata';
+import { readOutline } from '../core/bookmarks';
 import { displayedSize, setMediaAndCrop } from '../core/pages';
 import { listLayers, removeHiddenLayerContent } from '../core/layers';
 import { canvasToBlob, openRender, type PageRender } from '../core/render';
@@ -60,6 +61,7 @@ import {
   openInputs,
   pagesField,
   parsePageRanges,
+  selectedPageSet,
   qualityField,
 } from './helpers';
 import {
@@ -248,7 +250,7 @@ interface FontAudit {
  * descriptor carries `/FontFile3` was not embedded, a claim two outside readers
  * contradict (`docs/research/pdfa-attribution-recheck.md`).
  */
-function auditFonts(doc: PDFDocument): FontAudit {
+function auditFonts(doc: PDFDocument, pages: PDFPage[] = doc.getPages()): FontAudit {
   const audit: FontAudit = { total: 0, embedded: 0 };
   const seen = new Set<string>();
   const dictOf = (value: unknown): PDFDict | undefined => {
@@ -273,7 +275,7 @@ function auditFonts(doc: PDFDocument): FontAudit {
     }
     return false;
   };
-  for (const page of doc.getPages()) {
+  for (const page of pages) {
     const resources = page.node.Resources();
     const map = dictOf(resources);
     const fontDict = dictOf(map?.get(PDFName.of('Font')));
@@ -1842,35 +1844,106 @@ export const optimizeTools: PdfToolDefinition[] = [
   {
     id: 'font-to-outline',
     name: 'Font to Outline',
-    description: 'Convert all text to vector paths so rendering cannot change',
+    description: 'Convert text to vector paths so rendering cannot change',
     icon: '✒️',
     category: 'optimize',
     keywords: ['curves', 'no font dependency', 'rasterize type', 'outline'],
     outputSuffix: '_outlined.pdf',
     engines: ['ghostscript'],
     actionLabel: 'Outline',
-    promise: 'Text that cannot reflow or substitute, and a refusal that says whether Ghostscript could not be fetched or refused the file.',
+    promise: 'Text that cannot reflow or substitute, a refusal that names what failed, and the faces that were already safe said so.',
+    fields: [pagesField({ group: 'Which pages' })],
     notes: [
       'Glyphs become vector paths: the text can no longer be selected, searched or edited.',
       'This tool has no degraded path — a rebuild without Ghostscript would leave the fonts in place and only look outlined.',
       'A page that draws no text has nothing to outline: it comes back as Ghostscript rewrote it, and the result says so rather than claiming converted glyphs.',
+      'A page naming a font that is already embedded as a subset is safe for a printer to receive — its face travels in the file. A page naming one of the standard 14 faces carries no font program at all, so a printer or a viewer may draw it with a different face; that is the case this tool exists for, and the result names how many pages of each you have.',
+      'A page you leave out is copied through untouched — its text, its annotations and its links stay. A partial run rebuilds the page tree, so the outline and the page labels do not come along — the result counts the bookmarks it had to drop.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
       const { textToOutlines } = await import('../core/engine-ops');
+      const opened = input.doc.getPages();
       // What the pages drew before the run, so "outlined" is a comparison and
       // not an assumption: a file that comes back still drawing its text must
       // not be described as converted.
-      const textPages = input.doc.getPages().filter(pageShowsText).length;
+      const textPages = opened.filter(pageShowsText).length;
+      const chosen = new Set(selectedPageSet(input, stringValue(context.values, 'pages', 'all')));
+      if (chosen.size === 0) {
+        throw new ToolInputError('OUT_OF_RANGE', 'No page was selected, so nothing was outlined.', {
+          fileName: input.name,
+          hint: 'Write a range such as 1-3, or clear the box for every page.',
+        });
+      }
+      // Choosing every page in document order keeps Ghostscript's own whole-file
+      // job, which is the one that carries the outline and the page labels.
+      const wholeDocument =
+        chosen.size === opened.length && [...chosen].every((index, at) => index === at);
+      // Only the selected pages are the subject of the report.
+      const askedText = opened.filter((page, index) => chosen.has(index) && pageShowsText(page)).length;
+      const carriedPages = opened.length - chosen.size;
+      // Contiguous runs, so a long selection is one Ghostscript job and not one
+      // per page; `pdfwrite` writes only the pages it is given.
+      const runs: Array<[number, number]> = [];
+      for (const index of [...chosen].sort((a, b) => a - b)) {
+        const last = runs[runs.length - 1];
+        if (last && index === last[1] + 1) last[1] = index;
+        else runs.push([index, index]);
+      }
       let bytes: Uint8Array;
-      let producedBy: ByteSource;
-      let outlineLog: string[] = [];
+      let producedBy: ByteSource = { via: 'engine', engine: 'ghostscript' };
+      const outlineLog: string[] = [];
       try {
-        const outcome = await textToOutlines(input.bytes, { onStatus: context.log });
-        bytes = outcome.bytes;
-        producedBy = outcome.producedBy;
-        outlineLog = outcome.log;
+        if (wholeDocument) {
+          const outcome = await textToOutlines(input.bytes, { onStatus: context.log });
+          bytes = outcome.bytes;
+          producedBy = outcome.producedBy;
+          outlineLog.push(...outcome.log);
+        } else {
+          const target = await newPDF();
+          // `/Info` sits above the page tree, which this path rebuilds.
+          carrySourceInfo(input.doc, target);
+          const slots: Array<PDFPage | null> = new Array(opened.length).fill(null);
+          let done = 0;
+          for (const [first, last] of runs) {
+            const outcome = await textToOutlines(
+              input.bytes,
+              { onStatus: context.log },
+              { first: first + 1, last: last + 1 },
+            );
+            outlineLog.push(...outcome.log);
+            producedBy = outcome.producedBy;
+            const outlinedDoc = await openPDF(outcome.bytes, { ignoreEncryption: true, updateMetadata: false });
+            const wanted = last - first + 1;
+            const indexes = outlinedDoc.getPages().map((_, index) => index);
+            if (indexes.length !== wanted) {
+              throw new ToolInputError(
+                'CORRUPT',
+                `Ghostscript returned ${indexes.length} page(s) for pages ${first + 1}-${last + 1}, so nothing was outlined.`,
+                { fileName: input.name, hint: 'Try the run without a page selection, or use Rasterize PDF.' },
+              );
+            }
+            const copied = await target.copyPages(outlinedDoc, indexes);
+            copied.forEach((page, offset) => {
+              slots[first + offset] = page;
+            });
+            done += copied.length;
+            context.progress(Math.min(0.95, (done / chosen.size) * 0.95), `Outlined ${done} of ${chosen.size} page(s)`);
+          }
+          // Document order, with the pages that were left out copied as they are.
+          for (let index = 0; index < slots.length; index++) {
+            const held = slots[index];
+            if (held) {
+              target.addPage(held);
+              continue;
+            }
+            const [carried] = await target.copyPages(input.doc, [index]);
+            target.addPage(carried);
+          }
+          bytes = await savePDF(target, { useObjectStreams: true });
+        }
       } catch (error) {
+        if (error instanceof ToolInputError) throw error;
         // Two different failures, and saying "could not be reached" for the
         // second one sends the user to check a connection that is fine: an
         // `EngineUnavailable` is the download, anything else is Ghostscript
@@ -1890,19 +1963,28 @@ export const optimizeTools: PdfToolDefinition[] = [
         );
       }
       const produced = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
-      const fonts = auditFonts(produced);
-      const stillText = produced.getPages().filter(pageShowsText).length;
-      const outlined = textPages > 0 && stillText === 0 && fonts.total === 0;
+      const producedPages = produced.getPages();
+      // The audit is scoped to the pages that were asked for: the font resources
+      // on a page nobody selected are meant to still be there.
+      const selectedProduced = producedPages.filter((_, index) => chosen.has(index));
+      const fonts = auditFonts(produced, selectedProduced);
+      const stillText = selectedProduced.filter(pageShowsText).length;
+      const outlined = askedText > 0 && stillText === 0 && fonts.total === 0;
       const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
       const outcome = sizeSentence(change);
-      // Three honest answers, chosen by what the bytes now contain.
+      const carriedSentence = carriedPages > 0
+        ? ` The ${carriedPages} page(s) you did not select still carry their text.`
+        : '';
+      // Four honest answers, chosen by what the bytes now contain.
       let headline: string;
-      if (textPages === 0) {
-        headline = `Ghostscript rewrote ${input.name}, and no page draws text — there was nothing to outline. ${outcome}.`;
+      if (askedText === 0) {
+        headline = `Ghostscript rewrote ${input.name}, and no selected page draws text — there was nothing to outline.${carriedSentence} ${outcome}.`;
       } else if (outlined) {
-        headline = `Ghostscript drew the type on all ${textPages} page(s) as vector paths: no page shows text through a font and no font resource is left. ${outcome}.`;
+        headline = wholeDocument
+          ? `Ghostscript drew the type on all ${textPages} page(s) as vector paths: no page shows text through a font and no font resource is left. ${outcome}.`
+          : `Ghostscript drew the type on the ${askedText} selected page(s) as vector paths: no selected page shows text through a font and no font resource is left on them.${carriedSentence} ${outcome}.`;
       } else {
-        headline = `Ghostscript rewrote the file, but ${stillText} of ${textPages} page(s) still draw text and ${fonts.total} font resource(s) remain: that type is not outlined. ${outcome}.`;
+        headline = `Ghostscript rewrote the file, but ${stillText} of the ${askedText} selected page(s) still draw text and ${fonts.total} font resource(s) remain on them: that type is not outlined.${carriedSentence} ${outcome}.`;
       }
       const warnings: string[] = [];
       for (const line of outlineLog) warnings.push(`Ghostscript: ${line}`);
@@ -1915,6 +1997,33 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
       if (fonts.total > 0) {
         warnings.push(`${fonts.total} font resource(s) are still referenced, so Ghostscript did not outline every glyph.`);
+      }
+      // What the face situation was, because "outlined" means different things
+      // for a face that already travelled in the file and for a bare reference.
+      const faces = faceAudit(input.doc, opened.filter((_, index) => chosen.has(index)));
+      if (faces.plain > 0) {
+        warnings.push(
+          `${faces.plain} of the ${faces.text} selected page(s) name a font with no program in the file (a standard 14 reference), so any printer may draw it with a different face — those are the pages this tool is for.`,
+        );
+      }
+      if (faces.embedded > 0) {
+        warnings.push(
+          `${faces.embedded} of the ${faces.text} selected page(s) already carry an embedded subset, which a printer may draw as it is: outlining those is only needed if the shapes themselves must not move.`,
+        );
+      }
+      if (carriedPages > 0) {
+        // Only the structures a reader would miss, and only when they exist: a
+        // sentence about "0 bookmark(s)" trains people to skip the list.
+        const bookmarks = countOutline(readOutline(input.doc));
+        const labels = input.doc.catalog.get(PDFName.of('PageLabels')) !== undefined;
+        const lost = [bookmarks > 0 ? `${bookmarks} bookmark(s)` : '', labels ? 'the page labels' : '']
+          .filter(Boolean)
+          .join(' and ');
+        if (lost) {
+          warnings.push(
+            `A partial selection rebuilds the page tree, so ${lost} did not come along; the pages you did not select keep their text, annotations and links.`,
+          );
+        }
       }
       if (change.grew) {
         // Only a run that converted type may blame the growth on geometry.
@@ -2099,6 +2208,28 @@ function carrySourceInfo(source: PDFDocument, target: PDFDocument): void {
   if (subject) target.setSubject(subject);
   if (keywords) target.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
   if (creator) target.setCreator(creator);
+}
+
+/**
+ * Of the selected pages that draw text, how many name a face with no program in
+ * the file and how many already carry an embedded program. `get_fonts`-style
+ * walking is `auditFonts`'s; this is the per-page split the card speaks in.
+ */
+function faceAudit(doc: PDFDocument, pages: PDFPage[]): { text: number; plain: number; embedded: number } {
+  const counts = { text: 0, plain: 0, embedded: 0 };
+  for (const page of pages) {
+    if (!pageShowsText(page)) continue;
+    counts.text += 1;
+    const whole = auditFonts(doc, [page]);
+    if (whole.total > whole.embedded) counts.plain += 1;
+    else if (whole.embedded > 0) counts.embedded += 1;
+  }
+  return counts;
+}
+
+/** Every node of an outline, children included. */
+function countOutline(nodes: ReturnType<typeof readOutline>): number {
+  return nodes.reduce((sum, node) => sum + 1 + countOutline(node.children ?? []), 0);
 }
 
 /** `/Annots` on each page, and how many of them are form widgets. */

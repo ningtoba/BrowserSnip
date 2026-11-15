@@ -33,12 +33,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import * as pdfjs from 'pdfjs-dist';
 import { GlobalWorkerOptions, OPS } from 'pdfjs-dist';
 import { PDFDocument, StandardFonts, rgb } from '@maxwbh/pdf-lib';
-import { PDFDict, PDFName, PDFRef, openPDF } from '@/lib/pdf/core/doc';
+import { PDFArray, PDFDict, PDFName, PDFRef, fontkit, openPDF } from '@/lib/pdf/core/doc';
 import { mediaBox } from '@/lib/pdf/core/pages';
 import { describeSize, isToolInputError } from '@/lib/pdf/core/guard';
 import { resetEngines } from '@/lib/pdf/engines/auto';
 import { ENGINE_DEFAULTS } from '@/lib/pdf/engines/provider';
 import { convertToPdfA, rebuildWithGhostscript, textToOutlines } from '@/lib/pdf/core/engine-ops';
+import { addPageLabels, writeOutline } from '@/lib/pdf/core/bookmarks';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 
@@ -169,6 +170,59 @@ async function artPdf(): Promise<Uint8Array> {
   page.drawImage(image, { x: 60, y: 500, width: 200, height: 200 });
   page.drawRectangle({ x: 320, y: 520, width: 180, height: 160, color: rgb(0.2, 0.6, 0.2) });
   page.drawLine({ start: { x: 60, y: 300 }, end: { x: 500, y: 120 }, thickness: 4, color: rgb(0, 0, 0.8) });
+  return doc.save({ useObjectStreams: false });
+}
+
+/**
+ * Four pages, two face kinds and the structures above the page tree: the shape a
+ * partial outline has to hold. Page 1 names an embedded subset, pages 2-3 the bare
+ * base-14 reference, page 4 draws a picture and no text.
+ */
+async function mixedPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const face = await doc.embedFont(new Uint8Array(fs.readFileSync(`${process.cwd()}/public/fonts/NotoSans-Regular.ttf`)), {
+    subset: true,
+  });
+  const plain = await doc.embedFont(StandardFonts.Helvetica);
+  for (let index = 1; index <= 4; index++) {
+    const page = doc.addPage([595.28, 841.89]);
+    if (index === 4) {
+      page.drawLine({ start: { x: 60, y: 300 }, end: { x: 500, y: 500 }, thickness: 6, color: rgb(0, 0, 0.8) });
+      continue;
+    }
+    page.drawText(`MIXEDPROBE page ${index} line one`, {
+      x: 54,
+      y: 700,
+      size: 14,
+      font: index === 1 ? face : plain,
+      color: rgb(0, 0, 0),
+    });
+    if (index === 1) {
+      // A highlight and a URI link on a page that will be left out of the run.
+      const annot = doc.context.obj({
+        Type: 'Annot',
+        Subtype: 'Highlight',
+        Rect: [54, 692, 300, 716],
+        C: [1, 1, 0],
+        F: 4,
+      });
+      page.node.set(PDFName.of('Annots'), doc.context.obj([doc.context.register(annot)]));
+      const link = doc.context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [54, 660, 300, 680],
+        A: { S: 'URI', URI: 'https://example.com/round029' },
+      });
+      page.node.set(
+        PDFName.of('Annots'),
+        doc.context.obj([doc.context.register(annot), doc.context.register(link)]),
+      );
+    }
+  }
+  writeOutline(doc, [{ title: 'Chapter one', page: 0 }, { title: 'Chapter two', page: 1 }]);
+  addPageLabels(doc, [{ start: 0, style: 'D' }]);
+  doc.setTitle('MIXEDPROBE document');
   return doc.save({ useObjectStreams: false });
 }
 
@@ -391,8 +445,15 @@ describe('the Ghostscript command line each tool builds', () => {
     expect(args).toContain('-dNoOutputFonts');
     expect(args).toContain('-sDEVICE=pdfwrite');
     expect(args).toContain('-dAutoRotatePages=/None');
-    // Nothing may narrow the job to part of the document.
+    // Nothing may narrow the job to part of the document unless it is asked to.
     expect(args.filter((arg) => arg.startsWith('-dFirstPage') || arg.startsWith('-dLastPage'))).toEqual([]);
+    // A range is a page *range to process*: `pdfwrite` writes only those pages.
+    gs.calls.length = 0;
+    await textToOutlines(SAMPLE, {}, { first: 2, last: 3 });
+    expect(lastCall().args.filter((arg) => /^-d(First|Last)Page=/.test(arg))).toEqual([
+      '-dFirstPage=2',
+      '-dLastPage=3',
+    ]);
   });
 });
 
@@ -473,6 +534,96 @@ describe('font-to-outline over the published Ghostscript build', () => {
     // are the rewrite, not geometry.
     const said = `${outcome.message ?? ''} ${outcome.warnings.join(' ')}`;
     expect(said).not.toMatch(/outlines are geometry/i);
+  }, 240_000);
+
+  it('outlines the pages it was given and leaves the rest selectable', async (ctx) => {
+    if (!gs.live) ctx.skip(gs.skipped || 'the real Ghostscript build was not loaded');
+    const source = await mixedPdf();
+    const before = await extractableText(source);
+    expect(before[1]).toContain('MIXEDPROBE page 2');
+    expect(before[2]).toContain('MIXEDPROBE page 3');
+
+    const outcome = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(source, 'mixed.pdf')],
+      values: { pages: '2' },
+    });
+    const bytes = await bytesOf(outcome.outputs[0].blob);
+    const after = await extractableText(bytes);
+
+    // The converter must not touch a page nobody selected…
+    expect(after[0]).toContain('MIXEDPROBE page 1');
+    expect(after[2]).toContain('MIXEDPROBE page 3');
+    // …and page 2 must lose its text and keep its ink, in place.
+    expect(after[1].trim()).toBe('');
+    const painted = await paintOps(bytes);
+    const paintedBefore = await paintOps(source);
+    expect(painted[1].text).toBe(0);
+    expect(painted[1].paths).toBeGreaterThan(paintedBefore[1].paths);
+    expect(painted[0].text).toBe(paintedBefore[0].text);
+    expect(painted[2].text).toBe(paintedBefore[2].text);
+
+    // Order, count and boxes survive the rebuild.
+    expect(outcome.pagesOut).toBe(4);
+    expect(await pageSizes(bytes)).toEqual(await pageSizes(source));
+    // The font resources on the carried pages are meant to still be there, so the
+    // audit must be scoped or the card claims un-outlined type.
+    expect((await resources(bytes)).fonts).toBeGreaterThan(0);
+    expect(outcome.message).toMatch(/the 1 selected page\(s\)/);
+    expect(outcome.message).toMatch(/still carry their text/);
+    expect(outcome.message).not.toMatch(/all \d+ page\(s\)/);
+    // A fixture with nothing above the page tree must not print "0 bookmark(s)".
+    const bare = await typePdf();
+    const bareRun = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(bare, 'bare.pdf')],
+      values: { pages: '1' },
+    });
+    expect(bareRun.warnings.join(' ')).not.toMatch(/bookmark|page labels/);
+  }, 240_000);
+
+  it('carries a left-out page\'s annotations and links, and says what the rebuild costs', async (ctx) => {
+    if (!gs.live) ctx.skip(gs.skipped || 'the real Ghostscript build was not loaded');
+    const source = await mixedPdf();
+    const outcome = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(source, 'mixed.pdf')],
+      values: { pages: '3' },
+    });
+    const bytes = await bytesOf(outcome.outputs[0].blob);
+    const doc = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
+    const [first] = doc.getPages();
+    const hold = first.node.get(PDFName.of('Annots'));
+    const list = hold instanceof PDFRef ? doc.context.lookup(hold) : hold;
+    expect(list).toBeInstanceOf(PDFArray);
+    expect((list as PDFArray).size()).toBe(2);
+    // The identity survives, and the two structures this path drops are counted.
+    expect(doc.getTitle()).toBe('MIXEDPROBE document');
+    const said = outcome.warnings.join(' ');
+    expect(said).toMatch(/A partial selection rebuilds the page tree, so 2 bookmark\(s\) and the page labels did not come along/);
+  }, 240_000);
+
+  it('names a bare base-14 reference as the unsafe case and an embedded subset as safe', async (ctx) => {
+    if (!gs.live) ctx.skip(gs.skipped || 'the real Ghostscript build was not loaded');
+    const source = await mixedPdf();
+    const plainRun = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(source, 'mixed.pdf')],
+      values: { pages: '2' },
+    });
+    const plainSaid = plainRun.warnings.join(' ');
+    expect(plainSaid).toMatch(/1 of the 1 selected page\(s\) name a font with no program/);
+    expect(plainSaid).not.toMatch(/already carry an embedded subset/);
+
+    const embeddedRun = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(source, 'mixed.pdf')],
+      values: { pages: '1' },
+    });
+    const embeddedSaid = embeddedRun.warnings.join(' ');
+    expect(embeddedSaid).toMatch(/1 of the 1 selected page\(s\) already carry an embedded subset/);
+    expect(embeddedSaid).toMatch(/already safe|only needed if the shapes themselves must not move/);
+    expect(embeddedSaid).not.toMatch(/name a font with no program/);
   }, 240_000);
 
   it('hands back a file that reopens, and counts it from the producer', async (ctx) => {

@@ -257,10 +257,16 @@ export async function convertToPdfA(
 /**
  * Turn every glyph into a vector path with `-dNoOutputFonts`, so the file
  * renders identically without any font on the machine.
+ *
+ * `range` narrows the job to 1-based pages, and it is a *page range to process*,
+ * not a page selection to keep: `pdfwrite` writes only those pages, so a caller
+ * that wants the rest of the document has to put them back itself. Left out, the
+ * whole file is converted.
  */
 export async function textToOutlines(
   bytes: Uint8Array,
   hooks?: EngineHooks,
+  range?: { first: number; last: number },
 ): Promise<GsOutcome> {
   return runGhostscript([
     '-dQUIET',
@@ -272,6 +278,7 @@ export async function textToOutlines(
     '-dCompatibilityLevel=1.7',
     '-dAutoRotatePages=/None',
     '-dColorConversionStrategy=/LeaveColorUnchanged',
+    ...(range ? [`-dFirstPage=${range.first}`, `-dLastPage=${range.last}`] : []),
   ], bytes, hooks);
 }
 

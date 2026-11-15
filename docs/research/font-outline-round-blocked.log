@@ -1,0 +1,13 @@
+# font-to-outline with the engine's CDN cut before the navigation (fresh tab)
+# all six rows must pass, and no PDF blob may exist
+clicked: clicked
+PDF: /tmp/triage/in/doc.pdf
+  ok   names Ghostscript
+  ok   says nothing was outlined
+  ok   says it could not be reached
+  ok   sends the user to a connection, not settings
+  ok   offers Rasterize PDF as the way round it
+  ok   no silent fallback file
+body: /tmp/r29/blocked.txt | screenshot: /tmp/r29/blocked.png | pdf blobs: 0
+console errors: []
+exit=0

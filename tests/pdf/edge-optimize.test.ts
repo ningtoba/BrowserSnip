@@ -1021,7 +1021,7 @@ describe('font-to-outline refuses instead of faking (E20)', () => {
     expect(outcome.warnings.join(' ')).toMatch(/still referenced/i);
     // Returning the input unchanged is the silent failure of this family: the
     // pages still draw their text, so the card may not describe them as paths.
-    expect(outcome.message).toMatch(/2 of 2 page\(s\) still draw text and 1 font resource\(s\) remain/);
+    expect(outcome.message).toMatch(/2 of the 2 selected page\(s\) still draw text and 1 font resource\(s\) remain/);
     expect(outcome.message).not.toMatch(/vector paths|no font resource is left/i);
     expectMeasuredSizes(outcome.message ?? '', source.byteLength, outcome.bytes.byteLength);
   });

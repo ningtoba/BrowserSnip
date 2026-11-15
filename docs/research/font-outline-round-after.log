@@ -1,0 +1,121 @@
+# after the fix — the same fixture, the same probes
+# run: doc.pdf, Pages 1,2 written through a native value setter and read back
+
+=== /tmp/triage/in/doc.pdf -> /tmp/r29/after-doc-p12.pdf
+    ok   page count — 4 -> 4
+  page 1: text 295 -> 0 | ink 8653 -> 8673 | paths 0 -> 236 | fonts ['Bitstream Vera Sans Roman'] -> [] | embed tags ['Bitstream Vera Sans Roman'] -> [] | rotate 0 -> 0
+    ok   p1 text is gone — 0 chars left
+    ok   p1 ink kept — 8653 -> 8673 (tol 86)
+    ok   p1 glyphs are now paths — 0 -> 236
+    ok   p1 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p1 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 rotation — 0 -> 0
+  page 2: text 295 -> 0 | ink 8406 -> 8377 | paths 0 -> 236 | fonts ['Helvetica'] -> [] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p2 text is gone — 0 chars left
+    ok   p2 ink kept — 8406 -> 8377 (tol 84)
+    ok   p2 glyphs are now paths — 0 -> 236
+    ok   p2 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p2 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p2 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p2 rotation — 0 -> 0
+  page 3: text 295 -> 295 | ink 10610 -> 10610 | paths 1 -> 1 | fonts ['Helvetica'] -> ['Helvetica'] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p3 text kept — 295 -> 295 chars
+    ok   p3 ink kept — 10610 -> 10610 (tol 106)
+    ok   p3 art untouched — 1 -> 1
+    ok   p3 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p3 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p3 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p3 rotation — 0 -> 0
+  page 4: text 0 -> 0 | ink 27732 -> 27732 | paths 1 -> 1 | fonts [] -> [] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p4 text kept — 0 -> 0 chars
+    ok   p4 ink kept — 27732 -> 27732 (tol 277)
+    ok   p4 art untouched — 1 -> 1
+    ok   p4 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p4 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p4 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p4 rotation — 0 -> 0
+    ok   outline — [] -> []
+    ok   info title — 'OUTLINEPROBE document' -> 'OUTLINEPROBE document'
+    ok   info author — 'Round 029' -> 'Round 029'
+    ok   info subject — 'keep me' -> 'keep me'
+    ok   crop still paints the same words — 7625 -> 7669 lit px
+    crops: /tmp/r29/after-doc-p12-crop-source.png / -produced.png
+
+0 FAIL line(s)
+
+# run: rich.pdf, Pages 2 — the carried sheets keep annot, link, /Rotate 90
+
+=== /tmp/triage/in/rich.pdf -> /tmp/r29/after-rich-p2.pdf
+    ok   page count — 3 -> 3
+  page 1: text 48 -> 48 | ink 5936 -> 5936 | paths 1 -> 1 | fonts ['Helvetica'] -> ['Helvetica'] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p1 text kept — 48 -> 48 chars
+    ok   p1 ink kept — 5936 -> 5936 (tol 59)
+    ok   p1 art untouched — 1 -> 1
+    ok   p1 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p1 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 rotation — 0 -> 0
+    ok   p1 annotations — [('Highlight', (50.2, 97.0, 423.8, 115.0))] -> [('Highlight', (50.2, 97.0, 423.8, 115.0))]
+    ok   p1 links — [(1, (54.0, 130.0, 300.0, 150.0))] -> [(1, (54.0, 130.0, 300.0, 150.0))]
+  page 2: text 47 -> 0 | ink 1636 -> 1621 | paths 0 -> 37 | fonts ['Helvetica'] -> [] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p2 text is gone — 0 chars left
+    ok   p2 ink kept — 1636 -> 1621 (tol 16)
+    ok   p2 glyphs are now paths — 0 -> 37
+    ok   p2 box — (440.0, 640.0) -> (440.0, 640.0)
+    ok   p2 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p2 crop box — (60.0, 60.0, 500.0, 700.0) -> (60.0, 60.0, 500.0, 700.0)
+    ok   p2 rotation — 0 -> 0
+    ok   p2 links — [(2, (54.0, 130.0, 300.0, 150.0))] -> [(2, (54.0, 130.0, 300.0, 150.0))]
+  page 3: text 41 -> 41 | ink 1519 -> 1519 | paths 0 -> 0 | fonts ['Helvetica'] -> ['Helvetica'] | embed tags [] -> [] | rotate 90 -> 90
+    ok   p3 text kept — 41 -> 41 chars
+    ok   p3 ink kept — 1519 -> 1519 (tol 15)
+    ok   p3 art untouched — 0 -> 0
+    ok   p3 box — (841.89, 595.28) -> (841.89, 595.28)
+    ok   p3 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p3 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p3 rotation — 90 -> 90
+    ok   outline named, not kept — [[1, 'First sheet', 1], [1, 'Second sheet', 2]] -> [] (the card counts it)
+    ok   info title — 'ANNOTPROBE document' -> 'ANNOTPROBE document'
+    ok   info author — 'Round 029' -> 'Round 029'
+    ok   info subject — '' -> ''
+
+0 FAIL line(s)
+
+# run: rich.pdf, all pages (the unchanged whole-document path)
+
+=== /tmp/triage/in/rich.pdf -> /tmp/r29/after-rich-all.pdf
+    ok   page count — 3 -> 3
+  page 1: text 48 -> 0 | ink 5936 -> 5936 | paths 1 -> 41 | fonts ['Helvetica'] -> [] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p1 text is gone — 0 chars left
+    ok   p1 ink kept — 5936 -> 5936 (tol 59)
+    ok   p1 glyphs are now paths — 1 -> 41
+    ok   p1 box — (595.28, 841.89) -> (595.28, 841.89)
+    ok   p1 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p1 rotation — 0 -> 0
+    ok   p1 annotations — [('Highlight', (50.2, 97.0, 423.8, 115.0))] -> [('Highlight', (50.2, 97.0, 423.8, 115.0))]
+    ok   p1 links — [(1, (54.0, 130.0, 300.0, 150.0))] -> [(1, (54.0, 130.0, 300.0, 150.0))]
+  page 2: text 47 -> 0 | ink 1636 -> 1621 | paths 0 -> 37 | fonts ['Helvetica'] -> [] | embed tags [] -> [] | rotate 0 -> 0
+    ok   p2 text is gone — 0 chars left
+    ok   p2 ink kept — 1636 -> 1621 (tol 16)
+    ok   p2 glyphs are now paths — 0 -> 37
+    ok   p2 box — (440.0, 640.0) -> (440.0, 640.0)
+    ok   p2 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 595.28, 841.89)
+    ok   p2 crop box — (60.0, 60.0, 500.0, 700.0) -> (60.0, 60.0, 500.0, 700.0)
+    ok   p2 rotation — 0 -> 0
+    ok   p2 links — [(2, (54.0, 130.0, 300.0, 150.0))] -> [(2, (54.0, 130.0, 300.0, 150.0))]
+  page 3: text 41 -> 0 | ink 1519 -> 1578 | paths 0 -> 34 | fonts ['Helvetica'] -> [] | embed tags [] -> [] | rotate 90 -> 0
+    ok   p3 text is gone — 0 chars left
+    FAIL p3 ink kept — 1519 -> 1578 (tol 15)
+    ok   p3 glyphs are now paths — 0 -> 34
+    ok   p3 box — (841.89, 595.28) -> (841.89, 595.28)
+    FAIL p3 media box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 841.89, 595.28)
+    FAIL p3 crop box — (0.0, 0.0, 595.28, 841.89) -> (0.0, 0.0, 841.89, 595.28)
+    FAIL p3 rotation — 90 -> 0
+    ok   outline — [[1, 'First sheet', 1], [1, 'Second sheet', 2]] -> [[1, 'First sheet', 1], [1, 'Second sheet', 2]]
+    ok   info title — 'ANNOTPROBE document' -> 'ANNOTPROBE document'
+    ok   info author — 'Round 029' -> 'Round 029'
+    ok   info subject — '' -> ''
+
+4 FAIL line(s)
