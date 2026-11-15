@@ -76,6 +76,12 @@ export interface ToolField {
    */
   previewFrom?: string;
   unit?: string;
+  /**
+   * Rows a `textarea` opens with. The default (4) is a note-sized box; a field
+   * whose whole content is the job — the bookmark outline, at one entry per line
+   * — needs enough to see a dozen of them without dragging the corner.
+   */
+  rows?: number;
   accept?: string;
   /** Let the user pick more than one file for this field. */
   multiple?: boolean;

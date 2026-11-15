@@ -696,7 +696,7 @@ describe('bookmarks write an outline that lands on the right page', () => {
     expect(entries.map((entry) => entry.title)).toEqual(['One', 'Two']);
     expect(entries.map((entry) => entry.page)).toEqual([0, 1]);
     // The report counts every entry it found, not just the top level.
-    expect(appended.message).toMatch(/after the 1 existing outline/u);
+    expect(appended.message).toMatch(/after the 1 bookmark already in the document/u);
   });
 
   it('admits an entry whose page is past the end of the document', async () => {

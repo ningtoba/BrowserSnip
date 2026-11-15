@@ -1226,12 +1226,18 @@ export const editTools: PdfToolDefinition[] = [
         group: 'Outline',
         type: 'textarea',
         default: '',
-        help: 'One entry per line, indent with spaces for children: "Chapter 1" or "  Section 1.1", optionally "Title :: 4" for page 4.',
+        rows: 12,
+        help: 'One entry per line, indent with spaces or a tab for children: "Chapter 1" or "  Section 1.1", optionally "Title :: 4" for page 4. The last "::" on a line is the page, so a title may contain one.',
       },
       { key: 'replace', label: 'Replace the existing outline', type: 'toggle', default: true, group: 'Outline', help: 'Off keeps the outline that exists and appends below it; on replaces the whole outline with what is in the box.' },
     ],
     notes: [
       'Page numbers are 1-based positions in the document as it stands now, before the new outline is written.',
+      // Measured against the produced bytes: appending keeps every existing entry,
+      // its title, its depth and its target, but the outline model has no notion of
+      // a collapsed group, so a `/Count -1` branch is rewritten open
+      // (`docs/research/bookmarks-round.md`).
+      'Appending keeps the bookmarks that are already there. A collapsed group among them comes back expanded.',
     ],
     async run(context) {
       const notes: string[] = [];
@@ -1265,7 +1271,9 @@ export const editTools: PdfToolDefinition[] = [
         notes,
         replace
           ? `Wrote ${countLabel(written.total, 'bookmark')} (${countLabel(nodes.length, 'top-level one', 'top-level ones')})${before > 0 ? `, replacing the ${countLabel(before, 'bookmark')} already in the document` : ''}.`
-          : `Added ${countLabel(written.total, 'bookmark')} after the ${countLabel(before, 'existing')} outline.`,
+          // "after the 3 existing" had no noun and read "3 existings"; over a
+          // document with no outline it said "the 0 existings outline".
+          : `Added ${countLabel(written.total, 'bookmark')} after ${before > 0 ? `the ${countLabel(before, 'bookmark')} already in the document` : 'an empty outline'}.`,
       );
     },
   },
@@ -2654,6 +2662,27 @@ function countOutline(nodes: OutlineNode[]): { total: number; targetless: number
   return { total, targetless };
 }
 
+/**
+ * Split a typed line into its title and its optional page suffix.
+ *
+ * The separator is the **last** `::`, and only when what follows it is a page
+ * number or nothing: splitting on the first one made a title containing `::`
+ * lose everything from there — `A :: B :: 3` was written as `A`, page 3 gone,
+ * with only a note that `B` was not a page. A line whose tail is not a number is
+ * all title, and `mistake` carries the tail when it looks like an attempted one
+ * so the caller can say so without nagging about `Notes :: Revised`.
+ */
+function splitPageSuffix(line: string): { title: string; page?: number; mistake?: string } {
+  const at = line.lastIndexOf('::');
+  if (at < 0) return { title: line };
+  const tail = line.slice(at + 2).trim();
+  const title = line.slice(0, at);
+  if (tail !== '' && !/^-?\d+(?:\.\d+)?$/.test(tail)) {
+    return { title: line, mistake: /\d/.test(tail) ? tail : undefined };
+  }
+  return { title, page: tail === '' ? undefined : Number(tail) };
+}
+
 function textToOutline(raw: string, total: number, notes: string[]): OutlineNode[] {
   const root: OutlineNode[] = [];
   const stack: { depth: number; node: OutlineNode }[] = [];
@@ -2662,17 +2691,22 @@ function textToOutline(raw: string, total: number, notes: string[]): OutlineNode
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const depth = /^\s*/.exec(line)?.[0].replace(/\t/g, '  ').length ?? 0;
-    const [title, pagePart] = line.split('::');
+    const { title, page: asked, mistake } = splitPageSuffix(line);
     if (!title.trim()) {
       blank += 1;
       continue;
     }
-    const page = pagePart ? Number(pagePart.trim()) - 1 : NaN;
-    if (pagePart && pagePart.trim() !== '' && !Number.isFinite(page)) {
-      note(notes, `"${pagePart.trim()}" is not a page number, so "${title.trim()}" was written without a link.`);
-    } else if (pagePart && Number.isFinite(page) && (page < 0 || page >= total)) {
-      offDocument += 1;
+    if (mistake !== undefined) {
+      note(notes, `"${mistake}" is not a page number, so "${title.trim()}" is written as a title with no link.`);
     }
+    // A destination must be a whole page: `writeOutline` throws on 2.5, and the
+    // sentence it threw ("points at page 2.5, but this document has 4 pages")
+    // named the wrong thing. Round it here and say which number was used.
+    if (asked !== undefined && !Number.isInteger(asked)) {
+      note(notes, `"${asked}" is not a whole page number, so page ${Math.round(asked)} was used.`);
+    }
+    const page = asked === undefined ? NaN : Math.round(asked) - 1;
+    if (Number.isFinite(page) && (page < 0 || page >= total)) offDocument += 1;
     const node: OutlineNode = {
       title: title.trim(),
       page: Number.isFinite(page) && page >= 0 && page < total ? page : null,
@@ -2688,7 +2722,7 @@ function textToOutline(raw: string, total: number, notes: string[]): OutlineNode
     note(notes, `${countLabel(offDocument, 'entry', 'entries')} named a page outside this ${total}-page document, so it opens nothing when clicked.`);
   }
   if (blank > 0) {
-    note(notes, `${countLabel(blank, 'line')} had no title and was skipped.`);
+    note(notes, `${countLabel(blank, 'line', 'lines')} had no title and ${blank === 1 ? 'was' : 'were'} skipped.`);
   }
   return root;
 }

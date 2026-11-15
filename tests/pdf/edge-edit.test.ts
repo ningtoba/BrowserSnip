@@ -41,6 +41,7 @@ import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import type { RunOutcome } from '@/lib/pdf/tools/runner';
 import { openPDF } from '@/lib/pdf/core/doc';
+import { readOutline, type OutlineNode } from '@/lib/pdf/core/bookmarks';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { listAnnotations } from '@/lib/pdf/core/annotations';
 import type { OcrPageResult } from '@/lib/pdf/core/ocr';
@@ -1131,6 +1132,9 @@ describe('Bates numbering (E9, E15, E16)', () => {
 });
 
 describe('page labels, bookmarks and contents (E6, E13, E15)', () => {
+  /** The outline of a produced file, read back out of its own bytes. */
+  const readOutlineOf = (doc: PDFDocument): OutlineNode[] => readOutline(doc);
+
   it('reports every range it could not use, and every range that runs longer than typed (E15)', async () => {
     const outcome = await run('add-page-labels', { ranges: '1-2 alpha\n9-11 roman 1\nnonsense line\n1-1 decimal' });
     const joined = outcome.warnings.join('\n');
@@ -1166,6 +1170,57 @@ describe('page labels, bookmarks and contents (E6, E13, E15)', () => {
     expect(replaced.message).toMatch(/replacing the 1 bookmark already in the document/i);
     const afterReplace = await openPDF(await outputBytes(replaced));
     expect(readOutline(afterReplace).map((node) => node.title)).toEqual(['Only this']);
+  });
+
+  it('keeps a title that contains the page separator, and links the page after it', async () => {
+    const bytes = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'colons');
+    const outcome = await run('bookmarks', { outline: 'A :: B :: 3\nNotes :: Revised :: 4' }, [bytes]);
+    const after = await openPDF(await outputBytes(outcome));
+    const nodes = readOutlineOf(after);
+    // Splitting on the *first* `::` wrote `A` and `Notes :: Revised` with no page.
+    expect(nodes.map((node) => node.title)).toEqual(['A :: B', 'Notes :: Revised']);
+    expect(nodes.map((node) => node.page)).toEqual([2, 3]);
+    expect(outcome.warnings).toEqual([]);
+  });
+
+  it('keeps a line whose tail is not a page number as a title, and names the part it read as one', async () => {
+    const outcome = await run('bookmarks', { outline: 'Notes :: Revised\nHalf :: pp4' });
+    const after = await openPDF(await outputBytes(outcome));
+    const nodes = readOutlineOf(after);
+    expect(nodes.map((node) => node.title)).toEqual(['Notes :: Revised', 'Half :: pp4']);
+    expect(nodes.map((node) => node.page)).toEqual([null, null]);
+    // Only the attempted one is named — `Notes :: Revised` was not a mistyped page.
+    expect(outcome.warnings.join('\n')).toMatch(/"pp4" is not a page number/i);
+    expect(outcome.warnings.join('\n')).not.toMatch(/Revised/i);
+  });
+
+  it('rounds a fractional page number instead of failing the whole run', async () => {
+    // `writeOutline` refuses a non-integer destination, so this used to throw
+    // "points at page 2.5, but this document has 4 pages" and save nothing.
+    const bytes = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'half');
+    const outcome = await run('bookmarks', { outline: 'Half :: 2.5' }, [bytes]);
+    const after = await openPDF(await outputBytes(outcome));
+    expect(readOutlineOf(after).map((node) => node.page)).toEqual([2]);
+    expect(outcome.warnings.join('\n')).toMatch(/"2\.5" is not a whole page number, so page 3 was used/i);
+  });
+
+  it('names what the append was added after, whether or not the document had bookmarks', async () => {
+    const { writeOutline } = await import('@/lib/pdf/core/bookmarks');
+    const doc = await openPDF(await fixture([{ size: A4 }, { size: A4 }], 'seeded'));
+    writeOutline(doc, [{ title: 'One', page: 0 }, { title: 'Two', page: 1 }]);
+    const bytes = await doc.save({ useObjectStreams: false });
+    const appended = await run('bookmarks', { outline: 'Three :: 1', replace: false }, [bytes]);
+    // "after the 2 existings outline" — no noun, and "the 0 existings" when bare.
+    expect(appended.message).toMatch(/after the 2 bookmarks already in the document/i);
+    const bare = await run('bookmarks', { outline: 'Three :: 1', replace: false });
+    expect(bare.message).toMatch(/after an empty outline/i);
+  });
+
+  it('agrees with its own count when it skips untitled lines', async () => {
+    const one = await run('bookmarks', { outline: 'Head :: 1\n :: 1' });
+    expect(one.warnings.join('\n')).toMatch(/1 line had no title and was skipped/i);
+    const two = await run('bookmarks', { outline: 'Head :: 1\n :: 1\n:: 1' });
+    expect(two.warnings.join('\n')).toMatch(/2 lines had no title and were skipped/i);
   });
 
   it('says so when there are no bookmarks and nothing was typed (E13)', async () => {

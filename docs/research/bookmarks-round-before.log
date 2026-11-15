@@ -1,0 +1,299 @@
+readers: pypdf 6.14.2, MuPDF 1.28.2:
+
+=== nesting  (typed grammar: two spaces, one tab and four spaces all mean one level deeper)
+typed: 'Chapter One\n  Section One.A\nChapter Two\n\tTab Child\n    Four-Space Grandchild :: 3'
+card : Wrote 5 bookmarks (2 top-level ones), replacing the 3 bookmarks already in the document.
+
+MuPDF get_toc: [(1, 'Chapter One', -1), (2, 'Section One.A', -1), (1, 'Chapter Two', -1), (2, 'Tab Child', -1), (3, 'Four-Space Grandchild', 3)]
+pypdf chain  : [(1, 'Chapter One', None), (2, 'Section One.A', None), (1, 'Chapter Two', None), (2, 'Tab Child', None), (3, 'Four-Space Grandchild', 2)]
+PASS entry count 5 == typed 5
+PASS title reads back 'Chapter One' == 'Chapter One'
+PASS depth 1 == 1 for 'Chapter One'
+PASS destination resolves to None == None for 'Chapter One'
+PASS title reads back 'Section One.A' == 'Section One.A'
+PASS depth 2 == 2 for 'Section One.A'
+PASS destination resolves to None == None for 'Section One.A'
+PASS title reads back 'Chapter Two' == 'Chapter Two'
+PASS depth 1 == 1 for 'Chapter Two'
+PASS destination resolves to None == None for 'Chapter Two'
+PASS title reads back 'Tab Child' == 'Tab Child'
+PASS depth 2 == 2 for 'Tab Child'
+PASS destination resolves to None == None for 'Tab Child'
+PASS title reads back 'Four-Space Grandchild' == 'Four-Space Grandchild'
+PASS depth 3 == 3 for 'Four-Space Grandchild'
+PASS destination resolves to 2 == 2 for 'Four-Space Grandchild'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== specials  (parentheses, a backslash, a colon pair and non-ASCII in the title)
+typed: 'Report (final) :: 1\nBack\\slash :: 2\nA :: B :: 3\nCafé ☕ :: 4\nРусский :: 1'
+card : Wrote 5 bookmarks (5 top-level ones), replacing the 3 bookmarks already in the document.
+warn : "B" is not a page number, so "A" was written without a link.
+
+MuPDF get_toc: [(1, 'Report (final)', 1), (1, 'Back\\slash', 2), (1, 'A', -1), (1, 'Café ☕', 4), (1, 'Русский', 1)]
+pypdf chain  : [(1, 'Report (final)', 0), (1, 'Back\\slash', 1), (1, 'A', None), (1, 'Café ☕', 3), (1, 'Русский', 0)]
+PASS entry count 5 == typed 5
+PASS title reads back 'Report (final)' == 'Report (final)'
+PASS depth 1 == 1 for 'Report (final)'
+PASS destination resolves to 0 == 0 for 'Report (final)'
+PASS title reads back 'Back\\slash' == 'Back\\slash'
+PASS depth 1 == 1 for 'Back\\slash'
+PASS destination resolves to 1 == 1 for 'Back\\slash'
+FAIL title reads back 'A' == 'A :: B'
+PASS depth 1 == 1 for 'A'
+FAIL destination resolves to None == 2 for 'A'
+PASS title reads back 'Café ☕' == 'Café ☕'
+PASS depth 1 == 1 for 'Café ☕'
+PASS destination resolves to 3 == 3 for 'Café ☕'
+PASS title reads back 'Русский' == 'Русский'
+PASS depth 1 == 1 for 'Русский'
+PASS destination resolves to 0 == 0 for 'Русский'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== append  (replace off, over a document that already holds three entries)
+typed: 'Appended :: 2'
+card : Added 1 bookmark after the 3 existings outline.
+
+MuPDF get_toc: [(1, 'Chapter One', 1), (2, 'Section One.A', 2), (1, 'Chapter Two', 4), (1, 'Appended', 2)]
+pypdf chain  : [(1, 'Chapter One', 0), (2, 'Section One.A', 1), (1, 'Chapter Two', 3), (1, 'Appended', 1)]
+PASS entry count 4 == typed 4
+PASS title reads back 'Chapter One' == 'Chapter One'
+PASS depth 1 == 1 for 'Chapter One'
+PASS destination resolves to 0 == 0 for 'Chapter One'
+PASS title reads back 'Section One.A' == 'Section One.A'
+PASS depth 2 == 2 for 'Section One.A'
+PASS destination resolves to 1 == 1 for 'Section One.A'
+PASS title reads back 'Chapter Two' == 'Chapter Two'
+PASS depth 1 == 1 for 'Chapter Two'
+PASS destination resolves to 3 == 3 for 'Chapter Two'
+PASS title reads back 'Appended' == 'Appended'
+PASS depth 1 == 1 for 'Appended'
+PASS destination resolves to 1 == 1 for 'Appended'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== edges  (a page past the last, an empty title, and a bare heading with no target)
+typed: 'Past the end :: 9\n\nOnly a heading\n :: 2\n:: 3\nLast :: 4'
+card : Wrote 3 bookmarks (3 top-level ones), replacing the 3 bookmarks already in the document.
+warn : 1 entry named a page outside this 4-page document, so it opens nothing when clicked.
+warn : 2 lines had no title and was skipped.
+
+MuPDF get_toc: [(1, 'Past the end', -1), (1, 'Only a heading', -1), (1, 'Last', 4)]
+pypdf chain  : [(1, 'Past the end', None), (1, 'Only a heading', None), (1, 'Last', 3)]
+PASS entry count 3 == typed 3
+PASS title reads back 'Past the end' == 'Past the end'
+PASS depth 1 == 1 for 'Past the end'
+PASS destination resolves to None == None for 'Past the end'
+PASS title reads back 'Only a heading' == 'Only a heading'
+PASS depth 1 == 1 for 'Only a heading'
+PASS destination resolves to None == None for 'Only a heading'
+PASS title reads back 'Last' == 'Last'
+PASS depth 1 == 1 for 'Last'
+PASS destination resolves to 3 == 3 for 'Last'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== forty  (40 entries, ten of them nested, against the 4-page fixture)
+typed: 'Group 1\n  Item 2 :: 2\n  Item 3 :: 3\n  Item 4 :: 4\n  Item 5 :: 1\n  Item 6 :: 2\n  Item 7 :: 3\n  Item 8 :: 4\n  Item 9 :: 1\n  Item 10 :: 2\nGroup 11\n  Item 12 :: 4\n  Item 13 :: 1\n  Item 14 :: 2\n  Item 15 :: 3\n  Item 16 :: 4\n  Item 17 :: 1\n  Item 18 :: 2\n  Item 19 :: 3\n  Item 20 :: 4\nGroup 21\n  Item 22 :: 2\n  Item 23 :: 3\n  Item 24 :: 4\n  Item 25 :: 1\n  Item 26 :: 2\n  Item 27 :: 3\n  Item 28 :: 4\n  Item 29 :: 1\n  Item 30 :: 2\nGroup 31\n  Item 32 :: 4\n  Item 33 :: 1\n  Item 34 :: 2\n  Item 35 :: 3\n  Item 36 :: 4\n  Item 37 :: 1\n  Item 38 :: 2\n  Item 39 :: 3\n  Item 40 :: 4'
+card : Wrote 40 bookmarks (4 top-level ones), replacing the 3 bookmarks already in the document.
+
+MuPDF get_toc: [(1, 'Group 1', -1), (2, 'Item 2', 2), (2, 'Item 3', 3), (2, 'Item 4', 4), (2, 'Item 5', 1), (2, 'Item 6', 2), (2, 'Item 7', 3), (2, 'Item 8', 4), (2, 'Item 9', 1), (2, 'Item 10', 2), (1, 'Group 11', -1), (2, 'Item 12', 4), (2, 'Item 13', 1), (2, 'Item 14', 2), (2, 'Item 15', 3), (2, 'Item 16', 4), (2, 'Item 17', 1), (2, 'Item 18', 2), (2, 'Item 19', 3), (2, 'Item 20', 4), (1, 'Group 21', -1), (2, 'Item 22', 2), (2, 'Item 23', 3), (2, 'Item 24', 4), (2, 'Item 25', 1), (2, 'Item 26', 2), (2, 'Item 27', 3), (2, 'Item 28', 4), (2, 'Item 29', 1), (2, 'Item 30', 2), (1, 'Group 31', -1), (2, 'Item 32', 4), (2, 'Item 33', 1), (2, 'Item 34', 2), (2, 'Item 35', 3), (2, 'Item 36', 4), (2, 'Item 37', 1), (2, 'Item 38', 2), (2, 'Item 39', 3), (2, 'Item 40', 4)]
+pypdf chain  : [(1, 'Group 1', None), (2, 'Item 2', 1), (2, 'Item 3', 2), (2, 'Item 4', 3), (2, 'Item 5', 0), (2, 'Item 6', 1), (2, 'Item 7', 2), (2, 'Item 8', 3), (2, 'Item 9', 0), (2, 'Item 10', 1), (1, 'Group 11', None), (2, 'Item 12', 3), (2, 'Item 13', 0), (2, 'Item 14', 1), (2, 'Item 15', 2), (2, 'Item 16', 3), (2, 'Item 17', 0), (2, 'Item 18', 1), (2, 'Item 19', 2), (2, 'Item 20', 3), (1, 'Group 21', None), (2, 'Item 22', 1), (2, 'Item 23', 2), (2, 'Item 24', 3), (2, 'Item 25', 0), (2, 'Item 26', 1), (2, 'Item 27', 2), (2, 'Item 28', 3), (2, 'Item 29', 0), (2, 'Item 30', 1), (1, 'Group 31', None), (2, 'Item 32', 3), (2, 'Item 33', 0), (2, 'Item 34', 1), (2, 'Item 35', 2), (2, 'Item 36', 3), (2, 'Item 37', 0), (2, 'Item 38', 1), (2, 'Item 39', 2), (2, 'Item 40', 3)]
+PASS entry count 40 == typed 40
+PASS title reads back 'Group 1' == 'Group 1'
+PASS depth 1 == 1 for 'Group 1'
+PASS destination resolves to None == None for 'Group 1'
+PASS title reads back 'Item 2' == 'Item 2'
+PASS depth 2 == 2 for 'Item 2'
+PASS destination resolves to 1 == 1 for 'Item 2'
+PASS title reads back 'Item 3' == 'Item 3'
+PASS depth 2 == 2 for 'Item 3'
+PASS destination resolves to 2 == 2 for 'Item 3'
+PASS title reads back 'Item 4' == 'Item 4'
+PASS depth 2 == 2 for 'Item 4'
+PASS destination resolves to 3 == 3 for 'Item 4'
+PASS title reads back 'Item 5' == 'Item 5'
+PASS depth 2 == 2 for 'Item 5'
+PASS destination resolves to 0 == 0 for 'Item 5'
+PASS title reads back 'Item 6' == 'Item 6'
+PASS depth 2 == 2 for 'Item 6'
+PASS destination resolves to 1 == 1 for 'Item 6'
+PASS title reads back 'Item 7' == 'Item 7'
+PASS depth 2 == 2 for 'Item 7'
+PASS destination resolves to 2 == 2 for 'Item 7'
+PASS title reads back 'Item 8' == 'Item 8'
+PASS depth 2 == 2 for 'Item 8'
+PASS destination resolves to 3 == 3 for 'Item 8'
+PASS title reads back 'Item 9' == 'Item 9'
+PASS depth 2 == 2 for 'Item 9'
+PASS destination resolves to 0 == 0 for 'Item 9'
+PASS title reads back 'Item 10' == 'Item 10'
+PASS depth 2 == 2 for 'Item 10'
+PASS destination resolves to 1 == 1 for 'Item 10'
+PASS title reads back 'Group 11' == 'Group 11'
+PASS depth 1 == 1 for 'Group 11'
+PASS destination resolves to None == None for 'Group 11'
+PASS title reads back 'Item 12' == 'Item 12'
+PASS depth 2 == 2 for 'Item 12'
+PASS destination resolves to 3 == 3 for 'Item 12'
+PASS title reads back 'Item 13' == 'Item 13'
+PASS depth 2 == 2 for 'Item 13'
+PASS destination resolves to 0 == 0 for 'Item 13'
+PASS title reads back 'Item 14' == 'Item 14'
+PASS depth 2 == 2 for 'Item 14'
+PASS destination resolves to 1 == 1 for 'Item 14'
+PASS title reads back 'Item 15' == 'Item 15'
+PASS depth 2 == 2 for 'Item 15'
+PASS destination resolves to 2 == 2 for 'Item 15'
+PASS title reads back 'Item 16' == 'Item 16'
+PASS depth 2 == 2 for 'Item 16'
+PASS destination resolves to 3 == 3 for 'Item 16'
+PASS title reads back 'Item 17' == 'Item 17'
+PASS depth 2 == 2 for 'Item 17'
+PASS destination resolves to 0 == 0 for 'Item 17'
+PASS title reads back 'Item 18' == 'Item 18'
+PASS depth 2 == 2 for 'Item 18'
+PASS destination resolves to 1 == 1 for 'Item 18'
+PASS title reads back 'Item 19' == 'Item 19'
+PASS depth 2 == 2 for 'Item 19'
+PASS destination resolves to 2 == 2 for 'Item 19'
+PASS title reads back 'Item 20' == 'Item 20'
+PASS depth 2 == 2 for 'Item 20'
+PASS destination resolves to 3 == 3 for 'Item 20'
+PASS title reads back 'Group 21' == 'Group 21'
+PASS depth 1 == 1 for 'Group 21'
+PASS destination resolves to None == None for 'Group 21'
+PASS title reads back 'Item 22' == 'Item 22'
+PASS depth 2 == 2 for 'Item 22'
+PASS destination resolves to 1 == 1 for 'Item 22'
+PASS title reads back 'Item 23' == 'Item 23'
+PASS depth 2 == 2 for 'Item 23'
+PASS destination resolves to 2 == 2 for 'Item 23'
+PASS title reads back 'Item 24' == 'Item 24'
+PASS depth 2 == 2 for 'Item 24'
+PASS destination resolves to 3 == 3 for 'Item 24'
+PASS title reads back 'Item 25' == 'Item 25'
+PASS depth 2 == 2 for 'Item 25'
+PASS destination resolves to 0 == 0 for 'Item 25'
+PASS title reads back 'Item 26' == 'Item 26'
+PASS depth 2 == 2 for 'Item 26'
+PASS destination resolves to 1 == 1 for 'Item 26'
+PASS title reads back 'Item 27' == 'Item 27'
+PASS depth 2 == 2 for 'Item 27'
+PASS destination resolves to 2 == 2 for 'Item 27'
+PASS title reads back 'Item 28' == 'Item 28'
+PASS depth 2 == 2 for 'Item 28'
+PASS destination resolves to 3 == 3 for 'Item 28'
+PASS title reads back 'Item 29' == 'Item 29'
+PASS depth 2 == 2 for 'Item 29'
+PASS destination resolves to 0 == 0 for 'Item 29'
+PASS title reads back 'Item 30' == 'Item 30'
+PASS depth 2 == 2 for 'Item 30'
+PASS destination resolves to 1 == 1 for 'Item 30'
+PASS title reads back 'Group 31' == 'Group 31'
+PASS depth 1 == 1 for 'Group 31'
+PASS destination resolves to None == None for 'Group 31'
+PASS title reads back 'Item 32' == 'Item 32'
+PASS depth 2 == 2 for 'Item 32'
+PASS destination resolves to 3 == 3 for 'Item 32'
+PASS title reads back 'Item 33' == 'Item 33'
+PASS depth 2 == 2 for 'Item 33'
+PASS destination resolves to 0 == 0 for 'Item 33'
+PASS title reads back 'Item 34' == 'Item 34'
+PASS depth 2 == 2 for 'Item 34'
+PASS destination resolves to 1 == 1 for 'Item 34'
+PASS title reads back 'Item 35' == 'Item 35'
+PASS depth 2 == 2 for 'Item 35'
+PASS destination resolves to 2 == 2 for 'Item 35'
+PASS title reads back 'Item 36' == 'Item 36'
+PASS depth 2 == 2 for 'Item 36'
+PASS destination resolves to 3 == 3 for 'Item 36'
+PASS title reads back 'Item 37' == 'Item 37'
+PASS depth 2 == 2 for 'Item 37'
+PASS destination resolves to 0 == 0 for 'Item 37'
+PASS title reads back 'Item 38' == 'Item 38'
+PASS depth 2 == 2 for 'Item 38'
+PASS destination resolves to 1 == 1 for 'Item 38'
+PASS title reads back 'Item 39' == 'Item 39'
+PASS depth 2 == 2 for 'Item 39'
+PASS destination resolves to 2 == 2 for 'Item 39'
+PASS title reads back 'Item 40' == 'Item 40'
+PASS depth 2 == 2 for 'Item 40'
+PASS destination resolves to 3 == 3 for 'Item 40'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== append-empty  (replace off over a document with no outline at all)
+typed: 'Fresh :: 1'
+card : Added 1 bookmark after the 0 existings outline.
+
+MuPDF get_toc: [(1, 'Fresh', 1)]
+pypdf chain  : [(1, 'Fresh', 0)]
+PASS entry count 1 == typed 1
+PASS title reads back 'Fresh' == 'Fresh'
+PASS depth 1 == 1 for 'Fresh'
+PASS destination resolves to 0 == 0 for 'Fresh'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== fraction  (a fractional page number)
+typed: 'Half :: 2.5\nZero :: 0\nNegative :: -1\nEmpty-after ::'
+card : Bookmark "Half" points at page 2.5, but this document has 4 pages.
+
+FAIL the tool refused the case: Bookmark "Half" points at page 2.5, but this document has 4 pages.
+
+=== colour  (control: the same tree on the unbookmarked 4-sheet fixture, and its append over nothing)
+typed: 'One :: 1\n  Two :: 2'
+card : Wrote 2 bookmarks (1 top-level one).
+
+MuPDF get_toc: [(1, 'One', 1), (2, 'Two', 2)]
+pypdf chain  : [(1, 'One', 0), (2, 'Two', 1)]
+PASS entry count 2 == typed 2
+PASS title reads back 'One' == 'One'
+PASS depth 1 == 1 for 'One'
+PASS destination resolves to 0 == 0 for 'One'
+PASS title reads back 'Two' == 'Two'
+PASS depth 2 == 2 for 'Two'
+PASS destination resolves to 1 == 1 for 'Two'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+PASS control: a blank PDF has no outline
+
+TOTAL 3 FAIL / 298 lines

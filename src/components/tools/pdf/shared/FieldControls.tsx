@@ -549,7 +549,7 @@ function Control({
           value={String(value ?? '')}
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
-          rows={4}
+          rows={field.rows ?? 4}
           className="doodle-input resize-y font-mono text-[11px] leading-relaxed"
         />
       );

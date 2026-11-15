@@ -1,0 +1,62 @@
+readers: pypdf 6.14.2, MuPDF 1.28.2:
+
+=== typed-specials-after  (parentheses, backslash, colon pair, non-ASCII (browser, after))
+typed: 'Report (final) :: 1\nBack\\slash :: 2\nA :: B :: 3\nCafé ☕ :: 4\nРусский :: 1'
+card : None
+
+MuPDF get_toc: [(1, 'Report (final)', 1), (1, 'Back\\slash', 2), (1, 'A :: B', 3), (1, 'Café ☕', 4), (1, 'Русский', 1)]
+pypdf chain  : [(1, 'Report (final)', 0), (1, 'Back\\slash', 1), (1, 'A :: B', 2), (1, 'Café ☕', 3), (1, 'Русский', 0)]
+PASS entry count 5 == typed 5
+PASS title reads back 'Report (final)' == 'Report (final)'
+PASS depth 1 == 1 for 'Report (final)'
+PASS destination resolves to 0 == 0 for 'Report (final)'
+PASS title reads back 'Back\\slash' == 'Back\\slash'
+PASS depth 1 == 1 for 'Back\\slash'
+PASS destination resolves to 1 == 1 for 'Back\\slash'
+PASS title reads back 'A :: B' == 'A :: B'
+PASS depth 1 == 1 for 'A :: B'
+PASS destination resolves to 2 == 2 for 'A :: B'
+PASS title reads back 'Café ☕' == 'Café ☕'
+PASS depth 1 == 1 for 'Café ☕'
+PASS destination resolves to 3 == 3 for 'Café ☕'
+PASS title reads back 'Русский' == 'Русский'
+PASS depth 1 == 1 for 'Русский'
+PASS destination resolves to 0 == 0 for 'Русский'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+=== append-after  (replace off over three existing entries (browser, after))
+typed: 'Appended :: 2'
+card : None
+
+MuPDF get_toc: [(1, 'Chapter One', 1), (2, 'Section One.A', 2), (1, 'Chapter Two', 4), (1, 'Appended', 2)]
+pypdf chain  : [(1, 'Chapter One', 0), (2, 'Section One.A', 1), (1, 'Chapter Two', 3), (1, 'Appended', 1)]
+PASS entry count 4 == typed 4
+PASS title reads back 'Chapter One' == 'Chapter One'
+PASS depth 1 == 1 for 'Chapter One'
+PASS destination resolves to 0 == 0 for 'Chapter One'
+PASS title reads back 'Section One.A' == 'Section One.A'
+PASS depth 2 == 2 for 'Section One.A'
+PASS destination resolves to 1 == 1 for 'Section One.A'
+PASS title reads back 'Chapter Two' == 'Chapter Two'
+PASS depth 1 == 1 for 'Chapter Two'
+PASS destination resolves to 3 == 3 for 'Chapter Two'
+PASS title reads back 'Appended' == 'Appended'
+PASS depth 1 == 1 for 'Appended'
+PASS destination resolves to 1 == 1 for 'Appended'
+PASS MuPDF's tree == pypdf's tree (depth, title, page)
+PASS page count 4 == source 4
+PASS /Info kept {'/Title': 'colour-tool fixture: bar + copy + band, colour squares, empty', '/Creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)'}
+PASS annotations 0 == source 0
+PASS link annots 0 == source 0
+PASS sheet ink unchanged [19048, 12737, 0, 36082]
+
+
+PASS control: a blank PDF has no outline
+
+TOTAL 0 FAIL / 61 lines
