@@ -533,3 +533,78 @@ status lines); the claim in the brief that CI deploys `875c931`.
 **Fixed by this pass:** §3.1 (grips under a pen, `1851dfc`), §3.6 / the
 flat-drag click (`3736594`), and the untested release seam (`a8e0d09`).
 
+
+---
+
+# Round 031 — the re-measurement, and the text box's clip
+
+The row was re-settled from the fixtures the triage corpus owns (`/tmp/triage/in/annot.pdf`,
+4 pages, 3 annotations and 1 link on page 1, `/Info` title and producer set), on the local
+dev server: 5271, 1500 × 1400 viewport, one fresh document load per case. New harness:
+`docs/research/edit-round-probe.mjs` (gesture → whole-page capture before and after with
+the selection cleared → export) and `docs/research/edit-round-check.py` (bitmap diff for
+ink and colour inside the annotation's own `/Rect`, the page's clean column as the
+instrument's control, then the same file rendered with and without annotations for the
+file half). The checker judges shape as well as area: a perimeter tool's pixels must sit on
+the outline with the middle empty, a segment's must hug the segment, a highlight's must
+cover its row.
+
+**Nothing in the tool's own promises had regressed.** 24/24 cases pass, on both halves,
+with the control column at 0 ink everywhere:
+
+* every mark family paints ink of the swatch's own colour at the drawn place and writes the
+  same colour into `/C` and its appearance — freehand 979/1573 px, rectangle 2040/3380,
+  ellipse 1679/2750, line 900/1778, arrow 978/2202 (`/LE [/None /ClosedArrow]`), highlight
+  2850/4823 with `QuadPoints` over the row, note 614/1156 `/Text` + `/Contents`, stamp
+  1425/1687, image 32 299/63 676, all measured with a light (`#FFEB3B`) and a dark
+  (`#1B1B18`, `#DC2626`, `#059669`, `#2563EB`) ink where the family takes one;
+* the five text properties each reach the file: family `Times-Roman` → `NotoSans-Regular-
+  9742`, size `Tf 28`, colour `0.863 0.149 0.149`, bold `Times-Bold`, italic
+  `Times-BoldItalic`, and the typed string is in the box's text;
+* `/Info`, the three source annotations and the link survive every export (3/3, 1/1,
+  `infoSame` true, page count 4 in, 4 out); the counts on the card equal the painted marks
+  (1 → 2 → 3, then 0 after Select-all + Delete);
+* undo and redo both work from the key and from the toolbar (a text edit is one step, so
+  the first undo leaves three marks and names three, the second removes one);
+* a mark dragged past the right edge is clipped to the page on both halves — the 120 pt
+  drag writes `/Rect [360 335.5 420 395.5]` and its stream stops at 57 pt;
+* dark mode leaves the paper white: a `#FFEB3B` stroke measures 2040 px of exactly
+  (255, 235, 59) on screen and 3395 px in the file, and a 28 pt text box is legible
+  (7399/11 277 px). The theme does not invert the sheet, so a light mark is visible against
+  paper at low contrast and clear against the fixture's black band
+  (`shots/round031-dark-light-mark.png`, `…-dark-text-box.png`).
+
+## 4 [P1, fixed] A text box painted its overflow over the page; the file clipped it
+
+Measured on a 120 × 40 box with a 17-word sentence typed into it: the editor's own caret
+surface clips (`overflow: hidden`, `scrollHeight 546` against `clientHeight 40`), and after
+the commit the SVG text layer painted **all 17 lines** — 11 798 px of ink outside the mark's
+`/Rect`, 16 382 px in total. The appearance stream writes all 17 `Tm`s too but is clipped to
+its `/BBox`, so the exported page shows **2** (`get_textbox` → `Alpha\nbeta`). The screen was
+showing fifteen lines no reader will ever paint (`shots/round031-textbox-spilled-before.png`).
+
+The card says nothing about growth, so the narrower repair is to make the screen agree with
+the format: the laid-out type is clipped to the mark's own box, in the same user space, with
+the same edge the appearance is clipped at. Same probe after: **11 798 px outside → 0**,
+ink 16 382 → 4564, and the file half unchanged (8013 px inside the box, `Alpha\nbeta`), which
+is the point — the file was already right.
+
+Two neighbours went in with it, because silently losing words is the same defect one step
+late: `layoutMarkText` now reports `contentHeight` from its own baselines (it had been
+returning the 8 pt block height, which the caller could not use), the export names the box
+height, the height the words need and what a reader will do, and the pane carries the same
+sentence in a warn block (`shots/round031-textbox-overflow-notice.png`). Four of six tests in
+`tests/pdf/annotation-text-fit.test.tsx` go red without the change.
+
+**Left open, measured, not this row's file:** with the default 12 pt a 240 pt-wide box holds
+about three lines before it clips, and the box never grows to fit — every line past the edge
+is lost to the reader, only named now. A "grow to fit" toggle is a product decision.
+`#FFFFFF` as a text colour is offered and paints white words on the box's own white fill
+(screen 208 grey, file 197): legible only as a grey edge, same on both halves.
+
+**Harness traps for the next audit of this screen.** A spawned Chrome reuses
+`/tmp/hns-<port>`, so `localStorage` carries the text style from one run to the next — a
+"before" and an "after" run do not necessarily start from the same pen. And a regex written
+inside a JS template literal needs a doubled backslash: `/\n+/g` becomes `/` + newline and
+the whole `Runtime.evaluate` dies with "Invalid regular expression: missing /", which is how
+`[data-empty-marks]` came back as `PAGEERR` for two runs here.

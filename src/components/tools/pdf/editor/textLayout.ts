@@ -167,13 +167,29 @@ export async function layoutMarkText(
       size: round(runSize),
     });
   }
+  /*
+     What the lines actually need, from the lines — not `prepared.layout.height`,
+     which is the 8 pt block the layout was asked for. The appearance is clipped to
+     the mark's own box, so this is the number that decides whether the file will
+     show the last line at all.
+  */
+  /*
+     The distance the lines occupy from the *top of the box* — the inset, the gap
+     the layout used (not a formula for it), and the last line's descender. Measured
+     from the box top and not from the first baseline, which itself moves down as the
+     box grows.
+  */
+  const run = lines.length > 1 ? lines[0].baseline - lines[lines.length - 1].baseline : 0;
+  const ascent = round(font.heightAtSize(size, { descender: false }));
+  const descent = round(font.heightAtSize(size) - ascent);
+  const contentHeight = round(textInset(size) + run + descent);
   return {
     lines,
     font,
     familyUsed: face.familyUsed,
     size,
     shrank: false,
-    contentHeight: round(prepared.layout.height),
+    contentHeight,
     note: face.note,
   };
 }
@@ -219,6 +235,14 @@ export interface MarkPreview {
   size: number;
   /** True when a stamp label was shrunk to fit its box. */
   shrank: boolean;
+  /**
+   * Points the type needs. A box's appearance is clipped to `/Rect`, so anything
+   * past the box height never reaches a reader: the overlay clips at the same
+   * line, and the editor says so.
+   */
+  contentHeight: number;
+  /** True when the words are taller than the mark, so the file will clip them. */
+  overflows: boolean;
   /** What the answering family was not, or a posture that could not be kept. */
   note?: string;
 }
@@ -253,6 +277,11 @@ export async function prepareSpecTexts(doc: PDFDocument, specs: AnnotationSpec[]
     });
     spec.textStyle = styledText(layout, style);
     if (layout.note) notices.push(layout.note);
+    if (body.kind === 'freetext' && layout.contentHeight > spec.rect.height + 0.5) {
+      notices.push(
+        `A text box is ${round(spec.rect.height)} pt tall and its words need ${round(layout.contentHeight)} pt, so the box is clipped at its edge — the rest is in the file but a reader will not show it.`,
+      );
+    }
     if (layout.shrank) {
       notices.push(
         `The ${body.kind === 'stamp' ? 'stamp label' : 'text'} was drawn at ${layout.size} pt to fit the box, not the ${style.size} pt asked for.`,
@@ -284,7 +313,14 @@ export async function previewMarkTexts<T extends { id: string }>(
       if (!args || args.body.length === 0) return;
       try {
         const layout = await layoutMarkText(doc, args);
-        out[mark.id] = { lines: layout.lines, size: layout.size, shrank: layout.shrank, note: layout.note };
+        out[mark.id] = {
+          lines: layout.lines,
+          size: layout.size,
+          shrank: layout.shrank,
+          note: layout.note,
+          contentHeight: layout.contentHeight,
+          overflows: args.kind === 'freetext' && layout.contentHeight > args.height + 0.5,
+        };
       } catch {
         // A face that will not download leaves the mark unpreviewed rather than
         // breaking the page: the export will name the failure where it matters.

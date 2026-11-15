@@ -2060,6 +2060,19 @@ export function AnnotationEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styledSignature]);
   /**
+   * Text boxes holding more words than the box can show.
+   *
+   * The overlay clips the type at the box edge because the appearance stream is
+   * clipped at its own, so the words past the edge are in the file and no reader
+   * paints them. Saying it before the export is the difference between a choice and
+   * a surprise.
+   */
+  const overflowMarks = useMemo(
+    () => annotations.filter((mark) => mark.page === page && previews[mark.id]?.overflows),
+    [annotations, page, previews],
+  );
+
+  /**
    * The selection, in the order it was built. `primary` is the newest id and is
    * what the corner handles, the rotate handle and the inspector's angle field
    * point at; `selected` is only a selection of one, because "the selected
@@ -2500,6 +2513,18 @@ export function AnnotationEditor({
               <p className="font-mono text-[10px] tabular-nums text-ink-soft" data-export-summary>
                 {marksSummary(annotations)}
               </p>
+              {overflowMarks.length > 0 && (
+                <div className="space-y-1 rounded-doodle-md border border-warn/30 bg-warn/[0.07] p-2" data-overflow-marks>
+                  <p className="text-[10px] font-semibold text-warn">
+                    {overflowMarks.length} text box{overflowMarks.length === 1 ? '' : 'es'} hold{overflowMarks.length === 1 ? 's' : ''} more
+                    words than the box shows
+                  </p>
+                  <p className="text-[10px] leading-relaxed text-ink-soft">
+                    The words are in the file, and clipped at the box edge in every
+                    reader. Drag the box taller to show them.
+                  </p>
+                </div>
+              )}
               {uselessMarks.length > 0 && (
                 <div className="space-y-1 rounded-doodle-md border border-warn/30 bg-warn/[0.07] p-2" data-empty-marks>
                   <p className="text-[10px] font-semibold text-warn">

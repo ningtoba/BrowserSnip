@@ -118,6 +118,9 @@ function turnStyle(annotation: EditorAnnotation, geom: PageGeom): React.CSSPrope
   return { transform: `rotate(${degrees}deg)`, transformOrigin: 'center' };
 }
 
+/** The id of the clip that keeps a mark's typed lines inside its own box. */
+export const textClipId = (id: string): string => `text-clip-${id}`;
+
 export function AnnotationOverlay({
   geom,
   annotations,
@@ -209,7 +212,23 @@ export function AnnotationOverlay({
            `x` from the box's left and `baseline` up from its bottom — the same space
            the stream uses — so there is no CSS line box in between to reinterpret
            where a line ends up.
+
+           The words are clipped to the bit of the box they fit in, because the
+           appearance stream is clipped to its `/BBox`: a line past the box edge is
+           in the file and no reader shows it. Without this the screen spilled the
+           rest of the paragraph over the page and the file lost it (round 031,
+           measured: 17 lines painted on screen, 2 visible in the exported page).
         */}
+        <defs>
+          {laidOut.map((annotation) => {
+            const clip = pdfToScreenRect(annotation.rect, geom);
+            return (
+              <clipPath key={`clip-${annotation.id}`} id={textClipId(annotation.id)}>
+                <rect x={clip.x} y={clip.y} width={Math.max(clip.width, 0.1)} height={Math.max(clip.height, 0.1)} />
+              </clipPath>
+            );
+          })}
+        </defs>
         {laidOut.map((annotation) => {
           const preview = textPreviews[annotation.id];
           const style = annotation.textStyle;
@@ -221,6 +240,8 @@ export function AnnotationOverlay({
               data-text-family={style.fontFamily || 'auto'}
               data-text-size={preview.size}
               data-text-shrank={preview.shrank ? 'true' : 'false'}
+              data-text-overflows={preview.overflows ? 'true' : 'false'}
+              clipPath={`url(#${textClipId(annotation.id)})`}
               opacity={annotation.opacity}
               {...turn(annotation, geom)}
             >
