@@ -25,7 +25,7 @@ import { drawTextU, measureText, wrapText } from '../core/fonts';
 import { mergeFaceStyle, standardFamilyFace, standardFacesSpell, type FaceStyle } from '../core/text-style';
 import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './textStyleFields';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
-import { addPageLabels, readPageLabels, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
+import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
 import type { OcrPageResult } from '../core/ocr';
 import { canvasToBlob } from '../core/render';
@@ -1155,6 +1155,14 @@ export const editTools: PdfToolDefinition[] = [
     ],
     notes: [
       'PDF page labels are start-based: a line takes effect on its first page and lasts until the next line or the end of the document.',
+      // Measured on the produced file: an existing store is deleted rather than
+      // merged with, so a second range line never adds to what the document held.
+      'The page labels the document already has are replaced, not merged into.',
+      // `/St 0` is written as asked. There is no roman or letter zero, and the readers
+      // disagree about what stands in for it (an empty label under both for roman;
+      // `z` under MuPDF and `1` under pypdf for a lettered range), so the card previews
+      // the 0 it stored rather than pretending to one reader's answer.
+      'A start of 0 is kept as the first number of its range: a decimal reader shows 0, 1, 2. The roman and letter styles have no zero — a reader shows an empty label there (MuPDF shows `z` for a lettered range), while this card previews 0.',
       'Labels change what the reader shows, not what is printed on the sheet. Use Page Numbers to stamp visible folios.',
     ],
     async run(context) {
@@ -1164,13 +1172,38 @@ export const editTools: PdfToolDefinition[] = [
       if (parsed.length === 0) {
         throw new Error(`No usable label range. ${notes[0] ?? 'Enter at least one line such as "1-3 roman 1".'}`);
       }
-      addPageLabels(input.doc, parsed);
+      // Sheets above the lowest range's start belong to no range at all. §12.4.2 then
+      // leaves the reader to number by position, which pypdf answers with an empty
+      // label and MuPDF 1.28.2 with an IndexError (`docs/research/page-labels-round.md`)
+      // — while this tool's own report already claims `1`. Writing that position out as
+      // a decimal range is the same numbering the format defaults to, said in the file.
+      const lead: LabelRange[] = parsed[0].start > 0
+        ? [{
+          start: 0,
+          end: parsed[0].start - 1,
+          askedEnd: parsed[0].start,
+          style: 'D',
+          firstPageNumber: 1,
+        }]
+        : [];
+      if (lead.length > 0) {
+        // "Pages 1-1" reads like a range that was asked for; one sheet is a page.
+        const leadCount = parsed[0].start;
+        note(notes, leadCount === 1
+          ? 'Page 1 comes before the first range, so it keeps its plain number 1.'
+          : `Pages 1-${leadCount} come before the first range, so they keep the plain numbers 1-${leadCount}.`);
+      }
+      // Read before the write: `addPageLabels` deletes the store, so the count of what
+      // was there is only available now, and the card is the one place it is said.
+      const replaced = readPageLabelRanges(input.doc).length;
+      addPageLabels(input.doc, [...lead, ...parsed]);
       const labels = readPageLabels(input.doc);
       const shown = Math.min(labels.length, 12);
       return pdfOutput(
         input.doc,
         notes,
-        `Applied ${countLabel(parsed.length, 'label range')}. The first ${countLabel(shown, 'page')} now read: ${labels.slice(0, shown).map((l) => l.label).join(', ')}${labels.length > shown ? ', \u2026' : ''}.`,
+        `Applied ${countLabel(parsed.length, 'label range')}. The first ${countLabel(shown, 'page')} now read: ${labels.slice(0, shown).map((l) => l.label).join(', ')}${labels.length > shown ? ', \u2026' : ''}.`
+          + (replaced > 0 ? ` Replaced the ${countLabel(replaced, 'label range')} it already had.` : ''),
       );
     },
   },

@@ -520,6 +520,79 @@ describe('the bytes behind the table', () => {
     expect(labelsOf(wide).slice(0, 2)).toEqual(['𓂀i', '𓂀ii']);
   });
 
+  it('numbers the sheets above the first range instead of leaving them unnamed', async () => {
+    // A sheet before the lowest `/Start` is covered by no range at all. §12.4.2 then
+    // leaves the reader to number it by position, which pypdf answers with an empty
+    // label and MuPDF 1.28.2 with an IndexError — while this tool's own report claims
+    // `1` for that sheet (`docs/research/page-labels-round.md`). The position is
+    // written out as a decimal range, so the file says what the card says.
+    const outcome = await runPdfTool({
+      toolId: 'add-page-labels',
+      files: [new File([fixtureBytes('labels-absent.pdf') as BlobPart], 'labels-absent.pdf', { type: 'application/pdf' })],
+      values: { ranges: '2-3 roman 1' },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    const doc = await outputOf(outcome, 'writer-leading-range');
+    expect(shaped(readPageLabelRanges(doc))).toEqual([
+      { start: 0, style: 'D' },
+      { start: 1, style: 'r' },
+    ]);
+    // Sheet 1 is not roman: it is the untouched one, and it keeps its own position.
+    expect(labelsOf(doc)).toEqual(['1', 'i', 'ii', 'iii']);
+    expect(outcome.warnings.join('\n')).toContain('Page 1 comes before the first range');
+    // Control: a run whose first range already starts at page 1 writes no lead range.
+    const covered = await runPdfTool({
+      toolId: 'add-page-labels',
+      files: [new File([fixtureBytes('labels-absent.pdf') as BlobPart], 'labels-absent.pdf', { type: 'application/pdf' })],
+      values: { ranges: '1-2 roman 1' },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    const coveredDoc = await outputOf(covered, 'writer-no-leading-range');
+    expect(shaped(readPageLabelRanges(coveredDoc))).toEqual([{ start: 0, style: 'r' }]);
+    expect(covered.warnings.join('\n')).not.toContain('come before the first range');
+  });
+
+  it('says that the numbering the document already had was replaced', async () => {
+    // `addPageLabels` deletes the store rather than merging into it, which is the
+    // right thing for a tool whose product *is* the numbering — but the card only
+    // said "applied", so two ranges became one in silence. Measured on
+    // `labels-nums-r.pdf`, whose `i, ii, iii, iv` must not survive beside the new run.
+    const outcome = await runPdfTool({
+      toolId: 'add-page-labels',
+      files: [new File([fixtureBytes('labels-nums-r.pdf') as BlobPart], 'labels-nums-r.pdf', { type: 'application/pdf' })],
+      values: { ranges: '1-2 decimal 1' },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    const doc = await outputOf(outcome, 'writer-replaces');
+    expect(shaped(readPageLabelRanges(doc))).toEqual([{ start: 0, style: 'D' }]);
+    // Control: no roman `i` is left anywhere, and every sheet restarts from 1.
+    expect(labelsOf(doc)).toEqual(['1', '2', '3', '4']);
+    expect(outcome.message).toContain('Replaced the 1 label range it already had');
+  });
+
+  it('keeps a zero start on the page it was asked for', async () => {
+    // The store is where the claim lives: an asked-for `/St 0` used to be clamped to
+    // 1, and MuPDF and pypdf then both printed `1, 2` instead of `0, 1`.
+    const outcome = await runPdfTool({
+      toolId: 'add-page-labels',
+      files: [new File([fixtureBytes('labels-absent.pdf') as BlobPart], 'labels-absent.pdf', { type: 'application/pdf' })],
+      values: { ranges: '1-2 decimal 0\n3-4 decimal 1' },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    const doc = await outputOf(outcome, 'writer-zero-start');
+    // The asked-for 0 is in the store; the second range's `/St 1` is the format's
+    // default and stays unwritten.
+    expect(shaped(readPageLabelRanges(doc))).toEqual([
+      { start: 0, style: 'D', firstPageNumber: 0 },
+      { start: 2, style: 'D' },
+    ]);
+    expect(labelsOf(doc)).toEqual(['0', '1', '1', '2']);
+  });
+
   it('numbers each file of a split from the pages that went into it', async () => {
     // `split` runs the copy once per output file, so every one of them has to
     // address its ranges from its own first sheet.

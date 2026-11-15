@@ -993,7 +993,11 @@ function labelDict(doc: PDFDocument, range: PageLabelRange): PDFDict {
   if (range.prefix) dict.set(PDFName.of('P'), prefixString(range.prefix));
   if (range.style !== '') dict.set(PDFName.of('S'), PDFName.of(range.style));
   if (range.firstPageNumber !== undefined && range.firstPageNumber !== 1) {
-    dict.set(PDFName.of('St'), PDFNumber.of(Math.max(1, Math.trunc(range.firstPageNumber))));
+    // `/St` is the number printed on the range's **first** sheet, and 0 is a value it
+    // can hold: §12.4.2 only defaults it to 1 when it is absent. Clamping it up to 1
+    // (`Math.max(1, …)`) is what made an asked-for zero start print `1, 2, 3` under
+    // MuPDF and pypdf alike (`docs/research/page-labels-round.md`).
+    dict.set(PDFName.of('St'), PDFNumber.of(Math.trunc(range.firstPageNumber)));
   }
   return dict;
 }
@@ -1154,8 +1158,10 @@ export function readPageLabels(doc: PDFDocument): PageLabel[] {
     const value = (range.firstPageNumber ?? 1) + (page - range.start);
     labels.push({
       page,
+      // Not clamped to 1 either: the label on the first sheet of a zero-based range is
+      // `0`, and a preview that said `1` would disagree with the file it describes.
       label: range.style !== ''
-        ? `${range.prefix ?? ''}${formatLabelNumber(range.style, Math.max(1, value))}`
+        ? `${range.prefix ?? ''}${formatLabelNumber(range.style, value)}`
         : (range.prefix ?? ''),
     });
   }
