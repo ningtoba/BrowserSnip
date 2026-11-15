@@ -28,6 +28,7 @@ import math
 import os
 import re
 import sys
+from typing import Any
 
 import pymupdf
 from PIL import Image
@@ -107,7 +108,7 @@ def shape_ok(kind: str, points: list[tuple[int, int]], rect: list, drag: list, p
     return True, ""
 
 
-def screen_half(before_path: str, after_path: str, scale: float, rect: list, stroke: float, opacity: float, colour_hex: str):
+def screen_half(before_path: str, after_path: str, scale: float, rect: list, stroke: float, opacity: float, colour_hex: str) -> dict[str, Any]:
     """`rect` is the annotation's own `/Rect` in MuPDF coordinates, which on a page
     with no rotation is the captured screenshot's own space (y down from the top)."""
     before = Image.open(before_path).convert("RGB")
@@ -183,7 +184,7 @@ def match_new(annots, src_annots):
     return new, len(taken)
 
 
-def file_half(pdf_path: str, source_path: str, drag: dict, colour_hex: str, body: str | None):
+def file_half(pdf_path: str, source_path: str, drag: dict, colour_hex: str, body: str | None) -> dict[str, Any]:
     doc = pymupdf.open(pdf_path)
     src = pymupdf.open(source_path)
     page, src_page = doc[0], src[0]
@@ -240,7 +241,8 @@ def file_half(pdf_path: str, source_path: str, drag: dict, colour_hex: str, body
     for y in range(max(box[1], 0), min(box[3], ph)):
         for x in range(max(box[0], 0), min(box[2], pw)):
             o = (y * pw + x) * with_annots.n
-            p, q = tuple(a_px[o:o + 3]), tuple(b_px[o:o + 3])
+            p: tuple[int, int, int] = (a_px[o], a_px[o + 1], a_px[o + 2])
+            q: tuple[int, int, int] = (b_px[o], b_px[o + 1], b_px[o + 2])
             if max(abs(p[i] - q[i]) for i in range(3)) <= INK_DELTA:
                 continue
             changed.append((min(math.dist(p, c) for c in wanted), p))
