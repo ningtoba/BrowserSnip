@@ -1018,11 +1018,11 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Number the files',
     promise: 'A sequential, zero-padded production number stamped on every page of every file, continuing across files or restarting in each one.',
     notes: [
-      'Bates numbering is permanent: the number is drawn into the page, so a second run writes a second number.',
+      'Bates numbering is permanent: the number is drawn into the page, and a second run over an already-stamped file prints the new number on top of the old one in the same place — only a digit that differs stays legible.',
       'One number is consumed per page across the whole batch, which is what a discovery production expects.',
     ],
     fields: [
-      { key: 'format', label: 'Number format', type: 'text', default: '{prefix}-{n}', help: 'Tokens: {n} {page} {total} {prefix} {date} {time}.', group: 'Number' },
+      { key: 'format', label: 'Number format', type: 'text', default: '{prefix}-{n}', help: 'Tokens: {n} {page} {total} {prefix} {date} {time}. {page} and {total} share the numbering scope — the whole batch, or the file when restarting — so {n}/{total} reads 7/9 of a nine-page production, never 7/5.', group: 'Number' },
       { key: 'prefix', label: 'Prefix', type: 'text', default: 'DOC', half: true, group: 'Number', help: 'Substituted into {prefix} in the format above, so the pattern decides whether it appears.' },
       { key: 'digits', label: 'Number width', type: 'number', default: 6, min: 1, max: 12, step: 1, integer: true, half: true, group: 'Number', help: 'Shorter than the highest number you will reach and the sequence silently grows a column; longer pads every sheet.' },
       { key: 'start', label: 'Start at', type: 'number', default: 1, min: 0, max: 1000000, step: 1, integer: true, half: true, group: 'Number', help: 'Where the first page of the first file is numbered from — continue an existing production rather than restart it.' },
@@ -1063,6 +1063,7 @@ export const editTools: PdfToolDefinition[] = [
       // number anything carries.
       let lastNumber = '';
       const total = inputs.reduce((sum, input) => sum + input.pageCount, 0);
+      noteUnknownTokens(format, notes);
       const seen = new Set<string>();
       for (const input of inputs) {
         // E16: the same document added twice is two productions here, and the
@@ -1077,8 +1078,13 @@ export const editTools: PdfToolDefinition[] = [
           lastNumber = number;
           const text = expand(format, {
             n: number,
-            page: String(index + 1),
-            total: String(input.pageCount),
+            // Both page tokens answer to the same scope as `{n}`: over one batch
+            // sequence a per-file total wrote `005/5 … 009/5` — nine numbers over
+            // a total of five — where `{page}` beside it was still the file's own
+            // position, so the two disagreed. `stamped` is the pages already drawn
+            // in this batch, so it is this page's position in the scope.
+            page: String(perFile ? index + 1 : stamped + 1),
+            total: String(perFile ? input.pageCount : total),
             prefix,
             date: new Date().toISOString().slice(0, 10),
             time: new Date().toTimeString().slice(0, 8),
@@ -2484,6 +2490,25 @@ function toLetters(value: number): string {
     remaining = Math.floor(remaining / 26);
   }
   return out;
+}
+
+/** The tokens `format` expands; anything else is printed standing and admitted. */
+const BATES_TOKENS = ['n', 'page', 'total', 'prefix', 'date', 'time'];
+
+/**
+ * Admit every token of `format` this tool does not know, once each.
+ *
+ * `expand` leaves an unknown token in the output verbatim, which is the right
+ * behaviour — the operator sees the typo on the sheet — but on its own it is
+ * silent: whole productions have gone out carrying `{foo}` with nothing on the
+ * card to say the pattern was half read.
+ */
+function noteUnknownTokens(format: string, notes: string[]): void {
+  for (const match of format.matchAll(/\{(\w+)\}/g)) {
+    if (!BATES_TOKENS.includes(match[1]!)) {
+      note(notes, `“{${match[1]}}” is not a token, so it is printed as it stands on every stamp.`);
+    }
+  }
 }
 
 const LABEL_STYLE_NAMES: Record<string, 'D' | 'R' | 'r' | 'A' | 'a' | ''> = {

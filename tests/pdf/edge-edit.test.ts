@@ -1026,6 +1026,63 @@ describe('Bates numbering (E9, E15, E16)', () => {
     expect(drawnRuns(second.getPage(0)).map((run) => run.text)).toEqual(['001']);
   });
 
+  it('numbers {page} and {total} in the same scope as the sequence, over the batch or the file', async () => {
+    // Measured on the shipped build: format `{n}/{total}` over 4 + 5 pages wrote
+    // `004/4`, then `005/5 … 009/5` — nine numbers measured against a total of
+    // five, while `{page}` beside it stayed the file's own position. Both tokens
+    // now answer to `{n}`'s scope: the batch when one sequence runs across the
+    // files, the file when the numbering restarts in each.
+    const four = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'colour');
+    const five = await fixture(
+      [{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'sheets');
+    const inputs = [pdfFile(four, 'colour.pdf'), pdfFile(five, 'sheets.pdf')];
+    const across = await runPdfTool({
+      toolId: 'bates-numbering',
+      files: inputs,
+      values: { format: '{n}/{page}of{total}', digits: 3, start: 1 },
+    });
+    const first = await openPDF(await outputBytes(across!, 0));
+    expect(drawnRuns(first.getPage(3)).map((run) => run.text)).toEqual(['004/4of9']);
+    const second = await openPDF(await outputBytes(across!, 1));
+    expect(drawnRuns(second.getPage(0)).map((run) => run.text)).toEqual(['005/5of9']);
+    expect(drawnRuns(second.getPage(4)).map((run) => run.text)).toEqual(['009/9of9']);
+
+    // The control: restarting in each file makes the file the scope, so the
+    // second file's last sheet is the fifth of five again.
+    const restarted = await runPdfTool({
+      toolId: 'bates-numbering',
+      files: inputs,
+      values: { format: '{n}/{page}of{total}', digits: 3, start: 1, perFile: true },
+    });
+    const again = await openPDF(await outputBytes(restarted!, 1));
+    expect(drawnRuns(again.getPage(4)).map((run) => run.text)).toEqual(['005/5of5']);
+  });
+
+  it('admits a token it does not know instead of printing it in silence', async () => {
+    const outcome = await run('bates-numbering', { format: '{n}-{foo}-{page}', digits: 3 });
+    expect(outcome.warnings.join('\n')).toMatch(/“\{foo\}” is not a token/i);
+    // The admission is true: the typo is still on the sheet, once per page.
+    const doc = await openPDF(await outputBytes(outcome));
+    expect(drawnRuns(doc.getPage(0)).map((run) => run.text)).toContain('001-{foo}-1');
+    expect(outcome.warnings.join('\n')).not.toMatch(/\{page\}/);
+  });
+
+  it('overprints a second number on the first in the same place, which is what the note says', async () => {
+    // The card's note used to say only that "a second run writes a second
+    // number"; rendered at 300 dpi the two stamps sit in the same box and only a
+    // differing digit survives (`Bates-005` over `Bates-001`), so the note now
+    // says so. This pins the geometry the sentence describes.
+    const once = await run('bates-numbering', { format: '{n}', digits: 3, start: 1 });
+    const stamped = await outputBytes(once);
+    expect((getPdfTool('bates-numbering')!.notes ?? []).join(' ')).toMatch(/on top of the old one in the same place/i);
+    const again = await run('bates-numbering', { format: '{n}', digits: 3, start: 7 }, [stamped]);
+    const doc = await openPDF(await outputBytes(again));
+    const stamps = drawnRuns(doc.getPage(0)).filter((run) => /^\d{3}$/.test(run.text));
+    expect(stamps.map((run) => run.text)).toEqual(['001', '007']);
+    expect(stamps[1]!.x).toBeCloseTo(stamps[0]!.x, 3);
+    expect(stamps[1]!.y).toBeCloseTo(stamps[0]!.y, 3);
+  });
+
   it('names both files beside a count that only describes the first (the multi-file card row)', async () => {
     // The `bates-numbering` FALSE CLAIM row: with 4 + 5 pages the card printed
     // `PAGES 9 → 4`, and the `→ 4` is the *primary* output's count — what
