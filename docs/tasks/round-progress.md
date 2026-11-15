@@ -1,9 +1,9 @@
 # Round progress — every PDF id, catalogue order
 
 Resume state: rounds 001-007 done and verified (each commit re-run by the parent:
-tsc, typecheck:tests, full suite). Continue at the first `[ ]` — but not past a `[ ]` before a `[x]`: 025 `repair` and
-026 `sanitize-pdf` were skipped when the dispatcher lost the file's order and must
-be taken before 028.
+tsc, typecheck:tests, full suite). Continue at the first `[ ]` — but not past a `[ ]` before a `[x]`: 026 `sanitize-pdf`
+was skipped when the dispatcher lost the file's order and must be taken before 028
+(025 `repair` is done, re-settled out of order at round 025).
 
 One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAMPAIGN.md`).
 
@@ -32,7 +32,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 022 [x] pdf-compress
 023 [x] optimize-pdf
 024 [x] rasterize-pdf
-025 [ ] repair
+025 [x] repair
 026 [ ] sanitize-pdf
 027 [x] linearize-pdf
 028 [ ] pdf-to-pdfa

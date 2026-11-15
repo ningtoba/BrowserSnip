@@ -178,6 +178,70 @@ def reader_noise(path: str) -> str:
     return " · ".join(notes[:2])
 
 
+def references(path: str) -> dict:
+    """Which of a page's references still resolve, counted with pikepdf.
+
+    A sheet can come back with its text and its bar and still point at an object the
+    file does not hold — `libqpdf` then warns "ignoring non-stream item"/unresolved
+    reference on every open. Images and annotations are counted the same way, since
+    a cut takes all three or none and a rebuild that copies the page dict rather
+    than the object graph carries the reference and not the object.
+    """
+    tally = {"contents": 0, "annots": 0, "images": 0, "contents_kept": 0, "annots_kept": 0, "images_kept": 0}
+    try:
+        with quiet_stderr():
+            pdf = pikepdf.open(path)
+    except Exception:  # noqa: BLE001 — a refusal leaves the tally at zero
+        return tally
+    try:
+        def resolves(value) -> bool:
+            """pikepdf hands back `None` for a reference whose target is not in the file."""
+            if value is None:
+                return False
+            try:
+                objgen = value.objgen
+            except AttributeError:  # a direct object has no object number of its own
+                return True
+            if objgen == (0, 0):
+                return True
+            try:
+                pdf.get_object(*objgen)
+                return True
+            except Exception:  # noqa: BLE001 — a missing target is the measurement
+                return False
+
+        for page in pdf.pages:
+            contents = page.obj.get("/Contents")
+            if contents is not None:
+                for item in (contents if isinstance(contents, pikepdf.Array) else [contents]):
+                    if resolves(item):
+                        tally["contents_kept"] += 1
+                    else:
+                        tally["contents"] += 1
+            annots = page.obj.get("/Annots")
+            if annots is not None:
+                for item in annots:
+                    if resolves(item):
+                        tally["annots_kept"] += 1
+                    else:
+                        tally["annots"] += 1
+            resources = page.obj.get("/Resources")
+            xobjects = resources.get("/XObject") if resources is not None else None
+            # `.items()`, not `.keys()`: pikepdf drops a key whose target is missing
+            # from `keys()` and keeps it in `items()` with a `None` value — which is
+            # exactly the state this tally exists to find.
+            for _name, xobject in (xobjects.items() if xobjects is not None else []):
+                if resolves(xobject):
+                    tally["images_kept"] += 1
+                else:
+                    tally["images"] += 1
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        pdf.close()
+    return tally
+
+
 def reading_of(path: str) -> dict:
     return {
         "mupdf": mupdf(path),
@@ -186,6 +250,7 @@ def reading_of(path: str) -> dict:
         "poppler": poppler_pages(path),
         "bytes": os.path.getsize(path),
         "qpdf_check": qpdf_check(path),
+        "refs": references(path),
         "noise": reader_noise(path),
     }
 
@@ -245,7 +310,7 @@ def main() -> int:
     with open(os.path.join(TARGET, "app.json"), encoding="utf-8") as handle:
         answers = {item["file"]: item for item in json.load(handle)}
 
-    cases = [{"name": "base", "file": "corpus/base.pdf"}, {"name": "base-objstm", "file": "corpus/base-objstm.pdf"}]
+    cases = [{"name": name, "file": f"corpus/{name}.pdf"} for name in ("base", "base-objstm", "base-plain", "base-rich")]
     cases += [{"name": item["name"], "file": item["file"]} for item in manifest["cases"]]
 
     rows = []
@@ -285,6 +350,9 @@ def main() -> int:
             print(f"    readers, input: {row['before']['noise']}")
         if row["after"] and row["after"]["noise"]:
             print(f"    readers, output: {row['after']['noise']}")
+        print(f"    dangling refs, input: {row['before']['refs']}")
+        if row["after"]:
+            print(f"    dangling refs, output: {row['after']['refs']}")
         print(f"    input characters per sheet: {row['before']['mupdf']['chars']}")
         print(f"    input planted words: {row['before']['mupdf']['words']}")
         if row["after"]:
@@ -299,7 +367,13 @@ def main() -> int:
     refused = [row for row in bad if row["verdict"].startswith("refused")]
     contradicted = [row for row in bad if row["verdict"] not in ("unreadable", "no output measured")
                     and not row["verdict"].startswith("refused")]
+    dangling = [
+        row["case"] for row in rows
+        if row["after"] and not row["case"].startswith("base") and any(
+            row["after"]["refs"][key] for key in ("contents", "annots", "images"))
+    ]
     print(f"\n{len(bad)} case(s) not preserved, of which {len(refused)} were refused outright")
+    print(f"{len(dangling)} produced file(s) name an object they do not hold: {dangling}")
     print(f"{len(contradicted)} case(s) whose produced file contradicts the sentence printed for it")
     return 1 if any(row["verdict"] in ("blank", "silent-loss", "unreadable", "no output measured")
                     or "overclaims" in row["verdict"] for row in bad) else 0

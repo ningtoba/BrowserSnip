@@ -26,6 +26,15 @@
 import { deflateSync, inflateSync } from 'node:zlib';
 import { PDFDocument, PDFDict, PDFName, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 
+/**
+ * A 16×16 solid red PNG, for the sheet decoration the dangling-image case needs.
+ * Large enough to move the ink reading (a 1×1 pixel painted at 100 pt does not),
+ * so an output that lost the picture is visible in the pixel count, not only in a
+ * resource dictionary.
+ */
+const RED_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGElEQVR4nGM4ISJCEmIY1TAaSiLDNmkAAEyg8AGJPyRzAAAAAElFTkSuQmCC';
+
 /** One word per sheet: a file that opens as 4 pages can still be missing one. */
 export const SHEET_WORDS = ['Alpha', 'Beta', 'Gamma', 'Delta'];
 
@@ -45,12 +54,16 @@ export type DamageId =
   | 'missing-endobj'
   | 'garbage-dict-midstream'
   | 'triage-report'
-  | 'plain-content-tailcut';
+  | 'plain-content-tailcut'
+  | 'wrong-length'
+  | 'orphaned-page-object'
+  | 'dangling-contents'
+  | 'dangling-image-and-annots';
 
 export interface DamageCase {
   id: DamageId;
   /** Which base the edit is applied to. */
-  base: 'classic' | 'object-streams' | 'plain';
+  base: 'classic' | 'object-streams' | 'plain' | 'rich';
   /** The structure the case breaks, in the words the report uses. */
   breaks: string;
   /**
@@ -91,6 +104,41 @@ export async function damageBase(objectStreams = false): Promise<Uint8Array> {
   doc.setTitle('Repair damage corpus');
   doc.setAuthor('BrowserSnip campaign');
   return new Uint8Array(await doc.save({ useObjectStreams: objectStreams }));
+}
+
+/**
+ * The known-good document plus the two things a cut can orphan: an image XObject
+ * and an annotation. A four-sheet file with neither cannot tell "the sheet came
+ * back" apart from "the sheet came back and still points at the picture it names",
+ * and a dangling reference is a `libqpdf` warning on open even when the sheet draws.
+ *
+ * Sheet 2 carries both, so one blanking edit can take them and leave the other
+ * three sheets as the control.
+ */
+export async function damageBaseRich(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const picture = await doc.embedPng(new Uint8Array(Buffer.from(RED_PNG, 'base64')));
+  SHEET_WORDS.forEach((word, index) => {
+    const page = doc.addPage([595, 842]);
+    page.drawText(`${word} ledger sheet ${index + 1}`, { x: 50, y: 760, size: 18, font, color: rgb(0, 0, 0) });
+    page.drawText(SENTENCE, { x: 50, y: 720, size: 11, font });
+    page.drawRectangle({ x: 50, y: 400, width: 300, height: 80, color: rgb(0.05, 0.05, 0.05) });
+    if (index !== 1) return;
+    page.drawImage(picture, { x: 400, y: 700, width: 100, height: 100 });
+    const annot = doc.context.register(doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [50, 300, 260, 330],
+      Border: [0, 0, 1],
+      F: 4,
+      A: { Type: 'Action', S: 'URI', URI: 'https://example.com/ledger' },
+    }));
+    page.node.set(PDFName.of('Annots'), doc.context.obj([annot]));
+  });
+  doc.setTitle('Repair damage corpus');
+  doc.setAuthor('BrowserSnip campaign');
+  return new Uint8Array(await doc.save({ useObjectStreams: false }));
 }
 
 /**
@@ -140,8 +188,19 @@ function splice(bytes: Uint8Array, from: number, to: number, replacement: string
   return new Uint8Array(Buffer.concat([Buffer.from(bytes.subarray(0, from)), Buffer.from(part), Buffer.from(bytes.subarray(to))]));
 }
 
-interface LocatedStream {
+interface LocatedObject {
   number: number;
+  /** Byte offset of the `N G obj` header. */
+  objectStart: number;
+  /** Byte just past this object's `endobj`. */
+  objectEnd: number;
+  /** Byte just past the `N G obj` header, where the body starts. */
+  bodyStart: number;
+  /** The object's text between its header and its `endobj`. */
+  body: string;
+}
+
+interface LocatedStream extends LocatedObject {
   dict: string;
   payloadStart: number;
   payloadEnd: number;
@@ -150,45 +209,58 @@ interface LocatedStream {
 }
 
 /**
- * Every stream object in the file, with its payload's byte range.
+ * Every whole object in the file, header to `endobj`.
  *
  * Walked object by object: matching the token `stream` across the whole file finds
  * `/XRefStm`, a `stream` inside a payload, and the `endstream` keyword itself, and
  * a "damage" written against the wrong byte range damages the fixture rather than
  * the file.
  */
-function locateStreams(text: string): LocatedStream[] {
-  const found: LocatedStream[] = [];
+function locateObjects(text: string): LocatedObject[] {
+  const found: LocatedObject[] = [];
   const header = /(?:^|[\r\n])(\d+)\s+(\d+)\s+obj\b/g;
   let match = header.exec(text);
   while (match !== null) {
     const number = Number(match[1]);
     const bodyStart = match.index + match[0].length;
+    const objectStart = match.index + match[0].indexOf(match[1]);
     const endObj = text.indexOf('endobj', bodyStart);
     if (endObj < 0) break;
-    const streamAt = text.indexOf('stream', bodyStart);
-    if (streamAt >= 0 && streamAt < endObj && /[\r\n]/.test(text[streamAt + 6] ?? '')) {
-      let payloadStart = streamAt + 6;
-      if (text[payloadStart] === '\r') payloadStart += 1;
-      payloadStart += 1; // past the single LF that ends the `stream` keyword line
-      const payloadEnd = text.indexOf('endstream', payloadStart);
-      const dict = text.slice(bodyStart, streamAt);
-      const lengthAt = dict.lastIndexOf('/Length');
-      let lengthStart = -1;
-      let lengthEnd = -1;
-      if (lengthAt >= 0) {
-        let at = lengthAt + '/Length'.length;
-        while (at < dict.length && /\s/.test(dict[at])) at += 1;
-        lengthStart = bodyStart + at;
-        while (at < dict.length && /\d/.test(dict[at])) at += 1;
-        lengthEnd = bodyStart + at;
-      }
-      found.push({ number, dict, payloadStart, payloadEnd, lengthStart, lengthEnd });
-    }
+    found.push({ number, objectStart, objectEnd: endObj + 'endobj'.length, bodyStart, body: text.slice(bodyStart, endObj) });
     header.lastIndex = endObj;
     match = header.exec(text);
   }
   return found;
+}
+
+/** Every *stream* object in the file, with its payload's byte range. */
+function locateStreams(text: string): LocatedStream[] {
+  const found: LocatedStream[] = [];
+  for (const object of locateObjects(text)) {
+    const { body } = object;
+    const streamAt = body.indexOf('stream');
+    if (streamAt < 0 || !/[\r\n]/.test(body[streamAt + 6] ?? '')) continue;
+    const dict = body.slice(0, streamAt);
+    const payloadStart = object.bodyStart + streamAt + 6 + (body[streamAt + 6] === '\r' ? 2 : 1);
+    const payloadEnd = text.indexOf('endstream', payloadStart);
+    const lengthAt = dict.lastIndexOf('/Length');
+    let lengthStart = -1;
+    let lengthEnd = -1;
+    if (lengthAt >= 0) {
+      let at = lengthAt + '/Length'.length;
+      while (at < dict.length && /\s/.test(dict[at])) at += 1;
+      lengthStart = object.bodyStart + at;
+      while (at < dict.length && /\d/.test(dict[at])) at += 1;
+      lengthEnd = object.bodyStart + at;
+    }
+    found.push({ ...object, dict, payloadStart, payloadEnd, lengthStart, lengthEnd });
+  }
+  return found;
+}
+
+/** The `ordinal`-th page content stream, counted over page content only. */
+function nthContent(text: string, ordinal: number): LocatedStream | undefined {
+  return locateStreams(text).filter((item) => isPageContent(item.dict))[ordinal - 1];
 }
 
 /** Replace one stream's payload, keeping its `/Length` truthful for the new bytes. */
@@ -196,13 +268,27 @@ function rewriteStream(
   bytes: Uint8Array,
   pick: (candidate: LocatedStream) => boolean,
   edit: (payload: Uint8Array, dict: string) => Uint8Array,
+  options: { length?: (declared: number) => number } = {},
 ): Uint8Array {
   const where = locateStreams(decode(bytes)).filter((item) => item.payloadEnd > 0 && pick(item))[0];
   if (!where) throw new Error('the base does not hold the stream this damage needs');
   const next = edit(bytes.subarray(where.payloadStart, where.payloadEnd), where.dict);
   if (where.lengthStart < 0) throw new Error('the chosen stream has no plain /Length');
+  const declared = options.length ? options.length(next.length) : next.length;
   const step1 = splice(bytes, where.payloadStart, where.payloadEnd, next);
-  return splice(step1, where.lengthStart, where.lengthEnd, String(next.length));
+  return splice(step1, where.lengthStart, where.lengthEnd, String(declared));
+}
+
+/**
+ * Overwrite one whole object with spaces, leaving its byte range the same width.
+ *
+ * A deletion would shift every later object and so damage the index as well; a
+ * blanking leaves each surviving offset true and makes the reference to this
+ * object the only broken thing in the file.
+ */
+function blankObject(bytes: Uint8Array, where: LocatedObject): Uint8Array {
+  const width = where.objectEnd - where.objectStart;
+  return splice(bytes, where.objectStart, where.objectEnd, ' '.repeat(width));
 }
 
 const isPageContent = (dict: string): boolean =>
@@ -335,6 +421,85 @@ export const DAMAGE_CASES: DamageCase[] = [
       return encode(`${text.slice(0, 12)}\n% damaged by triage\n${text.slice(12, text.length - 40)}\n%%EO\n`);
     },
   },
+  {
+    /**
+     * Sheet 2's content stream is whole; only the `/Length` above it lies, by 30 %
+     * too much. A reader that steps over payloads by the declared length lands in
+     * the next object, so the sheet's drawing is in the file and unreachable —
+     * which is the difference between "the cut took the page" and "the file
+     * misdescribes a page that is still here".
+     */
+    id: 'wrong-length',
+    base: 'classic',
+    breaks: 'sheet 2’s `/Length`: a third again as long as the payload it describes',
+    expect: { inputPages: 4, inputSheetsWithWords: 4, repairedPages: 4, repairedSheetsWithWords: 4, repairedBlankSheets: 0, mustProduce: true },
+    apply: (base) => {
+      const target = nthContent(decode(base), 2);
+      if (!target) throw new Error('the classic base holds no second content stream');
+      return rewriteStream(base, (item) => item.objectStart === target.objectStart, (payload) => payload, {
+        // The payload is untouched: only the number above it is rewritten.
+        length: (declared) => Math.round(declared * 1.3),
+      });
+    },
+  },
+  {
+    /**
+     * Sheet 2's page object is still in the bytes and still holds its `/Contents`,
+     * its box and its `/Resources`; the page tree simply no longer names it. Three
+     * readers open the input as 3 sheets, so 3 is the floor — but the fourth sheet
+     * is in the file, and a repair that counts it as lost is wrong about what it
+     * gave up.
+     */
+    id: 'orphaned-page-object',
+    base: 'classic',
+    breaks: 'one `/Kids` entry: the sheet is still an object, nothing in the tree names it',
+    expect: { inputPages: 4, inputSheetsWithWords: 3, repairedPages: 4, repairedSheetsWithWords: 4, repairedBlankSheets: 0, mustProduce: true },
+    apply: (base) => {
+      const text = decode(base);
+      const kids = /\/Kids\s*\[([^\]]*)\]/.exec(text);
+      if (!kids) throw new Error('the classic base has no /Kids array');
+      const entries = kids[1].trim().split(/\s+(?=\d+\s+\d+\s+R)/);
+      if (entries.length < 4) throw new Error(`/Kids holds ${entries.length} entries, not 4`);
+      const from = kids.index + kids[0].indexOf(kids[1]);
+      return splice(base, from, from + kids[1].length, entries.slice(1).join(' '));
+    },
+  },
+  {
+    /**
+     * The object sheet 2's `/Contents` names is blanked out in place: the bytes keep
+     * their length, so every other object keeps its offset and the page tree still
+     * reads. The reference is the only thing left, pointing at a hole.
+     */
+    id: 'dangling-contents',
+    base: 'rich',
+    breaks: 'sheet 2’s content stream object: blanked in place, its `/Contents` reference left behind',
+    expect: { inputPages: 4, inputSheetsWithWords: 3, repairedPages: 4, repairedSheetsWithWords: 3, repairedBlankSheets: 1, mustProduce: true },
+    apply: (base) => {
+      const target = nthContent(decode(base), 2);
+      if (!target) throw new Error('the rich base holds no second content stream');
+      return blankObject(base, target);
+    },
+  },
+  {
+    /**
+     * The same cut on the two decorations sheet 2 names: its image XObject and its
+     * link annotation. The sheet still draws its text and its bar, so a page count
+     * and an ink reading both pass while the file points at two missing objects —
+     * which is what `libqpdf` reports as an unresolved reference.
+     */
+    id: 'dangling-image-and-annots',
+    base: 'rich',
+    breaks: 'sheet 2’s image XObject and its annotation object: blanked, both references left behind',
+    expect: { inputPages: 4, inputSheetsWithWords: 4, repairedPages: 4, repairedSheetsWithWords: 4, repairedBlankSheets: 0, mustProduce: true },
+    apply: (base) => {
+      const text = decode(base);
+      const image = locateStreams(text).find((item) => /\/Subtype\s*\/Image/.test(item.dict));
+      const annot = locateObjects(text).find((item) => /\/Subtype\s*\/Link/.test(item.body));
+      if (!image || !annot) throw new Error('the rich base holds no image and annotation pair');
+      const first = blankObject(base, image);
+      return blankObject(first, annot as LocatedObject);
+    },
+  },
 ];
 
 /** The corpus: every case applied to its base, with the healthy document beside it. */
@@ -345,12 +510,14 @@ export async function buildDamageCorpus(): Promise<{
   const classic = await damageBase(false);
   const streams = await damageBase(true);
   const plain = await damageBasePlain();
-  const byBase = { classic, 'object-streams': streams, plain };
+  const rich = await damageBaseRich();
+  const byBase = { classic, 'object-streams': streams, plain, rich };
   return {
     bases: [
       { name: 'base.pdf', bytes: classic },
       { name: 'base-objstm.pdf', bytes: streams },
       { name: 'base-plain.pdf', bytes: plain },
+      { name: 'base-rich.pdf', bytes: rich },
     ],
     cases: DAMAGE_CASES.map((item) => ({
       name: `${item.id}.pdf`,

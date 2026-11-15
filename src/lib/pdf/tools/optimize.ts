@@ -1210,6 +1210,8 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'This tool opens files the normal reader refuses, which is the point of it.',
       'A file whose page content itself was cut off cannot be recreated; the report names the pages it lost and the sheets that came back blank.',
+      'A sheet whose page object is still in the file but no longer in the page tree is put back and opens — where it belongs among the others is a guess from the object numbers, and the report says so.',
+      'A link or a picture the damage took is removed from the copy instead of being left as a reference to nothing, so the download opens without complaints from a reader; that link or picture is not recovered.',
     ],
     async run(context) {
       const file = context.inputs[0];
@@ -1279,6 +1281,17 @@ export const optimizeTools: PdfToolDefinition[] = [
           `The file's own index could not be read: a fresh one was written over the ${rebuilt.pages} page object(s) still in the bytes.`,
         );
       }
+      if (rebuilt?.path === 'rehooked') {
+        // A page object with its `/Contents` and `/Resources` whole, that the page tree
+        // stopped naming. Four readers open these bytes at their full count, so the
+        // sheet is not lost — but where it belongs among the others is, and the
+        // placement follows object number, not the tree.
+        warnings.push(
+          `${rebuilt.rehooked} page object(s) were still in the bytes but no longer in the page tree: `
+          + 'the sheet(s) were re-hooked so they open, and their position follows the object order of the '
+          + 'file, which is this rebuild’s guess rather than the document’s own.',
+        );
+      }
       if (rebuilt?.path === 'content-streams') {
         warnings.push(
           'No page tree survived, so each sheet was rebuilt around a content stream: page size and order are a guess here, not the document’s own.',
@@ -1310,12 +1323,31 @@ export const optimizeTools: PdfToolDefinition[] = [
           + 'so the sheet opens and nothing appears on it.',
         );
       }
+      // What a recovered sheet still named and the cut took. Until this was counted the
+      // output of the `dangling-image-and-annots` case kept a reference to a missing
+      // image XObject and to a missing annotation, said "4 page(s) readable", and drew
+      // eight MuPDF errors while qpdf's own check called the file clean.
+      const cut = rebuilt?.dropped;
+      const cutRefs = cut ? cut.contents + cut.annots + cut.images : 0;
+      if (cutRefs > 0) {
+        const named = [
+          cut!.contents ? `${cut!.contents} content stream(s)` : '',
+          cut!.annots ? `${cut!.annots} annotation(s)` : '',
+          cut!.images ? `${cut!.images} image(s)` : '',
+        ].filter(Boolean);
+        warnings.push(
+          `${cutRefs} reference(s) on the recovered sheet(s) named objects the cut took (${named.join(', ')}) `
+          + 'and were removed, so the file points at nothing it does not hold'
+          + `${cut!.annots + cut!.images > 0 ? ' — those annotations and pictures are not in the copy' : ''}.`,
+        );
+      }
       const change = sizeChange(bytes.byteLength, repaired.byteLength);
       context.progress(1, 'Repaired');
       // One count phrase for both shapes: "N page(s)" when nothing was given up,
       // "N of M page(s)" when the file named more sheets than the rebuild holds.
       const listed = held > after.pages ? `${after.pages} of ${held} page(s)` : `${after.pages} page(s)`;
       const carried = after.pages - blank;
+      const rehooked = rebuilt?.rehooked ?? 0;
       return {
         kind: 'pdf',
         bytes: repaired,
@@ -1330,11 +1362,17 @@ export const optimizeTools: PdfToolDefinition[] = [
         // campaign keeps meeting, and a bare count is exactly what §2 reported —
         // "1 page(s) readable" for a file three readers still open as four inked
         // sheets. Where something was given up, the sentence says what.
+        // "readable" is only printed when every recovered sheet holds a drawing
+        // operator *and* its place in the order is the document's own: a re-hooked
+        // sheet opens and draws, but nothing in the file said where it belonged.
         message: `Repaired ${file.name}: ${
           blank > 0
             ? `${listed} recovered: ${carried} still ${carried === 1 ? 'holds' : 'hold'} content, `
               + `${blank} ${blank === 1 ? 'is' : 'are'} blank`
-            : `${listed} readable`
+              + (rehooked > 0 ? `, ${rehooked} re-hooked from page object(s) the tree no longer named` : '')
+            : rehooked > 0
+              ? `${listed} recovered, ${rehooked} of them re-hooked from page object(s) the tree no longer named`
+              : `${listed} readable`
         }. ${sizeSentence(change)}.`,
         warnings,
       };

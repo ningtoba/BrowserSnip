@@ -64,8 +64,17 @@ export type RepairPath =
   | 'opened'
   /** The file's own index was wrong or gone, so a fresh one was written over its objects. */
   | 'rebuilt-index'
+  /** Sheets were still page objects in the bytes but the page tree no longer named them. */
+  | 'rehooked'
   /** No page tree survived: sheets were built around the content streams in the bytes. */
   | 'content-streams';
+
+/** References a recovered page still names but the cut bytes no longer hold. */
+export interface DroppedRefs {
+  contents: number;
+  annots: number;
+  images: number;
+}
 
 export interface RepairFacts {
   bytes: Uint8Array;
@@ -87,6 +96,14 @@ export interface RepairFacts {
    * printing "1 page(s) readable" for precisely such a file.
    */
   blank: number;
+  /**
+   * Page objects that were whole in the bytes while nothing in the page tree named
+   * them. Counted as recovered sheets, not as lost ones: the object and its
+   * `/Contents` were there, only the `/Kids` entry was not.
+   */
+  rehooked: number;
+  /** References on the recovered sheets that point at objects the cut took. */
+  dropped: DroppedRefs;
 }
 
 /**
@@ -137,14 +154,27 @@ export async function repairPDF(pdfBuffer: ArrayBuffer): Promise<RepairFacts> {
     if (usablePages(doc) > 0) candidates.push({ doc, path: 'opened' });
   } catch { /* the index rebuild below reads the same bytes a different way */ }
 
+  // Sheet objects the page tree stopped naming. They are whole objects with their
+  // own `/Contents`; only the `/Kids` entry is gone, so counting them as lost is
+  // wrong about a page that is still in the file — MuPDF and poppler both open these
+  // bytes at 4 sheets where this tool returned 3 and said one "could not be
+  // recovered" (`docs/research/repair-damage-readers.log`, case `orphaned-page-object`).
+  const best = (): number => Math.max(0, ...candidates.map((item) => usablePages(item.doc)));
+  const openedPages = best();
+  const orphans = candidates.length > 0 ? orphanPageObjects(objects) : [];
+  const rehookedBytes = orphans.length > 0 ? rehookOrphans(bytes, objects, orphans) : null;
+
   // Strategy 2: re-index. Only worth a second parse when the first read fewer
   // sheets than the file claims, but that is exactly the case the tool is for.
-  const best = () => Math.max(0, ...candidates.map((item) => usablePages(item.doc)));
-  const indexed = rebuiltIndexBytes(bytes, objects);
+  const source = rehookedBytes ?? bytes;
+  const inSource = rehookedBytes ? scanPdfObjects(latin1Of(rehookedBytes)) : objects;
+  const indexed = rebuiltIndexBytes(source, inSource);
   if (indexed && (candidates.length === 0 || best() < (claimed ?? Infinity))) {
     try {
       const doc = await openPDF(indexed, { ignoreEncryption: true });
-      if (usablePages(doc) > best()) candidates.push({ doc, path: 'rebuilt-index' });
+      if (usablePages(doc) > best()) {
+        candidates.push({ doc, path: rehookedBytes ? 'rehooked' : 'rebuilt-index' });
+      }
     } catch { /* fall through to the content-stream harvest */ }
   }
 
@@ -178,7 +208,7 @@ export async function repairPDF(pdfBuffer: ArrayBuffer): Promise<RepairFacts> {
   for (const page of copied) {
     repaired.addPage(page);
   }
-  dropDanglingContent(repaired);
+  const dropped = dropDanglingReferences(repaired);
 
   // Copy metadata if readable
   try { const title = srcDoc.getTitle(); if (title) repaired.setTitle(title); } catch { /* metadata is optional */ }
@@ -198,6 +228,8 @@ export async function repairPDF(pdfBuffer: ArrayBuffer): Promise<RepairFacts> {
     pages: repaired.getPageCount(),
     claimed,
     blank: empty,
+    rehooked: chosen.path === 'rehooked' ? Math.max(0, repaired.getPageCount() - openedPages) : 0,
+    dropped,
   };
 }
 
@@ -364,39 +396,130 @@ function rebuiltIndexBytes(bytes: Uint8Array, objects: PdfObject[]): Uint8Array 
 }
 
 /**
- * Take out any `/Contents` entry that does not reach a stream.
+ * Take out the references a recovered sheet can no longer resolve.
  *
- * A page recovered through a rebuilt index can name a content stream that the cut
- * bytes no longer hold, and `copyPages` carries the dangling reference across. The
- * sheet is blank either way, but a file that points at nothing where a stream
- * should be draws a warning from libqpdf on open (`ignoring non-stream item`) —
- * so the rebuild says "this sheet is empty" by having no content, not by leaving a
- * reference to a hole.
+ * A page recovered through a rebuilt index can name a content stream, an annotation
+ * or an image XObject that the cut bytes no longer hold, and `copyPages` carries the
+ * dangling reference across. The sheet is blank either way, but a file that points
+ * at nothing draws warnings from every reader on open (libqpdf `ignoring non-stream
+ * item`, MuPDF `cannot find object in xref` / `no XObject subtype specified`), and
+ * none of that reaches the user while the sentence says "4 page(s) readable" —
+ * measured before this pass covered annots and XObjects: 4 sheets, unchanged dangling
+ * references, and eight MuPDF errors under `docs/research/repair-damage-readers.py`
+ * case `dangling-image-and-annots`.
+ *
+ * So the rebuild says "the cut took this" by holding no reference to it. Counted,
+ * because what goes is a picture or a link a reader would otherwise have been shown.
  */
-function dropDanglingContent(doc: PDFDocument): void {
+function dropDanglingReferences(doc: PDFDocument): DroppedRefs {
+  const dropped: DroppedRefs = { contents: 0, annots: 0, images: 0 };
   const { context } = doc;
+  const resolves = (value: unknown): boolean => {
+    try {
+      const found = value instanceof PDFRef ? context.lookup(value) : value;
+      return found instanceof PDFStream || found instanceof PDFDict
+        || found instanceof PDFArray || found instanceof PDFName;
+    } catch {
+      // A reference to an object the file does not hold — the truncated tail's
+      // case — which is what this pass is looking for.
+      return false;
+    }
+  };
   for (const page of doc.getPages()) {
     const contents = page.node.get(PDFName.of('Contents'));
-    if (contents === undefined) continue;
-    const resolves = (value: unknown): boolean => {
-      try {
-        const found = value instanceof PDFRef ? context.lookup(value) : value;
-        return found instanceof PDFStream;
-      } catch {
-        // A reference to an object the file does not hold — the truncated tail's
-        // case — which is what this pass is looking for.
-        return false;
+    if (contents !== undefined) {
+      if (contents instanceof PDFArray) {
+        const kept = contents.asArray().filter(resolves);
+        dropped.contents += contents.size() - kept.length;
+        if (kept.length !== contents.size()) {
+          if (kept.length === 0) page.node.delete(PDFName.of('Contents'));
+          else page.node.set(PDFName.of('Contents'), context.obj(kept));
+        }
+      } else if (!resolves(contents)) {
+        dropped.contents += 1;
+        page.node.delete(PDFName.of('Contents'));
       }
-    };
-    if (contents instanceof PDFArray) {
-      const kept = (contents as PDFArray).asArray().filter(resolves);
-      if (kept.length === (contents as PDFArray).size()) continue;
-      if (kept.length === 0) page.node.delete(PDFName.of('Contents'));
-      else page.node.set(PDFName.of('Contents'), context.obj(kept));
-    } else if (!resolves(contents)) {
-      page.node.delete(PDFName.of('Contents'));
+    }
+    const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+    if (annots) {
+      const kept = annots.asArray().filter(resolves);
+      dropped.annots += annots.size() - kept.length;
+      if (kept.length !== annots.size()) {
+        if (kept.length === 0) page.node.delete(PDFName.of('Annots'));
+        else page.node.set(PDFName.of('Annots'), context.obj(kept));
+      }
+    }
+    const xobjects = page.node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    if (xobjects) {
+      for (const name of xobjects.keys()) {
+        if (resolves(xobjects.get(name))) continue;
+        // The `/Contents` still says `/<name> Do`; readers report that as a missing
+        // resource on the one line they have for it, which is true: it is gone.
+        xobjects.delete(name);
+        dropped.images += 1;
+      }
     }
   }
+  return dropped;
+}
+
+/**
+ * Page objects the file still holds that no page tree names.
+ *
+ * A `remove-page`-shaped edit that only unhooks the `/Kids` entry leaves the object,
+ * its `/Contents` and its `/Resources` in the bytes. MuPDF and poppler open such a
+ * file at its full count, so a rebuild that returns the tree's number is returning
+ * fewer sheets than the file holds.
+ */
+function orphanPageObjects(objects: PdfObject[]): PdfObject[] {
+  const named = new Set<string>();
+  for (const item of objects) {
+    if (!/\/Type\s*\/Pages\b/.test(item.body)) continue;
+    for (const found of item.body.matchAll(/(\d+)\s+(\d+)\s+R/g)) named.add(`${found[1]} ${found[2]} R`);
+  }
+  return objects.filter(
+    (item) => /\/Type\s*\/Page\b/.test(item.body) && !named.has(`${item.number} ${item.generation} R`),
+  );
+}
+
+/**
+ * The same bytes with every orphaned page object named in the tree again.
+ *
+ * `/Kids` is an array of references in page order, so an object is put back before
+ * the first sibling with a greater object number — the order the file itself is in.
+ * That is a guess when numbers do not ascend with the pages, which the report says
+ * rather than passing off as the document's own order. `/Count` moves with it, and
+ * the index is rebuilt over the result afterwards, so both the offsets and the count
+ * are true of the bytes that get written.
+ *
+ * `null` when the bytes hold no page tree to put them back into.
+ */
+function rehookOrphans(bytes: Uint8Array, objects: PdfObject[], orphans: PdfObject[]): Uint8Array | null {
+  const node = objects.find(
+    (item) => /\/Type\s*\/Pages\b/.test(item.body) && /\/Kids\s*\[/.test(item.body) && /\/Count\s+\d+/.test(item.body),
+  );
+  const kids = node ? /\/Kids\s*\[([^\]]*)\]/.exec(node.body) : null;
+  const count = node ? /\/Count\s+(\d+)/.exec(node.body) : null;
+  if (!node || !kids || !count) return null;
+  const list = kids[1].trim().split(/\s+(?=\d+\s+\d+\s+R)/).filter(Boolean)
+    .map((ref) => ({ at: Number(/\d+/.exec(ref)?.[0] ?? 0), ref: ref.trim() }));
+  let added = 0;
+  for (const orphan of orphans) {
+    const ref = `${orphan.number} ${orphan.generation} R`;
+    if (list.some((entry) => entry.ref === ref)) continue;
+    const at = list.findIndex((entry) => entry.at > orphan.number);
+    const entry = { at: orphan.number, ref };
+    if (at < 0) list.push(entry);
+    else list.splice(at, 0, entry);
+    added += 1;
+  }
+  if (added === 0) return null;
+  const body = node.body
+    .replace(kids[0], `/Kids [${list.map((entry) => entry.ref).join(' ')}]`)
+    .replace(count[0], `/Count ${Number(count[1]) + added}`);
+  const bodyStart = node.end - node.body.length;
+  const text = latin1Of(bytes);
+  return latin1Bytes(`${text.slice(0, bodyStart)}${body}${text.slice(node.end)}`);
 }
 
 /**

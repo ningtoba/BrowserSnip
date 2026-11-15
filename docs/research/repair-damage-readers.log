@@ -1,56 +1,134 @@
-# step 3 — MuPDF, qpdf (libqpdf), poppler and pypdf over the same files, before and
-# after. `input still holds` is what the damaged file gives each reader, `output
-# reads as` is what `repair`'s file gives them, `check` is libqpdf's structural
-# verdict (the question a rebuilt index begs), `ink` is non-white pixels per
-# produced sheet at 72 dpi, and the detail blocks quote the tool's own sentence
-# beside the characters and planted words the readers found.
-# At the fixed head (`f5cb4ec`), over the same corpus bytes the pre-fix pair was made
-# from. Reproduced byte for byte across two runs of the rig.
+MuPDF error: format error: non-page object in page tree
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: format error: object is not a stream
+
+MuPDF error: format error: object is not a stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: syntax error: unknown keyword: 'Bz'
+
+MuPDF error: syntax error: unknown keyword: '6573207765726520636865636B656420616761696E737420746865206C65646765722062792068616E642E'
+
+MuPDF error: syntax error: syntax error in content stream
+
+MuPDF error: format error: object is not a stream
+
+MuPDF error: format error: object is not a stream
+
+MuPDF error: syntax error: no XObject subtype specified
+
+MuPDF error: syntax error: no XObject subtype specified
+
+MuPDF error: syntax error: cannot find XObject resource 'Image-7572533686'
+
+MuPDF error: syntax error: cannot find XObject resource 'Image-7572533686'
 
 case                     input still holds                                                                output reads as                                                                  ink % per sheet        verdict
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 base                     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
 base-objstm              mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None · check WARNING: <dir>/corpus/truncated-tail.pdf: file is damaged; WARNING: mupdf 2 · qpdf 2 · pop 2 · pypdf 2 · check clean     5.3/0.0                lost-pages 4->2
-lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: <dir>/corpus/lying-xref.pdf: file is damaged; WARNING: /tm mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None · check WARNING: <dir>/corpus/missing-startxref.pdf: file is damaged; WARNI mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None · check refuses: <dir>/corpus/objstm-wrong-offsets.pdf: unable to  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.4/5.3        preserved
-duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: <dir>/corpus/duplicate-endobj.pdf: file is damaged; WARNIN mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: <dir>/corpus/missing-endobj.pdf: file is damaged; WARNING: mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: <dir>/corpus/garbage-dict-midstream.pdf: file is damaged;  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: page object 8 0 stream 7 0 (content, offset 184): invalid cha 5.3/5.0/5.3/5.3        preserved
-triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: <dir>/corpus/triage-report.pdf: file is damaged; WARNING:  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: <dir>/corpus/plain-content-tailcut.pdf: file is damaged; W mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
-ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: <dir>/corpus/ledger-32-input.pdf: file is damaged; WARNING mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     24.5/19.8/0.0/57.0     preserved
+base-plain               mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+base-rich                mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/7.3/5.3/5.3        preserved
+truncated-tail           mupdf 4 · qpdf 2 · pop None · pypdf None · check WARNING: /tmp/rd-after/corpus/truncated-tail.pdf: file is damaged; WAR mupdf 2 · qpdf 2 · pop 2 · pypdf 2 · check WARNING: page object 8 0: item index 0 (from 0): ignoring non-stream i 5.3/0.0                lost-pages 4->2
+lying-xref               mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/lying-xref.pdf: file is damaged; WARNING mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-startxref        mupdf 4 · qpdf 4 · pop 4 · pypdf None · check WARNING: /tmp/rd-after/corpus/missing-startxref.pdf: file is damaged;  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+objstm-wrong-offsets     mupdf 0 · qpdf None · pop 4 · pypdf None · check refuses: /tmp/rd-after/corpus/objstm-wrong-offsets.pdf: unabl mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.4/5.3        preserved
+duplicate-endobj         mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/duplicate-endobj.pdf: file is damaged; W mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+missing-endobj           mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/missing-endobj.pdf: file is damaged; WAR mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+garbage-dict-midstream   mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/garbage-dict-midstream.pdf: file is dama mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: page object 8 0 stream 7 0 (content, offset 184): invalid cha 5.3/5.0/5.3/5.3        preserved
+triage-report            mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rd-after/corpus/triage-report.pdf: file is damaged; WARN mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+plain-content-tailcut    mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rd-after/corpus/plain-content-tailcut.pdf: file is damag mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+wrong-length             mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/wrong-length.pdf (object 8 0, offset 200 mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+orphaned-page-object     mupdf 4 · qpdf 3 · pop 4 · pypdf 3 · check WARNING: /tmp/rd-after/corpus/orphaned-page-object.pdf: file is damage mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+dangling-contents        mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/dangling-contents.pdf: file is damaged;  mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/0.0/5.3/5.3        preserved
+dangling-image-and-annots mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check WARNING: /tmp/rd-after/corpus/dangling-image-and-annots.pdf: file is d mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     5.3/5.3/5.3/5.3        preserved
+ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WARNING: /tmp/rd-after/corpus/ledger-32-input.pdf: file is damaged; WA mupdf 4 · qpdf 4 · pop 4 · pypdf 4 · check clean     24.5/19.8/0.0/57.0     preserved
+
 ### base: Repaired base.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### base-objstm: Repaired base-objstm.pdf: 4 page(s) readable. 2.0 KB → 2.0 KB (-3%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
-### truncated-tail: Repaired truncated-tail.pdf: 2 of 4 page(s) recovered: 1 still holds content, 1 is blank. 1.8 KB → 1.1 KB (-42%).
+### base-plain: Repaired base-plain.pdf: 4 page(s) readable. 3.6 KB → 1.8 KB (-50%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### base-rich: Repaired base-rich.pdf: 4 page(s) readable. 3.7 KB → 2.3 KB (-38%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 1, 'images_kept': 1}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 1, 'images_kept': 1}
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### truncated-tail: Repaired truncated-tail.pdf: 2 of 4 page(s) recovered: 1 still holds content, 1 is blank. 1.8 KB → 1.1 KB (-41%).
     ! The input would not open ("truncated-tail.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
     ! The file's own index could not be read: a fresh one was written over the 2 page object(s) still in the bytes.
     ! 2 page(s) could not be recovered.
     ! 1 of the 2 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
     readers, input: pdfinfo: Syntax Error: Invalid XRef entry 0
+    dangling refs, input: {'contents': 1, 'annots': 0, 'images': 0, 'contents_kept': 1, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 2, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 19, 0, 0]
     input planted words: [['Alpha'], ['Beta'], [], []]
     output characters per sheet: [78, 0]
     output planted words: [['Alpha'], []]
 ### lying-xref: Repaired lying-xref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### missing-startxref: Repaired missing-startxref.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
@@ -58,24 +136,32 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WA
 ### objstm-wrong-offsets: Repaired objstm-wrong-offsets.pdf: 4 page(s) readable. 2.0 KB → 2.5 KB (+22%).
     ! The input would not open ("objstm-wrong-offsets.pdf" has no pages.).
     ! No page tree survived, so each sheet was rebuilt around a content stream: page size and order are a guess here, not the document’s own.
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 0, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: []
     input planted words: []
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### duplicate-endobj: Repaired duplicate-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### missing-endobj: Repaired missing-endobj.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
     output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
 ### garbage-dict-midstream: Repaired garbage-dict-midstream.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
     ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 19, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 19, 78, 78]
@@ -84,6 +170,8 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WA
     ! The input would not open ("triage-report.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
     ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
     readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
@@ -92,6 +180,43 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WA
     ! The input would not open ("plain-content-tailcut.pdf" is damaged: its PDF structure could not be parsed.) — it has no end-of-file marker.
     ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
     readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### wrong-length: Repaired wrong-length.pdf: 4 page(s) readable. 3.3 KB → 2.0 KB (-39%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    input characters per sheet: [78, 77, 78, 78]
+    input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### orphaned-page-object: Repaired orphaned-page-object.pdf: 4 page(s) recovered, 1 of them re-hooked from page object(s) the tree no longer named. 3.3 KB → 1.9 KB (-41%).
+    ! 1 page object(s) were still in the bytes but no longer in the page tree: the sheet(s) were re-hooked so they open, and their position follows the object order of the file, which is this rebuild’s guess rather than the document’s own.
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 3, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    input characters per sheet: [77, 78, 78]
+    input planted words: [['Beta'], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 77, 78, 78]
+    output planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
+### dangling-contents: Repaired dangling-contents.pdf: 4 page(s) recovered: 3 still hold content, 1 is blank. 3.7 KB → 2.0 KB (-47%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    ! 1 of the 4 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
+    ! 1 reference(s) on the recovered sheet(s) named objects the cut took (1 content stream(s)) and were removed, so the file points at nothing it does not hold.
+    dangling refs, input: {'contents': 1, 'annots': 0, 'images': 0, 'contents_kept': 3, 'annots_kept': 1, 'images_kept': 1}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 3, 'annots_kept': 1, 'images_kept': 1}
+    input characters per sheet: [78, 0, 78, 78]
+    input planted words: [['Alpha'], [], ['Gamma'], ['Delta']]
+    output characters per sheet: [78, 0, 78, 78]
+    output planted words: [['Alpha'], [], ['Gamma'], ['Delta']]
+### dangling-image-and-annots: Repaired dangling-image-and-annots.pdf: 4 page(s) readable. 3.7 KB → 2.0 KB (-46%).
+    ! The input already opened; this run re-wrote its structure without losing pages (4 in, 4 out).
+    ! 2 reference(s) on the recovered sheet(s) named objects the cut took (1 annotation(s), 1 image(s)) and were removed, so the file points at nothing it does not hold — those annotations and pictures are not in the copy.
+    dangling refs, input: {'contents': 0, 'annots': 1, 'images': 1, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 4, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [78, 77, 78, 78]
     input planted words: [['Alpha'], ['Beta'], ['Gamma'], ['Delta']]
     output characters per sheet: [78, 77, 78, 78]
@@ -101,9 +226,13 @@ ledger-32-input          mupdf 4 · qpdf 4 · pop None · pypdf None · check WA
     ! The file's own index could not be read: a fresh one was written over the 4 page object(s) still in the bytes.
     ! 1 of the 4 page(s) in the output is blank: its content stream holds no drawing operator, so the sheet opens and nothing appears on it.
     readers, input: pdfinfo: Syntax Error: End of file inside dictionary
+    dangling refs, input: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 3, 'annots_kept': 0, 'images_kept': 0}
+    dangling refs, output: {'contents': 0, 'annots': 0, 'images': 0, 'contents_kept': 3, 'annots_kept': 0, 'images_kept': 0}
     input characters per sheet: [1778, 12, 0, 0]
     input planted words: [[], [], [], []]
     output characters per sheet: [1778, 12, 0, 0]
     output planted words: [[], [], [], []]
+
 1 case(s) not preserved, of which 0 were refused outright
+0 produced file(s) name an object they do not hold: []
 1 case(s) whose produced file contradicts the sentence printed for it

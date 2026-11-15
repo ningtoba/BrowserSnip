@@ -37,6 +37,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as pdfjs from 'pdfjs-dist';
 import { GlobalWorkerOptions, OPS } from 'pdfjs-dist';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
+import { openPDF } from '@/lib/pdf/core/doc';
+import { PDFArray, PDFDict, PDFName, PDFStream } from '@maxwbh/pdf-lib';
 import { buildDamageCorpus, DAMAGE_CASES, SHEET_WORDS, type DamageCase } from './repair-damage-corpus';
 
 /**
@@ -279,5 +281,97 @@ describe('the shapes the report must never confuse', () => {
     expect(run.message).toContain('4 page(s) readable');
     expect(run.warnings).toContain('without losing pages (4 in, 4 out)');
     expect(run.warnings).not.toMatch(/blank|could not be recovered/);
+  });
+});
+
+/**
+ * Every reference a page still names whose object the file does not hold.
+ *
+ * The mirror of `docs/research/repair-damage-readers.py:references` (pikepdf): a
+ * `/Contents` that is not a stream, an `/Annots` entry or an `/XObject` entry that
+ * resolves to nothing. A sheet can carry all its ink and still leave two of these
+ * behind, which is what every reader then warns about on open.
+ */
+async function danglingReferences(bytes: Uint8Array): Promise<string[]> {
+  const doc = await openPDF(new Uint8Array(bytes), { ignoreEncryption: true });
+  const { context } = doc;
+  const resolves = (value: unknown): boolean => {
+    try {
+      const found = value instanceof PDFStream ? value : context.lookup(value as never);
+      return found instanceof PDFStream || found instanceof PDFDict || found instanceof PDFArray;
+    } catch {
+      return false;
+    }
+  };
+  const found: string[] = [];
+  doc.getPages().forEach((page, index) => {
+    const contents = page.node.get(PDFName.of('Contents'));
+    if (contents !== undefined) {
+      const refs = contents instanceof PDFArray ? contents.asArray() : [contents];
+      for (const ref of refs) if (!resolves(ref)) found.push(`${index}:contents`);
+    }
+    const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray);
+    for (const ref of annots?.asArray() ?? []) if (!resolves(ref)) found.push(`${index}:annots`);
+    const xobjects = page.node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    for (const name of xobjects?.keys() ?? []) if (!resolves(xobjects!.get(name))) found.push(`${index}:xobject`);
+  });
+  return found;
+}
+
+describe('what the cut took and the copy still pointed at', () => {
+  it('a sheet the page tree stopped naming is put back, not counted as lost', async () => {
+    const damaged = byName.get('orphaned-page-object')!;
+    // The instrument first: the damaged input really does hold a page object nothing
+    // names, and the input's own tree reads 3 sheets.
+    const input = await read(damaged.bytes, 'input');
+    expect(input.pages).toBe(3);
+    const run = await repair(damaged.bytes, 'orphaned-page-object.pdf');
+    const out = await read(run.bytes, 'orphaned-page-object');
+    // MuPDF and poppler open the input at 4 sheets: the object and its content stream
+    // are whole, only the `/Kids` entry is gone. Returning 3 and saying one "could not
+    // be recovered" was a page given up for an edit that never touched its bytes.
+    expect(out.pages).toBe(4);
+    expect(out.withWords).toBe(4);
+    expect(out.blank).toBe(0);
+    expect(run.message).toContain('4 page(s) recovered');
+    expect(run.message).toMatch(/1 of them re-hooked from page object\(s\)/);
+    expect(run.warnings).toMatch(/re-hooked so they open, and their position follows the object order/);
+    expect(run.warnings).not.toMatch(/could not be recovered/);
+  });
+
+  it('a page whose image and annotation the cut took points at neither afterwards', async () => {
+    const damaged = byName.get('dangling-image-and-annots')!;
+    // Two references dangle in the input. Without this reading passing here, a clean
+    // output below would only mean the instrument cannot see a dangling reference.
+    expect(await danglingReferences(damaged.bytes)).toEqual(['1:annots', '1:xobject']);
+    const run = await repair(damaged.bytes, 'dangling-image-and-annots.pdf');
+    const out = await read(run.bytes, 'dangling-image-and-annots');
+    expect(out.pages).toBe(4);
+    expect(await danglingReferences(run.bytes)).toEqual([]);
+    expect(run.warnings).toMatch(/2 reference\(s\) .* named objects the cut took \(1 annotation\(s\), 1 image\(s\)\)/);
+    expect(run.warnings).toMatch(/not in the copy/);
+  });
+
+  it('the control: an intact annotation and image are kept, not dropped', async () => {
+    const run = await repair(corpus.bases[3].bytes, 'base-rich.pdf');
+    expect(await danglingReferences(run.bytes)).toEqual([]);
+    expect(run.warnings).not.toMatch(/named objects the cut took/);
+    // Still present in the copy: `libqpdf`'s own tally of the same two references.
+    const doc = await openPDF(new Uint8Array(run.bytes), { ignoreEncryption: true });
+    const page = doc.getPage(1);
+    expect(page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.size()).toBe(1);
+    expect(page.node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict)?.keys().length).toBe(1);
+  });
+
+  it('a page whose own content stream the cut took is named, and its reference removed', async () => {
+    const damaged = byName.get('dangling-contents')!;
+    expect(await danglingReferences(damaged.bytes)).toEqual(['1:contents']);
+    const run = await repair(damaged.bytes, 'dangling-contents.pdf');
+    const out = await read(run.bytes, 'dangling-contents');
+    expect(out.pages).toBe(4);
+    expect(out.blank).toBe(1);
+    expect(await danglingReferences(run.bytes)).toEqual([]);
+    expect(run.message).toMatch(/1 is blank/);
+    expect(run.warnings).toMatch(/1 reference\(s\) .* \(1 content stream\(s\)\)/);
   });
 });

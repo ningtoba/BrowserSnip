@@ -27,6 +27,17 @@ const PAINT_NAMES = [
 ];
 const PAINT_IDS = new Set(PAINT_NAMES.map((name) => OPS[name]));
 
+/**
+ * pdf.js's node worker can throw *out of a read that has already settled*: a sheet
+ * whose `/Contents` the cut took answers `Bad (uncompressed) xref entry` from a
+ * microtask once the awaiting chain has returned. Unhandled, that kills the process
+ * mid-corpus and every case after it goes unmeasured, so both channels are caught
+ * and printed beside the case instead of ending the pass.
+ */
+const shout = (error) => console.log(`  !! ${String(error?.message ?? error).slice(0, 60)}`);
+process.on('uncaughtException', shout);
+process.on('unhandledRejection', shout);
+
 const DIR = process.argv[2] ?? '/tmp/rd';
 const WORDS = JSON.parse(readFileSync(join(DIR, 'manifest.json'), 'utf8')).sheet_words;
 
@@ -60,7 +71,12 @@ async function scan(path) {
 
 console.log('case                     pdf.js reads the input    pdf.js reads the repaired file');
 for (const name of readdirSync(join(DIR, 'corpus')).filter((item) => item.endsWith('.pdf')).sort()) {
-  const input = await scan(join(DIR, 'corpus', name));
+  let input;
+  try {
+    input = await scan(join(DIR, 'corpus', name));
+  } catch (error) {
+    input = `crashed (${String(error.message).slice(0, 24)})`;
+  }
   let outLine = 'no file';
   try {
     outLine = await scan(join(DIR, 'out', name));
