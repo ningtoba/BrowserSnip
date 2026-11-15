@@ -216,6 +216,10 @@ async function stamp(
   // The reach is the face's own declared lower bound — an AFM `/FontBBox` or the
   // outline font's bbox in font units — because the nominal AFM descender stops
   // 0.02 em above what a `g` actually draws and left its tip on the edge.
+  // SAFETY: a face handed to `embedFont` by `core/fonts` is a fontkit object that
+  // carries `embedder.font` with the program's own bbox; the public pdf-lib type
+  // stops at `heightAtSize`, so the optional shape below is the only reach for it
+  // and every step is optional-chained.
   const faceFont = (measured.font as unknown as {
     embedder?: { font?: { bbox?: { minY?: number }; FontBBox?: number[]; descent?: number; unitsPerEm?: number } };
   }).embedder?.font;
