@@ -302,15 +302,37 @@ export function jpegBytes(width: number, height: number, orientation?: number): 
 }
 
 /** A BMP header with real dimensions (the pixels are not read in jsdom). */
-export function bmpBytes(width: number, height: number): Uint8Array {
-  const bytes = new Uint8Array(54);
+/**
+ * A complete 24-bit bottom-up BMP: header, row-padded pixel array, and `bfSize` /
+ * `biSizeImage` both equal to the truth, the way every real encoder writes one.
+ *
+ * It used to be a 54-byte header with no pixels at all — a *truncated* file, and
+ * the reader now refuses those, so the fixture had to grow. `bmpTruncate` below
+ * cuts one short on purpose.
+ */
+export function bmpBytes(width: number, height: number, topDown = false): Uint8Array {
+  const stride = Math.ceil((width * 3) / 4) * 4;
+  const rows = Math.abs(height);
+  const size = 54 + stride * rows;
+  const bytes = new Uint8Array(size);
   bytes.set(Buffer.from('BM', 'latin1'), 0);
   const view = new DataView(bytes.buffer);
-  view.setUint32(18, width, true);
-  view.setUint32(22, height, true);
+  view.setUint32(2, size, true);
+  view.setUint32(10, 54, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, topDown ? -rows : rows, true);
   view.setUint16(26, 1, true);
   view.setUint16(28, 24, true);
+  view.setUint32(34, stride * rows, true);
   return bytes;
+}
+
+/** The same BMP with only `rows` of its pixel rows left in the file. */
+export function bmpTruncate(bytes: Uint8Array, rows: number): Uint8Array {
+  const width = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(18, true);
+  const stride = Math.ceil((width * 3) / 4) * 4;
+  return bytes.slice(0, 54 + stride * rows);
 }
 
 /** A lossy WebP (`VP8 ` chunk) whose frame header carries the size. */
@@ -391,7 +413,8 @@ export function readImageDims(bytes: Uint8Array): { width: number; height: numbe
     return dims(view.getUint32(16), view.getUint32(20));
   }
   if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
-    return dims(view.getUint32(18, true), view.getUint32(22, true));
+    // Signed: a negative height is a top-down BMP, not a 4-billion-row one.
+    return dims(Math.abs(view.getInt32(18, true)), Math.abs(view.getInt32(22, true)));
   }
   if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
     return dims(view.getUint16(26, true) & 0x3fff, view.getUint16(28, true) & 0x3fff);

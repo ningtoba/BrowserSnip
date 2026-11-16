@@ -129,6 +129,69 @@ export function extensionForMime(mime: string): string {
   return EXT_BY_MIME[base] ?? (base.startsWith('image/') ? base.slice(6) : 'bin');
 }
 
+/**
+ * How many bytes a BMP header says its pixel array occupies, and where it starts.
+ *
+ * Only the `BITMAPINFOHEADER` family (40 bytes and up) is modelled. A header this
+ * does not understand returns `null` so the browser still gets its try — a
+ * refusal is only ever made on the file's own numbers.
+ */
+function bmpPixelArray(bytes: Uint8Array):
+  | { strokes: string }
+  | { width: number; rows: number; offBits: number; required: number; bottomUp: boolean }
+  | null {
+  if (bytes.length < 26) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const headerSize = view.getUint32(14, true);
+  if (headerSize < 40) return null;
+  const width = view.getInt32(18, true);
+  const height = view.getInt32(22, true);
+  const planes = view.getUint16(26, true);
+  const bpp = view.getUint16(28, true);
+  const compression = view.getUint32(30, true);
+  // RLE (1, 2) is run-length coded, so no stride applies to it.
+  if (width <= 0 || height === 0 || planes !== 1) return null;
+  if (![1, 4, 8, 16, 24, 32].includes(bpp) || (compression !== 0 && compression !== 3)) return null;
+  const used = view.getUint32(46, true);
+  const palette = bpp <= 8 ? (used > 0 ? used : 2 ** bpp) * 4 : 0;
+  const headerEnd = 14 + headerSize + palette;
+  const offBits = view.getUint32(10, true);
+  const rows = Math.abs(height);
+  const stride = Math.ceil((bpp * width) / 32) * 4;
+  if (offBits < headerEnd) {
+    return { strokes: `its header points the pixels at byte ${offBits}, but the header and palette alone run to byte ${headerEnd}` };
+  }
+  if (offBits > bytes.length) {
+    return { strokes: `its header points the pixels at byte ${offBits}, past the ${bytes.length} byte(s) the file holds` };
+  }
+  return { width, rows, offBits, required: offBits + stride * rows, bottomUp: height > 0 };
+}
+
+/**
+ * Refuse a BMP whose own header describes more pixels than the file carries.
+ *
+ * Chrome does not: it paints the rows it has and fills the rest with white, so a
+ * 24-bit 243 x 160 file cut after 10 rows embedded as a complete 243 x 160 page
+ * with 150 invented white rows on top and nothing said (measured; Pillow calls
+ * the same file `truncated`). Every other raster format here fails loudly or
+ * carries a length; BMP is the one whose header states the byte count, so it is
+ * checked before the decoder is asked.
+ */
+function assertBmpComplete(bytes: Uint8Array): void {
+  const facts = bmpPixelArray(bytes);
+  if (!facts) return;
+  if ('strokes' in facts) throw new Error(facts.strokes);
+  if (bytes.length >= facts.required) return;
+  const stride = (facts.required - facts.offBits) / facts.rows;
+  const missing = Math.ceil((facts.required - bytes.length) / stride);
+  const where = facts.bottomUp ? 'top' : 'bottom';
+  throw new Error(
+    `its header describes ${facts.required} byte(s) of pixels for a ${facts.width} x ${facts.rows} picture `
+    + `but the file stops after ${bytes.length} — the ${Math.min(missing, facts.rows)} row(s) at its ${where} `
+    + 'would come out blank',
+  );
+}
+
 /** Resolve a MIME from magic bytes, then the declared type, then the name. */
 export function resolveImageMime(bytes: Uint8Array, declared?: string, name?: string): string {
   return sniffImageMime(bytes) ?? declared ?? (name ? mimeForFile(name) : undefined) ?? 'image/png';
@@ -147,6 +210,9 @@ export async function decodeImage(
   const mime = resolveImageMime(bytes, options.mime);
 
   switch (mime) {
+    case 'image/bmp':
+      assertBmpComplete(bytes);
+      return decodeNative(bytes, mime, options);
     case 'image/tiff':
       return decodeTiff(bytes, options);
     case 'image/svg+xml':

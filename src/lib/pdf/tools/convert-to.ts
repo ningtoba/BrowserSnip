@@ -190,6 +190,16 @@ const RASTER_DENSITY =
 const PNG_ALPHA =
   'A transparent PNG keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
 
+/**
+ * A BMP header carries its own byte count, and Chrome ignores it.
+ *
+ * Handed a short file the decoder paints the rows that are there and fills the
+ * rest with white; nothing distinguishes that from a picture of a white band.
+ * The reader compares the header against the file length and refuses by name.
+ */
+const BMP_TRUNCATED =
+  'A BMP header states exactly how many pixel bytes the file must hold, and the file is checked against it: one cut short — an interrupted copy or save — is refused by name instead of converting with the missing rows painted white.';
+
 /** Shared admissions for the text routes — true of the bundled layout engine. */
 const TEXT_NOTES = [
   'Text is drawn as real, selectable PDF text through embedded fonts, so it stays searchable and copyable.',
@@ -653,6 +663,8 @@ export const convertToTools: PdfToolDefinition[] = [
     const isHeic = format === 'heic';
     // PNG is the one format in this family that carries transparency.
     const isPng = format === 'png';
+    // BMP is the one whose header states, byte for byte, how much it must hold.
+    const isBmp = format === 'bmp';
     return {
       id,
       name: `${label} to PDF`,
@@ -672,6 +684,10 @@ export const convertToTools: PdfToolDefinition[] = [
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
         isPng ? PNG_ALPHA : '',
+        // Measured on the dev build: a 24-bit 243 x 160 BMP cut after 10 rows
+        // embedded as a complete page with 150 white rows Chrome invented, and
+        // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
+        isBmp ? BMP_TRUNCATED : '',
         RASTER_DENSITY,
         // Measured rather than assumed: two real HEIC files (32 KB and 472 B, both
         // `ftypheic`/hvc1, both decoded by Pillow on this machine) opened in neither
@@ -1777,6 +1793,13 @@ async function docxToBlocks(bytes: Uint8Array): Promise<Block[]> {
  * `refused`, when given, is where a rejected file's sentence goes while the
  * rest of the batch is still decoded; the caller puts those lines on the result
  * card. A batch of nothing but wrong-format files still fails, with every name.
+ *
+ * A refusal is pushed and *not* also logged: the runner promotes a logged line
+ * containing "could not" into `warnings`, so the same sentence reached the card
+ * twice — `"cut.bmp" could not be decoded: … — left out.` under
+ * `cut.bmp was left out: "cut.bmp" could not be decoded: …` — while a
+ * wrong-format refusal, whose sentence has no such word, printed once. The
+ * progress line below names the file for the log reader.
  */
 async function decodeImageBatch(
   context: ToolRunContext,
@@ -1808,7 +1831,6 @@ async function decodeImageBatch(
       const hint = 'Re-save it in the advertised format, or use Images to PDF, which takes anything this browser can decode.';
       if (!expected.refused) throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint });
       refused.push(`${sentence.replace(/\.$/, '')} — left out.`);
-      context.log(`${batch.name} was left out: ${sentence}`);
       context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
       continue;
     }
@@ -1823,7 +1845,6 @@ async function decodeImageBatch(
         throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint, detail: error });
       }
       refused.push(`${sentence.replace(/\.$/, '')} — left out.`);
-      context.log(`${batch.name} was left out: ${sentence}`);
       context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
       continue;
     }
