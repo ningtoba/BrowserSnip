@@ -742,6 +742,14 @@ describe('describeDelta', () => {
   it('has nothing to compare when the input size is unknown', () => {
     expect(describeDelta(null, 1000)).toBe('1000 B');
   });
+
+  // A zero-byte output is a size, not a missing one: `extract-attachments` hands
+  // back an empty enclosure and the row used to vanish, so the card said nothing
+  // about size where the truth was `0 B`.
+  it('still shows a zero-byte output', () => {
+    expect(describeDelta(2790, 0)).toBe('2.7 KB → 0 B · 100% smaller');
+    expect(describeDelta(null, 0)).toBe('0 B');
+  });
 });
 
 describe('ResultCard', () => {

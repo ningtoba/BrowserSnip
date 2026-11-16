@@ -1,0 +1,16 @@
+# extract-attachments, the dev build BEFORE round 062's fix — the same 9 runs the after
+# log repeats. `before-path-name.json` was driven on a scratch copy of the shape
+# (`/tmp/r062/path-name.pdf`, 16-byte payload) before the committed fixture existed, so
+# its payload line is that copy's and the run's real defect there is the name, not the
+# bytes. 3 of 9 red is the instrument being proved, not a harness failure.
+FAIL before-af-no-name.json: claimed no embedded files over 1 payload(s); card counted 0, fixture carries 1; no file produced; one attachment produced 0 download name(s): []; payload SHA-256 does not match the fixture
+ok   before-af-only.json
+ok   before-attach.json
+FAIL before-empty-f-no-uf.json: the download name is empty; name=[''] — the fixture's payloads are ['key-only.bin']
+ok   before-f-empty-uf-name.json
+ok   before-none.json
+FAIL before-path-name.json: payload SHA-256 does not match the fixture
+ok   before-same-name-two-nodes.json
+ok   before-zero-byte.json
+
+6/9 runs agree with their fixture

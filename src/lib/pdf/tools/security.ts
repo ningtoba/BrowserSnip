@@ -1359,6 +1359,7 @@ export const securityTools: PdfToolDefinition[] = [
     notes: [
       'A PDF with no embedded files returns a report saying so rather than an empty archive.',
       'The files are written out byte for byte, so a protected document still opens and a corrupted enclosure stays corrupted.',
+      'A file the PDF gives no usable name is named from its position in the file (`attachment-1.bin`); a name that is a path is flattened (`reports-q3 summary.txt`) and a second file of the same name gets a `-2` suffix. The bytes are the same either way.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1368,16 +1369,21 @@ export const securityTools: PdfToolDefinition[] = [
           message: 'No attachments found.',
         });
       }
-      const { createZip } = await import('../core/archive');
+      const { createZip, sanitiseEntryName } = await import('../core/archive');
+      // One name for both halves: the archive flattens an entry name, and a single
+      // file's download name is an entry name the browser cannot take a `/` in.
+      const outName = (a: (typeof found)[number]) => sanitiseEntryName(a.filename ?? a.name);
       const single = found.length === 1
         ? new Blob([found[0].bytes as BlobPart], { type: found[0].mimeType ?? 'application/octet-stream' })
         : await createZip(
-          found.map((a) => ({ name: a.filename ?? a.name, data: a.bytes })),
+          found.map((a) => ({ name: outName(a), data: a.bytes })),
           { comment: `Extracted from ${input.name}` },
         );
       return filesResult(
-        [{ blob: single, name: found.length === 1 ? (found[0].filename ?? found[0].name) : `${downloadStem(input.name)}-attachments.zip` }],
-        `Found ${found.length} embedded file(s): ${found.map((a) => `${a.name} (${formatBytes(a.size)})`).join(', ')}.`,
+        // The sentence names the file the way `/UF`/`/F` names it, not by the
+        // name-tree key, so it cannot disagree with the name on the download.
+        [{ blob: single, name: found.length === 1 ? outName(found[0]) : `${downloadStem(input.name)}-attachments.zip` }],
+        `Found ${found.length} embedded file(s): ${found.map((a) => `${outName(a)} (${formatBytes(a.size)})`).join(', ')}.`,
       );
     },
   },

@@ -8,6 +8,22 @@ Each `sha256=` is the payload the fixture was built to carry; a reader that list
 name whose hash differs found the entry but not its bytes, which is the failure this
 repo calls a blank page with a page count.
 
+== af-no-name.pdf
+   shape    catalogue /AF whose FileSpec has no /F and no /UF
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    nothing
+   pypdf    nothing
+   poppler  nothing
+   expected attachment-1.bin sha256=9c326996e40a
+
+== af-only.pdf
+   shape    catalogue /AF array only, no /Names entry
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    nothing
+   pypdf    nothing
+   poppler  nothing
+   expected af-only.bin sha256=b04390a9e880
+
 == annot-only.pdf
    shape    attachment reachable only through a page /FileAttachment
    producer libqpdf 12.3.2 (pikepdf)
@@ -81,6 +97,22 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    poppler  both-names.bin
    expected both-names.bin sha256=f2e68a9e71e0
 
+== empty-f-no-uf.pdf
+   shape    empty /F and no /UF: the name-tree key is the only name
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    key-only.bin sha256=90d6d7b6e133 = expected
+   pypdf    key-only.bin sha256=90d6d7b6e133 = expected
+   poppler  nothing
+   expected key-only.bin sha256=90d6d7b6e133
+
+== f-empty-uf-name.pdf
+   shape    empty /F, the name only in /UF, name-tree key differing from both
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    tree-key.bin sha256=0bb1d09444e5 (unexpected name)
+   pypdf    tree-key.bin sha256=0bb1d09444e5 (unexpected name), uf-name.bin sha256=0bb1d09444e5 = expected
+   poppler  uf-name.bin
+   expected uf-name.bin sha256=0bb1d09444e5
+
 == flat-names-indirect.pdf
    shape    flat /Names, indirect FileSpec, /EF << /F >>, full /Params
    producer libqpdf 12.3.2 (pikepdf)
@@ -113,6 +145,14 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    poppler  no-params.bin
    expected no-params.bin sha256=09ed501c75b3
 
+== path-name.pdf
+   shape    a /UF and /F that are a path, "reports/q3 summary.txt"
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    reports/q3 summary.txt sha256=8c24f24bdfb5 = expected
+   pypdf    reports/q3 summary.txt sha256=8c24f24bdfb5 = expected
+   poppler  reports/q3 summary.txt
+   expected reports/q3 summary.txt sha256=8c24f24bdfb5
+
 == pypdf-native.pdf
    shape    pypdf's own FileSpec + /EmbeddedFiles entry
    producer pypdf 6.14.2
@@ -121,6 +161,14 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    poppler  ledger.csv
    expected ledger.csv sha256=dc27bf90d6be
 
+== same-name-two-nodes.pdf
+   shape    the same name in the name tree and in a page /FileAttachment, different bytes
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    dup.bin sha256=4c8b48a4c6a8 = expected
+   pypdf    dup.bin sha256=4c8b48a4c6a8 = expected
+   poppler  dup.bin, dup.bin
+   expected dup.bin sha256=4c8b48a4c6a8, dup.bin (2) sha256=9477eb9b0aae
+
 == unicode-name.pdf
    shape    UTF-16BE /Names key, /UF differing from /F
    producer libqpdf 12.3.2 (pikepdf)
@@ -128,3 +176,11 @@ Syntax Error: Invalid FileSpec: Embedded file stream is not an indirect referenc
    pypdf    über-𓂀.txt sha256=067570bac832 = expected
    poppler  über-������.txt
    expected über-𓂀.txt sha256=067570bac832
+
+== zero-byte.pdf
+   shape    an /EmbeddedFile stream with a zero-byte payload
+   producer libqpdf 12.3.2 (pikepdf)
+   MuPDF    empty.bin sha256=e3b0c44298fc = expected
+   pypdf    empty.bin sha256=e3b0c44298fc = expected
+   poppler  empty.bin
+   expected empty.bin sha256=e3b0c44298fc

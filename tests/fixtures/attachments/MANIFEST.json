@@ -5,6 +5,22 @@
   "sha256": "bb101755c74ce2140dbcb93e3c5a68ba78bcc705a9e1f0407dedcc36a57ad448",
   "shape": "the three-page base, written by MuPDF"
  },
+ "af-no-name.pdf": {
+  "payloads": {
+   "attachment-1.bin": "9c326996e40a9cf19508662641d3399aad5d2871b2ab4ec355142fab04043c82"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "087f9c86cc30849442ec5f21030181e5710a221f08cc12972478da7636ca81fc",
+  "shape": "catalogue /AF whose FileSpec has no /F and no /UF"
+ },
+ "af-only.pdf": {
+  "payloads": {
+   "af-only.bin": "b04390a9e88070fed192b2332c4948c49f8a2606707ca2eaf1567393e4c5140d"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "947b3c115182a821dfff76239cda99f795bd1bc48d1fdfb2356bf03c2aebe626",
+  "shape": "catalogue /AF array only, no /Names entry"
+ },
  "annot-only.pdf": {
   "payloads": {
    "annot-only.bin": "7ba3aad285a9e8b7a87b995b52c8a1d68d070f51a74959e6047e1ae24b19b02a"
@@ -78,6 +94,22 @@
   "sha256": "092555a44f14de6bd2fb59cc244ccf4020b322b944ccea13d1a9ed2634de588b",
   "shape": "/EF << /F decoy /UF real >>: /UF must win"
  },
+ "empty-f-no-uf.pdf": {
+  "payloads": {
+   "key-only.bin": "90d6d7b6e133591a9253f3ce843a72122444edc8770215722a36c9278bdde538"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "06b92a4169340c405dec9c1c00115f8c3d78673c405187be19d8faf7ac7c956c",
+  "shape": "empty /F and no /UF: the name-tree key is the only name"
+ },
+ "f-empty-uf-name.pdf": {
+  "payloads": {
+   "uf-name.bin": "0bb1d09444e564ca0dda66f961c1d1175ae714e0ae386725695bf943d7eaca12"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "f49940803748650fdb8296b01be1c0265cad126749b2b1bb574b5f56aa1dbe9a",
+  "shape": "empty /F, the name only in /UF, name-tree key differing from both"
+ },
  "flat-names-indirect.pdf": {
   "payloads": {
    "flat-ref.bin": "b71020a0db478637d22d3b3964df821029a12296f518cdbc595c9e0cbfcb932d"
@@ -111,6 +143,14 @@
   "sha256": "51b260fd0c5976653ec649450eaffc3e37ccbcbcbf5237422036ad8c8e32dea6",
   "shape": "EmbeddedFile stream with no /Params (no Size, no CheckSum)"
  },
+ "path-name.pdf": {
+  "payloads": {
+   "reports/q3 summary.txt": "8c24f24bdfb59ce98b67b77be1cda8fec90317a73508329a34ee32b9233462d9"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "f791d393512dd48399860c54990b8c51a51faebd5aa6835c2d316b7c121bf469",
+  "shape": "a /UF and /F that are a path, \"reports/q3 summary.txt\""
+ },
  "pypdf-native.pdf": {
   "payloads": {
    "ledger.csv": "dc27bf90d6be70abb0146ec37f9da88633a1ba44ae84a5f102640b6c5abb776f"
@@ -119,6 +159,15 @@
   "sha256": "dd0f52f7bfc4fc9c86179ed0d349f852d8653ab4c7a531cd07a9201fc4e901e3",
   "shape": "pypdf's own FileSpec + /EmbeddedFiles entry"
  },
+ "same-name-two-nodes.pdf": {
+  "payloads": {
+   "dup.bin": "4c8b48a4c6a839769852dade06113f32c261f8d8982b5ef2bd6a24ae5f6a4b58",
+   "dup.bin (2)": "9477eb9b0aae10b96bde90320fc43c8dd55f98510ad597fa102410697ce8e35c"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "a0d2f21a17e40aa056c403c7a9be68ed9dd6a12e16e776f0427e0861d9575f31",
+  "shape": "the same name in the name tree and in a page /FileAttachment, different bytes"
+ },
  "unicode-name.pdf": {
   "payloads": {
    "über-𓂀.txt": "067570bac8320c1d6ee3ddf08d35248281ffcf3ab64277a4c82e668d4bc98325"
@@ -126,5 +175,13 @@
   "producer": "libqpdf 12.3.2 (pikepdf)",
   "sha256": "97cde48ff681db4ee1e2b23ba0a5717276eb63022e594efce28c84b2f27842d7",
   "shape": "UTF-16BE /Names key, /UF differing from /F"
+ },
+ "zero-byte.pdf": {
+  "payloads": {
+   "empty.bin": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "producer": "libqpdf 12.3.2 (pikepdf)",
+  "sha256": "e8f10b1a03bdd576e0a33ce87fbf58c29906d85ead70e6ba5ad968411a274084",
+  "shape": "an /EmbeddedFile stream with a zero-byte payload"
  }
 }

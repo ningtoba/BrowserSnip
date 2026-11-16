@@ -125,6 +125,24 @@ CHECKSUMS = {
     "f2e68a9e71e0e427": "3e4c14d4b21f653aeeea819dd9fc553a",
     "f61ea5e77bfc4640": "84ae02adb222a497a68fe705099f13e9",
     "f688bc41534910ec": "6c2b7a8fbbf12582857558144a62a009",
+    # added for the extraction round (round 062): the shapes the bank did not hold
+    "b04390a9e88070fe": "ab270ba91e9a885d7d69481d9a77f7f3",
+    "0bb1d09444e564ca": "0b5535d27bd5124d98625100145c0e78",
+    "0727b0e33dc107a8": "2c4df9d654fe90ab0e689c024e901281",
+    "4c8b48a4c6a83976": "2dcb12d941867b1d49a4ce086704bef8",
+    "9477eb9b0aae10b9": "8c79280c29df985518abefb2bd3ba4ef",
+    "f7bb42b9f891fd4c": "6511fcd086db2bb13acde139ed00ecd1",
+    "2812be2ea8d7df0a": "0c26c6abc5b27ed7b3c14b387757e956",
+    "14efcf5cd85dd66d": "72c0673f99f5d5dfef51c9173de21f64",
+    "49bcd66dbd45590c": "7a8183178df22b7ad42ff8ca8a4a8793",
+    # a zero-byte payload: the digest of nothing, and the size the reader must not
+    # report as "no file".
+    "e3b0c44298fc1c14": "d41d8cd98f00b204e9800998ecf8427e",
+    # a file specification with no name at all: the payload is there, the name is not.
+    "90d6d7b6e133591a": "d6feabc7258c70ee5fe564eecbe4a20b",
+    "9c326996e40a9cf1": "a7a96ec80b13a4216ab5813fec042dfd",
+    # a name that is a path: common in files exported from a folder tree.
+    "8c24f24bdfb59ce9": "9b1a9fa5bad5929bb8f46da6864fd213",
 }
 
 
@@ -430,6 +448,96 @@ def build() -> None:
         attach_flat(pdf, [(pikepdf.String("bare.bin"), pdf.make_indirect(fs))])
 
     hand("ef-dict-indirect.pdf", "/EF is an indirect dict; no /Subtype, no /Params", p14, f14)
+
+    # 15 — named only by a catalogue `/AF` associated-files entry: no name tree at
+    # all. PDF 2.0 allows it and the app's own `addAttachments` writes `/AF`, so a
+    # reader that trusts it in one direction and not the other is the pattern here.
+    p15 = {"af-only.bin": payload("af-only")}
+
+    def f15(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, p15["af-only.bin"]))
+        fs = pdf.make_indirect(file_spec(pdf, stream, name="af-only.bin"))
+        pdf.Root["/AF"] = pikepdf.Array([fs])
+
+    hand("af-only.pdf", "catalogue /AF array only, no /Names entry", p15, f15)
+
+    # 16 — `/F` is the **empty** string and only `/UF` carries the name. What does a
+    # viewer that prefers `/UF` show, and does an empty `/F` fall back at all?
+    p16 = {"uf-name.bin": payload("f-empty")}
+
+    def f16(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, p16["uf-name.bin"]))
+        fs = pdf.make_indirect(D(Type=N("Filespec"), F=pikepdf.String(""), UF=pikepdf.String("uf-name.bin"),
+                                 EF=D(F=stream)))
+        attach_flat(pdf, [(pikepdf.String("tree-key.bin"), fs)])
+
+    hand("f-empty-uf-name.pdf", "empty /F, the name only in /UF, name-tree key differing from both", p16, f16)
+
+    # 17 — the **same name** for two different byte streams, in two different nodes:
+    # the catalogue name tree and a page `/FileAttachment`. Two files, one name — an
+    # extractor that keys its output on the name loses one of them.
+    # Both payloads are filed under `dup.bin`; the manifest keys have to tell them
+    # apart in one dict, so the second says so.
+    dup1 = payload("dup-one")
+    dup2 = payload("dup-two", shift=5)
+    p17 = {"dup.bin": dup1, "dup.bin (2)": dup2}
+
+    def f17(pdf):
+        one = pdf.make_indirect(ef_stream(pdf, dup1))
+        two = pdf.make_indirect(ef_stream(pdf, dup2))
+        fs1 = pdf.make_indirect(file_spec(pdf, one, name="dup.bin"))
+        fs2 = pdf.make_indirect(file_spec(pdf, two, name="dup.bin"))
+        attach_flat(pdf, [(pikepdf.String("dup.bin"), fs1)])
+        pdf.pages[0]["/Annots"] = pikepdf.Array([file_attachment(pdf, fs2)])
+
+    hand("same-name-two-nodes.pdf", "the same name in the name tree and in a page /FileAttachment, different bytes", p17, f17)
+
+    # 18 — a zero-byte payload. A file of no bytes is still a file; a reader that
+    # tests the payload's truthiness drops it.
+    p18 = {"empty.bin": b""}
+
+    def f18(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, b""))
+        fs = pdf.make_indirect(file_spec(pdf, stream, name="empty.bin"))
+        attach_flat(pdf, [(pikepdf.String("empty.bin"), fs)])
+
+    hand("zero-byte.pdf", "an /EmbeddedFile stream with a zero-byte payload", p18, f18)
+
+    # 19 — `/F` is the empty string and there is no `/UF` at all: the name-tree key is
+    # the only name the file carries. What is the extracted file called?
+    p19 = {"key-only.bin": payload("no-name")}
+
+    def f19(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, p19["key-only.bin"]))
+        fs = pdf.make_indirect(D(Type=N("Filespec"), F=pikepdf.String(""), EF=D(F=stream)))
+        attach_flat(pdf, [(pikepdf.String("key-only.bin"), fs)])
+
+    hand("empty-f-no-uf.pdf", "empty /F and no /UF: the name-tree key is the only name", p19, f19)
+
+    # 20 — a catalogue `/AF` file specification carrying no `/F` and no `/UF` — only
+    # `/EF`, a `/Desc` and the `/AFRelationship` PDF 2.0 asks for. The payload is
+    # reachable; no name is.
+    # The file has no name, so the manifest records the one an extractor must invent.
+    p20 = {"attachment-1.bin": payload("af-noname")}
+
+    def f20(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, p20["attachment-1.bin"]))
+        fs = pdf.make_indirect(D(Type=N("Filespec"), Desc=pikepdf.String("an associated file with no name"),
+                                 AFRelationship=N("Supplement"), EF=D(F=stream)))
+        pdf.Root["/AF"] = pikepdf.Array([fs])
+
+    hand("af-no-name.pdf", "catalogue /AF whose FileSpec has no /F and no /UF", p20, f20)
+
+    # 21 — the name is a path. A download attribute may not contain `/`, so the name
+    # has to be flattened the same way an archive entry is.
+    p21 = {"reports/q3 summary.txt": payload("path-name")}
+
+    def f21(pdf):
+        stream = pdf.make_indirect(ef_stream(pdf, p21["reports/q3 summary.txt"]))
+        fs = pdf.make_indirect(file_spec(pdf, stream, name="reports/q3 summary.txt"))
+        attach_flat(pdf, [(pikepdf.String("reports/q3 summary.txt"), fs)])
+
+    hand("path-name.pdf", "a /UF and /F that are a path, \"reports/q3 summary.txt\"", p21, f21)
 
     write_manifest(TARGET, freeze_all_here())
 

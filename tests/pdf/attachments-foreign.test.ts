@@ -44,6 +44,7 @@ import { newPDF, openPDF, savePDF, type PDFDocument } from '@/lib/pdf/core/doc';
 import { addAttachments, listAttachments, md5Hex, removeAttachments } from '@/lib/pdf/core/attachments';
 import { context } from '@/lib/pdf/core/doc';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
+import { readZip } from '@/lib/pdf/core/archive';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import type { ToolValues } from '@/lib/pdf/tools/types';
 
@@ -63,6 +64,8 @@ interface Case {
   /** Which outside readers list it — `docs/research/attachments-foreign-shapes.log`. */
   seenBy: string;
   expect: { name: string; sha256: string }[];
+  /** The payload is zero bytes, so the "every byte value is here" checks cannot run. */
+  empty?: boolean;
 }
 
 /** Payload SHA-256s are the values `scripts/attachments-foreign-fixtures.py` planted. */
@@ -157,6 +160,53 @@ const CASES: Case[] = [
     seenBy: 'pypdf (MuPDF mojibakes it, poppler fails to print it)',
     expect: [{ name: 'über-𓂀.txt', sha256: '067570bac8320c1d6ee3ddf08d35248281ffcf3ab64277a4c82e668d4bc98325' }],
   },
+  // Round 062 — the shapes the extraction side had never been measured on.
+  {
+    file: 'af-only.pdf',
+    shape: 'catalogue /AF array and nothing else',
+    seenBy: 'none of MuPDF, pypdf, poppler',
+    expect: [{ name: 'af-only.bin', sha256: 'b04390a9e88070fed192b2332c4948c49f8a2606707ca2eaf1567393e4c5140d' }],
+  },
+  {
+    file: 'af-no-name.pdf',
+    shape: 'catalogue /AF whose FileSpec carries no /F and no /UF — the payload is reachable, the name is not',
+    seenBy: 'none of MuPDF, pypdf, poppler',
+    expect: [{ name: 'attachment-1.bin', sha256: '9c326996e40a9cf19508662641d3399aad5d2871b2ab4ec355142fab04043c82' }],
+  },
+  {
+    file: 'empty-f-no-uf.pdf',
+    shape: '`/F ()` with no `/UF`: the name-tree key is the only name the file carries',
+    seenBy: 'MuPDF, pypdf',
+    expect: [{ name: 'key-only.bin', sha256: '90d6d7b6e133591a9253f3ce843a72122444edc8770215722a36c9278bdde538' }],
+  },
+  {
+    file: 'f-empty-uf-name.pdf',
+    shape: '`/F ()` and the name only in `/UF`, the name-tree key differing from both',
+    seenBy: 'pypdf, poppler',
+    expect: [{ name: 'tree-key.bin', sha256: '0bb1d09444e564ca0dda66f961c1d1175ae714e0ae386725695bf943d7eaca12' }],
+  },
+  {
+    file: 'path-name.pdf',
+    shape: 'a `/UF` and `/F` that are a path, `reports/q3 summary.txt`',
+    seenBy: 'MuPDF, pypdf, poppler',
+    expect: [{ name: 'reports/q3 summary.txt', sha256: '8c24f24bdfb59ce98b67b77be1cda8fec90317a73508329a34ee32b9233462d9' }],
+  },
+  {
+    file: 'same-name-two-nodes.pdf',
+    shape: 'the SAME name in the name tree and in a page /FileAttachment, different bytes',
+    seenBy: 'MuPDF, pypdf (one of the two); poppler lists both',
+    expect: [
+      { name: 'dup.bin', sha256: '4c8b48a4c6a839769852dade06113f32c261f8d8982b5ef2bd6a24ae5f6a4b58' },
+      { name: 'dup.bin', sha256: '9477eb9b0aae10b96bde90320fc43c8dd55f98510ad597fa102410697ce8e35c' },
+    ],
+  },
+  {
+    file: 'zero-byte.pdf',
+    shape: 'an /EmbeddedFile stream whose payload is zero bytes',
+    seenBy: 'MuPDF, pypdf, poppler',
+    expect: [{ name: 'empty.bin', sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }],
+    empty: true,
+  },
 ];
 
 /**
@@ -200,10 +250,12 @@ describe('the committed fixtures are the bytes the generator recorded', () => {
     for (const testCase of CASES) {
       const entry = manifest[testCase.file];
       expect(entry, `${testCase.file} is in the manifest`).toBeTruthy();
-      expect(Object.keys(entry.payloads).sort()).toEqual(testCase.expect.map((w) => w.name).sort());
-      for (const wanted of testCase.expect) {
-        expect(entry.payloads[wanted.name], `${testCase.file}/${wanted.name}`).toBe(wanted.sha256);
-      }
+      // The digests, in order, not the dictionary keys: `same-name-two-nodes.pdf`
+      // files two payloads under one name and `af-no-name.pdf` has no name at all,
+      // so the manifest keys cannot be the name the file carries.
+      expect(Object.values(entry.payloads).sort(), testCase.file).toEqual(
+        testCase.expect.map((wanted) => wanted.sha256).sort(),
+      );
     }
   });
 });
@@ -254,18 +306,24 @@ describe('the /CheckSum a foreign file stores is read, not just recomputed', () 
 
 const listed = async (file: string) => listAttachments(await open(file));
 
+
 describe.each(CASES)('listAttachments over a foreign file: $file', (testCase) => {
   it(`finds what ${testCase.shape} stores, with the bytes it stores`, async () => {
     const entries = await listed(testCase.file);
     const want = testCase.expect;
     expect(entries.map((entry) => entry.name), testCase.shape).toEqual(want.map((w) => w.name));
-    for (const wanted of want) {
-      const entry = entries.find((e) => e.name === wanted.name);
+    // Two attachments may share a name (`same-name-two-nodes.pdf`), so the pair is
+    // matched by position once the names are equal; a name lookup would hand the
+    // first entry to both expectations and pass on one payload twice.
+    const duplicated = new Set(want.map((w) => w.name)).size < want.length;
+    for (const [index, wanted] of want.entries()) {
+      const entry = duplicated ? entries[index] : entries.find((e) => e.name === wanted.name);
       expect(entry, `${wanted.name} is not listed`).toBeTruthy();
       // Content, not count: a name beside empty bytes is the failure this repo
       // already refuses for a blank page.
       expect(sha256(entry!.bytes), `${wanted.name} payload`).toBe(wanted.sha256);
       expect(entry!.size).toBe(entry!.bytes.length);
+      if (testCase.empty) continue;
       expect(entry!.bytes.length).toBeGreaterThan(0);
       // Every byte value 0x00-0xFF is in the payload, so a latin1/UTF-8 detour in
       // the read path changes the hash rather than the length.
@@ -282,7 +340,7 @@ describe.each(CASES)('listAttachments over a foreign file: $file', (testCase) =>
       // pass over the payload, it has to describe the bytes that were extracted. A
       // stored checksum that disagreed with them would be reported to the user as
       // though it were a fact about the file.
-      expect(entry.checksum, `${entry.name}: reported digest vs extracted bytes`).toBe(md5Hex(entry.bytes));
+      expect(entry.checksum, `${entry.name}: reported digest vs extracted bytes`).toBe(md5Of(entry.bytes));
       if (entry.name === 'no-params.bin' || entry.name === 'bare.bin') {
         // Those two fixtures carry no `/Params` at all, so the digest here is ours.
         expect(entry.creationDate).toBeUndefined();
@@ -298,18 +356,18 @@ describe.each(CASES)('listAttachments over a foreign file: $file', (testCase) =>
  */
 const md5Of = (bytes: Uint8Array) => md5Hex(bytes);
 
-describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
-  const run = (toolId: string, values: ToolValues, file: string) => {
-    expect(getPdfTool(toolId), `tool ${toolId} is registered`).toBeTruthy();
-    return runPdfTool({
-      toolId,
-      files: [new File([fixtureBytes(file) as BlobPart], file, { type: 'application/pdf' })],
-      values,
-      onProgress: () => undefined,
-      onLog: () => undefined,
-    });
-  };
+const run = (toolId: string, values: ToolValues, file: string) => {
+  expect(getPdfTool(toolId), `tool ${toolId} is registered`).toBeTruthy();
+  return runPdfTool({
+    toolId,
+    files: [new File([fixtureBytes(file) as BlobPart], file, { type: 'application/pdf' })],
+    values,
+    onProgress: () => undefined,
+    onLog: () => undefined,
+  });
+};
 
+describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
   it('extract-attachments hands back the original bytes of a file MuPDF embedded', async () => {
     const outcome = await run('extract-attachments', {}, 'mupdf-native.pdf');
     expect(outcome.outputs, 'the run produced no file').toHaveLength(1);
@@ -416,6 +474,72 @@ describe('the two tools docs/TOOL-TRIAGE.md ERRORS 4 accused', () => {
     expect(listAttachments(doc)).toEqual([]);
     const saved = await openPDF(await savePDF(doc), { updateMetadata: false, ignoreEncryption: true });
     expect(listAttachments(saved)).toEqual([]);
+  });
+});
+
+/**
+ * The name the extracted file arrives under, measured off the run's own output.
+ *
+ * Round 062: the tool keyed the output on `entry.filename ?? entry.name`, and
+ * `specName` returned the **empty string** for a blank `/F` — so a file whose name
+ * lived only in `/UF` was called `""` and the browser saved it under no name at
+ * all, and an unnamed `/AF` entry was dropped before it could be extracted. The
+ * fallbacks below are ordered: `/UF`, `/F`, the name-tree key, then a position.
+ */
+describe('the output name of an attachment that is unnamed or named oddly', () => {
+  const draft = async (file: string) => {
+    const outcome = await run('extract-attachments', {}, file);
+    expect(outcome.outputs, `${file} produced no file`).toHaveLength(1);
+    return outcome;
+  };
+
+  it('names a file whose only name is /UF by that /UF, and its sentence agrees', async () => {
+    const outcome = await draft('f-empty-uf-name.pdf');
+    expect(outcome.outputs[0].name).toBe('uf-name.bin');
+    // The sentence used to print the name-tree key while the download was the /UF.
+    expect(outcome.message).toMatch(/uf-name\.bin \(/);
+    expect(outcome.message).not.toMatch(/tree-key\.bin/);
+  });
+
+  it('falls back to the name-tree key when /F is blank and there is no /UF', async () => {
+    const outcome = await draft('empty-f-no-uf.pdf');
+    expect(outcome.outputs[0].name).toBe('key-only.bin');
+    expect(sha256(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer())))
+      .toBe('90d6d7b6e133591a9253f3ce843a72122444edc8770215722a36c9278bdde538');
+  });
+
+  it('extracts an /AF attachment that carries no name at all, under a position name', async () => {
+    // The payload is in the file and no name is: dropping the entry lost the file.
+    const outcome = await draft('af-no-name.pdf');
+    expect(outcome.outputs[0].name).toBe('attachment-1.bin');
+    expect(sha256(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer())))
+      .toBe('9c326996e40a9cf19508662641d3399aad5d2871b2ab4ec355142fab04043c82');
+  });
+
+  it('flattens a path-shaped name the way an archive entry is flattened', async () => {
+    // A download attribute may not carry `/`: before, the browser saved
+    // `reports_q3 summary.txt` under a name the card never showed.
+    const outcome = await draft('path-name.pdf');
+    expect(outcome.outputs[0].name).toBe('reports-q3 summary.txt');
+    expect(outcome.outputs[0].name).not.toContain('/');
+  });
+
+  it('keeps two attachments that share a name apart, with both payloads', async () => {
+    const outcome = await draft('same-name-two-nodes.pdf');
+    expect(outcome.outputs[0].name).toBe('same-name-two-nodes-attachments.zip');
+    const entries = await readZip(outcome.outputs[0].blob);
+    expect(entries.map((entry) => entry.name).sort()).toEqual(['dup-2.bin', 'dup.bin']);
+    expect(entries.map((entry) => sha256(entry.bytes)).sort()).toEqual([
+      '4c8b48a4c6a839769852dade06113f32c261f8d8982b5ef2bd6a24ae5f6a4b58',
+      '9477eb9b0aae10b96bde90320fc43c8dd55f98510ad597fa102410697ce8e35c',
+    ]);
+  });
+
+  it('extracts a zero-byte payload as an empty file, not as no file', async () => {
+    const outcome = await draft('zero-byte.pdf');
+    expect(outcome.outputs[0].name).toBe('empty.bin');
+    expect(outcome.outputs[0].blob.size).toBe(0);
+    expect(outcome.message).toMatch(/empty\.bin \(0 B\)/);
   });
 });
 

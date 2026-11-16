@@ -168,12 +168,28 @@ function collectNameTree(
   }
 }
 
-/** The name a file specification carries: `/UF` — the Unicode name — then `/F`. */
+/**
+ * The name a file specification carries: `/UF` — the Unicode name — then `/F`.
+ *
+ * A key that is present but **blank** is skipped rather than returned: producers
+ * write `/F ()` when they only have a Unicode name, and `??` alone would stop at
+ * the empty string and hand the caller a file called "".
+ */
 function specName(doc: PDFDocument, spec: PDFDict): string | undefined {
-  return (
-    decodeTextString(resolve(doc, spec.get(PDFName.of('UF')))) ??
-    decodeTextString(resolve(doc, spec.get(PDFName.of('F'))))
-  );
+  for (const key of ['UF', 'F'] as const) {
+    const text = decodeTextString(resolve(doc, spec.get(PDFName.of(key))));
+    if (text !== undefined && text.trim() !== '') return text;
+  }
+  return undefined;
+}
+
+/**
+ * The name to file an entry under when neither the specification nor its host
+ * carries one: a payload still has to arrive with *a* name. `/AF` and its
+ * annotations have no name-tree key to fall back to, so the position stands in.
+ */
+function unnamedName(index: number): string {
+  return `attachment-${index}.bin`;
 }
 
 /**
@@ -206,8 +222,8 @@ function filespecSites(doc: PDFDocument): FilespecSite[] {
       const value = af.get(i);
       const spec = resolve(doc, value);
       if (!looksLikeFilespec(spec)) continue;
-      const name = specName(doc, spec);
-      if (name) sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: af });
+      const name = specName(doc, spec) ?? unnamedName(i + 1);
+      sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: af });
     }
   }
 
@@ -224,9 +240,11 @@ function filespecSites(doc: PDFDocument): FilespecSite[] {
       const value = annot.get(PDFName.of('FS')) ?? annot.get(PDFName.of('A'));
       const spec = resolve(doc, value);
       if (!looksLikeFilespec(spec)) continue;
-      const name =
-        specName(doc, spec) ?? decodeTextString(resolve(doc, annot.get(PDFName.of('Contents'))));
-      if (name) sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: annot });
+      const contents = decodeTextString(resolve(doc, annot.get(PDFName.of('Contents'))));
+      const name = specName(doc, spec)
+        ?? (contents !== undefined && contents.trim() !== '' ? contents : undefined)
+        ?? unnamedName(i + 1);
+      sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: annot });
     }
   }
 

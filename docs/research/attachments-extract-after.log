@@ -1,0 +1,12 @@
+ok   after-af-no-name.json
+ok   after-af-only.json
+ok   after-attach.json
+ok   after-dark.json
+ok   after-empty-f-no-uf.json
+ok   after-f-empty-uf-name.json
+ok   after-none.json
+ok   after-path-name.json
+ok   after-same-name-two-nodes.json
+ok   after-zero-byte.json
+
+10/10 runs agree with their fixture

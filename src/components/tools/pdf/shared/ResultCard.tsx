@@ -121,7 +121,9 @@ export function describeProvenance(
 
 /** `2.4 MB → 1.1 MB · 54% smaller`, honest about growth too. */
 export function describeDelta(before: number | null | undefined, after: number | null | undefined): string | null {
-  if (after == null || after <= 0) return null;
+  // A zero-byte output is a size, not an absence: `extract-attachments` hands back
+  // an empty enclosure, and the row vanishing said less than `0 B` does.
+  if (after == null) return null;
   if (before == null || before <= 0) return formatFileSize(after);
   const pct = Math.round(((after - before) / before) * 100);
   const head = `${formatFileSize(before)} → ${formatFileSize(after)}`;
