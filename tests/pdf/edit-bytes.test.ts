@@ -1448,6 +1448,109 @@ describe('remove-annotations and redact delete from the bytes', () => {
     expect(await pageText(cleared.getPages()[0])).toContain('annotated page');
   });
 
+  /** A two-sheet form: one text field on each page, built by pdf-lib's own form code. */
+  async function twoFieldForm(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    for (const label of ['first sheet', 'second sheet']) {
+      const page = doc.addPage(A4);
+      await drawTextU(page, { text: label, x: 40, y: A4[1] - 60, size: 14 });
+    }
+    const form = doc.getForm();
+    form.createTextField('first.name').addToPage(doc.getPages()[0], { x: 40, y: 700, width: 200, height: 20 });
+    form.createTextField('second.name').addToPage(doc.getPages()[1], { x: 40, y: 700, width: 200, height: 20 });
+    return doc.save({ useObjectStreams: false });
+  }
+
+  /** The `/AcroForm /Fields` entries, and whether each still resolves to a field. */
+  function fieldTree(doc: PDFDocument): { names: string[]; dangling: number } {
+    // `lookup(..., PDFDict)` throws on a missing key, and the fix removes the
+    // whole `/AcroForm` when it has no fields left.
+    const acroForm = doc.catalog.get(PDFName.of('AcroForm'));
+    if (!acroForm) return { names: [], dangling: 0 };
+    const resolvedForm = doc.context.lookup(acroForm) as PDFDict | undefined;
+    const fields = resolvedForm?.get(PDFName.of('Fields'));
+    if (!fields) return { names: [], dangling: 0 };
+    const array = doc.context.lookup(fields) as PDFArray | undefined;
+    if (!array) return { names: [], dangling: 0 };
+    const names: string[] = [];
+    let dangling = 0;
+    const walk = (list: PDFArray, prefix: string): void => {
+    for (let i = 0; i < list.size(); i += 1) {
+      const entry = list.get(i);
+      // A deleted object leaves a ref that no longer resolves: the written file
+      // then names a field no page draws (pypdf refuses it outright).
+      const dict = doc.context.lookup(entry) as PDFDict | undefined;
+      if (!dict) {
+        dangling += 1;
+        continue;
+      }
+      const name = dict.get(PDFName.of('T'));
+      const text = name && 'decodeText' in name ? (name as { decodeText: () => string }).decodeText() : '?';
+      const kids = dict.get(PDFName.of('Kids'));
+      const kidArray = kids ? (doc.context.lookup(kids) as PDFArray | undefined) : undefined;
+      if (kidArray) walk(kidArray, `${prefix}${text}.`);
+      // A widget merged into its field carries no `/T` of its own.
+      else names.push(text === '?' ? prefix.replace(/\.$/, '') : `${prefix}${text}`);
+    }
+    };
+    walk(array, '');
+    return { names, dangling };
+  }
+
+  it('takes the removed widgets out of /AcroForm so no field ref dangles', async () => {
+    const bytes = await twoFieldForm();
+    const outcome = await run('remove-annotations', { pages: 'all' }, [pdfFile(bytes, 'form.pdf')]);
+    expect(outcome.message).toMatch(/Removed 2 annotations from 2 pages/u);
+    expect(outcome.warnings.join('\n')).toMatch(/2 form fields went with their widgets/u);
+    const cleared = await reopen(outcome);
+    expect(fieldTree(cleared)).toEqual({ names: [], dangling: 0 });
+    // An `/AcroForm` with nothing left is an empty shell; the catalog says so.
+    expect(cleared.catalog.get(PDFName.of('AcroForm'))).toBeUndefined();
+  });
+
+  it('keeps the fields on pages it did not touch, and only those', async () => {
+    const bytes = await twoFieldForm();
+    const outcome = await run('remove-annotations', { pages: '1' }, [pdfFile(bytes, 'form.pdf')]);
+    const cleared = await reopen(outcome);
+    // The dotted name is a parent field with a widget kid; both survive, and the
+    // kid still resolves (a dangling one is counted, not read).
+    expect(fieldTree(cleared)).toEqual({ names: ['second.name'], dangling: 0 });
+    expect(await pageText(cleared.getPages()[1])).toContain('second sheet');
+  });
+
+  it('strips a link that is the only mark a page carries', async () => {
+    const bytes = await pdfFixture([{ text: 'link only' }]);
+    const doc = await openPDF(bytes);
+    addAnnotations(doc, [
+      { kind: 'Link', page: 0, rect: { x: 40, y: 700, width: 160, height: 16 }, link: { type: 'uri', uri: 'https://example.test/x' } },
+    ] as never);
+    const marked = await doc.save({ useObjectStreams: false });
+    const outcome = await run('remove-annotations', { pages: 'all' }, [pdfFile(marked, 'link.pdf')]);
+    expect(outcome.message).toMatch(/Removed 1 annotation from 1 page/u);
+    const cleared = await reopen(outcome);
+    expect(listAnnotations(cleared)).toHaveLength(0);
+    expect(await pageText(cleared.getPages()[0])).toContain('link only');
+  });
+
+  it('does not add the note pop-up to the annotations it counts outside the selection', async () => {
+    // Page 1 carries a sticky note and its `/Popup`: two entries in `/Annots`,
+    // one mark. The report has always split them; the "outside" sentence did not.
+    const bytes = await pdfFixture([{ text: 'noted' }, { text: 'untouched' }]);
+    const doc = await openPDF(bytes);
+    addAnnotations(doc, [
+      { kind: 'Text', page: 0, rect: { x: 40, y: 700, width: 20, height: 20 }, contents: 'a note' },
+      { kind: 'Popup', page: 0, rect: { x: 62, y: 690, width: 120, height: 70 } },
+    ] as never);
+    const note = listAnnotations(doc).find((mark) => mark.kind === 'Text')!;
+    const popup = listAnnotations(doc).find((mark) => mark.kind === 'Popup')!;
+    (doc.context.lookup(popup.ref, PDFDict) as PDFDict).set(PDFName.of('Parent'), note.ref);
+    (doc.context.lookup(note.ref, PDFDict) as PDFDict).set(PDFName.of('Popup'), popup.ref);
+    const marked = await doc.save({ useObjectStreams: false });
+    const outcome = await run('remove-annotations', { pages: '2' }, [pdfFile(marked, 'noted.pdf')]);
+    expect(outcome.outputs).toHaveLength(0);
+    expect(outcome.report?.sections?.[0]?.text).toMatch(/^What this document carries sits outside the 1 page you selected: 1 annotation and 1 note pop-up\./u);
+  });
+
   it('deletes the text under a redaction box rather than covering it', async () => {
     // The mark is the band over the fixture's line (user-space y 781.89 of an
     // 841.89 pt sheet) in the frame the redaction pane hands the tool: the page as

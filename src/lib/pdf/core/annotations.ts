@@ -668,6 +668,7 @@ export function removeAnnotations(
   const context = doc.context;
   let removed = 0;
   const handled = new Set<string>();
+  const removedRefs = new Set<string>();
 
   doc.getPages().forEach((page, index) => {
     if (pagesWanted && !pagesWanted.has(index)) return;
@@ -684,12 +685,68 @@ export function removeAnnotations(
         if (wanted && !wanted.has(kind)) continue;
         if (banned && banned.has(kind)) continue;
         array.remove(i);
-        if (entry instanceof PDFRef) context.delete(entry);
+        if (entry instanceof PDFRef) {
+          removedRefs.add(entry.toString());
+          context.delete(entry);
+        }
         removed += 1;
       }
     }
   });
+  // A widget annotation and its field are one dictionary (§12.7.4.2), so the
+  // pages gave up form fields too; `/AcroForm` still names them otherwise.
+  pruneFormFields(doc, removedRefs);
   return removed;
+}
+
+/**
+ * Drop the field entries that point at widgets `removeAnnotations` just deleted.
+ *
+ * A widget **is** the field's dictionary, so `/AcroForm /Fields` holds a ref that
+ * no longer resolves and a reader that trusts it breaks: `pypdf` refuses the
+ * written file outright (`Object 12 0 not defined`), and one that tolerates the
+ * null lists a field no page draws. A non-terminal field with `/Kids` keeps the
+ * kids that survived and is dropped only when none did. `/XFA` is left alone —
+ * its packet is not a field tree and is not ours to prune.
+ */
+function pruneFormFields(doc: PDFDocument, removedRefs: Set<string>): void {
+  if (removedRefs.size === 0) return;
+  const context = doc.context;
+  const acroForm = deref(context, doc.catalog.get(PDFName.of('AcroForm')));
+  if (!(acroForm instanceof PDFDict)) return;
+  const fields = deref(context, acroForm.get(PDFName.of('Fields')));
+  if (!(fields instanceof PDFArray)) return;
+
+  let dropped = 0;
+  const walk = (array: PDFArray): void => {
+    for (let i = array.size() - 1; i >= 0; i -= 1) {
+      const entry = array.get(i);
+      const dict = deref(context, entry);
+      if (entry instanceof PDFRef && removedRefs.has(entry.toString())) {
+        array.remove(i);
+        dropped += 1;
+        continue;
+      }
+      if (!(dict instanceof PDFDict)) {
+        array.remove(i);
+        dropped += 1;
+        continue;
+      }
+      const kids = deref(context, dict.get(PDFName.of('Kids')));
+      if (!(kids instanceof PDFArray)) continue;
+      walk(kids);
+      if (kids.size() === 0) {
+        array.remove(i);
+        dropped += 1;
+      }
+    }
+  };
+  walk(fields);
+  // An `/AcroForm` with no fields left is an empty shell; without `/XFA` there is
+  // nothing behind it, so the catalog says there is no form rather than an empty.
+  if (dropped > 0 && fields.size() === 0 && !acroForm.has(PDFName.of('XFA'))) {
+    doc.catalog.delete(PDFName.of('AcroForm'));
+  }
 }
 
 /** Number of annotations in the document; see [[listAnnotations]]. */

@@ -744,6 +744,15 @@ if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i'
 }
 console.log('fields:', JSON.stringify(applied, null, 1));
 
+// `SHOT_BEFORE` keeps the screen the fields produced, before the run replaces it
+// with a result: a tool that removes ink needs a before and an after, and the
+// pages rail previews the sheet being acted on.
+if (process.env.SHOT_BEFORE) {
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(process.env.SHOT_BEFORE, Buffer.from(shot.data, 'base64'));
+  console.log('screenshot before:', process.env.SHOT_BEFORE);
+}
+
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
 if (!(await wait('window.__blobs.length>0', TIMEOUT))) {
   console.log('NO OUTPUT — the screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));

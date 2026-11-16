@@ -1,0 +1,20 @@
+fields: [
+ "Pages=all: \"text=all\" → \"text=all\""
+]
+clicked "Remove annotations"
+output {"type":"application/pdf","bytes":3262,"file":"/tmp/r/ra-form-after.pdf"}
+report line: form_clean.pdf
+
+READY
+SIZE
+5.4 KB → 3.2 KB · 41% smaller
+PAGES
+4 → 4
+
+Removed 3 annotations from 1 page.
+
+WHAT YOU SHOULD KNOW (1)
+
+3 form fields went with their widgets: those pages no longer carry a fillable field, and the answers written into them went too.
+Download
+console errors: []

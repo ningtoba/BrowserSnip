@@ -2154,6 +2154,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'Removal is permanent: the annotation objects are deleted, not hidden.',
       'Annotations inherited from a shared parent node are removed for every page beneath it.',
+      'A form field is its own widget annotation, so fields on the selected pages go too: the field, its widget and the answer written into it are deleted, and `/AcroForm` stops naming them.',
     ],
     fields: [
       pagesField({ group: 'Pages' }),
@@ -2166,7 +2167,15 @@ export const editTools: PdfToolDefinition[] = [
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const scope = new Set(pages);
       const before = listAnnotations(input.doc);
-      const outside = before.filter((mark) => !scope.has(mark.page)).length;
+      const outsideAll = before.filter((mark) => !scope.has(mark.page));
+      const outside = outsideAll.length;
+      // The same split the report below uses: a `/Popup` is an entry in `/Annots`
+      // but not a mark, so "5 annotations" over four marks and their pop-up is
+      // the count the file does not back up.
+      const outsideMarks = outsideAll.filter((mark) => mark.kind !== 'Popup').length;
+      const outsidePopups = outside - outsideMarks;
+      const remaining = countLabel(outsideMarks, 'annotation')
+        + (outsidePopups > 0 ? ` and ${countLabel(outsidePopups, 'note pop-up', 'note pop-ups')}` : '');
       const removed = removeAnnotations(input.doc, { pages });
       if (removed === 0) {
         // E13: an unchanged file is not a result. Say what is actually there.
@@ -2175,7 +2184,7 @@ export const editTools: PdfToolDefinition[] = [
             [{
               title: 'Nothing to remove',
               text: outside > 0
-                ? `The ${countLabel(outside, 'annotation')} this document carries sit${outside === 1 ? 's' : ''} outside the ${countLabel(pages.length, 'page')} you selected. Widen the Pages range and run again.`
+                ? `What this document carries sits outside the ${countLabel(pages.length, 'page')} you selected: ${remaining}. Widen the Pages range and run again.`
                 : 'This document has no annotations at all — nothing was removed, and the download would be byte-for-byte the file you started with.',
             }],
             { message: 'There were no annotations to remove.' },
@@ -2184,7 +2193,7 @@ export const editTools: PdfToolDefinition[] = [
         );
       }
       if (outside > 0) {
-        note(notes, `${countLabel(outside, 'annotation')} on the pages you did not select is still there.`);
+        note(notes, `${remaining} on the pages you did not select ${outside === 1 ? 'is' : 'are'} still there.`);
       }
       // Two numbers the written file has to back up. A note's `/Popup` is an entry
       // in `/Annots` but not a mark a reader lists as a comment, so it is counted
@@ -2194,6 +2203,12 @@ export const editTools: PdfToolDefinition[] = [
       const gone = before.filter((mark) => !after.has(mark.ref.toString()));
       const popups = gone.filter((mark) => mark.kind === 'Popup').length;
       const marks = gone.length - popups;
+      // A widget is the field's own dictionary, so the field went with it — a
+      // consequence of "remove annotations" a form owner has to be told about.
+      const fields = gone.filter((mark) => mark.kind === 'Widget').length;
+      if (fields > 0) {
+        note(notes, `${countLabel(fields, 'form field')} went with ${fields === 1 ? 'its widget' : 'their widgets'}: those pages no longer carry a fillable field, and the answers written into ${fields === 1 ? 'it' : 'them'} went too.`);
+      }
       const changed = new Set(gone.map((mark) => mark.page)).size;
       return pdfOutput(
         input.doc,
