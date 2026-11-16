@@ -80,13 +80,39 @@ export interface SignatureInfo {
   fieldName?: string;
   /** True when the recomputed digest matches the one inside the signature. */
   digestMatches: boolean;
+  /**
+   * True/False once the signature value itself was checked against the signer
+   * certificate's public key. `undefined` means it could not be checked (no
+   * certificate, an algorithm node-forge cannot verify, or a parse failure).
+   *
+   * The digest alone is not integrity: the message-digest attribute lives inside
+   * the PKCS#7 blob, so a blob whose RSA value was swapped for another still
+   * carries the right digest and used to read `valid` here while openssl's
+   * `cms -verify` refused it.
+   */
+  signatureVerifies?: boolean;
+  subFilter?: string;
+  /** Subject and issuer are the same name: nothing vouches for this certificate. */
+  selfSigned?: boolean;
+  /** Every signed range, so a reader can see exactly what was covered. */
+  signedRanges?: { start: number; length: number }[];
+  fileLength?: number;
+  /** True when the ranges start at byte 0 and end at the end of the file. */
+  coversWholeFile?: boolean;
+  /** Bytes before the first range or after the last: outside the signature. */
+  bytesBeforeFirstRange?: number;
+  bytesAfterLastRange?: number;
+  /** The `/ByteRange` gap does not line up with the `/Contents` hex string. */
+  gapMismatch?: boolean;
+  /** A `/SubFilter` this reader has no rule for. */
+  subFilterUnsupported?: boolean;
   signer?: string;
   issuer?: string;
   signedAt?: Date;
   digestAlgorithm?: string;
   notBefore?: Date;
   notAfter?: Date;
-  byteRange?: [number, number, number, number];
+  byteRange?: number[];
   /** Set when the PKCS#7 blob could not be parsed at all. */
   error?: string;
 }
@@ -162,7 +188,7 @@ export async function readSignatures(input: Uint8Array): Promise<SignatureInfo[]
 
     const byteRange = readNumberArray(value.get(PDFName.of('ByteRange')));
     const contentsHex = readHexString(value.get(PDFName.of('Contents')));
-    if (!byteRange || byteRange.length !== 4 || !contentsHex) {
+    if (!byteRange || byteRange.length < 4 || byteRange.length % 2 !== 0 || !contentsHex) {
       results.push({
         fieldName,
         digestMatches: false,
@@ -170,7 +196,9 @@ export async function readSignatures(input: Uint8Array): Promise<SignatureInfo[]
       });
       continue;
     }
-    results.push(verifyOne(bytes, byteRange, contentsHex, fieldName));
+    const subFilter = readName(value.get(PDFName.of('SubFilter')));
+    const certBlobs = readCertEntries(doc, value);
+    results.push(verifyOne(bytes, byteRange, contentsHex, fieldName, subFilter, certBlobs));
   }
   return results;
 }
@@ -289,22 +317,68 @@ function skipPunctuation(text: string, from: number): number {
 
 // ── verification ────────────────────────────────────────────────────────────
 
+const PKCS7_SUBFILTERS = new Set(['adbe.pkcs7.detached', 'adbe.pkcs7.sha1', 'ETSI.CAdES.detached']);
+const RAW_SUBFILTER = 'adbe.x509.rsa_sha1';
+
+/** A `/Name` entry, without the leading slash. */
+function readName(value: unknown): string | undefined {
+  const text = String(value ?? '');
+  return text.startsWith('/') ? text.slice(1) : (text || undefined);
+}
+
+/**
+ * Certificate blobs from a raw-signature dictionary's `/Cert`.
+ *
+ * `adbe.x509.rsa_sha1` has no PKCS#7 envelope, so the certificate a reader must
+ * use lives here — and a file that omits it cannot be checked at all.
+ */
+function readCertEntries(doc: PDFDocument, value: PDFDict): string[] {
+  const entry = value.get(PDFName.of('Cert'));
+  const resolved = entry instanceof PDFRef ? doc.context.lookup(entry) : entry;
+  const items = resolved instanceof PDFArray ? resolved.asArray() : resolved ? [resolved] : [];
+  const out: string[] = [];
+  for (const item of items) {
+    const target = item instanceof PDFRef ? doc.context.lookupMaybe(item, PDFHexString) : item;
+    const hex = readHexString(target);
+    if (hex) out.push(hex);
+  }
+  return out;
+}
+
 function verifyOne(
   bytes: Uint8Array,
   byteRange: number[],
   contentsHex: string,
-  fieldName?: string,
+  fieldName: string | undefined,
+  subFilter: string | undefined,
+  certBlobs: string[],
 ): SignatureInfo {
-  const [offsetA, lengthA, offsetB, lengthB] = byteRange;
+  const ranges: { start: number; length: number }[] = [];
+  for (let i = 0; i + 1 < byteRange.length; i += 2) {
+    ranges.push({ start: byteRange[i], length: byteRange[i + 1] });
+  }
+  const first = ranges[0];
+  const last = ranges[ranges.length - 1];
   const info: SignatureInfo = {
     fieldName,
-    byteRange: [offsetA, lengthA, offsetB, lengthB],
+    subFilter,
+    byteRange,
+    signedRanges: ranges,
+    fileLength: bytes.length,
     digestMatches: false,
+    coversWholeFile: Boolean(first && last && first.start === 0 && last.start + last.length === bytes.length),
+    bytesBeforeFirstRange: first?.start ?? 0,
+    bytesAfterLastRange: last ? bytes.length - (last.start + last.length) : 0,
   };
-  if (!inBounds(bytes, offsetA, lengthA) || !inBounds(bytes, offsetB, lengthB)) {
+  if (ranges.some((range) => !inBounds(bytes, range.start, range.length))) {
     info.error = 'The recorded byte ranges fall outside this file, which means the file length changed after signing.';
     return info;
   }
+
+  if (subFilter === RAW_SUBFILTER) {
+    return verifyRawSignature(bytes, ranges, contentsHex, info, certBlobs);
+  }
+  if (subFilter && !PKCS7_SUBFILTERS.has(subFilter)) info.subFilterUnsupported = true;
 
   try {
     // `/Contents` is padded with zero bytes up to its reserved width, so the
@@ -322,6 +396,7 @@ function verifyOne(
     if (signerCertificate) {
       info.signer = commonName(signerCertificate.subject.attributes);
       info.issuer = commonName(signerCertificate.issuer.attributes);
+      info.selfSigned = nameKey(signerCertificate.subject.attributes) === nameKey(signerCertificate.issuer.attributes);
       info.notBefore = signerCertificate.validity.notBefore;
       info.notAfter = signerCertificate.validity.notAfter;
     }
@@ -344,13 +419,136 @@ function verifyOne(
       info.error = 'The signature carries no message-digest attribute to compare against.';
       return info;
     }
-    const covered = concatenateRanges(bytes, offsetA, lengthA, offsetB, lengthB);
+    // The digest gap must be the `/Contents` string and nothing else. A range
+    // that starts after `<` or ends before `>` leaves neighbouring bytes outside
+    // the signature while still digesting cleanly.
+    if (ranges.length === 2) {
+      const gapStart = first.start + first.length;
+      const gapEnd = ranges[1].start;
+      const gap = new TextDecoder('latin1').decode(bytes.subarray(gapStart, gapEnd)).trim();
+      // The signing pass ends the first range right after the `<` and starts the
+      // second at the `>`, so the gap is exactly the hex string and nothing else.
+      if (gap.replace(/\s+/g, '') !== contentsHex) info.gapMismatch = true;
+    }
+    const covered = concatenateSpans(bytes, ranges);
     const recomputed = digest(algorithm, forge.util.binary.raw.encode(covered));
     info.digestMatches = timingSafeEqualHex(toHex(storedDigest), recomputed);
+    // A correct message digest only proves the attribute was not edited. The RSA
+    // value over those attributes is what binds the blob to the certificate; a
+    // blob with its signature bytes swapped kept reading `valid` without this.
+    if (signerCertificate && attributes.length > 0) {
+      info.signatureVerifies = verifySignedAttributes(signerInfo, attributes, signerCertificate, algorithm);
+    }
   } catch (error) {
     info.error = error instanceof Error ? error.message : String(error);
   }
   return info;
+}
+
+/** Compare two X.509 names field by field, so a self-issued cert is named as such. */
+function nameKey(attributes: forge.pki.CertificateField[] | undefined): string {
+  return (attributes ?? []).map((attribute) => `${attribute.shortName ?? attribute.name}=${String(attribute.value)}`).join(',');
+}
+
+/** The last OCTET STRING in a SignerInfo: the encrypted digest (the signature). */
+function findSignatureValue(signerInfo: forge.asn1.Asn1): string | undefined {
+  const octets = children(signerInfo).filter(
+    (element) => element.tagClass === forge.asn1.Class.UNIVERSAL
+      && element.type === forge.asn1.Type.OCTETSTRING
+      && typeof element.value === 'string',
+  );
+  const value = octets[octets.length - 1]?.value;
+  return typeof value === 'string' && value.length > 32 ? value : undefined;
+}
+
+/**
+ * Check the RSA value over the DER of the signed attributes.
+ *
+ * RFC 5652 signs the attributes re-encoded as a universal `SET OF`, not the
+ * context-tagged `[0]` they are stored under.
+ */
+function verifySignedAttributes(
+  signerInfo: forge.asn1.Asn1,
+  attributes: forge.asn1.Asn1[],
+  certificate: forge.pki.Certificate,
+  algorithm: DigestAlgorithm,
+): boolean | undefined {
+  const signature = findSignatureValue(signerInfo);
+  if (!signature) return undefined;
+  const publicKey = certificate.publicKey as forge.pki.rsa.PublicKey;
+  if (typeof publicKey.verify !== 'function') return undefined;
+  const set = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, attributes);
+  const md = createDigest(algorithm);
+  md.update(forge.asn1.toDer(set).getBytes());
+  try {
+    return Boolean(publicKey.verify(md.digest().bytes(), signature, 'RSASSA-PKCS1-v1_5'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `adbe.x509.rsa_sha1`: `/Contents` is the bare PKCS#1 signature over the
+ * covered bytes, and the key is in `/Cert`. There is no message digest to read,
+ * so the public-key check *is* the integrity check.
+ */
+function verifyRawSignature(
+  bytes: Uint8Array,
+  ranges: { start: number; length: number }[],
+  contentsHex: string,
+  info: SignatureInfo,
+  certBlobs: string[],
+): SignatureInfo {
+  info.digestAlgorithm = 'SHA-1';
+  const certificate = certBlobs.length > 0
+    ? (() => {
+      try {
+        return forge.pki.certificateFromAsn1(
+          forge.asn1.fromDer(trimToAsn1Length(forge.util.hexToBytes(certBlobs[0]))),
+        );
+      } catch {
+        return undefined;
+      }
+    })()
+    : undefined;
+  if (!certificate) {
+    info.error = 'This is a raw PKCS#1 signature (/adbe.x509.rsa_sha1) with no readable /Cert, so there is no certificate to check it against.';
+    return info;
+  }
+  info.signer = commonName(certificate.subject.attributes);
+  info.issuer = commonName(certificate.issuer.attributes);
+  info.notBefore = certificate.validity.notBefore;
+  info.notAfter = certificate.validity.notAfter;
+  info.selfSigned = nameKey(certificate.subject.attributes) === nameKey(certificate.issuer.attributes);
+  const covered = concatenateSpans(bytes, ranges);
+  const md = forge.md.sha1.create();
+  md.update(forge.util.binary.raw.encode(covered));
+  try {
+    info.signatureVerifies = Boolean(
+      (certificate.publicKey as forge.pki.rsa.PublicKey).verify(
+        md.digest().bytes(),
+        trimToAsn1Length(forge.util.hexToBytes(contentsHex)),
+        'RSASSA-PKCS1-v1_5',
+      ),
+    );
+  } catch {
+    info.signatureVerifies = false;
+  }
+  info.digestMatches = info.signatureVerifies === true;
+  return info;
+}
+
+function concatenateSpans(
+  bytes: Uint8Array,
+  ranges: { start: number; length: number }[],
+): Uint8Array {
+  const covered = new Uint8Array(ranges.reduce((total, range) => total + range.length, 0));
+  let at = 0;
+  for (const range of ranges) {
+    covered.set(bytes.subarray(range.start, range.start + range.length), at);
+    at += range.length;
+  }
+  return covered;
 }
 
 /**

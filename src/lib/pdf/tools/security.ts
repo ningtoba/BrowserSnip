@@ -1584,17 +1584,19 @@ export const securityTools: PdfToolDefinition[] = [
   {
     id: 'validate-signature-pdf',
     name: 'Validate Signature',
-    description: 'Check whether digital signatures are intact and who signed',
+    description: 'Check whether each signature verifies, who signed, and which bytes it covers',
     icon: '✅',
     category: 'security',
     keywords: ['verify', 'integrity', 'certificate details'],
     surface: 'none',
     outputSuffix: '_signature-report.txt',
     readsOnly: true,
-    promise: 'Whether each signature still matches these bytes, who signed, and what an empty signature field really means.',
+    promise: 'Whether each signature verifies, who signed, the ranges it covers — and, when the file changed, which range changed.',
     actionLabel: 'Validate signatures',
     notes: [
-      'Intact means the signed bytes are unchanged. The certificate chain is not validated and revocation cannot be checked offline, so this does not tell you the signer is trusted.',
+      'Intact means two things: the bytes in the signed ranges are unchanged, and the signature value matches the signer\'s certificate. Both are checked, because a blob with its signature value altered still carries a correct digest of the file.',
+      'The report names the byte ranges. Bytes outside them — usually a revision appended after signing — are not covered by the signature, so a file can show an intact signature over an old revision.',
+      'The certificate chain is not validated and revocation cannot be checked offline, so this does not tell you the signer is trusted. A self-signed or expired certificate is named but not judged.',
       'An empty signature field proves nothing: it is a box somebody prepared and never signed.',
     ],
     async run(context) {
@@ -1609,6 +1611,23 @@ export const securityTools: PdfToolDefinition[] = [
       }
       let signatures: Awaited<ReturnType<typeof readSignatures>> = [];
       let readFailure: string | null = null;
+      // A `/Contents` value in an encrypted file is ciphered, so the PKCS#7 blob is
+      // not the DER a reader expects: measured on a signed copy re-encrypted with
+      // AES-256, the only answer used to be node-forge's "Unparsed DER bytes".
+      if (input.inspection?.encrypted) {
+        return {
+          kind: 'report',
+          sections: [{
+            title: 'Digital signatures',
+            rows: [{
+              label: 'Result',
+              value: `This file is encrypted and carries ${fields.length} signature field(s). Signature values are ciphered with the document, so their PKCS#7 blobs cannot be read here and no verdict is claimed. Remove the password, then validate the unlocked copy.`,
+            }],
+          }],
+          message: 'Encrypted — the signature values cannot be checked until the file is unlocked.',
+          warnings: ['An encrypted file\'s signature bytes are encrypted too. Unlock first (Remove password) and validate that copy.'],
+        };
+      }
       try {
         signatures = await readSignatures(input.bytes);
       } catch (error) {
@@ -1633,19 +1652,48 @@ export const securityTools: PdfToolDefinition[] = [
         };
       }
       const now = Date.now();
-      const broken = signatures.filter((signature) => !signature.error && !signature.digestMatches).length;
+      const spanText = (signature: (typeof signatures)[number]) => (signature.signedRanges ?? [])
+        .map((range) => `${range.start}–${range.start + range.length - 1}`)
+        .join(' and ');
+      const coverage = (signature: (typeof signatures)[number]): string => {
+        const spans = spanText(signature);
+        const fileLength = signature.fileLength ?? input.bytes.length;
+        if (signature.coversWholeFile) return `bytes ${spans} of ${fileLength} — the whole document`;
+        const before = signature.bytesBeforeFirstRange ?? 0;
+        const after = signature.bytesAfterLastRange ?? 0;
+        const outside = [
+          before > 0 ? `${before} byte(s) before the first signed byte` : '',
+          after > 0 ? `${after} byte(s) after the last signed byte` : '',
+          signature.gapMismatch ? 'bytes beside the signature value itself' : '',
+        ].filter(Boolean).join(' and ');
+        return `bytes ${spans} of ${fileLength} — ${outside} are not covered`;
+      };
+      const contentChanged = signatures.filter((signature) => !signature.error && !signature.digestMatches).length;
+      const signatureBad = signatures.filter((signature) => !signature.error && signature.digestMatches && signature.signatureVerifies === false).length;
       const unreadable = signatures.filter((signature) => signature.error).length;
-      const intact = signatures.length - broken - unreadable;
+      const intact = signatures.length - contentChanged - signatureBad - unreadable;
+      const partial = signatures.filter((signature) => !signature.error && !signature.coversWholeFile && !signature.gapMismatch).length;
       const warnings: string[] = [];
       if (fields.length > signatures.length) {
         warnings.push(`${fields.length - signatures.length} signature field(s) sit in page annotations and are not registered in the document form, so they could not be verified.`);
       }
       if (intact > 0) {
-        warnings.push('Intact means the bytes the signature covers have not changed. The certificate chain is not validated and revocation cannot be checked in the browser, so this does not confirm the signer is trusted.');
+        warnings.push('Intact means the signed byte ranges are unchanged and the signature value matches the certificate. The certificate chain is not validated and revocation cannot be checked in the browser, so this does not confirm the signer is trusted.');
+      }
+      if (partial > 0) {
+        warnings.push(`${partial} signature(s) do not cover the whole file: bytes after the last signed offset were appended after signing and are outside the signature. A reader that shows the new revision is showing bytes nobody signed.`);
+      }
+      const selfSigned = signatures.filter((signature) => !signature.error && signature.selfSigned).length;
+      if (selfSigned > 0) {
+        warnings.push(`${selfSigned} signature(s) used a self-signed certificate (subject and issuer are the same). The signature proves the holder of that key made it; nothing outside the file vouches for who that is.`);
       }
       const expired = signatures.filter((signature) => signature.notAfter && signature.notAfter.getTime() < now).length;
       if (expired > 0) {
         warnings.push(`${expired} signature(s) used a certificate that has since passed its expiry date. That does not undo the signature — it was valid when applied — but the signing identity can no longer be confirmed from the certificate alone.`);
+      }
+      const notYet = signatures.filter((signature) => signature.notBefore && signature.notBefore.getTime() > now).length;
+      if (notYet > 0) {
+        warnings.push(`${notYet} signature(s) used a certificate whose validity start is still in the future; a verifier with a correct clock would reject it.`);
       }
       return {
         kind: 'report',
@@ -1657,9 +1705,23 @@ export const securityTools: PdfToolDefinition[] = [
               value: signature.error
                 ? `Not checked — ${signature.error}`
                 : signature.digestMatches
-                  ? 'Yes — the document has not changed since signing'
-                  : 'No — the file was modified after signing',
+                  ? 'Yes — the signed bytes are unchanged'
+                  : `No — the digest of the signed bytes no longer matches: the change is inside ${spanText(signature)}`
+                    + `${signature.gapMismatch ? ' (the declared range also does not line up with the signature value)' : ''}`
+                    + `${(signature.bytesAfterLastRange ?? 0) > 0 ? `, and ${signature.bytesAfterLastRange} byte(s) after the signed end are not covered` : ''}`,
             },
+            {
+              label: 'Signature value',
+              value: signature.error
+                ? 'Not checked'
+                : signature.signatureVerifies === true
+                  ? 'Yes — matches the signer certificate'
+                  : signature.signatureVerifies === false
+                    ? 'No — does not match the signer certificate; the signature blob itself was altered or forged'
+                    : 'Not checked — no certificate or an unsupported key type',
+            },
+            { label: 'Signed range', value: coverage(signature) },
+            { label: 'SubFilter', value: signature.subFilter ? `/${signature.subFilter}${signature.subFilterUnsupported ? ' — not a type this reader has a rule for; the digest and value were still checked where possible' : ''}` : 'not recorded' },
             { label: 'Signer', value: signature.signer ?? 'unknown' },
             { label: 'Issued by', value: signature.issuer ?? 'unknown' },
             { label: 'Signed at', value: signature.signedAt?.toISOString() ?? 'not recorded' },
@@ -1669,9 +1731,11 @@ export const securityTools: PdfToolDefinition[] = [
             { label: 'Revocation', value: 'not checked offline — a browser has no OCSP responder access for this chain' },
           ],
         })),
-        message: broken === 0 && unreadable === 0
-          ? `All ${signatures.length} signature(s) verify: the bytes they cover are unchanged since signing.`
-          : `${intact} of ${signatures.length} signature(s) verify; ${broken} were broken by an edit after signing${unreadable > 0 ? `; ${unreadable} could not be read at all` : ''}.`,
+        message: intact === signatures.length && partial === 0
+          ? `All ${signatures.length} signature(s) verify: the signature values match the certificates and every signed byte is unchanged.`
+          : intact === signatures.length
+            ? `All ${signatures.length} signature(s) verify against the bytes they cover, but ${partial === 1 ? '1 does' : `${partial} do`} not cover the whole file — bytes after the signed end are outside the signature.`
+            : `${intact} of ${signatures.length} signature(s) verify; ${contentChanged} were broken by an edit after signing${signatureBad > 0 ? `; ${signatureBad} had a signature value that does not match the certificate` : ''}${unreadable > 0 ? `; ${unreadable} could not be read at all` : ''}.`,
         warnings,
       };
     },

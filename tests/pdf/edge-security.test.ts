@@ -823,7 +823,7 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const outcome = await run('validate-signature-pdf', {}, [pdfFile(tampered, 'tampered.pdf')]);
     expect(outcome.report?.message).toMatch(/0 of 1 signature\(s\) verify; 1 were broken/i);
     const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
-    expect(rows.get('Byte range intact')).toMatch(/^No — the file was modified after signing/);
+    expect(rows.get('Byte range intact')).toMatch(/^No — the digest of the signed bytes no longer matches: the change is inside \d+–\d+/);
   }, 180_000);
 
   it('detects a document that was re-saved by this app after signing', async () => {
@@ -834,6 +834,71 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const outcome = await run('validate-signature-pdf', {}, [pdfFile(edited, 'edited.pdf')]);
     expect(outcome.report?.message).toMatch(/broken by an edit after signing/i);
   }, 180_000);
+
+  it('names the signed byte ranges, and says bytes appended after signing are not covered', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    // Appending is what a second revision does: the signature still digests
+    // cleanly over its own ranges, so a digest-only reader calls the whole file
+    // unchanged while poppler answers "Not total document signed".
+    const appended = new Uint8Array([...signed, ...encoder.encode('\n% revision two, added after signing\n')]);
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(appended, 'revised.pdf')]);
+    expect(outcome.report?.message).toMatch(/does not cover the whole file/i);
+    expect(outcome.warnings.join(' ')).toMatch(/appended after signing|outside the signature/i);
+    const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    const range = rows.get('Signed range') ?? '';
+    expect(range).toMatch(/^bytes \d+–\d+( and \d+–\d+)? of \d+/);
+    expect(range).toMatch(/\d+ byte\(s\) after the last signed byte are not covered/);
+    const [info] = await readSignatures(appended);
+    expect(info.coversWholeFile).toBe(false);
+    expect(info.bytesAfterLastRange).toBeGreaterThan(0);
+  }, 180_000);
+
+  it('calls a signature whose value was altered invalid, even though its digest still matches', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    // Flip one hex digit deep inside the `/Contents` placeholder: the covered
+    // bytes do not move, so the message-digest attribute still matches. Only the
+    // RSA value over the signed attributes is broken. openssl's `cms -verify`
+    // refuses this file; the digest-only reader used to call it "All verify".
+    const forged = new Uint8Array(signed);
+    const text = latin1.decode(forged);
+    const open = text.indexOf('<', text.lastIndexOf('/Contents')) + 1;
+    let at = text.indexOf('>', open) - 1;
+    while (text[at] === '0') at -= 1;
+    forged[at] = (text[at].toLowerCase() === 'f' ? 'e' : 'abcdef0123456789'[('abcdef0123456789'.indexOf(text[at].toLowerCase()) + 1) % 16]).charCodeAt(0);
+    const [info] = await readSignatures(forged);
+    expect(info.digestMatches, 'the control: a one-hex-digit change inside /Contents must not move the digest').toBe(true);
+    expect(info.signatureVerifies).toBe(false);
+
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(forged, 'forged.pdf')]);
+    expect(outcome.report?.message).not.toMatch(/All 1 signature\(s\) verify/i);
+    expect(outcome.report?.message).toMatch(/signature value that does not match the certificate/i);
+    const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(rows.get('Signature value')).toMatch(/^No/);
+    expect(rows.get('Byte range intact')).toMatch(/^Yes/);
+  }, 180_000);
+
+  it('reports a second signature that invalidated the first per signature, not as one verdict', async () => {
+    const once = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const twice = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(once, 'contract.pdf')]));
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(twice, 'twice.pdf')]);
+    expect(outcome.report?.sections).toHaveLength(2);
+    expect(outcome.report?.message).toMatch(/^1 of 2 signature\(s\) verify/);
+    const [first, second] = outcome.report!.sections.map((section) => new Map(section.rows?.map((row) => [row.label, row.value])));
+    expect(first.get('Byte range intact')).toMatch(/^No/);
+    expect(second.get('Byte range intact')).toMatch(/^Yes/);
+  }, 240_000);
+
+  it('names a self-signed certificate and an encrypted file instead of guessing', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const good = await run('validate-signature-pdf', {}, [pdfFile(signed, 'signed.pdf')]);
+    expect(good.warnings.join(' ')).toMatch(/self-signed certificate/i);
+
+    const locked = await saveEncrypted(await openPDF(signed), { ownerPassword: 'owner' });
+    const encrypted = await run('validate-signature-pdf', {}, [pdfFile(locked, 'locked.pdf')]);
+    expect(encrypted.report?.message).toMatch(/^Encrypted/i);
+    const rows = new Map(encrypted.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(rows.get('Result')).toMatch(/ciphered|unlock/i);
+  }, 240_000);
 
   it('rejects a visible signature on a page the document does not have (E6)', async () => {
     await expect(
