@@ -531,16 +531,23 @@ describe('what the revision-6 check value records', () => {
     const clear = await lock(false);
     expect(encryptBody(ciphered)).toMatch(/\/EncryptMetadata true/);
     expect(encryptBody(clear)).toMatch(/\/EncryptMetadata false/);
-    // `/Info` is exempt from the cipher with the flag false, and not with it true —
-    // the dictionary's claim and the bytes behind it, checked in both directions.
-    expect((await sealed(clear)).getTitle()).toBe(TITLE);
-    expect((await sealed(ciphered)).getTitle()).not.toBe(TITLE);
+    // The flag is about the document metadata *stream*, and the `/Info` strings are
+    // ciphered under it either way — libqpdf does the same (#1368: "Only top-level XMP
+    // metadata is supposed to be left unencrypted") and MuPDF and pypdf undo it, so a
+    // file that left `/Info` readable behind this flag was the odd one out. Both
+    // directions here: the title is ciphertext until the pass, and readable after it.
+    for (const bytes of [clear, ciphered]) {
+      expect((await sealed(bytes)).getTitle()).not.toBe(TITLE);
+      const opened = await sealed(bytes);
+      await decryptDocument(opened, USER);
+      expect(opened.getTitle()).toBe(TITLE);
+    }
     // The flag is byte 8 of the check value at this revision, not a key input.
     expect(String.fromCharCode((await revision6State(ciphered, USER)).permsPlain[8])).toBe('T');
     expect(String.fromCharCode((await revision6State(clear, USER)).permsPlain[8])).toBe('F');
     // Both files still read, pages and words included, and the page streams are
-    // ciphered either way: `/EncryptMetadata false` unciphers the document's name
-    // tags, not its content.
+    // ciphered either way: `/EncryptMetadata false` leaves the metadata stream alone,
+    // not the content.
     for (const bytes of [ciphered, clear]) {
       expect(latin1.decode(bytes)).not.toContain(WORDS);
       expect(pageWords(await openPDF(bytes, { password: USER }))[0]).toContain(WORDS);
@@ -690,9 +697,13 @@ describe('the AES-256 files the outside readers are shown', () => {
     const bytes = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
     expect(encryptBody(bytes)).toMatch(/\/EncryptMetadata false/);
     expect(permissionsOf(bytes)).toBe(-3376);
-    // `/Title` readable, the page's operators not: the exemption and the cipher,
-    // both doing their own jobs in the same file.
-    expect((await sealed(bytes)).getTitle()).toBe(PLANTED.split(' page')[0]);
+    // The flag written, the `/Title` ciphered like the page's operators, and both of
+    // them readable again once the pass runs: the exemption is the metadata *stream*,
+    // not `/Info`.
+    expect((await sealed(bytes)).getTitle()).not.toBe(PLANTED.split(' page')[0]);
+    const reopened = await sealed(bytes);
+    await decryptDocument(reopened, PASSWORD);
+    expect(reopened.getTitle()).toBe(PLANTED.split(' page')[0]);
     expect(latin1.decode(bytes)).not.toContain(PLANTED);
     expect(pageWords(await openPDF(bytes, { password: PASSWORD }))[0]).toContain(PLANTED);
     dump('a256-app-plainmeta.pdf', bytes);

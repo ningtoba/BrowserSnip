@@ -584,7 +584,8 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Remove restrictions',
     notes: [
       'A signature in the source is broken by clearing its restrictions, whether the page tree is rebuilt or only the encryption entry is dropped: verify the signature first if the file is signed.',
-      'A file with no /Encrypt entry is returned unchanged, and the result says so rather than claiming a removal.',
+      'A file with no /Encrypt entry is returned unchanged, and the result says so rather than claiming a removal; a file whose dictionary refuses nothing at all is still rewrapped, and the result names that instead of claiming a restriction that was not there.',
+      'Lifting a restriction here means dropping the dictionary, so the copy carries no owner key at all: restrictions can be set on it again with any owner password, but not lifted by the one it arrived with.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -604,7 +605,11 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes: cleared.bytes,
         pages: cleared.pages,
-        message: `Restrictions cleared — ${cleared.pages} page(s) verified readable with no /Encrypt entry and no password needed, carrying ${structureSentence(cleared.kept)}.`,
+        // What was actually restricting the source, in front of the removal: the
+        // output is fully open either way, so without this the card reads the same
+        // over a file that refused printing and editing and over one that refused
+        // nothing (`restrictedClause`).
+        message: `Restrictions cleared — ${restrictedClause(input.inspection?.permissions ?? null)}; ${cleared.pages} page(s) verified readable with no /Encrypt entry and no password needed, carrying ${structureSentence(cleared.kept)}.`,
         warnings: cleared.warnings,
       };
     },
@@ -2195,6 +2200,29 @@ const PERMISSION_REPORT: readonly [keyof PDFPermissions, string][] = [
   ['contentAccessibility', 'screen readers'],
   ['documentAssembly', 'rotating and inserting pages'],
 ];
+
+/**
+ * What the source's own `/P` refused, as the clause a removal has to carry.
+ *
+ * This tool lifts restrictions by dropping the dictionary, so the copy is fully
+ * open whatever the source refused — the output cannot say whether anything was
+ * restricted, and the card that said only "Restrictions cleared" read
+ * word-for-word the same over a libqpdf file that denied printing and editing and
+ * over one that denied nothing (measured, round 054: `/P -3392` and `/P -4`, both
+ * `-4` afterwards and both with no `/Encrypt`). Only the source can tell the two
+ * apart, and `/P` is plaintext in the dictionary, so reading it needs no secret.
+ */
+function restrictedClause(permissions: PdfPermissions | null): string {
+  if (!permissions) return 'its dictionary records no /P at all, so no permission was ever refused';
+  const blocked = PERMISSION_REPORT
+    .filter(([key]) => permissions[key] === false)
+    // "printing blocked" already covers the full-resolution entry beside it.
+    .filter(([key]) => !(key === 'printingHighQuality' && permissions.printing === false))
+    .map(([, label]) => label);
+  return blocked.length > 0
+    ? `the source refused ${andList(blocked)}`
+    : 'the source refused nothing (every permission was already allowed), so what this run removed is its encryption and owner key';
+}
 
 /** One sentence describing the permissions a file really carries. */
 function permissionSentence(permissions: PDFPermissions | PdfPermissions): string {

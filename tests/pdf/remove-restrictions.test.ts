@@ -139,6 +139,12 @@ async function readerView(bytes: Uint8Array, password?: string) {
   }
 }
 
+/** An inspector for the bytes, `null` when they carry no dictionary to inspect. */
+const inspector = async (bytes: Uint8Array) => {
+  const view = await inspectPdf(bytes, 'copy.pdf');
+  return view.encrypted ? view : null;
+};
+
 /* ── 1. the refusal the row measured is gone ─────────────────────────────── */
 
 describe('removing restrictions from a locked file', () => {
@@ -207,8 +213,9 @@ describe('removing restrictions from a locked file', () => {
     // `get_toc()` says 2. Under-claiming about what survived, in the same direction
     // on the input, and pinned here so a change to either number is a decision.
     expect(outcome.message).toBe(
-      `Restrictions cleared — ${PAGES} page(s) verified readable with no /Encrypt entry and no password needed, `
-      + 'carrying 1 bookmark(s).',
+      `Restrictions cleared — the source refused printing, editing, comments and form filling, `
+      + `filling existing forms and rotating and inserting pages; ${PAGES} page(s) verified readable with no /Encrypt `
+      + 'entry and no password needed, carrying 1 bookmark(s).',
     );
     // Nothing stronger than "the dictionary is gone": no cipher named, because the
     // copy carries none; no password promised, because none is left to promise.
@@ -279,7 +286,85 @@ describe('the refusals that remain are the guard naming a cipher, not the tool',
   }, 300_000);
 });
 
-/* ── 3. the siblings, on the same fixtures ───────────────────────────────── */
+/* ── 3. what was restricted, said apart from what was decrypted ───────────── */
+
+describe('the sentence names the restriction the source carried, not a blanket removal', () => {
+  // The tool lifts restrictions by dropping the dictionary, so its output is fully
+  // open whatever the source refused — page count, `/P -4` and "no /Encrypt" are
+  // identical on both files below. Before this pin the card said
+  // "Restrictions cleared" over a dictionary that refused nothing at all, in exactly
+  // the words it used for one that denied printing and editing: the file on the
+  // screen could not be told from the output. A restriction-only file whose `/P` is
+  // `-4` is the case the round brief asks about — it must not claim a restriction
+  // that was not there while its rewrite is still right.
+  // Nothing typed: a restriction-only file opens on the empty user secret, and
+  // "the run asked for no password" is part of what is being pinned.
+  const restrictionOnly = (name: string) => ({ name, secret: '' });
+
+  it('names printing and editing when the dictionary refuses them', async () => {
+    const outcome = await run('remove-restrictions', {}, restrictionOnly('restrict-none-aes-128.pdf'));
+    expect(outcome.message).toContain(
+      'the source refused printing, editing, comments and form filling, filling existing forms '
+      + 'and rotating and inserting pages',
+    );
+    expect(outcome.message).not.toMatch(/refused nothing/);
+    expect(outcome.message).toMatch(/no \/Encrypt entry and no password needed/);
+  }, 600_000);
+
+  it('says nothing was refused when the dictionary refuses nothing, and names what it did remove', async () => {
+    const outcome = await run('remove-restrictions', {}, restrictionOnly('restrict-open-aes-128.pdf'));
+    expect(outcome.message).toMatch(/the source refused nothing \(every permission was already allowed\)/);
+    expect(outcome.message).toMatch(/what this run removed is its encryption and owner key/);
+    expect(outcome.message).not.toMatch(/refused printing/);
+    // Still a real change, so still a real file: the bytes are open and the words are
+    // on the sheets. The claim that nothing was restricted must not cost the removal.
+    const { bytes } = await produced(outcome);
+    expect(latin1(bytes)).not.toMatch(/\/Encrypt[\s<\d]/);
+    expect(latin1(bytes)).not.toMatch(/\/P\s+-?\d+/);
+    expect(await inspector(bytes)).toBeNull();
+    expect((await readerView(bytes)).pages.join(' ')).toContain(PLANTED);
+  }, 600_000);
+
+  it('writes the same fully-open copy in both cases, so only the sentence differs', async () => {
+    // The control: if the two copies could be told apart, the source's `/P` would not
+    // be the thing the sentence is about.
+    const refused = await produced(await run('remove-restrictions', {}, restrictionOnly('restrict-none-aes-128.pdf')));
+    const open = await produced(await run('remove-restrictions', {}, restrictionOnly('restrict-open-aes-128.pdf')));
+    for (const bytes of [refused.bytes, open.bytes]) {
+      const after = await inspectPdf(bytes, 'copy.pdf');
+      expect(after.encrypted).toBe(false);
+      expect(after.permissions).toBeNull();
+      expect(after.needsPassword).toBe(false);
+    }
+  }, 600_000);
+
+  it('keeps the document properties readable when the source declared /EncryptMetadata false', async () => {
+    // Measured before this pin: the copy came back with `/Title` and `/Author`
+    // still ciphertext — mojibake in the properties of a file whose pages were
+    // perfectly restored — because the decrypt pass read "/EncryptMetadata false"
+    // as "/Info is in the clear too". libqpdf ciphers `/Info` under that flag, and
+    // MuPDF, pypdf and qpdf all undo it, so the app's copy was the odd one out.
+    const fixture = restrictionOnly('restrict-none-aes-128-clearmeta.pdf');
+    const outcome = await run('remove-restrictions', {}, fixture);
+    const { bytes } = await produced(outcome);
+    // The strings the fixture was written with, read back off the produced bytes.
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getTitle(), 'the /Title in the copy is still ciphertext').toBe('Lighthouse Inventory 1887');
+    expect(doc.getAuthor(), 'the /Author in the copy is still ciphertext').toBe('unlock structure rig');
+    // And the page words still came through, so the properties are not a lone win.
+    expect((await readerView(bytes)).pages.join(' ')).toContain('Structure sheet 1');
+  }, 600_000);
+
+  it('still returns a file with no dictionary unchanged, so the two controls stay apart', async () => {
+    // The other side of "refused nothing": no dictionary at all is a different case,
+    // and it is answered by a message, not by a rewrite.
+    const outcome = await run('remove-restrictions', {}, { name: 'plain.pdf', secret: '' });
+    expect(outcome.message).toMatch(/has no encryption dictionary, so nothing was restricting it/);
+    expect(outcome.message).not.toMatch(/the source refused/);
+  }, 300_000);
+});
+
+/* ── 4. the siblings, on the same fixtures ───────────────────────────────── */
 
 describe('the sibling entries still do what their names say', () => {
   it('unlock removes the password as completely as restrictions are removed', async () => {

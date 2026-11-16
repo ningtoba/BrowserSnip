@@ -443,7 +443,7 @@ export interface Cipher {
   /** `/Perms`: the 16-byte check value. Revision 6 only; revision 4 may carry one. */
   perms: Uint8Array | null;
   permissions: number;
-  /** `/EncryptMetadata false`: the user metadata and `/Info` stay in the clear. */
+  /** `/EncryptMetadata false`: the document metadata *stream* stays in the clear. */
   metadataEncrypted: boolean;
   documentId: Uint8Array;
 }
@@ -1074,8 +1074,8 @@ export async function decryptDocument(doc: PDFDocument, password?: string): Prom
   if (!cipher) return { kind: 'unsupported', reason: 'missing-parameters', strength };
 
   // The encryption dictionary's own /O and /U strings are exempt from the cipher
-  // they describe (ISO 32000-1 §7.3.2.1), as is user metadata when the
-  // dictionary says `/EncryptMetadata false`.
+  // they describe (ISO 32000-1 §7.3.2.1), as is the document metadata stream when
+  // the dictionary says `/EncryptMetadata false`.
   const exempt = exemptRefs(context, cipher);
   let streams = 0;
   let strings = 0;
@@ -1132,8 +1132,15 @@ function cryptBytes(
  *
  * The encryption dictionary's own `/O`, `/U`, `/OE` and `/UE` are keys and are
  * never ciphered (ISO 32000-1 §7.3.2.1), and with `/EncryptMetadata false` the
- * `/Info` dictionary and the user metadata stream stay readable — which matters
- * twice over, because both feed the key derivation.
+ * **document-level metadata stream** stays readable.
+ *
+ * `/EncryptMetadata` is about that one stream and not about `/Info`: the flag's own
+ * wording is "whether the document-level metadata stream shall be encrypted", and
+ * libqpdf, MuPDF and pypdf all cipher the `/Info` strings under it anyway — measured
+ * by writing the flag with `qpdf --cleartext-metadata` (`qpdf` #1368: "Only top-level
+ * XMP metadata is supposed to be left unencrypted"). Exempting the `/Info` dictionary
+ * here left a title and an author that no reader could read once the dictionary was
+ * dropped, on a file whose pages were otherwise perfectly restored.
  */
 function exemptRefs(context: PDFContext, cipher: Cipher): Set<string> {
   const exempt = new Set<string>();
@@ -1142,7 +1149,6 @@ function exemptRefs(context: PDFContext, cipher: Cipher): Set<string> {
   };
   mark(context.trailerInfo.Encrypt);
   if (cipher.metadataEncrypted) return exempt;
-  mark(context.trailerInfo.Info);
   mark(context.lookupMaybe(context.trailerInfo.Root, PDFDict)?.get(PDFName.of('Metadata')));
   return exempt;
 }
@@ -1253,9 +1259,9 @@ export interface CipherRequest {
   /**
    * `/EncryptMetadata`, asked for rather than assumed. The flag is not one bit in
    * the dictionary: at revision 4 it is mixed into the file key, at revision 6 it
-   * is byte 8 of the `/Perms` plaintext, and with it false the `/Info` dictionary
-   * and the user metadata stream stay in the clear — which is what a reader that
-   * wants a title without a password looks for.
+   * is byte 8 of the `/Perms` plaintext, and with it false the document metadata
+   * *stream* stays in the clear — which is what a reader that wants an XMP packet
+   * without a password looks for. The `/Info` strings are ciphered either way.
    */
   encryptMetadata: boolean;
 }
@@ -1630,10 +1636,9 @@ async function cipherIndirectObjects(
   if (!method) return { streams: 0, strings: 0 };
   // The same set the read path skips, and for the same reasons: the encryption
   // dictionary holds the `/O`, `/U`, `/OE` and `/UE` that *are* the keys, and with
-  // `/EncryptMetadata false` the `/Info` dictionary and the user metadata stream
-  // stay in the clear. Ciphering them here while writing that flag would hand back
-  // a file whose dictionary promises readable metadata over bytes only a key can
-  // reach — and `decryptDocument` would leave them ciphered on the way back in.
+  // `/EncryptMetadata false` the document metadata *stream* stays in the clear. The
+  // `/Info` strings do not join them — a reader ciphers and undoes them like any
+  // other string, whatever the flag says (`exemptRefs`).
   const exempt = exemptRefs(context, cipher);
   let streams = 0;
   let strings = 0;

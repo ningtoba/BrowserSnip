@@ -1,0 +1,9 @@
+# /Info under `/EncryptMetadata false`: title and author, per reader
+  source          mupdf 'Lighthouse Inventory 1887' / 'unlock structure rig'
+  source          raw   '/Title <1781c629ef68b488'   (ciphertext, not a title)
+  before copy     mupdf '\x01Ïa‹\x02øFü\x06à⁄\nk¤‡½µŁ9·õ?·|gë\x05V\x03q¤ß\x02†ä6o!Óøð\r!ãê×˙F' / '¹®[ö¥ÍbÄ¢ôleµª>Í\x0ew“@ãƒł−±Ö\x0cw³\x00¶FŁÌ¥U8yË´˙c\x00\x0b˚÷Yá'
+  before copy     pypdf {'/Author': b'\xb9\xae[\xf6\xa5\xcdb\xc4\xa2\xf4le\xb5\xaa>\xcd\x0ew\x8d@\xe3\x86\x9b\x8a\xb1\xd6\x0cw\xb3\x00\xb6F\x95\xcc\xa5U8y\xcb\xb4\x1bc\x00\x0b\x1e\xf7Y\xe1', '/Title': '\x01Ïa‹\x02øFü\x06à⁄\nk¤‡½µŁ9·õ?·|gë\x05V\x03q¤ß\x02†ä6o!Óøð\r!ãê×˙F'}
+  before copy     qpdf --check exit 0
+  after  copy     mupdf 'Lighthouse Inventory 1887' / 'unlock structure rig'
+  after  copy     pypdf {'/Author': 'unlock structure rig', '/Title': 'Lighthouse Inventory 1887'}
+  after  copy     qpdf --check exit 0

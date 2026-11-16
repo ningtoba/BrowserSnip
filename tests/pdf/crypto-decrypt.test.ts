@@ -275,3 +275,44 @@ describe('the ciphers this module does not claim', () => {
   });
 });
 
+
+/* ── `/EncryptMetadata false` is about the metadata stream, not `/Info` ──── */
+
+describe('a dictionary that says /EncryptMetadata false', () => {
+  // The flag's own wording is "whether the document-level metadata *stream* shall
+  // be encrypted", but the exempt list here read "metadata" as "the /Info
+  // dictionary too". libqpdf, MuPDF and pypdf all cipher `/Info` under the flag, so
+  // a file written by `qpdf --cleartext-metadata` came back with a title and an
+  // author that were still ciphertext once the dictionary was gone: pages restored,
+  // document properties mojibake. Measured with the fixture this pins.
+  it('still ciphers /Info in the file, whatever the flag says', async () => {
+    const doc = await loadRaw('restrict-none-aes-128-clearmeta.pdf');
+    expect(doc.context.trailerInfo.Info, 'the fixture carries no /Info dictionary').toBeTruthy();
+    // The caveat that makes the next assertion a measurement rather than a hope:
+    // nothing readable sits in `/Title` before the pass.
+    expect(doc.getTitle()).not.toBe(PLANTED);
+    expect(doc.getTitle()).not.toBe('unlock structure rig');
+  });
+
+  it('undoes the /Info strings with the rest of the document', async () => {
+    const doc = await loadRaw('restrict-none-aes-128-clearmeta.pdf');
+    const outcome = await decryptDocument(doc, 'owner-pass');
+    expect(outcome).toMatchObject({ kind: 'decrypted', strength: 'AES-128' });
+    expect(doc.getTitle()).toBe(PLANTED);
+    expect(doc.getAuthor()).toBe('unlock structure rig');
+    // The pages came through the same pass, so this is not an /Info-only fix.
+    expect(pageWords(doc)[0]).toContain('Structure sheet 1');
+  });
+
+  it('still exempts the metadata stream the flag is about', async () => {
+    // The stream half is untouched by this change and must stay so: the exempt set
+    // is the encryption dictionary plus, for this flag only, the catalog's
+    // `/Metadata`. Pinned by the dictionary itself so a later edit that drops the
+    // stream half along with the `/Info` half is visible.
+    const doc = await loadRaw('restrict-none-aes-128-clearmeta.pdf');
+    const cipher = doc.context.trailerInfo.Encrypt;
+    const dict = cipher instanceof PDFRef ? doc.context.lookupMaybe(cipher, PDFDict) : cipher;
+    expect(dict).toBeInstanceOf(PDFDict);
+    expect((dict as PDFDict).get(PDFName.of('EncryptMetadata'))?.toString()).toBe('false');
+  });
+});

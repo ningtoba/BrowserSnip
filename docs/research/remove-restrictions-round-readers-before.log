@@ -1,0 +1,97 @@
+/home/nekophobia/.local/lib/python3.14/site-packages/pikepdf/_methods.py:709: UserWarning: A password was provided, but no password was needed to open this PDF.
+  pdf = Pdf._open(
+# produced by the app, opened with no secret typed
+
+## remove-restrictions__restrict-aes-128.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": false, "pages": 2, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "2", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 130, "planted": true, "stderr": []}
+   bytes   {"size": 4041, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__restrict-aes-256.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": false, "pages": 2, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "2", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 130, "planted": true, "stderr": []}
+   bytes   {"size": 4219, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__restrict-open-aes-128.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": false, "pages": 2, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "2", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 130, "planted": true, "stderr": []}
+   bytes   {"size": 4038, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+## remove-restrictions__restrict-rc4-128.pdf
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": false, "pages": 2, "syntax": "clean"}
+   poppler {"rc": 0, "pages": "2", "encryption": null, "page1": "595 x 842 pts (A4)", "chars": 130, "planted": true, "stderr": []}
+   bytes   {"size": 3892, "hasEncryptKey": false, "typedSecretInBytes": false}
+
+
+# the same produced files, asked with a secret
+
+
+# the fixtures themselves, opened with their own secret
+
+## base.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 4, "planted": 0, "sheets": 0, "chars": 1792}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 4, "ink_page1": 24.47, "planted": 0, "sheets": 0, "chars": 1792}
+   qpdf    {"opens": true, "encrypted": false, "pages": 4, "syntax": "clean"}
+
+## control-plain.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 3, "planted": 3, "sheets": 3, "chars": 164}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 3, "ink_page1": 1.51, "planted": 3, "sheets": 3, "chars": 167}
+   qpdf    {"opens": true, "encrypted": false, "pages": 3, "syntax": "clean"}
+
+## control-structure-plain.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": false, "pages": 2, "syntax": "clean"}
+
+## furniture.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 4, "planted": 0, "sheets": 0, "chars": 1792}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 4, "ink_page1": 24.47, "planted": 0, "sheets": 0, "chars": 1792}
+   qpdf    {"opens": true, "encrypted": false, "pages": 4, "syntax": "clean"}
+
+## prelabelled.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 4, "planted": 0, "sheets": 0, "chars": 1792}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 4, "ink_page1": 24.47, "planted": 0, "sheets": 0, "chars": 1792}
+   qpdf    {"opens": true, "encrypted": false, "pages": 4, "syntax": "clean"}
+
+## restrict-aes-128.pdf (secret 'owner-pass')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 4, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": true, "pages": 2, "syntax": "clean", "V": 4, "R": 4, "P": -3392, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+
+## restrict-aes-256.pdf (secret 'owner-pass')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 4, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": true, "pages": 2, "syntax": "clean", "V": 5, "R": 6, "P": -3392, "stream_method": "aesv3", "string_method": "aesv3", "user_password": ""}
+
+## restrict-none-aes-128-clearmeta.pdf (secret 'owner-pass')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 4, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": true, "pages": 2, "syntax": "clean", "V": 4, "R": 4, "P": -3376, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+
+## restrict-open-aes-128.pdf (secret 'owner-pass')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 4, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": true, "pages": 2, "syntax": "clean", "V": 4, "R": 4, "P": -4, "stream_method": "aes", "string_method": "aes", "user_password": ""}
+
+## restrict-rc4-128.pdf (secret 'owner-pass')
+   pypdf   {"encrypted": true, "opens": true, "level": 2, "pages": 2, "planted": 2, "sheets": 0, "chars": 106}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 4, "encrypted": false, "permissions": -4, "pages": 2, "ink_page1": 1.28, "planted": 2, "sheets": 0, "chars": 123}
+   qpdf    {"opens": true, "encrypted": true, "pages": 2, "syntax": "clean", "V": 2, "R": 3, "P": -3392, "stream_method": "none", "string_method": "none", "user_password": ""}
+
+## roundtrip-src.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 4, "planted": 0, "sheets": 0, "chars": 1792}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 4, "ink_page1": 24.47, "planted": 0, "sheets": 0, "chars": 1792}
+   qpdf    {"opens": true, "encrypted": false, "pages": 4, "syntax": "clean"}
+
+## thirty.pdf (secret 'hunter2')
+   pypdf   {"encrypted": false, "opens": true, "level": 1, "pages": 30, "planted": 0, "sheets": 0, "chars": 14336}
+   mupdf   {"needs_pass": false, "opens": true, "auth_bits": 1, "encrypted": false, "permissions": -4, "pages": 30, "ink_page1": 24.47, "planted": 0, "sheets": 0, "chars": 14336}
+   qpdf    {"opens": true, "encrypted": false, "pages": 30, "syntax": "clean"}

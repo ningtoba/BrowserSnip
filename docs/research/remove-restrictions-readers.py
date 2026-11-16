@@ -170,7 +170,11 @@ def main():
     print("\n\n# the fixtures themselves, opened with their own secret")
     for name in sorted(n for n in os.listdir(fixture_dir) if n.endswith(".pdf")):
         path = os.path.join(fixture_dir, name)
-        secret = "" if name.endswith("-owner.pdf") or name == "plain.pdf" else "hunter2"
+        # Round 054's `restrict-*` fixtures are owner-only (an empty user secret,
+        # so they open with nothing typed) and were written with `owner-pass`;
+        # the corpus' `-owner` pair and `plain.pdf` open with nothing at all.
+        owner_only = name.startswith("restrict-") or name.endswith("-owner.pdf") or name == "plain.pdf"
+        secret = "owner-pass" if name.startswith("restrict-") else "" if owner_only else "hunter2"
         print(f"\n## {name} (secret {secret!r})")
         print("   pypdf  ", json.dumps(pypdf_view(path, secret)))
         print("   mupdf  ", json.dumps(mupdf_view(path, secret)))
