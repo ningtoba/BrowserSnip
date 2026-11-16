@@ -125,6 +125,14 @@ checker to a new one.
 * If the tool is already correct, that is a result: record the measurement, add
   the missing pin if the behaviour was unpinned, and change no behaviour.
 
+## Reading the noise
+
+These are expected in the `docs/research/**` probes and are not blockers:
+`unchecked-throwing-call-js` (a probe may throw), `no-console-except-error-js`
+(a probe reports on stdout), `require-safety-comment-for-as-unknown-as` only where
+the invariant is obvious from adjacent code. Anything lens reports inside `src/`
+or `tests/` is real and must be fixed.
+
 ## Commit
 
 One commit, exactly your files, conventional-commit subject in the repo's voice
