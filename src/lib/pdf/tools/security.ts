@@ -627,7 +627,7 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Flatten',
     notes: [
       'A flattened mark is page content: it can no longer be selected, moved, deleted or read as a comment by another reader.',
-      'Baking copies what the annotation already draws — its appearance stream. A comment with no appearance of its own, or one flagged so no reader paints it, is left where it is and counted; nothing is rasterised here.',
+      'Baking copies what the annotation already draws — its appearance stream, at the opacity and blend mode the mark itself declares. A comment with no appearance of its own, or one flagged so no reader paints it, is left where it is and counted; nothing is rasterised here.',
       'Baking changes the bytes, so it breaks a signature that is already on the file — flatten first, then sign.',
     ],
     fields: [
@@ -699,7 +699,7 @@ export const securityTools: PdfToolDefinition[] = [
           ? `${saved.fields} form field(s) are still interactive in the saved file, so their answers can still be retyped.`
           : `Form fields were left interactive, as asked: ${saved.fields} field(s) can still be retyped.`);
       }
-      const liveMarksLeft = commentCount(saved, keepLinks);
+      const liveMarksLeft = commentCount(saved);
       const liveLinksLeft = keepLinks ? 0 : saved.links;
       if (bakeMarks && liveMarksLeft > 0) {
         warnings.push(`${liveMarksLeft} comment(s) are still live annotations in the saved file rather than page content.`);
@@ -714,8 +714,11 @@ export const securityTools: PdfToolDefinition[] = [
       }
       // What the run was actually asked to bake, read off the input rather than
       // out of the counters: a file that carries nothing of the selected kind is a
-      // different sentence from a file whose marks could not be drawn.
-      const askedFor = (bakeMarks ? commentCount(had, keepLinks) : 0) + (bakeFields ? had.fields : 0);
+      // different sentence from a file whose marks could not be drawn. Links are a
+      // target only when the toggle says so, and they are counted here because
+      // `commentCount` never counts them.
+      const askedFor =
+        (bakeMarks ? commentCount(had) + (keepLinks ? 0 : had.links) : 0) + (bakeFields ? had.fields : 0);
       if (bakedAnnotations === 0 && fieldsBaked === 0) {
         warnings.push(askedFor === 0
           ? 'This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.'
@@ -2052,9 +2055,14 @@ async function liveMarks(bytes: Uint8Array): Promise<LiveMarks> {
  * The annotations a reader lists as comments on the page: not the clickable areas,
  * not the note popups, and not the form boxes — those three are each counted, and
  * named, by their own number.
+ *
+ * A link is subtracted whatever its toggle says: with "Keep clickable links" off a
+ * link that has no appearance of its own stays live, and it was being named twice
+ * — once as a link that could not be baked and again as a comment — because only
+ * the kept-links case subtracted it.
  */
-function commentCount(marks: LiveMarks, keepLinks: boolean): number {
-  return Math.max(0, marks.marks - marks.widgets - marks.popups - (keepLinks ? marks.links : 0));
+function commentCount(marks: LiveMarks): number {
+  return Math.max(0, marks.marks - marks.widgets - marks.popups - marks.links);
 }
 
 /**

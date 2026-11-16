@@ -305,6 +305,52 @@ async function pageAlphas(bytes: Uint8Array, pageIndex: number): Promise<number[
   });
 }
 
+/** The `/ExtGState` entries a page's resources hold, as `name → alpha` pairs. */
+async function pageStates(bytes: Uint8Array, pageIndex: number): Promise<Map<string, number>> {
+  const doc = await load(bytes);
+  const resources = doc.getPages()[pageIndex].node.Resources();
+  const dict = resources instanceof PDFRef ? doc.context.lookupMaybe(resources, PDFDict) : resources;
+  const states = dict ? doc.context.lookupMaybe(dict.get(PDFName.of('ExtGState')), PDFDict) : undefined;
+  const out = new Map<string, number>();
+  for (const [name, value] of states?.entries() ?? []) {
+    const state = value instanceof PDFDict ? value : doc.context.lookupMaybe(value as PDFRef, PDFDict);
+    const alpha = state?.lookupMaybe(PDFName.of('ca'), PDFNumber)?.asNumber();
+    if (alpha !== undefined) out.set(String(name).slice(1), alpha);
+  }
+  return out;
+}
+
+/**
+ * The alpha in force at each painting operator, replayed off the graphics stack.
+ *
+ * `q`/`Q` and `gs` are the whole question: an `/ExtGState` that is *set* but popped
+ * before the fill leaves the mark opaque, and every resource-level check still sees
+ * the entry. Operands are collected in `operands` and consumed by the next operator.
+ */
+function alphasAtPaint(content: string, states: Map<string, number>): { op: string; alpha: number }[] {
+  const stack: number[] = [];
+  let current = 1;
+  let operands: string[] = [];
+  const out: { op: string; alpha: number }[] = [];
+  for (const token of content.split(/\s+/).filter(Boolean)) {
+    if (token === 'q') { stack.push(current); operands = []; continue; }
+    if (token === 'Q') { current = stack.pop() ?? 1; operands = []; continue; }
+    if (token === 'gs') {
+      const name = operands[operands.length - 1]?.replace(/^\//, '');
+      current = states.get(name ?? '') ?? current;
+      operands = [];
+      continue;
+    }
+    if (['f', 'f*', 'F', 'B', 'B*', 'S', 's'].includes(token)) {
+      out.push({ op: token, alpha: current });
+      operands = [];
+      continue;
+    }
+    operands.push(token);
+  }
+  return out;
+}
+
 // ── the four kinds this app paints ─────────────────────────────────────────
 
 describe('flatten-pdf puts each mark in the page and takes it out of the comment list', () => {
@@ -332,6 +378,64 @@ describe('flatten-pdf puts each mark in the page and takes it out of the comment
     expect(content).toMatch(/1 1 0 rg/);
     expect(content).toMatch(/\/GS\d*[-\w]* gs/);
     expect(placedAt(content, HIGHLIGHT.x, HIGHLIGHT.y), 'the band missed its quad').toBe(true);
+  });
+
+it('opens the wash\u2019s transparency around the paint, not after it', async () => {
+    const bytes = await bytesOf(await runFlatten(await markedFixture({ fields: false })));
+    const paint = alphasAtPaint(await pageContent(bytes, 3), await pageStates(bytes, 3));
+    expect(paint.length, 'the wash painted nothing at all').toBeGreaterThan(0);
+    // Every operator of the wash has to run at 40 %. `pageAlphas` (above) only
+    // proves the `/ExtGState` was *written*; this is the half that was missing —
+    // the state used to be set and popped in a stream the page keeps *before* the
+    // appearance stream, so the fill ran opaque while the resource sat there.
+    for (const entry of paint) expect(entry.alpha, `${entry.op} ran at ${entry.alpha}, not 0.4`).toBeCloseTo(0.4, 4);
+  });
+
+  it('does not call a clickable link a live comment when links were meant to be baked', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage(PAGE);
+    const index = addAnnotation(doc, {
+      kind: 'Link', page: 0, rect: LINK, link: { type: 'uri', uri: 'https://www.browsersnip.com' },
+    });
+    // A link a producer stored without an appearance: nothing to copy, so it stays
+    // live — as a link. The card used to count it as a comment as well, and said
+    // "1 comment(s) are still live" over a page whose only entry is the link.
+    const annots = doc.getPages()[0].node.Annots() as PDFArray;
+    (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
+    const outcome = await runFlatten(await doc.save({ useObjectStreams: false }), {
+      forms: false, annotations: true, keepLinks: false,
+    });
+    const all = [outcome.message ?? '', ...outcome.warnings].join(' ');
+    expect(await liveKinds(await bytesOf(outcome))).toContain('Link');
+    expect(all, 'the link was named as a comment as well as a link').toMatch(/1 link\(s\) still clickable/);
+    expect(all, 'a comment that is not there was reported live').not.toMatch(/comment\(s\)/);
+    expect(all).toMatch(/1 link\(s\) carry no appearance/);
+  });
+
+  it('does not count a popup as a mark that failed to bake when links are off', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    const index = addAnnotation(doc, { kind: 'Text', page: 0, rect: NOTE, contents: 'open me' });
+    const context = doc.context;
+    const annots = page.node.Annots() as PDFArray;
+    const noteRef = annots.get(index) as PDFRef;
+    const popup = context.register(context.obj({
+      Type: 'Annot', Subtype: 'Popup', Parent: noteRef, Rect: [320, 600, 420, 660],
+    } as never));
+    annots.push(popup);
+    (context.lookup(noteRef, PDFDict) as PDFDict).set(PDFName.of('Popup'), popup);
+    // Turned off, links stop being skipped up front — and the popup was swept with
+    // them: it never has an appearance, so it read as "1 annotation had no
+    // appearance to draw" on a run whose only real mark did bake. Its parent's fate
+    // decides instead, and the popup leaves with the note.
+    const outcome = await runFlatten(await doc.save({ useObjectStreams: false }), {
+      forms: false, annotations: true, keepLinks: false,
+    });
+    const kinds = await liveKinds(await bytesOf(outcome));
+    expect(kinds).not.toContain('Popup');
+    expect(outcome.warnings.join(' '), 'the popup was reported as a mark that could not be drawn')
+      .not.toMatch(/had no appearance/);
+    expect(outcome.message).toMatch(/^1 annotation\(s\) drawn into the content of 1 page\(s\)/);
   });
 
   it('bakes an ink stroke inside the box it was drawn on', async () => {

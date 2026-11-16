@@ -62,7 +62,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 052 [x] unlock
 053 [x] change-permissions
 054 [x] remove-restrictions
-055 [ ] flatten-pdf
+055 [x] flatten-pdf
 056 [ ] redact-pdf
 057 [ ] compare-pdfs
 058 [ ] view-metadata

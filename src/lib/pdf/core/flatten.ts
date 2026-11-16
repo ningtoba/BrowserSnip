@@ -219,6 +219,11 @@ function shouldFlatten(
   keepLinks: boolean,
 ): boolean {
   if (kind === 'Link' && keepLinks) return false;
+  // A popup is a bubble, not a mark: it has no appearance of its own and whether
+  // it survives is its parent's business, so it is never a target itself. Asking
+  // it to bake made it read as "an annotation with no appearance" on every run
+  // that turned the link toggle off, and it is removed with its parent anyway.
+  if (kind === 'Popup') return false;
   if (FORM_OWNED.includes(kind as AnnotationKind)) return false;
   if (options.kinds && !options.kinds.includes(kind as AnnotationKind)) return false;
   if (options.except?.includes(kind as AnnotationKind)) return false;
@@ -242,17 +247,21 @@ function drawAppearance(doc: PDFDocument, page: PDFPage, annotation: PDFDict): b
   const rect = readRect(annotation.get(PDFName.of('Rect')));
   if (!rect || rect.width <= 0 || rect.height <= 0) return false;
   const rotation = quarterTurn(annotation.get(PDFName.of('Rotate')));
+  // The mark's `/CA` and `/BM` are handed to the drawing call, not pushed around
+  // it: `pushOperators` writes into one stream the page holds *before* the
+  // appearance's own stream, so a `q … gs` / `Q` pair around it puts the state in
+  // force only for the empty stretch between the two — the fill then runs with the
+  // default state and a 40 % mark comes back solid. Both arms open their own `q`,
+  // so the `gs` goes directly after it and encloses the operators.
   const state = paintState(doc, page, annotation);
-  if (state) page.pushOperators(pushGraphicsState(), setGraphicsState(state));
   // Inlining the operators is the promise made literal: the mark's own words land
   // in the page content, where search, copy and redaction still reach them. A form
   // this module cannot copy (a resource it does not adopt) is drawn as a
   // positioned XObject instead, which still puts the ink on the page.
-  const baked =
-    inlineFormXObject(page, appearanceRef, { rect, rotation }) ||
-    drawAppearanceObject(doc, page, appearanceRef, rect, rotation);
-  if (state) page.pushOperators(popGraphicsState());
-  return baked;
+  return (
+    inlineFormXObject(page, appearanceRef, { rect, rotation, state }) ||
+    drawAppearanceObject(doc, page, appearanceRef, rect, rotation, state)
+  );
 }
 
 /**
@@ -295,11 +304,13 @@ function drawAppearanceObject(
   appearanceRef: PDFRef,
   rect: { x: number; y: number; width: number; height: number },
   rotation: 0 | 90 | 180 | 270,
+  state?: PDFName,
 ): boolean {
   if (!(doc.context.lookupMaybe(appearanceRef, PDFStream) instanceof PDFStream)) return false;
   const key = page.node.newXObject('Flat', appearanceRef);
   page.pushOperators(
     pushGraphicsState(),
+    ...(state ? [setGraphicsState(state)] : []),
     translate(rect.x, rect.y),
     ...rotateInPlace({ width: rect.width, height: rect.height, rotation }),
     // A form XObject paints the unit square; without this the appearance lands on

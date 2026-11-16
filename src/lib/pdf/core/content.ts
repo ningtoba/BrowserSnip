@@ -3847,7 +3847,7 @@ function rotateInPlaceMatrix(width: number, height: number, rotation: number): M
 export function inlineFormXObject(
   page: PDFPage,
   formRef: PDFRef,
-  options: { rect: ContentRect; rotation?: number },
+  options: { rect: ContentRect; rotation?: number; state?: PDFName },
 ): boolean {
   const context = page.doc.context;
   const stream = context.lookupMaybe(formRef, PDFStream);
@@ -3863,7 +3863,7 @@ export function inlineFormXObject(
   const renamed = adoptFormResources(page, stream.dict, ops);
   if (!renamed) return false;
 
-  const { rect, rotation = 0 } = options;
+  const { rect, rotation = 0, state } = options;
   // form space → unit square → the box it is drawn into → turned in place → its
   // corner on the page. `multiply(m, n)` applies `m` first, as a viewer does.
   let placed = multiply(matrix as Matrix, scaleBy(rect.width, rect.height));
@@ -3875,6 +3875,10 @@ export function inlineFormXObject(
 
   appendContentOps(page, [
     makeOp('q'),
+    // The transparency (or blend) the annotation declared, opened inside the same
+    // `q` that wraps the placement: a caller that pushed it around this stream
+    // instead would see it popped before the operators run.
+    ...(state ? [makeOp('gs', [operand.name(bare(state.asString()))])] : []),
     makeOp('cm', placed.map((value) => operand.number(Number(value.toFixed(5))))),
     ...renameResourceOperands(ops, renamed),
     makeOp('Q'),
