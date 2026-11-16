@@ -484,6 +484,175 @@ export function writeXmp(doc: PDFDocument, xmp: string): void {
   if (old && old.toString() !== ref.toString()) ctx.delete(old);
 }
 
+/** The XMP properties the properties editor owns, keyed by qualified name. */
+const XMP_NS: Record<string, string> = {
+  dc: 'http://purl.org/dc/elements/1.1/',
+  pdf: 'http://ns.adobe.com/pdf/1.3/',
+  xmp: 'http://ns.adobe.com/xap/1.0/',
+  rdf: 'http://www.w3.org/1999-02-22-rdf-syntax-ns#',
+};
+
+/** Values to write into the packet; `''`/`[]` removes the property. */
+export interface XmpPatch {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: readonly string[];
+  producer?: string;
+  creatorTool?: string;
+  lang?: string;
+}
+
+function qualified(doc: Document, name: string): Element {
+  const prefix = name.slice(0, name.indexOf(':'));
+  return doc.createElementNS(XMP_NS[prefix], name);
+}
+
+/** `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt></dc:title>`. */
+function altElement(doc: Document, name: string, value: string): Element {
+  const element = qualified(doc, name);
+  const alt = qualified(doc, 'rdf:Alt');
+  const item = qualified(doc, 'rdf:li');
+  item.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:lang', 'x-default');
+  item.textContent = value;
+  alt.appendChild(item);
+  element.appendChild(alt);
+  return element;
+}
+
+function seqElement(doc: Document, name: string, values: readonly string[]): Element {
+  const element = qualified(doc, name);
+  const seq = qualified(doc, 'rdf:Seq');
+  for (const value of values) {
+    const item = qualified(doc, 'rdf:li');
+    item.textContent = value;
+    seq.appendChild(item);
+  }
+  element.appendChild(seq);
+  return element;
+}
+
+/** The `rdf:Description` the editable properties live on, created if absent. */
+function descriptionFor(doc: Document): Element | undefined {
+  const root = doc.getElementsByTagName('rdf:RDF')[0] ?? doc.documentElement;
+  if (!root) return undefined;
+  const descriptions = [...doc.getElementsByTagName('rdf:Description')];
+  const existing = descriptions.find(
+    (element) => element.getAttribute('xmlns:dc') === XMP_NS.dc,
+  );
+  if (existing) return existing;
+  const created = qualified(doc, 'rdf:Description');
+  created.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:rdf', XMP_NS.rdf);
+  for (const [prefix, uri] of Object.entries(XMP_NS)) {
+    if (prefix === 'rdf') continue;
+    created.setAttributeNS('http://www.w3.org/2000/xmlns/', `xmlns:${prefix}`, uri);
+  }
+  created.setAttribute('rdf:about', '');
+  root.appendChild(created);
+  return created;
+}
+
+/**
+ * Replace one property on a description, or drop it when the value is empty.
+ *
+ * The packet is *patched*, not rebuilt: an editor that rewrote the whole packet
+ * from the six fields it shows measured away `pdf:PDFVersion`, `xmp:CreateDate`,
+ * `xmp:MetadataDate`, `dc:rights` and `dc:language` on a file that carried them,
+ * which is metadata lost by the tool whose job is metadata.
+ */
+function patchProperty(doc: Document, description: Element, name: string, value: string | readonly string[] | undefined): void {
+  for (const old of [...description.getElementsByTagName(name)]) description.removeChild(old);
+  const empty = value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+  if (empty) return;
+  if (name === 'dc:title' || name === 'dc:description' || name === 'dc:rights') {
+    description.appendChild(altElement(doc, name, value as string));
+  } else if (name === 'dc:creator' || name === 'dc:subject' || name === 'dc:language') {
+    description.appendChild(seqElement(doc, name, Array.isArray(value) ? value : [value as string]));
+  } else {
+    const element = qualified(doc, name);
+    element.textContent = value as string;
+    description.appendChild(element);
+  }
+}
+
+/** A whole packet carrying `patch`, for a document that has none to patch. */
+export function buildXmpPacket(patch: XmpPatch, keep?: XmpSummary | null): string {
+  const xml = typeof DOMParser === 'undefined' ? null : new DOMParser()
+    .parseFromString('<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+      + '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#">'
+      + '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>', 'application/xml');
+  if (xml) {
+    const description = descriptionFor(xml);
+    if (description) {
+      patchProperty(xml, description, 'dc:title', patch.title);
+      patchProperty(xml, description, 'dc:creator', patch.author);
+      patchProperty(xml, description, 'dc:description', patch.subject);
+      patchProperty(xml, description, 'dc:subject', patch.keywords);
+      patchProperty(xml, description, 'dc:language', patch.lang);
+      patchProperty(xml, description, 'pdf:Producer', patch.producer);
+      patchProperty(xml, description, 'xmp:CreatorTool', patch.creatorTool);
+      return new XMLSerializer().serializeToString(xml);
+    }
+  }
+  return '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+    + `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="${XMP_NS.rdf}">`
+    + `<rdf:Description rdf:about="" xmlns:dc="${XMP_NS.dc}" xmlns:pdf="${XMP_NS.pdf}" xmlns:xmp="${XMP_NS.xmp}">`
+    + (patch.title ? `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapeXmlText(patch.title)}</rdf:li></rdf:Alt></dc:title>` : '')
+    + (patch.author ? `<dc:creator><rdf:Seq><rdf:li>${escapeXmlText(patch.author)}</rdf:li></rdf:Seq></dc:creator>` : '')
+    + (patch.subject ? `<dc:description><rdf:Alt><rdf:li xml:lang="x-default">${escapeXmlText(patch.subject)}</rdf:li></rdf:Alt></dc:description>` : '')
+    + (patch.keywords?.length ? `<dc:subject><rdf:Seq>${patch.keywords.map((word) => `<rdf:li>${escapeXmlText(word)}</rdf:li>`).join('')}</rdf:Seq></dc:subject>` : '')
+    + (patch.producer ? `<pdf:Producer>${escapeXmlText(patch.producer)}</pdf:Producer>` : '')
+    + (patch.creatorTool ? `<xmp:CreatorTool>${escapeXmlText(patch.creatorTool)}</xmp:CreatorTool>` : '')
+    + `</rdf:Description>`
+    // A packet that declared PDF/A conformance keeps it: editing the properties
+    // must not silently un-archive a filed document, and that identity exists
+    // only in the XMP.
+    + (keep?.pdfaPart !== undefined
+      ? `<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">`
+        + `<pdfaid:part>${keep.pdfaPart}</pdfaid:part>`
+        + (keep.pdfaConformance ? `<pdfaid:conformance>${escapeXmlText(keep.pdfaConformance)}</pdfaid:conformance>` : '')
+        + `</rdf:Description>`
+      : '')
+    + `</rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+}
+
+/**
+ * Make the packet say what `/Info` says, and leave the rest of it alone.
+ *
+ * `'patched'` and `'rewritten'` both mean the packet now agrees with the
+ * properties; a packet that is not XML this can parse (an undeclared `rdf:`
+ * prefix is common) is replaced whole, because patching it would need the
+ * parser that just refused it.
+ */
+export function syncXmp(doc: PDFDocument, patch: XmpPatch): 'patched' | 'rewritten' | 'absent' {
+  const raw = readXmpText(doc);
+  if (raw === undefined) {
+    const any = Object.values(patch).some((value) => (Array.isArray(value) ? value.length > 0 : !!value));
+    if (!any) return 'absent';
+    writeXmp(doc, buildXmpPacket(patch));
+    return 'rewritten';
+  }
+  const xml = parseXml(raw);
+  const description = xml ? descriptionFor(xml) : undefined;
+  if (!xml || !description) {
+    writeXmp(doc, buildXmpPacket(patch, readXmp(doc)));
+    return 'rewritten';
+  }
+  patchProperty(xml, description, 'dc:title', patch.title);
+  patchProperty(xml, description, 'dc:creator', patch.author);
+  patchProperty(xml, description, 'dc:description', patch.subject);
+  patchProperty(xml, description, 'dc:subject', patch.keywords);
+  patchProperty(xml, description, 'dc:language', patch.lang);
+  patchProperty(xml, description, 'pdf:Producer', patch.producer);
+  patchProperty(xml, description, 'xmp:CreatorTool', patch.creatorTool);
+  writeXmp(doc, new XMLSerializer().serializeToString(xml));
+  return 'patched';
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /**
  * Remove `/Metadata`.
  * @returns true when the document carried XMP and it is now gone.

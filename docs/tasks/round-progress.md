@@ -66,7 +66,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 056 [x] redact-pdf
 057 [x] compare-pdfs
 058 [x] view-metadata
-059 [ ] edit-metadata
+059 [x] edit-metadata
 060 [ ] remove-metadata
 061 [ ] add-attachments
 062 [ ] extract-attachments

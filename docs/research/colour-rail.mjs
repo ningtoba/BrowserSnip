@@ -150,6 +150,17 @@ const TOOL_LABELS = {
   },
   // `protect`/`change-permissions` call their mode selection "Protection type", not
   // "Method", and their eight /P toggles print a sentence each (round 051).
+  // `edit-metadata` names one key in longer words than the key and its two
+  // provenance switches read as sentences, so the bare keys read NO CONTROL and a
+  // run would go ahead with the defaults (round 059).
+  'edit-metadata': {
+    docLanguage: 'Document language',
+    creator: 'Creator application',
+    creationDate: 'Creation date',
+    modDate: 'Modification date',
+    syncXmp: 'Write the same values into the XMP packet',
+    touchDates: 'Set the modification date to now',
+  },
   protect: {
     mode: 'Protection type',
     allowPrinting: 'Allow printing',
@@ -162,15 +173,23 @@ const TOOL_LABELS = {
   },
 };
 
+// `FIELDS` splits on whitespace, which cannot express a value with a space in it;
+// `FIELDS_JSON` takes the same key→raw-value object as JSON instead (round 059's
+// `edit-metadata` title is "Report (final) v2 \ draft", and a split `FIELDS` fed
+// the title `Report` and the word `(final)` as another control).
 const WANTED = Object.fromEntries(
-  (process.env.FIELDS || '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((pair) => {
-      const at = pair.indexOf('=');
-      const key = pair.slice(0, at);
-      return [TOOL_LABELS[TOOL]?.[key] ?? FIELD_LABELS[key] ?? key, pair.slice(at + 1)];
-    }),
+  process.env.FIELDS_JSON
+    ? Object.entries(JSON.parse(process.env.FIELDS_JSON)).map(([key, value]) => [
+      TOOL_LABELS[TOOL]?.[key] ?? FIELD_LABELS[key] ?? key, String(value),
+    ])
+    : (process.env.FIELDS || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((pair) => {
+        const at = pair.indexOf('=');
+        const key = pair.slice(0, at);
+        return [TOOL_LABELS[TOOL]?.[key] ?? FIELD_LABELS[key] ?? key, pair.slice(at + 1)];
+      }),
 );
 
 // ── Chromium over CDP ───────────────────────────────────────────────────────

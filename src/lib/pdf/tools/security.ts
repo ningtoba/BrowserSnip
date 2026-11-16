@@ -1123,7 +1123,7 @@ export const securityTools: PdfToolDefinition[] = [
   {
     id: 'edit-metadata',
     name: 'Edit Metadata',
-    description: 'Change title, author, subject, keywords and dates',
+    description: 'Change title, author, subject, keywords, language and the two dates',
     icon: '🏷️',
     category: 'security',
     keywords: ['properties', 'document title', 'author', 'xmp'],
@@ -1131,8 +1131,9 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The document properties you can see in a reader’s file panel, rewritten; the pages are left exactly as they were.',
     actionLabel: 'Save properties',
     notes: [
-      'Only the info dictionary and the XMP packet change — the page content is not re-written, so this cannot alter what the document says.',
-      'Anything you leave blank keeps its current value. To erase a field rather than replace it, use Remove Metadata.',
+      'Only the info dictionary and the XMP packet change — the page content is not re-written, so this cannot alter what the document says. In the XMP packet only the properties this form owns are rewritten; an `xmp:CreateDate`, a `dc:rights` or a vendor property is carried over untouched.',
+      'Anything you leave blank keeps its current value — the key is not emptied. To erase every property rather than replace one, use Remove Metadata.',
+      'A date is written as the PDF date it parses to. Text that is not a date is refused by name rather than stored verbatim in a key readers date-sort on.',
     ],
     fields: [
       { key: 'title', label: 'Title', type: 'text', group: 'Identity', placeholder: 'The name a reader shows in its tab', help: 'This is what most readers title the window with — more visible to the person reading than the filename is.' },
@@ -1143,11 +1144,13 @@ export const securityTools: PdfToolDefinition[] = [
       { key: 'creator', label: 'Creator application', type: 'text', group: 'Provenance', placeholder: 'What produced the original content', help: 'The application that produced the original content, which is different from the one that wrote this PDF.' },
       { key: 'producer', label: 'Producer', type: 'text', group: 'Provenance', placeholder: 'What wrote this PDF' , help: 'Named because auditors look for it: overwriting it hides which tool produced the file.' },
       { key: 'syncXmp', label: 'Write the same values into the XMP packet', type: 'toggle', default: true, group: 'Provenance', help: 'Off leaves the two stores disagreeing, and a different reader then shows the value you did not change.' },
-      { key: 'touchDates', label: 'Set the modification date to now', type: 'toggle', default: true, group: 'Provenance', help: 'Off keeps the original ModDate, which is what you want when the file has been signed or filed against that date.' },
+      { key: 'creationDate', label: 'Creation date', type: 'text', group: 'Dates', placeholder: '2026-01-31 or D:20260131010101Z', help: 'The document’s birthday, kept as it is unless you type one. ISO text and PDF dates are both accepted.' },
+      { key: 'modDate', label: 'Modification date', type: 'text', group: 'Dates', placeholder: '2026-01-31 or D:20260131010101Z', help: 'A value typed here wins over the toggle below; the toggle only fills it when this is blank.' },
+      { key: 'touchDates', label: 'Set the modification date to now', type: 'toggle', default: true, group: 'Dates', help: 'Off keeps the original ModDate, which is what you want when the file has been signed or filed against that date.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
-      const { writeInfo, readInfo, writeXmp } = await import('../core/metadata');
+      const { writeInfo, readInfo, syncXmp } = await import('../core/metadata');
       const current = readInfo(input.doc);
       const keywords = stringValue(context.values, 'keywords');
       const written: Parameters<typeof writeInfo>[1] = {
@@ -1159,42 +1162,27 @@ export const securityTools: PdfToolDefinition[] = [
         producer: stringValue(context.values, 'producer') || current.producer,
         lang: stringValue(context.values, 'docLanguage') || current.lang,
       };
-      // The control reads "Set the modification date to now", and `freshDates`
-      // also overwrote CreationDate — a document's birthday is not this tool's to
-      // change, and auditors read it.
-      if (booleanValue(context.values, 'touchDates', true)) written.modDate = formatPdfDate(new Date());
+      // Both dates are typable. A typed value wins over the "set to now" toggle —
+      // a user who named a date asked for that date — and the toggle only fills
+      // ModDate. `freshDates` would also overwrite CreationDate, and a document's
+      // birthday is not this tool's to change: auditors read it.
+      const creationDate = stringValue(context.values, 'creationDate').trim();
+      const modDate = stringValue(context.values, 'modDate').trim();
+      if (creationDate) written.creationDate = creationDate;
+      if (modDate) written.modDate = modDate;
+      else if (booleanValue(context.values, 'touchDates', true)) written.modDate = formatPdfDate(new Date());
       writeInfo(input.doc, written);
       if (booleanValue(context.values, 'syncXmp', true)) {
         const info = readInfo(input.doc);
-        const previous = readXmp(input.doc);
-        const subjects = (info.keywords ?? '')
-          .split(/[,;]+/)
-          .map((word) => word.trim())
-          .filter(Boolean)
-          .map((word) => `<rdf:li>${escapeXml(word)}</rdf:li>`)
-          .join('');
-        // A packet that declared PDF/A conformance keeps it: editing the
-        // properties must not silently un-archive a filed document, and that
-        // identity exists only in the XMP.
-        const pdfa = previous?.pdfaPart !== undefined
-          ? `<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">` +
-            `<pdfaid:part>${previous.pdfaPart}</pdfaid:part>` +
-            (previous.pdfaConformance ? `<pdfaid:conformance>${escapeXml(previous.pdfaConformance)}</pdfaid:conformance>` : '') +
-            `</rdf:Description>`
-          : '';
-        writeXmp(
-          input.doc,
-          `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
-          `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#">` +
-          `<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">` +
-          `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(info.title ?? '')}</rdf:li></rdf:Alt></dc:title>` +
-          `<dc:creator><rdf:Seq><rdf:li>${escapeXml(info.author ?? '')}</rdf:li></rdf:Seq></dc:creator>` +
-          `<dc:description><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(info.subject ?? '')}</rdf:li></rdf:Alt></dc:description>` +
-          (subjects ? `<dc:subject><rdf:Seq>${subjects}</rdf:Seq></dc:subject>` : '') +
-          (info.producer ? `<pdf:Producer>${escapeXml(info.producer)}</pdf:Producer>` : '') +
-          (info.creator ? `<xmp:CreatorTool>${escapeXml(info.creator)}</xmp:CreatorTool>` : '') +
-          `</rdf:Description>${pdfa}</rdf:RDF></x:xmpmeta><?xpacket end="w"?>`,
-        );
+        syncXmp(input.doc, {
+          title: info.title,
+          author: info.author,
+          subject: info.subject,
+          keywords: (info.keywords ?? '').split(/[,;]+/).map((word) => word.trim()).filter(Boolean),
+          producer: info.producer,
+          creatorTool: info.creator,
+          lang: info.lang,
+        });
       }
       return pdfResult(input.doc, { message: 'Updated the document properties.' });
     },
@@ -2494,10 +2482,6 @@ async function verifyProtection(
   return { inspection, warnings };
 }
 
-
-function escapeXml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 function diffWords(a: string, b: string): string {
   const left = new Set(a.split(/\s+/).filter(Boolean));
