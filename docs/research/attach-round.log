@@ -1,0 +1,69 @@
+# add-attachments, round 061 — browser runs and byte measurements
+
+Fixture /tmp/triage/in/attach.pdf (4 pages, carries note.txt, 45 B, sha 295ff656…), dev :5271.
+Driver docs/research/attach-round.mjs (and verify-attachments-run.mjs for the mixed run).
+Reader of the produced files: docs/research/attach-check.py (PyMuPDF 1.28.2, pypdf 6.14.2, libqpdf 12.3.2).
+
+## BEFORE — the build at 7c98506
+
+### mixed shapes: pixel.png (67 B), bin-handshake.bin (1 KiB), notes-éè.txt (16 B)
+pane: "Embedded 3 new file(s). The document now carries 4 attachment(s), up from 1." + collision warning (driver double-add)
+pages 4 -> 4 same
+ink [183459, 148710, 0, 427689] -> [183459, 148710, 0, 427689] same
+text [1779, 13, 0, 0] -> [1779, 13, 0, 0] same
+/Info same
+pre-existing payloads same True
+ENTRY name-tree-key b'(note.txt)' | /F b'(note.txt)' | /UF b'(note.txt)' | /EF ['/F'] | /Subtype None | /Size 45| /CheckSum no | sha256 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9 len 45
+ENTRY name-tree-key b'<feff0070006900780065006c002e0070006e0067>' | /F b'(pixel.png)' | /UF b'<feff0070006900780065006c002e0070006e0067>' | /EF ['/F'] | /Subtype /image/png | /Size 67| /CheckSum yes | sha256 daaf29ba63f382d2a566b32caf5ad8b6b98682fa9e29135447df5fca16c7e606 len 67
+ENTRY name-tree-key b'<feff00620069006e002d00680061006e0064007300680061006b0065002e00620069006e>' | /F b'(bin-handshake.bin)' | /UF b'<feff00620069006e002d00680061006e0064007300680061006b0065002e00620069006e>' | /EF ['/F'] | /Subtype /application/octet-stream | /Size 1024| /CheckSum yes | sha256 b9d00a39bc5e2b116520728c0852a89a2115e6412ed98515d2d6300e9635b9a5 len 1024
+ENTRY name-tree-key b'<feff006e006f007400650073002d00e900e8002e007400780074>' | /F b'(notes-\xe9\xe8.txt)' | /UF b'<feff006e006f007400650073002d00e900e8002e007400780074>' | /EF ['/F'] | /Subtype /text/plain | /Size 16| /CheckSum yes | sha256 82a521e2de7cd594423f1e8307ebc34061061914f2f9dcee4dce1383d095e3a9 len 16
+pypdf names ['note.txt', 'pixel.png', 'bin-handshake.bin', 'notes-éè.txt']
+AF members 3 | /PageMode /UseAttachments
+OK   note.txt want 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9 got 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9
+OK   pixel.png want daaf29ba63f382d2a566b32caf5ad8b6b98682fa9e29135447df5fca16c7e606 got daaf29ba63f382d2a566b32caf5ad8b6b98682fa9e29135447df5fca16c7e606
+OK   bin-handshake.bin want b9d00a39bc5e2b116520728c0852a89a2115e6412ed98515d2d6300e9635b9a5 got b9d00a39bc5e2b116520728c0852a89a2115e6412ed98515d2d6300e9635b9a5
+OK   notes-éè.txt want 82a521e2de7cd594423f1e8307ebc34061061914f2f9dcee4dce1383d095e3a9 got 82a521e2de7cd594423f1e8307ebc34061061914f2f9dcee4dce1383d095e3a9
+VERDICT PASS
+
+### names with a space and a zero-byte file
+pane: "Embedded 2 new file(s). The document now carries 3 attachment(s), up from 1."
+ENTRY name-tree-key b'(note.txt)' | /F b'(note.txt)' | /UF b'(note.txt)' | /EF ['/F'] | /Subtype None | /Size 45| /CheckSum no | sha256 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9 len 45
+ENTRY name-tree-key b'<feff0071007500610072007400650072006c00790020007200650070006f00720074002e006300730076>' | /F b'(quarterly report.csv)' | /UF b'<feff0071007500610072007400650072006c00790020007200650070006f00720074002e006300730076>' | /EF ['/F'] | /Subtype /text/csv | /Size 15| /CheckSum yes | sha256 c21e4d7c28b1d7419e61401a85a7561eae403754795fd53c899ad071cdbc6da8 len 15
+ENTRY name-tree-key b'<feff0062006c0061006e006b0030002e00620069006e>' | /F b'(blank0.bin)' | /UF b'<feff0062006c0061006e006b0030002e00620069006e>' | /EF ['/F'] | /Subtype /application/octet-stream | /Size 0| /CheckSum yes | sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 len 0
+pypdf names ['note.txt', 'quarterly report.csv', 'blank0.bin']
+OK   note.txt want 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9 got 295ff656c1e3d540a36894b14e171b4e44bf8b056ef2753d9c6bd0e31ce79ee9
+OK   quarterly report.csv want c21e4d7c28b1d7419e61401a85a7561eae403754795fd53c899ad071cdbc6da8 got c21e4d7c28b1d7419e61401a85a7561eae403754795fd53c899ad071cdbc6da8
+OK   blank0.bin want e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 got e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+VERDICT PASS
+
+### collision with the stored note.txt + a 2 MiB incompressible file
+pane: "Embedded 1 new file(s) and replaced 1 already stored under the same name(s). The document now carries 2 attachment(s), up from 1."
+pages 4 -> 4 same
+ink [183459, 148710, 0, 427689] -> [183459, 148710, 0, 427689] same
+text [1779, 13, 0, 0] -> [1779, 13, 0, 0] same
+/Info same
+pre-existing payloads same False
+ENTRY name-tree-key b'<feff006e006f00740065002e007400780074>' | /F b'(note.txt)' | /UF b'<feff006e006f00740065002e007400780074>' | /EF ['/F'] | /Subtype /text/plain | /Size 30| /CheckSum yes | sha256 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f len 30
+ENTRY name-tree-key b'<feff0062006900670032006d002e00620069006e>' | /F b'(big2m.bin)' | /UF b'<feff0062006900670032006d002e00620069006e>' | /EF ['/F'] | /Subtype /application/octet-stream | /Size 2097152| /CheckSum yes | sha256 3237bc27a4d4a9e252e0e58cea55caf8686fb03671f650d862d408b23cd5551b len 2097152
+pypdf names ['note.txt', 'big2m.bin']
+AF members 2 | /PageMode /UseAttachments
+OK   note.txt want 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f got 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f
+OK   big2m.bin want 3237bc27a4d4a9e252e0e58cea55caf8686fb03671f650d862d408b23cd5551b got 3237bc27a4d4a9e252e0e58cea55caf8686fb03671f650d862d408b23cd5551b
+VERDICT PASS
+produced 2100967 B for a 2097152 B payload (1.0018x)
+
+### the defect: a name with surrounding whitespace (" note.txt ")
+pane: "Embedded 1 new file(s). The document now carries 1 attachment(s), up from 1."
+pane WARNING: "\" note.txt \" is not in the saved file, so it is not among the attachments the recipient will see."
+pypdf names ['note.txt']
+OK   note.txt want 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f got 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f
+VERDICT PASS
+
+## AFTER — the same padded name, security.ts fixed
+pane: "Embedded 0 new file(s) and replaced 1 already stored under the same name(s). The document now carries 1 attachment(s). Readers with an attachments panel will list them."
+pane WARNING: (none)
+ENTRY name-tree-key b'<feff006e006f00740065002e007400780074>' | /F b'(note.txt)' | /UF b'<feff006e006f00740065002e007400780074>' | /EF ['/F'] | /Subtype /application/octet-stream | /Size 30| /CheckSum yes | sha256 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f len 30
+pypdf names ['note.txt']
+OK   note.txt want 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f got 6de46abd0de3ba81ef5f07415561e6f90e0d3216d6643ee62dfee3dabe14f35f
+VERDICT PASS
+screenshots: docs/research/attach-round-dark.png (two names, dark), docs/research/attach-round-after.png (the padded name, dark)

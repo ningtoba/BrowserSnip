@@ -1058,7 +1058,9 @@ describe('the attachments tools are judged on the bytes they carry', () => {
     const stored = listAttachments(await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false }));
     expect(stored.map((file) => [file.name, latin1.decode(file.bytes)])).toEqual([['notes.txt', 'v2 replaced']]);
     expect(outcome.message).toMatch(/Embedded 0 new file\(s\) and replaced 1 already stored/);
-    expect(outcome.message).toMatch(/up from 1/);
+    // A replacement leaves the count where it was; "up from 1" said otherwise.
+    expect(outcome.message).toMatch(/carries 1 attachment\(s\)\./);
+    expect(outcome.message).not.toMatch(/up from/);
 
     // Two files under one name in the same run: a PDF stores one per name.
     const clash = await run('add-attachments', { files: [enclosure('same.txt', 'a'), enclosure('same.txt', 'b')] }, [pdfFile(await textFixture(), 'claim.pdf')]);

@@ -1293,27 +1293,52 @@ export const securityTools: PdfToolDefinition[] = [
       // is not how many this run embedded: a document with one attachment and one
       // new file did not gain two. The names are diffed instead, and the saved
       // bytes are asked what they really carry.
+      //
+      // The diff has to use the writer's own idea of a name: it trims, and removal
+      // matches case-insensitively, so `removeAttachments` folds `" note.txt "` and
+      // `Notes.txt` onto the stored `note.txt`. Compared exactly, a padded or
+      // recased name read as a *new* attachment and a saved file that carries it
+      // was told "\" note.txt \" is not in the saved file" — a false sentence over
+      // correct bytes. Each requested name still claims at most one stored entry,
+      // so `A.txt` + `a.txt` in one run is one replacement and one addition, which
+      // is what the bytes then show.
+      const key = (name: string) => name.trim().toLowerCase();
+      const stored = new Map<string, number>();
+      for (const name of before.keys()) stored.set(key(name), (stored.get(key(name)) ?? 0) + 1);
       const had = before.size;
       await addAttachments(input.doc, wanted);
-      const requested = [...new Set(wanted.map((file) => file.name))];
-      const replaced = requested.filter((name) => before.has(name));
-      const added = requested.filter((name) => !before.has(name));
+      const requested = [...new Set(wanted.map((file) => file.name.trim()))];
+      const replaced: string[] = [];
+      const added: string[] = [];
+      for (const name of requested) {
+        const left = stored.get(key(name)) ?? 0;
+        if (left > 0) {
+          replaced.push(name);
+          stored.set(key(name), left - 1);
+        } else added.push(name);
+      }
       const collided = wanted.length - requested.length;
       const bytes = await savePDF(input.doc);
       const carried = listAttachments(await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }));
+      const carriedKeys = new Set(carried.map((a) => key(a.name)));
       const warnings: string[] = [];
       if (collided > 0) {
         warnings.push(`${collided} file(s) shared a name with another in this run, and a PDF stores one attachment per name: only the last copy of each is embedded.`);
       }
-      const missing = requested.filter((name) => !carried.some((a) => a.name === name));
+      const missing = requested.filter((name) => !carriedKeys.has(key(name)));
       if (missing.length > 0) {
         warnings.push(`${missing.map((name) => `"${name}"`).join(', ')} is not in the saved file, so it is not among the attachments the recipient will see.`);
       }
+      // "up from" on an unchanged count is not true of a replacement, and a
+      // case-insensitive replace can remove two stored keys for one.
+      const moved = carried.length > had
+        ? `, up from ${had}`
+        : carried.length < had ? `, down from ${had}` : '';
       return {
         kind: 'pdf' as const,
         bytes,
         pages: input.doc.getPageCount(),
-        message: `Embedded ${added.length} new file(s)${replaced.length > 0 ? ` and replaced ${replaced.length} already stored under the same name(s)` : ''}. The document now carries ${carried.length} attachment(s)${had > 0 ? `, up from ${had}` : ''}. Readers with an attachments panel will list them.`,
+        message: `Embedded ${added.length} new file(s)${replaced.length > 0 ? ` and replaced ${replaced.length} already stored under the same name(s)` : ''}. The document now carries ${carried.length} attachment(s)${moved}. Readers with an attachments panel will list them.`,
         warnings,
       };
     },
