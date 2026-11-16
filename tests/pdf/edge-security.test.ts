@@ -561,12 +561,15 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     expect(outcome.warnings.join(' ')).not.toMatch(/not what was asked for/i);
   }, 120_000);
 
-  it('names no cipher the saved file does not carry (the change-permissions FALSE CLAIM row)', async () => {
+  it('names the cipher the saved file carries, and no other (the change-permissions FALSE CLAIM row)', async () => {
     // The triage ran an AES-128 file through this tool and got "Restrictions as
     // recorded in the file (AES-256)": the one word the sentence added was the one
     // the bytes denied. `9d064f5` took the cipher out of the line rather than
-    // guessing at it, so this pins that it stays out — and that the strength the
-    // entry's own note offers is the strength the dictionary holds.
+    // guessing at it — which left the entry's own note claiming "the card after the
+    // run repeats the strength read back off the saved file" over a card naming no
+    // strength at all (round 053). It is back, and read off the file the way
+    // `protect` reads it: the word in the sentence is the guard's description of
+    // this dictionary, not the option the form happened to hold.
     const outcome = await run('change-permissions', {
       action: 'set',
       ownerPassword: 'owner',
@@ -581,7 +584,8 @@ describe('change-permissions and remove-restrictions (E5, E13)', () => {
     const bytes = await bytesOf(outcome);
     const gate = await inspectPdf(bytes, 'permissions.pdf');
     expect(gate.algorithm, 'this build writes AES-128 here').toBe('AES-128');
-    expect(outcome.message).not.toMatch(/AES|RC4|\b256\b|\b128\b/);
+    expect(outcome.message).toMatch(/ciphered in AES-128 \(crypt filter \/StdCF, revision 4\)/);
+    expect(outcome.message).not.toMatch(/AES-256|RC4|\b256\b/);
     expect(outcome.message).toMatch(/as recorded in the file/i);
     expect(outcome.message).toMatch(/printing blocked/i);
     // The promise is that the sentence is read off the file, so the bits it names

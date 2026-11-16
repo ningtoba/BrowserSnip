@@ -137,7 +137,7 @@ const PERMISSION_NOTES = [
  * having run the cipher.
  */
 const CIPHERTEXT_NOTE =
-  'What lands in the file is ciphertext: every page stream and every string is ciphered with the password you set, at the strength the Cipher control names — AES-128 (`/V 4 /R 4`, `/CFM /AESV2`) or AES-256 (`/V 5 /R 6`, `/CFM /AESV3`) — and MuPDF, qpdf, pypdf, poppler and Ghostscript all refuse a copy that has a password until it is typed (a permissions-only copy opens with nothing typed and each of them still reports the limits). The card after the run repeats the strength read back off the saved file, not the one the form asked for. A strength is named here because a file is written at it and read back at it — this app opens what this app protects.';
+  'What lands in the file is ciphertext: every page stream and every string is ciphered with the password you set, at the strength the Cipher control names — AES-128 (`/V 4 /R 4`, `/CFM /AESV2`), AES-256 (`/V 5 /R 6`, `/CFM /AESV3`), or, on a file that is already protected, the strength it arrived at — and MuPDF, qpdf, pypdf, poppler and Ghostscript all refuse a copy that has a password until it is typed (a permissions-only copy opens with nothing typed and each of them still reports the limits). The card after the run repeats the strength read back off the saved file, not the one the form asked for. A strength is named here because a file is written at it and read back at it — this app opens what this app protects.';
 
 const CIPHER_STRENGTH_NOTE =
   'Two strengths are offered, and both reach the bytes: AES-128, and AES-256 (`/R 6`, with `/OE`, `/UE` and the revision-6 check value), each written here and each opened again by readers that share no code with this app over the same document at the same `/P`. RC4-128 is read but never written — this build has no outside measurement of its own RC4 output — and RC4-40 has no outside fixture at all, so both are refused by name rather than offered as a label. What this app *opens* is wider than what it writes: RC4-128, AES-128 and AES-256 files are decrypted when you open them and re-sealed at the strength they arrived at, so an AES-256 file edited here leaves as AES-256. AES-256 under another handler revision (`/R 5`, `/R 7`) is still refused by name. Offering a strength this app cannot prove it round-trips would turn a protected download into blank paper the moment you re-opened it here.';
@@ -157,14 +157,20 @@ const SCAN_ALTERNATIVE_NOTE =
  * record, and PDF 1.6 rather than 2.0 — and the result card names whichever strength
  * the saved file turns out to carry.
  */
-function cipherField(whenSet?: (v: Record<string, unknown>) => boolean) {
+function cipherField(whenSet?: (v: Record<string, unknown>) => boolean, opts: { keep?: boolean } = {}) {
   return {
     key: 'cipher',
     label: 'Cipher',
     type: 'select' as const,
-    default: 'AES-128',
+    default: opts.keep ? 'keep' : 'AES-128',
     group: 'Password',
     options: [
+      // Only where there is an input whose strength can be kept: `protect` sets a
+      // password the source never had, `change-permissions` rewrites one bit of a
+      // lock that is already there, and re-sealing an AES-256 file at the default
+      // AES-128 is a downgrade nobody asked for (measured: `/CFM /AESV3` in,
+      // `/CFM /AESV2` out, with the card naming neither).
+      ...(opts.keep ? [{ value: 'keep', label: "Keep the file's strength", hint: 'Writes the strength the file arrived at; an unprotected file gets AES-128.' }] : []),
       { value: 'AES-128', label: 'AES-128', hint: 'PDF 1.6. The widest compatible choice.' },
       { value: 'AES-256', label: 'AES-256', hint: 'PDF 2.0, /V 5 /R 6. Strongest; needs a modern reader.' },
     ],
@@ -180,8 +186,12 @@ function cipherField(whenSet?: (v: Record<string, unknown>) => boolean) {
  * names — because a stored value from an older form must not end up as a dictionary
  * the bytes contradict, which is the defect this tool was written up for.
  */
-function cipherChoice(values: Record<string, unknown>): WritableStrength {
-  return stringValue(values, 'cipher', 'AES-128') === 'AES-256' ? 'AES-256' : 'AES-128';
+function cipherChoice(values: Record<string, unknown>, keep?: WritableStrength): WritableStrength {
+  const named = stringValue(values, 'cipher', 'AES-128');
+  if (named === 'AES-256') return 'AES-256';
+  if (named === 'AES-128') return 'AES-128';
+  // `keep`, and anything a stored form value left behind that is neither name.
+  return keep ?? 'AES-128';
 }
 
 /**
@@ -473,10 +483,12 @@ export const securityTools: PdfToolDefinition[] = [
         ],
         help: 'Remove all restrictions drops the encryption dictionary, which is the only edit that clears a permissions-only file from inside this tool.',
       },
-      // The same two strengths `protect` offers, because the same writer runs them:
-      // this entry re-seals the file with an empty user secret, and the cipher over
-      // the pages is whatever the control names.
-      cipherField((v) => v.action === 'set'),
+      // The strengths `protect` offers, plus the one this tool needs and `protect`
+      // does not: the strength the file already arrived at. This entry re-seals the
+      // file with an empty user secret, so the pages are ciphered whichever name
+      // the control holds — and the default is the source's own, because the user
+      // came here to change a permission bit, not a strength.
+      cipherField((v) => v.action === 'set', { keep: true }),
       ...permissionFields((v) => v.action === 'set'),
     ],
     async run(context) {
@@ -517,15 +529,20 @@ export const securityTools: PdfToolDefinition[] = [
         assembling: booleanValue(context.values, 'allowAssembling'),
       });
       const source = contentFingerprint(doc);
+      // A strength this app reads but cannot write (RC4-128, a `/None` gate) falls
+      // back to AES-128, which is also what an unprotected input gets.
+      const arrivedAt = input.inspection?.algorithm ?? 'another strength';
+      const kept: WritableStrength = arrivedAt === 'AES-256' ? 'AES-256' : 'AES-128';
+      const strength = cipherChoice(context.values, kept);
       const bytes = await saveEncrypted(doc, {
         ownerPassword: owner || 'browsersnip',
         userPassword: '',
         permissions: flags,
-        cipher: cipherChoice(context.values),
+        cipher: strength,
       });
       const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, source, true, '');
       if (wasProtected) {
-        warnings.push('This replaced any protection the file already had. The copy opens without a password; only the owner password set here unlocks its restrictions.');
+        warnings.push(`This replaced any protection the file already had. The copy opens without a password; only the owner password set here unlocks its restrictions${strength === arrivedAt ? ' — and it is written at the strength the file arrived at' : `, and it is written at ${strength} where the file arrived at ${arrivedAt}`}.`);
       }
       if (!owner) {
         warnings.push('No owner password was entered, so a random one was used: the restrictions can be changed again but not lifted by name.');
@@ -542,7 +559,7 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes,
         pages: doc.getPageCount(),
-        message: `Restrictions as recorded in the file: ${permissionSentence(inspection.permissions ?? flags)}. ${
+        message: `Restrictions as recorded in the file, ciphered in ${cipherAsWritten(inspection)}: ${permissionSentence(inspection.permissions ?? flags)}. ${
           reader.verdict === 'opens'
             ? `A PDF reader opens it with no password: ${reader.pages} page(s) readable.`
             : 'The document is written to open without a password.'

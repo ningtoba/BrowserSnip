@@ -342,4 +342,59 @@ describe('the sibling entries still do what their names say', () => {
     expect(outcome.message).toMatch(/All restrictions and the password were removed/);
     expect((await readerView(bytes)).pages.join(' ')).toContain(PLANTED);
   }, 600_000);
+
+  /* ── the strength, which this entry used to drop in silence ─────────────── */
+
+  it('writes the strength the file arrived at, and says which one it wrote', async () => {
+    // Measured before the fix (round 053): an AES-256 `/CFM /AESV3` file came back
+    // `/CFM /AESV2` — a downgrade nobody asked for, on the one edit that is not
+    // about strength — and the card named no cipher at all while the entry's own
+    // note promised it repeated the strength read off the saved file. A permission
+    // change is not a reason to weaken a file.
+    const fixture = lockedWith('AES-256');
+    const outcome = await run('change-permissions', {
+      action: 'set', ownerPassword: PASSWORD, allowPrinting: true, printLevel: 'high', allowCopying: false,
+    }, fixture);
+    const { bytes } = await produced(outcome);
+    const raw = latin1(bytes);
+    expect(raw, 'the revision-6 cipher is gone').toMatch(/\/CFM \/AESV3/);
+    expect(raw, 'the copy was downgraded to AES-128').not.toMatch(/\/CFM \/AESV2/);
+    expect(raw).toMatch(/\/V 5/);
+    const after = await inspectPdf(bytes, fixture.name);
+    expect(after.algorithm, 'the saved dictionary is not the strength the source carried').toBe('AES-256');
+    // The card names it, from the file rather than from the form.
+    expect(outcome.message).toMatch(/ciphered in AES-256 \(crypt filter \/StdCF, revision 6\)/);
+    expect(outcome.warnings.join(' ')).toMatch(/at the strength the file arrived at/);
+    // And a revision-6 re-seal still carries the words: a strength kept over blank
+    // pages would be the `encrypted-inputs` defect wearing the right dictionary.
+    expect((await readerView(bytes)).pages.join(' ')).toContain(PLANTED);
+  }, 600_000);
+
+  it('falls back to AES-128 for a strength it reads but never writes, and names the change', async () => {
+    // RC4-128 is readable here and unwritable, so "keep" cannot be honoured. The
+    // copy must still be ciphered and the card must not claim the source's strength.
+    const fixture = lockedWith('RC4-128');
+    const outcome = await run('change-permissions', {
+      action: 'set', ownerPassword: PASSWORD, allowCopying: false,
+    }, fixture);
+    const { bytes } = await produced(outcome);
+    expect(latin1(bytes)).toMatch(/\/CFM \/AESV2/);
+    expect(outcome.message).toMatch(/ciphered in AES-128 \(crypt filter \/StdCF, revision 4\)/);
+    expect(outcome.message).not.toMatch(/RC4-128 \(/);
+    expect(outcome.warnings.join(' ')).toMatch(/written at AES-128 where the file arrived at RC4-128/);
+    expect((await readerView(bytes)).pages.join(' ')).toContain(PLANTED);
+  }, 600_000);
+
+  it('still lets the control override the kept strength, and says so', async () => {
+    // The control is the whole point of "keep" being a value rather than a rule:
+    // asking for AES-128 on an AES-256 file has to reach the bytes.
+    const outcome = await run('change-permissions', {
+      action: 'set', cipher: 'AES-128', ownerPassword: PASSWORD, allowCopying: false,
+    }, lockedWith('AES-256'));
+    const { bytes } = await produced(outcome);
+    expect(latin1(bytes)).toMatch(/\/CFM \/AESV2/);
+    expect(outcome.message).toMatch(/ciphered in AES-128/);
+    expect(outcome.warnings.join(' ')).toMatch(/written at AES-128 where the file arrived at AES-256/);
+    expect((await readerView(bytes)).pages.join(' ')).toContain(PLANTED);
+  }, 600_000);
 });
