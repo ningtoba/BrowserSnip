@@ -19,7 +19,8 @@
  * decoded by the same rules a viewer uses.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PDFDocument } from '@maxwbh/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from '@maxwbh/pdf-lib';
+import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { pageContentOps } from '@/lib/pdf/core/content';
 import {
   OLE_BYTES,
@@ -149,6 +150,34 @@ function find(runs: TextRun[], text: string): TextRun[] {
   return runs.filter((run) => run.text.includes(text));
 }
 
+/**
+ * XObject names a page (or a Form it draws) refers to that the file never wrote.
+ *
+ * Resolved through the document's own cross-reference table, the way a reader
+ * does: an entry whose object is absent is a `Do` for nothing.
+ */
+async function danglingXObjects(bytes: Uint8Array): Promise<string[]> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const dangling: string[] = [];
+  const walk = (resources: PDFObject | undefined, page: number, depth: number) => {
+    const dict = resources instanceof PDFDict ? resources : undefined;
+    const xobjects = dict?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    if (!(xobjects instanceof PDFDict)) return;
+    for (const [name, value] of xobjects.entries()) {
+      const label = `p${page}:${name.asString().replace(/^\//, '')}`;
+      if (value instanceof PDFRef) {
+        const target = doc.context.lookup(value);
+        if (target === undefined) { dangling.push(label); continue; }
+        if (target instanceof PDFStream && depth === 0) {
+          walk(target.dict.lookupMaybe(PDFName.of('Resources'), PDFDict), page, depth + 1);
+        }
+      }
+    }
+  };
+  doc.getPages().forEach((page, index) => walk(page.node.Resources(), index, 0));
+  return dangling;
+}
+
 /** The `/Image` and `/Form` XObjects a page draws, with their placed boxes. */
 async function placedOn(bytes: Uint8Array, page = 0) {
   const perPage = await imagesPerPage(bytes);
@@ -240,6 +269,56 @@ describe('image-to-pdf places the picture it was given', () => {
       }
       expect(page[0]!.box[1]).toBeGreaterThan(page[1]!.box[1]);
     }
+  });
+
+  it('leaves both pictures reachable in the file when two share a sheet', async () => {
+    // A `Do` is not a drawing: the page named `/EmbeddedPdfPage-…` at an object
+    // number the finished file never wrote, so a reader painted 0 ink on a sheet
+    // that measured two placed images. `placedImages` above reads resource
+    // *entries*, so it saw the pair either way — `pixels` falls back to [0, 0]
+    // and `kind` to 'Unknown' exactly when the object behind the entry is gone.
+    const straight = await firstPdf(await run('image-to-pdf', { pageSize: 'fit', margin: 0 }, [
+      fileFrom(realPng(120, 60), 'a.png', 'image/png'),
+    ]));
+    // Control: the unpaired route already resolves, so a hit below is the pair-up.
+    expect(await danglingXObjects(straight)).toEqual([]);
+
+    const outcome = await run('image-to-pdf', { onePerSheet: true, pageSize: 'a4', margin: 0 }, [
+      fileFrom(realPng(120, 60), 'a.png', 'image/png'),
+      fileFrom(realPng(60, 120), 'b.png', 'image/png'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(await danglingXObjects(bytes)).toEqual([]);
+    const pages = await imagesPerPage(bytes);
+    expect(pages.length).toBe(1);
+    // Each side is an embedded page, so the entry is a Form with the picture's
+    // own box inside it — `[0, 0]` again the moment the object is gone.
+    expect(pages[0]!.map((placed) => placed.kind)).toEqual(['Form', 'Form']);
+    expect(pages[0]!.map((placed) => placed.pixels)).toEqual([[120, 60], [60, 120]]);
+  });
+
+  it('hides Fit and Orientation where they cannot move anything', async () => {
+    // Measured in a real tab: at the default "Hug each image" the sheet is the
+    // picture's own box, and `placeImage` sizes it from the pixels alone — so
+    // Fit and Orientation were two controls over nothing on the default path.
+    const definition = getPdfTool('image-to-pdf')!;
+    for (const key of ['fit', 'orientation']) {
+      const field = definition.fields!.find((entry) => entry.key === key)!;
+      expect(field.when).toBeDefined();
+      expect(field.when!({ pageSize: 'fit' })).toBe(false);
+      expect(field.when!({ pageSize: 'a4', onePerSheet: true })).toBe(false);
+      expect(field.when!({ pageSize: 'a4' })).toBe(true);
+    }
+    // The control must still be live wherever it is still shown, or the fix hid
+    // a working control instead of a dead one.
+    const hugged = await run('image-to-pdf', { pageSize: 'fit', fit: 'stretch', orientation: 'portrait', margin: 0 }, [
+      fileFrom(realPng(120, 60), 'a.png', 'image/png'),
+    ]);
+    expect(await pageSizes(await firstPdf(hugged))).toEqual([[120, 60]]);
+    const sheeted = await run('image-to-pdf', { pageSize: 'a4', fit: 'stretch', orientation: 'landscape', margin: 0 }, [
+      fileFrom(realPng(120, 60), 'a.png', 'image/png'),
+    ]);
+    expect(await pageSizes(await firstPdf(sheeted))).toEqual([[841.89, 595.28]]);
   });
 
   it('follows the EXIF orientation of a phone photo', async () => {

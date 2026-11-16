@@ -21,7 +21,7 @@
  *   `core/fonts`, so CJK, Cyrillic and accented Latin survive (E11) instead of
  *   raising the old `WinAnsi cannot encode` error.
  */
-import { drawPageInto, newPDF, savePDF } from '../core/doc';
+import { drawPageInto, newPDF, openPDF, savePDF } from '../core/doc';
 import { decodeImage, decodeImagePages, sniffImageMime, type DecodedImage } from '../core/images';
 import { pdfFromImages } from '../core/pack';
 import { ocrSilentPageOf, type OcrPageResult, type OcrSilentPage } from '../core/ocr';
@@ -503,16 +503,16 @@ export const convertToTools: PdfToolDefinition[] = [
           { value: 'a5', label: 'A5' },
           { value: 'tabloid', label: 'Tabloid' },
         ],
-        help: 'The sheet each picture is placed on. Fit to image sizes the page to the picture instead.',
+        help: 'The sheet each picture is placed on. “Hug each image” sizes every page to its own picture, which leaves Fit and Orientation nothing to act on — both are hidden until a sheet is chosen.',
       },
-      { key: 'fit', label: 'Fit', type: 'select', default: 'contain', group: 'Page', options: [
+      { key: 'fit', label: 'Fit', type: 'select', default: 'contain', group: 'Page', when: (v: ToolValues) => v.pageSize !== 'fit' && v.onePerSheet !== true, options: [
         { value: 'contain', label: 'Fit inside the page' },
         { value: 'cover', label: 'Fill the page (crop)' },
         { value: 'stretch', label: 'Stretch' },
       ],
         help: 'Nothing is cropped unless you ask for it: the picture is scaled down to the page here, cropped by fill, and distorted by stretch.',
       },
-      { key: 'orientation', label: 'Orientation', type: 'select', default: 'auto', group: 'Page', help: 'Auto follows each picture’s own shape, so a rotated phone photo lands the way it was taken.', options: [
+      { key: 'orientation', label: 'Orientation', type: 'select', default: 'auto', group: 'Page', when: (v: ToolValues) => v.pageSize !== 'fit' && v.onePerSheet !== true, help: 'Auto follows each picture’s own shape, so a rotated phone photo lands the way it was taken.', options: [
         { value: 'auto', label: 'Match each image' }, { value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' },
       ] },
       { key: 'margin', label: 'Margin', type: 'slider', default: 0, min: 0, max: 72, step: 1, unit: 'pt', group: 'Page',
@@ -1741,6 +1741,15 @@ async function decodeImageBatch(
  * `pdfFromImages` is one image per page by design, so the pair-up happens on the
  * finished pages: each sheet gets two source pages scaled into halves of it,
  * which keeps the original pixels and only changes geometry.
+ *
+ * The packed document is serialised and reopened first. `embedPage` copies a
+ * page's objects into the target and keeps the ref it was handed for the copied
+ * form; on a document that was never written, the copier allocates its objects
+ * out of the same number space, that form ref is never assigned, and the sheet
+ * draws `/EmbeddedPdfPage-… Do` at an object absent from the xref — measured on
+ * this build, one page of `/Subtype /Form` with no image a reader could follow,
+ * 0 ink px rendered, and MuPDF reporting “cannot find object in xref”. A loaded
+ * source numbers its objects itself, so the copied refs resolve.
  */
 async function twoUp(
   source: Awaited<ReturnType<typeof pdfFromImages>>['doc'],
@@ -1749,7 +1758,7 @@ async function twoUp(
 ): Promise<Awaited<ReturnType<typeof pdfFromImages>>['doc']> {
   const [sheetWidth, sheetHeight] = pageSize(sheet ?? 'a4', false);
   const target = await newPDF();
-  const pages = source.getPages();
+  const pages = (await openPDF(await savePDF(source), { updateMetadata: false })).getPages();
   for (let index = 0; index < pages.length; index += 2) {
     const page = target.addPage([sheetWidth, sheetHeight]);
     const usableWidth = sheetWidth - margin * 2;

@@ -74,7 +74,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 064 [x] digital-sign-pdf
 065 [x] validate-signature-pdf
 066 [x] timestamp-pdf
-067 [ ] image-to-pdf
+067 [x] image-to-pdf
 068 [ ] jpg-to-pdf
 069 [ ] png-to-pdf
 070 [ ] webp-to-pdf
