@@ -165,6 +165,31 @@ const FORMAT_MIMES: Record<string, string[]> = {
 const RASTER_LOSS =
   'Each page is one flat image: there is no text layer to select or search, and colour profile, EXIF and GPS metadata are dropped.';
 
+/**
+ * Where the page box comes from, measured rather than assumed.
+ *
+ * `placeImage` sizes a hugged page from the pixel count, one point per pixel,
+ * and never reads a density: a 300 x 150 PNG carrying `pHYs` at 300 dpi came out
+ * of the dev build as a 300 x 150 pt sheet (4.17 x 2.08 in), not the 1 x 0.5 in
+ * its own resolution claims. That is the scanner convention and is kept — but a
+ * 300 dpi scan prints four times the size its density asks for, so say so.
+ */
+const RASTER_DENSITY =
+  'The page is sized from the pixel count at 72 dpi — one point per pixel — never from a density the file records (EXIF resolution, or a PNG `pHYs` chunk): a 300 dpi scan prints about four times the size it asks for.';
+
+/**
+ * Transparency in a PNG: kept in the file, flattened by the page.
+ *
+ * On the dev build the alpha survived as an image soft mask (`/SMask` present,
+ * mask 0 outside the disc, 255 inside) and `pdfFromImages` painted a white
+ * rectangle under the image, so the see-through part *shows* the page's own white
+ * paper (measured there: 255, 255, 255; the disc 220, 30, 40 exact) rather than a
+ * black or a checkerboard. The mask is the file's, the white is the page's, and
+ * a user choosing a cut-out logo deserves both facts before the run.
+ */
+const PNG_ALPHA =
+  'A transparent PNG keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
+
 /** Shared admissions for the text routes — true of the bundled layout engine. */
 const TEXT_NOTES = [
   'Text is drawn as real, selectable PDF text through embedded fonts, so it stays searchable and copyable.',
@@ -626,6 +651,8 @@ export const convertToTools: PdfToolDefinition[] = [
     const label = format.toUpperCase();
     const isTiff = format === 'tiff';
     const isHeic = format === 'heic';
+    // PNG is the one format in this family that carries transparency.
+    const isPng = format === 'png';
     return {
       id,
       name: `${label} to PDF`,
@@ -644,6 +671,8 @@ export const convertToTools: PdfToolDefinition[] = [
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
+        isPng ? PNG_ALPHA : '',
+        RASTER_DENSITY,
         // Measured rather than assumed: two real HEIC files (32 KB and 472 B, both
         // `ftypheic`/hvc1, both decoded by Pillow on this machine) opened in neither
         // `createImageBitmap` nor `<img>` here, so the whole run is a refusal.
@@ -679,7 +708,7 @@ export const convertToTools: PdfToolDefinition[] = [
             message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`
               + (refused.length ? ` ${refused.length} file(s) left out.` : ''),
           })),
-          warnings: [RASTER_LOSS, ...refused],
+          warnings: [RASTER_LOSS, ...(isPng ? [PNG_ALPHA] : []), RASTER_DENSITY, ...refused],
         };
       },
     };
