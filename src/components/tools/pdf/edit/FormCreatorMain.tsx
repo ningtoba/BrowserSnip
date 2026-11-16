@@ -217,8 +217,10 @@ export function toCreateSpec(draft: DraftField) {
 export interface ViewportView {
   width: number;
   height: number;
-  /** `PageViewport.convertToPdfPoint` for the page on screen. */
+  /** `PageViewport.convertToPdfPoint` for the page on screen: screen → PDF. */
   toPdf: (x: number, y: number) => ArrayLike<number>;
+  /** `PageViewport.convertToViewportPoint` for the same page: PDF → screen. */
+  toView: (x: number, y: number) => ArrayLike<number>;
 }
 
 /** Screen box → PDF rect via two opposite corners; rotations stay axis-aligned. */
@@ -314,7 +316,15 @@ export default function FormCreatorMain(): JSX.Element {
     [drafts, page],
   );
 
-  /** Recompute the on-screen box of the given drafts. */
+  /**
+   * Recompute the on-screen box of the given drafts.
+   *
+   * `rectToOverlay` wants the PDF → screen direction, and `view.toPdf` is the
+   * opposite one: passing `toPdf` here divided the box by the zoom factor a
+   * second time and measured y from the bottom, so every draft was drawn
+   * shrunk and about a page too low once the gesture that placed it ended — and
+   * moving or nudging it wrote that wrong rectangle into the file.
+   */
   const recomputeBoxes = useCallback((list: DraftField[]) => {
     const view = viewRef.current;
     if (!view) return;
@@ -322,7 +332,7 @@ export default function FormCreatorMain(): JSX.Element {
       const next = { ...current };
       for (const draft of list) {
         next[draft.id] = clampBox(
-          rectToOverlay(draft.rect, (x, y) => view.toPdf(x, y)),
+          rectToOverlay(draft.rect, view.toView),
           view.width,
           view.height,
         );
@@ -403,6 +413,7 @@ export default function FormCreatorMain(): JSX.Element {
           width: viewport.width,
           height: viewport.height,
           toPdf: (x, y) => viewport.convertToPdfPoint(x, y),
+          toView: (x, y) => viewport.convertToViewportPoint(x, y),
         };
         render = await session.renderPage(page.page, scale);
         if (cancelled) return;
@@ -693,20 +704,43 @@ export default function FormCreatorMain(): JSX.Element {
       // The list order *is* the tab order: `createFormField` appends to
       // `/AcroForm /Fields`, and viewers follow that array.
       let created = 0;
+      const refused: string[] = [];
       for (let index = 0; index < drafts.length; index += 1) {
         const draft = drafts[index];
         const spec = toCreateSpec(draft);
-        if (createFormField(doc, draft.page, spec) >= 0) created += 1;
+        // One field pdf-lib refuses (an answer a dropdown does not offer, say)
+        // used to abort the whole save and hand back no file at all.
+        try {
+          if (createFormField(doc, draft.page, spec) >= 0) created += 1;
+          else refused.push(`${spec.name} (nothing to place)`);
+        } catch (error) {
+          refused.push(`${spec.name}: ${error instanceof Error ? error.message : String(error)}`);
+        }
         store.setPercent(6 + Math.round((84 * (index + 1)) / drafts.length), `Adding ${spec.name}…`);
       }
       store.setPercent(94, 'Saving…');
       const out = await savePDF(doc);
       const blob = new Blob([out as BlobPart], { type: 'application/pdf' });
-      store.setOutput(blob, URL.createObjectURL(blob));
+      /*
+       * The screen the user lands on is the result card, not this pane: setting
+       * the output unmounts it, so the `setStatus` line below was thrown away and
+       * the card showed a file name and nothing about the run. The store's
+       * warnings are what the card paints under "What you should know", and the
+       * count of fields written belongs there.
+       */
       const line = `Added ${created} fillable field${created === 1 ? '' : 's'}${
         removed ? `, removed ${removed} existing field${removed === 1 ? '' : 's'}` : ''
       }. Tab order follows the field list.`;
-      store.appendLog(`FormCreatorMain: ${line}`);
+      const warnings = [
+        line,
+        ...(refused.length > 0
+          ? [`${refused.length} of the ${drafts.length} field${drafts.length === 1 ? '' : 's'} could not be placed — ${refused.join('; ')}.`]
+          : []),
+        ...(created === 0 ? ['Nothing was added, so the page is exactly as it arrived.'] : []),
+      ];
+      store.setWarnings(warnings);
+      store.appendLog(`FormCreatorMain: ${warnings.join(' ')}`);
+      store.setOutput(blob, URL.createObjectURL(blob));
       setStatus(line);
     } catch (err) {
       const text = err instanceof Error ? err.message : 'The form could not be saved.';
@@ -868,7 +902,18 @@ export default function FormCreatorMain(): JSX.Element {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="min-h-0 flex-1 overflow-auto bg-cream p-3">
+        {/*
+          The sheet sits inside padded scroll area, so a drag that starts just off
+          the page (in the grey, or off the edge of the window) landed on a node
+          with no pointer handler and produced nothing at all. The frame starts the
+          same gesture; `clampBox` pulls the box back onto the paper.
+        */}
+        <div
+          className="min-h-0 flex-1 overflow-auto bg-cream p-3"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) startDraw(event);
+          }}
+        >
           <div className="relative mx-auto w-fit" style={{ lineHeight: 0 }}>
             <div ref={canvasHost} />
             <div
