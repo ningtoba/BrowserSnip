@@ -1129,7 +1129,7 @@ function pageAnnotations(page: PDFPage): { dict: PDFDict; ref: PDFRef; array: PD
  * it). A shared ancestor array is reported once per page, which is what the
  * viewers show.
  */
-function annotationArrays(page: PDFPage): PDFArray[] {
+export function annotationArrays(page: PDFPage): PDFArray[] {
   const context = page.doc.context;
   const own = deref(context, page.node.get(PDFName.of('Annots')));
   if (own instanceof PDFArray) return [own];

@@ -89,6 +89,9 @@ function item(overrides: Partial<ExtractedTextItem> & { str: string }): Extracte
     fontSize: size,
     hasEOL: false,
     isInvisible: false,
+    // Upright text only: up the page is up the screen.
+    ux: 0,
+    uy: -1,
     ...overrides,
   };
 }

@@ -141,6 +141,9 @@ function word(str: string, x: number, y: number, w: number, h: number): Extracte
     h,
     hasEOL: false,
     isInvisible: false,
+    // Upright text: "up" the page is up the screen.
+    ux: 0,
+    uy: -1,
   };
 }
 

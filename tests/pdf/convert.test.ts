@@ -149,6 +149,9 @@ function item(
     h,
     hasEOL: false,
     isInvisible: false,
+    // Upright text only: up the page is up the screen.
+    ux: 0,
+    uy: -1,
   };
 }
 
@@ -1008,6 +1011,8 @@ describe('ocr.ts — word boxes and searchable-page detection', () => {
     h: 10,
     hasEOL: false,
     isInvisible: opts.invisible ?? false,
+    ux: 0,
+    uy: -1,
   });
 
   it('counts only visible characters when deciding a page is searchable', async () => {

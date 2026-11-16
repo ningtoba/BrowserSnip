@@ -21,6 +21,56 @@ interface ItemBox extends ViewportBox {
   text: string;
   /** The baseline: the bottom edge of the box the text layer reports. */
   bottom: number;
+  /** Glyph size, which is the run's own em — not the box, whose height is its length. */
+  em: number;
+  /** Unit vector from the baseline towards the ascenders, in viewport space. */
+  ux: number;
+  uy: number;
+}
+
+/**
+ * Re-anchor one run on its ink, along the em the run actually stands up in.
+ *
+ * `render.toExtractedItems` reports a run as one em of box stacked on the
+ * *ascender* side of the baseline, so as it comes the box has a quarter-em of
+ * air above the tallest letter and stops at the feet of the text: a highlight
+ * misses the tails of `g`, `p`, `q` and `y`, and anything placed as a share of
+ * that box sits high by the same amount. The box keeps its extent along the line
+ * and moves `TEXT_BASELINE_SHARE` of the way down its own em, which is where
+ * `markupRule` in `core/annotations` strokes from — the same fraction on the
+ * screen and in the file.
+ *
+ * "The way down" is the run's own `ux`/`uy`, not the viewer's y. On a `/Rotate 90`
+ * sheet the em lies horizontally and the box's height is the run's *length*, so
+ * an anchor taken from the height pushed a 163 pt line 33 pt sideways off its
+ * words and left them outside the mark.
+ */
+function anchorOnInk(run: ItemBox[]): ViewportBox {
+  const em = Math.max(...run.map((b) => b.em));
+  const ux = run[0].ux;
+  const uy = run[0].uy;
+  const x0 = Math.min(...run.map((b) => b.x0));
+  const x1 = Math.max(...run.map((b) => b.x1));
+  const y0 = Math.min(...run.map((b) => b.y0));
+  const y1 = Math.max(...run.map((b) => b.y1));
+  // The baseline edge is the one furthest along -u; the anchored box spans
+  // `em` from there, `TEXT_BASELINE_SHARE` of it towards the ascenders.
+  const towards = (t: number): [number, number] => [
+    (TEXT_BASELINE_SHARE - t) * em * ux,
+    (TEXT_BASELINE_SHARE - t) * em * uy,
+  ];
+  const vertical = Math.abs(uy) >= Math.abs(ux);
+  // t = 0 is the ascender edge, t = 1 the feet edge.
+  const [ax, ay] = towards(0);
+  const [bx, by] = towards(1);
+  if (vertical) {
+    // The baseline is at the bottom when the text stands up, at the top when it
+    // hangs upside down.
+    const base = uy < 0 ? y1 : y0;
+    return { x0, x1, y0: Math.min(base + ay, base + by), y1: Math.max(base + ay, base + by) };
+  }
+  const base = ux > 0 ? x0 : x1;
+  return { y0, y1, x0: Math.min(base + ax, base + bx), x1: Math.max(base + ax, base + bx) };
 }
 
 export interface SnapOptions {
@@ -72,7 +122,19 @@ function toBox(item: ExtractedTextItem): ItemBox | null {
   const { x, y, w, h } = item;
   if (![x, y, w, h].every((n) => Number.isFinite(n))) return null;
   if (w <= 0 || h <= 0) return null;
-  return { x0: x, y0: y, x1: x + w, y1: y + h, bottom: y + h, text: item.str };
+  return {
+    x0: x,
+    y0: y,
+    x1: x + w,
+    y1: y + h,
+    bottom: y + h,
+    text: item.str,
+    em: Number.isFinite(item.fontSize) && item.fontSize > 0 ? item.fontSize : h,
+    // An older caller (or a test double) may not carry a vector: upright text is
+    // the case every reader means, so that is the fallback.
+    ux: Number.isFinite(item.ux) ? item.ux : 0,
+    uy: Number.isFinite(item.uy) ? item.uy : -1,
+  };
 }
 
 function hits(box: ItemBox, region: ViewportBox, tolerance: number): boolean {
@@ -155,15 +217,8 @@ export function snapTextLines(
       const isEdge = index === 0 || index === touched.length - 1;
       const words = touched.length > 2 && !isEdge ? group.line : group.hits;
       return runGroups(words, gapEm).map((run) => {
-        const x0 = Math.min(...run.map((b) => b.x0));
-        const x1 = Math.max(...run.map((b) => b.x1));
-        // Every run on the line sits on (within tolerance of) the same baseline,
-        // so the lowest box bottom is the line's baseline and the tallest box is
-        // the line's em.
-        const baseline = Math.max(...run.map((b) => b.bottom));
-        const em = baseline - Math.min(...run.map((b) => b.y0));
-        const y0 = baseline - TEXT_BASELINE_SHARE * em;
-        const y1 = baseline + (1 - TEXT_BASELINE_SHARE) * em;
+        const box = anchorOnInk(run);
+        const { x0, x1, y0, y1 } = box;
         const text = run
           .slice()
           .sort((a, b) => a.x0 - b.x0)

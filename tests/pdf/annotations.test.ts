@@ -1149,7 +1149,7 @@ describe('applyRedactions', () => {
     expect(pageContent(reloaded)).toContain('1 0 0 rg');
     expect(() => applyRedactions(doc, [{ page: 7, rect: { x: 0, y: 0, width: 5, height: 5 } }])).toThrow(/has 1 page/);
     expect(() => applyRedactions(doc, [{ page: 0, rect: { x: 0, y: 0, width: 5, height: 5 } }], { fill: 'oops' })).toThrow(/hex value/);
-    expect(applyRedactions(doc, [])).toEqual({ removed: 0, rasterised: false });
+    expect(applyRedactions(doc, [])).toEqual({ removed: 0, rasterised: false, marksRemoved: 0, widgetsLeft: 0 });
   });
 });
 

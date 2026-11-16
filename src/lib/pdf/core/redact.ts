@@ -65,6 +65,7 @@ import {
   PDFRef,
 } from './doc';
 import type { PDFContext, PDFDocument, PDFPage, PDFObject } from './doc';
+import { annotationArrays } from './annotations';
 import type { QuadRect } from './annotations';
 
 export interface RedactionRect {
@@ -94,6 +95,14 @@ export interface RedactionResult {
   removed: number;
   /** True when a rect covered raster content that pdf-lib cannot delete. */
   rasterised: boolean;
+  /**
+   * Annotations deleted from `/Annots` because a burned rect covered them.
+   * A viewer draws them above page content, so leaving one is leaving the mark
+   * on top of the fill — its appearance and its comment text both survive.
+   */
+  marksRemoved: number;
+  /** Form widgets whose centre was covered and were left live, with their field. */
+  widgetsLeft: number;
 }
 
 /* ------------------------------------------------------------------ *
@@ -624,10 +633,15 @@ function readCidWidths(context: PDFContext, array: PDFArray, into: Map<number, n
       i += 2;
       continue;
     }
+    // `cFirst cLast w`: the *third* entry is the width and the group is three
+    // long. Read the other way (`cFirst w cLast`) and stepped by four, the whole
+    // tail of `/W` desynchronises: a 14 pt DejaVu glyph came back 0.63 pt wide,
+    // so its box covered a fourteenth of its advance and no rect ever covered a
+    // glyph — CID text was painted over while every glyph stayed in the file.
     const last = item(i + 2);
     if (second instanceof PDFNumber && last instanceof PDFNumber) {
-      for (let c = start; c <= last.asNumber(); c += 1) into.set(c, second.asNumber());
-      i += 4;
+      for (let c = start; c <= second.asNumber(); c += 1) into.set(c, last.asNumber());
+      i += 3;
       continue;
     }
     i += 2;
@@ -1054,6 +1068,9 @@ class RedactionWalk {
       const spacing = text.charSpacing + (size === 1 && chunk[0] === 0x20 ? text.wordSpacing * horizontal : 0);
       const advance = ((metrics.widthOf(code) / 1000) * em + spacing) * horizontal;
       const box = rectOf(transformBox(trm, pen, bottom, pen + Math.max(advance, em * 0.01), top));
+      if ((globalThis as any).__redactDebug && i < 3) {
+        console.log('DBG', JSON.stringify({ em, top, bottom, advance, pen, box, rects: this.rects, trm, tm: text.tm, metrics: { a: metrics.ascent, d: metrics.descent, cb: metrics.codeBytes, gs: metrics.glyphSpace, measured: metrics.measured } }));
+      }
       if (this.rects.some((rect) => covered(box, rect))) {
         skipped += advance;
         lost += 1;
@@ -1337,10 +1354,12 @@ export function applyRedactions(
     list.push(box);
     byPage.set(entry.page, list);
   }
-  if (byPage.size === 0) return { removed: 0, rasterised: false };
+  if (byPage.size === 0) return { removed: 0, rasterised: false, marksRemoved: 0, widgetsLeft: 0 };
 
   let removed = 0;
   let rasterised = false;
+  let marksRemoved = 0;
+  let widgetsLeft = 0;
 
   for (const [index, pageRects] of byPage) {
     const page = doc.getPage(index);
@@ -1350,6 +1369,11 @@ export function applyRedactions(
 
     const painted = pageRects.filter((_, i) => !(onImage === 'keep' && outcome.hitImages.has(i)));
     if (painted.length > 0) paintRects(doc, page, painted, fill);
+    // A viewer paints annotations above page content, so a comment left in the
+    // area is drawn over the fill and the bar is only a background.
+    const burned = burnAnnotations(doc, page, painted);
+    marksRemoved += burned.removed;
+    widgetsLeft += burned.widgetsLeft;
 
     const verify = walkPage(doc, page, pageRects, 'verify');
     if (verify.leftoverRuns > 0) {
@@ -1359,7 +1383,90 @@ export function applyRedactions(
     }
   }
 
-  return { removed, rasterised };
+  return { removed, rasterised, marksRemoved, widgetsLeft };
+}
+
+/**
+ * Delete the annotations a burned rect covers, and their pop-up bubbles.
+ *
+ * The fill is painted into the *page content*, and every viewer draws
+ * annotations **above** page content, so an untouched mark is not merely still
+ * clickable: its appearance is drawn over the black bar and the redaction is
+ * not redacted at all. A note's 16 pt icon, a highlight, a free-text box and a
+ * link target all go, on the same centre test the glyphs use so a mark only
+ * half under the box survives with its ink outside the fill.
+ *
+ * A `Widget` stays: it **is** a form field's dictionary, and deleting it out from
+ * under `/AcroForm` is the failure `remove-annotations` pays for with
+ * `pruneFormFields`. Those are counted instead, so the caller can say so.
+ *
+ * @returns how many entries left `/Annots`, and how many widgets were left live.
+ */
+function burnAnnotations(
+  doc: PDFDocument,
+  page: PDFPage,
+  rects: QuadRect[],
+): { removed: number; widgetsLeft: number } {
+  const context = doc.context;
+  const target = (dict: PDFDict): boolean => {
+    const numbers = numbersIn(dict.get(PDFName.of('Rect')), context);
+    if (numbers.length !== 4 || numbers.some((n) => !Number.isFinite(n))) return false;
+    const box = rectOf({ x: numbers[0], y: numbers[1], width: numbers[2] - numbers[0], height: numbers[3] - numbers[1] });
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    return rects.some((rect) => cx >= rect.x && cx <= rect.x + rect.width && cy >= rect.y && cy <= rect.y + rect.height);
+  };
+  const keys = new Set<string>();
+  const keyOf = (value: unknown): string => {
+    if (value instanceof PDFRef) return value.toString();
+    const ref = value instanceof PDFDict ? context.getObjectRef(value) : undefined;
+    return ref ? ref.toString() : '';
+  };
+
+  // Targets first: a bubble is elsewhere on the page, so its own box decides
+  // nothing and it has to go with the note it belongs to.
+  const targets = new Set<PDFDict>();
+  for (const array of annotationArrays(page)) {
+    for (let i = 0; i < array.size(); i += 1) {
+      const dict = deref(context, array.get(i));
+      if (!(dict instanceof PDFDict)) continue;
+      const kind = subtypeName(context, dict);
+      if (kind === 'Widget' || kind === 'Popup') continue;
+      if (target(dict)) targets.add(dict);
+    }
+  }
+  for (const dict of targets) {
+    const key = keyOf(dict);
+    if (key) keys.add(key);
+  }
+
+  let removed = 0;
+  for (const array of annotationArrays(page)) {
+    for (let i = array.size() - 1; i >= 0; i -= 1) {
+      const entry = array.get(i);
+      const dict = deref(context, entry);
+      if (!(dict instanceof PDFDict)) continue;
+      const kind = subtypeName(context, dict);
+      const parent = deref(context, dict.get(PDFName.of('Parent')));
+      const parentKey = parent instanceof PDFDict ? keyOf(parent) : '';
+      const go = targets.has(dict) || (kind === 'Popup' && parentKey !== '' && keys.has(parentKey));
+      if (!go) continue;
+      array.remove(i);
+      removed += 1;
+      if (entry instanceof PDFRef) context.delete(entry);
+    }
+    // A page left with an empty array keeps a `/Annots []`, which is legal but
+    // noise; a viewer shows nothing either way.
+  }
+
+  let widgetsLeft = 0;
+  for (const array of annotationArrays(page)) {
+    for (let i = 0; i < array.size(); i += 1) {
+      const dict = deref(context, array.get(i));
+      if (dict instanceof PDFDict && subtypeName(context, dict) === 'Widget' && target(dict)) widgetsLeft += 1;
+    }
+  }
+  return { removed, widgetsLeft };
 }
 
 function walkPage(

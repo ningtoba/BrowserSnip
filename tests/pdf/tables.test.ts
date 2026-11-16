@@ -60,6 +60,9 @@ function item(seed: ItemSeed): ExtractedTextItem {
     h,
     hasEOL: false,
     isInvisible: seed.invisible ?? false,
+    // Upright text only: up the page is up the screen.
+    ux: 0,
+    uy: -1,
   };
 }
 

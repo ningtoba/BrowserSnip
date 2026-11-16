@@ -761,7 +761,7 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'The words under each box deleted from the page, then painted over — select the black bar and there is nothing left to copy.',
     actionLabel: 'Redact',
     notes: [
-      'Redaction deletes glyphs from page content. With the metadata option on the same words are deleted from the document properties, the XMP packet and the bookmark titles as well; a comment’s own text and an embedded file’s bytes are never rewritten, and the result names whatever still holds the words.',
+      'Redaction deletes glyphs from page content, and deletes the comments whose mark sat under a box — a viewer draws a comment above the page, so one left in place would sit in front of the fill. With the metadata option on the same words are deleted from the document properties, the XMP packet and the bookmark titles as well; a comment elsewhere keeps its own text, a form field box is left live, an embedded file’s bytes are never rewritten, and the result names whatever still holds the words.',
       'An area that lands inside an image is painted over rather than cut out: the pixels of a scanned page still contain the shape of what was there.',
     ],
     fields: [
@@ -807,6 +807,9 @@ export const securityTools: PdfToolDefinition[] = [
       const warnings: string[] = [];
       if (skipped > 0) {
         warnings.push(`${skipped} marked area(s) had no width or height and were skipped — a redaction has to cover something to delete something.`);
+      }
+      if (outcome.widgetsLeft > 0) {
+        warnings.push(`${outcome.widgetsLeft} form field(s) under the marks are still live: a widget is the field's own dictionary, so it was left in /Annots and its appearance is drawn over the fill. Flatten the fields first if the box must be the only thing there.`);
       }
       if (outcome.rasterised) {
         warnings.push('At least one area fell inside an image, so the pixels there were painted over rather than cut out: text that is part of a scanned page survives as image data.');
@@ -859,17 +862,19 @@ export const securityTools: PdfToolDefinition[] = [
         kind: 'pdf',
         bytes,
         pages: input.doc.getPageCount(),
-        message: outcome.removed === 0
-          ? `Marked ${marked.length} area(s); none of them held text, so nothing was deleted — the fill was painted over the page only.`
-          : survivors.length > 0
-            ? `Deleted ${outcome.removed} text run(s) under ${marked.length} area(s) and painted the fill, but ${survivors.length} word(s) under those areas still extract from the saved file.`
-            : `Redacted ${outcome.removed} text run(s) under ${marked.length} area(s) by deleting the glyphs themselves${
-                after
-                  ? destroyed.length > 0
-                    ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.`
-                    : '; no whole word under the marks could be located in the page text layer, so the deletion was confirmed from the page content alone.'
-                  : '.'
-              }`,
+        message: `${
+          outcome.removed === 0
+            ? `Marked ${marked.length} area(s); none of them held text, so no glyph was deleted — the fill was painted over the page only.`
+            : survivors.length > 0
+              ? `Deleted ${outcome.removed} text run(s) under ${marked.length} area(s) and painted the fill, but ${survivors.length} word(s) under those areas still extract from the saved file.`
+              : `Redacted ${outcome.removed} text run(s) under ${marked.length} area(s) by deleting the glyphs themselves${
+                  after
+                    ? destroyed.length > 0
+                      ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.`
+                      : '; no whole word under the marks could be located in the page text layer, so the deletion was confirmed from the page content alone.'
+                    : '.'
+                }`
+        }${outcome.marksRemoved > 0 ? ` ${outcome.marksRemoved} comment(s) under the marks were deleted from the page rather than left drawn over the fill.` : ''}`,
         warnings,
       };
     },
@@ -1825,11 +1830,13 @@ function andList(items: readonly string[]): string {
 /**
  * Stores a redaction cannot rewrite that still carry one of the redacted words.
  *
- * `redact-pdf` deletes glyphs from page content and, when asked, scrubs the
- * `/Info` strings, the XMP packet and the outline. Annotation text and the bytes
+ * `redact-pdf` deletes glyphs from page content, takes the comments whose mark
+ * sat under a box out of `/Annots`, and, when asked, scrubs the `/Info` strings,
+ * the XMP packet and the outline. A comment *elsewhere* on the page and the bytes
  * of an embedded file are neither: a name blacked out on the page but living on
- * in a comment popover or in `enclosure.zip` has not been redacted, so the
- * warning has to say that in particular rather than lean on the generic caveat.
+ * in a popover across the sheet or in `enclosure.zip` has not been redacted, so
+ * the warning has to say that in particular rather than lean on the generic
+ * caveat.
  */
 function redactedWordsStillHeld(doc: PDFDocument, terms: readonly string[]): string[] {
   const wanted = [...new Set(terms.map((term) => term.trim()).filter(Boolean))];

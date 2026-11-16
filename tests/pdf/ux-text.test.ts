@@ -154,6 +154,8 @@ function item(overrides: Partial<ExtractedTextItem> & { str: string }): Extracte
     fontSize: size,
     hasEOL: false,
     isInvisible: false,
+    ux: 0,
+    uy: -1,
     ...overrides,
   };
 }

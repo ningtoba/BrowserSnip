@@ -133,6 +133,9 @@ function word(
     h,
     hasEOL: false,
     isInvisible: false,
+    // This fixture is upright: up the page is up the screen.
+    ux: 0,
+    uy: -1,
     ...extra,
   };
 }

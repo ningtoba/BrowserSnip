@@ -1326,7 +1326,7 @@ describe('stamps, annotations and redaction (E9, E13, E15)', () => {
     // A box over blank paper still paints its fill and still returns a file — but it
     // is not counted as a redaction, and it leaves the text it missed alone.
     const blank = await run('redact-pdf', { regions: [{ page: 0, x: 20, y: 400, width: 40, height: 20 }] }, [bytes]);
-    expect(blank.message).toMatch(/none of them held text, so nothing was deleted/i);
+    expect(blank.message).toMatch(/none of them held text, so no glyph was deleted/i);
     expect(blank.outputs).toHaveLength(1);
     const kept = await openPDF(await outputBytes(blank));
     expect(drawnRuns(kept.getPage(0)!).map((entry) => entry.text).join(' ')).toMatch(/Fixture body one/);

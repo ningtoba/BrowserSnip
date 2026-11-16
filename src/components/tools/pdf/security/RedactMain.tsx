@@ -103,6 +103,25 @@ const MIN_SIZE_FRAC = 0.01;
  * Returns `null` for a drag that caught nothing, which is what keeps an empty
  * rectangle out of the document.
  */
+/**
+ * Cut the snapped lines down to the ink the drag actually crossed.
+ *
+ * `snapTextLines` works in text *runs*, and a run is usually a whole line, so
+ * dragging across one name marked the line from its first word to its last and
+ * deleted the words either side of it — 10 of 11 words on a one-word drag. Only
+ * the cross-axis band is the snapped box's own business (that is what makes a
+ * mark cover the words and not the leading); the extent along the line is the
+ * drag's. A line the drag leaves nothing of is dropped.
+ */
+export function clipLinesToDrag(
+  lines: SnappedLine[],
+  drag: { x0: number; x1: number },
+): SnappedLine[] {
+  return lines
+    .map((line) => ({ ...line, x0: Math.max(line.x0, drag.x0), x1: Math.min(line.x1, drag.x1) }))
+    .filter((line) => line.x1 > line.x0);
+}
+
 export function redactionFromLines(
   lines: SnappedLine[],
   canvas: { width: number; height: number },
@@ -219,6 +238,13 @@ export function RedactMain() {
         const pageIdx = Math.min(st.page - 1, pdfDoc.numPages - 1);
         const page = await pdfDoc.getPage(pageIdx + 1);
         const vp = page.getViewport({ scale: DISPLAY_SCALE });
+        // The marks are stored as fractions of the *displayed* sheet, so the size
+        // they are turned back with has to be this sheet's: a /Rotate 90 page is
+        // its height wide, and a document with mixed page sizes is wider or
+        // narrower than the first one. Kept from the load alone, a mark on any
+        // other sheet was scaled by the first page's dimensions and the bar landed
+        // in the wrong band while the words survived.
+        _pageW = vp.width; _pageH = vp.height;
         canvasRef.current!.width = vp.width;
         canvasRef.current!.height = vp.height;
         setCanvasDims({ w: vp.width, h: vp.height });
@@ -276,6 +302,21 @@ export function RedactMain() {
 
   // ═══════════════════ Drag, Move & Resize ═══════════════════
 
+  /**
+   * The canvas's own size, in CSS pixels, read from the element.
+   *
+   * `canvasDims` is state and is the right thing to *paint* a mark with, but the
+   * gesture handlers must not decide geometry from it: the page-change effect
+   * resizes the element and the state commits a render later, so a drag made in
+   * that gap was measured against the previous sheet's dimensions. On a
+   * `/Rotate 90` sheet, whose width is the page's height, the region then fell
+   * nowhere near the text and the pane answered "no words under that box".
+   */
+  const canvasSize = () => ({
+    w: canvasRef.current?.width ?? 0,
+    h: canvasRef.current?.height ?? 0,
+  });
+
   const dragRef = useRef<{
     mode: 'draw' | 'move' | 'resize';
     id?: string;
@@ -286,11 +327,17 @@ export function RedactMain() {
     free?: boolean;
   } | null>(null);
   const [drawing, setDrawing] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** The overlay's rect as measured when the pointer went down. */
+  const gestureRect = useRef<DOMRect | null>(null);
 
   const onStartDraw = useCallback((e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
     if (!overlayRef.current) return;
+    // The overlay rect is frozen for the whole gesture: the notice line under the
+    // toolbar appears and disappears as marks come and go, which moves the pane
+    // under a pointer that is already down.
     const rect = overlayRef.current.getBoundingClientRect();
+    gestureRect.current = rect;
     // Shift is the deliberate "mark an area, not words" gesture: photographs and
     // scanned pages with no text layer have no lines to snap to.
     dragRef.current = { mode: 'draw', startX: e.clientX, startY: e.clientY, free: e.shiftKey };
@@ -328,7 +375,7 @@ export function RedactMain() {
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current;
       if (!d || !overlayRef.current) return;
-      const rect = overlayRef.current.getBoundingClientRect();
+      const rect = gestureRect.current ?? overlayRef.current.getBoundingClientRect();
 
       if (d.mode === 'draw') {
         const fx1 = (d.startX - rect.left) / rect.width;
@@ -386,14 +433,16 @@ export function RedactMain() {
             addRedaction({ ...drawing, free: true });
             setNotice('Area mark added — it covers pixels, so this page will be re-rendered.');
           } else {
+            const size = canvasSize();
+            const drag = {
+              x0: drawing.x * size.w,
+              y0: (1 - drawing.y - drawing.h) * size.h,
+              x1: (drawing.x + drawing.w) * size.w,
+              y1: (1 - drawing.y) * size.h,
+            };
             const snapped = redactionFromLines(
-              snapTextLines(itemsRef.current, {
-                x0: drawing.x * canvasDims.w,
-                y0: (1 - drawing.y - drawing.h) * canvasDims.h,
-                x1: (drawing.x + drawing.w) * canvasDims.w,
-                y1: (1 - drawing.y) * canvasDims.h,
-              }),
-              { width: canvasDims.w, height: canvasDims.h },
+              clipLinesToDrag(snapTextLines(itemsRef.current, drag), drag),
+              { width: size.w, height: size.h },
             );
             if (snapped) {
               addRedaction({ ...snapped.box, lines: snapped.lines });

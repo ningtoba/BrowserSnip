@@ -180,6 +180,15 @@ export interface ExtractedTextItem {
   fontSize: number;
   /** 1 when the run is hidden render mode 3 (the OCR/searchable-layer case). */
   isInvisible: boolean;
+  /**
+   * Unit vector, in viewer space, from the run's baseline towards its ascenders.
+   * `(0, -1)` for ordinary text; `(1, 0)` on a `/Rotate 90` sheet, where "up" in
+   * the glyph's own frame points right on the screen. It is what tells a caller
+   * which way round the run's em lies — the box's *height* is the run's length
+   * once the page is turned.
+   */
+  ux: number;
+  uy: number;
 }
 
 export class RenderCancelled extends Error {
@@ -485,7 +494,7 @@ export function toExtractedItems(
   const out: ExtractedTextItem[] = [];
   for (const item of content.items) {
     if (!isTextItem(item)) continue;
-    const [a = 0, b = 0, , , e = 0, f = 0] = item.transform.map(Number);
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = item.transform.map(Number);
     const runWidth = item.width;
     const runHeight = Math.hypot(b, a) || Math.abs(item.height) || 0;
     const fontSize = Math.hypot(a, b);
@@ -498,6 +507,12 @@ export function toExtractedItems(
     const y = Math.min(...ys);
     const w = Math.max(...xs) - x;
     const h = Math.max(...ys) - y;
+    // The up vector is the transform's third column, pushed through the same
+    // viewport transform and normalised. (c, d) is one unit of +y in the run's
+    // own frame, so this is the em axis after the page's quarter turn.
+    const upX = a0 * c + c0 * d;
+    const upY = b0 * c + d0 * d;
+    const upLength = Math.hypot(upX, upY) || 1;
     out.push({
       str: item.str,
       transform: item.transform,
@@ -515,6 +530,8 @@ export function toExtractedItems(
       // A zero font matrix means the run was drawn invisibly (mode 3), which
       // is exactly what an OCR text layer looks like.
       isInvisible: fontSize === 0,
+      ux: upX / upLength,
+      uy: upY / upLength,
     });
   }
   return out;
