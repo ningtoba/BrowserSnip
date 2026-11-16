@@ -1,0 +1,42 @@
+# round 064, BEFORE, on the dev build :5271 — colour.pdf, page 1, visible block on.
+# Driver: docs/research/verify-digital-sign-run.mjs (BASE/PDF/CERT/KEY/PAGE/SHOT/OUT)
+# Judge:  docs/research/verify-digital-sign-read.py <file> --tamper   (pypdf/pikepdf/openssl/MuPDF/poppler)
+# Fixture /tmp/triage/colour.pdf (4 pages, 3 904 B). Cert+key /tmp/triage/in/signer-{cert,key}.pem
+# (self-signed, CN=BrowserSnip Triage, RSA-1024, valid 2024-01-01..2034-01-01).
+
+run 1 -> /tmp/r/dig-base.pdf  20 968 B
+  result screen: "Signed as BrowserSnip Triage using SHA-256. The signature covers 4.48 KiB of
+  the 20.5 KiB file - every byte except the 16.0 KiB placeholder ... and verifies against those bytes."
+
+pypdf: 1 form field '/Signature8563' | pikepdf: /AcroForm yes, /NeedAppearances absent
+  signature dictionary: /Filter=/Adobe.PPKLite /SubFilter=/adbe.pkcs7.detached
+  /ByteRange=[0, 3875, 20259, 709]            <- 4 ints, start 0, ends at EOF, tiles the file
+  /Name=/Signature8563   <- the FIELD name, not the signer
+  /Location=/Cambridge  /Reason=/I#20approve#20this#20document   <- both PDF *names* (#20 for spaces)
+  /M=/D:20261116161643Z  /Cert=None  /Prop_Build=None
+  /Contents reserves 8192 bytes; 891 of them are the CMS blob
+pikepdf widget keys: ['/Subtype','/Rect','/T','/Type','/Border','/V','/F','/FT','/P']
+                     <- NO /AP and NO /Parent
+openSSL cms -verify over the byte range: exit 0 "CMS Verification successful"
+  tamper first span        exit 4 CMS_SignerInfo_verify_content: verification failure
+  tamper last signed byte  exit 4 verification failure
+  tamper second span       exit 4 verification failure
+  tamper the placeholder   exit 0 (control: the placeholder is not covered)
+
+VISIBLE BLOCK — nothing painted, twice measured:
+  page-1 dark px @100 dpi (luma<200)   source 91 043   signed 91 043   delta 0
+  widget clip 36,36-256,126 @150 dpi   source 62 133   signed 62 133   delta 0
+  page text after signing: no signer name, no date ("BrowserSnip Triage" False, "2026" False)
+  MuPDF widgets: [('', 'Signature', (36.0,36.0,256.0,126.0))]  — a signed rect, no appearance
+  pdfsig: "was asked for widget and didn't had one, creating it" / "Bad bounding box for annotation"
+          "- Signature Field Name: " (empty) · 2 signatures listed for 1 field · exit 2
+
+TWO SIGNATURES — run 2 signs dig-base.pdf -> /tmp/r/dig-second.pdf 37 902 B
+  pdfsig Signature #1 "Digest Mismatch" / "Not total document signed"
+  pdfsig Signature #2 "Signature is Valid"          <- the first one is killed, silently:
+  the result sentence still says only "... and verifies against those bytes"
+
+LOCKED FILE (in-process replicate of the same tool run): /Encrypt is re-applied by the runner
+  after signing, the /Contents hex is ciphered afterwards, readSignatures: digestMatches false,
+  error "Only 8, 16, 24, or 32 bits supported: 48" while the sentence claims it verifies.
+  pdfinfo on the produced file: "Incorrect password". Same for a permissions-only file.

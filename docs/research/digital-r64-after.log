@@ -1,0 +1,54 @@
+# round 064, AFTER, same dev build :5271, same fixture colour.pdf, same cert/key, same dpi.
+# Same driver and same judge as digital-r64-before.log. Page 2 this time (page 1 is the
+# before case, and the fixture's page 2 is nearly empty so the block is the only ink in it).
+
+run -> /tmp/r/dig-final.pdf  21 851 B     pane shot /tmp/r/dig-final-pane.png (read: dark, tokens,
+                                          all fields filled, "HONEST NOTES (4)")
+  result screen: "... covers 5.31 KiB of the 21.3 KiB file - every byte except the 16.0 KiB
+  placeholder ... and verifies against those bytes."
+
+signature dictionary now: /Name <FEFF0042…Triage> (a UTF-16 text string, the SIGNER)
+  /Reason <…> /Location <…> (text strings, `#20` gone) · /ContactInfo omitted when empty
+  /ByteRange [0 3864 20248 1603]: 4 ints, start 0, last range ends at EOF (21 851 = 3864+16384+1603)
+field keys ['/FT','/T','/V','/Kids']   widget keys ['/Border','/Type','/Parent','/Subtype','/P','/FT','/AP','/T','/F','/V']
+  widget /Parent -> the field, widget carries /AP /N, field name is /Signature1 (was /Signature8563)
+
+VISIBLE BLOCK now paints (page 2, rect [36,36,256,126], box 220x90):
+  page-2 dark px @100 dpi  source 72 817   signed 63 638  (a white block covers 9 179 px of ink)
+  page-1 dark px           source 91 043   signed 91 043  <- control: the unmarked page is untouched
+  page 3 (empty)           source 0        signed 0        <- control: an empty page stays empty
+  /AP /N is a Form XObject, /BBox [0 0 220 90] equal to the rect, /Resources has F1+F2
+  appearance ink (tests/pdf/appearance-harness.ts) ≈ 1 900 pt²; visible:false -> no /AP, ink 0
+  MuPDF text on page 2: "Digitally signed by | BrowserSnip Triage | Date: 2026-11-16 16:59:00 UTC
+  | Reason: I approve this document | Location: Cambridge"  (searchable, and the render at
+  /tmp/r/dig-final-mark.png was looked at: bordered box, name bold, date, reason, legible)
+
+READERS on /tmp/r/dig-final.pdf:
+  openssl cms -verify over the byte range      exit 0  "CMS Verification successful"
+    tamper first span / last signed byte /
+    second span                                exit 4  verification failure (all three)
+    tamper the placeholder                     exit 0  (control)
+  pdfsig                                       "Signature is Valid." · "Total document signed"
+                                               · "Certificate issuer is unknown" · exit 0
+                                               (both "Syntax Error" lines gone)
+  MuPDF 1.28.2                                 opens, 4 pages, form=1, one widget on page 2
+  PyMuPDF page text                            the name and the date extract
+  pdfinfo / pdftotext                          exit 0, title kept, 4 pages
+  self-signed chain                            every reader calls the certificate untrusted
+                                               ("issuer is unknown"); the digest itself is accepted
+
+TWO SIGNATURES — run signs /tmp/r/dig-fix.pdf -> /tmp/r/dig-twice.pdf 39 636 B
+  screen warning: "The signature that was already in this document no longer match these bytes:
+  signing rewrites the file, so it now reads as invalid. Keep this copy only if the earlier
+  signature did not matter."
+  pdfsig: #1 "Digest Mismatch" · #2 "Signature is Valid" | openssl: range 1 exit 4, range 2 exit 0
+  readSignatures: [false, true] — both fields /Signature1 and /Signature2, names distinct
+
+LOCKED / RESTRICTED input: refused before the key is used —
+  "\"locked.pdf\" is encrypted, and a signed copy of an encrypted file is re-encrypted after the
+  signature is made — which ciphers the signature itself. Unlock it first (Remove password),
+  then sign the unlocked file." (unit-pinned for both a user-password file and a permissions-only
+  one; the unlocked control signs and verifies)
+
+SMALL SHEET (150x100 in-process): rect was [36,-26,256,64] before, now clamped inside the sheet
+  [4,4,146,94] and the appearance shrinks with it; ink still > 500 pt².

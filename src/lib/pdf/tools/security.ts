@@ -1483,8 +1483,9 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Sign',
     notes: [
       'Signing proves the document has not changed since. It does not prove the signer is who they claim: that needs a certificate issued by an authority the other side already trusts.',
-      'A signature seals the document. Any later edit — flattening, timestamping, even opening and re-saving in some tools — invalidates it, so sign last.',
+      'A signature seals the document. Any later edit — flattening, timestamping, signing again here, even opening and re-saving in some tools — invalidates it, so sign last.',
       'The signature is created in your browser from your own certificate. Certificate revocation checking needs a network connection; everything else is local.',
+      'A password-protected file is refused: the copy is re-encrypted after signing, which ciphers the signature too. Unlock it first, then sign.',
     ],
     fields: [
       { key: 'certificate', label: 'Certificate (PEM or P12)', type: 'file', accept: '.pem,.crt,.cer,.p12,.pfx', group: 'Your certificate', required: true, help: 'The public half, plus the private key when it is a .p12/.pfx bundle. Nothing is uploaded and nothing is stored afterwards.' },
@@ -1502,6 +1503,20 @@ export const securityTools: PdfToolDefinition[] = [
       const cert = fileValues(context.values, 'certificate')[0];
       const key = fileValues(context.values, 'privateKey')[0];
       if (!cert) throw new Error('Choose the certificate you want to sign with.');
+      // A signature hashes the file's own bytes, so it cannot survive a later rewrite
+      // of them. A copy of an encrypted input *is* rewritten: the runner re-seals it
+      // after the tool returns. Measured on a locked fixture, the `/Contents` was
+      // ciphered after the digest was taken and `readSignatures` answered
+      // `digestMatches: false` (poppler: "Signature has not yet been verified") while
+      // the message still claimed it verified. A permissions-only file breaks the
+      // same way, so both are refused rather than half-signed.
+      if (input.inspection?.encrypted) {
+        throw new Error(
+          `"${input.name}" is encrypted, and a signed copy of an encrypted file is re-encrypted after the `
+          + 'signature is made — which ciphers the signature itself. Unlock it first (Remove password), '
+          + 'then sign the unlocked file.',
+        );
+      }
       // E6: a visible block on page 9 of a 3-page PDF is a mistake worth naming
       // before the signature is written somewhere unexpected.
       const total = input.doc.getPageCount();
@@ -1535,6 +1550,13 @@ export const securityTools: PdfToolDefinition[] = [
       }
       if (readBack.length > 0 && mine?.error) {
         warnings.push(`The saved signature could not be parsed: ${mine.error}`);
+      }
+      // Signing again rewrites the whole file, so every signature that was already
+      // there stops matching. Measured: the earlier `/Sig` reads `Digest Mismatch`
+      // in poppler's `pdfsig` after a second run, and nothing used to say so.
+      const brokenEarlier = readBack.slice(0, -1).filter((entry) => !entry.error && !entry.digestMatches);
+      if (brokenEarlier.length > 0) {
+        warnings.push(`${brokenEarlier.length === 1 ? 'The signature that was' : `The ${brokenEarlier.length} signatures that were`} already in this document no longer match these bytes: signing rewrites the file, so ${brokenEarlier.length === 1 ? 'it now reads' : 'they now read'} as invalid. Keep this copy only if the earlier signature did not matter.`);
       }
       const [, first, secondStart, secondLength] = result.byteRange;
       const covered = first + secondLength;

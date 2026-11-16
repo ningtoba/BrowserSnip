@@ -19,7 +19,22 @@
  */
 import forge from 'node-forge';
 import type { PDFDocument } from './doc';
-import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRef, openPDF, toBytes } from './doc';
+import {
+  PDFArray,
+  PDFDict,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  StandardFonts,
+  openPDF,
+  toBytes,
+} from './doc';
+import type { PDFFont } from './doc';
+import type { PDFObject } from './doc';
+
+/** Shape accepted by `PDFContext.obj`; a bare string there becomes a PDF *name*. */
+type ObjValue = number | boolean | string | null | PDFObject | ObjValue[] | { [key: string]: ObjValue };
 
 /** Hex characters reserved for `/Contents` — room for RSA-4096 plus a chain. */
 const CONTENT_HEX_LENGTH = 16384;
@@ -109,8 +124,8 @@ export async function signDocument(
   }
 
   const signer = commonName(loaded.certificate.subject.attributes) ?? `certificate ${loaded.certificate.serialNumber}`;
-  const name = options.fieldName ?? `Signature${Math.floor(Math.random() * 10000)}`;
-  installSignatureField(doc, name, options);
+  const name = options.fieldName ?? nextFieldName(doc);
+  await installSignatureField(doc, name, options, signer);
 
   const draft = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
   return patchSignature(toBytes(draft), loaded, privateKey, options, signer);
@@ -662,35 +677,153 @@ function writeLatinAt(target: Uint8Array, offset: number, value: string): void {
   for (let i = 0; i < value.length; i++) target[offset + i] = value.charCodeAt(i) & 0xff;
 }
 
-function installSignatureField(doc: PDFDocument, name: string, options: SignOptions): void {
+/** Reserved width and height of the visible block, in points. */
+const BLOCK_WIDTH = 220;
+const BLOCK_HEIGHT = 90;
+/** Print (4) + Locked (128): the mark belongs on paper and seals the field. */
+const WIDGET_FLAGS = 132;
+
+/** A text string, or nothing at all when the user left the box empty. */
+function textOrNothing(value: string | undefined): PDFHexString | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? PDFHexString.fromText(trimmed) : undefined;
+}
+
+/**
+ * A field name that is not already taken (`Signature1`, `Signature2`, …).
+ *
+ * A random four-digit suffix used to be good enough for one signature and collided
+ * on the second one: two fields named `/Signature8563` are one field to a reader
+ * resolving names, so the earlier signature became unreachable.
+ */
+function nextFieldName(doc: PDFDocument): string {
+  const taken = new Set(signatureFields(doc).map((field) => decodePdfString(field.get(PDFName.of('T')))));
+  let index = 1;
+  while (taken.has(`Signature${index}`)) index += 1;
+  return `Signature${index}`;
+}
+
+/** Fonts that draw the block, embedded once per document. */
+async function blockFonts(doc: PDFDocument): Promise<{ body: PDFFont; head: PDFFont }> {
+  return {
+    body: await doc.embedFont(StandardFonts.Helvetica),
+    head: await doc.embedFont(StandardFonts.HelveticaBold),
+  };
+}
+
+/** WinAnsi has no glyph for most scripts, so a character it cannot draw reads `?`. */
+function drawable(text: string): string {
+  return text.replace(/[^\x20-\x7e\xa0-\xff]/gu, '?');
+}
+
+/** Cut a line to a width, with a trailing ellipsis when it had to be cut. */
+function fitLine(font: PDFFont, text: string, size: number, width: number): string {
+  const safe = drawable(text);
+  if (font.widthOfTextAtSize(safe, size) <= width) return safe;
+  let cut = safe;
+  while (cut.length > 1 && font.widthOfTextAtSize(`${cut}...`, size) > width) cut = cut.slice(0, -1);
+  return `${cut}...`;
+}
+
+/** `D:20261116161643Z` → `2026-11-16 16:16:43 UTC`, the same instant as `/M`. */
+function readableDate(date: Date): string {
+  return `${date.toISOString().slice(0, 10)} ${date.toISOString().slice(11, 19)} UTC`;
+}
+
+const escapeLiteral = (text: string) => text.replace(/([()\\])/g, '\\$1');
+
+/**
+ * The appearance stream for the visible block: a bordered white box naming the
+ * signer, the instant, and the reason.
+ *
+ * Without `/AP` the widget is a rectangle with an empty border and *nothing*
+ * painted: `/Rect` alone was measured to add zero dark pixels to the page, so the
+ * card's "visible signature block" was a box nobody could see. The block is drawn
+ * in the annotation's own space (`BBox [0 0 w h]`), which is what a reader scales
+ * onto `/Rect`.
+ */
+async function signatureAppearance(
+  doc: PDFDocument,
+  signer: string,
+  options: SignOptions,
+  signedAt: Date,
+  width: number,
+  height: number,
+): Promise<PDFRef> {
+  const context = doc.context;
+  const { body, head } = await blockFonts(doc);
+  const inner = width - 16;
+  const lines: string[] = ['q', '1 1 1 rg', `0 0 ${width} ${height} re`, 'f',
+    '0.45 0.45 0.5 RG', '0.7 w', `0.5 0.5 ${width - 1} ${height - 1} re`, 'S', 'Q'];
+  const write = (font: PDFFont, size: number, text: string, x: number, y: number) => {
+    lines.push('q', '0.08 0.08 0.12 rg', 'BT', `/${font === head ? 'F2' : 'F1'} ${size} Tf`,
+      `1 0 0 1 ${x} ${y} Tm`, `(${escapeLiteral(fitLine(font, text, size, inner))}) Tj`, 'ET', 'Q');
+  };
+  lines.push('q', '0.35 0.35 0.4 rg', 'BT', '/F1 6.5 Tf', `1 0 0 1 8 ${height - 14} Tm`,
+    '(Digitally signed by) Tj', 'ET', 'Q');
+  write(head, 9, signer, 8, height - 26);
+  write(body, 7, `Date: ${readableDate(signedAt)}`, 8, height - 40);
+  if (options.reason?.trim()) write(body, 7, `Reason: ${options.reason}`, 8, height - 52);
+  if (options.location?.trim()) write(body, 7, `Location: ${options.location}`, 8, height - 64);
+
+  const content = `${lines.join('\n')}\n`;
+  const stream = context.flateStream(content, {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: [0, 0, width, height],
+    Matrix: [1, 0, 0, 1, 0, 0],
+    Resources: { Font: { F1: body.ref, F2: head.ref } },
+  });
+  stream.dict.set(PDFName.of('Length'), PDFNumber.of(stream.contents.length));
+  return context.register(stream);
+}
+
+async function installSignatureField(
+  doc: PDFDocument,
+  name: string,
+  options: SignOptions,
+  signer: string,
+): Promise<void> {
   const context = doc.context;
   const pageIndex = Math.min(Math.max(0, options.page ?? 0), doc.getPageCount() - 1);
   const page = doc.getPage(pageIndex);
-  const width = 220;
-  const height = 90;
+  const pageWidth = page.getWidth();
   const pageHeight = page.getHeight();
+  // A sheet smaller than the block still gets a block, and one that fits: the
+  // rect is shrunk to the sheet and then clamped inside it, so nothing hangs off
+  // a 150x100 page (the appearance is clipped to `/BBox`, which follows the rect).
+  const width = Math.max(Math.min(BLOCK_WIDTH, pageWidth - 8), 40);
+  const height = Math.max(Math.min(BLOCK_HEIGHT, pageHeight - 8), 24);
+  const left = Math.min(Math.max(36, 4), Math.max(pageWidth - width - 4, 4));
+  const bottom = Math.min(Math.max(pageHeight - 36 - height, 4), Math.max(pageHeight - height - 4, 4));
   const visible = options.visible !== false;
+  const signedAt = new Date();
 
-  const signature = context.register(
-    context.obj({
-      Type: 'Sig',
-      Filter: 'Adobe.PPKLite',
-      SubFilter: 'adbe.pkcs7.detached',
-      Name: name,
-      Reason: options.reason ?? '',
-      Location: options.location ?? '',
-      ContactInfo: options.contact ?? '',
-      M: `D:${formatDate(new Date())}Z`,
-      // Nine full-width integers, so pdf-lib writes exactly
-      // `[ 9999999999 9999999999 9999999999 9999999999 ]`.
-      ByteRange: context.obj(Array.from({ length: 4 }, () => Number('9'.repeat(BYTE_RANGE_WIDTH)))),
-      // A JS string would become a PDF *name*, and `PDFHexString.fromText`
-      // hex-encodes its argument (doubling the width). The placeholder must be
-      // exactly CONTENT_HEX_LENGTH hex characters, so it is built from raw hex.
-      Contents: PDFHexString.of('0'.repeat(CONTENT_HEX_LENGTH)),
-    }),
-  );
-
+  // `/Name` is the *signer*, not the field: a validator's panel shows this line to
+  // say who signed, and it used to show `Signature8563`. `/Reason`, `/Location` and
+  // `/ContactInfo` are text strings (a JS string would become a PDF *name*, spaces
+  // and all) and an empty one is left out rather than written as a bare `/`.
+  const signatureEntries: { [key: string]: ObjValue } = {
+    Type: 'Sig',
+    Filter: 'Adobe.PPKLite',
+    SubFilter: 'adbe.pkcs7.detached',
+    Name: PDFHexString.fromText(signer),
+    M: `D:${formatDate(signedAt)}Z`,
+    // Nine full-width integers, so pdf-lib writes exactly
+    // `[ 9999999999 9999999999 9999999999 9999999999 ]`.
+    ByteRange: context.obj(Array.from({ length: 4 }, () => Number('9'.repeat(BYTE_RANGE_WIDTH)))),
+    // A JS string would become a PDF *name*, and `PDFHexString.fromText`
+    // hex-encodes its argument (doubling the width). The placeholder must be
+    // exactly CONTENT_HEX_LENGTH hex characters, so it is built from raw hex.
+    Contents: PDFHexString.of('0'.repeat(CONTENT_HEX_LENGTH)),
+  };
+  const reason = textOrNothing(options.reason);
+  const location = textOrNothing(options.location);
+  const contact = textOrNothing(options.contact);
+  if (reason) signatureEntries.Reason = reason;
+  if (location) signatureEntries.Location = location;
+  if (contact) signatureEntries.ContactInfo = contact;
+  const signature = context.register(context.obj(signatureEntries));
   let acroForm = doc.catalog.get(PDFName.of('AcroForm'));
   let acroDict = acroForm instanceof PDFRef
     ? doc.context.lookup(acroForm, PDFDict)
@@ -708,22 +841,27 @@ function installSignatureField(doc: PDFDocument, name: string, options: SignOpti
       return created;
     })();
 
+  const field = context.register(context.obj({ FT: 'Sig', V: signature, T: name }));
+  // `/Parent` is what makes the widget the *appearance* of that field. Without it
+  // poppler reads the widget as a second, separate signature ("was asked for widget
+  // and didn't had one" / "Bad bounding box") and lists one signature twice.
+  // The widget is the field's *appearance*, so it carries no `/FT`, `/T` or `/V` of
+  // its own: with those repeated, pypdf listed one signature as two fields
+  // (`/Signature1` and `/Signature1./Signature1`).
   const widget = context.register(
     context.obj({
       Type: 'Annot',
       Subtype: 'Widget',
-      FT: 'Sig',
-      Rect: visible
-        ? [36, pageHeight - 36 - height, 36 + width, pageHeight - 36]
-        : [0, 0, 0, 0],
-      V: signature,
+      Parent: field,
+      Rect: visible ? [left, bottom, left + width, bottom + height] : [0, 0, 0, 0],
       P: page.ref,
-      T: name,
-      F: 4,
+      F: WIDGET_FLAGS,
       Border: context.obj([0, 0, 1]),
+      ...(visible ? { AP: { N: await signatureAppearance(doc, signer, options, signedAt, width, height) } } : {}),
     }),
   );
-  fields.push(context.register(context.obj({ FT: 'Sig', V: signature, T: name, Kids: context.obj([widget]) })));
+  fields.push(field);
+  context.lookup(field, PDFDict).set(PDFName.of('Kids'), context.obj([widget]));
 
   const annots = page.node.Annots();
   const annotArray = annots instanceof PDFArray

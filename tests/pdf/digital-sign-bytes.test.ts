@@ -16,6 +16,14 @@
  *    signature blob? It used to report `1.38 KiB of the file` — the CMS length — for a
  *    file whose signed span was 3.34 KiB of 19.34 KiB.
  * 4. does the visible block land on the page the field named, inside that page's box?
+ * 5. does the block *paint* — a name, a date and a rule the reader can see? The first
+ *    four questions were all green while `/Rect` was the only thing written: a widget
+ *    with no `/AP` adds **0** dark pixels, so "Show a visible signature block" painted
+ *    a bordered box that nobody could see. `appearance-harness.ts` measures the stream
+ *    in pt², and `visible: false` is the control that must measure none.
+ * 6. are `/Name`, `/Reason` and `/Location` text strings (`/Name` = the *signer*, not
+ *    `Signature8563`), the widget `/Parent`ed to its field, and is the earlier
+ *    signature's fate reported when a signed file is signed again?
  *
  * Nothing here needs a server: the certificate and key are handed in as files and the
  * signature is made in-process. Only `timestamp-pdf` reaches the network, and it says
@@ -31,6 +39,8 @@ import {
   readSignatures,
   signDocument,
 } from '@/lib/pdf/core/signature';
+import { appearanceInk } from './appearance-harness';
+import { openPDF, saveEncrypted, savePDF } from '@/lib/pdf/core/doc';
 
 const latin1 = new TextDecoder('latin1');
 
@@ -229,5 +239,206 @@ describe('a digital signature signs the bytes it says it signs', () => {
     const widgetPage = signed.getPage(2);
     expect(widgetPage.node.get(PDFName.of('Annots')), 'the block is not annotated onto the page it was aimed at')
       .not.toBeUndefined();
+  });
+});
+
+/** The widget kid of the first `/Sig` field, and the box the file already had there. */
+function widgetOf(doc: PDFDocument): PDFDict {
+  const { field } = signatureOf(doc);
+  const kids = doc.context.lookup(field.get(PDFName.of('Kids'))) as PDFArray;
+  expect(kids, 'the field has no widget').not.toBeUndefined();
+  return doc.context.lookup(kids.asArray()[0]) as PDFDict;
+}
+
+const decoded = (value: unknown): string | null =>
+  value === undefined || value === null ? null : (value as { decodeText?: () => string }).decodeText?.() ?? null;
+
+describe('the visible block is drawn, and says who and when', () => {
+  it('paints a rule, the signer and the date inside the box, and names the signer in /Name', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const doc = await PDFDocument.load(await mixedFixture());
+    const result = await signDocument(doc, {
+      certificate: bytes(cert.certificatePem),
+      privateKey: bytes(cert.privateKeyPem),
+      reason: 'I approve this document',
+      location: 'Cambridge',
+      contact: '',
+      visible: true,
+      page: 2,
+    });
+
+    const signed = await PDFDocument.load(result.bytes);
+    const { field, value } = signatureOf(signed);
+    const widget = widgetOf(signed);
+    // No `/AP` at all is the defect this test exists for: `/Rect` alone renders as paper.
+    const painted = appearanceInk(signed, widget);
+    expect(painted.ops, 'the widget carries no appearance stream').not.toBe('');
+    expect(painted.inkPt2, `the appearance paints no area: ${painted.ops}`).toBeGreaterThan(500);
+    expect(painted.ops).toContain('Digitally signed by');
+    expect(painted.ops).toContain('Ada Lovelace');
+    expect(painted.ops).toMatch(/Date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/);
+    expect(painted.ops).toContain('Reason: I approve this document');
+
+    // The stream is a Form XObject: without `/BBox` and a font the reader paints nothing.
+    const ap = signed.context.lookup(widget.get(PDFName.of('AP'))) as PDFDict;
+    const normal = signed.context.lookup(ap.get(PDFName.of('N'))) as unknown as { dict: PDFDict };
+    expect(String(normal.dict.get(PDFName.of('Subtype')))).toBe('/Form');
+    expect(normal.dict.get(PDFName.of('Resources')), 'the stream has no font to draw with')
+      .not.toBeUndefined();
+    const box = (signed.context.lookup(normal.dict.get(PDFName.of('BBox'))) as PDFArray).asArray().map(Number);
+    const rect = (signed.context.lookup(widget.get(PDFName.of('Rect'))) as PDFArray).asArray().map(Number);
+    // The appearance is clipped to its own box, so the box and the rect must agree.
+    expect(box).toEqual([0, 0, rect[2] - rect[0], rect[3] - rect[1]]);
+
+    // `/Name` is the signer's name (PDF 32000-1 §12.8.3 Table 252), not the field name.
+    expect(decoded(value.get(PDFName.of('Name'))), 'the signature does not name the signer')
+      .toBe('Ada Lovelace');
+    expect(decoded(value.get(PDFName.of('Reason')))).toBe('I approve this document');
+    expect(decoded(value.get(PDFName.of('Location')))).toBe('Cambridge');
+    // An empty box is left out rather than written as a bare `/` (an empty *name*).
+    expect(value.get(PDFName.of('ContactInfo'))).toBeUndefined();
+    expect(String(value.get(PDFName.of('Reason')))).not.toMatch(/^\/[^<]/);
+
+    // The widget is the appearance *of* that field, not a second signature.
+    const parent = signed.context.lookup(widget.get(PDFName.of('Parent'))) as PDFDict;
+    expect(String(parent.get(PDFName.of('FT')))).toBe('/Sig');
+    expect(String(parent.get(PDFName.of('V')))).toBe(String(field.get(PDFName.of('V'))));
+    // The widget repeats no `/FT`, `/T` or `/V`: pypdf read a duplicated set as a
+    // second field named `/Signature1./Signature1`.
+    expect(widget.get(PDFName.of('T'))).toBeUndefined();
+    expect(widget.get(PDFName.of('V'))).toBeUndefined();
+  });
+
+  it('leaves the page untouched when the block is switched off, and names the field uniquely', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const doc = await PDFDocument.load(await mixedFixture());
+    const result = await signDocument(doc, {
+      certificate: bytes(cert.certificatePem),
+      privateKey: bytes(cert.privateKeyPem),
+      visible: false,
+      page: 0,
+    });
+
+    const signed = await PDFDocument.load(result.bytes);
+    const widget = widgetOf(signed);
+    expect(widget.get(PDFName.of('AP')), 'an invisible signature must not paint a box').toBeUndefined();
+    expect(appearanceInk(signed, widget).inkPt2).toBe(0);
+    // The control for the ink above: an empty stream and an absent one are different
+    // things, and only the absent one means "invisible".
+    expect(signatureOf(signed).field.get(PDFName.of('T'))).toBeDefined();
+    expect(String(signatureOf(signed).field.get(PDFName.of('T')))).toBe('/Signature1');
+  });
+});
+
+describe('signing an already signed file', () => {
+  it('keeps both signatures readable but reports that the first no longer matches', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const certificate = bytes(cert.certificatePem);
+    const privateKey = bytes(cert.privateKeyPem);
+    const first = await signDocument(await PDFDocument.load(await mixedFixture()), { certificate, privateKey });
+
+    const tool = getPdfTool('digital-sign-pdf') as PdfToolDefinition;
+    const outcome = (await runPdfTool({
+      toolId: 'digital-sign-pdf',
+      files: [asFile(first.bytes, 'once.pdf', 'application/pdf')],
+      values: {
+        certificate: [{ name: 'ada.pem', mimeType: 'application/x-x509-ca-cert', size: certificate.length, bytes: certificate }],
+        privateKey: [{ name: 'ada.key.pem', mimeType: 'application/x-pem-file', size: privateKey.length, bytes: privateKey }],
+        visible: true,
+        page: 1,
+        reason: '',
+      } satisfies ToolValues,
+      onProgress: () => {},
+      onLog: () => {},
+    })) as unknown as { outputs: { blob: Blob }[]; message?: string; warnings: string[]; error?: string };
+    expect(outcome.error, outcome.error).toBeUndefined();
+
+    const twice = new Uint8Array(await outcome.outputs[0].blob.arrayBuffer());
+    const both = await readSignatures(twice);
+    expect(both.length, 'the second run lost a signature').toBe(2);
+    expect(both[1].digestMatches, 'the new signature does not verify').toBe(true);
+    // Rewriting the file is what breaks the first one; the sentence has to say so.
+    expect(both[0].digestMatches).toBe(false);
+    expect((outcome.warnings ?? []).join(' ')).toMatch(/already in this document no longer match/);
+    expect(outcome.message ?? '').toMatch(/verifies against those bytes/);
+
+    // Two fields, two distinct names, or a reader addressing `/Signature1` hits both.
+    const signed = await PDFDocument.load(twice);
+    const form = formDictOf(signed) as PDFDict;
+    const named = (signed.context.lookup(form.get(PDFName.of('Fields'))) as PDFArray).asArray()
+      .map((ref) => String((signed.context.lookup(ref) as PDFDict).get(PDFName.of('T'))));
+    expect(new Set(named).size, `field names collide: ${named.join(',')}`).toBe(named.length);
+  });
+});
+
+describe('a sheet with no room, and a file that is locked', () => {
+  it('shrinks and clamps the block inside a page smaller than it is', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const doc = await PDFDocument.create();
+    doc.addPage([150, 100]);
+    doc.addPage([420, 595]);
+    const result = await signDocument(doc, {
+      certificate: bytes(cert.certificatePem),
+      privateKey: bytes(cert.privateKeyPem),
+      reason: 'I approve this document',
+      visible: true,
+      page: 0,
+    });
+
+    const signed = await PDFDocument.load(result.bytes);
+    const widget = widgetOf(signed);
+    const rect = (signed.context.lookup(widget.get(PDFName.of('Rect'))) as PDFArray)
+      .asArray().map(Number);
+    const [x0, y0, x1, y1] = rect;
+    // 220x90 on a 150x100 sheet used to be written as [36, -26, 256, 64]: two edges
+    // of the box, and its border, hung off the paper.
+    expect([x0 >= 0, y0 >= 0, x1 <= 150, y1 <= 100], `the block leaves the 150x100 sheet: ${rect}`)
+      .toEqual([true, true, true, true]);
+    expect(x1 - x0).toBeGreaterThan(100);
+    expect(y1 - y0).toBeGreaterThan(70);
+    // The appearance is clipped to its own box, so it has to follow the shrink.
+    const painted = appearanceInk(signed, widget);
+    expect(painted.inkPt2).toBeGreaterThan(500);
+  });
+
+  it('refuses a locked file and a permissions-only one instead of shipping a dead signature', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const locked = await saveEncrypted(await PDFDocument.load(await mixedFixture()), {
+      userPassword: 'hunter2',
+      ownerPassword: 'hunter2',
+    });
+    const tool = getPdfTool('digital-sign-pdf') as PdfToolDefinition;
+    const values = {
+      certificate: [{ name: 'ada.pem', mimeType: 'application/x-x509-ca-cert', size: 1, bytes: bytes(cert.certificatePem) }],
+      privateKey: [{ name: 'ada.key.pem', mimeType: 'application/x-pem-file', size: 1, bytes: bytes(cert.privateKeyPem) }],
+      visible: true,
+      page: 1,
+      reason: '',
+    } satisfies ToolValues;
+    const gated = await saveEncrypted(await PDFDocument.load(await mixedFixture()), {
+      ownerPassword: 'owner',
+      permissions: { printing: true, copying: false, modifying: false },
+    });
+    const attempt = (file: Uint8Array, password?: string) => runPdfTool({
+      toolId: 'digital-sign-pdf',
+      files: [asFile(file, 'locked.pdf', 'application/pdf')],
+      values,
+      password,
+      onProgress: () => {},
+      onLog: () => {},
+    }) as unknown as Promise<{ outputs: { blob: Blob }[] }>;
+
+    // The guard asks for the password first; with it supplied the tool refuses,
+    // because the re-encryption of the copy ciphers a signature that was just made.
+    await expect(attempt(locked)).rejects.toThrow(/password protected/i);
+    await expect(attempt(locked, 'hunter2')).rejects.toThrow(/is encrypted.*unlock it first/i);
+    // A permissions-only file opens with no password at all and is refused all the same:
+    // measured, its signature also comes back `digestMatches: false`.
+    await expect(attempt(gated)).rejects.toThrow(/is encrypted.*unlock it first/i);
+    // The control: the same document unlocked signs and verifies.
+    const clear = await savePDF(await openPDF(locked, { password: 'hunter2' }));
+    const signed = await attempt(clear);
+    const [read] = await readSignatures(new Uint8Array(await signed.outputs[0].blob.arrayBuffer()));
+    expect(read.digestMatches, 'the unlocked control does not verify').toBe(true);
   });
 });
