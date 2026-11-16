@@ -244,6 +244,30 @@ function permissionFields(whenSet?: (v: Record<string, unknown>) => boolean) {
   ];
 }
 
+/*
+ * The default timestamp authority.
+ *
+ * A timestamp authority is only usable from this app if the *page* may read the
+ * answer, so it has to send `Access-Control-Allow-Origin`, and the POST carries
+ * `application/timestamp-query`, so the preflight has to be answered too.
+ * Measured with curl on 2026-11-17, `Origin: http://localhost:5271`:
+ *
+ *   freetsa.org            preflight 403, no CORS header
+ *   timestamp.digicert.com preflight 501, no CORS header on the POST either
+ *   timestamp.sectigo.com  preflight 200, no CORS header
+ *   tsa.swisssign.net      preflight 200, no CORS header
+ *   timestamp.entrust.net  preflight 200, no CORS header
+ *   rfc3161.ai.moda        preflight 200 *and* 200 on the POST, with
+ *                          `Access-Control-Allow-Origin` in both
+ *
+ * In a Chromium tab every one of the first five fails the fetch with "Failed to
+ * fetch" (log `docs/research/timestamp-netprobe.log` for DigiCert), and the
+ * responder behind the last one is DigiCert's own. The card used to default to
+ * DigiCert, so the one tool in the app that needs the network could never reach
+ * its own default from a page.
+ */
+const DEFAULT_TSA_URL = 'https://rfc3161.ai.moda';
+
 export const securityTools: PdfToolDefinition[] = [
   {
     id: 'protect',
@@ -1752,8 +1776,9 @@ export const securityTools: PdfToolDefinition[] = [
     promise: 'A third-party stamp proving the signature existed at a stated moment, so it outlives the certificate that made it.',
     actionLabel: 'Add timestamp',
     notes: [
-      'The timestamp covers the signature, not the whole document, and the authority address is the only thing sent over the network: a digest of the signature, never the pages.',
-      'This is the one PDF tool in BrowserSnip that cannot work offline: without a reachable authority there is no timestamp to add, and the run says so instead of shipping an untimed file with a stamp-shaped promise. The request is made by this page, so an authority that answers only command-line tools - or one the page\'s origin cannot reach - fails with "could not be reached", and the signature is left untouched.',
+      'The timestamp covers the signature, not the whole document, and the authority address is the only thing sent over the network: a digest of the signature value, never the pages.',
+      'This is the one PDF tool in BrowserSnip that cannot work offline: without a reachable authority there is no timestamp to add, and the run says so instead of shipping an untimed file with a stamp-shaped promise.',
+      'The address must be one this page may read an answer from. FreeTSA, DigiCert and Sectigo answer a command line but send no CORS header, so a tab cannot read their reply — the default here is an authority that does. A blocked address fails with "could not be reached" and the signature is left untouched.',
       'This tool refuses an unsigned file rather than producing a timestamp on nothing.',
     ],
     fields: [
@@ -1761,11 +1786,11 @@ export const securityTools: PdfToolDefinition[] = [
         key: 'tsa',
         label: 'Timestamp authority URL',
         type: 'text',
-        default: 'http://timestamp.digicert.com',
+        default: DEFAULT_TSA_URL,
         group: 'Authority',
         required: true,
         pattern: '^https?://',
-        help: 'The only step that needs the network: the token comes from a third party. Prefer https, since the digest travels, and the address must answer this page — not only a command line.',
+        help: 'The only step that needs the network, and the address must let this page read the answer — several well-known authorities answer a command line only. Prefer https, since the digest travels.',
       },
       { key: 'fieldName', label: 'Signature field to stamp', type: 'text', group: 'Authority', placeholder: 'The only signature, if left blank', help: 'Needed when a document carries more than one signature and only one of them should be stamped.' },
     ],
@@ -1779,7 +1804,7 @@ export const securityTools: PdfToolDefinition[] = [
       if (signatureCount === 0) {
         throw new Error('This PDF has no digital signature to timestamp. Run Digital Signature on it first, then timestamp the signed file.');
       }
-      const tsaUrl = stringValue(context.values, 'tsa', 'http://timestamp.digicert.com');
+      const tsaUrl = stringValue(context.values, 'tsa', DEFAULT_TSA_URL);
       let result: Awaited<ReturnType<typeof timestampBytes>>;
       try {
         // The bytes as they arrived, not a re-save of the opened document:
@@ -2503,18 +2528,33 @@ function signatureFields(doc: PDFDocument): PDFDict[] {
  * anything to do with the network, and none of them should leave the user
  * thinking their document is now timestamped.
  */
+/**
+ * Say which step failed, in the running lane's own words.
+ *
+ * The core reports short facts ("the request failed (Failed to fetch)", "the
+ * authority answered HTTP 400") and the sentence is built here, once. It used to
+ * wrap the core's *complete* sentence, so the card printed the authority address
+ * and the parenthesis twice, and it called an HTTP 400 — a reachable authority
+ * turning a malformed request down — "could not be reached", which sent the user
+ * to check their connection for a defect in this app.
+ */
 function timestampFailure(error: unknown, tsaUrl: string, signatureCount: number): Error {
   const detail = error instanceof Error ? error.message : String(error ?? 'unknown reason');
   if (signatureCount === 0 || /has no signature/i.test(detail)) {
     return new Error('This PDF has no digital signature to timestamp. Run Digital Signature on it first, then timestamp the signed file.');
   }
-  if (/not a PKCS#7|no signer information|no message digest|could not be read/i.test(detail)) {
+  if (/not a PKCS#7|no signer information|could not be read|no signature value|could not be bound/i.test(detail)) {
     return new Error(
-      `The signature in this PDF could not be read by the timestamp step (${detail}), so no timestamp was attached and nothing was changed. The signature itself is untouched — Validate Signature still reports on it; a timestamp can be added when the authority answers this app's request.`,
+      `The signature in this PDF could not be read by the timestamp step (${detail}), so no timestamp was attached and nothing was changed. The signature itself is untouched — Validate Signature still reports on it.`,
+    );
+  }
+  if (/^the authority answered HTTP|^the authority refused|^the token|^the response/.test(detail)) {
+    return new Error(
+      `The authority at ${tsaUrl} was reached but ${detail}, so no token came back and the file is unchanged. The signature itself is untouched — try another authority URL, or keep the untimed signature.`,
     );
   }
   return new Error(
-    `The timestamp authority at ${tsaUrl} could not be reached (${detail}). This is the only step in BrowserSnip that needs the network — the signature digest, never the document, is sent. Try again with a connection, or keep the untimed signature.`,
+    `The timestamp authority at ${tsaUrl} could not be reached (${detail}). This is the only step in BrowserSnip that needs the network — a digest of the signature value, never the document, is sent. Try again with a connection, or keep the untimed signature.`,
   );
 }
 

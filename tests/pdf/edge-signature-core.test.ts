@@ -89,35 +89,74 @@ function acroFormOf(doc: PDFDocument): PDFDict | undefined {
 }
 
 /**
- * A `TimeStampResp` the core can use: `SEQUENCE { PKIStatusInfo { status 0 },
- * token }`. The token only has to be an ASN.1 tree carrying `genTime`; the core
- * copies whatever it finds into the signer info's *unsigned* attributes.
+ * A `TimeStampResp` the core can use, shaped as RFC 3161 shapes it —
+ * `SEQUENCE { PKIStatusInfo { 0 }, ContentInfo { id-ct-TSTInfo, [0] SignedData } }`
+ * with the `TSTInfo` (and so the `genTime`) inside the encapsulated content, where
+ * the core now reads the attested time from. The core copies the token into the
+ * signer info's *unsigned* attributes; the request body is parsed here only so the
+ * nonce can be echoed, which is what makes the echo check real.
  */
-function tsaResponse(): ArrayBuffer {
+function tsaResponse(nonce: string): ArrayBuffer {
   const universal = forge.asn1.Class.UNIVERSAL;
   const sequence = (children: forge.asn1.Asn1[]) =>
     forge.asn1.create(universal, forge.asn1.Type.SEQUENCE, true, children);
-  const token = sequence([
-    forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer(TIMESTAMP_TOKEN_OID).getBytes()),
+  const sha256 = () => forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer(forge.pki.oids.sha256).getBytes());
+  const tstInfo = sequence([
+    forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(1)),
+    forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer('1.2.3.4.1').getBytes()),
+    sequence([sequence([sha256(), forge.asn1.create(universal, forge.asn1.Type.NULL, false, '')]),
+      forge.asn1.create(universal, forge.asn1.Type.OCTETSTRING, false, forge.random.getBytesSync(32))]),
+    forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(9)),
     forge.asn1.create(universal, forge.asn1.Type.GENERALIZEDTIME, false, GEN_TIME),
+    forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, nonce),
   ]);
-  const response = sequence([sequence([
-    forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(0)),
-  ]), token]);
+  const tstDer = forge.asn1.toDer(tstInfo).getBytes();
+  const token = sequence([
+    forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer('1.2.840.113549.1.9.16.1.4').getBytes()),
+    forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
+      sequence([
+        forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(3)),
+        forge.asn1.create(universal, forge.asn1.Type.SET, true, [sequence([sha256()])]),
+        sequence([
+          forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer('1.2.840.113549.1.9.16.1.4').getBytes()),
+          forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
+            forge.asn1.create(universal, forge.asn1.Type.OCTETSTRING, false, tstDer),
+          ]),
+        ]),
+      ]),
+    ]),
+  ]);
+  const response = sequence([
+    sequence([forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(0))]),
+    token,
+  ]);
   const der = forge.asn1.toDer(response).getBytes();
   const bytes = new Uint8Array(der.length);
   for (let index = 0; index < der.length; index++) bytes[index] = der.charCodeAt(index) & 0xff;
   return bytes.buffer;
 }
 
+/** The nonce the request asked with: the INTEGER that is not the version. */
+function nonceOfRequest(body: unknown): string {
+  const bytes = body instanceof Uint8Array
+    ? body
+    : Uint8Array.from(String(body), (character) => character.charCodeAt(0) & 0xff);
+  const request = forge.asn1.fromDer(forge.util.binary.raw.encode(bytes), false);
+  const members = (request.value ?? []) as forge.asn1.Asn1[];
+  const nonce = members.slice(1).find(
+    (member) => member.tagClass === forge.asn1.Class.UNIVERSAL && member.type === forge.asn1.Type.INTEGER,
+  );
+  return nonce && typeof nonce.value === 'string' ? nonce.value : '';
+}
+
 /** Serve the stub token and record every URL the core posts to. */
 function stubAuthority(calls: string[]): () => void {
   const real = globalThis.fetch;
-  const body = tsaResponse();
   // jsdom's `Response` refuses an ArrayBuffer body, and the core reads nothing
   // but `ok` and `arrayBuffer()`, so the network peer is stood in for directly.
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push(String(input));
+    const body = tsaResponse(nonceOfRequest(init?.body));
     return { ok: true, arrayBuffer: async () => body } as unknown as Response;
   }) as unknown as typeof fetch;
   return () => {

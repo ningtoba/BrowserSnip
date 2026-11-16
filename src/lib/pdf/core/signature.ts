@@ -657,6 +657,22 @@ function findSignerInfo(signedData: forge.asn1.Asn1): forge.asn1.Asn1 | null {
 }
 
 /**
+ * The signature value octets of a `SignerInfo` — the `encryptedDigest` OCTET
+ * STRING, which is what a signature time-stamp imprints.
+ *
+ * It is the only UNIVERSAL OCTET STRING directly under the `SignerInfo`: the
+ * signed attributes sit under the context tag `[0]`, and the fields before it are
+ * an INTEGER, a SEQUENCE pair (`sid`, `digestAlgorithm`), so a top-level scan
+ * cannot reach into them.
+ */
+function signatureValueOf(signerInfo: forge.asn1.Asn1): string | null {
+  const value = children(signerInfo).find(
+    (member) => member.tagClass === forge.asn1.Class.UNIVERSAL && member.type === forge.asn1.Type.OCTETSTRING,
+  );
+  return value && typeof value.value === 'string' && value.value.length > 0 ? value.value : null;
+}
+
+/**
  * SignerInfo ::= SEQUENCE { version, sid, digestAlgorithm,
  *                            [0] authenticatedAttributes,
  *                            digestEncryptionAlgorithm, encryptedDigest,
@@ -1290,14 +1306,20 @@ export async function timestampBytes(
   }
   const signerInfo = findSignerInfo(signedData);
   if (!signerInfo) throw new Error('The existing signature has no signer information.');
-  const messageDigest = findAttributeValue(findAuthenticatedAttributes(signerInfo), MESSAGE_DIGEST_OID);
-  if (!messageDigest) {
+  // The imprint is over the signature *value* octets, not over the document: that
+  // is what a signature time-stamp is (ETSI EN 319 142-1 §6.3, CAdES signature-time-stamp),
+  // and it is the only thing a verifier can recompute from the file without
+  // re-hashing pages. Hashing the `messageDigest` attribute — the document digest —
+  // made the token a stamp over the pages with nothing tying it to this signature.
+  const signatureValue = signatureValueOf(signerInfo);
+  if (!signatureValue) {
     throw new Error(
-      'The existing signature carries no message digest, so a trusted timestamp cannot be bound to it.',
+      'The existing signature carries no signature value octets, so a trusted timestamp cannot be bound to it.',
     );
   }
+  const imprint = forge.md.sha256.create().update(signatureValue).digest().getBytes();
 
-  const token = await requestTimestamp(messageDigest, options.tsaUrl);
+  const token = await requestTimestamp(imprint, options.tsaUrl);
   appendUnsignedAttribute(signerInfo, token.bytes);
 
   const rebuilt = forge.util.bytesToHex(forge.asn1.toDer(root).getBytes());
@@ -1318,41 +1340,57 @@ interface TimestampToken {
   authority: string;
 }
 
-/** Build a TimeStampReq over the signature digest and POST it to the authority. */
-async function requestTimestamp(messageDigest: string, tsaUrl: string): Promise<TimestampToken> {
+/**
+ * Build a `TimeStampReq` over the signature value's digest and POST it to the
+ * authority, then read the granted token back.
+ *
+ * The request is laid out as RFC 3161 §2.4.1 defines it —
+ * `SEQUENCE { version, messageImprint { hashAlgorithm, hashedMessage }, nonce,
+ * certReq }`. The first build put the digest straight into the request beside the
+ * version, with no `messageImprint` wrapper, so the token this app asked for was
+ * rejected by every authority: `openssl ts -query` reads the wrapper as the
+ * algorithm and stops on a wrong tag, and a live responder answers HTTP 400
+ * ("this authority could not be reached"), which is why no timestamp had ever
+ * been produced in a browser.
+ */
+async function requestTimestamp(imprint: string, tsaUrl: string): Promise<TimestampToken> {
   const universal = forge.asn1.Class.UNIVERSAL;
-  const digestBytes = forge.util.hexToBytes(toHex(messageDigest));
   const nonce = forge.random.getBytesSync(8);
   const request = forge.asn1
     .toDer(
       forge.asn1.create(universal, forge.asn1.Type.SEQUENCE, true, [
         forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, String.fromCharCode(1)),
-        forge.asn1.create(universal, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer(forge.pki.oids.sha256).getBytes()),
-          forge.asn1.create(universal, forge.asn1.Type.NULL, false, ''),
-        ]),
-        forge.asn1.create(universal, forge.asn1.Type.OCTETSTRING, false, digestBytes),
-        forge.asn1.create(universal, forge.asn1.Type.INTEGER, false, nonce),
+        createMessageImprint(imprint),
+        derInteger(nonce),
         forge.asn1.create(universal, forge.asn1.Type.BOOLEAN, false, String.fromCharCode(0xff)),
       ]),
     )
     .getBytes();
+
+  // Bytes, not the binary string `forge` hands back: a string body is encoded as
+  // *UTF-8* by `fetch`, so every DER octet above 0x7f left as two bytes and the
+  // request stopped being DER at all. A live authority answers that with HTTP 400
+  // (measured: rfc3161.ai.moda returns 400 on the string body and 200 on the same
+  // bytes as a `Uint8Array`).
+  const requestBytes = Uint8Array.from(request, (character) => character.charCodeAt(0) & 0xff);
 
   let responseBytes: Uint8Array;
   try {
     const response = await fetch(tsaUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/timestamp-query' },
-      body: request,
+      body: requestBytes,
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    // A reachable authority can still turn the request down, and that is a
+    // different thing to say than "unreachable": an HTTP status arrives here, a
+    // blocked or offline request never does.
+    if (!response.ok) {
+      throw new Error(`the authority answered HTTP ${response.status}`);
+    }
     responseBytes = new Uint8Array(await response.arrayBuffer());
   } catch (error) {
-    throw new Error(
-      `The timestamp authority at ${tsaUrl} could not be reached (${
-        error instanceof Error ? error.message : 'network error'
-      }). Timestamping is the one PDF step that needs a connection — go online and retry, or sign without a timestamp.`,
-    );
+    const detail = error instanceof Error ? error.message : 'network error';
+    throw new Error(/^the authority answered HTTP/.test(detail) ? detail : `the request failed (${detail})`);
   }
 
   const asn1 = forge.asn1.fromDer(forge.util.binary.raw.encode(responseBytes), false);
@@ -1365,17 +1403,114 @@ async function requestTimestamp(messageDigest: string, tsaUrl: string): Promise<
       ? forge.asn1.derToOid(firstFailure.value)
       : undefined;
     throw new Error(
-      `The timestamp authority refused to issue a token (status ${status}${detail ? `, reason ${detail}` : ''}). Try a different authority URL.`,
+      `the authority refused to issue a token (status ${status}${detail ? `, reason ${detail}` : ''})`,
     );
   }
   const tokenNode = child(asn1, 1);
-  if (!tokenNode) throw new Error('The timestamp response contained no token.');
+  if (!tokenNode) throw new Error('the response carried no token');
+
+  // The token's own `TSTInfo` is where the time it attests lives, and where the
+  // nonce comes back. Reading a time off the outer tree instead found the TSA's
+  // own `signingTime` — or, when it found nothing, this machine's clock, which is
+  // not what the authority said.
+  const info = tstInfoOf(tokenNode);
+  if (!info) throw new Error('the token carries no TSTInfo, so it attests no time');
+  // `genTime` is the attested time; the tree-wide search is the fallback for a
+  // token that nests its TSTInfo somewhere this reader does not expect.
+  const attestedAt = genTimeOf(info) ?? readTokenGenTime(tokenNode);
+  if (!attestedAt) throw new Error('the token states no time in its TSTInfo');
+  const echoed = nonceOf(info);
+  if (echoed !== null && !sameInteger(echoed, nonce)) {
+    throw new Error('the token answers a different request (its nonce is not the one sent)');
+  }
 
   return {
     bytes: forge.asn1.toDer(tokenNode).getBytes(),
-    attestedAt: readTokenGenTime(tokenNode) ?? new Date(),
+    attestedAt,
     authority: hostOf(tsaUrl),
   };
+}
+
+/** `messageImprint ::= SEQUENCE { hashAlgorithm, hashedMessage }`. */
+function createMessageImprint(imprint: string): forge.asn1.Asn1 {
+  const universal = forge.asn1.Class.UNIVERSAL;
+  return forge.asn1.create(universal, forge.asn1.Type.SEQUENCE, true, [
+    forge.asn1.create(universal, forge.asn1.Type.SEQUENCE, true, [
+      forge.asn1.create(universal, forge.asn1.Type.OID, false, forge.asn1.oidToDer(forge.pki.oids.sha256).getBytes()),
+      forge.asn1.create(universal, forge.asn1.Type.NULL, false, ''),
+    ]),
+    forge.asn1.create(universal, forge.asn1.Type.OCTETSTRING, false, imprint),
+  ]);
+}
+
+/**
+ * A DER `INTEGER` from raw octets: leading zeroes drop, and a high first bit
+ * gains a `0x00` prefix so the number stays positive. Without the prefix a nonce
+ * of `0x80…` encodes negative and a strict authority rejects the request — it
+ * depended on the coin toss of the first random byte.
+ */
+function derInteger(octets: string): forge.asn1.Asn1 {
+  let value = octets;
+  let index = 0;
+  while (index < value.length - 1 && value.charCodeAt(index) === 0) index++;
+  value = value.slice(index);
+  if (value.charCodeAt(0) > 0x7f) value = `\u0000${value}`;
+  return forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.INTEGER, false, value);
+}
+
+/** Same number, whichever way its leading octets were written. */
+function sameInteger(a: string, b: string): boolean {
+  const trim = (value: string) => value.replace(/^[\u0000]+/, '');
+  return trim(a) === trim(b);
+}
+
+/**
+ * The `TSTInfo` inside a token: `ContentInfo { oid, [0] SignedData }`,
+ * `SignedData.encapContentInfo { eContentType, [0] OCTET STRING }`, and the octet
+ * string is the DER of a `TSTInfo`. The OCTET STRING is not parsed by
+ * `forge.asn1.fromDer`, so its contents are parsed here.
+ */
+function tstInfoOf(tokenNode: forge.asn1.Asn1): forge.asn1.Asn1 | null {
+  const encapsulated = child(child(child(child(tokenNode, 1), 0), 2), 1);
+  const wrapped = child(encapsulated, 0);
+  if (!wrapped || typeof wrapped.value !== 'string' || wrapped.value.length === 0) return null;
+  try {
+    return forge.asn1.fromDer(wrapped.value, false);
+  } catch {
+    return null;
+  }
+}
+
+/** `TSTInfo.genTime`, the moment the authority attests. */
+function genTimeOf(info: forge.asn1.Asn1): Date | undefined {
+  for (const member of children(info)) {
+    const isTime = member.tagClass === forge.asn1.Class.UNIVERSAL
+      && (member.type === forge.asn1.Type.GENERALIZEDTIME || member.type === forge.asn1.Type.UTCTIME);
+    if (isTime && typeof member.value === 'string') return parseAsn1Time(member.value);
+  }
+  return undefined;
+}
+
+/**
+ * `TSTInfo.nonce`, when the authority echoed one.
+ *
+ * It is the INTEGER that follows `genTime`. Taking "the first INTEGER that is not
+ * the version" picked the *serial number* instead, which is why a real DigiCert
+ * token read as an answer to a different request.
+ */
+function nonceOf(info: forge.asn1.Asn1): string | null {
+  let afterTime = false;
+  for (const member of children(info)) {
+    if (member.tagClass !== forge.asn1.Class.UNIVERSAL) continue;
+    if (member.type === forge.asn1.Type.GENERALIZEDTIME || member.type === forge.asn1.Type.UTCTIME) {
+      afterTime = true;
+      continue;
+    }
+    if (afterTime && member.type === forge.asn1.Type.INTEGER && typeof member.value === 'string') {
+      return member.value;
+    }
+  }
+  return null;
 }
 
 function numberAt(node: forge.asn1.Asn1 | undefined): number {
