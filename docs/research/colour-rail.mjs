@@ -790,16 +790,29 @@ if (process.env.CARD_PASSWORD) {
 // still empty disables its own run button — `protect` among them. Waiting first
 // made the probe report "no enabled button" for a tool that runs fine, and the
 // list of buttons it printed was the disabled one.
+// One screenshot helper. `SHOT_FULL` captures the whole document, not the
+// viewport: a report pane longer than the window (view-metadata, view-fields)
+// otherwise loses the rows below the fold — round 060 needed the LANGUAGE row
+// and the shot stopped four rows short of it.
+const shoot = async (path) => {
+  const full = !!process.env.SHOT_FULL;
+  // The app scrolls inside a pane, not the window, so `captureBeyondViewport`
+  // changes nothing: scroll every scroller to its end and shoot that.
+  if (full) {
+    await ev(`(()=>{for(const e of document.querySelectorAll('*')) if (e.scrollHeight > e.clientHeight + 40) e.scrollTop = e.scrollHeight; window.scrollTo(0, document.body.scrollHeight); return 1})()`);
+    await sleep(300);
+  }
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(path, Buffer.from(shot.data, 'base64'));
+  console.log('screenshot:', path);
+};
+
 if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`, 90000))) {
   console.log('buttons:', JSON.stringify(await ev(`JSON.stringify([...document.querySelectorAll('button')].map(b=>[b.innerText.trim().slice(0,30),!b.disabled]))`)));
   console.log('fields:', JSON.stringify(applied, null, 1));
   // A refusal is a result, not a harness bug: keep the screen that produced it.
   console.log('screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
-  if (process.env.SHOT) {
-    const shot = await send('Page.captureScreenshot', { format: 'png' });
-    writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
-    console.log('screenshot:', process.env.SHOT);
-  }
+  if (process.env.SHOT) await shoot(process.env.SHOT);
   chrome.kill('SIGKILL');
   process.exit(2);
 }
@@ -818,19 +831,11 @@ await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');const 
 if (!(await wait('window.__blobs.length>0', TIMEOUT))) {
   console.log('NO OUTPUT — the screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
   // A refusal is a result: keep the screen that shows it.
-  if (process.env.SHOT) {
-    const shot = await send('Page.captureScreenshot', { format: 'png' });
-    writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
-    console.log('screenshot:', process.env.SHOT);
-  }
+  if (process.env.SHOT) await shoot(process.env.SHOT);
   throw new Error('the tool produced no output blob');
 }
 await sleep(1000);
-if (process.env.SHOT) {
-  const shot = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
-  console.log('screenshot:', process.env.SHOT);
-}
+if (process.env.SHOT) await shoot(process.env.SHOT);
 const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output', JSON.stringify({ type: info.type, bytes: info.size, file: OUT }));

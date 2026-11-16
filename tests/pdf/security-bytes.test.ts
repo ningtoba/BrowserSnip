@@ -41,6 +41,7 @@ import {
   PDFName,
   PDFRawStream,
   PDFRef,
+  PDFString,
   PDFTextField,
   StandardFonts,
   degrees,
@@ -53,7 +54,7 @@ import { inspectPdf } from '@/lib/pdf/core/guard';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
 import { openRender } from '@/lib/pdf/core/render';
 import { pageContentStreams } from '@/lib/pdf/core/content';
-import { readInfo, readXmp, toLocalBytes, writeInfo, writeXmp } from '@/lib/pdf/core/metadata';
+import { infoDict, readInfo, readXmp, toLocalBytes, writeInfo, writeXmp } from '@/lib/pdf/core/metadata';
 import { addAnnotation, annotationCount, listAnnotations } from '@/lib/pdf/core/annotations';
 import { addAttachments } from '@/lib/pdf/core/attachments';
 import { listAttachments } from '@/lib/pdf/core/attachments';
@@ -707,7 +708,7 @@ describe('remove-metadata clears /Info and the XMP packet', () => {
     const info = readInfo(reloaded);
     expect(info.title).toBeUndefined();
     expect(info.author).toBeUndefined();
-    expect(info.lang, 'the catalog /Lang went too').toBeUndefined();
+    expect(info.lang, 'the catalog /Lang is not an /Info entry, so it stays').toBe('en-GB');
     expect(info.creationDate, 'the /Info dates went too').toBeUndefined();
     expect(info.modDate).toBeUndefined();
     expect(readXmp(reloaded), 'the XMP packet is gone, not merely empty').toBeNull();
@@ -723,6 +724,91 @@ describe('remove-metadata clears /Info and the XMP packet', () => {
     const second = await run('remove-metadata', { info: true, xmp: true, attachments: false, readerSettings: true }, [pdfFile(bytes, 'clean.pdf')]);
     expect(second.message).toMatch(/Nothing was removed/);
     expect(second.warnings.join(' ')).toMatch(/the output is the same document/i);
+  }, 300_000);
+
+  /**
+   * The strip must not be wider than `/Info`.
+   *
+   * Measured on meta.pdf and on a file carrying a `/PieceInfo`, a `/Trapped`, a
+   * vendor key and a `/Perms`: the strip left `/Info << >>` behind (an empty
+   * properties panel, `present, 0 key(s)` in this app's own report) and took the
+   * catalog `/Lang` with it, counting the language as a ninth "property" beside
+   * the eight real ones. It also deleted `/Perms`, which is a signature's
+   * DocMDP record and not a reader setting.
+   */
+  const bystander = async (): Promise<{ source: Uint8Array; carried: number }> => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595, 842]);
+    page.drawText('Acme Confidential Title', { x: 60, y: 760, size: 18, font });
+    doc.getForm().createTextField('claimRef').setText('CLM-1');
+    writeInfo(doc, {
+      title: 'Acme Confidential Title', author: 'Dana Ledger', subject: 'Control',
+      keywords: 'alpha, beta', creator: 'ctl-maker', producer: 'ctl-producer',
+      trapped: 'True', lang: 'en-GB', extra: { AcmeJob: 'JOB-77' },
+    });
+    const dict = infoDict(doc)!;
+    dict.set(PDFName.of('CreationDate'), PDFString.of("D:20260101010101Z00'00'"));
+    dict.set(PDFName.of('ModDate'), PDFString.of("D:20260102020202Z00'00'"));
+    const carried = [...dict.keys()].length;
+    doc.catalog.set(PDFName.of('PieceInfo'), doc.context.obj({ AcmeJob: { JobID: 'ABCD-1234' } }));
+    page.node.set(PDFName.of('PieceInfo'), doc.context.obj({ Acme: 'page-private' }));
+    doc.catalog.set(PDFName.of('MarkInfo'), doc.context.obj({ Marked: true }));
+    doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+    doc.catalog.set(PDFName.of('ViewerPreferences'), doc.context.obj({ DisplayDocTitle: true }));
+    doc.catalog.set(PDFName.of('Perms'), doc.context.obj({ DocMDP: { Type: 'Sig' } }));
+    return { source: await doc.save({ useObjectStreams: false }), carried };
+  };
+
+  it('deletes the whole /Info dictionary, not merely its entries', async () => {
+    const { source, carried } = await bystander();
+    const outcome = await run('remove-metadata',
+      { info: true, xmp: false, attachments: false, readerSettings: false }, [pdfFile(source, 'ctl.pdf')]);
+    const bytes = await bytesOf(outcome);
+
+    const reloaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    expect(reloaded.context.trailerInfo.Info, 'the trailer /Info key survived').toBeUndefined();
+    expect(await inflatedStreams(bytes)).not.toMatch(/<<\s*\/Info\s*<<\s*>>/);
+    expect(readInfo(reloaded).title).toBeUndefined();
+    // The count is of the keys that were really in the dictionary.
+    expect(outcome.message).toBe(`Removed ${carried} properties.`);
+
+    // Control: a second run finds nothing and must not invent an /Info.
+    const second = await run('remove-metadata',
+      { info: true, xmp: false, attachments: false, readerSettings: false }, [pdfFile(bytes, 'clean.pdf')]);
+    expect(second.message).toMatch(/Nothing was removed/);
+    const twice = await PDFDocument.load(await bytesOf(second), { updateMetadata: false });
+    expect(twice.context.trailerInfo.Info).toBeUndefined();
+  }, 300_000);
+
+  it('keeps the language, the /PieceInfo, the /MarkInfo and a signature’s /Perms', async () => {
+    const { source } = await bystander();
+    const outcome = await run('remove-metadata',
+      { info: true, xmp: true, attachments: false, readerSettings: true }, [pdfFile(source, 'ctl.pdf')]);
+    const reloaded = await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false });
+    expect(readInfo(reloaded).lang, 'the catalog /Lang was taken').toBe('en-GB');
+    expect(reloaded.catalog.has(PDFName.of('PieceInfo'))).toBe(true);
+    expect(reloaded.getPage(0).node.has(PDFName.of('PieceInfo'))).toBe(true);
+    expect(reloaded.catalog.has(PDFName.of('MarkInfo'))).toBe(true);
+    expect(reloaded.catalog.has(PDFName.of('Perms')), '/Perms is a signature record').toBe(true);
+    expect((await reloaded.getForm().getTextField('claimRef')).getText()).toBe('CLM-1');
+  }, 300_000);
+
+  it('still removes the reader settings the card names', async () => {
+    const { source } = await bystander();
+    const outcome = await run('remove-metadata',
+      { info: false, xmp: false, attachments: false, readerSettings: true }, [pdfFile(source, 'ctl.pdf')]);
+    const reloaded = await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false });
+    expect(reloaded.catalog.has(PDFName.of('PageMode'))).toBe(false);
+    expect(
+      reloaded.catalog.lookupMaybe(PDFName.of('ViewerPreferences'), PDFDict)?.has(PDFName.of('DisplayDocTitle')),
+    ).toBe(false);
+    expect(outcome.message).toContain('reader settings (PageMode, ViewerPreferences/DisplayDocTitle)');
+    // Control: with the toggle off they stay.
+    const kept = await bytesOf(await run('remove-metadata',
+      { info: false, xmp: false, attachments: false, readerSettings: false }, [pdfFile(source, 'ctl.pdf')]));
+    const untouched = await PDFDocument.load(kept, { updateMetadata: false });
+    expect(untouched.catalog.has(PDFName.of('PageMode'))).toBe(true);
   }, 300_000);
 
   it('clears an XMP packet that a producer inlined into the catalog', async () => {

@@ -368,10 +368,20 @@ function isPdfNameToken(key: string): boolean {
 }
 
 /**
- * Remove every `/Info` entry and the catalog `/Lang`.
- * @returns how many values were deleted.
+ * Remove the whole `/Info` dictionary: every entry, then the trailer key.
+ *
+ * Emptying the entries alone left an `/Info << >>` behind, which is still a
+ * document properties panel in a reader and a `present, 0 key(s)` row in this
+ * app's own report — a file a reviewer opened after the privacy tool still said
+ * it had a properties dictionary. The catalog `/Lang` stays: it names the
+ * language of the text and the properties panel edits it (`docLanguage`), so it
+ * is not one of `/Info`'s entries and must not be counted as one.
+ *
+ * @returns how many `/Info` values were deleted.
  */
 export function stripInfo(doc: PDFDocument): number {
+  const ctx = context(doc);
+  const entry = doc.context.trailerInfo.Info;
   let removed = 0;
   const dict = infoDict(doc);
   if (dict) {
@@ -379,7 +389,11 @@ export function stripInfo(doc: PDFDocument): number {
       if (dict.delete(key)) removed++;
     }
   }
-  if (doc.catalog.delete(PDFName.of('Lang'))) removed++;
+  doc.context.trailerInfo.Info = undefined;
+  // A dictionary written inline in the trailer disappears with the key; the
+  // indirect one every producer writes would survive as an orphan object, and
+  // its strings with it.
+  if (entry instanceof PDFRef) ctx.delete(entry);
   return removed;
 }
 

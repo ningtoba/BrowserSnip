@@ -1200,10 +1200,11 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Remove metadata',
     notes: [
       'Metadata is not the page. Words still sit in the content streams, bookmarks and annotations of a document, and text hidden under a redaction bar is removed by Redact PDF, not here.',
+      "The catalogue's /Lang and an application's own /PieceInfo stay: they describe the text and the document, not who wrote it. A signature's permission record (/Perms) stays too, so a certified file keeps its badge.",
       'A store that was already empty is reported as untouched rather than counted as removed.',
     ],
     fields: [
-      { key: 'info', label: 'Document info dictionary', type: 'toggle', default: true, group: 'What to remove', help: 'Title, author, subject, keywords, producer and the dates. This is the panel a reader shows under Properties.' },
+      { key: 'info', label: 'Document info dictionary', type: 'toggle', default: true, group: 'What to remove', help: 'The whole dictionary, vendor keys included: title, author, subject, keywords, producer, the dates. This is the panel a reader shows under Properties.' },
       { key: 'xmp', label: 'XMP metadata stream', type: 'toggle', default: true, group: 'What to remove', help: 'The XML copy of the same facts, plus history some applications embed. Removing one store and leaving the other is how a "cleaned" file still carries your name.' },
       { key: 'attachments', label: 'Embedded files', type: 'toggle', default: false, group: 'What to remove', help: 'Off by default because these are payload, not furniture: an attachment can be the contract itself.' },
       { key: 'readerSettings', label: 'Last-opened page and zoom memory', type: 'toggle', default: true, group: 'What to remove', help: 'Which page and zoom the document opens at, and whether the title or the filename is shown. They reveal how the file was used.' },
@@ -1232,12 +1233,14 @@ export const securityTools: PdfToolDefinition[] = [
         // Only claim the keys that were really there: this used to report
         // "reader settings" on a document that had none of them.
         const cleared: string[] = [];
+        // /Perms is not a reader setting: it is the signature dictionary's
+        // DocMDP record, and deleting it takes the certification badge off a
+        // signed file. PageMode and DisplayDocTitle are what the card means.
         if (input.doc.catalog.delete(PDFName.of('PageMode'))) cleared.push('PageMode');
         const viewerPrefs = input.doc.catalog.get(PDFName.of('ViewerPreferences'));
         if (viewerPrefs instanceof PDFDict && viewerPrefs.delete(PDFName.of('DisplayDocTitle'))) {
           cleared.push('ViewerPreferences/DisplayDocTitle');
         }
-        if (input.doc.catalog.delete(PDFName.of('Perms'))) cleared.push('Perms');
         if (cleared.length > 0) done.push(`reader settings (${cleared.join(', ')})`);
       }
       const bytes = await savePDF(input.doc);
