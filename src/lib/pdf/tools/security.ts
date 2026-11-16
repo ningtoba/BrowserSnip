@@ -1391,22 +1391,24 @@ export const securityTools: PdfToolDefinition[] = [
   {
     id: 'edit-attachments',
     name: 'Edit Attachments',
-    description: 'List and delete the files embedded in a PDF',
+    description: 'List, rename and delete the files embedded in a PDF',
     icon: '✂️',
     category: 'security',
-    keywords: ['remove attachment', 'manage embedded', 'package', 'enclosed files'],
+    keywords: ['remove attachment', 'rename attachment', 'manage embedded', 'package', 'enclosed files'],
     outputSuffix: '_attachments.pdf',
-    promise: 'The attachments listed with their sizes, and only the ones you name deleted — a name that is not there is reported, not ignored.',
-    actionLabel: 'Remove attachments',
+    promise: 'The attachments listed with their sizes, the ones you name renamed with the same bytes, only the named ones deleted.',
+    actionLabel: 'Update attachments',
     notes: [
-      'Deleting an attachment is permanent in the output copy: an enclosure that was the only version of that file is gone.',
+      'Deleting an attachment is permanent in the output copy: an enclosure that was the only version of that file is gone. Renaming keeps the bytes and the file’s size, dates and description.',
+      'Renaming onto a name the PDF already carries keeps both files: the mover gets a `-2` suffix and the card says which name it was stored under.',
     ],
     fields: [
-      { key: 'remove', label: 'Names to remove', type: 'textarea', group: 'Attachments', placeholder: 'One attachment name per line', help: 'Copy the names from the list this tool shows first. Leaving the box empty is a request to look, not to delete.' },
+      { key: 'remove', label: 'Names to remove', type: 'textarea', group: 'Attachments', placeholder: 'One attachment name per line', help: 'Copy the names from the list this tool shows first. Leaving both boxes empty is a request to look, not to change anything.' },
+      { key: 'rename', label: 'Renames', type: 'textarea', group: 'Attachments', placeholder: 'note.txt -> catch.csv', help: 'One per line: the name as listed, `->`, then the name to store it under. Removing a name and renaming it are separate requests; both can be made in one run.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
-      const { removeAttachments } = await import('../core/attachments');
+      const { removeAttachments, renameAttachments } = await import('../core/attachments');
       const existing = listAttachments(input.doc);
       const wanted = stringValue(context.values, 'remove')
         .split(/[\n,]+/)
@@ -1415,26 +1417,55 @@ export const securityTools: PdfToolDefinition[] = [
       if (existing.length === 0) {
         throw new Error('This PDF has no attachments to edit.');
       }
-      if (wanted.length === 0) {
+      const lines = stringValue(context.values, 'rename')
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const malformed: string[] = [];
+      const requests = lines.flatMap((line) => {
+        const split = line.split(/\s*(?:->|=>)\s*/);
+        if (split.length !== 2 || !split[0] || !split[1]) {
+          malformed.push(line);
+          return [];
+        }
+        return [{ from: split[0], to: split[1] }];
+      });
+      if (wanted.length === 0 && lines.length === 0) {
         return reportResult(
           [{ title: 'Attachments', rows: existing.map((a) => ({ label: a.name, value: formatBytes(a.size) })) }],
-          { message: `This PDF carries ${existing.length} attachment(s). List the names you want removed.` },
+          { message: `This PDF carries ${existing.length} attachment(s). List the names you want removed, or a rename per line as old -> new.` },
         );
       }
       const removed = removeAttachments(input.doc, wanted);
-      const missing = wanted.filter((name) => !existing.some((a) => a.name === name || a.filename === name));
+      const rename = renameAttachments(input.doc, requests);
+      const missing = [
+        ...wanted.filter((name) => !existing.some((a) => a.name === name || a.filename === name)),
+        ...rename.missing,
+      ];
       const warnings = missing.length
-        ? [`${missing.map((name) => `"${name}"`).join(', ')} ${missing.length === 1 ? 'is' : 'are'} not embedded in this PDF, so nothing was removed for ${missing.length === 1 ? 'it' : 'them'}.`]
+        ? [`${missing.map((name) => `"${name}"`).join(', ')} ${missing.length === 1 ? 'is' : 'are'} not embedded in this PDF, so nothing was ${requests.length > 0 ? 'removed or renamed' : 'removed'} for ${missing.length === 1 ? 'it' : 'them'}.`]
         : [];
-      if (removed === 0 && wanted.length > 0) {
+      const collided = rename.renamed.filter((entry) => entry.to !== entry.asked);
+      if (collided.length > 0) {
+        warnings.push(`${collided.map((entry) => `"${entry.from}" was stored as "${entry.to}" because "${entry.asked}" is already carried`).join('; ')}. Both files are in the output.`);
+      }
+      if (malformed.length > 0) {
+        warnings.push(`${malformed.map((line) => `"${line}"`).join(', ')} ${malformed.length === 1 ? 'is' : 'are'} not a rename: the line needs old -> new.`);
+      }
+      if (removed === 0 && rename.renamed.length === 0) {
         warnings.push('None of the names you listed matched an attachment, so the document is unchanged.');
       }
+      const changed: string[] = [];
+      if (wanted.length > 0) changed.push(`Removed ${removed} of ${wanted.length} requested attachment(s)`);
+      if (requests.length > 0) changed.push(`renamed ${rename.renamed.length} of ${requests.length} requested attachment(s)`);
+      if (changed.length === 0) changed.push('Changed nothing');
+      const sentence = changed.join(' and ');
       const bytes = await savePDF(input.doc);
       return {
-        kind: 'pdf',
+        kind: 'pdf' as const,
         bytes,
         pages: input.doc.getPageCount(),
-        message: `Removed ${removed} of ${wanted.length} requested attachment(s). Remaining: ${existing.length - removed}.`,
+        message: `${sentence[0].toUpperCase()}${sentence.slice(1)}. Remaining: ${existing.length - removed}.${rename.renamed.length > 0 ? ` Now carried: ${rename.renamed.map((entry) => `"${entry.to}"`).join(', ')}.` : ''}`,
         warnings,
       };
     },

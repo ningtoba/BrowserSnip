@@ -70,7 +70,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 060 [x] remove-metadata
 061 [x] add-attachments
 062 [x] extract-attachments
-063 [ ] edit-attachments
+063 [x] edit-attachments
 064 [ ] digital-sign-pdf
 065 [ ] validate-signature-pdf
 066 [ ] timestamp-pdf

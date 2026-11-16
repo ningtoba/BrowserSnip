@@ -1,0 +1,46 @@
+== before: rename unsupported (attach.pdf, box: note.txt -> catch.csv) ==
+report line: attach_attachments.pdf
+
+READY
+SIZE
+4.1 KB → 2.6 KB · 36% smaller
+PAGES
+4 → 4
+
+== before: delete (attach.pdf, remove note.txt) ==
+report line: attach_attachments.pdf
+
+READY
+SIZE
+4.1 KB → 2.4 KB · 43% smaller
+PAGES
+4 → 4
+
+== after: rename (attach.pdf, Renames: note.txt -> catch.csv) ==
+report line: attach_attachments.pdf
+
+READY
+SIZE
+4.1 KB → 2.6 KB · 36% smaller
+PAGES
+4 → 4
+
+== after: collision (two.pdf, Renames: note.txt -> second.txt) ==
+report line: two_attachments.pdf
+
+READY
+SIZE
+4.5 KB → 2.9 KB · 34% smaller
+PAGES
+4 → 4
+
+Renamed 1 of 1 requested attachment(s). Remaining: 2. Now carried: "second-2.txt".
+
+== after: non-ASCII (attach.pdf, Renames: note.txt -> résumé.pdf) ==
+report line: attach_attachments.pdf
+
+READY
+SIZE
+4.1 KB → 2.6 KB · 36% smaller
+PAGES
+4 → 4

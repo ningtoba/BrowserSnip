@@ -427,6 +427,23 @@ export async function addAttachments(
   return listAttachments(doc).length;
 }
 
+/**
+ * A name as a string object: hex of its UTF-16BE bytes for anything one byte
+ * cannot spell, hex of its Latin-1 bytes otherwise.
+ *
+ * Hex rather than a literal, because the fork's `PDFString` copies characters
+ * into the output unescaped — a name holding `(` or `\` would end the literal
+ * early — and `charCodeAt & 0xff` would turn `é` into its low byte.
+ */
+function nameString(name: string): PDFHexString {
+  if (Array.from(name).some((char) => (char.codePointAt(0) ?? 0) > 0xff)) {
+    return unicodeFileName(name);
+  }
+  const bytes = new Uint8Array(name.length);
+  for (let index = 0; index < name.length; index++) bytes[index] = name.charCodeAt(index) & 0xff;
+  return PDFHexString.fromBytes(bytes);
+}
+
 /** `name` as a text string in UTF-16BE, led by the BOM the spec asks for. */
 function unicodeFileName(name: string): PDFHexString {
   const bytes = new Uint8Array(2 + name.length * 2);
@@ -614,6 +631,84 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
   });
   if (sites.length === 0) return 0;
   return removeSites(doc, sites);
+}
+
+/** One `from -> to` rename request, as the card's field spells it. */
+export interface RenameRequest {
+  from: string;
+  to: string;
+}
+
+/** What a rename run did, for the card to report. */
+export interface RenameOutcome {
+  /** `asked` is the name requested; `to` is the name actually stored. */
+  renamed: { from: string; to: string; asked: string }[];
+  /** Requested names this document does not carry. */
+  missing: string[];
+}
+
+/** `wanted`, or the first `-2`, `-3` … suffix of it that `held` does not have. */
+function uniqueName(held: Set<string>, wanted: string): string {
+  if (!held.has(wanted.toLowerCase())) return wanted;
+  const dot = wanted.lastIndexOf('.');
+  const stem = dot > 0 ? wanted.slice(0, dot) : wanted;
+  const extension = dot > 0 ? wanted.slice(dot) : '';
+  for (let suffix = 2; ; suffix++) {
+    const candidate = `${stem}-${suffix}${extension}`;
+    if (!held.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/**
+ * Rename attachments (case-insensitive on both sides; the old name matches the
+ * name-tree key or the file's own name).
+ *
+ * A name-tree key must be unique (§7.9.6), and every reader lists the key, so a
+ * rename has to move the key, `/UF` and `/F` together — renaming only the file
+ * name would leave the tree answering the old name and the file answering the
+ * new one. Renaming onto a name the document already carries keeps the target
+ * and suffixes the mover rather than replacing a payload nobody asked to lose.
+ *
+ * The payload, `/Params` and the description are untouched: this is a name
+ * change, not a rewrite.
+ */
+export function renameAttachments(doc: PDFDocument, requests: RenameRequest[]): RenameOutcome {
+  const sites = filespecSites(doc);
+  const held = new Set(sites.map((site) => site.name.toLowerCase()));
+  const outcome: RenameOutcome = { renamed: [], missing: [] };
+
+  for (const request of requests) {
+    const from = request.from.trim();
+    const asked = request.to.trim();
+    if (!from || !asked) continue;
+    const wanted = from.toLowerCase();
+    const site = sites.find(
+      (candidate) =>
+        candidate.name.toLowerCase() === wanted ||
+        specName(doc, candidate.spec)?.toLowerCase() === wanted,
+    );
+    if (!site) {
+      outcome.missing.push(from);
+      continue;
+    }
+    held.delete(site.name.toLowerCase());
+    const to = uniqueName(held, asked);
+    held.add(to.toLowerCase());
+
+    if (site.tree) {
+      for (let i = 0; i + 1 < site.tree.size(); i += 2) {
+        if (isSiteEntry(doc, site.tree.get(i + 1), site)) site.tree.set(i, nameString(to));
+      }
+    }
+    site.spec.set(PDFName.of('UF'), nameString(to));
+    site.spec.set(PDFName.of('F'), nameString(to));
+    // A `/FileAttachment` annotation repeats the name in `/Contents`.
+    if (site.host instanceof PDFDict) site.host.set(PDFName.of('Contents'), nameString(to));
+    site.name = to;
+    outcome.renamed.push({ from, to, asked });
+  }
+
+  return outcome;
 }
 
 /** How many embedded files the document names, without reading any payload. */
