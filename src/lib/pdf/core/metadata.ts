@@ -87,7 +87,7 @@ export interface PdfDateParts {
 }
 
 const PDF_DATE_RE =
-  /^(?:D:\s*)?(\d{4})(\d\d)?(\d\d)?(?:\s*(\d\d)?(\d\d)?(\d\d)?)?(Z|[+-]\d\d'?\d\d'?|[+-]\d\d)?\s*$/i;
+  /^(?:D:\s*)?(\d{4})(\d\d)?(\d\d)?(?:\s*(\d\d)?(\d\d)?(\d\d)?)?(Z(?:\d\d'?\d\d'?)?|[+-]\d\d'?\d\d'?|[+-]\d\d)?\s*$/i;
 
 function pad(value: number, width = 2): string {
   const sign = value < 0 ? '-' : '';
@@ -138,7 +138,10 @@ export function parsePdfDate(value: string): Date | undefined {
 
 function parseZone(zone: string | undefined): number | undefined {
   if (!zone) return undefined;
-  if (zone === 'Z') return 0;
+  // MuPDF writes a UTC date as `Z00'00'` — a `Z` with a zero offset spelled out
+  // after it — and the old pattern accepted only the bare `Z`, so every date that
+  // producer wrote fell through the parser.
+  if (zone.startsWith('Z')) return 0;
   const digits = zone.replace(/[^0-9]/g, '');
   const hours = Number(digits.slice(0, 2) || '0');
   const minutes = Number(digits.slice(2, 4) || '0');
@@ -176,7 +179,11 @@ export function formatPdfDate(
 
 /** The `/Info` dictionary, created on demand like pdf-lib does internally. */
 export function infoDict(doc: PDFDocument, create = false): PDFDict | undefined {
-  const existing = context(doc).lookup(doc.context.trailerInfo.Info, PDFDict);
+  // A file with no `/Info` at all is an ordinary shape — MuPDF writes none — and the
+  // typed `lookup` throws on the undefined reference, which took the whole
+  // properties report (and `redact-pdf`) with it instead of reporting an absence.
+  const entry = doc.context.trailerInfo.Info;
+  const existing = entry === undefined ? undefined : context(doc).lookup(entry);
   if (existing instanceof PDFDict) return existing;
   if (!create) return undefined;
   const fresh = context(doc).obj({});
@@ -391,6 +398,12 @@ export interface XmpSummary {
   pdfaPart?: number;
   /** `pdfaid:conformance`, e.g. 'B'. */
   pdfaConformance?: string;
+  /**
+   * Whether the packet is well-formed XML. A packet that is not still carries its
+   * values as text — plenty of producers write `<rdf:RDF>` without declaring the
+   * `rdf` prefix — so a `false` here means "read as text", not "empty".
+   */
+  readable: boolean;
   /** The complete packet, or `null` when the document carries no XMP. */
   raw: string | null;
 }
@@ -424,9 +437,10 @@ export function readXmp(doc: PDFDocument): XmpSummary | null {
   const raw = readXmpText(doc);
   if (raw === undefined) return null;
 
-  const summary: XmpSummary = { raw };
+  const summary: XmpSummary = { raw, readable: false };
   const xml = parseXml(raw);
   if (!xml) return summary;
+  summary.readable = true;
 
   const title = firstRdfLi(xml, 'dc:title');
   if (title) summary.title = title;
@@ -690,6 +704,263 @@ function near(a: number, b: number): boolean {
 }
 
 /**
+ * One `/Info` value, as the file holds it: an absent key says it is absent, an
+ * empty one says it is empty, and a value is shown verbatim (a key with a
+ * newline in it must not read like a key with a space in it).
+ */
+function propertyRow(rows: MetadataRow[], label: string, dict: PDFDict | undefined, key: string): void {
+  if (!dict || !dict.has(PDFName.of(key))) {
+    rows.push({ label, value: `not set — the file has no /${key}` });
+    return;
+  }
+  const raw = dict.get(PDFName.of(key));
+  const text = decodeInfoValue(raw);
+  if (text === undefined) {
+    rows.push({ label, value: `present, but not a text object (${raw?.toString() ?? 'null'})` });
+    return;
+  }
+  if (text === '') {
+    rows.push({ label, value: `present, empty — /${key} is an empty string` });
+    return;
+  }
+  rows.push({ label, value: text });
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+/** `D:20260102010101Z00'00'` → `2 January 2026 at 01:01:01 UTC`. */
+function humanDate(parts: PdfDateParts): string {
+  const offset = parts.offsetMinutes;
+  const wall = new Date(parts.date.getTime() + (offset ?? 0) * 60_000);
+  const clock = `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`;
+  const zone = offset === undefined
+    ? 'local time, no offset recorded'
+    : offset === 0
+      ? 'UTC'
+      : `${offset > 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`;
+  return `${wall.getUTCDate()} ${MONTH_NAMES[wall.getUTCMonth()]} ${wall.getUTCFullYear()} at ${clock} ${zone}`;
+}
+
+/**
+ * A date property, rendered for a human **and** with the stored string in reach.
+ *
+ * A producer's `D:` string is the only faithful record of the value, and parse it
+ * the strict way or not, it is never dropped: a date this cannot read keeps its
+ * raw text instead of leaving a blank row.
+ */
+function dateRow(rows: MetadataRow[], label: string, dict: PDFDict | undefined, key: string): void {
+  if (!dict || !dict.has(PDFName.of(key))) {
+    rows.push({ label, value: `not set — the file has no /${key}` });
+    return;
+  }
+  const raw = decodeInfoValue(dict.get(PDFName.of(key)));
+  if (raw === undefined) {
+    rows.push({ label, value: 'present, but not a text object' });
+    return;
+  }
+  if (raw === '') {
+    rows.push({ label, value: `present, empty — /${key} is an empty string` });
+    return;
+  }
+  const parts = parsePdfDateParts(raw);
+  rows.push({
+    label,
+    value: parts
+      ? `${humanDate(parts)} · stored as ${raw}`
+      : `not a date this can read: ${raw} — shown exactly as the file stores it`,
+  });
+}
+
+/** The `/Info` section: every named property, then every vendor key. */
+function infoRows(doc: PDFDocument): MetadataRow[] {
+  const dict = infoDict(doc);
+  const rows: MetadataRow[] = [{
+    label: 'Info dictionary',
+    value: dict
+      ? `present, ${[...dict.keys()].length} key(s)`
+      : 'absent — the file carries no /Info dictionary, so the properties below are unset',
+  }];
+  for (const key of ['Title', 'Author', 'Subject', 'Keywords', 'Creator', 'Producer']) {
+    propertyRow(rows, key, dict, key);
+  }
+  dateRow(rows, 'Creation date', dict, 'CreationDate');
+  dateRow(rows, 'Modification date', dict, 'ModDate');
+  propertyRow(rows, 'Trapped', dict, 'Trapped');
+  const lang = decodeTextString(doc.catalog.lookup(PDFName.of('Lang')));
+  rows.push({
+    label: 'Language',
+    value: lang === undefined
+      ? 'not set — the catalogue carries no /Lang'
+      : lang === ''
+        ? 'present, empty — /Lang is an empty string'
+        : lang,
+  });
+  if (dict) {
+    for (const key of dict.keys()) {
+      const name = key.decodeText();
+      if (NAMED_KEYS.has(name)) continue;
+      propertyRow(rows, name, dict, name);
+    }
+  }
+  return rows;
+}
+
+const ACTION_VERBS: Record<string, string> = {
+  JavaScript: 'runs JavaScript',
+  GoTo: 'jumps to a destination in this file',
+  GoToR: 'jumps into another file',
+  GoToE: 'jumps into an embedded file',
+  Launch: 'launches an application',
+  URI: 'opens a URI',
+  SubmitForm: 'submits a form',
+  Named: 'runs a named action',
+  Rendition: 'plays a rendition',
+};
+
+/** Where a destination array points, by page number when it names one. */
+function destinationSays(doc: PDFDocument, array: PDFArray): string {
+  const first = array.get(0);
+  if (first instanceof PDFNumber) return `page ${first.asNumber() + 1}`;
+  const index = first instanceof PDFRef
+    ? doc.getPages().findIndex((page) => page.ref === first)
+    : -1;
+  return index >= 0 ? `page ${index + 1}` : 'a destination this cannot resolve to a page';
+}
+
+/** What one `/OpenAction` entry does, in the card's words. */
+function actionSays(doc: PDFDocument, value: unknown): string | null {
+  const ctx = context(doc);
+  const target = value instanceof PDFRef ? ctx.lookup(value) : value;
+  if (target instanceof PDFArray) return `jumps to ${destinationSays(doc, target)}`;
+  if (!(target instanceof PDFDict)) return null;
+  const subtype = nameText(target.get(PDFName.of('S')));
+  if (subtype === undefined) return null;
+  const verb: string = ACTION_VERBS[subtype] ?? `runs a /${subtype} action`;
+  if (subtype === 'GoTo') {
+    const destination = target.get(PDFName.of('D'));
+    const array = destination instanceof PDFRef ? ctx.lookup(destination) : destination;
+    if (array instanceof PDFArray) return `jumps to ${destinationSays(doc, array)}`;
+  }
+  if (subtype !== 'JavaScript') return verb;
+  const scriptValue = target.get(PDFName.of('JS'));
+  const script = scriptValue instanceof PDFStream
+    ? new TextDecoder('utf-8', { fatal: false }).decode(streamBytes(scriptValue))
+    : decodeTextString(scriptValue instanceof PDFRef ? ctx.lookup(scriptValue) : scriptValue);
+  if (!script) return 'runs JavaScript whose /JS could not be decoded';
+  // Long scripts are elided, but the row says how long the script is, so the cut
+  // is visible rather than a shorter script than the file holds.
+  return script.length > 200
+    ? `runs JavaScript on open: ${script.slice(0, 200)}… (${script.length} characters)`
+    : `runs JavaScript on open: ${script}`;
+}
+
+/** Whether opening the file acts, and what the action does. */
+function openActionSays(doc: PDFDocument): string {
+  const value = doc.catalog.lookup(PDFName.of('OpenAction'));
+  if (value === undefined) return 'none — the document does nothing when it is opened';
+  const entries = value instanceof PDFArray
+    ? [...Array<unknown>(value.size())].map((_, index) => value.get(index))
+    : [value];
+  const said = entries.map((entry) => actionSays(doc, entry)).filter((text): text is string => text !== null);
+  return said.length > 0 ? `yes — ${said.join(' and ')}` : 'declared, but not as an action this can describe';
+}
+
+function keysOf(dict: PDFDict): string {
+  return [...dict.keys()].map((key) => key.decodeText()).join(', ') || 'no keys';
+}
+
+/** `/PieceInfo` — application-private data, in the catalogue and on any page. */
+function pieceInfoSays(doc: PDFDocument): string {
+  const places: string[] = [];
+  const catalog = doc.catalog.lookupMaybe(PDFName.of('PieceInfo'), PDFDict);
+  if (catalog) places.push(`catalogue (keys: ${keysOf(catalog)})`);
+  doc.getPages().forEach((page, index) => {
+    const dict = page.node.lookupMaybe(PDFName.of('PieceInfo'), PDFDict);
+    if (dict) places.push(`page ${index + 1} (keys: ${keysOf(dict)})`);
+  });
+  return places.length === 0
+    ? 'none — no /PieceInfo in the catalogue or on any page'
+    : `declared ${places.join('; ')} — private data an application keeps for itself`;
+}
+
+/** Is the file laid out for progressive loading? */
+function linearizedSays(bytes: Uint8Array): string {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 2048));
+  const match = /\/Linearized\s+([\d.]+)/.exec(head);
+  return match
+    ? `yes — the file declares a linearisation dictionary (/Linearized ${match[1]})`
+    : 'no — the file is not laid out for progressive loading';
+}
+
+function xmpPacketSays(doc: PDFDocument): string {
+  const found = metadataStream(doc);
+  return found
+    ? `present, ${formatBytes(streamBytes(found.stream).length)} at catalogue /Metadata`
+    : 'absent — the catalogue has no /Metadata stream';
+}
+
+/** The key fields a packet carries, by plain text, for one this cannot parse. */
+const XMP_TEXT_FIELDS: [string, string][] = [
+  ['Title', 'dc:title'],
+  ['Creator', 'dc:creator'],
+  ['Description', 'dc:description'],
+  ['Keywords', 'dc:subject'],
+  ['Producer', 'pdf:Producer'],
+  ['Creator tool', 'xmp:CreatorTool'],
+];
+
+function fallbackXmpFields(raw: string): MetadataRow[] {
+  const rows: MetadataRow[] = [];
+  for (const [label, tag] of XMP_TEXT_FIELDS) {
+    const found: string[] = [];
+    for (const match of raw.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'gi'))) {
+      const text = match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text) found.push(text);
+    }
+    if (found.length > 0) rows.push({ label, value: found.join(', ') });
+  }
+  if (rows.length === 0) rows.push({ label: 'Fields', value: 'no dc:/pdf: key field is visible in the packet as text either' });
+  return rows;
+}
+
+function xmpFieldRow(rows: MetadataRow[], label: string, value: string | undefined): void {
+  rows.push({ label, value: value && value !== '' ? value : 'not in the packet' });
+}
+
+/**
+ * The XMP section: the declared packet, its size, and its key fields — not a wall
+ * of XML. A packet that is not well-formed XML is reported as that and read as
+ * text, because the fields are still in it and a silent empty section reads like
+ * a packet with no properties.
+ */
+function xmpRows(doc: PDFDocument): MetadataRow[] {
+  const xmp = readXmp(doc);
+  if (!xmp) return [{ label: 'Packet', value: 'absent — the catalogue has no /Metadata stream' }];
+  const rows: MetadataRow[] = [{
+    label: 'Packet',
+    value: `present, ${formatBytes(new TextEncoder().encode(xmp.raw ?? '').length)} at catalogue /Metadata`,
+  }];
+  if (!xmp.readable) {
+    rows.push({
+      label: 'Well-formed',
+      value: 'not XML this could parse — the fields below were read as text out of the packet',
+    });
+    rows.push(...fallbackXmpFields(xmp.raw ?? ''));
+    return rows;
+  }
+  xmpFieldRow(rows, 'Title', xmp.title);
+  xmpFieldRow(rows, 'Creator', xmp.creator);
+  xmpFieldRow(rows, 'Description', xmp.description);
+  xmpFieldRow(rows, 'Keywords', xmp.keywords?.join(', '));
+  xmpFieldRow(rows, 'Declared PDF version', xmp.pdfVersion);
+  if (xmp.pdfaPart !== undefined) {
+    rows.push({ label: 'PDF/A', value: `${xmp.pdfaPart}${xmp.pdfaConformance ? `-${xmp.pdfaConformance}` : ''}` });
+  }
+  return rows;
+}
+
+/**
  * Everything a human would want in a "Document properties" pane: file facts,
  * `/Info`, XMP, and one row per page with its size and content-stream weight.
  * `bytes` is the saved file the document came from — pass the same bytes you
@@ -724,42 +995,20 @@ export function metadataReport(
   });
   const attachments = attachmentCount(doc);
   if (attachments !== undefined) file.push({ label: 'Attachments', value: String(attachments) });
+  // Four structures a reader acts on and a reviewer asks about by name, none of
+  // which the panel used to mention: a linearised file, something that runs on
+  // open, a vendor `/PieceInfo`, and whether the file declares an XMP packet at
+  // all (the XMP section only appeared when there was one, so "no packet" and
+  // "no XMP section" were the same screen).
+  file.push({ label: 'Linearized', value: linearizedSays(bytes) });
+  file.push({ label: 'Open action', value: openActionSays(doc) });
+  file.push({ label: 'Piece info', value: pieceInfoSays(doc) });
+  file.push({ label: 'XMP packet', value: xmpPacketSays(doc) });
   sections.push({ title: 'File', rows: file });
 
-  const info = readInfo(doc);
-  const infoRows: MetadataRow[] = [];
-  addRow(infoRows, 'Title', info.title);
-  addRow(infoRows, 'Author', info.author);
-  addRow(infoRows, 'Subject', info.subject);
-  addRow(infoRows, 'Keywords', info.keywords);
-  addRow(infoRows, 'Creator', info.creator);
-  addRow(infoRows, 'Producer', info.producer);
-  addRow(infoRows, 'Creation date', info.creationDate);
-  addRow(infoRows, 'Modification date', info.modDate);
-  addRow(infoRows, 'Trapped', info.trapped);
-  addRow(infoRows, 'Language', info.lang);
-  for (const [key, value] of Object.entries(info.extra ?? {})) {
-    addRow(infoRows, key, value);
-  }
-  sections.push({
-    title: 'Document information',
-    rows: infoRows.length > 0 ? infoRows : [{ label: 'Empty', value: 'no /Info entries' }],
-  });
+  sections.push({ title: 'Document information', rows: infoRows(doc) });
 
-  const xmp = readXmp(doc);
-  if (xmp) {
-    const xmpRows: MetadataRow[] = [];
-    addRow(xmpRows, 'Title', xmp.title);
-    addRow(xmpRows, 'Creator', xmp.creator);
-    addRow(xmpRows, 'Description', xmp.description);
-    if (xmp.keywords) xmpRows.push({ label: 'Keywords', value: xmp.keywords.join(', ') });
-    addRow(xmpRows, 'Declared PDF version', xmp.pdfVersion);
-    if (xmp.pdfaPart !== undefined) {
-      addRow(xmpRows, 'PDF/A', `${xmp.pdfaPart}${xmp.pdfaConformance ? `-${xmp.pdfaConformance}` : ''}`);
-    }
-    xmpRows.push({ label: 'Packet size', value: formatBytes(new TextEncoder().encode(xmp.raw ?? '').length) });
-    sections.push({ title: 'XMP metadata', rows: xmpRows });
-  }
+  sections.push({ title: 'XMP metadata', rows: xmpRows(doc) });
 
   const pageRows: MetadataRow[] = doc.getPages().map((page, index) => {
     const width = page.getWidth();
@@ -994,10 +1243,6 @@ export function listImages(doc: PDFDocument): ImageInventory[] {
     }
   }
   return [...found.values()].sort((a, b) => b.bytes - a.bytes);
-}
-
-function addRow(rows: MetadataRow[], label: string, value: string | undefined): void {
-  if (value !== undefined && value !== '') rows.push({ label, value });
 }
 
 function round(value: number): string {

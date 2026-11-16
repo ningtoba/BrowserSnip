@@ -754,19 +754,20 @@ describe('the round trip on outlines', () => {
     expect(outcome.message).not.toMatch(/without a page/);
   });
 
-  it('redacting a file with no /Info dictionary never reaches the bookmarks at all', async () => {
-    // Recorded, not fixed here. Every fixture except `outlines-redactable.pdf` is a
-    // MuPDF file with no document-information dictionary, which is legal and common,
-    // and `core/metadata.ts:infoDict` asks pdf-lib for a typed object at a key that
-    // is simply absent — the class the attachments row closed for `/EF`. The
-    // redaction therefore refuses the file with an engine sentence before it reads a
-    // single bookmark, so this round trip can only be measured on the one fixture
-    // that carries `/Info`.
-    await expect(run('redact-pdf', {
+  it('redacts a file with no /Info dictionary instead of refusing it', async () => {
+    // Every fixture except `outlines-redactable.pdf` is a MuPDF file with no
+    // document-information dictionary, which is legal and common. `infoDict` asked
+    // pdf-lib for a typed object at a key that is simply absent and the fork throws,
+    // so the redaction refused the file before it read a single bookmark. Round 058
+    // made an absent `/Info` an answer rather than a throw, and this is the run that
+    // proves it: the sheet is redacted and the bookmarks come out with it.
+    const { outcome, bytes } = await run('redact-pdf', {
       fill: '#000000',
       alsoMetadata: true,
       regions: [{ page: 0, x: 50, y: 680, width: 320, height: 60 }],
-    }, 'outlines-dests-ref.pdf')).rejects.toThrow(/Expected instance of PDFDict/);
+    }, 'outlines-dests-ref.pdf');
+    expect(outcome.message).not.toMatch(/went wrong/i);
+    expect(new TextDecoder().decode(bytes).length).toBeGreaterThan(1000);
   });
 
   it('reads the outline, not the page: no title it reports is anywhere in the content', async () => {

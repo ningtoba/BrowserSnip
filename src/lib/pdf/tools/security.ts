@@ -1053,6 +1053,9 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Read metadata',
     notes: [
       'The /P permission flags are reported as what the file records, not as a guarantee: a reader is free to ignore them.',
+      'A property the file does not hold is named as unset, so a blank row and an absent property never look alike. Values are shown exactly as stored, newlines and padding included.',
+      'A date is rendered in words with the stored D: string beside it. One that will not parse keeps its raw text rather than showing nothing.',
+      'The XMP packet is reported as present with its key fields, not dumped as XML; a packet that is not well-formed is read as text and says so.',
     ],
     async run(context) {
       const [input] = await openInputs(context);

@@ -85,10 +85,13 @@ export function ReportView({ report }: { report: ToolReport | null }) {
                   key={`${row.label}-${index}`}
                   className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-3 px-4 py-1.5"
                 >
-                  <dt className="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
+                  <dt className="break-words font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted">
                     {row.label}
                   </dt>
-                  <dd className="break-words font-mono text-[11px] text-ink-soft">{row.value}</dd>
+                  {/* `pre-wrap`, not the default collapse: a property with a newline
+                      or a padded value in it was shown as if the whitespace were not
+                      there. Long values already wrap; labels no longer ellipsise. */}
+                  <dd className="whitespace-pre-wrap break-words font-mono text-[11px] text-ink-soft">{row.value}</dd>
                 </div>
               ))}
             </dl>

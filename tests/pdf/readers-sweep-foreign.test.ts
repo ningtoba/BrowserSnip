@@ -518,16 +518,15 @@ describe('listFonts / listImages, on files this repo did not write', () => {
   it('the view-metadata card prints the inventory a user reads', async () => {
     const file = 'resources-xobject.pdf';
     const doc = await open(file);
-    // `metadataReport` reads `/Info` through `infoDict`, which asks pdf-lib for a
+    // `metadataReport` reads `/Info` through `infoDict`, which asked pdf-lib for a
     // `PDFDict` at a trailer key that is absent — and the fork throws instead of
-    // answering undefined, even with `create` set. That is the open seam
-    // `docs/research/foreign-structure-audit.md` names for `redact-pdf`; the inspect
-    // card is its second user-visible consequence, so both halves are pinned.
-    expect(() => metadataReport(doc, fixtureBytes(file))).toThrow(/PDFDict/);
-    expect(() => infoDict(doc, true)).toThrow(/PDFDict/);
-    // Give the document the one dictionary it was missing, by hand, and the card renders
-    // — printing exactly what the two walks saw.
-    doc.context.trailerInfo.Info = doc.context.register(PDFDict.withContext(doc.context));
+    // answering undefined. That was the open seam `docs/research/foreign-structure-audit.md`
+    // names for `redact-pdf`, and the inspect card was its second user-visible
+    // consequence (round 058 closed both halves: absent now reports as absent).
+    const bare = metadataReport(doc, fixtureBytes(file));
+    expect(bare.find((section) => section.title === 'Document information')?.rows[0].value)
+      .toMatch(/no \/Info dictionary/);
+    expect(() => infoDict(doc, true)).not.toThrow();
     const sections = metadataReport(doc, fixtureBytes(file));
     const fonts = sections.find((section) => section.title === 'Fonts');
     const images = sections.find((section) => section.title === 'Images');
