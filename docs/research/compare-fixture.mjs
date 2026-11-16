@@ -95,6 +95,54 @@ const b = await build(true);
 writeFileSync(`${DIR}/a.pdf`, a);
 writeFileSync(`${DIR}/b.pdf`, b);
 
+/**
+ * The height pair, for the alignment question.
+ *
+ * Two sheets of *different heights* carrying the same copy at the same offsets from
+ * the top, so the only difference a reader has to explain is the height itself:
+ * `h-a` is 500 pt tall and `h-b` 560 (the same width). The pane bottom-aligns the
+ * pair inside the union frame and the export top-aligns it, so on this pair the two
+ * halves of the tool make two different claims — `h-hi` adds the usual block at the
+ * usual place to check that the alignment does not move a real mark.
+ */
+const H_BOX = [420, 560];
+const H_SHORT = 500;
+
+async function buildHeight(withBlock) {
+  const doc = await PDFDocument.create();
+  doc.setProducer('compare-fixture');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([H_BOX[0], H_SHORT]);
+  LINES.slice(0, 4).forEach((line, index) => {
+    page.drawText(line, { x: 40, y: H_SHORT - 40 - index * 20, size: 12, font, color: rgb(0, 0, 0) });
+  });
+  if (withBlock) {
+    page.drawRectangle({
+      x: KNOWN.x0,
+      y: H_SHORT - KNOWN.y1,
+      width: KNOWN.x1 - KNOWN.x0,
+      height: KNOWN.y1 - KNOWN.y0,
+      color: rgb(0, 0, 0),
+    });
+  }
+  return new Uint8Array(await doc.save({ useObjectStreams: false }));
+}
+
+/** The same copy on the taller sheet, and nothing else. */
+async function buildTall() {
+  const doc = await PDFDocument.create();
+  doc.setProducer('compare-fixture');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage(H_BOX);
+  LINES.slice(0, 4).forEach((line, index) => {
+    page.drawText(line, { x: 40, y: H_BOX[1] - 40 - index * 20, size: 12, font, color: rgb(0, 0, 0) });
+  });
+  return new Uint8Array(await doc.save({ useObjectStreams: false }));
+}
+
+const heights = { a: await buildHeight(false), hi: await buildHeight(true), b: await buildTall() };
+for (const [name, bytes] of Object.entries(heights)) writeFileSync(`${DIR}/h-${name}.pdf`, bytes);
+
 const solo = await PDFDocument.create();
 solo.addPage(BOX);
 const blankBytes = new Uint8Array(await solo.save({ useObjectStreams: false }));
@@ -105,5 +153,6 @@ console.log(JSON.stringify({
   box: BOX,
   known: KNOWN,
   pages: { a: 3, b: 3, blank: 1 },
-  bytes: { a: a.length, b: b.length, blank: blankBytes.length },
+  heights: { box: H_BOX, short: H_SHORT },
+  bytes: { a: a.length, b: b.length, blank: blankBytes.length, 'h-a': heights.a.length, 'h-hi': heights.hi.length, 'h-b': heights.b.length },
 }));

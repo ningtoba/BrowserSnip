@@ -1,9 +1,15 @@
 /**
- * CompareMain — Visual PDF comparison overlay.
+ * CompareMain — the comparison itself, and the verdict about the page in view.
  *
- * Renders two PDFs side by side and highlights pixel differences
- * on the first document. Drag the threshold slider to control
- * sensitivity.
+ * Renders two PDFs side by side and highlights pixel differences on the first
+ * document. The threshold slider controls sensitivity, the mode segment controls
+ * what is *read* (pixels, the text layer, or both), and the resolution controls how
+ * finely both pages are rendered before they are compared.
+ *
+ * The mode segment had no control for a long time: `compare-pdfs`' own definition
+ * declares `mode` and `resolution`, the route prints that definition's promise, and
+ * the panel's button runs a different entry entirely — so nothing on the page ever
+ * reached either field. See `docs/TOOL-CAMPAIGN.md`, the `compare-pdfs` row.
  */
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
@@ -17,7 +23,21 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 // ═══════════════════ Shared state ═══════════════════
 
+/**
+ * What the page compares: the pixels, the extractable text, or both.
+ *
+ * The copy the export writes is always a pixel comparison — a text change that a
+ * rendering hides still has no pixels to paint — so the mode decides the *reading*
+ * beside the sheets, and the panel says which half the marks belong to.
+ */
+export type CompareMode = 'visual' | 'text' | 'both';
+
 interface CompareState {
+  mode: CompareMode;
+  /** Dots per inch both pages are rendered at for the comparison. */
+  dpi: number;
+  /** Bumped when a setting needs both pages rendered again. */
+  revision: number;
   sensitivity: number;   // 0–255, pixel diff threshold
   highlightColor: string; // hex
   page: number;
@@ -39,10 +59,9 @@ interface CompareState {
    */
   diffAreas: DiffArea[];
   /**
-   * Whether the diff ran over document A's own page box rather than a taller
-   * union frame. Two sheets of different heights share the larger box, and the
-   * pane bottom-aligns them inside it, so the frame's top edge is then above
-   * A's page and the areas no longer name a spot on it.
+   * Whether the areas name a spot on the page in view. Both sheets are drawn from
+   * the frame's top-left, so they do even when the two differ in size; the flag
+   * stays because the sentence and the card read it.
    */
   areasOnPage: boolean;
   /**
@@ -53,6 +72,24 @@ interface CompareState {
    * a verdict of “nothing differs” over pages it had not read.
    */
   compared: boolean;
+  /**
+   * The text half: whether the text layers were read, whether they differ, and —
+   * for two pages neither of which carries any text — whether the mode could answer
+   * at all. "identical text" over two scans was a false all-clear.
+   */
+  textCompared: boolean;
+  textChanged: boolean;
+  textSilent: boolean;
+  /** `3 word(s) removed, 1 added`, the shape the report path uses. */
+  textWords: string;
+  /**
+   * Whether the page differs **under the mode in force** — the pixel answer in
+   * `visual`, the text answer in `text`, either of them in `both`.
+   *
+   * Without it a text-only change was reported as "Nothing differs on the page in
+   * view" the moment its two renderings happened to match.
+   */
+  pageDiffers: boolean;
 }
 
 /** One changed area, in points, from the top-left of what was compared. */
@@ -67,6 +104,9 @@ export interface DiffArea {
 const AREA_LIMIT = 12;
 
 let _state: CompareState = {
+  mode: 'visual',
+  dpi: 144,
+  revision: 0,
   sensitivity: 30,
   highlightColor: '#ff0000',
   page: 1,
@@ -78,6 +118,11 @@ let _state: CompareState = {
   diffAreas: [],
   areasOnPage: true,
   compared: false,
+  textCompared: false,
+  textChanged: false,
+  textSilent: false,
+  textWords: '',
+  pageDiffers: false,
 };
 let _listeners = new Set<() => void>();
 function notify() { _listeners.forEach((fn) => fn()); }
@@ -93,7 +138,25 @@ function notify() { _listeners.forEach((fn) => fn()); }
  */
 let _repaint: (() => void) | null = null;
 
+/**
+ * Renders the pair again. Mode and resolution change what has to be read or at what
+ * size, which no threshold can answer from pixels already in hand.
+ */
+let _rerender: (() => void) | null = null;
+
 export function getCompareState() { return _state; }
+export function setCompareMode(m: CompareMode) {
+  _state.mode = m;
+  _state.revision += 1;
+  _rerender?.();
+  notify();
+}
+export function setCompareResolution(dpi: number) {
+  _state.dpi = dpi;
+  _state.revision += 1;
+  _rerender?.();
+  notify();
+}
 export function setCompareSensitivity(s: number) { _state.sensitivity = s; _repaint?.(); notify(); }
 export function setCompareHighlightColor(c: string) { _state.highlightColor = c; _repaint?.(); notify(); }
 export function setComparePage(p: number) { _state.page = p; notify(); }
@@ -101,7 +164,8 @@ export function subscribeCompare(fn: () => void) { _listeners.add(fn); return ()
 
 // ═══════════════════ Component ═══════════════════
 
-const DISPLAY_SCALE = 1.0;
+/** The zoom the sheets are drawn at: 1 device px per point is 72 dpi. */
+const dpiToScale = (dpi: number) => dpi / 72;
 
 /**
  * The pixels one compared pair was measured over.
@@ -116,9 +180,15 @@ interface ComparedFrame {
   width: number;
   height: number;
   scale: number;
-  /** Device pixels from the frame's top edge to the top of document A's page. */
+  /**
+   * Device pixels from the frame's top edge to the top of document A's page.
+   *
+   * Both sheets are drawn at the frame's top-left, exactly as the export draws them
+   * into its page, so this is zero; it is kept because the areas are divided back
+   * down by it and a second alignment would have to say so here.
+   */
   originY: number;
-  /** Whether that offset is zero, i.e. the frame *is* A's page box. */
+  /** Whether the frame's top-left is A's page's top-left, so areas name a spot on it. */
   areasOnPage: boolean;
 }
 
@@ -218,6 +288,15 @@ export function countDiffRegions(
   return diffAreasOf(changed, width, height, cell).length;
 }
 
+/** `2 word(s) removed, 1 added` — the wording the report path already uses. */
+function wordChanges(a: string, b: string): string {
+  const left = new Set(a.split(/\s+/).filter(Boolean));
+  const right = new Set(b.split(/\s+/).filter(Boolean));
+  const removed = [...left].filter((word) => !right.has(word)).length;
+  const added = [...right].filter((word) => !left.has(word)).length;
+  return `${removed} word(s) removed, ${added} added`;
+}
+
 /** The attribute spelling of an area, for a probe to read off the DOM. */
 export function diffAreaAttribute(area: DiffArea): string {
   return [area.x0, area.y0, area.x1, area.y1].map((v) => Math.round(v * 10) / 10).join(',');
@@ -237,6 +316,7 @@ export function CompareMain() {
 
   const [loading, setLoading] = useState(true);
   const [st, setSt] = useState<CompareState>(_state);
+  const [revision, setRevision] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   /**
    * The pixels the last pair was measured over, kept so the threshold and the
@@ -260,9 +340,9 @@ export function CompareMain() {
   /** The pair this pane was last asked to show, checked before anything is published. */
   const renders = useRef(0);
   /**
-   * The unified frame the diff ran in. Both pages are bottom-aligned inside it,
-   * which is what lets the overlay land on the words rather than a page-height
-   * above or below them when the two documents differ in size.
+   * The unified frame the diff ran in. Both pages start at its top-left — the
+   * alignment the export paints with, and the one that keeps a reported area on the
+   * page when the two documents differ in size.
    */
   const [diffBox, setDiffBox] = useState({ width: 0, height: 0 });
 
@@ -274,9 +354,15 @@ export function CompareMain() {
   // pane re-renders on every notification it publishes.
   useEffect(() => () => {
     _repaint = null;
+    _rerender = null;
     compared.current = null;
     renders.current += 1;
   }, []);
+
+  // A mode or resolution change is a different comparison, not a different threshold:
+  // both pages have to be read again (text layer, or at the new size).
+  const bump = useCallback(() => setRevision((r) => r + 1), []);
+  useEffect(() => { _rerender = bump; return () => { _rerender = null; }; }, [bump]);
 
   // ── Load and render both PDFs ─────────────────────────────
 
@@ -342,7 +428,7 @@ export function CompareMain() {
       cancelled = true;
       for (const doc of opened) void doc.destroy();
     };
-  }, [st.page]);
+  }, [st.page, revision]);
 
   const renderPagePair = async (docA: pdfjsLib.PDFDocumentProxy, docB: pdfjsLib.PDFDocumentProxy, pageNum: number) => {
     const token = renders.current + 1;
@@ -358,8 +444,9 @@ export function CompareMain() {
     const maxW = Math.max(vpA.width, vpB.width);
     const maxH = Math.max(vpA.height, vpB.height);
 
-    const vpAU = pageA.getViewport({ scale: DISPLAY_SCALE });
-    const vpBU = pageB.getViewport({ scale: DISPLAY_SCALE });
+    const diffScale = dpiToScale(_state.dpi);
+    const vpAU = pageA.getViewport({ scale: diffScale });
+    const vpBU = pageB.getViewport({ scale: diffScale });
 
     // Render doc A
     const cA = canvasARef.current;
@@ -378,30 +465,63 @@ export function CompareMain() {
       notify();
       return;
     }
+    // The bitmap is measured at the resolution's density, but it is *shown* at one
+    // CSS pixel per point so a page still fits beside another one: the resolution
+    // changes how finely the pair is compared, not the zoom a reader gets.
     cA.width = vpAU.width; cA.height = vpAU.height;
+    cA.style.width = `${vpAU.width / diffScale}px`;
+    cA.style.height = `${vpAU.height / diffScale}px`;
     await pageA.render({ canvasContext: cA.getContext('2d')!, viewport: vpAU }).promise;
 
     // Render doc B
     cB.width = vpBU.width; cB.height = vpBU.height;
+    cB.style.width = `${vpBU.width / diffScale}px`;
+    cB.style.height = `${vpBU.height / diffScale}px`;
     await pageB.render({ canvasContext: cB.getContext('2d')!, viewport: vpBU }).promise;
     // A pair superseded while it was painting must not publish over the one that
     // superseded it — the pixels in the canvas are the newer pair's by then.
     if (renders.current !== token) return;
 
+    // The text half, when the mode asks for it. Read off the same two pages the
+    // pixels came from, so the two answers cannot describe different documents.
+    const wantsText = _state.mode !== 'visual';
+    if (wantsText) {
+      const words = async (page: pdfjsLib.PDFPageProxy) => {
+        try {
+          const content = await page.getTextContent();
+          return content.items.map((item) => (item as { str?: string }).str ?? '').join(' ');
+        } catch {
+          // A page with no text layer is not a match: it is a page this mode could
+          // not read, which the verdict says rather than calling it equal.
+          return '';
+        }
+      };
+      const [ta, tb] = await Promise.all([words(pageA), words(pageB)]);
+      if (renders.current !== token) return;
+      _state.textCompared = true;
+      _state.textSilent = ta.trim() === '' && tb.trim() === '';
+      _state.textChanged = !_state.textSilent && ta !== tb;
+      _state.textWords = wordChanges(ta, tb);
+    } else {
+      _state.textCompared = false;
+      _state.textChanged = false;
+      _state.textSilent = false;
+      _state.textWords = '';
+    }
+
     // Compute diff at unified resolution
-    const diffScale = DISPLAY_SCALE;
     const diffW = Math.round(maxW * diffScale);
     const diffH = Math.round(maxH * diffScale);
 
     const tmpA = document.createElement('canvas'); tmpA.width = diffW; tmpA.height = diffH;
     const ctxA = tmpA.getContext('2d')!;
     ctxA.fillStyle = '#ffffff'; ctxA.fillRect(0, 0, diffW, diffH);
-    ctxA.drawImage(cA, 0, 0, vpAU.width, vpAU.height, 0, diffH - vpAU.height, vpAU.width, vpAU.height);
+    ctxA.drawImage(cA, 0, 0, vpAU.width, vpAU.height, 0, 0, vpAU.width, vpAU.height);
 
     const tmpB = document.createElement('canvas'); tmpB.width = diffW; tmpB.height = diffH;
     const ctxB = tmpB.getContext('2d')!;
     ctxB.fillStyle = '#ffffff'; ctxB.fillRect(0, 0, diffW, diffH);
-    ctxB.drawImage(cB, 0, 0, vpBU.width, vpBU.height, 0, diffH - vpBU.height, vpBU.width, vpBU.height);
+    ctxB.drawImage(cB, 0, 0, vpBU.width, vpBU.height, 0, 0, vpBU.width, vpBU.height);
 
     const dataA = ctxA.getImageData(0, 0, diffW, diffH).data;
     const dataB = ctxB.getImageData(0, 0, diffW, diffH).data;
@@ -423,15 +543,19 @@ export function CompareMain() {
       width: diffW,
       height: diffH,
       scale: diffScale,
-      // Both sheets are bottom-aligned inside the frame, so the frame's top edge is
-      // this many device pixels above the top of A's page — the offset the reported
-      // areas are measured back down by.
-      originY: diffH - vpAU.height,
-      areasOnPage: diffW === vpAU.width && diffH === vpAU.height,
+      // Both sheets start at the frame's top-left, which is what the export does with
+      // its page copy and its overlay: one alignment for both halves. Bottom-aligning
+      // them here instead put the shorter sheet's rows against the taller one's bottom,
+      // so a pair whose *only* difference was page height came back as 7 248 changed
+      // pixels in an area at `y -29–103` — negative, i.e. above the page — while the
+      // export of the same pair marked 0 px. Top-aligned, the frame's top edge is A's
+      // page's top edge, so a reported area always names a spot on A.
+      originY: 0,
+      areasOnPage: true,
     };
     publishDiff();
     _repaint = publishDiff;
-    setDiffBox({ width: diffW, height: diffH });
+    setDiffBox({ width: diffW / diffScale, height: diffH / diffScale });
   };
 
   /**
@@ -483,6 +607,14 @@ export function CompareMain() {
     _state.diffRegions = areas.length;
     _state.diffAreas = areas.slice(0, AREA_LIMIT);
     _state.areasOnPage = frame.areasOnPage;
+    const textMode = _state.mode !== 'visual';
+    const pixelMode = _state.mode !== 'text';
+    // The overlay always paints the pixels — the copy the export writes is a pixel
+    // comparison whatever the mode says — but `pageDiffers` follows the question
+    // that was actually asked, so a reworded sentence with identical renderings is
+    // not published as an all-clear in `Text content` mode.
+    _state.pageDiffers = (pixelMode && diffCount > 0)
+      || (textMode && _state.textCompared && !_state.textSilent && _state.textChanged);
     _state.compared = true;
     notify();
   };
@@ -499,15 +631,28 @@ export function CompareMain() {
    * pane that never painted a pixel said “Nothing differs on the page in view”.
    */
   const largest = st.diffAreas[0];
+  /** The text half of the answer, in the shape the report path used. */
+  const textLine = st.textCompared
+    ? st.textSilent
+      ? `Page ${st.page}: neither sheet has any extractable text — a scanned page. Run OCR, or read the pixels.`
+      : st.textChanged
+        ? `Page ${st.page}: the extractable text differs (${st.textWords}).`
+        : `Page ${st.page}: the extractable text is identical.`
+    : '';
+  const pixelLine = st.diffPixels === 0
+    ? 'No pixel differences found on page ' + st.page + ' at this sensitivity — the export marks nothing.'
+    : `${st.diffRegions} changed area${st.diffRegions === 1 ? '' : 's'} · ${st.diffPixels.toLocaleString()} of ${st.totalPixels.toLocaleString()} pixels (${diffPct}%) on page ${st.page}${
+      largest ? ` · largest at ${diffAreaWords(largest)} from the ${st.areasOnPage ? "page's" : "compared sheet's"} top-left${
+        st.diffRegions > st.diffAreas.length ? ` · ${st.diffRegions - st.diffAreas.length} more` : ''
+      }` : ''
+    }`;
   const resultLine = !st.compared
     ? 'Neither page has been read yet — no comparison has run.'
-    : st.diffPixels === 0
-      ? `No differences found on page ${st.page} at this sensitivity — the export marks nothing.`
-      : `${st.diffRegions} changed area${st.diffRegions === 1 ? '' : 's'} · ${st.diffPixels.toLocaleString()} of ${st.totalPixels.toLocaleString()} pixels (${diffPct}%) on page ${st.page}${
-        largest ? ` · largest at ${diffAreaWords(largest)} from the ${st.areasOnPage ? "page's" : "compared sheet's"} top-left${
-          st.diffRegions > st.diffAreas.length ? ` · ${st.diffRegions - st.diffAreas.length} more` : ''
-        }` : ''
-      }`;
+    : st.mode === 'text'
+      ? textLine
+      : st.mode === 'both'
+        ? `${pixelLine} ${textLine}`
+        : pixelLine;
 
   if (!hasFiles && !loading) {
     return (
@@ -558,7 +703,10 @@ export function CompareMain() {
           data-compare-pixels={st.diffPixels}
           data-compare-percent={st.diffPercent}
           data-compare-read={st.compared}
-          data-compare-identical={st.compared && st.diffPixels === 0}
+          data-compare-mode={st.mode}
+          data-compare-dpi={st.dpi}
+          data-compare-text={st.textCompared ? (st.textSilent ? 'no-text' : st.textChanged ? 'differs' : 'same') : undefined}
+          data-compare-identical={st.compared && !st.pageDiffers}
           data-compare-area={largest ? diffAreaAttribute(largest) : undefined}
         >
           {resultLine}
@@ -567,8 +715,9 @@ export function CompareMain() {
 
       {/*
         One scroller for both documents: page turns, zoom and scroll are shared by
-        construction, so the pair cannot drift apart mid-read. Both pages sit on
-        the same baseline box, which is the frame the diff was computed in.
+        construction, so the pair cannot drift apart mid-read. Both pages start at
+        the top-left of the frame the diff was computed in, which is the alignment
+        the export paints with.
       */}
       <div data-compare-scroll className="relative flex-1 overflow-auto p-4">
         {/*
@@ -592,7 +741,7 @@ export function CompareMain() {
             <div
               className="relative"
               style={diffBox.width > 0
-                ? { width: diffBox.width, height: diffBox.height, display: 'flex', alignItems: 'flex-end' }
+                ? { width: diffBox.width, height: diffBox.height, display: 'flex', alignItems: 'flex-start' }
                 : undefined}
             >
               <canvas ref={canvasARef} className="shadow-doodle-card rounded-md block" />
@@ -612,7 +761,7 @@ export function CompareMain() {
             <div
               className="relative"
               style={diffBox.width > 0
-                ? { width: diffBox.width, height: diffBox.height, display: 'flex', alignItems: 'flex-end' }
+                ? { width: diffBox.width, height: diffBox.height, display: 'flex', alignItems: 'flex-start' }
                 : undefined}
             >
               <canvas ref={canvasBRef} className="shadow-doodle-card rounded-md block" />

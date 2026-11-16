@@ -224,6 +224,40 @@ if (process.env.SHOT) {
   console.log('screenshot:', process.env.SHOT);
 }
 
+// `MODESHOT` presses each mode chip, reads the state back out of the DOM, and
+// screenshots the text answer — the mode segment lives in the panel now, so a probe
+// has to press it the way a user does and be told what it says. Pixels is restored
+// before the export so the measured file is the pixel comparison.
+if (process.env.MODESHOT) {
+  const modes = [];
+  for (const label of ['Text content', 'Both', 'Pixels']) {
+    const chip = `[...document.querySelectorAll('button')].find((x)=>(x.textContent||'').trim()===${JSON.stringify(label)})`;
+    const found = await ev(`(()=>{const b=${chip};if(!b) return 0;b.click();return 1})()`);
+    await sleep(1800);
+    // Read after the re-render: the attribute on the node in the click's own task is
+    // still the old value.
+    const pressed = found ? await ev(`(()=>{const b=${chip};return b?b.getAttribute('aria-pressed'):'NO CHIP'})()`) : 'NO CHIP';
+    const read = JSON.parse(await ev(`JSON.stringify({
+      pressed:${JSON.stringify(pressed)},
+      mode:(document.querySelector('[data-compare-counts]')||{getAttribute:()=>null}).getAttribute('data-compare-mode'),
+      text:(document.querySelector('[data-compare-counts]')||{getAttribute:()=>null}).getAttribute('data-compare-text'),
+      identical:(document.querySelector('[data-compare-counts]')||{getAttribute:()=>null}).getAttribute('data-compare-identical'),
+      line:(document.querySelector('[data-compare-counts]')||{innerText:''}).innerText.trim().slice(0,220),
+      cardText:(document.querySelector('[data-compare-text]')||{innerText:''}).innerText.trim().slice(0,220),
+      dpi:(document.querySelector('#compare-dpi')||{value:null}).value
+    })`));
+    modes.push({ label, ...read });
+    if (label === 'Text content' && process.env.MODESHOT !== '1') {
+      const shot = await send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(process.env.MODESHOT, Buffer.from(shot.data, 'base64'));
+    }
+  }
+  console.log('modes', JSON.stringify(modes));
+  // Back to Pixels, and wait for that comparison to publish before the export runs.
+  await wait(`(document.querySelector('[data-compare-counts]')||{getAttribute:()=>null}).getAttribute('data-compare-mode')==='visual'`, 60000);
+  await sleep(1200);
+}
+
 const clicked = await ev(`(()=>{
   const b=document.getElementById('tool-process-btn')
     ||[...document.querySelectorAll('button')].find(x=>/comparison/i.test(x.innerText||''));

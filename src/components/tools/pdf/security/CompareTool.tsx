@@ -27,9 +27,25 @@ import {
 import {
   diffAreaAttribute,
   diffAreaWords,
-  getCompareState, setCompareSensitivity, setCompareHighlightColor,
+  getCompareState, setCompareHighlightColor, setCompareMode, setCompareResolution, setCompareSensitivity,
   subscribeCompare,
+  type CompareMode,
 } from './CompareMain';
+
+/**
+ * The three answers `mode` can give. `Pixels` is the rendering, `Text content` is the
+ * layer underneath it.
+ *
+ * The segment used to exist only in `compare-pdfs`' field list, which the route never
+ * rendered: the page's own definition declared it, the printed promise leaned on it,
+ * and the button beside it ran a different definition without it. It lives here now,
+ * where the comparison actually happens.
+ */
+const MODES: { value: CompareMode; label: string; help: string }[] = [
+  { value: 'visual', label: 'Pixels', help: 'Catches a moved logo, a colour change or a redrawn chart.' },
+  { value: 'text', label: 'Text content', help: 'Catches a reworded sentence that a rendering can hide.' },
+  { value: 'both', label: 'Both', help: 'Reads the pixels and the words, and reports each.' },
+];
 
 export function CompareTool() {
   const files = useFileStore((s) => s.files);
@@ -103,8 +119,12 @@ export function CompareTool() {
     void run({
       highlightColor: st.highlightColor,
       sensitivity: clampSensitivity(st.sensitivity),
+      // The copy is rendered at the resolution the reading used; without this the
+      // field would move the preview and leave the produced pixels at 2 px/pt.
+      dpi: Math.min(300, Math.max(72, st.dpi)),
+      mode: st.mode,
     });
-  }, [report.valid, run, st.highlightColor, st.sensitivity]);
+  }, [report.valid, run, st.highlightColor, st.sensitivity, st.dpi, st.mode]);
 
   if (files.length < 2) {
     return (
@@ -211,10 +231,26 @@ export function CompareTool() {
             )}
           </motion.ul>
         )}
-        {st.compared && st.diffPixels === 0 && (
+        {/*
+          The words the mode asked for, on their own line: a reworded sentence can
+          leave both renderings identical, and "no pixels differ" is not an answer
+          to a text comparison.
+        */}
+        {st.textCompared && (
+          <p
+            className={`mt-1 text-[10px] leading-relaxed ${st.textChanged ? 'text-ink' : 'text-ink-muted'}`}
+            data-compare-text={st.textSilent ? 'no-text' : st.textChanged ? 'differs' : 'same'}
+          >
+            {st.textSilent
+              ? `Neither sheet of page ${st.page} carries extractable text — a scanned page, so text mode cannot answer for it.`
+              : st.textChanged
+                ? `The text of page ${st.page} differs: ${st.textWords}.`
+                : `The text of page ${st.page} is identical.`}
+          </p>
+        )}
+        {st.compared && !st.pageDiffers && (
           <p className="mt-1 text-[10px] leading-relaxed text-warn" data-compare-identical>
-            Nothing differs on the page in view. The comparison PDF will still be written, with no marks on it —
-            move to another page, or lower the sensitivity to catch smaller changes.
+            Nothing differs on the page in view{st.mode === 'text' ? ' — in its text' : ''}. The comparison PDF will still be written, with no marks on it — move to another page, or lower the sensitivity to catch smaller changes.
           </p>
         )}
       </motion.div>
@@ -239,6 +275,27 @@ export function CompareTool() {
         )}
       </motion.ul>
 
+      {/* What to look for: the pixels, the words, or both */}
+      <motion.div variants={fadeUp}>
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" id="compare-mode-label">Compare</p>
+        <div className="mt-1 flex gap-1" role="group" aria-labelledby="compare-mode-label" data-compare-mode={st.mode}>
+          {MODES.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              aria-pressed={st.mode === mode.value}
+              onClick={() => setCompareMode(mode.value)}
+              className={`doodle-chip flex-1 text-[10px] ${st.mode === mode.value ? '' : 'doodle-chip-inactive'}`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] leading-relaxed text-ink-muted" data-compare-mode-help>
+          {MODES.find((mode) => mode.value === st.mode)?.help} The exported copy marks pixels either way.
+        </p>
+      </motion.div>
+
       {/* Sensitivity */}
       <motion.div variants={fadeUp}>
         <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-sensitivity">
@@ -255,6 +312,24 @@ export function CompareTool() {
         <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">{sensitivityWords(st.sensitivity)}.</p>
       </motion.div>
 
+      {/* How finely both pages are rendered before they are compared */}
+      <motion.div variants={fadeUp}>
+        <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-dpi">
+          Resolution: <span className="tabular-nums">{st.dpi} dpi</span>
+        </label>
+        <input id="compare-dpi" type="number" min={72} max={300} step={1} value={st.dpi}
+          aria-label="Resolution both pages are rendered at before they are compared"
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            if (Number.isFinite(next)) setCompareResolution(Math.min(300, Math.max(72, Math.round(next))));
+          }}
+          className="mt-1 w-full rounded-[10px] border border-cream-border bg-white px-2 py-1 text-[11px] tabular-nums" />
+        <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">
+          Both pages are rendered at this density before they are compared, and the copy is written at it. Higher finds
+          finer differences and costs more memory per page.
+        </p>
+      </motion.div>
+
       {/* Highlight color */}
       <motion.div variants={fadeUp}>
         <label className="block font-mono text-[10px] uppercase tracking-[0.12em] text-ink-muted" htmlFor="compare-color">
@@ -268,9 +343,11 @@ export function CompareTool() {
 
       {/* Info */}
       <motion.p variants={scaleIn} className="rounded-[12px] border border-cream-border bg-cream-soft px-3.5 py-2.5 text-[10px] text-ink-muted leading-relaxed">
-        Changes are found by rendering both pages and comparing their pixels, not by reading the text. The output is a
-        copy of A with every changed area marked in the colour you chose; the verdict beside the pages is for the page
-        in view, and the marks run across every page both files have. Both files stay in this tab.
+        Changes are found by rendering both pages and comparing their pixels, not by reading the text; the mode above
+        decides what the verdict reads, and the text layer is compared only when you ask for it. The output is a copy of
+        A with every changed pixel marked in the colour you chose, at the resolution above; the verdict beside the
+        pages is for the page in view, and the marks run across every page both files have. Both files stay in this
+        tab.
       </motion.p>
 
       {/* What the run had to admit: pages only one document has, files it could

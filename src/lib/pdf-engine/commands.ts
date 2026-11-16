@@ -975,7 +975,20 @@ export async function comparePDFs(
   };
 }
 
-/** Paint every pixel over the threshold in the highlight colour, with alpha. */
+/**
+ * Paint every pixel over the threshold in the highlight colour, with alpha.
+ *
+ * `null` when not one pixel cleared the threshold, which is the whole answer for a
+ * page the two files share. The caller already guards on it; what it used to get was
+ * a full-size canvas of nothing, embedded as a PNG (three device px per point, plus
+ * an `/SMask`) on **every** page of every export — measured on an A-against-A pair,
+ * 2 image XObjects per page with 0 of 999 600 alpha bytes set on each of the three
+ * sheets, 85 247 bytes for three pages of text and no difference at all.
+ *
+ * The alpha is `distance × 1.5` clamped, the same rule the pane paints with
+ * (`CompareMain.publishDiff`), so one change is not two opacities depending on which
+ * path reached it.
+ */
 function diffCanvas(
   a: { canvas: HTMLCanvasElement; width: number; height: number },
   b: { canvas: HTMLCanvasElement; width: number; height: number },
@@ -1004,6 +1017,7 @@ function diffCanvas(
   if (!context) return null;
   const paint = context.createImageData(width, height);
   const target = paint.data;
+  let marked = 0;
   for (let i = 0; i < width * height; i++) {
     const j = i * 4;
     const distance = Math.abs(dataA[j] - dataB[j])
@@ -1014,8 +1028,10 @@ function diffCanvas(
       target[j + 1] = Math.round(highlight.g * 255);
       target[j + 2] = Math.round(highlight.b * 255);
       target[j + 3] = Math.min(255, Math.round(distance * 1.5));
+      marked += 1;
     }
   }
+  if (marked === 0) return null;
   context.putImageData(paint, 0, 0);
   return out;
 }

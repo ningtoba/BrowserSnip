@@ -82,11 +82,17 @@ run pair-cold  pair  1
 run pair-warm  pair  1 WARM=1
 run pair-page2 pair  2
 run pair-page3 pair  3
-run same       same  1
+# The height pair: the same copy on a 500 pt and a 560 pt sheet, nothing else. The
+# pane used to bottom-align it and the export top-align it, so the pane answered a
+# changed area at `y -29–103` while the export marked 0 px.
+run height     pair  1 A=$DIR/h-a.pdf B=$DIR/h-b.pdf
 run blanks     blank 1
 
 echo
 echo "═══ the exported file: the difference, marked where it was planted"
+check OK "height-only pair — the two halves agree there is nothing to mark" \
+  --src "$DIR/h-a.pdf" --out "$DIR/height.pdf" --page 1 --no-rect --max-images 1 \
+  --verdict "$DIR/height.json" --label "height pair p1"
 check OK "pair, sheet 1 — verdict and bytes, both localised" \
   --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 1 --rect "$RECT" \
   --verdict "$DIR/pair-cold.json" --label "export p1"
@@ -97,7 +103,7 @@ check OK "pair, sheet 1 after a page turn — the same marks" \
 # unmarked: this is the half that catches a tool that paints the whole document.
 check OK "pair, sheet 2 — no marks, all of its own ink" \
   --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 2 --no-rect \
-  --verdict "$DIR/pair-page2.json" --label "export p2"
+  --max-images 1 --verdict "$DIR/pair-page2.json" --label "export p2"
 # The empty sheet: no marks, and nothing invented on it either.
 check OK "pair, sheet 3 — blank against blank is not a difference" \
   --src "$DIR/a.pdf" --out "$DIR/pair-cold.pdf" --page 3 --no-rect --blank \

@@ -395,10 +395,23 @@ export const legacyTools: PdfToolDefinition[] = [
       const values = clampToFields(COMPARE_FIELDS, context.values, warnings);
       const sensitivity = numberValue(values, 'sensitivity', 30);
       const highlightColor = compareColor(values, warnings);
+      // The panel's resolution field, which is the render density the verdict beside
+      // the pages was measured at. Clamped here as well as at the box, because a pane
+      // or a test can hand `run` anything and 1 dpi still writes a plausible file.
+      const asked = Number(context.values.dpi);
+      const dpi = Number.isFinite(asked) ? Math.min(300, Math.max(72, Math.round(asked))) : 144;
+      const mode = stringValue(context.values, 'mode', 'visual');
+      if (mode === 'text') {
+        // The copy is a pixel comparison — a reworded sentence has no pixels to
+        // paint — so a text run that changes nothing on the rendering still writes an
+        // unmarked file. Say it instead of letting the download look wrong.
+        warnings.push('Text content was compared, but the copy marks pixel differences only: a reworded sentence can come back unmarked.');
+      }
       const { comparePDFs } = await import('@/lib/pdf-engine/commands');
       const outcome = await comparePDFs(first.bytes, second.bytes, {
         sensitivity,
         highlightColor,
+        scale: dpi / 72,
       }, { progress: context.progress, signal: context.signal });
       if (outcome.compared === 0) {
         throw new ToolInputError(

@@ -104,6 +104,8 @@ interface InkRect {
 interface SheetModel {
   box: [number, number];
   ink: InkRect[];
+  /** The page's extractable text, as `getTextContent` would report it. */
+  text?: string;
 }
 
 const SHEETS_A: SheetModel[] = [
@@ -172,6 +174,9 @@ async function docBytes(sheets: SheetModel[]): Promise<Uint8Array> {
       });
     }
     page.drawText('sheet', { x: 4, y: 4, size: 6, font, color: rgb(0, 0, 0) });
+    // The text layer is written into the bytes as well, so two sheets with the same
+    // ink and different words are two different documents to the double.
+    if (sheet.text) page.drawText(sheet.text, { x: 4, y: 20, size: 6, font, color: rgb(0, 0, 0) });
   }
   return new Uint8Array(await doc.save({ useObjectStreams: false }));
 }
@@ -455,7 +460,9 @@ vi.mock('pdfjs-dist', async (importOriginal) => {
         height: Math.floor(sheet.box[1] * scale),
         scale,
       }),
-      getTextContent: async () => ({ items: [] }),
+      getTextContent: async () => ({
+        items: (sheet.text ?? '').split(/\s+/).filter(Boolean).map((str) => ({ str })),
+      }),
       cleanup: () => {},
       render: ({ canvasContext }: { canvasContext: StubContext }) => {
         rig.renders += 1;
@@ -682,8 +689,17 @@ async function runCompare(id: string, pairs: Uint8Array[], values: ToolValues = 
   };
 }
 
+/**
+ * Device pixels per point, in both halves.
+ *
+ * The panel's resolution box defaults to 144 dpi — exactly two device px per point —
+ * and the export is written at the same density, so one number covers the verdict and
+ * the file and every count below is exact rather than a tolerance.
+ */
 const EXPORT_SCALE = 2;
+const PANE_SCALE = 2;
 const EXPORTED_AREA = (ptArea: number) => ptArea * EXPORT_SCALE * EXPORT_SCALE;
+const PANE_AREA = (ptArea: number) => ptArea * PANE_SCALE * PANE_SCALE;
 
 let bytesA: Uint8Array;
 let bytesB: Uint8Array;
@@ -747,26 +763,33 @@ describe('the exported comparison', () => {
 
   it('reports no difference for A against A — and keeps the page inked while doing so', async () => {
     const out = await runCompare('compare', [bytesA, bytesA]);
-    const marked = out.pages.map((page) => markedPixels(drawnImages(out.doc, page)[1]));
-    expect(marked, 'an unmarked page is the whole answer for a pair that is equal').toEqual([0, 0, 0]);
-    // The zero above has to be earned: the page image still carries the copy, so
-    // "nothing differs" is a measurement and not a canvas nobody painted.
-    expect(inkOf(drawnImages(out.doc, out.pages[0])[0])).toBe(EXPORTED_AREA(COPY_AREA));
+    // An equal page has no overlay to draw, so the export holds **one** image per
+    // page instead of a second, fully transparent one: measured before this, 2 image
+    // XObjects per page on all three sheets of an A-against-A download (85 247 bytes,
+    // 0 of 999 600 alpha bytes set), i.e. bytes for nothing on every page.
+    const images = out.pages.map((page) => drawnImages(out.doc, page));
+    expect(images.map((pair) => pair.length), 'an equal page still got an overlay').toEqual([1, 1, 1]);
+    // The zero has to be earned: the page image still carries the copy, so "nothing
+    // differs" is a measurement and not a canvas nobody painted.
+    expect(inkOf(images[0][0])).toBe(EXPORTED_AREA(COPY_AREA));
     expect(rig.earlyReads).toBe(0);
   });
 
   it('does not call two empty sheets a difference, and invents nothing on them', async () => {
     const out = await runCompare('compare', [bytesBlank, bytesBlank]);
     const images = out.pages.map((page) => drawnImages(out.doc, page));
-    expect(images.every((pair) => markedPixels(pair[1]) === 0), 'blank versus blank is not a change').toBe(true);
+    expect(images.every((pair) => pair.length === 1), 'blank versus blank is not a change').toBe(true);
     expect(images.every((pair) => inkOf(pair[0]) === 0), 'a blank sheet must stay blank in the file').toBe(true);
   });
 
   it('leaves the page both files share untouched, and marks only the one that changed', async () => {
     const out = await runCompare('compare', [bytesA, bytesB]);
-    const marked = out.pages.map((page) => markedPixels(drawnImages(out.doc, page)[1]));
-    expect(marked[PLANTED.page - 1], 'the page with the planted block is not marked').toBe(EXPORTED_AREA(PLANTED_AREA));
-    expect(marked.slice(1), 'a page nobody changed came back marked').toEqual([0, 0]);
+    const images = out.pages.map((page) => drawnImages(out.doc, page));
+    expect(markedPixels(images[PLANTED.page - 1][1]!), 'the page with the planted block is not marked')
+      .toBe(EXPORTED_AREA(PLANTED_AREA));
+    // The unchanged sheet and the empty one carry the page and no overlay at all.
+    expect(images.slice(1).map((pair) => pair.length), 'a page nobody changed came back with an overlay')
+      .toEqual([1, 1]);
   });
 
   it('marks only what the sensitivity catches, in the colour that was chosen', async () => {
@@ -825,7 +848,7 @@ describe('compare-pdfs as a report (the path the route never reaches)', () => {
 
 /* ══ 3. the pane: the verdict the user reads, and where it says the change is */
 
-const { CompareMain, getCompareState, setCompareSensitivity } = await import(
+const { CompareMain, getCompareState, setCompareResolution, setCompareSensitivity } = await import(
   '@/components/tools/pdf/security/CompareMain'
 );
 const { CompareTool } = await import('@/components/tools/pdf/security/CompareTool');
@@ -877,10 +900,10 @@ describe('the pane’s verdict', () => {
     const sizes = sheetCanvases().map((c) => [c.width, c.height]);
     // 300×150 is the size of a canvas nobody ever drew into, which is what the
     // first render used to leave behind while its own loading state held the DOM.
-    expect(sizes).toEqual([[SHEET[0], SHEET[1]], [SHEET[0], SHEET[1]]]);
+    expect(sizes).toEqual([[SHEET[0] * PANE_SCALE, SHEET[1] * PANE_SCALE], [SHEET[0] * PANE_SCALE, SHEET[1] * PANE_SCALE]]);
     const state = getCompareState();
     expect(state.compared, 'no comparison ran').toBe(true);
-    expect(state.diffPixels).toBe(PLANTED_AREA);
+    expect(state.diffPixels).toBe(PANE_AREA(PLANTED_AREA));
     expect(state.diffRegions).toBe(1);
     expect(state.diffAreas[0]).toEqual({
       x0: PLANTED.x0,
@@ -939,7 +962,8 @@ describe('the pane’s verdict', () => {
   it('does not call two empty sheets different, and paints no marks on them', async () => {
     await loadPair(bytesBlank, bytesBlank);
     const state = getCompareState();
-    expect(sheetCanvases().map((c) => [c.width, c.height])).toEqual([[SHEET[0], SHEET[1]], [SHEET[0], SHEET[1]]]);
+    expect(sheetCanvases().map((c) => [c.width, c.height]))
+      .toEqual([[SHEET[0] * PANE_SCALE, SHEET[1] * PANE_SCALE], [SHEET[0] * PANE_SCALE, SHEET[1] * PANE_SCALE]]);
     expect(state.compared).toBe(true);
     expect(state.diffPixels, 'an empty sheet is not a difference').toBe(0);
     expect(state.diffRegions).toBe(0);
@@ -951,7 +975,7 @@ describe('the pane’s verdict', () => {
     act(() => setCompareSensitivity(BLACK_ON_WHITE));
     expect(getCompareState().diffPixels, 'the threshold did not reach the verdict').toBe(0);
     act(() => setCompareSensitivity(30));
-    expect(getCompareState().diffPixels, 'the verdict did not come back').toBe(PLANTED_AREA);
+    expect(getCompareState().diffPixels, 'the verdict did not come back').toBe(PANE_AREA(PLANTED_AREA));
     expect(rig.renders, 'the slider re-rendered both pages instead of reusing the pixels').toBe(rendered);
   });
 
@@ -967,7 +991,7 @@ describe('the pane’s verdict', () => {
     await waitFor(() => expect(getCompareState().compared).toBe(true), { timeout: 20_000 });
     expect(rig.maxInFlight, 'two render tasks were on one canvas at once').toBeLessThanOrEqual(1);
     const state = getCompareState();
-    expect(state.diffPixels).toBe(PLANTED_AREA);
+    expect(state.diffPixels).toBe(PANE_AREA(PLANTED_AREA));
     expect(state.diffAreas[0]).toEqual({ x0: PLANTED.x0, y0: PLANTED.y0, x1: PLANTED.x1, y1: PLANTED.y1 });
     // Both sheets are paper under their ink: a torn canvas has ink floating on
     // transparency, which is what turned A-versus-A into a difference.
@@ -983,11 +1007,187 @@ describe('the pane’s verdict', () => {
     await loadPair(bytesA, bytesB);
     const overlay = overlayCanvas();
     expect(overlay, 'no overlay canvas is mounted').toBeTruthy();
-    expect([overlay!.width, overlay!.height]).toEqual(SHEET);
+    expect([overlay!.width, overlay!.height]).toEqual([SHEET[0] * PANE_SCALE, SHEET[1] * PANE_SCALE]);
     const raster = surfaceAsRaster(overlay);
-    expect(markedPixels(raster)).toBe(PLANTED_AREA);
-    const at = (PLANTED.y0 + 1) * raster.width + PLANTED.x0 + 1;
+    expect(markedPixels(raster)).toBe(PANE_AREA(PLANTED_AREA));
+    const at = (PLANTED.y0 * PANE_SCALE + 1) * raster.width + PLANTED.x0 * PANE_SCALE + 1;
     expect([raster.rgb[at * 3], raster.rgb[at * 3 + 1], raster.rgb[at * 3 + 2]]).toEqual([255, 0, 0]);
+  });
+});
+
+/* ══ 4. one alignment, one reading: a pair that differs in page height ══════ */
+
+/**
+ * The same copy and the same block on two sheets of *different heights*.
+ *
+ * The pane used to bottom-align the pair inside the union frame while the export
+ * painted it top-aligned, so on this pair — where nothing differs but the height —
+ * the pane answered **1 changed area at `y -29–103`** (negative, i.e. above the
+ * page) over **7 248 changed pixels** while the export of the same pair marked
+ * **0 px**. Top-aligned, both halves compare the same rows and the only differences
+ * left are the two sheets' own footers, each at its own bottom.
+ */
+const FOOTER_A: SheetModel[] = [{ box: [120, 120], ink: [{ x0: 10, y0: 110, x1: 60, y1: 114, colour: [0, 0, 0] }] }];
+const FOOTER_TALL: SheetModel[] = [
+  { box: [120, 160], ink: [{ x0: 10, y0: 150, x1: 60, y1: 154, colour: [0, 0, 0] }] },
+];
+
+describe('a pair that differs in page height', () => {
+  it('measures the verdict on the sheet in view, never above it', async () => {
+    const short = await register(FOOTER_A);
+    const tall = await register(FOOTER_TALL);
+    const view = await loadPair(short, tall);
+    const state = getCompareState();
+    expect(state.compared).toBe(true);
+    // Two differences, and both are *on* the page: each sheet's own footer, where
+    // that sheet puts it. Bottom-aligned, A's footer was compared against B's rows
+    // 40 px further down and came back at y -30 with a second area beside it.
+    const rows = state.diffAreas.map((area) => area.y0).sort((x, y) => x - y);
+    expect(rows, 'a changed area was reported above the top of the page').toEqual([110, 150]);
+    expect(state.diffAreas.find((area) => area.y0 === 110)).toEqual({ x0: 10, y0: 110, x1: 60, y1: 114 });
+    expect(state.areasOnPage, 'the areas no longer name a spot on the page').toBe(true);
+    expect(view.container.querySelector('[data-compare-counts]')?.textContent).not.toMatch(/compared sheet/);
+  });
+
+  it('marks the same band in the export, and nothing above the page', async () => {
+    const short = await register(FOOTER_A);
+    const tall = await register(FOOTER_TALL);
+    const out = await runCompare('compare', [short, tall]);
+    const box = markedBox(drawnImages(out.doc, out.pages[0])[1]!, [120, 160]);
+    expect(box, 'the export marks nothing on a pair that differs only in height').not.toBeNull();
+    // The same two bands the pane found, on the produced page: nothing at the top.
+    expect(box![1]).toBeGreaterThanOrEqual(110);
+    expect(box![3]).toBeLessThanOrEqual(160);
+  });
+});
+
+/* ══ 5. the mode segment and the resolution box, on the page ════════════════ */
+
+/** Same ink on both sheets, different text: the change only the text layer holds. */
+const WORDS_A: SheetModel[] = [{ box: SHEET, ink: COPY, text: 'the quick brown fox' }];
+const WORDS_B: SheetModel[] = [{ box: SHEET, ink: COPY, text: 'the quick brown cat' }];
+
+function modeButton(container: HTMLElement, label: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === label);
+  expect(found, `the panel renders no "${label}" control`).toBeTruthy();
+  return found as HTMLButtonElement;
+}
+
+describe('the mode segment and the resolution box', () => {
+  it('renders the three modes the definition declares, and one of them is pressed', async () => {
+    const view = await loadPair(bytesA, bytesB);
+    const pressed = ['Pixels', 'Text content', 'Both'].filter((label) => modeButton(view.container, label).getAttribute('aria-pressed') === 'true');
+    expect(pressed, 'exactly one mode is the current one').toEqual(['Pixels']);
+    // Both of these used to be declared on the definition, printed in the promise and
+    // rendered nowhere: the page's only controls were Prev/Next and the run button.
+    expect(view.container.querySelector('#compare-dpi'), 'the resolution box is missing').toBeTruthy();
+  });
+
+  it('reports a text change the renderings hide, and stops calling the page equal', async () => {
+    const a = await register(WORDS_A);
+    const b = await register(WORDS_B);
+    const view = await loadPair(a, b);
+    const strip = view.container.querySelector('[data-compare-counts]');
+    // Pixels: identical ink, so nothing to mark and nothing to report.
+    expect(getCompareState().diffPixels).toBe(0);
+    expect(strip?.getAttribute('data-compare-identical')).toBe('true');
+
+    act(() => modeButton(view.container, 'Text content').click());
+    expect(modeButton(view.container, 'Text content').getAttribute('aria-pressed')).toBe('true');
+    await waitFor(() => expect(strip?.getAttribute('data-compare-text')).toBe('differs'), { timeout: 20_000 });
+    expect(strip?.textContent).toMatch(/text differs \(1 word\(s\) removed, 1 added\)/);
+    expect(strip?.getAttribute('data-compare-identical'), 'a text change was published as an all-clear').toBe('false');
+    expect(view.container.querySelector('[data-compare-text="differs"]'), 'the card does not carry the finding').toBeTruthy();
+    // The marks are the pixel answer and stay absent: the copy is a pixel comparison.
+    expect(getCompareState().diffPixels).toBe(0);
+  }, 60_000);
+
+  it('renders both sheets at the resolution the box asks for, and still reports in points', async () => {
+    await loadPair(bytesA, bytesB);
+    act(() => setCompareResolution(72));
+    await waitFor(() => expect(sheetCanvases()[0]?.width).toBe(SHEET[0]), { timeout: 20_000 });
+    expect(sheetCanvases().map((c) => [c.width, c.height])).toEqual([SHEET, SHEET]);
+    // The unit does not follow the zoom: an area is in the page's own points, which
+    // is where the export puts the mark.
+    expect(getCompareState().diffAreas[0]).toEqual({ x0: PLANTED.x0, y0: PLANTED.y0, x1: PLANTED.x1, y1: PLANTED.y1 });
+  });
+});
+
+/* ══ 6. two diffs, one opacity and one threshold ════════════════════════════ */
+
+/** The faint change: 20 per channel, a sum of 60 — over 30, under 3 × 30. */
+const FAINT: InkRect = { x0: 20, y0: 40, x1: 100, y1: 80, colour: [235, 235, 235] };
+const FAINT_A: SheetModel[] = [{ box: SHEET, ink: COPY }];
+const FAINT_B: SheetModel[] = [{ box: SHEET, ink: [...COPY, FAINT] }];
+
+/** Encode-time capture of every canvas the run hands `toBlob`, i.e. its overlays. */
+async function captureEncoded<T>(fn: () => Promise<T>): Promise<{ result: T; surfaces: Surface[] }> {
+  const proto = HTMLCanvasElement.prototype as unknown as {
+    toBlob: (cb: (blob: Blob | null) => void, type?: string) => void;
+  };
+  const real = proto.toBlob;
+  const surfaces: Surface[] = [];
+  proto.toBlob = function toBlob(this: HTMLCanvasElement, cb, type) {
+    surfaces.push(surfaceOf(this));
+    return real.call(this, cb, type);
+  };
+  try {
+    const result = await fn();
+    return { result, surfaces };
+  } finally {
+    proto.toBlob = real;
+  }
+}
+
+/** The alpha the overlay paints at a point 1 px inside the faint block's corner. */
+function alphaAt(surface: Surface, x: number, y: number): number {
+  return surface.data[(y * surface.width + x) * 4 + 3];
+}
+
+describe('the two pixel diffs the tool carries', () => {
+  it('paints one change at one opacity, whichever path reached it', async () => {
+    const a = await register(FAINT_A);
+    const b = await register(FAINT_B);
+    // The exported copy writes its overlay through `toBlob`; so does the report path.
+    const { surfaces, result } = await captureEncoded(async () => {
+      const exported = await runCompare('compare', [a, b]);
+      const reported = await runCompare('compare-pdfs', [a, b], { mode: 'visual', dpi: 144 });
+      return { exported, reported };
+    });
+    const at = (surface: Surface) => alphaAt(surface, FAINT.x0 * EXPORT_SCALE + 1, FAINT.y0 * EXPORT_SCALE + 1);
+    // Two different spellings of "how much": distance × 1.5, clamped. The report path
+    // used a flat 200, so the same change painted at 90 in the file and 200 on the
+    // page the report describes.
+    const inner = (surface: Surface) => (FAINT.y0 * EXPORT_SCALE + 1) * surface.width + FAINT.x0 * EXPORT_SCALE + 1;
+    /** Whether this surface carries the report path's own highlight colour, 225/29/72. */
+    const isReportOverlay = (surface: Surface) => {
+      const at = inner(surface) * 4;
+      return surface.data[at] === 225 && surface.data[at + 1] === 29 && surface.data[at + 2] === 72;
+    };
+    const exportOverlay = surfaces.find((surface) => at(surface) === 90 && !isReportOverlay(surface));
+    expect(exportOverlay, 'the export no longer paints the faint change at distance × 1.5').toBeTruthy();
+    const reportOverlay = surfaces.find(isReportOverlay);
+    expect(reportOverlay, 'the report wrote no highlight-coloured overlay').toBeTruthy();
+    expect(at(reportOverlay!), 'the report path paints the same change at another opacity').toBe(90);
+    // And the threshold is the slider's own unit, not a mean channel distance: the
+    // faint block's sum is 60, over 30, so the report has to find it.
+    expect(result.reported.rows[0]?.value).toMatch(/% of pixels differ/);
+    expect(result.exported.pages).toHaveLength(1);
+  });
+});
+
+/* ══ 7. one field name, one number ═════════════════════════════════════════ */
+
+describe('the sensitivity setting', () => {
+  it('is the slider’s number on every surface that names it', () => {
+    const field = (getPdfTool('compare-pdfs')!.fields ?? []).find((entry) => entry.key === 'sensitivity');
+    expect(field, 'the definition declares no sensitivity field').toBeTruthy();
+    // 24 out of 120 on the definition, 30 out of 150 on the slider: the same field
+    // name asked for two different settings depending on which surface stood behind
+    // it, and neither range could reach the other's default.
+    expect(field!.default).toBe(30);
+    expect([field!.min, field!.max]).toEqual([5, 150]);
+    expect(getCompareState().sensitivity).toBe(field!.default);
   });
 });
 

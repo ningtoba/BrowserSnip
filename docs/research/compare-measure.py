@@ -148,6 +148,8 @@ def main():
     ap.add_argument("--tol", type=float, default=2.0)
     ap.add_argument("--no-rect", action="store_true", help="assert nothing is marked anywhere on the page")
     ap.add_argument("--blank", action="store_true", help="the source sheet is empty: ink must stay at the label")
+    ap.add_argument("--max-images", type=int, default=0,
+                    help="fail when the page draws more than this many image XObjects")
     ap.add_argument("--min-ink-frac", type=float, default=0.85,
                     help="produced ink must reach this share of the source sheet's own ink")
     ap.add_argument("--verdict", default="", help="the pane's published verdict, from compare-rail.mjs")
@@ -189,7 +191,12 @@ def main():
         area = (got["box"][2] - got["box"][0]) * (got["box"][3] - got["box"][1]) if got["box"] else 0.0
         print(f"   marked area {area:.0f} pt² against the planted {planted:.0f} pt² "
               f"({100.0 * area / planted:.1f} % of it)")
-    elif args.no_rect and got["mark_px"] > 0:
+    if args.max_images and got["images"] > args.max_images:
+        fails.append(
+            f"the page draws {got['images']} image XObject(s) where at most {args.max_images} is the "
+            "page and its overlay — an unmarked page must not carry a blank overlay"
+        )
+    if args.no_rect and got["mark_px"] > 0:
         fails.append(
             f"{got['mark_px']} px are marked on a page whose two sources are the same sheet "
             f"(bbox {tuple(round(v, 1) for v in (got['box'] or (0, 0, 0, 0)))})"

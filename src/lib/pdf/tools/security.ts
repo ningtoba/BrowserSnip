@@ -895,25 +895,20 @@ export const securityTools: PdfToolDefinition[] = [
     // Despite the `_comparison.pdf` suffix this answers with a report and page
     // images: both come from pdf.js, which undoes RC4 and AES itself.
     readsOnly: true,
-    // What the shipped page does, measured rather than remembered. It used to
-    // promise "a page-by-page report of what differs, with a picture of each
-    // changed area when you compare pixels", and three things contradicted that:
-    // the route (`#/tool/compare-pdfs`) mounts the pane and this entry's own panel,
-    // so the rail form whose Pixels / Text content / Both segment the sentence
-    // leans on is never rendered — with two files loaded the only enabled buttons
-    // on the deployed page were the panel's own “Generate comparison PDF”, “◂ Prev”
-    // and “Next ▸”; the `run` below collects an overlay per differing page into
-    // `images` and then returns without them, so no picture reaches anybody; and a
-    // page that differs really does come back as one marked band across the sheet,
-    // not as a cut-out of each area. The report this `run` writes is a true thing
-    // to promise *when something calls it* — see `docs/TOOL-CAMPAIGN.md`, the
-    // `compare-pdfs` row, for which side of that seam owns the decision.
+    // The route (`#/tool/compare-pdfs`) mounts the pane and this entry's own panel, so
+    // the fields below have no rail form of their own: `docs/TOOL-CAMPAIGN.md`'s
+    // `compare-pdfs` row is where the decision sat. It went to the pane — the panel
+    // now renders this entry's own `mode` segment and `resolution` box against the
+    // comparison that already lives there, and the promise speaks of what the page
+    // does (the reading beside the sheets, the painted copy) rather than of the
+    // report this `run` writes for a surface nothing mounts.
     promise: 'Both pages side by side, the changed areas counted and located in the page’s own points, and a copy of the first file with those areas painted.',
     actionLabel: 'Compare',
     notes: [
       'Comparison works page against page by number, so a document with one page inserted reports every later page as different.',
       'A difference in rendering is not a difference in content: two files can hold the same text and still differ in pixels because of a font substitute.',
       'The numbers beside the pages are for the page in view; the marks are painted across every page both files have, and a page only one file has is reported and left out.',
+      'Comparing reads what you pick — pixels, the text layer, or both. The exported copy always marks pixels, so a change only the text layer shows can come back unmarked: read the verdict as well as the file.',
     ],
     fields: [
       {
@@ -929,8 +924,15 @@ export const securityTools: PdfToolDefinition[] = [
         ],
         help: 'Pixels catch a moved logo or a colour change; text content catches a reworded sentence a rendering hides.',
       },
-      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 24, min: 1, max: 120, step: 1, integer: true, group: 'What to look for', when: (v) => v.mode !== 'text', help: 'How far a pixel has to move before it counts as different. Raise it when antialiasing makes every page look changed.' },
-      resolutionField({ default: 150, min: 72, max: 300, group: 'What to look for', help: 'Both pages are rendered at this resolution before they are compared. Higher finds finer differences and costs more memory per page.' }),
+      // The pane's slider (`CompareTool`), the export's clamp and `clampSensitivity`
+      // are 5–150 with 30 as the default. This entry asked for 24 out of 120, so the
+      // same word named two different settings depending on which surface stood
+      // behind it. One number, and the slider is the one that owns it.
+      { key: 'sensitivity', label: 'Sensitivity', type: 'slider', default: 30, min: 5, max: 150, step: 1, integer: true, group: 'What to look for', when: (v) => v.mode !== 'text', help: 'How far a pixel has to move before it counts as different. Raise it when antialiasing makes every page look changed.' },
+      // 144 dpi is exactly two device pixels per PDF point — the density the pane and
+      // the export both use, so a marked area is one pixel-grid step wide and the two
+      // halves of the tool quantise the same way.
+      resolutionField({ default: 144, min: 72, max: 300, group: 'What to look for', help: 'Both pages are rendered at this resolution before they are compared. Higher finds finer differences and costs more memory per page.' }),
     ],
     validate: (_v, { fileCount }) =>
       fileCount === 2 ? null : 'Add exactly two PDFs to compare.',
@@ -938,7 +940,12 @@ export const securityTools: PdfToolDefinition[] = [
       const [a, b] = await openInputs(context);
       const mode = stringValue(context.values, 'mode', 'visual');
       const dpi = numberValue(context.values, 'dpi', 150);
-      const sensitivity = numberValue(context.values, 'sensitivity', 24) / 255;
+      // Raw sum of the per-channel distances, the unit the slider is in and the unit
+      // every other pixel diff here uses. This used to hand `visualDiff` a fraction
+      // and that function doubled it back (`delta / 3 > threshold * 255`), i.e. a mean
+      // channel distance — three times blunter than the pane's and the export's
+      // question asked of the same number.
+      const sensitivity = numberValue(context.values, 'sensitivity', 30);
       const pages = Math.max(a.pageCount, b.pageCount);
       const rows: { label: string; value: string }[] = [];
       const images: { label: string; blob: Blob }[] = [];
@@ -2497,7 +2504,15 @@ function diffWords(a: string, b: string): string {
   return `${removed} word(s) removed, ${added} added`;
 }
 
-/** Overlay two page renders and return the diff percentage plus an image. */
+/**
+ * Overlay two page renders and return the diff percentage plus an image.
+ *
+ * The judgement and the alpha are the export's and the pane's: a pixel counts when
+ * the three-channel sum exceeds `threshold`, and it is painted at `distance × 1.5`
+ * clamped. This path used to use a fixed alpha of 200, so the same change painted at
+ * a different opacity depending on which of the three surfaces ran it — and neither
+ * of the other two ever produced a flat alpha.
+ */
 function visualDiff(
   a: HTMLCanvasElement,
   b: HTMLCanvasElement,
@@ -2532,13 +2547,13 @@ function visualDiff(
       Math.abs(dataA[i] - dataB[i]) +
       Math.abs(dataA[i + 1] - dataB[i + 1]) +
       Math.abs(dataA[i + 2] - dataB[i + 2]);
-    const changed = delta / 3 > threshold * 255;
+    const changed = delta > threshold;
     if (changed) {
       different += 1;
       image.data[i] = 225;
       image.data[i + 1] = 29;
       image.data[i + 2] = 72;
-      image.data[i + 3] = 200;
+      image.data[i + 3] = Math.min(255, Math.round(delta * 1.5));
     } else {
       const grey = Math.round(0.299 * dataA[i] + 0.587 * dataA[i + 1] + 0.114 * dataA[i + 2]);
       const faded = Math.min(255, grey + 60);
