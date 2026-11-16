@@ -1,0 +1,30 @@
+=== protect-copyblocked-after.pdf (4740 bytes)
+  dictionary: {'/V': ['4'], '/R': ['4'], '/CFM': ['/AESV2'], '/Length': ['688', '256', '160', '128'], '/StmF': ['/StdCF'], '/StrF': ['/StdCF'], '/Filter': ['/FlateDecode', '/FlateDecode', '/FlateDecode', '/Standard']}
+  /P -1044 -> allows ['access', 'annot', 'forms', 'highres', 'modify', 'print']
+  mupdf   : no-password: opens with no password; wrong: opens with no password; user: opens with no password; owner: opens with no password
+  poppler : no-password: opened with the empty secret; wrong: refused; user: refused; owner: opened [plant True]
+  qpdf    : no-password: opened, syntax clean, allows ['accessibility', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']; wrong: refused; user: refused; owner: opened, syntax clean, allows ['accessibility', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : no-password: opened (level 1); wrong: refused; user: refused; owner: opened (level 2) [plant True]
+  gs      : no-password: wrote 4 page(s); wrong: wrote 4 page(s); user: wrote 4 page(s) [plant True]; owner: wrote 4 page(s) [plant True]
+  copy (pdftotext, owner secret): rc=0 chars=1798 plant=True allows-copy=False
+  print (pdftops, owner secret): rc=0  allows-print=True
+=== protect-locked-new-after.pdf (5117 bytes)
+  dictionary: {'/V': ['4'], '/R': ['4'], '/CFM': ['/AESV2'], '/Length': ['688', '256', '160', '144'], '/StmF': ['/StdCF'], '/StrF': ['/StdCF'], '/Filter': ['/FlateDecode', '/FlateDecode', '/FlateDecode', '/FlateDecode']}
+  /P -1028 -> allows ['access', 'annot', 'copy', 'forms', 'highres', 'modify', 'print']
+  mupdf   : no-password: refuses (asks); wrong: refused; user: opened; owner: opened
+  poppler : no-password: refused; wrong: refused; user: opened [plant True]; owner: opened [plant True]
+  qpdf    : no-password: refused; wrong: refused; user: opened, syntax clean, allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']; owner: opened, syntax clean, allows ['accessibility', 'extract', 'modify_annotation', 'modify_form', 'modify_other', 'print_highres', 'print_lowres']
+  pypdf   : no-password: refused; wrong: refused; user: opened (level 1) [plant True]; owner: opened (level 2) [plant True]
+  gs      : no-password: refused; wrong: refused; user: wrote 4 page(s) [plant True]; owner: wrote 4 page(s) [plant True]
+  copy (pdftotext, owner secret): rc=0 chars=1842 plant=True allows-copy=True
+  print (pdftops, owner secret): rc=0  allows-print=True
+=== zz-locked-source.pdf (5083 bytes)
+  dictionary: {'/V': ['5'], '/R': ['6'], '/CFM': ['/AESV3'], '/Length': ['688', '256', '160', '144'], '/StmF': ['/StdCF'], '/StrF': ['/StdCF'], '/Filter': ['/FlateDecode', '/FlateDecode', '/FlateDecode', '/FlateDecode']}
+  /P -2060 -> allows ['access', 'annot', 'assemble', 'copy', 'forms', 'print']
+  mupdf   : no-password: refuses (asks); wrong: refused; user: refused; owner: opened
+  poppler : no-password: refused; wrong: refused; user: refused; owner: opened [plant True]
+  qpdf    : no-password: refused; wrong: refused; user: refused; owner: opened, syntax clean, allows ['accessibility', 'extract', 'modify_annotation', 'modify_assembly', 'modify_form', 'print_lowres']
+  pypdf   : no-password: refused; wrong: refused; user: refused; owner: opened (level 2) [plant True]
+  gs      : no-password: refused; wrong: refused; user: refused; owner: wrote 4 page(s) [plant True]
+  copy (pdftotext, owner secret): rc=0 chars=1842 plant=True allows-copy=True
+  print (pdftops, owner secret): rc=0  allows-print=True

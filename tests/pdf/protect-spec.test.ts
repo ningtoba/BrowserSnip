@@ -476,6 +476,47 @@ describe('protect → unlock hands back the same document', () => {
   }, 600_000);
 });
 
+/**
+ * A file that is already locked, protected again under a *different* password.
+ *
+ * `protect` writes the passwords the copy will carry, so the secret that opens the
+ * input cannot come from its own form: it is typed on the file's card and reaches
+ * the runner as `RunRequest.password`. Measured in Chromium on
+ * `tests/fixtures/encrypted/locked.pdf`, before the card kept its box beside the
+ * form, the same run answered *"That password is not correct for \"locked.pdf\""*
+ * and produced no file — the tool opened the input with the password being set.
+ */
+describe('a file that is already locked', () => {
+  it('is re-keyed from the card’s secret, and its own pages come through undoubled', async () => {
+    const source = await richFixture();
+    const before = await structureOf(source);
+    const locked = await bytesOf(await run('protect', { mode: 'both', userPassword: USER, ownerPassword: OWNER }));
+
+    const again = await run(
+      'protect',
+      { mode: 'both', userPassword: 'brand-new-secret', ownerPassword: 'second-owner' },
+      [pdfFile(locked, 'claim.pdf')],
+      USER,
+    );
+    const bytes = await bytesOf(again);
+    dump('91-rekeyed.pdf', bytes);
+
+    // The copy answers to the secrets set here…
+    await expect(structureOf(bytes, 'brand-new-secret')).resolves.toEqual(before);
+    // …and not to the one it was locked with, which is the sentence the card owes.
+    await expect(structureOf(bytes, USER)).rejects.toThrow();
+    expect(again.warnings.join(' ')).toMatch(/already protected/i);
+
+    // Undoubled ciphertext: a reader that undoes one layer reads the words, and the
+    // inventory of objects is the source's own — the page count alone would pass on
+    // a file whose streams were ciphered twice.
+    const words = await readerSays(bytes, 'brand-new-secret');
+    expect('pages' in words && words.text).toContain(WORDS);
+    const p = rawPermissionValue(encryptDictBody(bytes));
+    expect(permissionBit(p, 3), 'the form’s default printing reaches the copy').toBe(true);
+  }, 300_000);
+});
+
 // ── the escalation: files a real encryptor wrote ────────────────────────────
 
 /**

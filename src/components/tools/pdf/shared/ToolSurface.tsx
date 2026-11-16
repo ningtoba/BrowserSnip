@@ -261,6 +261,7 @@ function ReadyPane({ api, intake, copy, before, onDone, state, touched }: ReadyP
             onPassword={api.setPassword}
             passwordChecking={api.lockChecking}
             toolOwnsPassword={api.needsPassword}
+            toolPasswordIsForOutput={api.passwordIsForOutput}
           />
         </section>
 

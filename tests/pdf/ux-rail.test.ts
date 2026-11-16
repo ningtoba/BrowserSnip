@@ -194,8 +194,31 @@ const STANDS: Record<string, PdfToolDefinition> = {
   },
 };
 
+/**
+ * The same stop, on the tool whose own field is the password the *copy* will carry
+ * (`protect`): the ask belongs on the card, and this stand is what lets the chrome
+ * be read for it without a locked fixture.
+ */
+const railProtect: PdfToolDefinition = {
+  id: 'rail-protect',
+  name: 'Protect Rail',
+  description: 'Set a new password',
+  icon: '🔐',
+  category: 'security',
+  actionLabel: 'Protect',
+  outputSuffix: '_protected.pdf',
+  passwordForTheOutput: true,
+  fields: [passwordField],
+  async run() {
+    throw new ToolInputError('BAD_PASSWORD', 'That password is not correct for "doc.pdf".', {
+      fileName: 'doc.pdf',
+      hint: 'Check the password (it is case-sensitive) and try again.',
+    });
+  },
+};
+
 vi.mock('@/lib/pdf/tools/registry', () => ({
-  getPdfTool: (id?: string) => (id ? STANDS[id] : undefined),
+  getPdfTool: (id?: string) => (id ? (STANDS[id] ?? (id === 'rail-protect' ? railProtect : undefined)) : undefined),
 }));
 
 function fakeSession(pages = 3): PdfSession {
@@ -924,6 +947,25 @@ describe('the rail’s one password box', () => {
     await screen.findByLabelText('Current password');
     expect(document.querySelectorAll('input[type=password]')).toHaveLength(1);
     expect(screen.queryByText('PDF password')).toBeNull();
+  });
+
+  /**
+   * `protect` sets a password instead of asking for one, so the box that matters on
+   * a locked input is on the card. The notice sent the user to this panel's field
+   * anyway, which is the sentence that made a re-key look impossible (round 051).
+   */
+  it('points at the card when the tool’s own field is the copy’s password', async () => {
+    loadFiles([await realPdf('doc.pdf')]);
+    render(h(PdfToolPanel, { toolId: 'rail-protect' }));
+    fireEvent.change(await screen.findByLabelText('Current password'), { target: { value: 'brand-new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Protect' }));
+    const wrong = await waitFor(() => {
+      const node = document.querySelector('[data-password-notice="wrong"]');
+      if (!node) throw new Error('the wrong-secret notice has not arrived');
+      return node;
+    });
+    expect(wrong.textContent).toMatch(/in the box on the file’s card/i);
+    expect(wrong.textContent).not.toMatch(/this tool’s password field/i);
   });
 
   it('answers a missing secret and a wrong secret with two different asks', async () => {

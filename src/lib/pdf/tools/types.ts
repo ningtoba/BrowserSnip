@@ -294,6 +294,19 @@ export interface PdfToolDefinition {
    * the guard exists for.
    */
   readsOnly?: boolean;
+  /**
+   * Set when the tool's own password field is the secret the **copy** will carry
+   * rather than the one the source opens with (`protect` writes a new open
+   * password; `unlock` and `change-permissions` ask for the current one).
+   *
+   * A locked input needs both, and the two cannot be the same box: the card's box
+   * is hidden for every tool that declares a password field, so `protect` on a
+   * locked file used to open the input with the *new* password and refuse — a
+   * file could be protected again under its own password but never re-keyed. With
+   * this flag the card keeps its box beside the form's, and the runner's existing
+   * precedence (card secret opens the input, the form's is written) does the rest.
+   */
+  passwordForTheOutput?: boolean;
   run?: (context: ToolRunContext) => Promise<ToolResult>;
   /** Provided instead of `run` for tools with bespoke execution (editors). */
   mainComponent?: ComponentType<{ context: ToolRunContext }>;

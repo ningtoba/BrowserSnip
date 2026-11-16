@@ -137,7 +137,7 @@ const PERMISSION_NOTES = [
  * having run the cipher.
  */
 const CIPHERTEXT_NOTE =
-  'What lands in the file is ciphertext: every page stream and every string is ciphered with the password you set, at the strength the Cipher control names — AES-128 (`/V 4 /R 4`, `/CFM /AESV2`) or AES-256 (`/V 5 /R 6`, `/CFM /AESV3`) — and MuPDF, qpdf, pypdf, poppler and Ghostscript all refuse the copy until it is typed. The card after the run repeats the strength read back off the saved file, not the one the form asked for. A strength is named here because a file is written at it and read back at it — this app opens what this app protects.';
+  'What lands in the file is ciphertext: every page stream and every string is ciphered with the password you set, at the strength the Cipher control names — AES-128 (`/V 4 /R 4`, `/CFM /AESV2`) or AES-256 (`/V 5 /R 6`, `/CFM /AESV3`) — and MuPDF, qpdf, pypdf, poppler and Ghostscript all refuse a copy that has a password until it is typed (a permissions-only copy opens with nothing typed and each of them still reports the limits). The card after the run repeats the strength read back off the saved file, not the one the form asked for. A strength is named here because a file is written at it and read back at it — this app opens what this app protects.';
 
 const CIPHER_STRENGTH_NOTE =
   'Two strengths are offered, and both reach the bytes: AES-128, and AES-256 (`/R 6`, with `/OE`, `/UE` and the revision-6 check value), each written here and each opened again by readers that share no code with this app over the same document at the same `/P`. RC4-128 is read but never written — this build has no outside measurement of its own RC4 output — and RC4-40 has no outside fixture at all, so both are refused by name rather than offered as a label. What this app *opens* is wider than what it writes: RC4-128, AES-128 and AES-256 files are decrypted when you open them and re-sealed at the strength they arrived at, so an AES-256 file edited here leaves as AES-256. AES-256 under another handler revision (`/R 5`, `/R 7`) is still refused by name. Offering a strength this app cannot prove it round-trips would turn a protected download into blank paper the moment you re-opened it here.';
@@ -246,6 +246,9 @@ export const securityTools: PdfToolDefinition[] = [
     // Cipher control and reach the bytes; `rc4` is a search term, not a choice, and
     // the notes say so rather than letting the keyword imply a capability.
     keywords: ['encrypt', 'encryption', 'aes', 'aes-256', 'rc4', 'cipher', 'password', 'restrict', 'lock'],
+    // The two password boxes on this tool are the ones the *copy* will carry, so a
+    // locked input still needs the secret that opens it — typed on the file's card.
+    passwordForTheOutput: true,
     outputSuffix: '_protected.pdf',
     promise: 'A copy that asks for your password before it opens, its pages ciphered at the AES strength you picked and the permissions read back from the file.',
     actionLabel: 'Protect',
@@ -335,6 +338,16 @@ export const securityTools: PdfToolDefinition[] = [
         cipher: strength,
       });
       const { inspection, warnings } = await verifyProtection(bytes, input.name, flags, source, user === '', user || owner);
+      // A locked source keeps none of its own secrets: this save assembles a new
+      // dictionary, so the passwords that opened the input do not open the copy and
+      // the strength it came in at is not the strength it leaves at. Said once, with
+      // both facts, rather than discovered by the recipient.
+      if (input.inspection?.encrypted) {
+        const before = input.inspection.algorithm && input.inspection.algorithm !== 'no cipher'
+          ? input.inspection.algorithm
+          : 'a password gate';
+        warnings.push(`This file was already protected (${before}). The copy carries only the protection set here — the passwords it opened with do not open the copy${mode === 'owner' ? ', and with no open password set it opens freely' : ''}.`);
+      }
       // E5: the password that was just written has to be the one that opens it.
       const reopened = await inspectPdf(bytes, input.name, { password: user || owner });
       if (!reopened.passwordAccepted) {

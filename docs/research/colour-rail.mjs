@@ -145,6 +145,18 @@ const TOOL_LABELS = {
     maxAngle: 'Largest angle to correct',
     threshold: 'Confidence needed before turning a page',
   },
+  // `protect`/`change-permissions` call their mode selection "Protection type", not
+  // "Method", and their eight /P toggles print a sentence each (round 051).
+  protect: {
+    mode: 'Protection type',
+    allowPrinting: 'Allow printing',
+    allowCopying: 'Allow copying text and images',
+    allowAccessibility: 'Allow screen readers',
+    allowModifying: 'Allow modifying',
+    allowAnnotating: 'Allow comments',
+    allowFillingForms: 'Allow filling forms',
+    allowAssembling: 'Allow page reorganisation',
+  },
 };
 
 const WANTED = Object.fromEntries(
@@ -723,6 +735,23 @@ const applied = [];
 for (const [label, raw] of Object.entries(WANTED)) {
   const result = await setField(label, raw);
   applied.push(`${result.label}=${result.want}: "${result.before}" → "${result.after}"`);
+}
+
+// The card's own lock box, for the tools whose own password field is the one the
+// *copy* will carry (`protect`): the file's current secret is a different value and
+// lives on the card (round 051). Written last, and read back, like every field.
+if (process.env.CARD_PASSWORD) {
+  const box = `document.querySelector('[data-file-password]')`;
+  if (!(await wait(`${box} !== null`, 20000))) throw new Error('no lock box on the card');
+  // Read back in the same task: an accepted secret closes the row (the box is for
+  // what is still unanswered), so a read a beat later finds no element.
+  const written = await ev(`(()=>{const c=${box};
+    const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+    set.call(c,${JSON.stringify(process.env.CARD_PASSWORD)});
+    c.dispatchEvent(new Event('input',{bubbles:true})); c.dispatchEvent(new Event('change',{bubbles:true}));
+    return c.value})()`);
+  console.log('card password read back:', JSON.stringify(written));
+  await sleep(1500);
 }
 
 // Asked *after* the fields are written, because a rail whose required field is

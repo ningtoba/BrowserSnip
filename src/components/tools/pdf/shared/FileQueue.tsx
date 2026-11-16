@@ -58,6 +58,8 @@ export interface FileQueueProps {
   passwordChecking?: boolean;
   /** True when the tool declares a password field of its own. */
   toolOwnsPassword?: boolean;
+  /** True when that field is the secret the copy carries, not the file's. */
+  toolPasswordIsForOutput?: boolean;
   emptyTitle?: string;
   emptyBody?: string;
   className?: string;
@@ -93,6 +95,7 @@ export function FileQueue({
   onPassword,
   passwordChecking = false,
   toolOwnsPassword = false,
+  toolPasswordIsForOutput = false,
   emptyTitle = 'No files yet',
   emptyBody = 'Drop a PDF here — it never leaves this device.',
   className = '',
@@ -215,6 +218,7 @@ export function FileQueue({
                 onPassword={onPassword}
                 checking={passwordChecking}
                 toolOwnsPassword={toolOwnsPassword}
+                toolPasswordIsForOutput={toolPasswordIsForOutput}
                 shared={lockedRows > 1}
               />
             )}

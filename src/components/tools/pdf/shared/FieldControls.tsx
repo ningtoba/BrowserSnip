@@ -145,7 +145,11 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           {api.needsPassword && (
             <div className="w-[240px] space-y-1">
-              <LockedNotice visible={api.locked} problem={api.lockProblem} />
+              <LockedNotice
+              visible={api.locked}
+              problem={api.lockProblem}
+              cardOwnsTheSecret={api.passwordIsForOutput}
+            />
             </div>
           )}
 
@@ -319,19 +323,26 @@ export function NotesPanel({ notes, defaultOpen }: { notes: string[]; defaultOpe
 function LockedNotice({
   visible,
   problem,
+  cardOwnsTheSecret = false,
 }: {
   visible: boolean;
   problem: 'needed' | 'wrong' | null;
+  /** True when this tool's own field is the password the copy will carry. */
+  cardOwnsTheSecret?: boolean;
 }) {
   if (!visible) return null;
+  // `protect` sets a password instead of asking for one, so the secret that opens
+  // the file is typed on the card. Sending the user to this panel's field for a
+  // locked input is what made a re-key look impossible (round 051).
+  const where = cardOwnsTheSecret ? 'in the box on the file’s card' : 'in this tool’s password field';
   return (
     <p
       data-password-notice={problem ?? 'needed'}
       className="rounded-doodle-md border border-warn/25 bg-warn/5 p-2 text-[10px] leading-relaxed text-warn"
     >
       {problem === 'wrong'
-        ? 'That password did not open this PDF — it is still closed. Correct it in this tool’s password field, then run again.'
-        : 'This PDF needs its password before it can be opened. Type it in this tool’s password field, then run again.'}
+        ? `That password did not open this PDF — it is still closed. Correct it ${where}, then run again.`
+        : `This PDF needs its password before it can be opened. Type it ${where}, then run again.`}
     </p>
   );
 }

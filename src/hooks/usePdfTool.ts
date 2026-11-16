@@ -60,6 +60,12 @@ export interface UsePdfTool {
   setPassword: (value: string) => void;
   /** True when the tool declares a password field of its own; then that field is the only box. */
   needsPassword: boolean;
+  /**
+   * True when the tool's own password field is the secret the *copy* will carry
+   * (`protect`), so a locked input still needs the one that opens it typed on the
+   * card: the two are different secrets and get a box each.
+   */
+  passwordIsForOutput: boolean;
   isRunning: boolean;
   run: (overrides?: ToolValues) => Promise<RunOutcome | null>;
   cancel: () => void;
@@ -312,6 +318,8 @@ export function usePdfTool(
     () => Boolean(tool?.fields?.some((field) => field.type === 'password')),
     [tool],
   );
+
+  const passwordIsForOutput = Boolean(tool?.passwordForTheOutput);
 
   const documentKey = primary ? `${primary.name}:${primary.size}` : null;
   /** The choices on screen: past the open document's own read, or nothing. */
@@ -673,6 +681,7 @@ export function usePdfTool(
     password,
     setPassword,
     needsPassword,
+    passwordIsForOutput,
     isRunning,
     run,
     cancel,

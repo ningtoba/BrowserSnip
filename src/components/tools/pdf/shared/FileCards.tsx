@@ -66,6 +66,13 @@ export interface FileCardsProps {
    * precedence can never see both filled.
    */
   toolOwnsPassword?: boolean;
+  /**
+   * True when that own field carries the password the **copy** will get (`protect`)
+   * rather than the one the file opens with. Then the row keeps its own box as
+   * well: the secret that opens the input and the secret being set are two
+   * different values, and one box cannot hold both.
+   */
+  toolPasswordIsForOutput?: boolean;
 }
 
 const keyFor = (file: File): string => `${file.name}:${file.size}`;
@@ -165,6 +172,7 @@ export function FileCards({
   onPassword,
   passwordChecking = false,
   toolOwnsPassword = false,
+  toolPasswordIsForOutput = false,
 }: FileCardsProps) {
   const { sessions, failed } = useFileSessions(files, !imageInput);
   /** Which card is grabbed, and which gap its drop would land in. */
@@ -268,6 +276,7 @@ export function FileCards({
               onPassword={onPassword}
               checking={passwordChecking}
               toolOwnsPassword={toolOwnsPassword}
+              toolPasswordIsForOutput={toolPasswordIsForOutput}
               shared={lockedCards > 1}
             />
             <div className="mt-2 flex items-center justify-between gap-1">
@@ -397,6 +406,8 @@ export interface FileLockRowProps {
   checking?: boolean;
   /** True when the tool declares a password field of its own. */
   toolOwnsPassword?: boolean;
+  /** True when that field is the secret the *copy* carries, not the file's. */
+  toolPasswordIsForOutput?: boolean;
   /** True when more than one file in this job needs a secret. */
   shared?: boolean;
 }
@@ -433,6 +444,7 @@ export function FileLockRow({
   onPassword,
   checking = false,
   toolOwnsPassword = false,
+  toolPasswordIsForOutput = false,
   shared = false,
 }: FileLockRowProps) {
   if (lock === 'none' || !encryption) return null;
@@ -440,7 +452,12 @@ export function FileLockRow({
   const headline = ciphered
     ? `Encrypted with ${describeEncryption(encryption)}`
     : `Password gate, ${describeEncryption(encryption)}`;
-  const asks = (lock === 'needs-password' || lock === 'wrong-password') && !toolOwnsPassword;
+  // A tool whose own password is the one the *copy* will carry (`protect`) needs
+  // this box as well as its own: the secret that opens the input is not the one
+  // being set, so the row keeps the box rather than naming a field that holds a
+  // different password.
+  const ownsItsBox = toolOwnsPassword && !toolPasswordIsForOutput;
+  const asks = (lock === 'needs-password' || lock === 'wrong-password') && !ownsItsBox;
 
   let tone = 'border-cream-border bg-cream-soft/70 text-ink-soft';
   let text: string;
@@ -456,14 +473,18 @@ export function FileLockRow({
     text = 'Password accepted — the pages are readable.';
   } else if (lock === 'wrong-password') {
     tone = 'border-danger/25 bg-danger/5 text-danger';
-    text = toolOwnsPassword
+    text = toolOwnsPassword && !toolPasswordIsForOutput
       ? 'That is not the password for this file. Correct it in this tool’s own password box.'
-      : 'That is not the password for this file — it is still closed. Try again.';
+      : toolPasswordIsForOutput
+        ? 'That is not the password that opens this file. Type the one it was locked with below — the tool’s own boxes are the passwords the copy will carry.'
+        : 'That is not the password for this file — it is still closed. Try again.';
   } else {
     tone = 'border-warn/25 bg-warn/5 text-warn';
-    text = toolOwnsPassword
+    text = toolOwnsPassword && !toolPasswordIsForOutput
       ? 'This file needs its password to be opened, and this tool asks for it in its own options.'
-      : 'This file needs its password before anything here can read its pages.';
+      : toolPasswordIsForOutput
+        ? 'This file needs the password it was locked with — type it below. The tool’s own boxes are the passwords the copy will carry.'
+        : 'This file needs its password before anything here can read its pages.';
   }
 
   return (

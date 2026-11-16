@@ -542,6 +542,38 @@ describe('FileLockRow: one component, drawn wherever a file is listed', () => {
     expect(document.querySelector('[data-file-lock]')?.textContent).toMatch(/Correct it in this tool/i);
   });
 
+  /**
+   * `protect` writes a *new* password, so its own field cannot also be the secret
+   * the input opens with. Before this, a locked file could only be protected under
+   * the password it already had: the card's box was hidden, the run opened the
+   * input with the value being set, and answered "That password is not correct for
+   * …" — measured on `tests/fixtures/encrypted/locked.pdf` through the browser.
+   */
+  it('keeps the card’s box beside a tool whose own field is the copy’s password', () => {
+    const encryption: PdfEncryption = {
+      state: 'ciphered', algorithm: 'AES-256', streamFilter: 'StdCF', stringFilter: 'StdCF', method: 'AESV3',
+      version: 5, revision: 6, supported: true, refusal: null,
+    };
+    render(h(FileLockRow, {
+      name: 'doc.pdf', lock: 'needs-password', encryption, password: '',
+      onPassword: noop, toolOwnsPassword: true, toolPasswordIsForOutput: true,
+    }));
+    const input = screen.getByLabelText('Open password for doc.pdf') as HTMLInputElement;
+    expect(input.getAttribute('data-file-password')).toBe('doc.pdf');
+    const text = document.querySelector('[data-file-lock]')?.textContent ?? '';
+    expect(text).toMatch(/needs the password it was locked with/i);
+    expect(text).toMatch(/the passwords the copy will carry/i);
+    // The control: the same row without the flag still says the tool's own field is
+    // the box, so the two states are the two different jobs, not two spellings.
+    cleanup();
+    render(h(FileLockRow, {
+      name: 'doc.pdf', lock: 'needs-password', encryption, password: '',
+      onPassword: noop, toolOwnsPassword: true,
+    }));
+    expect(screen.queryByLabelText('Open password for doc.pdf')).toBeNull();
+    expect(document.querySelector('[data-file-lock]')?.textContent).toMatch(/its own options/i);
+  });
+
   it('says so when one secret covers several locked files in the same job', () => {
     const encryption: PdfEncryption = {
       state: 'ciphered', algorithm: 'AES-128', streamFilter: 'StdCF', stringFilter: 'StdCF', method: 'AESV2',
