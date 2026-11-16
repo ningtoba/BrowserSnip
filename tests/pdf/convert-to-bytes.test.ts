@@ -368,6 +368,30 @@ describe('the format-specific image routes keep real dimensions', () => {
     expect(placed?.pixels).toEqual([320, 200]);
   });
 
+  it('jpg-to-pdf makes the page the picture unless a sheet is asked for', async () => {
+    // The route opened on A4 with no hug in the list: a 320 x 200 JPEG sat in a
+    // 595 x 842 sheet at 161 596 ink px of 501 832. Hugging is now the default,
+    // so the sheet is the picture and no sheet has to be named.
+    const outcome = await run('jpg-to-pdf', {}, [fileFrom(jpegBytes(320, 200), 'photo.jpg', 'image/jpeg')]);
+    const bytes = await firstPdf(outcome);
+    expect(await pageSizes(bytes)).toEqual([[320, 200]]);
+    const [placed] = await placedOn(bytes);
+    expect(placed?.pixels).toEqual([320, 200]);
+  });
+
+  it('jpg-to-pdf leaves out a file of another format and converts the rest', async () => {
+    // One PNG among the JPEGs used to kill the whole run and hand back nothing,
+    // naming only the PNG: a batch is a batch.
+    const outcome = await run('jpg-to-pdf', {}, [
+      fileFrom(realPng(120, 60), 'shot.png', 'image/png'),
+      fileFrom(jpegBytes(320, 200), 'photo.jpg', 'image/jpeg'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(await pageSizes(bytes)).toEqual([[320, 200]]);
+    expect(outcome.warnings.join(' ')).toMatch(/shot\.png/);
+    expect(outcome.warnings.join(' ')).toMatch(/left out/);
+  });
+
   it('bmp-to-pdf reads the BMP header rather than a fallback size', async () => {
     const outcome = await run('bmp-to-pdf', { pageSize: 'a4', margin: 0 }, [
       fileFrom(bmpBytes(160, 90), 'raw.bmp', 'image/bmp'),

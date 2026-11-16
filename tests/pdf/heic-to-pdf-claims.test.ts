@@ -43,7 +43,7 @@ describe('a HEIC run says what this browser cannot do', () => {
     expect(notes).toMatch(/no PDF is produced|refused by name/i);
     // The card that says "Every HEIC you add becomes a PDF page" must be the one that
     // also says when it does not, or the promise is the bytes' to contradict.
-    expect(heic?.promise).toMatch(/Every HEIC you add becomes a PDF page/);
+    expect(heic?.promise).toMatch(/Every HEIC you add becomes its own PDF page, the size of the picture/);
     expect((getPdfTool('image-to-pdf')?.notes ?? []).join(' '))
       .toMatch(/HEIC.*browser decoder/i);
   });

@@ -44,6 +44,7 @@ import {
   fileValues,
   stringValue,
   type PdfToolDefinition,
+  type ToolField,
   type ToolResult,
   type ToolRunContext,
   type ToolValues,
@@ -80,6 +81,39 @@ function sheetLabel(value: string): string {
 const MARGIN_FIELD = marginField();
 
 const ORIENTATION_FIELD = orientationField();
+
+/**
+ * The raster routes' sheet, which is the picture unless a sheet is asked for.
+ *
+ * "JPG to PDF" (and its six siblings) takes one format and nothing else; the page
+ * *is* the picture there, one PDF point per pixel at 72 dpi, so a named sheet is
+ * the exception. The route used to open on A4 with no hug in the list at all:
+ * measured on the dev build, a 420 x 300 JPEG landed 483 x 345 pt inside a
+ * 595.28 x 841.89 sheet — 161 596 ink px of 501 832, the picture floating in white
+ * on a page 2.4 times its height. Hugging is the first choice and the default.
+ */
+const IMAGE_PAGE_FIELD = pageSizeField({
+  default: 'fit',
+  options: [{ value: 'fit', label: 'Match each image' }, ...SHEET_OPTIONS],
+  help: 'Each page is the size of its own picture, one point per pixel at 72 dpi, plus the margin. A named sheet puts every page on that paper and scales the picture into it.',
+});
+
+/**
+ * Orientation, hidden where it cannot act.
+ *
+ * A page sized from its own pixels has no width and height to swap, and
+ * `placeImage` never reads the orientation on that branch, so the control was
+ * live-looking and inert there. Where a sheet *is* chosen it still swaps the
+ * sheet (A4 + Landscape → 841.89 x 595.28).
+ */
+const IMAGE_ORIENTATION_FIELD: ToolField = {
+  ...ORIENTATION_FIELD,
+  when: (values: ToolValues) => values.pageSize !== 'fit',
+  help: 'Swaps the sheet’s width and height. A page that matches its picture has nothing to swap, so this is hidden until you pick a sheet.',
+};
+
+/** Zero margin by default: the shared 56 pt would pad every page the picture sits on. */
+const IMAGE_MARGIN_FIELD: ToolField = { ...MARGIN_FIELD, default: 0 };
 
 /**
  * Layout settings for the shared renderer.
@@ -268,10 +302,19 @@ export function assertSourceFormat(
   );
 }
 
-/** Files chosen in a `file` field, else the drop-zone inputs, in order. */
+/**
+ * Files chosen in a `file` field, else the drop-zone inputs, in order.
+ *
+ * `refused`, when given, collects the sentences for files this route does not
+ * take instead of throwing on the first one. A batch is a batch: one PNG among
+ * ten JPEGs used to kill the whole run and hand back nothing, naming only the
+ * PNG, while the card promised per-file refusal. Without the collector the
+ * one-document converters keep the old throw-first behaviour.
+ */
 async function sourceBatches(
   context: ToolRunContext,
   expected: { kinds: SourceKind[]; label: string; hint?: string },
+  refused?: string[],
 ): Promise<{ name: string; bytes: Uint8Array }[]> {
   const chosen = fileValues(context.values, 'files');
   const raw = chosen.length > 0
@@ -291,9 +334,24 @@ async function sourceBatches(
   const out: { name: string; bytes: Uint8Array }[] = [];
   for (const [index, item] of raw.entries()) {
     throwIfAborted(context.signal);
-    assertSourceFormat(item.name, item.bytes, expected);
+    try {
+      assertSourceFormat(item.name, item.bytes, expected);
+    } catch (error) {
+      // One file keeps the old refusal word for word: there is no batch to
+      // protect, and the single-file sentences are pinned by other tests.
+      if (!refused || raw.length < 2 || !(error instanceof ToolInputError)) throw error;
+      refused.push(`${error.message.replace(/\.$/, '')} — left out.`);
+      context.log(`${item.name} was left out: ${error.message}`);
+      context.progress(((index + 1) / raw.length) * 0.2, `Left out ${item.name}`);
+      continue;
+    }
     context.progress(((index + 1) / raw.length) * 0.2, `Read ${item.name} (${describeSize(item.bytes)})`);
     out.push(item);
+  }
+  if (out.length === 0 && refused?.length && raw.length > 0) {
+    throw new ToolInputError('UNSUPPORTED', `Nothing could be read from ${raw.length} file(s): ${refused.join(' ')}`, {
+      hint: expected.hint,
+    });
   }
   return out;
 }
@@ -524,7 +582,7 @@ export const convertToTools: PdfToolDefinition[] = [
     ],
     async run(context) {
       const warnings = [RASTER_LOSS];
-      const images = await decodeImageBatch(context, {
+      const { images } = await decodeImageBatch(context, {
         label: 'one or more images',
         hint: alternativeFor({ kind: 'image', label: 'an image' }),
         background: undefined,
@@ -580,9 +638,9 @@ export const convertToTools: PdfToolDefinition[] = [
       accept: `.${format},image/*`,
       outputSuffix: `_from_${format}.pdf`,
       actionLabel: 'Create PDF',
-      promise: `Every ${label} you add becomes a PDF page, in the order you added them.`,
+      promise: `Every ${label} you add becomes its own PDF page, the size of the picture, in the order you added them.`,
       notes: [
-        `Files whose bytes are not ${label} are refused by name instead of being silently re-encoded.`,
+        `A file that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded.`,
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
@@ -594,27 +652,34 @@ export const convertToTools: PdfToolDefinition[] = [
           : '',
         RASTER_LOSS,
       ].filter((line) => line !== ''),
-      fields: [PAGE_FIELD, MARGIN_FIELD, ORIENTATION_FIELD],
+      fields: [IMAGE_PAGE_FIELD, IMAGE_MARGIN_FIELD, IMAGE_ORIENTATION_FIELD],
       async run(context) {
-        const images = await decodeImageBatch(context, {
+        // The refusals are collected apart from the standing note: `warnings`
+        // already starts with `RASTER_LOSS`, so handing that array over as the
+        // collector made every run count one file left out, even a single good
+        // JPEG.
+        const refused: string[] = [];
+        const { images } = await decodeImageBatch(context, {
           label: `one or more ${label} images`,
           hint: `Re-save the file as ${label}, or use Images to PDF, which sniffs the real format.`,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
+          refused,
         });
         const packed = await pdfFromImages(
           images.map((image) => ({ data: image.canvas })),
           {
-            pageSize: stringValue(context.values, 'pageSize', 'a4'),
+            pageSize: stringValue(context.values, 'pageSize', 'fit'),
             margin: clampNumber(numberValue(context.values, 'margin', 0), 0, 144),
-            orientation: stringValue(context.values, 'orientation', 'auto') as 'auto',
+            orientation: stringValue(context.values, 'orientation', 'portrait') as 'portrait' | 'landscape',
           },
         );
         return {
           ...(await pdfResult(packed.doc, {
-            message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`,
+            message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`
+              + (refused.length ? ` ${refused.length} file(s) left out.` : ''),
           })),
-          warnings: [RASTER_LOSS],
+          warnings: [RASTER_LOSS, ...refused],
         };
       },
     };
@@ -1539,7 +1604,7 @@ export const convertToTools: PdfToolDefinition[] = [
     async run(context) {
       const warnings: string[] = [];
       const enhance = booleanValue(context.values, 'enhance', true);
-      const images = await decodeImageBatch(context, {
+      const { images } = await decodeImageBatch(context, {
         label: 'one or more photos or scans',
         hint: 'Add a JPG, PNG, WEBP, TIFF, HEIC or BMP page.',
         background: enhance ? '#ffffff' : undefined,
@@ -1679,6 +1744,10 @@ async function docxToBlocks(bytes: Uint8Array): Promise<Block[]> {
  * A browser that cannot decode HEIC is a fact about the engine, not a bug in
  * the file, so the message names the file and the format instead of throwing a
  * decode stack.
+ *
+ * `refused`, when given, is where a rejected file's sentence goes while the
+ * rest of the batch is still decoded; the caller puts those lines on the result
+ * card. A batch of nothing but wrong-format files still fails, with every name.
  */
 async function decodeImageBatch(
   context: ToolRunContext,
@@ -1690,49 +1759,64 @@ async function decodeImageBatch(
     expectLabel?: string;
     /** MIME types a format-specific tool will actually accept (E2). */
     mimes?: string[];
+    /** Collect refusals here instead of throwing on the first one. */
+    refused?: string[];
   },
-): Promise<DecodedImage[]> {
+): Promise<{ images: DecodedImage[]; refused: string[] }> {
+  const refused = expected.refused ?? [];
   const batches = await sourceBatches(context, {
     kinds: expected.kinds ?? ['image', 'svg', 'psd'],
     label: expected.label,
     hint: expected.hint,
-  });
+  }, expected.refused);
   const images: DecodedImage[] = [];
   for (const [index, batch] of batches.entries()) {
     throwIfAborted(context.signal);
     const mime = sniffImageMime(batch.bytes) ?? undefined;
     if (expected.mimes && mime && !expected.mimes.includes(mime)) {
       const wanted = expected.mimes.map((type) => IMAGE_LABELS[type] ?? type).join(' or ');
-      throw new ToolInputError(
-        'UNSUPPORTED',
-        `"${batch.name}" is ${IMAGE_LABELS[mime] ?? `an ${mime} image`}, not ${wanted}.`,
-        {
-          fileName: batch.name,
-          hint: 'Re-save it in the advertised format, or use Images to PDF, which takes anything this browser can decode.',
-        },
-      );
+      const sentence = `"${batch.name}" is ${IMAGE_LABELS[mime] ?? `an ${mime} image`}, not ${wanted}.`;
+      const hint = 'Re-save it in the advertised format, or use Images to PDF, which takes anything this browser can decode.';
+      if (!expected.refused) throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint });
+      refused.push(`${sentence.replace(/\.$/, '')} — left out.`);
+      context.log(`${batch.name} was left out: ${sentence}`);
+      context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
+      continue;
     }
     let pages;
     try {
       pages = await decodeImagePages(batch.bytes, { mime, background: expected.background });
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'this browser could not decode it';
-      throw new ToolInputError('UNSUPPORTED', `"${batch.name}" could not be decoded: ${reason}`, {
-        fileName: batch.name,
-        hint: `Re-save it as PNG or JPEG, or use a converter for its real format.`,
-        detail: error,
-      });
+      const sentence = `"${batch.name}" could not be decoded: ${reason}`;
+      const hint = `Re-save it as PNG or JPEG, or use a converter for its real format.`;
+      if (!expected.refused) {
+        throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint, detail: error });
+      }
+      refused.push(`${sentence.replace(/\.$/, '')} — left out.`);
+      context.log(`${batch.name} was left out: ${sentence}`);
+      context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
+      continue;
     }
     context.log(`${batch.name} — ${pages.length} page(s), ${mime ?? 'unknown format'}`);
     context.progress(((index + 1) / batches.length) * 0.4, `Decoded ${batch.name}`);
     images.push(...pages);
   }
   if (images.length === 0) {
+    // Nothing survived: the refusal that was collected is the answer, not a
+    // generic sentence about the count — for one file it is exactly the sentence
+    // the throw-first path used to raise, name and all.
+    const both = refused
+      .map((line) => line.replace(/\s*—\s*left out\.$/, '.'))
+      .filter((line) => line !== '');
+    if (both.length > 0) {
+      throw new ToolInputError('UNSUPPORTED', both.join(' '), { hint: expected.hint });
+    }
     throw new ToolInputError('UNSUPPORTED', `No readable ${expected.expectLabel ?? 'image'} was added.`, {
       hint: expected.hint,
     });
   }
-  return images;
+  return { images, refused };
 }
 
 /**
