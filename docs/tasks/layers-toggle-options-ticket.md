@@ -1,5 +1,14 @@
 # Ticket — `pdf-layers` cannot toggle a layer, because its lists are never filled
 
+**Closed in round 049** — the document-driven options path exists and the lists are
+filled from the open document; see the `pdf-layers` row in `docs/TOOL-CAMPAIGN.md`.
+What was done, in the smallest shape the seam allowed: `ToolField.choices` (a resolver
+on the field), read by `usePdfTool` from the loaded document and re-read on a document
+or password change, with a stale value dropped and blocking until the re-read lands;
+`FieldControls` draws `api.fields`, the answer, or *None in this document.* Nothing
+outside that path was rebuilt, and the two shared files it touches are named in the
+fix commit.
+
 **Found by:** the eight-tool measurement (`docs/research/layers-deployed.log`, from
 `node docs/research/verify-layers-run.mjs` against `https://www.browsersnip.com`).
 

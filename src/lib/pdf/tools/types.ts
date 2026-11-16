@@ -43,6 +43,13 @@ export interface ToolFieldOption {
   hint?: string;
 }
 
+/** The loaded document a field's choices are read from. */
+export interface FieldChoicesInput {
+  bytes: Uint8Array;
+  name: string;
+  password?: string;
+}
+
 export interface ToolField {
   key: string;
   label: string;
@@ -90,6 +97,16 @@ export interface ToolField {
   half?: boolean;
   /** Hide the field while `when` is false. */
   when?: (values: ToolValues) => boolean;
+  /**
+   * Choices only the opened document can name, for a `select` or a `multiselect`.
+   *
+   * The rail calls this whenever a document is loaded — and again when the
+   * document or its password changes — and shows the answer in place of
+   * `options`. A value the document no longer carries is dropped rather than
+   * submitted against the next one, and blocks the run while the re-read is
+   * outstanding, because a list from the last file is not a choice in this one.
+   */
+  choices?: (input: FieldChoicesInput) => Promise<ToolFieldOption[]>;
   /**
    * Refuse an empty value. A predicate makes it conditional, so a field that is
    * only required in one mode is required *there* — inline, on the field itself —

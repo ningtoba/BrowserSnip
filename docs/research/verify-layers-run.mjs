@@ -26,6 +26,15 @@ if (!PDF) throw new Error('PDF is required');
 const h = await open();
 const rootId = async () => (await h.send('DOM.getDocument', { depth: -1 })).root.nodeId;
 await h.send('Page.navigate', { url: `${BASE}/#/tool/pdf-layers` });
+if (process.env.DARK) {
+  // Tokens only: this clicks the app's own theme switch and reports what it did.
+  await h.wait(`!!document.querySelector('button')`, 60000);
+  console.log('dark:', await h.ev(`(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => /theme|dark|light/i.test((x.getAttribute('aria-label') || '') + (x.title || '')));
+    if (b) { b.click(); return b.getAttribute('aria-label') || 'clicked'; }
+    document.documentElement.classList.add('dark'); return 'forced';
+  })()`));
+}
 if (!(await h.wait(`!!document.querySelector('input[type=file]')`, 60000))) throw new Error('no file input');
 await h.ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.createObjectURL=(b)=>{window.__blobs.push(b);return o(b)};return 1})()`);
 await h.ev(`(() => { const i = [...document.querySelectorAll('input[type=file]')].find((x) => !x.closest('[role=group]')); if (i) i.setAttribute('data-probe-doc','1'); return !!i; })()`);
@@ -52,7 +61,14 @@ const census = () => h.ev(`JSON.stringify({
 })`);
 console.log('rail:', await census());
 
-/** Tick (or clear) the box whose label matches, in the named group. */
+/**
+ * Tick (or clear) the box whose label matches, in the named group.
+ *
+ * The box is clicked once and read back: a label that wraps its input already
+ * forwards the click, so also calling `box.click()` flipped every tick straight
+ * back off — the run then went ahead untoggled and the pane looked as though it
+ * had accepted it. A tick that did not land is retried once, then reported.
+ */
 const tick = (groupLabel, option, want = true) => h.ev(`(() => {
   const group = [...document.querySelectorAll('[role=group]')]
     .find((g) => (g.getAttribute('aria-label') || '') === ${JSON.stringify(groupLabel)});
@@ -61,19 +77,27 @@ const tick = (groupLabel, option, want = true) => h.ev(`(() => {
   if (!label) return 'no option ' + ${JSON.stringify(option)} + ' among ' + [...group.querySelectorAll('label')].map((l) => l.innerText.trim()).join(' | ');
   const box = label.querySelector('input[type=checkbox]');
   if (!box) return 'label without a box';
-  if (box.checked !== ${want ? 'true' : 'false'}) {
-    (label.matches('label') ? label : box).click();
-    box.click?.();
-  }
-  return ${JSON.stringify(groupLabel)} + ' / ' + ${JSON.stringify(option)} + ' checked=' + box.checked;
+  const want = ${want ? 'true' : 'false'};
+  if (box.checked !== want) box.click();
+  if (box.checked !== want) box.click();
+  return ${JSON.stringify(groupLabel)} + ' / ' + ${JSON.stringify(option)} + ' checked=' + box.checked
+    + (box.checked === want ? '' : ' (DID NOT STICK)');
 })()`);
 
 for (const name of HIDE) console.log('hide:', await tick('Hide these layers', name));
 for (const name of SHOW) console.log('show:', await tick('Show these layers', name));
+/**
+ * Write a field the way a keystroke reaches React, and read it back.
+ *
+ * The delete field is a `textarea` and the add field is an `input`, and
+ * `HTMLInputElement`'s value setter throws on the other tag ("Illegal
+ * invocation") — which the delete path had never been driven through.
+ */
 const write = async (id, value) => h.ev(`(() => {
   const el = document.getElementById(${JSON.stringify(id)});
   if (!el) return 'missing #' + ${JSON.stringify(id)};
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(value)});
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)});
   el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(value)} }));
   return ${JSON.stringify(id)} + '=' + el.value;
 })()`);

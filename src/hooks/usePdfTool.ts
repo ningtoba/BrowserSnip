@@ -26,8 +26,10 @@ import {
 } from '@/lib/pdf/core/guard';
 import {
   defaultValues,
+  stringValues,
   type PdfToolDefinition,
   type ToolField,
+  type ToolFieldOption,
   type ToolValues,
 } from '@/lib/pdf/tools/types';
 import {
@@ -108,6 +110,13 @@ export interface UsePdfTool {
   promise: string;
   /** Fields bucketed under their `group` heading, in declaration order. */
   groups: FieldGroup[];
+  /**
+   * The tool's fields, with any `choices` answered by the open document.
+   *
+   * The panel renders these, not `tool.fields`: a list the file did not give is
+   * worse than no list, because it looks like a choice.
+   */
+  fields: ToolField[];
 }
 
 export interface UsePdfToolOptions {
@@ -190,6 +199,14 @@ export function usePdfTool(
   // the same parse, and a new secret re-runs it (see `PASSWORD_SETTLE_MS`) rather
   // than paying for a second pass just to tell the row something changed.
   const [probes, setProbes] = useState<Record<string, FileProbe>>({});
+  /**
+   * Choices read off the open document, by field, and which document they came
+   * from. Keyed because a list from the file the user just replaced is not a
+   * choice in this one — see the `choices` comment on `ToolField`.
+   */
+  const [choiceState, setChoiceState] = useState<{ key: string; byField: Record<string, ToolFieldOption[]> } | null>(
+    null,
+  );
   const settledPassword = useSettledValue(password, PASSWORD_SETTLE_MS);
   /** True while a re-read prompted by the secret is still outstanding. */
   const lockChecking = settledPassword !== password;
@@ -296,10 +313,108 @@ export function usePdfTool(
     [tool],
   );
 
-  const { values: checked, issues, notices } = useMemo(
-    () => checkFields(tool?.fields, values, { pageCount }),
-    [pageCount, tool, values],
+  const documentKey = primary ? `${primary.name}:${primary.size}` : null;
+  /** The choices on screen: past the open document's own read, or nothing. */
+  const liveChoices = choiceState && choiceState.key === documentKey ? choiceState.byField : null;
+
+  // Ask the loaded document what a `choices` field can offer. One read per input
+  // and password: the file the rail describes has to be the file the run will get.
+  useEffect(() => {
+    const asked = (tool?.fields ?? []).filter((field) => field.choices);
+    if (!primary || asked.length === 0) {
+      setChoiceState(null);
+      return;
+    }
+    let live = true;
+    const key = `${primary.name}:${primary.size}`;
+    void (async () => {
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await primary.arrayBuffer());
+      } catch {
+        if (live) setChoiceState({ key, byField: Object.fromEntries(asked.map((field) => [field.key, []])) });
+        return;
+      }
+      const answered: Record<string, ToolFieldOption[]> = {};
+      for (const field of asked) {
+        try {
+          answered[field.key] = await field.choices!({ bytes, name: primary.name, password: settledPassword || undefined });
+        } catch {
+          // A document this reader cannot parse offers nothing; the run itself
+          // says what went wrong with it, in its own words.
+          answered[field.key] = [];
+        }
+      }
+      if (!live || !mounted.current) return;
+      setChoiceState({ key, byField: answered });
+    })();
+    return () => {
+      live = false;
+    };
+    // `primary` is the input the run will read; a new one is a new question.
+  }, [primary, settledPassword, tool]);
+
+  /** The tool's fields, with the document's own answers in the `choices` ones. */
+  const fields = useMemo(
+    () =>
+      (tool?.fields ?? []).map((field) =>
+        field.choices ? { ...field, options: liveChoices?.[field.key] ?? [] } : field,
+      ),
+    [liveChoices, tool],
   );
+
+  const { values: checked, issues, notices } = useMemo(
+    () => checkFields(fields, values, { pageCount }),
+    [fields, pageCount, values],
+  );
+
+  /**
+   * A ticked value the open document does not carry.
+   *
+   * Unticking is the only answer, so the run is held rather than sent an
+   * instruction the file cannot obey: the tool would report `"Old" is not a
+   * layer` only after writing a file over the new document.
+   */
+  const choiceIssues = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const field of fields) {
+      if (!field.choices) continue;
+      const chosen = stringValues(values, field.key);
+      if (chosen.length === 0) continue;
+      const offered = liveChoices?.[field.key];
+      if (!offered) {
+        out[field.key] = `${field.label}: reading the open document…`;
+        continue;
+      }
+      const known = new Set(offered.map((option) => String(option.value)));
+      const gone = chosen.filter((name) => !known.has(name));
+      if (gone.length === 0) continue;
+      out[field.key] = `${gone.map((name) => `"${name}"`).join(', ')} ${gone.length === 1 ? 'is' : 'are'} not in this document — untick ${gone.length === 1 ? 'it' : 'them'}.`;
+    }
+    return out;
+  }, [fields, liveChoices, values]);
+
+  // Keep only what the document still names. Without this a swap leaves the old
+  // name ticked and unchecked at once — the box has no row to sit on.
+  useEffect(() => {
+    if (!liveChoices) return;
+    setValues((current) => {
+      let next = current;
+      for (const [key, offered] of Object.entries(liveChoices)) {
+        const chosen = stringValues(current, key);
+        if (chosen.length === 0) continue;
+        const known = new Set(offered.map((option) => String(option.value)));
+        const kept = chosen.filter((name) => known.has(name));
+        if (kept.length === chosen.length) continue;
+        next = { ...next, [key]: kept };
+      }
+      return next;
+    });
+  }, [liveChoices]);
+
+  /** Every reason the button is off, the document's own answers included. */
+  const fieldIssues = useMemo(() => ({ ...issues, ...choiceIssues }), [issues, choiceIssues]);
+  void issues;
 
   /** Why the primary action cannot fire, in the order the user can act on. */
   const blockers = useMemo(() => {
@@ -336,7 +451,7 @@ export function usePdfTool(
       );
     }
     for (const field of tool.fields ?? []) {
-      const issue = issues[field.key];
+      const issue = fieldIssues[field.key];
       if (issue) out.push(issue);
     }
     const custom = tool.validate?.(checked, { fileCount: files.length });
@@ -569,14 +684,15 @@ export function usePdfTool(
     pagesByFile,
     pagesIn,
     notices,
-    issues,
+    issues: fieldIssues,
     blockers,
     advisories,
     canRun,
     checked,
     verb: tool ? verbFor(tool) : 'Run',
     promise: tool ? promiseFor(tool as PanelTool) : '',
-    groups: groupFields(tool?.fields ?? []),
+    groups: groupFields(fields),
+    fields,
   };
 }
 

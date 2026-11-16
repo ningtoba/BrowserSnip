@@ -38,7 +38,9 @@ import {
   numberValue,
   stringValue,
   stringValues,
+  type FieldChoicesInput,
   type PdfToolDefinition,
+  type ToolFieldOption,
   type ToolResult,
   type ToolRunContext,
 } from './types';
@@ -516,6 +518,27 @@ function parseRegions(
 
 /** How many marks one page may receive from a tiled pattern (E7). */
 const MAX_TILES = 400;
+
+/**
+ * The layer names the opened document carries, for the two toggle lists.
+ *
+ * The rail has no way to know them — `ToolField.options` is a static array — so the
+ * field declares `choices` and the hook asks this once per loaded document. The
+ * hint says which way the file holds the layer now, because both lists carry every
+ * name and the tick alone would not tell a reader what the default view already says.
+ */
+async function layerChoices(input: FieldChoicesInput): Promise<ToolFieldOption[]> {
+  const [{ listLayers }, { openPdfInput }] = await Promise.all([
+    import('../core/layers'),
+    import('../core/guard'),
+  ]);
+  const { doc } = await openPdfInput(input.bytes, input.name, { password: input.password });
+  return listLayers(doc).map((layer) => ({
+    value: layer.name,
+    label: layer.name,
+    hint: layer.on ? 'On in the file now — tick here to hide it.' : 'Hidden in the file now — tick here to show it.',
+  }));
+}
 
 export const editTools: PdfToolDefinition[] = [
   {
@@ -2037,10 +2060,10 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Change layers',
     promise: 'The optional-content groups of a CAD or GIS export, switched on or off in the default view.',
     fields: [
-      { key: 'hide', label: 'Hide these layers', type: 'multiselect', default: [], options: [], group: 'Default view', help: 'Switched off in the default view. The content stays in the file and any reader can turn it back on.' },
-      { key: 'show', label: 'Show these layers', type: 'multiselect', default: [], options: [], group: 'Default view', help: 'Switched on in the default view, overriding what the file was saved with.' },
+      { key: 'hide', label: 'Hide these layers', type: 'multiselect', default: [], options: [], choices: layerChoices, group: 'Default view', help: 'Switched off in the default view. The content stays in the file and any reader can turn it back on.' },
+      { key: 'show', label: 'Show these layers', type: 'multiselect', default: [], options: [], choices: layerChoices, group: 'Default view', help: 'Switched on in the default view, overriding what the file was saved with.' },
       { key: 'add', label: 'Add a layer named', type: 'text', placeholder: 'Revision B', group: 'Manage', help: 'Creates an empty optional-content group, ready for content to be assigned to it elsewhere.' },
-      { key: 'remove', label: 'Delete layers named', type: 'textarea', group: 'Manage', help: 'Deletes the group definition. Content that belonged to it falls back to always visible in most readers.' },
+      { key: 'remove', label: 'Delete layers named', type: 'textarea', group: 'Manage', help: 'Deletes the group from the layers panel. Content that belonged to it stays on the page and falls back to always visible in most readers.' },
     ],
     validate: (values) => {
       const asked = stringValues(values, 'hide').length
@@ -2048,12 +2071,13 @@ export const editTools: PdfToolDefinition[] = [
         + (stringValue(values, 'add').trim() ? 1 : 0)
         + (stringValues(values, 'remove').flatMap((entry) => entry.split(/[\n,]+/)).filter((name) => name.trim() !== '').length);
       return asked === 0
-        ? 'Choose layers to hide or show, or name one to add or delete — with none of those ticked nothing would change.'
+        ? 'Tick a layer to hide or show it, or name one to add or delete — with none of those chosen nothing would change.'
         : null;
     },
     notes: [
       'Only the default viewing configuration is edited; named configurations keep their own state, as in other viewers.',
       'Hiding a layer turns it off in the layers panel; it does not delete the content.',
+      'A layer you add is empty — this tool creates the group, and the marked content that would put drawing in it is written by the producer, not here.',
       'To take hidden ink out of the file instead, use Sanitize PDF with "Remove hidden layer content": that deletes the operators, and cannot be undone in the output.',
     ],
     async run(context) {

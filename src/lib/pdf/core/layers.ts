@@ -184,18 +184,77 @@ export function deleteLayer(doc: PDFDocument, name: string): boolean {
   if (!entry || !array) return false;
   const index = indexOfRef(array, entry.ref);
   if (index !== -1) removeAt(array, index);
-  doc.context.delete(entry.ref);
-
-  const defaultConfig = resolveDict(doc, properties.get(PDFName.of('D')));
-  if (defaultConfig) {
+  // The page content still says `/OC /MC0 BDC` and the resources still resolve
+  // `MC0` to the group: the marked content is deliberately left in place, so the
+  // group dictionary has to stay while a property list names it. The pointers that
+  // made it a *layer* — `/OCGs`, the configuration lists, `/Configs` — are gone
+  // above, so it is no longer in any panel, and both readers show its content.
+  // Deleting the object as well left `/MC0 12 0 R` pointing at a free xref: MuPDF
+  // says `cannot find object in xref`, poppler `Invalid XRef entry 12` and then
+  // resolves the name against an unrelated object (the page) — measured.
+  for (const config of allConfigurations(doc, properties)) {
     for (const key of ['ON', 'OFF', 'Order']) {
-      const list = arrayAt(doc, defaultConfig, key);
+      const list = arrayAt(doc, config, key);
       if (!list) continue;
       const at = indexOfRef(list, entry.ref);
       if (at !== -1) removeAt(list, at);
     }
   }
+  const stillNamed = countPropertyNames(doc, entry.ref.toString());
+  // An annotation or a field can guard itself with `/OC`; that is a reference the
+  // marked content does not account for, so it keeps the dictionary too.
+  const elsewhere = structuralReferences(doc, properties, new Set([entry.ref.toString()])).get(entry.ref.toString()) ?? 0;
+  if (stillNamed === 0 && elsewhere === 0) doc.context.delete(entry.ref);
   return true;
+}
+
+/** Every configuration dictionary a reader can switch to, the default included. */
+function allConfigurations(doc: PDFDocument, properties: PDFDict): PDFDict[] {
+  const found: PDFDict[] = [];
+  const config = resolveDict(doc, properties.get(PDFName.of('D')));
+  if (config) found.push(config);
+  const named = deref(doc, properties.get(PDFName.of('Configs')));
+  if (named instanceof PDFArray) {
+    for (const item of named.asArray()) {
+      const next = resolveDict(doc, item);
+      if (next) found.push(next);
+    }
+  }
+  return found;
+}
+
+/**
+ * How many `/Resources /Properties` names resolve to one object.
+ *
+ * `/Properties` is how `/OC /MC0 BDC` reaches a group, so a name that names it is
+ * the reason the definition cannot simply be deleted: the marked content stays (the
+ * tool does not delete drawing), and a name left pointing at a removed object is a
+ * dangling reference both readers report — MuPDF `cannot find object in xref`,
+ * poppler `Invalid XRef entry`, then the name resolves against an unrelated object.
+ * Pages, and the form XObjects they reach, are walked: a CAD export draws its
+ * layers inside forms.
+ */
+function countPropertyNames(doc: PDFDocument, needle: RefKey): number {
+  const seen = new Set<string>();
+  const pending: PDFDict[] = [];
+  let named = 0;
+  const take = (resources: PDFDict | null): void => {
+    if (!resources) return;
+    const properties = resolveDict(doc, resources.get(PDFName.of('Properties')));
+    for (const [, value] of properties?.entries() ?? []) {
+      if (value instanceof PDFRef && value.toString() === needle) named += 1;
+    }
+    const xobjects = resolveDict(doc, resources.get(PDFName.of('XObject')));
+    for (const [, entry] of xobjects?.entries() ?? []) {
+      if (!(entry instanceof PDFRef) || seen.has(entry.toString())) continue;
+      seen.add(entry.toString());
+      const stream = doc.context.lookup(entry);
+      if (stream instanceof PDFStream) pending.push(resolveDict(doc, stream.dict.get(PDFName.of('Resources')))!);
+    }
+  };
+  doc.getPages().forEach((page) => take(page.node.Resources() ?? null));
+  while (pending.length > 0) take(pending.pop()!);
+  return named;
 }
 
 /** Rename an existing OCG. */

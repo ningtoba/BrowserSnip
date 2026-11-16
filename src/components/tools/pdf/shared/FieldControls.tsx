@@ -100,8 +100,8 @@ export function OptionsPanel({ api, before, touched }: OptionsPanelProps) {
   const disclosure = useRef<HTMLButtonElement>(null);
   const restore = useRef(false);
   const fields = useMemo(
-    () => (api.tool?.fields ?? []).filter((field) => !field.when || field.when(api.values)),
-    [api.tool, api.values],
+    () => api.fields.filter((field) => !field.when || field.when(api.values)),
+    [api.fields, api.values],
   );
   const lead = leadField(fields, api.issues, api.values, touched);
   const folded = fields.filter((field) => field !== lead);
@@ -642,6 +642,17 @@ function Control({
       );
     case 'multiselect': {
       const chosen = Array.isArray(value) ? (value as string[]) : [];
+      const options = field.options ?? [];
+      if (options.length === 0) {
+        // An empty box with a heading over it reads as a control that failed to
+        // load; say which of the two it is. With `choices` the document decides,
+        // so the sentence is about the file rather than about the tool's schema.
+        return (
+          <p className="text-[10px] text-ink-soft">
+            {field.choices ? 'None in this document.' : 'Nothing to choose here.'}
+          </p>
+        );
+      }
       return (
         <div
           role="group"
@@ -650,9 +661,10 @@ function Control({
             compact ? 'max-h-24' : 'max-h-40'
           }`}
         >
-          {(field.options ?? []).map((option) => (
+          {options.map((option) => (
             <label
               key={String(option.value)}
+              title={option.hint}
               className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[10px] text-ink-soft"
             >
               <input
