@@ -386,17 +386,48 @@ function imprintOf(body: Uint8Array): string {
  * The two candidate imprint targets, read out of the signed file: the signature
  * value octets and the `messageDigest` attribute's value.
  */
+/**
+ * The `/Contents` placeholder is padded with zero bytes, and the padding is not
+ * always all of what follows the DER: stripping a trailing run of `0` *hex
+ * digits* also eats a real nibble when the signature's own last byte ends in
+ * `0`, so `fromDer` was handed a truncated value in about one run in five
+ * ("Unparsed DER bytes remain"). This returns exactly the first DER element by
+ * reading its own length header instead.
+ */
+function firstDer(hex: string): string {
+  const bytes = forge.util.hexToBytes(hex);
+  let offset = 1;
+  let length = bytes.charCodeAt(offset++) & 0xff;
+  if (length & 0x80) {
+    const octets = length & 0x7f;
+    length = 0;
+    for (let i = 0; i < octets; i += 1) length = length * 256 + (bytes.charCodeAt(offset++) & 0xff);
+  }
+  return forge.util.bytesToHex(bytes.slice(0, offset + length));
+}
+
 function digestTargets(signed: Uint8Array): { signatureValue: string; documentDigest: string } {
   const hex = /\/Contents\s*<([0-9A-Fa-f\s]+)>/.exec(latin1.decode(signed))?.[1].replace(/\s+/g, '') ?? '';
-  const root = forge.asn1.fromDer(forge.util.hexToBytes(hex.replace(/0+$/, '')), false);
+  const root = forge.asn1.fromDer(forge.util.hexToBytes(firstDer(hex)), false);
   const signedData = (root.value as forge.asn1.Asn1[])[1];
   const content = (signedData.value as forge.asn1.Asn1[])[0];
   const sets = (content.value as forge.asn1.Asn1[]).filter((m) => m.type === forge.asn1.Type.SET);
   const signerInfo = (sets[sets.length - 1].value as forge.asn1.Asn1[])[0];
   const members = signerInfo.value as forge.asn1.Asn1[];
-  const signatureValue = members.find(
-    (m) => m.tagClass === forge.asn1.Class.UNIVERSAL && m.type === forge.asn1.Type.OCTETSTRING,
-  )?.value;
+  // The *last* universal OCTET STRING: `encryptedDigest` follows the
+  // digestEncryptionAlgorithm SEQUENCE, and forge hands back a nested
+  // `messageDigest` attribute's octets as a direct member too often enough that
+  // `find` (the first) read the digest of the document instead of the signature
+  // — one flake in five, with both values a valid-looking 64 hex.
+  // `encryptedDigest` is the member right after the digestEncryptionAlgorithm
+  // SEQUENCE. A plain `find` for the first OCTET STRING read the document's
+  // `messageDigest` attribute instead, in about one run in five, because forge
+  // hands that nested attribute's octets back as a direct member too — so the
+  // position is taken from the grammar rather than from search order.
+  const algorithmAt = members.map((m) => m.type === forge.asn1.Type.SEQUENCE).lastIndexOf(true);
+  const signatureValue = members
+    .slice(algorithmAt + 1)
+    .find((m) => m.tagClass === forge.asn1.Class.UNIVERSAL && m.type === forge.asn1.Type.OCTETSTRING)?.value;
   const attributes = members.find((m) => m.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC && m.type === 0);
   const messageDigest = (attributes?.value as forge.asn1.Asn1[])
     ?.find((attribute) => {
