@@ -22,6 +22,18 @@ named at the foot of this README and are never kept here:
 > reading its own output. See the `protect` and `encrypted-inputs` rows of
 > `docs/TOOL-CAMPAIGN.md`, and `docs/research/encrypted-inputs-findings.md`.
 
+`structure-aes-256-user.pdf` is locked over a different base on purpose. The
+three-page base above carries words and an outline and nothing else, so on it
+alone "the form fields, the comments, the bookmarks and the embedded files stay
+where they were" (`unlock`'s card) has nothing to be true about. That base is two
+sheets carrying a text note, a highlight, a URI link, a text field worth
+`Ada Lovelace`, a checked box, an outline of two entries, `/PageLabels` (`A-`),
+an enclosure `source.csv`, and `/Info` title and author — every object a page-tree
+rebuild is known to drop, planted so a copy that drops one is countable. It is
+built and locked by `docs/research/unlock-structure-fixture.py`, which prints the
+census of both the plain and the locked file (the pair is identical) so a fixture
+that never carried a thing cannot be credited with keeping it.
+
 Rebuild with `python3 scripts/encrypted-fixtures.py` (it re-verifies each file
 with qpdf and MuPDF before it is kept, and prints the dictionary, the trailer
 spelling and the command that wrote it). The same document, richer and measured
@@ -47,6 +59,7 @@ that keeps its page count while losing its text is visible.
 | `mu-aes-128-user.pdf` | `/V 4 /R 4 /CF << /StdCF /CFM /AESV2 >> /StmF /StdCF /StrF /StdCF` | **inlined** | AES-128 by the second producer | user `hunter2` |
 | `mu-aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 >> /StmF /StdCF /StrF /StdCF` | **inlined** | AES-256 by the second producer | user `hunter2` |
 | `mu-aes-256-owner.pdf` | same `/V 5 /R 6` dictionary | **inlined** | AES-256, empty user password, second producer | owner `hunter2` |
+| `structure-aes-256-user.pdf` | `/V 5 /R 6 /CF << /StdCF /CFM /AESV3 /Length 32 >> /StmF /StdCF /StrF /StdCF` | reference | AES-256 over **a second base** (below), libqpdf | user `hunter2` |
 
 The two AES-256 rows carry the revision-6 spellings the read path has to handle:
 `/O` and `/U` are **48** bytes (32-byte hash, 8-byte validation salt, 8-byte key

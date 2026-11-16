@@ -410,7 +410,7 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Unlock',
     notes: [
       'Protection lives in the trailer, so it is removed there: the page tree, the form fields, the comments, the bookmarks and any embedded files all stay where they were.',
-      'A file that needs the password just to be read cannot lose it here: unlock it with the open password first. A restricted-but-openable one needs no password at all.',
+      'A file that asks for a password before it will be read is unlocked here by typing it: either the user or the owner password works, and page streams still ciphered at the old revision are undecrypted before the dictionary goes. A restricted-but-openable one needs no password at all.',
       'If the fields, comments or bookmarks of the source do come out missing, the result names them; the page count is refused outright rather than reported.',
     ],
     fields: [{ key: 'password', label: 'Current password', type: 'password', group: 'Password', placeholder: 'The password this file opens with', help: 'Either the user or the owner password works. Leave blank if the file is restricted but readable.' }],
@@ -2107,6 +2107,15 @@ interface StripResult {
  * the source. A file whose streams really are ciphertext loses its content when
  * the dictionary goes, and that is named instead of shipped quietly (E5).
  */
+/**
+ * `UNLOCK_FORCE_REBUILD=1` takes the lossy page-tree fallback on purpose, so the
+ * pin for what the cheap path keeps can be shown to fail when it is not the path
+ * that runs. Vite replaces `process.env.NODE_ENV` only, hence the guard.
+ */
+function forceRebuild(): boolean {
+  return typeof process !== 'undefined' && process.env?.UNLOCK_FORCE_REBUILD === '1';
+}
+
 async function stripProtectionFrom(
   input: OpenedInput,
   doc: PDFDocument,
@@ -2117,7 +2126,7 @@ async function stripProtectionFrom(
   let bytes = await saveUnprotected(doc);
   let inspection = await inspectPdf(bytes, input.name);
   let rebuilt = false;
-  if (inspection.encrypted) {
+  if (inspection.encrypted || forceRebuild()) {
     const cleared = await rebuildDocument(doc);
     bytes = await savePDF(cleared, { useObjectStreams: true });
     inspection = await inspectPdf(bytes, input.name);

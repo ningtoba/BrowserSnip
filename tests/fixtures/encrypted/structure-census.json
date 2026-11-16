@@ -1,0 +1,44 @@
+{
+ "pages": 2,
+ "annotations": 6,
+ "links": 1,
+ "fields": 2,
+ "outline": 2,
+ "attachments": [
+  "source.csv"
+ ],
+ "page_labels": "<</Nums[0<</P(A-)/S/D>>]>>",
+ "title": "Lighthouse Inventory 1887",
+ "author": "unlock structure rig",
+ "field_values": [
+  "Ada Lovelace",
+  "Yes"
+ ],
+ "uris": [
+  "https://example.com"
+ ],
+ "outline_titles": [
+  "Chapter Bravo",
+  "Intro"
+ ],
+ "label_prefix": "A-",
+ "attachment_names": [
+  "source.csv"
+ ],
+ "subtypes": [
+  "Highlight",
+  "Link",
+  "Popup",
+  "Text",
+  "Widget",
+  "Widget"
+ ],
+ "text": [
+  53,
+  68
+ ],
+ "text_strings": [
+  "Structure sheet 1\nLighthouse Inventory 1887 body copy",
+  "Structure sheet 2\nLighthouse Inventory 1887 body copy\nAda Lovelace\n3"
+ ]
+}

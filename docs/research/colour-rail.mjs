@@ -51,6 +51,9 @@ const FIELD_LABELS = {
   // type' here, so a spec run names that one by its printed words instead.
   userPassword: 'Open password',
   ownerPassword: 'Owner password',
+  // `unlock`'s one field: the secret the *input* opens with (round 052). Without
+  // this the key alone reads NO CONTROL and the probe clicks with an empty box.
+  password: 'Current password',
   // The shared text-style model's rail keys: each tool renders these through
   // `textStyleFields`, so their labels are the same words everywhere.
   font: 'Typeface',
@@ -506,7 +509,12 @@ async function runTool(run) {
   // `DARK=1` takes the one dark-mode screenshot a UI round owes, tokens only: the
   // class is what the theme switch sets, so the shot is the same surface a dark
   // user meets.
-  if (process.env.DARK) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
+  if (process.env.DARK) {
+  await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
+  // A repaint has to land before the screenshot, or the capture can come back
+  // tiled with the previous frame (round 052 measured one).
+  await sleep(900);
+}
   // The rail folds everything but its lead field behind "N more options".
   if (run.openOptions !== false) {
     await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
@@ -726,7 +734,12 @@ await ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.crea
 // `DARK=1` takes the one dark-mode screenshot a UI round owes, tokens only: the
 // class is what the theme switch sets, so the shot is the same surface a dark
 // user meets.
-if (process.env.DARK) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
+if (process.env.DARK) {
+  await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('browsersnip:theme','dark')}catch{}return 1})()`);
+  // A repaint has to land before the screenshot, or the capture can come back
+  // tiled with the previous frame (round 052 measured one).
+  await sleep(900);
+}
 // The rail folds everything but its lead field behind "N more options".
 await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
 await sleep(400);
