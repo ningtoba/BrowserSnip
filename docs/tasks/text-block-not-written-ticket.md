@@ -30,7 +30,7 @@ user looking at a white box and a wrong font over unchanged words. It also means
 
 `docs/research/text-campaign-repro.mjs` drives it end to end:
 
-```
+```bash
 TYPE=1 BLOCK_TEXT='Built the reporting' OUT=/tmp/x.pdf \
   BASE=http://localhost:5271 node docs/research/text-campaign-repro.mjs
 ```
