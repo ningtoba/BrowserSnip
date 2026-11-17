@@ -187,7 +187,19 @@ export function AnnotationOverlay({
    * neither: the box stayed, the words did not. Falling back on "no lines" means
    * the words always get painted by one surface or the other.
    */
-  const laidOutPreview = (id: string): boolean => (textPreviews[id]?.lines.length ?? 0) > 0;
+  const laidOutPreview = (id: string): boolean => (textPreviews[id]?.lines.length ?? 0) > 0;  /**
+   * A clip the text can actually appear in.
+   *
+   * The clip is the box, computed from the page geometry; a degenerate one (a box
+   * measured before its own geometry arrived, a zero-size default) hides every
+   * glyph while the file still carries them. Below a couple of pixels it is
+   * better to lose the overflow trim than the words.
+   */
+  const clipUsable = (annotation: EditorAnnotation): boolean => {
+    const box = pdfToScreenRect(annotation.rect, geom);
+    return box.width > 2 && box.height > 2;
+  };
+
   const textLayers = annotations.filter(
     (a) => a.kind === 'FreeText' && (a.id === editingId || !laidOutPreview(a.id)),
   );
@@ -283,8 +295,10 @@ export function AnnotationOverlay({
               data-text-size={preview.size}
               data-text-shrank={preview.shrank ? 'true' : 'false'}
               data-text-overflows={preview.overflows ? 'true' : 'false'}
-              clipPath={`url(#${textClipId(annotation.id)})`}
-              opacity={annotation.opacity}
+              clipPath={clipUsable(annotation) ? `url(#${textClipId(annotation.id)})` : undefined}
+              // A mark whose opacity came out 0 (or undefined on an older draft)
+              // would paint nothing at all; the file shows it, so the screen must.
+              opacity={annotation.opacity || 1}
               {...turn(annotation, geom)}
             >
               {preview.lines.map((line, index) =>

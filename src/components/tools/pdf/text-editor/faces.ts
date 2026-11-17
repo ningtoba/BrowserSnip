@@ -201,6 +201,24 @@ export function chooseFace(
   return embeddedFace(doc, style, text);
 }
 
+/**
+ * The standard family closest to the face being replaced.
+ *
+ * A refused subset used to fall straight to Noto Sans, so editing one word in a
+ * serif CV re-set it in a sans face — the substitution was reported but it was the
+ * *most* wrong face available. The standard 14 carry all three classes, and a
+ * whole-class match is what keeps the page looking like itself; only a character
+ * they cannot encode sends the run to the Unicode face.
+ */
+function classOf(baseFont: string, subtype: string): string {
+  const name = `${baseFont} ${subtype}`.toLowerCase();
+  if (/courier|mono|consol|menlo|typewriter|fixed/.test(name)) return 'std:courier';
+  if (/times|serif|georgia|garamond|minion|book|roman|palatino|baskerv|didot|century/.test(name)) {
+    return 'std:times';
+  }
+  return 'std:helvetica';
+}
+
 function substitute(
   doc: PDFDocument,
   style: InlineStyle,
@@ -208,7 +226,13 @@ function substitute(
   source: SourceFont,
   reason: SubstitutionReason,
 ): Promise<FaceChoice> {
-  return embeddedFace(doc, style, text).then((choice) => ({
+  // Same class first, and only if that face is refused (a character it cannot
+  // encode) the Unicode face. `style.fontFamily` stays empty on the auto path, so
+  // this is the only place the class can be expressed.
+  const classed: InlineStyle = style.fontFamily
+    ? style
+    : { ...style, fontFamily: classOf(source.baseFont ?? '', source.subtype ?? '') };
+  return embeddedFace(doc, style.fontFamily ? style : classed, text).then((choice) => ({
     ...choice,
     substitution: { from: source.baseFont || source.subtype, to: choice.face.label, reason },
   }));

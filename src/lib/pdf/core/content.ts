@@ -3115,7 +3115,11 @@ function boxesTouch(a: ContentRect, b: ContentRect): boolean {
   const rowsOverlap = a.y < b.y + b.height && b.y < a.y + a.height;
   if (!rowsOverlap) return false;
   const gapX = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width));
-  return gapX < Math.max(2, Math.min(a.height, b.height) * 0.5);
+  // A patch is one bar across the leftovers it covers, so the gap it bridges is
+  // background given up: two leftover words a word apart in the same line used to
+  // merge into a bar spanning the clean space between them, and every bright pixel
+  // under it went white. A third of the glyph height is what a word space is.
+  return gapX < Math.max(1.5, Math.min(a.height, b.height) * 0.35);
 }
 
 /**

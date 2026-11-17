@@ -620,6 +620,24 @@ describe('font retention', () => {
     expect((choice.substitution?.reason as { characters: string }).characters).toContain('f');
   });
 
+  it('substitutes into the same class of face, not the bundled sans over a serif', async () => {
+    // A refused serif subset used to be replaced by Noto Sans: reported, but the
+    // most wrong face available. A whole-class match keeps the page looking like
+    // itself — the report still names the swap.
+    const doc = await fixtureDoc([
+      {
+        ops: showOps('/F1 12 Tf\n50 700 Td\n(aaaa bbbb) Tj\n'),
+        rawFonts: {
+          F1: (context) => subsetFont(context, 'AAAAAA+Times-Roman', [0x20, 0x61, 0x62], { fontFile: NOTO }),
+        },
+      },
+    ]);
+    const choice = await chooseFace(doc, { ...DEFAULT_STYLE, size: 12 }, 'fixed words', pageTextFaces(doc.getPages()[0]));
+    expect(choice.face.fromSource).toBe(false);
+    expect(choice.substitution?.reason.kind).toBe('missing');
+    expect(choice.substitution?.to).toMatch(/Times/i);
+  });
+
   it('refuses a face whose embedded file cannot be read, rather than guessing', async () => {
     const doc = await fixtureDoc([
       {
