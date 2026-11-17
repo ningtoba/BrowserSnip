@@ -1136,6 +1136,34 @@ describe('word-to-pdf keeps headings, tables and non-Latin text', () => {
     expect(row[0]!.y).toBeLessThan(header[0]!.y);
   });
 
+  it('keeps bold and strike runs and breaks a line at w:br', async () => {
+    const docx = docxBytes(
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>loud</w:t></w:r><w:r><w:t xml:space="preserve"> and </w:t></w:r>'
+      + '<w:r><w:rPr><w:strike/></w:rPr><w:t>struck</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>one</w:t><w:br/><w:t>two</w:t></w:r></w:p>',
+    );
+    const outcome = await run('word-to-pdf', {}, [fileFrom(await docx, 'marks.docx')]);
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
+    const loud = runs.find((run) => run.text.includes('loud'));
+    const struck = runs.find((run) => run.text.includes('struck'));
+    expect(loud?.font ?? '').toMatch(/Bold/i);
+    expect(struck).toBeTruthy();
+    // The strike is painted as a rule: the page's content stream carries a thin
+    // filled rectangle or a stroked line near the struck word's baseline.
+    expect(pageContentOps((await PDFDocument.load(bytes, { updateMetadata: false })).getPages()[0]!)
+      .some((op) => ['re', 'S'].includes(op.name))).toBe(true);
+    const one = runs.find((run) => run.text === 'one');
+    const two = runs.find((run) => run.text === 'two');
+    expect(one && two).toBeTruthy();
+    expect(one!.y).toBeGreaterThan(two!.y);
+  });
+
+  it('refuses a .docx that holds PDF bytes', async () => {
+    await expect(run('word-to-pdf', {}, [fileFrom(await pdfBytes(), 'report.docx')]))
+      .rejects.toThrow(/PDF/i);
+  });
+
   it('carries Cyrillic and CJK from the document into the PDF', async () => {
     const docx = docxBytes(
       '<w:p><w:r><w:t>Привет мир</w:t></w:r></w:p><w:p><w:r><w:t>中文段落内容</w:t></w:r></w:p>',
