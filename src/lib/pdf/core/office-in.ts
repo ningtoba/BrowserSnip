@@ -222,7 +222,11 @@ export async function epubToBlocks(
     if (id) manifest.set(id, href ?? '');
   }
   const spine: string[] = [];
-  for (const [, idref] of iterateAttributes(opf, 'itemref')) {
+  // `iterateAttributes` yields `[tag, id, href|idref]`: the reference is the
+  // *third* slot, and an `itemref` usually has no `id` of its own, so reading it
+  // from the second slot emptied the spine and the reader fell back to manifest
+  // order — a book whose manifest is not in reading order came out backwards.
+  for (const [, , idref] of iterateAttributes(opf, 'itemref')) {
     const href = manifest.get(idref ?? '');
     if (href) spine.push(href);
   }

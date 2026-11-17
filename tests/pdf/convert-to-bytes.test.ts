@@ -1357,6 +1357,31 @@ describe('powerpoint-to-pdf gives each slide its own page', () => {
   });
 });
 
+describe('epub-to-pdf follows the spine, not the manifest', () => {
+  it('reads the chapters in spine order when the manifest lists them backwards', async () => {
+    // Real EPUBs list manifest items in any order and state the reading order in
+    // the spine. A reader that walks the manifest prints the book backwards.
+    const book = await zipBytes([
+      {
+        name: 'META-INF/container.xml',
+        data: '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+      },
+      {
+        name: 'OEBPS/content.opf',
+        data: '<package xmlns="http://www.idpf.org/2007/opf"><manifest>'
+          + '<item id="b" href="b.xhtml" media-type="application/xhtml+xml"/>'
+          + '<item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>'
+          + '</manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>',
+      },
+      { name: 'OEBPS/a.xhtml', data: '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Chapter A</h1><p>alpha body</p></body></html>' },
+      { name: 'OEBPS/b.xhtml', data: '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Chapter B</h1><p>beta body</p></body></html>' },
+    ]);
+    const runs = await textRuns(await firstPdf(await run('epub-to-pdf', {}, [fileFrom(book, 'book.epub')])));
+    expect(runsOn(runs, 0).some((run) => run.text.includes('alpha body'))).toBe(true);
+    expect(runsOn(runs, 1).some((run) => run.text.includes('beta body'))).toBe(true);
+  });
+});
+
 describe('epub-to-pdf reflows a book without losing its order', () => {
   it('puts each chapter on its own sheet, in spine order, numbered', async () => {
     const outcome = await run('epub-to-pdf', {}, [
