@@ -516,6 +516,28 @@ describe('svg-to-pdf and cbz-to-pdf put each artefact on its own sheet', () => {
     expect(outcome.warnings.join(' ')).toMatch(/Non-image entries/);
   });
 
+  it('finds pages inside a nested folder and skips archive filler', async () => {
+    // Real CBZs wrap pages in a folder and carry `__MACOSX` twins; a reader that
+    // only looks at the root finds nothing and calls a good comic empty.
+    const zip = await zipBytes([
+      { name: '__MACOSX/._page1.png', data: realPng(20, 10) },
+      { name: 'comic/001.png', data: realPng(30, 10) },
+      { name: 'comic/002.png', data: realPng(40, 10) },
+    ]);
+    const outcome = await run('cbz-to-pdf', {}, [fileFrom(zip, 'nested.cbz')]);
+    const bytes = await firstPdf(outcome);
+    expect(await pageSizes(bytes)).toEqual([[30, 10], [40, 10]]);
+  });
+
+  it('refuses an empty archive and a corrupt one, in words', async () => {
+    const empty = await zipBytes([{ name: 'readme.txt', data: 'nothing to draw' }]);
+    await expect(run('cbz-to-pdf', {}, [fileFrom(empty, 'empty.cbz')]))
+      .rejects.toThrow(/holds no page images/);
+    const corrupt = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01, 0x02]);
+    await expect(run('cbz-to-pdf', {}, [fileFrom(corrupt, 'broken.cbz')]))
+      .rejects.toThrow(/not a readable ZIP archive/);
+  });
+
   it('keeps the CBZ pictures as pictures: no text is selectable', async () => {
     const outcome = await run('cbz-to-pdf', {}, [fileFrom(await cbzBytes(1), 'one.cbz')]);
     expect(squash(await extractText(await firstPdf(outcome)))).toBe('');

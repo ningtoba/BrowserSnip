@@ -9,7 +9,7 @@
 // Reports the line the tool printed and the bytes it produced; what "correct"
 // means for those bytes is the caller's question (see the paired .py checks).
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, statSync } from 'node:fs';
 
 const CHROME = process.env.CHROME || '/home/nekophobia/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
 const BASE = process.env.BASE || 'http://localhost:5291';
@@ -77,8 +77,16 @@ if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');return
 // after the click and was reported as a TIFF byte-for-byte identical to the
 // input.
 const before = await ev('window.__blobs.length');
+// Counting past the click is not enough on its own: a run that *refuses* still
+// mints an object URL when its card re-renders into the stopped state and
+// re-previews the file it stopped on, so a `psd-to-pdf` refusal arrived here as
+// a 58904-byte "PSD download" and read like an answer. The blob has to be one
+// the tool writes (a PDF or a ZIP archive) and not the input handed back.
+const srcSize = statSync(PDF).size;
+const resultIndex = `(window.__blobs.map((b,i)=>[b,i]).slice(${before}).find(([b])=>/^application\\/(pdf|zip)$/.test(b.type)&&b.size!==${srcSize})||[-1])[1]`;
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
-if (!(await wait(`window.__blobs.length>${before}`, 60000))) {
+const resultAt = await wait(`${resultIndex}>=0`, 60000).then(async (ok) => (ok ? ev(resultIndex) : -1));
+if (resultAt < 0) {
   // A refusal is an answer too: print what the rail says instead of a download,
   // so a tool that turns down a legitimate file is caught by this probe.
   const text = await ev(`(document.body.innerText || '').slice(0, 1600)`);
@@ -86,7 +94,7 @@ if (!(await wait(`window.__blobs.length>${before}`, 60000))) {
   throw new Error('the tool produced no output blob');
 }
 await sleep(1200);
-const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
+const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs[${resultAt}];var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output', JSON.stringify({ type: info.type, bytes: info.size, file: OUT }));
 console.log('result screen:', await ev(`(document.body.innerText.match(/[^\\n]*(page|pages|greyscale|skew|correct|blank|render)[^\\n]*/gi)||[]).slice(0,6).join(' ;; ')`));

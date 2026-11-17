@@ -27,7 +27,7 @@
 // FIELDS keys are the tools' own field keys (see FIELD_LABELS); SPEC runs name each
 // control by the words the rail prints beside it, which is what a human reads.
 import { spawn } from 'node:child_process';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 const CHROME = process.env.CHROME || '/home/nekophobia/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
@@ -831,8 +831,16 @@ if (process.env.SHOT_BEFORE) {
 // before the run does: the wait has to grow past the count at the click, or a
 // slow tool — or a refusing one — is reported as its own source file.
 const blobsBefore = await ev('window.__blobs.length');
+// Counting past the click is not enough on its own. A run that *refuses* still
+// mints a URL: the card re-renders into its stopped state and re-previews the
+// file it stopped on, so on `psd-to-pdf` a refusal arrived here as a "58904
+// byte PSD" download and read like an answer. The blob has to be one the tool
+// writes (a PDF or a ZIP archive) and not the input handed back at its own size.
+const srcSize = statSync(PDF).size;
+const resultIndex = `(window.__blobs.map((b,i)=>[b,i]).slice(${blobsBefore}).find(([b])=>/^application\\/(pdf|zip)$/.test(b.type)&&b.size!==${srcSize})||[-1])[1]`;
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
-if (!(await wait(`window.__blobs.length>${blobsBefore}`, TIMEOUT))) {
+const resultAt = await wait(`${resultIndex}>=0`, TIMEOUT).then(async (ok) => (ok ? ev(resultIndex) : -1));
+if (resultAt < 0) {
   console.log('NO OUTPUT — the screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
   // A refusal is a result: keep the screen that shows it.
   if (process.env.SHOT) await shoot(process.env.SHOT);
@@ -840,7 +848,7 @@ if (!(await wait(`window.__blobs.length>${blobsBefore}`, TIMEOUT))) {
 }
 await sleep(1000);
 if (process.env.SHOT) await shoot(process.env.SHOT);
-const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
+const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs[${resultAt}];var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({type:b.type,size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output', JSON.stringify({ type: info.type, bytes: info.size, file: OUT }));
 console.log('report line:', await ev(`(()=>{const card=document.querySelector('section[aria-label="Result"]');if(card) return card.innerText;return (document.body.innerText.match(/[^\\n]*(page|pages|dpi|invert|adjust|scan)[^\\n]*/gi)||[]).slice(0,6).join(' ;; ')})()`));
