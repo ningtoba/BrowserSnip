@@ -114,7 +114,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 104 [x] pdf-to-bmp
 105 [x] pdf-to-tiff
 106 [x] pdf-to-greyscale
-107 [ ] page-dimensions
+107 [x] page-dimensions
 108 [ ] odt-to-pdf
 109 [ ] ods-to-pdf
 110 [ ] odp-to-pdf

@@ -1953,6 +1953,16 @@ describe('page-dimensions', () => {
     expect(summary).toMatch(/A4|Letter|Custom/);
   });
 
+  it('carries the millimetre and inch equivalents, so the size is usable', async () => {
+    // Points alone are not a unit anybody prints with; a report that only says
+    // 595.28 × 841.89 leaves the conversion to the reader.
+    const outcome = await run('page-dimensions', {}, [fileOf(await mixedPdf(), 'sizes.pdf')]);
+    const rows = outcome.report!.sections.flatMap((section) => section.rows ?? []);
+    const page1 = rows.find((row) => row.label === 'Page 1')!.value;
+    expect(page1).toMatch(/210(\.0)? × 297(\.0)? mm|8\.2\\d? × 11\.6\\d? in/);
+    expect(page1).toMatch(/mm|in/);
+  });
+
   it('reports every page of a 500-page document (E7)', async () => {
     const outcome = await run('page-dimensions', {}, [fileOf(await bigTextPdf(500), 'long.pdf')]);
     const listed = outcome.report!.sections.flatMap((section) => section.rows ?? []);
