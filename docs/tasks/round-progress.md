@@ -106,7 +106,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 096 [x] pdf-to-excel
 097 [x] pdf-to-word
 098 [x] pdf-to-svg
-099 [ ] extract-images
+099 [x] extract-images
 100 [ ] pdf-to-image
 101 [ ] pdf-to-png
 102 [ ] pdf-to-jpg

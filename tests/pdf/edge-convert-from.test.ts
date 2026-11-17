@@ -1541,6 +1541,25 @@ describe('extract-images', () => {
     expect(pixelAt(image, 5, 5)).toEqual([200, 30, 40, 255]);
   });
 
+  it('extracts a shared image once per placement, under names that differ', async () => {
+    // The same logo on every page is one object in the file and N placements on
+    // the sheets; a reader extracts what it sees, and a name collision would
+    // silently overwrite the second entry.
+    const doc = await PDFDocument.create();
+    const png = await doc.embedPng(solidPng(30, 20, [10, 120, 200, 255]));
+    for (let index = 0; index < 2; index += 1) {
+      doc.addPage([200, 200]).drawImage(png, { x: 20, y: 20, width: 30, height: 20 });
+    }
+    const outcome = await run('extract-images', { pages: 'all', smallest: 0 }, [
+      fileOf(await doc.save({ useObjectStreams: false }), 'logo.pdf'),
+    ]);
+    // Two placements, so the answer is one zip of two entries — not one file.
+    const entries = await zipEntries(outcome);
+    expect(entries).toHaveLength(2);
+    expect(new Set(entries.map((entry) => entry.name)).size).toBe(2);
+    expect(entries[0]!.bytes).toEqual(entries[1]!.bytes);
+  });
+
   it('reports a document with no images instead of an empty zip (E13)', async () => {
     const outcome = await run('extract-images', { pages: 'all' }, [
       fileOf(await textPdfCached(), 'prose.pdf'),
