@@ -103,8 +103,8 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 093 [x] prepare-pdf-for-ai
 094 [x] pdf-to-csv
 095 [x] extract-tables
-096 [ ] pdf-to-excel
-097 [ ] pdf-to-word
+096 [x] pdf-to-excel
+097 [x] pdf-to-word
 098 [ ] pdf-to-svg
 099 [ ] extract-images
 100 [ ] pdf-to-image

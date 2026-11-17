@@ -1405,6 +1405,20 @@ describe('pdf-to-excel', () => {
     expect(cells).toContain('Quantity');
   });
 
+  it('writes a workbook a spreadsheet engine reads back cell for cell', async () => {
+    // `sheet1.xml` containing the words is not the same as a workbook. Parsed by
+    // the `xlsx` reader, the grid has to come back at the addresses it was drawn
+    // at, with the words in the cells.
+    const XLSX = await import('xlsx');
+    const outcome = await run('pdf-to-excel', { pages: 'all' }, [fileOf(await tablePdf(3), 'prices.pdf')]);
+    const blob = (outcome as unknown as { outputs: { blob: Blob }[] }).outputs[0]!.blob;
+    const book = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: 'array' });
+    const sheet = book.Sheets[book.SheetNames[0]!]!;
+    expect(sheet['A1']?.v).toBe('Item');
+    expect(sheet['A2']?.v).toBe('row 1 col 1');
+    expect(sheet['B1']?.v).toBe('Quantity');
+  });
+
   it('collapses every table onto one sheet when asked', async () => {
     const outcome = await run('pdf-to-excel', { pages: 'all', oneSheet: true }, [
       fileOf(await tablePdf(5), 'prices.pdf'),
