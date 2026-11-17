@@ -29,6 +29,10 @@ const pick = async (selector) => {
   return (await h.send('DOM.querySelector', { nodeId: root.nodeId, selector })).nodeId;
 };
 
+if (process.env.DARK) {
+  await h.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+  await h.ev(`localStorage.setItem('browsersnip.theme','dark')`).catch(() => {});
+}
 await h.send('Page.navigate', { url: `${BASE}/#/tool/edit-pdf` });
 if (!(await h.wait(`!!document.querySelector('input[type=file]')`, 60000))) throw new Error('no file input');
 await h.ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);
@@ -40,6 +44,12 @@ if (!(await h.wait(`!!document.querySelector('[data-tool-gesture]')`, 60000))) {
 }
 await sleep(2500);
 
+if (process.env.PAGE) {
+  await h.ev(`(()=>{const i=document.querySelector('input[aria-label*="Page" i]')||[...document.querySelectorAll('input')].find((x)=>x.type==='number');
+    if(!i)return 'no page field';const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'${process.env.PAGE}');
+    i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value})()`).then((v)=>console.log('page',v));
+  await sleep(2500);
+}
 const tool = await h.ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/Text box/i.test(x.innerText||''));if(!b)return 'none';b.click();return b.innerText.trim()})()`);
 console.log('tool', JSON.stringify(tool));
 await sleep(500);
@@ -53,6 +63,80 @@ const surface = await h.ev(`(()=>{const t=document.querySelector('textarea[data-
 console.log('surface', surface);
 await h.send('Input.insertText', { text: 'Plain type on the page' });
 await sleep(400);
+if (process.env.HOVER) {
+  await h.click(box.x + 60, box.y + 120);
+  await sleep(600);
+  // Point at the middle of the box: the extent hint is a hover, so it appears
+  // for the pointer and vanishes when it leaves.
+  await h.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x0 + 60), y: Math.round(y0 + 20), buttons: 0 });
+  await sleep(500);
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-hover.png'), Buffer.from(r.data,'base64')); console.log('hover-shot'); }
+  await h.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(box.x + 20), y: Math.round(box.y + 500), buttons: 0 });
+  await sleep(400);
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-away.png'), Buffer.from(r.data,'base64')); console.log('away-shot'); }
+}
+if (process.env.ONECLICK) {
+  // The gesture a person makes: type, then click the paper once.
+  await h.click(box.x + 60, box.y + 120);
+  await sleep(900);
+  console.log('panel', await h.ev(`document.querySelector('[data-selection-panel]')?.dataset.selectionPanel ?? 'none'`));
+  console.log('render', await h.ev(`JSON.stringify({divs:[...document.querySelectorAll('[data-tool-gesture] div')].map((d)=>[d.textContent,getComputedStyle(d).color]), layouts:document.querySelectorAll('[data-text-layout] text').length})`));
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-oneclick.png'), Buffer.from(r.data,'base64')); console.log('oneclick-shot'); }
+}
+if (process.env.DESELECT) {
+  // Commit, then clear the selection: the mark is then painted like any other,
+  // with no selection chrome to hide behind.
+  await h.click(box.x + 40, box.y + 40);
+  await sleep(500);
+  await h.ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/Select/i.test(x.innerText||''));b&&b.click();return 1})()`);
+  await h.click(box.x + 60, box.y + 20);
+  await sleep(300);
+  await h.click(box.x + 60, box.y + 20);
+  await sleep(700);
+  console.log('selection', await h.ev(`document.querySelector('[data-selection-panel]')?.dataset.selectionPanel ?? 'none'`));
+  console.log('paint', await h.ev(`JSON.stringify({
+    layouts: document.querySelectorAll('[data-text-layout]').length,
+    divs: [...document.querySelectorAll('[data-tool-gesture] div')].map((d)=>[d.textContent, getComputedStyle(d).color, d.getBoundingClientRect().width|0]),
+    svgTexts: [...document.querySelectorAll('[data-tool-gesture] svg text')].map((t)=>[t.textContent, t.getAttribute('fill')]),
+    marks: document.querySelectorAll('[data-tool-gesture] svg g').length })`));
+  console.log('stack', await h.ev(`JSON.stringify([...document.querySelectorAll('canvas, svg')].map((n)=>{const r=n.getBoundingClientRect();const cs=getComputedStyle(n);
+    return {tag:n.tagName, z:cs.zIndex, pos:cs.position, rect:[r.x|0,r.y|0,r.width|0,r.height|0], parentClass:n.parentElement?.className?.toString().slice(0,40)}}))`));
+  console.log('at', await h.ev(`(()=>{const t=document.querySelector('[data-text-layout] text');const r=t.getBoundingClientRect();
+    const el=document.elementFromPoint(r.x+4, r.y+r.height/2);return JSON.stringify({hit:el?.tagName+'.'+String(el?.getAttribute('class')||'').slice(0,30), parent:el?.parentElement?.tagName})})()`));
+  console.log('attrs', await h.ev(`JSON.stringify([...document.querySelectorAll('[data-text-layout] text')].slice(0,2).map((t)=>[t.getAttribute('x'),t.getAttribute('y'),t.getAttribute('font-size')]))`));
+  console.log('svgbox', await h.ev(`(()=>{const s=document.querySelector('svg.absolute');const r=s.getBoundingClientRect();return JSON.stringify({x:r.x|0,y:r.y|0,w:r.width|0,h:r.height|0, vb:s.getAttribute('viewBox')})})()`));
+  console.log('red', await h.ev(`(()=>{const ts=[...document.querySelectorAll('[data-text-layout] text')];ts.forEach((t)=>{t.setAttribute('fill','red');t.setAttribute('font-size','24')});return ts.length})()`));
+  await sleep(300);
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-red.png'), Buffer.from(r.data,'base64')); console.log('redshot'); }
+  // A/B: with and without the clip, the same mark, straight from the DOM.
+  if (SHOT) {
+    await h.ev(`[...document.querySelectorAll('[data-text-layout]')].forEach((g)=>g.style.clipPath='none')`);
+    await sleep(300);
+    const open = await h.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(SHOT.replace('.png', '-noclip.png'), Buffer.from(open.data, 'base64'));
+    await h.ev(`[...document.querySelectorAll('[data-text-layout]')].forEach((g)=>g.style.clipPath='')`);
+    await sleep(300);
+    const closed = await h.send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(SHOT.replace('.png', '-clip.png'), Buffer.from(closed.data, 'base64'));
+    console.log('shots', SHOT.replace('.png', '-noclip.png'), SHOT.replace('.png', '-clip.png'));
+  }
+  console.log('clips', await h.ev(`JSON.stringify([...document.querySelectorAll('clipPath')].map((cp)=>{const r=cp.querySelector('rect');const b=r?r.getBoundingClientRect():null;return {id:cp.id, rect:b?[b.x|0,b.y|0,b.width|0,b.height|0]:null, attrs:r?[r.getAttribute('x'),r.getAttribute('y'),r.getAttribute('width'),r.getAttribute('height')]:null}}))`));
+  console.log('css', await h.ev(`(()=>{const g=document.querySelector('[data-text-layout]');const t=g&&g.querySelector('text');if(!t)return 'no text';
+    const cs=getComputedStyle(t); const gs=getComputedStyle(g);
+    return JSON.stringify({fill:cs.fill, op:cs.opacity, vis:cs.visibility, display:cs.display, clip:cs.clipPath, mask:cs.mask, filter:cs.filter, gcl:gs.clipPath, gfilter:gs.filter, gmask:gs.mask, gtransform:gs.transform})})()`));
+  console.log('clip', await h.ev(`(()=>{const g=document.querySelector('[data-text-layout]');
+    const raw=(g.getAttribute('clip-path')||''); const id=raw.replace(/^url\(["']?#?|["']?\)$/g,'');
+    const cp=document.getElementById(id); if(!cp) return 'missing '+id;
+    const r=cp.querySelector('rect'); const b=r?r.getBoundingClientRect():null;
+    const t=g.querySelector('text').getBoundingClientRect();
+    return JSON.stringify({id, clip:[b?b.x|0:null,b?b.y|0:null,b?b.width|0:null,b?b.height|0:null], text:[t.x|0,t.y|0,t.width|0,t.height|0]})})()`));
+  console.log('geo', await h.ev(`JSON.stringify([...document.querySelectorAll('[data-text-layout]')].map((g)=>{
+    const t=g.querySelector('text'); const tb=t.getBoundingClientRect();
+    const id=g.getAttribute('clip-path'); const clip=document.querySelector(id.replace(/url\\(#|\\)/g,''));
+    const cb=clip?clip.querySelector('rect').getBoundingClientRect():null;
+    return {clip:id, text:[tb.x|0,tb.y|0,tb.width|0,tb.height|0], clipRect:cb?[cb.x|0,cb.y|0,cb.width|0,cb.height|0]:null, opacity:getComputedStyle(g).opacity, vis:getComputedStyle(g).visibility, disp:getComputedStyle(g).display};
+  }))`));
+}
 if (process.env.FILL) {
   // The mark is placed, so the tool has dropped back to Select: click the mark
   // itself to get the *selection* panel, which is where a placed box is changed.

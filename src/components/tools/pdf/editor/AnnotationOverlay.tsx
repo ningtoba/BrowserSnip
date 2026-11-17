@@ -10,7 +10,7 @@
  * It owns no editing state: pointer events are reported as page-relative CSS
  * points and the editor decides what a drag means.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { EditorAnnotation, EditorToolId } from './types';
 import type { CssRect, PageGeom, Point } from './geometry';
 import { markScreenRotation, pdfToScreenPoint, pdfToScreenRect, quadsToPoints } from './geometry';
@@ -121,6 +121,9 @@ function turnStyle(annotation: EditorAnnotation, geom: PageGeom): React.CSSPrope
 /** The id of the clip that keeps a mark's typed lines inside its own box. */
 export const textClipId = (id: string): string => `text-clip-${id}`;
 
+/** The screen-only hint drawn round a text box under the pointer. */
+const HOVER_INK = 'var(--accent-line)';
+
 export function AnnotationOverlay({
   geom,
   annotations,
@@ -141,6 +144,15 @@ export function AnnotationOverlay({
   textPreviews = {},
 }: OverlayProps) {
   const host = useRef<HTMLDivElement>(null);
+  /**
+   * The text box the pointer is over.
+   *
+   * A text box carries no border of its own any more, so once it is deselected
+   * there is nothing on the page that says where its edges are — pointing at it
+   * has to. Only the box under the pointer, only on screen, and only while it is
+   * not already wearing the selection chrome.
+   */
+  const [hoverId, setHoverId] = useState<string | null>(null);
 
   const localPoint = (event: { clientX: number; clientY: number }): Point => {
     const box = host.current?.getBoundingClientRect();
@@ -185,6 +197,22 @@ export function AnnotationOverlay({
         if (event.button !== 0) return;
         onSurfacePointerDown(localPoint(event), event.shiftKey);
       }}
+      onPointerMove={(event) => {
+        if (!selectable) {
+          if (hoverId !== null) setHoverId(null);
+          return;
+        }
+        const at = localPoint(event);
+        const under = [...annotations].reverse().find((annotation) => {
+          if (annotation.kind !== 'FreeText' || annotation.id === editingId) return false;
+          const box = pdfToScreenRect(annotation.rect, geom);
+          return at.x >= box.x && at.x <= box.x + box.width
+            && at.y >= box.y && at.y <= box.y + box.height;
+        });
+        const next = under?.id ?? null;
+        if (next !== hoverId) setHoverId(next);
+      }}
+      onPointerLeave={() => setHoverId(null)}
       onDoubleClick={() => {
         if (tool === 'polygon' || tool === 'polyline') onFinishVertices();
       }}
@@ -197,7 +225,12 @@ export function AnnotationOverlay({
       >
         {annotations.map((annotation) => (
           <g key={annotation.id} data-mark={annotation.id} {...turn(annotation, geom)}>
-            <Mark annotation={annotation} geom={geom} laidOut={Boolean(textPreviews[annotation.id])} />
+            <Mark
+              annotation={annotation}
+              geom={geom}
+              laidOut={Boolean(textPreviews[annotation.id])}
+              hovered={annotation.id === hoverId && !selection.includes(annotation.id)}
+            />
           </g>
         ))}
         {draft ? (
@@ -639,10 +672,13 @@ function Mark({
   geom,
   draft = false,
   laidOut = false,
+  hovered = false,
 }: {
   annotation: EditorAnnotation;
   geom: PageGeom;
   draft?: boolean;
+  /** Pointer is over this mark and it is not selected: show where its box is. */
+  hovered?: boolean;
   /**
    * True when the styled-text layer already paints this mark's words, at the size
    * and on the baseline the file will use. The heuristic label below is then not
@@ -756,8 +792,12 @@ function Mark({
             width={Math.max(box.width - inset * 2, 0.1)}
             height={Math.max(box.height - inset * 2, 0.1)}
             fill={annotation.fillColor ?? 'none'}
-            stroke={annotation.borderColor ?? 'none'}
-            strokeWidth={strokeWidth}
+            stroke={annotation.borderColor ?? (hovered ? HOVER_INK : 'none')}
+            strokeWidth={annotation.borderColor ? strokeWidth : hovered ? 1 : strokeWidth}
+            strokeDasharray={hovered && !annotation.borderColor ? '4 3' : undefined}
+            // The dash belongs on screen only: the file's own border is the
+            // solid one the user chose, and a hint must not read as one.
+            opacity={annotation.borderColor || !hovered ? 1 : 0.55}
           />
         </g>
       );
