@@ -179,11 +179,20 @@ export function AnnotationOverlay({
   // A FreeText mark with a layout is painted from it, in the SVG below, on the
   // baselines the file will use. Only the one being typed into, and any mark whose
   // lines have not arrived yet, still needs the DOM surface.
+  /**
+   * A preview counts only when it carries lines.
+   *
+   * The two surfaces are exclusive — a mark is either laid out or typed live — so
+   * an entry whose `lines` came back empty used to satisfy both filters and paint
+   * neither: the box stayed, the words did not. Falling back on "no lines" means
+   * the words always get painted by one surface or the other.
+   */
+  const laidOutPreview = (id: string): boolean => (textPreviews[id]?.lines.length ?? 0) > 0;
   const textLayers = annotations.filter(
-    (a) => a.kind === 'FreeText' && (a.id === editingId || !textPreviews[a.id]),
+    (a) => a.kind === 'FreeText' && (a.id === editingId || !laidOutPreview(a.id)),
   );
   const laidOut = annotations.filter(
-    (a) => a.textStyle && textPreviews[a.id] && a.id !== editingId,
+    (a) => a.textStyle && laidOutPreview(a.id) && a.id !== editingId,
   );
 
   return (
@@ -228,7 +237,7 @@ export function AnnotationOverlay({
             <Mark
               annotation={annotation}
               geom={geom}
-              laidOut={Boolean(textPreviews[annotation.id])}
+              laidOut={laidOutPreview(annotation.id)}
               hovered={annotation.id === hoverId && !selection.includes(annotation.id)}
             />
           </g>

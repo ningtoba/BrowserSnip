@@ -57,12 +57,27 @@ await sleep(500);
 const box = json(await h.ev(`(()=>{const s=document.querySelector('[data-tool-gesture]');const r=s.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`));
 const x0 = box.x + 160;
 const y0 = box.y + 220;
-await h.drag(x0, y0, x0 + 300, y0 + 60, Number(process.env.STEPS || 10));
+if (process.env.CLICKBOX) {
+  // "or click for a default one": a click, no drag.
+  await h.click(x0, y0);
+} else {
+  await h.drag(x0, y0, x0 + 300, y0 + 60, Number(process.env.STEPS || 10));
+}
 await sleep(900);
 const surface = await h.ev(`(()=>{const t=document.querySelector('textarea[data-editing-surface]');if(!t)return 'no surface';t.focus();return 'surface'})()`);
 console.log('surface', surface);
-await h.send('Input.insertText', { text: 'Plain type on the page' });
+await h.send('Input.insertText', { text: process.env.TEXT || 'Plain type on the page' });
 await sleep(400);
+if (process.env.ARM) {
+  // Arm another tool straight after typing: the draft must be committed, not
+  // dropped, because the editor drops the *gesture* when a pen is armed.
+  await h.ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/^Select/i.test(x.innerText||''));b&&b.click();return !!b})()`);
+  await sleep(900);
+  console.log('after-arm', await h.ev(`JSON.stringify({textarea: document.querySelectorAll('textarea[data-editing-surface]').length, layouts: document.querySelectorAll('[data-text-layout] text').length, list: [...document.querySelectorAll('[data-page-mark]')].length})`));
+  console.log('row', await h.ev(`[...document.querySelectorAll('li,div')].map((n)=>n.textContent||'').find((t)=>/Plain type/.test(t))?.slice(0,60) ?? 'no row'`));
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-arm.png'), Buffer.from(r.data,'base64')); console.log('arm-shot'); }
+  if (process.env.STOP) { process.exit(0); }
+}
 if (process.env.HOVER) {
   await h.click(box.x + 60, box.y + 120);
   await sleep(600);
