@@ -192,6 +192,63 @@ function assertBmpComplete(bytes: Uint8Array): void {
   );
 }
 
+/**
+ * Whether the RIFF header's own byte count is satisfied by the file, in words.
+ *
+ * A WebP is RIFF: `File Size` at byte 4 says how long the file is and each chunk
+ * header repeats the same claim about its own payload, both of them counted from
+ * the bytes. Nothing on the decode path reads either, so a file cut short is
+ * handed to `createImageBitmap`, which — measured on the dev build — answers a
+ * *complete* 400 x 240 bitmap of white: a truncated WebP became a blank page, at
+ * the right size, with the card claiming `2 WEBP image(s) -> 2 page(s)` (Pillow
+ * refuses the same file, `could not create decoder object`). Only the file's own
+ * numbers are used, and only `RIFF`/`WEBP` files are judged, so a MIME guess from
+ * a name still reaches the browser.
+ */
+function webpShortfall(bytes: Uint8Array): string | null {
+  if (bytes.length < 12 || !ascii(bytes, 0, 'RIFF') || !ascii(bytes, 8, 'WEBP')) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const declared = view.getUint32(4, true) + 8;
+  if (declared < 12) return `its RIFF header claims a ${declared} byte(s) file, which is shorter than the header itself`;
+  // Trailing bytes past the declared length are legal and ignored (spec: a reader
+  // MAY parse such a file), so only a *short* file and a chunk overrunning the
+  // declared end are faults. Walking the chunks catches a file whose header size
+  // was rewritten to the truncated length beside the cut payload.
+  let at = 12;
+  while (at + 8 <= declared) {
+    const fourcc = String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]);
+    const size = view.getUint32(at + 4, true);
+    const end = at + 8 + size + (size & 1);
+    if (end > declared) {
+      return `its '${fourcc}' chunk at byte ${at} says ${size} byte(s), which runs past the ${declared} byte(s) its header declares`;
+    }
+    at = end;
+  }
+  if (bytes.length < declared) {
+    return `its header says the file is ${declared} byte(s) long, but the file stops after ${bytes.length} — ${declared - bytes.length} byte(s) of the picture are missing`;
+  }
+  return null;
+}
+
+/** How many frames the file holds; `1` for a still, more for an animation. */
+export function webpFrameCount(bytes: Uint8Array): number {
+  if (!ascii(bytes, 0, 'RIFF') || !ascii(bytes, 8, 'WEBP')) return 1;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const end = Math.min(bytes.length, view.getUint32(4, true) + 8);
+  let frames = 0;
+  for (let at = 12; at + 8 <= end;) {
+    const size = view.getUint32(at + 4, true);
+    if (ascii(bytes, at, 'ANMF')) frames += 1;
+    at += 8 + size + (size & 1);
+  }
+  return Math.max(1, frames);
+}
+
+function assertWebpComplete(bytes: Uint8Array): void {
+  const fault = webpShortfall(bytes);
+  if (fault) throw new Error(fault);
+}
+
 /** Resolve a MIME from magic bytes, then the declared type, then the name. */
 export function resolveImageMime(bytes: Uint8Array, declared?: string, name?: string): string {
   return sniffImageMime(bytes) ?? declared ?? (name ? mimeForFile(name) : undefined) ?? 'image/png';
@@ -212,6 +269,9 @@ export async function decodeImage(
   switch (mime) {
     case 'image/bmp':
       assertBmpComplete(bytes);
+      return decodeNative(bytes, mime, options);
+    case 'image/webp':
+      assertWebpComplete(bytes);
       return decodeNative(bytes, mime, options);
     case 'image/tiff':
       return decodeTiff(bytes, options);

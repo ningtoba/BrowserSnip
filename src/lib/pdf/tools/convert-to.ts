@@ -22,7 +22,7 @@
  *   raising the old `WinAnsi cannot encode` error.
  */
 import { drawPageInto, newPDF, openPDF, savePDF } from '../core/doc';
-import { decodeImage, decodeImagePages, sniffImageMime, type DecodedImage } from '../core/images';
+import { decodeImage, decodeImagePages, sniffImageMime, webpFrameCount, type DecodedImage } from '../core/images';
 import { pdfFromImages } from '../core/pack';
 import { ocrSilentPageOf, type OcrPageResult, type OcrSilentPage } from '../core/ocr';
 import { pageSize } from '../core/pages';
@@ -199,6 +199,21 @@ const PNG_ALPHA =
  */
 const BMP_TRUNCATED =
   'A BMP header states exactly how many pixel bytes the file must hold, and the file is checked against it: one cut short — an interrupted copy or save — is refused by name instead of converting with the missing rows painted white.';
+
+/**
+ * A WebP states its own length too, and its decoder is even quieter than BMP's.
+ *
+ * A WebP cut at 40 % of its bytes decoded into a *complete* 400 x 240 bitmap of
+ * white and shipped as a page: the card said `2 WEBP image(s) -> 2 page(s)` with
+ * nothing else (measured, and Pillow refuses the same file). The RIFF length and
+ * each chunk's own size are read and a short file is refused by name.
+ */
+const WEBP_TRUNCATED =
+  'A WebP header states the file’s own length and every chunk repeats its size, and the file is checked against both: one cut short — an interrupted download or save — is refused by name instead of becoming a blank page.';
+
+/** PDF has no animation, and a WebP may be one. */
+const WEBP_FIRST_FRAME =
+  'An animated WebP gives one page — its first frame — and the rest of the frames and their timing are dropped: a PDF page cannot play. The result card names every file that was animated.';
 
 /** Shared admissions for the text routes — true of the bundled layout engine. */
 const TEXT_NOTES = [
@@ -665,6 +680,9 @@ export const convertToTools: PdfToolDefinition[] = [
     const isPng = format === 'png';
     // BMP is the one whose header states, byte for byte, how much it must hold.
     const isBmp = format === 'bmp';
+    // WebP carries alpha like PNG, states its own length like BMP, and is the
+    // only advertised format that can hold more than one frame.
+    const isWebp = format === 'webp';
     return {
       id,
       name: `${label} to PDF`,
@@ -683,11 +701,13 @@ export const convertToTools: PdfToolDefinition[] = [
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
-        isPng ? PNG_ALPHA : '',
+        isPng || isWebp ? PNG_ALPHA : '',
         // Measured on the dev build: a 24-bit 243 x 160 BMP cut after 10 rows
         // embedded as a complete page with 150 white rows Chrome invented, and
         // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
         isBmp ? BMP_TRUNCATED : '',
+        isWebp ? WEBP_TRUNCATED : '',
+        isWebp ? WEBP_FIRST_FRAME : '',
         RASTER_DENSITY,
         // Measured rather than assumed: two real HEIC files (32 KB and 472 B, both
         // `ftypheic`/hvc1, both decoded by Pillow on this machine) opened in neither
@@ -704,12 +724,16 @@ export const convertToTools: PdfToolDefinition[] = [
         // collector made every run count one file left out, even a single good
         // JPEG.
         const refused: string[] = [];
+        // Facts about a *file* that the run has to say out loud, kept apart from
+        // `refused` (those end “— left out.” and the count beside them).
+        const notices: string[] = [];
         const { images } = await decodeImageBatch(context, {
           label: `one or more ${label} images`,
           hint: `Re-save the file as ${label}, or use Images to PDF, which sniffs the real format.`,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
           refused,
+          notices,
         });
         const packed = await pdfFromImages(
           images.map((image) => ({ data: image.canvas })),
@@ -724,7 +748,7 @@ export const convertToTools: PdfToolDefinition[] = [
             message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`
               + (refused.length ? ` ${refused.length} file(s) left out.` : ''),
           })),
-          warnings: [RASTER_LOSS, ...(isPng ? [PNG_ALPHA] : []), RASTER_DENSITY, ...refused],
+          warnings: [RASTER_LOSS, ...(isPng || isWebp ? [PNG_ALPHA] : []), RASTER_DENSITY, ...notices, ...refused],
         };
       },
     };
@@ -1801,6 +1825,27 @@ async function docxToBlocks(bytes: Uint8Array): Promise<Block[]> {
  * wrong-format refusal, whose sentence has no such word, printed once. The
  * progress line below names the file for the log reader.
  */
+/**
+ * Note an animated WebP for the card — the frames past the first are not in the
+ * file, and a reader of the page cannot tell.
+ *
+ * Pulled out of `decodeImageBatch` so the loop keeps one statement rather than
+ * three branches; `webpFrameCount` answers `1` for a still, so nothing else needs
+ * a format test.
+ */
+function collectNotice(
+  notices: string[] | undefined,
+  mime: string | undefined,
+  bytes: Uint8Array,
+  name: string,
+): void {
+  if (!notices || mime !== 'image/webp') return;
+  const frames = webpFrameCount(bytes);
+  if (frames > 1) {
+    notices.push(`"${name}" is an animated WebP with ${frames} frames — only the first one is on its page, and the PDF will not play the rest.`);
+  }
+}
+
 async function decodeImageBatch(
   context: ToolRunContext,
   expected: {
@@ -1813,6 +1858,8 @@ async function decodeImageBatch(
     mimes?: string[];
     /** Collect refusals here instead of throwing on the first one. */
     refused?: string[];
+    /** Collect facts about a file that made it through, for the card. */
+    notices?: string[];
   },
 ): Promise<{ images: DecodedImage[]; refused: string[] }> {
   const refused = expected.refused ?? [];
@@ -1834,6 +1881,13 @@ async function decodeImageBatch(
       context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
       continue;
     }
+    if (expected.notices && mime === 'image/webp') {
+      const frames = webpFrameCount(batch.bytes);
+      if (frames > 1) {
+        expected.notices.push(`"${batch.name}" is an animated WebP with ${frames} frames — only the first one is on its page, and the PDF will not play the rest.`);
+      }
+    }
+    collectNotice(expected.notices, mime, batch.bytes, batch.name);
     let pages;
     try {
       pages = await decodeImagePages(batch.bytes, { mime, background: expected.background });
