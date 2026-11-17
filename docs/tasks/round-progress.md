@@ -120,13 +120,13 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 110 [x] odp-to-pdf
 111 [x] xps-to-pdf
 112 [x] fb2-to-pdf
-113 [ ] mobi-to-pdf
-114 [ ] pages-to-pdf
-115 [ ] pub-to-pdf
-116 [ ] vsd-to-pdf
-117 [ ] wpd-to-pdf
-118 [ ] wps-to-pdf
-119 [ ] odg-to-pdf
+113 [x] mobi-to-pdf
+114 [x] pages-to-pdf
+115 [x] pub-to-pdf
+116 [x] vsd-to-pdf
+117 [x] wpd-to-pdf
+118 [x] wps-to-pdf
+119 [x] odg-to-pdf
 120 [ ] sign
 121 [ ] pdf-crop
 122 [ ] scan-to-pdf
