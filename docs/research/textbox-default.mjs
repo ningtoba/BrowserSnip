@@ -66,7 +66,17 @@ if (process.env.CLICKBOX) {
 await sleep(900);
 const surface = await h.ev(`(()=>{const t=document.querySelector('textarea[data-editing-surface]');if(!t)return 'no surface';t.focus();return 'surface'})()`);
 console.log('surface', surface);
-await h.send('Input.insertText', { text: process.env.TEXT || 'Plain type on the page' });
+const typed = process.env.TEXT || 'Plain type on the page';
+if (process.env.KEYS) {
+  // One real key event per character, which is how a person types: `insertText`
+  // jumps straight to the value and skips the per-keystroke path.
+  for (const ch of typed) {
+    await h.send('Input.dispatchKeyEvent', { type: 'keyDown', text: ch, key: ch, unmodifiedText: ch });
+    await h.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
+  }
+} else {
+  await h.send('Input.insertText', { text: typed });
+}
 await sleep(400);
 if (process.env.ARM) {
   // Arm another tool straight after typing: the draft must be committed, not
