@@ -1228,6 +1228,30 @@ describe('excel-to-pdf prints the cells it was shown', () => {
     expect(columns(runs.filter((run) => ['Widget', '3', '9.99'].includes(run.text))).length).toBe(3);
   });
 
+  it('keeps a merged header on one line and still lays out an empty sheet', async () => {
+    const outcome = await run('excel-to-pdf', {}, [fileFrom(await workbookBytes(), 'sales.xlsx')]);
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
+    // The fixture merges A1:B1 across `Item` and `Qty`: both header cells stay on
+    // the header's own baseline rather than being pushed to their own rows.
+    const merged = runs.filter((run) => ['Item', 'Qty'].includes(run.text));
+    expect(baselines(merged).length).toBe(1);
+    // The workbook's second sheet holds no cells: it is skipped, and named in a
+    // warning rather than becoming a blank section nobody can tell from a page
+    // break.
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Empty".*skipped/);
+  });
+
+  it('prints a boolean cell as a word, not as 1', async () => {
+    const XLSX = await import('xlsx');
+    const sheet = XLSX.utils.aoa_to_sheet([['flag'], [true], [false]]);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Flags');
+    const bytes = new Uint8Array(XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+    const text = squash(await extractText(await firstPdf(await run('excel-to-pdf', {}, [fileFrom(bytes, 'flags.xlsx')]))));
+    expect(text).toMatch(/TRUE|FALSE/);
+  });
+
   it('refuses a PDF dropped on it instead of printing the wrong thing', async () => {
     const error = await run('excel-to-pdf', {}, [fileFrom(await pdfBytes(), 'doc.pdf')]).catch((err) => err);
     expect((error as Error).message).toMatch(/is a PDF/);
