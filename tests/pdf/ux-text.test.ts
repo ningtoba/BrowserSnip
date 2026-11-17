@@ -531,8 +531,10 @@ describe('a box that is not a finished edit', () => {
     // A queued or written block wears the page's sampled colour: underneath it,
     // the export deletes the runs. A blocked one keeps them, so the paper colour
     // would be a claim the bytes contradict.
-    expect(blockOverlayBackground('queued', '#f2efe6')).toBe('#f2efe6');
-    expect(blockOverlayBackground('written', '#f2efe6')).toBe('#f2efe6');
+    // The sampled colour, held under opaque so the box is not a card of paint
+    // laid on the page; the hue is still the page's own.
+    expect(blockOverlayBackground('queued', '#f2efe6')).toBe('rgba(242, 239, 230, 0.88)');
+    expect(blockOverlayBackground('written', '#f2efe6')).toBe('rgba(242, 239, 230, 0.88)');
     expect(blockOverlayBackground('needs-engine', '#f2efe6')).not.toBe('#f2efe6');
     expect(blockOverlayBackground('failed', '#f2efe6')).toMatch(/var\(--warn-rgb\)/);
     // A token, not a hex literal: dark mode keeps its own warning colour.

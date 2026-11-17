@@ -1341,13 +1341,27 @@ export function blockStillHasSource(state: CommitState): boolean {
 /**
  * The colour the on-screen box is painted in.
  *
- * A committed block normally wears the page's own sampled colour, because the
- * export deletes the words underneath it. A block the engine could not delete
- * still has those words in the file, so painting paper over them would show a
- * finished edit that does not exist: it gets the warning tint instead.
+ * A committed block wears the page's own sampled colour, because the export
+ * deletes the words underneath it. Opaque, the box is a rectangle of paint sitting
+ * on the page — over a heading, or over anything the paper sampler averaged, that
+ * reads as a white card laid on the document. Held at 88 % the page still shows
+ * through and the old words under it stay faint instead of gone, so the blocked
+ * words and a completed edit are still distinguishable by eye while the block no
+ * longer looks pasted on.
+ *
+ * A block the engine could not delete keeps its warning tint: those words stay in
+ * the file, and painting paper over them would show an edit that does not exist.
  */
 export function blockOverlayBackground(state: CommitState, paperColor: string): string {
-  return BLOCKED_STATES.has(state) ? 'rgb(var(--warn-rgb) / 0.14)' : paperColor;
+  return BLOCKED_STATES.has(state) ? 'rgb(var(--warn-rgb) / 0.14)' : withAlpha(paperColor, 0.88);
+}
+
+/** A `#rrggbb` at an alpha, or the string untouched if it is another form. */
+function withAlpha(colour: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim());
+  if (!hex) return colour;
+  const value = Number.parseInt(hex[1], 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
 }
 
 export interface BaseObject {

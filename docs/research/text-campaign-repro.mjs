@@ -27,7 +27,19 @@ const ev = (x) => h.ev(x);
 
 await h.send('Page.navigate', { url: `${BASE}/#/tool/edit-pdf-text` });
 await h.wait(`!!document.querySelector('input[type=file][accept*="pdf"]')`, 40000);
-await h.send('DOM.setFileInputFiles', { nodeId: await pick('input[type=file][accept*="pdf"]'), files: ['/tmp/sample.pdf'] });
+// Set the file through the DOM instead of a CDP node id: the pane re-creates its
+// input while it mounts, so a node id taken a moment earlier is already gone.
+const pdfB64 = fs.readFileSync(process.env.PDF || '/tmp/sample.pdf').toString('base64');
+await h.ev(`(async () => {
+  const bytes = Uint8Array.from(atob(${JSON.stringify(pdfB64)}), (c) => c.charCodeAt(0));
+  const file = new File([bytes], 'sample.pdf', { type: 'application/pdf' });
+  const input = document.querySelector('input[type=file][accept*="pdf"]');
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return input.files.length;
+})()`);
 await h.wait(`document.querySelectorAll('[data-editable-block]').length > 0`, 40000);
 await sleep(3000);
 await h.ev(HELPERS);
