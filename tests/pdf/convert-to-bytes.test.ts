@@ -431,6 +431,21 @@ describe('the format-specific image routes keep real dimensions', () => {
     expect(outcome.warnings.join(' ')).toMatch(/cut\.tif.*stops early/);
   });
 
+  it('psd-to-pdf refuses a PSD cut before its composite instead of using a thumbnail', async () => {
+    // The composite is the last thing in a PSD. Cut the file and the backwards
+    // scan lands on the little thumbnail in the image-resource block: a 200 x 120
+    // canvas came out as a 120 x 60 page with half its rows blank, silently.
+    const whole = psdBytes(200, 120);
+    const cut = whole.slice(0, Math.floor(whole.length * 0.55));
+    const outcome = await run('psd-to-pdf', { pageSize: 'fit', margin: 0 }, [
+      fileFrom(cut, 'cut.psd', 'image/vnd.adobe.photoshop'),
+      fileFrom(psdBytes(40, 30), 'ok.psd', 'image/vnd.adobe.photoshop'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(await pageSizes(bytes)).toEqual([[40, 30]]);
+    expect(outcome.warnings.join(' ')).toMatch(/cut\.psd.*stops before the end/);
+  });
+
   it('tiff-to-pdf gives every frame its own page, in order', async () => {
     const outcome = await run('tiff-to-pdf', { pageSize: 'a4', margin: 0 }, [
       fileFrom(tiffBytes([{ width: 30, height: 40 }, { width: 50, height: 20 }]), 'fax.tif', 'image/tiff'),

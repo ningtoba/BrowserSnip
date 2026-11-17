@@ -606,7 +606,52 @@ async function decodePhotoshop(bytes: Uint8Array, options: DecodeOptions): Promi
       'That PSD has no flattened preview embedded, so its layers cannot be rasterised in the browser.',
     );
   }
-  return decodeNative(preview.bytes, preview.mime, options);
+  const decoded = await decodeNative(preview.bytes, preview.mime, options);
+  // The composite is the last thing in a PSD, so a file cut during transfer ends
+  // inside it: the backwards scan then lands on the little thumbnail in the
+  // image-resource block instead, and a 200 x 120 canvas came out as a 120 x 60
+  // page with half its rows blank and nothing said. Two answers, in order: a
+  // preview without its terminator is a cut file, and a preview smaller than the
+  // canvas the header states is a thumbnail rather than the composite.
+  if (!previewComplete(preview.bytes)) {
+    throw new Error(
+      'the file stops before the end of its flattened preview — it was cut during transfer',
+    );
+  }
+  const canvas = photoshopCanvas(bytes);
+  if (canvas && (canvas[0] > decoded.width + 1 || canvas[1] > decoded.height + 1)) {
+    throw new Error(
+      `the PSD canvas is ${canvas[0]} x ${canvas[1]} but the only preview inside the file is`
+      + ` ${decoded.width} x ${decoded.height} — it carries a thumbnail only`,
+    );
+  }
+  return decoded;
+}
+
+/** Does that image byte string end with its own terminator? */
+function previewComplete(preview: Uint8Array): boolean {
+  if (preview.length < 4) return false;
+  const end = preview.subarray(preview.length - 12);
+  const tail = new TextDecoder('latin1').decode(end);
+  if (preview[0] === 0xff) return preview[preview.length - 2] === 0xff && preview[preview.length - 1] === 0xd9;
+  if (preview[0] === 0x89) return tail.includes('IEND');
+  return true;
+}
+
+/** The canvas size a PSD header declares
+/** The canvas size a PSD header declares: `rows` then `columns`, big-endian. */
+function photoshopCanvas(bytes: Uint8Array): [number, number] | null {
+  // Only a header that looks like a header is trusted: a 26-byte stub with a
+  // PNG pinned after it would otherwise report 1313279242 x 35152.
+  if (bytes.length < 26) return null;
+  const signature = new TextDecoder('latin1').decode(bytes.subarray(0, 4));
+  if (signature !== '8BPS') return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint16(4, false) !== 1) return null;
+  const rows = view.getUint32(14, false);
+  const columns = view.getUint32(18, false);
+  if (rows < 1 || columns < 1 || rows > 300000 || columns > 300000) return null;
+  return [columns, rows];
 }
 
 function findEmbeddedPreview(bytes: Uint8Array): { bytes: Uint8Array; mime: string } | null {

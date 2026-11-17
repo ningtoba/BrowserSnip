@@ -360,9 +360,19 @@ export function uint32le(value: number): Uint8Array {
 
 /** A PSD with a flattened PNG preview appended, which is what we read. */
 export function psdBytes(width: number, height: number): Uint8Array {
-  const header = new Uint8Array(16);
+  // A real 26-byte file header: signature, version, 6 reserved, 2 channels,
+  // 4 rows, 4 columns, 2 depth, 2 colour mode. The rows and columns are what
+  // `decodePhotoshop` compares a found preview against, so a header without
+  // them (the 16-byte stub this used to be) cannot tell a thumbnail from a
+  // composite.
+  const header = new Uint8Array(26);
   header.set([0x38, 0x42, 0x50, 0x53]); // `8BPS`
   header[5] = 1; // PSD version 1
+  header[13] = 4; // channels
+  const view = new DataView(header.buffer);
+  view.setUint32(14, height, false); // rows
+  view.setUint32(18, width, false); // columns
+  header[23] = 8; // depth
   return concat(header, realPng(width, height));
 }
 
