@@ -133,6 +133,13 @@ These are expected in the `docs/research/**` probes and are not blockers:
 the invariant is obvious from adjacent code. Anything lens reports inside `src/`
 or `tests/` is real and must be fixed.
 
+## Disk
+
+`/tmp` is a 16 GB tmpfs and fills up: chrome profiles are ~100 MB each. Delete
+your `PORT`'s profile dir and any scratch fixtures larger than a few MB when the
+round is over, and never write outside `/tmp/<round>`. `df -h /tmp` before you
+commit; at 100 % vitest fails with `ENOSPC` and it reads like a code failure.
+
 ## Commit
 
 One commit, exactly your files, conventional-commit subject in the repo's voice
