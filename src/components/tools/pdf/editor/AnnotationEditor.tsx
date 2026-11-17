@@ -662,6 +662,10 @@ export function AnnotationEditor({
         ...(patch.color !== undefined ? { color: patch.color } : {}),
         ...(patch.opacity !== undefined ? { opacity: patch.opacity } : {}),
         ...(patch.strokeWidth !== undefined ? { strokeWidth: patch.strokeWidth } : {}),
+        // `filled: false` clears the interior on every selected mark; a colour on
+        // its own only recolours one that already has an interior.
+        ...(patch.filled !== undefined ? { filled: patch.filled } : {}),
+        ...(patch.fillColor !== undefined ? { fillColor: patch.fillColor } : {}),
         ...(textStyle ? { textStyle } : {}),
       };
       const changed = Object.keys(shared) as (keyof SharedStyle)[];
@@ -2340,10 +2344,14 @@ export function AnnotationEditor({
                 <Slider
                   label="Stroke"
                   value={style.strokeWidth}
-                  min={0.5}
+                  min={0}
                   max={12}
                   step={0.5}
                   unit="pt"
+                  // 0 is "no border", which is what a text box starts with and what
+                  // a shape with no outline wants; the slider has to be able to say
+                  // it, not snap to the thinnest pen.
+                  display={style.strokeWidth === 0 ? 'none' : undefined}
                   onChange={(strokeWidth) => patchStyle({ strokeWidth })}
                 />
               )}
@@ -3155,14 +3163,38 @@ function SelectionPanel({
         display={mixed.has('opacity') ? 'mixed' : `${Math.round(summary.shared.opacity * 100)}%`}
         onChange={(opacity) => onStyle({ opacity })}
       />
+      {summary.kinds.some((kind) => FILLABLE_TOOLS.includes(kind.tool)) ? (
+        <div className="space-y-1">
+          <label className="flex cursor-pointer items-center justify-between gap-2 text-[10px] text-ink-soft">
+            Fill
+            <input
+              type="checkbox"
+              checked={summary.shared.filled}
+              onChange={(event) => onStyle({ filled: event.target.checked })}
+              className="h-3 w-3 accent-[#2563EB]"
+              aria-label="Fill behind the selection"
+            />
+          </label>
+          {summary.shared.filled ? (
+            <input
+              type="color"
+              value={/^#[0-9a-f]{6}$/i.test(summary.shared.fillColor ?? '') ? (summary.shared.fillColor as string) : '#ffffff'}
+              onChange={(event) => onStyle({ fillColor: event.target.value })}
+              className="h-7 w-10 cursor-pointer rounded border border-cream-border bg-white"
+              aria-label="Fill colour of the selection"
+            />
+          ) : null}
+        </div>
+      ) : null}
+
       <Slider
         label="Stroke"
         value={summary.shared.strokeWidth}
-        min={0.5}
+        min={0}
         max={12}
         step={0.5}
         unit="pt"
-        display={mixed.has('strokeWidth') ? 'mixed' : undefined}
+        display={mixed.has('strokeWidth') ? 'mixed' : summary.shared.strokeWidth === 0 ? 'none' : undefined}
         onChange={(strokeWidth) => onStyle({ strokeWidth })}
       />
       {styling ? (

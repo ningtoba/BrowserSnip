@@ -151,6 +151,7 @@ const STYLE_LABELS: Record<string, string> = {
   color: 'colour',
   opacity: 'opacity',
   strokeWidth: 'stroke width',
+  fillColor: 'fill colour',
   fontSize: 'text size',
   textStyle: 'text style',
 };

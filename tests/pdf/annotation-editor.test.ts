@@ -79,6 +79,7 @@ import {
   markupTapTarget,
   moveAnnotation,
   redactionNeedsRasterising,
+  styleMarks,
   workSignature,
   withText,
 } from '@/components/tools/pdf/editor/specs';
@@ -562,7 +563,29 @@ describe('building annotations from gestures', () => {
 
     const box = build('freetext', { drag: { x: 100, y: 100, width: 1, height: 1 }, text: 'hi' })!;
     expect(box.rect.width).toBe(240);
-    expect(annotationToSpec(box).freeText).toMatchObject({ text: 'hi', fontSize: 12, background: '#FFFFFF' });
+    // A text box opens as type on the page: no paper behind it and no border.
+    expect(box.fillColor).toBeUndefined();
+    expect(annotationToSpec(box).freeText).toMatchObject({ text: 'hi', fontSize: 12, border: false });
+    expect(annotationToSpec(box).freeText?.background).toBeUndefined();
+
+    const onPaper = build('freetext', { drag: { x: 100, y: 100, width: 200, height: 40 }, text: 'hi' }, { filled: true })!;
+    expect(annotationToSpec(onPaper).freeText?.background).toBe('#FFFFFF');
+  });
+
+  it('gives a selected text box paper when Fill is turned on, and takes it back', () => {
+    // The selection panel's Fill toggle (and the palette's) writes through
+    // `styleMarks`; on its own it has to produce a plate, or the control snaps
+    // back to "off" because the mark still carries no interior.
+    const bare = build('freetext', { drag: { x: 10, y: 10, width: 200, height: 40 }, text: 'hi' })!;
+    const [on] = styleMarks([bare], [bare.id], { filled: true });
+    expect(on.fillColor).toBe('#FFFFFF');
+    const [colour] = styleMarks([on!], [on!.id], { fillColor: '#FFF3A3' });
+    expect(colour!.fillColor).toBe('#FFF3A3');
+    const [off] = styleMarks([colour!], [colour!.id], { filled: false });
+    expect(off!.fillColor).toBeUndefined();
+    // And the spec the writer reads says the same thing, both ways.
+    expect(annotationToSpec(on!).freeText?.background).toBe('#FFFFFF');
+    expect(annotationToSpec(off!).freeText?.background).toBeUndefined();
   });
 
   it('gives a free text box a border only when the stroke is visible', () => {

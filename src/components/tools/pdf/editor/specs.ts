@@ -551,6 +551,13 @@ export interface SharedStyle {
   color?: string;
   opacity?: number;
   strokeWidth?: number;
+  /**
+   * The interior. `filled: false` clears it rather than painting white, and
+   * `fillColor` alone recolours an existing one — a text box given a plate and a
+   * text box left bare are the same control read both ways.
+   */
+  filled?: boolean;
+  fillColor?: string;
   fontSize?: number;
   /**
    * The shared text style, patched rather than replaced: setting the family must
@@ -586,6 +593,14 @@ export function styleMarks(
     }
     if (style.opacity !== undefined && annotation.kind !== 'Redact') {
       next.opacity = style.opacity;
+    }
+    if (style.filled === false) {
+      next.fillColor = undefined;
+    } else if (style.fillColor !== undefined || style.filled === true) {
+      // Turning the interior on without naming a colour gives it paper: the
+      // toggle alone has to produce a box, or it snaps back to "off" because the
+      // mark still carries no fill.
+      next.fillColor = style.fillColor ?? annotation.fillColor ?? '#FFFFFF';
     }
     if (style.strokeWidth !== undefined) {
       // Markup must stay at least as thick as the glyphs it covers.
@@ -658,6 +673,9 @@ export interface SelectionSummary {
   /** Properties every selected mark shares, ready for the controls to show. */
   shared: Required<Pick<SharedStyle, 'opacity' | 'strokeWidth'>> & {
     color?: string;
+    /** The interior, when the whole set agrees it has one and on its colour. */
+    fillColor?: string;
+    filled: boolean;
     fontSize?: number;
     /** The style every selected text mark shares, for the control set to show. */
     textStyle?: FaceStyle;
@@ -694,10 +712,19 @@ export function selectionSummary(
   const shared: SelectionSummary['shared'] = {
     opacity: 1,
     strokeWidth: 0,
+    filled: false,
   };
   const color = agrees(marks.map((mark) => mark.color));
   if (color.same) shared.color = color.value;
   else mixed.push('color');
+  const fills = marks.map((mark) => mark.fillColor);
+  const fill = agrees(fills);
+  // `filled` is whether any mark in the set carries an interior: a group mixing
+  // a bare text box and a plated one reads as "on" so one click can take the
+  // plate off every mark, and the colour is left alone when they disagree.
+  shared.filled = fills.some((value) => value !== undefined);
+  if (fill.same && fill.value !== undefined) shared.fillColor = fill.value;
+  else if (fills.some((value) => value !== undefined)) mixed.push('fillColor');
   const opacity = agrees(marks.map((mark) => mark.opacity));
   if (opacity.same) shared.opacity = opacity.value;
   else mixed.push('opacity');

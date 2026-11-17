@@ -86,11 +86,15 @@ export function defaultStyleFor(tool: EditorToolId): ToolStyle {
     case 'note':
       return style({ color: '#FFF3A3', opacity: 1 });
     case 'freetext':
+      // A text box starts as type on the page: no border, no paper behind it, the
+      // way every other editor opens one. The Fill toggle turns a white box on for
+      // the cases that want one (a label over artwork), and the Stroke slider takes
+      // it back to a hairline.
       return style({
         color: text.color,
         fillColor: '#FFFFFF',
-        filled: true,
-        strokeWidth: 0.8,
+        filled: false,
+        strokeWidth: 0,
         text: { ...text, color: text.color },
       });
     case 'ink':
@@ -166,7 +170,7 @@ export const TOOLS: ToolMeta[] = [
     id: 'freetext',
     label: 'Text box',
     icon: 'T',
-    hint: 'Drag a box (or click for a default one) and type into it.',
+    hint: 'Drag a box (or click for a default one) and type into it — no border and no paper behind it unless you turn Fill on.',
     gesture: 'box',
     kind: 'FreeText',
   },
