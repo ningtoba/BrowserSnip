@@ -1258,6 +1258,20 @@ describe('excel-to-pdf prints the cells it was shown', () => {
   });
 });
 
+describe('powerpoint-to-pdf keeps every slide, even an empty one', () => {
+  it('gives a blank slide its own page rather than dropping it', async () => {
+    const outcome = await run('powerpoint-to-pdf', {}, [
+      fileFrom(await pptxBytes(['First', '', 'Third']), 'deck.pptx'),
+    ]);
+    // A blank slide is a beat in the deck (a pause before the point); the page
+    // count has to match the slide count or the deck drifts out of step.
+    expect(outcome.pagesOut).toBe(3);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('First');
+    expect(text).toContain('Third');
+  });
+});
+
 describe('powerpoint-to-pdf gives each slide its own page', () => {
   it('converts two slides into two pages, not three with a blank leader', async () => {
     const outcome = await run('powerpoint-to-pdf', {}, [
