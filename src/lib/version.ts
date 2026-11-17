@@ -10,7 +10,7 @@
  * One reload per build, recorded in `sessionStorage`, so a page that keeps
  * failing to match cannot loop.
  */
-const CHECK_AFTER_MS = 8_000;
+const CHECK_AFTER_MS = 0;
 const CHECK_EVERY_MS = 60_000;
 const KEY = 'browsersnip.build.reloaded';
 
@@ -26,12 +26,26 @@ async function check(): Promise<void> {
     if (!id || id === mine) return;
     // Already reloaded for this id and still running it? Leave the tab alone;
     // something else is wrong and a reload loop would hide it.
-    if (sessionStorage.getItem(KEY) === id) return;
-    sessionStorage.setItem(KEY, id);
-    location.reload();
+    reloadForBuild(id);
   } catch {
     // Offline, or a host without the file: the page keeps working as it is.
   }
+}
+
+/**
+ * Reload once for a build id, or report that this one already reloaded.
+ *
+ * Shared by the watcher below and the error boundary's stale-chunk path so the
+ * two cannot fight: whoever gets there first marks the id, and a page that keeps
+ * failing leaves the tab alone instead of spinning.
+ */
+export function reloadForBuild(id: string): boolean {
+  try {
+    if (id && sessionStorage.getItem(KEY) === id) return false;
+    if (id) sessionStorage.setItem(KEY, id);
+  } catch { /* private mode */ }
+  location.reload();
+  return true;
 }
 
 /** Start watching, once per document. */

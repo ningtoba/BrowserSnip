@@ -10,6 +10,16 @@ type Props = {
 
 type State = { error: Error | null };
 
+/** A dynamic import that failed because the file moved under a stale shell. */
+const STALE_CHUNK = /dynamically imported module|Loading chunk \d+ failed|Importing a module script failed/i;
+/**
+ * The card's own reading, which is wider: a bare `Failed to fetch` can also be a
+ * tool's network call, so it earns the explanation but not an automatic reload —
+ * reloading a tab mid-OCR because a CDN was blocked would lose the work.
+ */
+const STALE_HINT = new RegExp(`${STALE_CHUNK.source}|Failed to fetch`, 'i');
+const isStaleChunk = (error: Error): boolean => STALE_CHUNK.test(`${error.name} ${error.message}`);
+
 /**
  * A tool that throws during render used to take the whole app down: with no
  * boundary anywhere, React unmounts the root and the tab shows a blank page
@@ -28,6 +38,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    // A chunk that moved is not a bug in the tool and nobody should have to read
+    // a card to fix it: take the reload ourselves, once per session.
+    if (isStaleChunk(error)) {
+      void import('@/lib/version').then(({ reloadForBuild }) => {
+        if (!reloadForBuild(`stale:${error.message}`)) return;
+      }).catch(() => { /* the card stays, its own button still works */ });
+    }
     console.error(
       `[browsersnip] ${this.props.label ?? 'view'} failed to render${info.componentStack ? `:${info.componentStack}` : ''}`,
       error,
@@ -42,8 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error } = this.state;
     if (!error) return this.props.children;
 
-    const text = `${error.name} ${error.message}`;
-    const staleChunk = /dynamically imported module|Loading chunk \d+ failed|Importing a module script failed|Failed to fetch/i.test(text);
+    const staleChunk = STALE_HINT.test(`${error.name} ${error.message}`);
 
     return (
       <div className="mx-auto max-w-lg px-6 py-16">
