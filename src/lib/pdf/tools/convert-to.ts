@@ -784,6 +784,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'SVG is painted through the browser canvas, so the result is a high-resolution bitmap: strokes, gradients and text become pixels and cannot be re-coloured or searched afterwards. A server-grade engine keeps them as vector operators.',
       'The artwork’s own `width`/`height` decide the sheet in “Fit the artwork”; “Square” keeps the long edge and pads the short one.',
       'Text inside the SVG renders in whatever font this browser resolved, not an embedded copy of yours.',
+      'An SVG with no `width`/`height` is laid out at the browser default 300 × 150, because the file states no size of its own.',
       'Animations, filters and external references (`<image href="…">`) are not reproduced.',
     ],
     fields: [

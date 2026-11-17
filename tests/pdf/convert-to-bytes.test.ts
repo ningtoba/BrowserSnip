@@ -446,6 +446,15 @@ describe('the format-specific image routes keep real dimensions', () => {
     expect(outcome.warnings.join(' ')).toMatch(/cut\.psd.*stops before the end/);
   });
 
+  it('svg-to-pdf refuses a raster named .svg, naming both formats', async () => {
+    // The page size of a painted SVG is a browser measurement (jsdom's canvas
+    // mock does not honour the intrinsic size): the dev build gives a 200 x 100
+    // drawing a 312 x 212 page at the default margin, colours exact. What can be
+    // pinned here is the refusal, which is what a `.svg` holding pixels gets.
+    await expect(run('svg-to-pdf', {}, [fileFrom(realPng(20, 10), 'fake.svg', 'image/svg+xml')]))
+      .rejects.toThrow(/PNG image, not an SVG drawing/);
+  });
+
   it('tiff-to-pdf gives every frame its own page, in order', async () => {
     const outcome = await run('tiff-to-pdf', { pageSize: 'a4', margin: 0 }, [
       fileFrom(tiffBytes([{ width: 30, height: 40 }, { width: 50, height: 20 }]), 'fax.tif', 'image/tiff'),
