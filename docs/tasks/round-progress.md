@@ -95,7 +95,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 085 [x] excel-to-pdf
 086 [x] powerpoint-to-pdf
 087 [x] epub-to-pdf
-088 [ ] email-to-pdf
+088 [x] email-to-pdf
 089 [ ] digitize-document
 090 [ ] pdf-to-text
 091 [ ] pdf-to-markdown

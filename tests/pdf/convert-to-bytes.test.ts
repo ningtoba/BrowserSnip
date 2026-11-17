@@ -1462,6 +1462,25 @@ describe('email-to-pdf prints the message, not the MIME plumbing', () => {
     expect(columns(header).length).toBe(3);
   });
 
+  it('joins a folded header and prints an HTML body as words', async () => {
+    const mail = [
+      'Subject: A very long subject that the sender',
+      ' wrapped onto a second line',
+      'From: sender@example.com',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      '<p>Hello <b>there</b> &amp; welcome.</p>',
+    ].join('\r\n');
+    const text = squash(await extractText(await firstPdf(await run('email-to-pdf', {}, [
+      fileFrom(mail, 'folded.eml', 'message/rfc822'),
+    ]))));
+    // A folded header is one value: the newline and the space before the
+    // continuation belong to the header, not to the subject.
+    expect(text).toContain('long subject that the sender wrapped onto a second line');
+    expect(text).toContain('Hello there & welcome.');
+    expect(text).not.toContain('<b>');
+  });
+
   it('drops the attachment list when the control is off', async () => {
     const outcome = await run('email-to-pdf', { includeAttachments: false }, [fileFrom(eml, 'mail.eml', 'message/rfc822')]);
     const text = squash(await extractText(await firstPdf(outcome)));
