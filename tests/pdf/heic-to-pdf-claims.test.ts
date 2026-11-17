@@ -18,15 +18,44 @@
  * on Linux) belongs to that module and is written up in
  * `docs/tasks/heic-decoder-claim-ticket.md`.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
+import { sniffImageMime } from '@/lib/pdf/core/images';
 
 const JPEG_UNDER_HEIC = new Uint8Array([
   0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
   ...new Array(20).fill(0x20),
   0xff, 0xd9,
 ]);
+
+const HEIC_MAGIC = new Uint8Array([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0x00, 0x00, 0x00, 0x00,
+  0x6d, 0x69, 0x66, 0x31, 0x68, 0x65, 0x69, 0x63,
+]);
+
+/**
+ * Fail both decode routes on the next task instead of waiting out the deadline.
+ *
+ * jsdom has no `createImageBitmap` and never fires `load` or `error` on an `<img>`,
+ * so the real refusal takes the whole 30 s bound. Both routes are modelled the way
+ * a decoder-less engine behaves: the bitmap API rejects and the element errors.
+ */
+function refuseEveryDecoder(): void {
+  vi.stubGlobal('createImageBitmap', () => Promise.reject(new Error('The source image could not be decoded.')));
+  class RefusingImage {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_value: string) {
+      setTimeout(() => this.onerror?.(), 0);
+    }
+  }
+  vi.stubGlobal('Image', RefusingImage);
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 async function run(id: string, files: File[], values: Record<string, unknown> = {}) {
   return (await runPdfTool({
@@ -76,4 +105,74 @@ describe('a HEIC run says what this browser cannot do', () => {
     // that may not fire), so the refusal arrives even for a truncated HEIC; it must
     // arrive inside that bound rather than as a spinner the user escapes by reload.
   }, 40_000);
+});
+
+/**
+ * Round 071: the sentences and the detection the refusal rests on.
+ *
+ * Every case here failed on the build before the round: the hint sent a HEIC owner
+ * to "re-save it as HEIC", the format list printed one format twice, and the
+ * closing advice named a browser version that the bytes on this machine contradict.
+ */
+describe('the refusal says the true thing about HEIC', () => {
+  it('reads `ftyp` at byte 4, both directions, so a HEIC under any name is sniffed', () => {
+    // A `ftyp` box starts with its own length (bytes 0-3), so the brand begins at 4.
+    // A sniffer that looked at 0 sees nothing; one that looks at 4 cannot be fooled by
+    // a name either way.
+    expect(sniffImageMime(HEIC_MAGIC)).toBe('image/heic');
+    expect(sniffImageMime(JPEG_UNDER_HEIC)).toBe('image/jpeg');
+  });
+
+  it('refuses HEIC bytes wearing a .jpg name as the HEIC they are', async () => {
+    const failure = await run('jpg-to-pdf', [
+      new File([HEIC_MAGIC], 'renamed.jpg', { type: 'image/jpeg' }),
+    ]).catch((error: unknown) => error);
+    const text = failure instanceof Error ? failure.message : JSON.stringify(failure);
+    expect(text).toMatch(/renamed\.jpg/);
+    expect(text).toMatch(/is a HEIC\/HEIF image, not a JPEG image/);
+  });
+
+  it('names one format once, not "a HEIC/HEIF image or a HEIF image"', async () => {
+    const failure = await run('heic-to-pdf', [
+      new File([JPEG_UNDER_HEIC], 'photo.heic', { type: 'image/heic' }),
+    ]).catch((error: unknown) => error);
+    const text = failure instanceof Error ? failure.message : JSON.stringify(failure);
+    expect(text).toMatch(/not a HEIC\/HEIF image\./);
+    expect(text).not.toMatch(/or a HEIF image/);
+  });
+
+  it('tells a HEIC owner to change container, not to re-save the HEIC as HEIC', async () => {
+    refuseEveryDecoder();
+    const failure = await run('heic-to-pdf', [
+      new File([HEIC_MAGIC], 'tiny.heic', { type: 'image/heic' }),
+    ]).catch((error: unknown) => error);
+    const hint = (failure as { hint?: string }).hint ?? '';
+    expect(hint, 'a HEIC refused without a route out of HEIC').toMatch(/PNG or JPEG/);
+    expect(hint).not.toMatch(/Re-save the file as HEIC/);
+    // The same remedy reaches a mixed batch, where the decode failure is the one a
+    // rename cannot cure.
+    const mixed = await run('heic-to-pdf', [
+      new File([JPEG_UNDER_HEIC], 'wrong.heic', { type: 'image/heic' }),
+      new File([HEIC_MAGIC], 'real.heic', { type: 'image/heic' }),
+    ]).catch((error: unknown) => error);
+    expect((mixed as { hint?: string }).hint ?? '').toMatch(/PNG or JPEG/);
+    expect((mixed as Error).message).toMatch(/wrong\.heic.*real\.heic/s);
+  });
+
+  it('does not attribute the decoder to a browser version the bytes contradict', async () => {
+    refuseEveryDecoder();
+    const failure = await run('image-to-pdf', [
+      new File([HEIC_MAGIC], 'tiny.heic', { type: 'image/heic' }),
+    ]).catch((error: unknown) => error);
+    const text = failure instanceof Error ? failure.message : JSON.stringify(failure);
+    // Measured: Chrome for Testing 151 on Linux has no HEIC decoder, so "Chrome 130+"
+    // sent a reader back to the same refusal. The platform owns the codec.
+    expect(text).not.toMatch(/Chrome 130/);
+    expect(text).toMatch(/browser whose platform can decode/i);
+  });
+
+  it('qualifies the "files beside it are still converted" line with a decoder', () => {
+    const notes = (getPdfTool('heic-to-pdf')?.notes ?? []).join(' ');
+    expect(notes).toMatch(/where a decoder exists, the HEIC files beside it/);
+  });
 });

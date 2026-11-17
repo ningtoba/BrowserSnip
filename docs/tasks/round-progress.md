@@ -78,7 +78,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 068 [x] jpg-to-pdf
 069 [x] png-to-pdf
 070 [x] webp-to-pdf
-071 [ ] heic-to-pdf
+071 [x] heic-to-pdf
 072 [x] bmp-to-pdf
 073 [ ] tiff-to-pdf
 074 [ ] psd-to-pdf

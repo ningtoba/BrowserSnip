@@ -1,0 +1,72 @@
+[
+ {
+  "tool": "heic-to-pdf",
+  "tag": "real",
+  "files": [
+   "/tmp/round071/real.heic"
+  ],
+  "timeout": 180000,
+  "shot": true,
+  "shotName": "refusal"
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "jpeg-named",
+  "files": [
+   "/tmp/round071/jpeg-named.heic"
+  ],
+  "timeout": 180000
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "png-named",
+  "files": [
+   "/tmp/round071/png-named.heic"
+  ],
+  "timeout": 180000
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "heic-named-jpg",
+  "files": [
+   "/tmp/round071/heic-named.jpg"
+  ],
+  "timeout": 180000
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "batch-heic-then-jpeg",
+  "files": [
+   "/tmp/round071/real.heic",
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "timeout": 180000,
+  "shot": true,
+  "shotName": "batch"
+ },
+ {
+  "tool": "heic-to-pdf",
+  "tag": "batch-jpeg-then-heic",
+  "files": [
+   "/tmp/triage/in/photo.jpg",
+   "/tmp/round071/real.heic"
+  ],
+  "timeout": 180000
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "real-heic",
+  "files": [
+   "/tmp/round071/real.heic"
+  ],
+  "timeout": 180000
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "heic-bytes-named-jpg",
+  "files": [
+   "/tmp/round071/heic-named.jpg"
+  ],
+  "timeout": 180000
+ }
+]

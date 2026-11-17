@@ -183,6 +183,19 @@ interface FileProbe {
 
 /** Log lines that describe a compromise rather than a step. */
 
+/**
+ * The files a failure message blames: every input it quotes by name.
+ *
+ * A batch refusal sentences each file in turn ("a.heic could not be decoded: …
+ * \"b.jpg\" is a JPEG image, not …"), and each of those cards has to stop. When
+ * the message quotes none, the only input is blamed — never a guess among many.
+ */
+export function filesAtFault<T extends { name: string }>(files: T[], message: string): T[] {
+  const quoted = files.filter((file) => message.includes(file.name));
+  if (quoted.length > 0) return quoted;
+  return files.length === 1 ? files : [];
+}
+
 export function usePdfTool(
   toolId: ToolId | string | undefined,
   options: UsePdfToolOptions = {},
@@ -639,11 +652,14 @@ export function usePdfTool(
         }
         const failed = store.getState();
         failed.setError(message, isToolInputError(error) ? error.hint : null);
-        // Name the file that broke (E1/E2/E4): the message when it quotes one,
-        // otherwise the only input, otherwise the first of them.
-        const atFault = activeFiles.find((file) => message.includes(file.name))
-          ?? (activeFiles.length === 1 ? activeFiles[0] : undefined);
-        if (atFault) failed.setFileState(atFault.name, { error: message, percent: 0 });
+        // Name the files that broke (E1/E2/E4) — every one the message quotes, so a
+        // batch that refused several cards marks each of them. Only the first was
+        // marked before: measured on a HEIC + JPEG batch, whose finished run named
+        // both files while the second card still read "Reading" under a
+        // "counting pages…" it was never going to answer.
+        for (const file of filesAtFault(activeFiles, message)) {
+          failed.setFileState(file.name, { error: message, percent: 0 });
+        }
         return null;
       } finally {
         // Only the newest run owns the rail's idea of "working"; a superseded

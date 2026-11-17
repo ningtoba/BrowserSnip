@@ -428,7 +428,7 @@ async function loadBitmap(
   } else if (typeof Image !== 'function') {
     throw new ImageDecodeError(
       `${subject(options.name)} cannot be decoded here: this browser has no image decoder for `
-      + `${formatName(mime)}. Convert it to PNG or JPEG, or open it in Safari or Chrome 130+.`,
+      + `${formatName(mime)}. Convert it to PNG or JPEG, or open it in a browser whose platform can decode it.`,
     );
   }
 
@@ -445,10 +445,20 @@ async function loadBitmap(
   }
 }
 
+/**
+ * The refusal, in the user's words.
+ *
+ * "or open it in Safari or Chrome 130+" named a browser version, and the version
+ * was measured to be beside the point: Chrome for Testing 151 on Linux has no
+ * HEIC decoder at all, because the codec is the *platform's* (measured; the same
+ * two files decode in Pillow on the same machine and fail in both `createImageBitmap`
+ * and `<img>` — `docs/tasks/heic-decoder-claim-ticket.md`). So the dependency is
+ * named instead of a version.
+ */
 function unsupported(mime: string, name?: string, cause?: Error | null): Error {
   return new ImageDecodeError(
     `${subject(name)} could not be opened: this browser has no decoder for ${formatName(mime)}`
-    + `${cause ? ` (${cause.message})` : ''}. Convert the file to PNG or JPEG, or open it in Safari or Chrome 130+.`,
+    + `${cause ? ` (${cause.message})` : ''}. Convert the file to PNG or JPEG, or open it in a browser whose platform can decode it.`,
   );
 }
 

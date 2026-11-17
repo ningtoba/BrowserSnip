@@ -676,6 +676,12 @@ export const convertToTools: PdfToolDefinition[] = [
     const label = format.toUpperCase();
     const isTiff = format === 'tiff';
     const isHeic = format === 'heic';
+    // "Re-save the file as HEIC" is inert advice for a file that already is one:
+    // measured on the dev build, the alert under a real 5 KB `ftypheic` file said
+    // exactly that and a person following it lands back on the same refusal (`docs/
+    // tasks/heic-decoder-claim-ticket.md`). What helps is the container change, or
+    // a platform that owns the codec.
+    const HEIC_DECODE_HINT = 'Re-save the photo as PNG or JPEG, or open this page where the system can decode HEIC (Safari on macOS or iOS), then try again.';
     // PNG is the one format in this family that carries transparency.
     const isPng = format === 'png';
     // BMP is the one whose header states, byte for byte, how much it must hold.
@@ -697,7 +703,13 @@ export const convertToTools: PdfToolDefinition[] = [
       actionLabel: 'Create PDF',
       promise: `Every ${label} you add becomes its own PDF page, the size of the picture, in the order you added them.`,
       notes: [
-        `A file that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded.`,
+        // The tail is conditional on a decoder, because on a build without one a
+        // mixed batch converts nothing at all (measured: HEIC + JPEG on the dev
+        // build, both named, no PDF) — the flat sentence read as a promise about
+        // the very files that were about to be refused.
+        isHeic
+          ? 'A file that is not really a HEIC is named and left out; where a decoder exists, the HEIC files beside it are still converted, never silently re-encoded.'
+          : `A file that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded.`,
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
@@ -730,6 +742,7 @@ export const convertToTools: PdfToolDefinition[] = [
         const { images } = await decodeImageBatch(context, {
           label: `one or more ${label} images`,
           hint: `Re-save the file as ${label}, or use Images to PDF, which sniffs the real format.`,
+          decodeHint: isHeic ? HEIC_DECODE_HINT : undefined,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
           refused,
@@ -1846,6 +1859,37 @@ function collectNotice(
   }
 }
 
+/**
+ * The format words for a tool's accepted MIME list, for "…is a JPEG image, not …".
+ *
+ * Two MIME types can name one format, and the family's HEIC list holds both, so a
+ * plain join printed "not a HEIC/HEIF image or a HEIF image" on the dev build. A
+ * label contained in another one is dropped.
+ */
+function advertisedFormats(mimes: string[]): string {
+  const labels = mimes.map((type) => IMAGE_LABELS[type] ?? type);
+  // Compared without the leading article: the shared labels are "a HEIC/HEIF image"
+  // and "a HEIF image", and the article alone stops one being a substring.
+  const bare = (line: string) => line.replace(/^(a|an) /, '');
+  return labels
+    .filter((line) => !labels.some((other) => other !== line && bare(other).includes(bare(line))))
+    .join(' or ');
+}
+
+/**
+ * The hint a refused batch raises with.
+ *
+ * A batch can be refused file by file for different reasons and the raised
+ * sentence carries one hint, so a decode failure outranks a wrong format: it is
+ * the one the batch cannot get around by renaming anything.
+ */
+function refusedHint(
+  expected: { hint?: string; decodeHint?: string },
+  decodeRefused: boolean,
+): string | undefined {
+  return (decodeRefused ? expected.decodeHint : undefined) ?? expected.hint;
+}
+
 async function decodeImageBatch(
   context: ToolRunContext,
   expected: {
@@ -1853,6 +1897,15 @@ async function decodeImageBatch(
     label: string;
     hint?: string;
     background?: string;
+    /**
+     * The hint for "this browser cannot open that picture", when it differs from
+     * the one for "that is not the format this tool takes".
+     *
+     * The two failures have different remedies and the family used to hand both
+     * the same line: on `heic-to-pdf` a real HEIC came back "Re-save the file as
+     * HEIC", which is what the file already is.
+     */
+    decodeHint?: string;
     expectLabel?: string;
     /** MIME types a format-specific tool will actually accept (E2). */
     mimes?: string[];
@@ -1863,6 +1916,10 @@ async function decodeImageBatch(
   },
 ): Promise<{ images: DecodedImage[]; refused: string[] }> {
   const refused = expected.refused ?? [];
+  // Every file in a batch can be refused for a different reason, but the raised
+  // sentence carries one hint: once a decode has failed, the decode remedy is the
+  // one that applies to the batch (see `refusedHint`).
+  let decodeRefused = false;
   const batches = await sourceBatches(context, {
     kinds: expected.kinds ?? ['image', 'svg', 'psd'],
     label: expected.label,
@@ -1873,7 +1930,7 @@ async function decodeImageBatch(
     throwIfAborted(context.signal);
     const mime = sniffImageMime(batch.bytes) ?? undefined;
     if (expected.mimes && mime && !expected.mimes.includes(mime)) {
-      const wanted = expected.mimes.map((type) => IMAGE_LABELS[type] ?? type).join(' or ');
+      const wanted = advertisedFormats(expected.mimes);
       const sentence = `"${batch.name}" is ${IMAGE_LABELS[mime] ?? `an ${mime} image`}, not ${wanted}.`;
       const hint = 'Re-save it in the advertised format, or use Images to PDF, which takes anything this browser can decode.';
       if (!expected.refused) throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint });
@@ -1894,7 +1951,9 @@ async function decodeImageBatch(
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'this browser could not decode it';
       const sentence = `"${batch.name}" could not be decoded: ${reason}`;
-      const hint = `Re-save it as PNG or JPEG, or use a converter for its real format.`;
+      const hint = expected.decodeHint
+        ?? 'Re-save it as PNG or JPEG, or use a converter for its real format.';
+      decodeRefused = true;
       if (!expected.refused) {
         throw new ToolInputError('UNSUPPORTED', sentence, { fileName: batch.name, hint, detail: error });
       }
@@ -1914,7 +1973,9 @@ async function decodeImageBatch(
       .map((line) => line.replace(/\s*—\s*left out\.$/, '.'))
       .filter((line) => line !== '');
     if (both.length > 0) {
-      throw new ToolInputError('UNSUPPORTED', both.join(' '), { hint: expected.hint });
+      throw new ToolInputError('UNSUPPORTED', both.join(' '), {
+        hint: refusedHint(expected, decodeRefused),
+      });
     }
     throw new ToolInputError('UNSUPPORTED', `No readable ${expected.expectLabel ?? 'image'} was added.`, {
       hint: expected.hint,

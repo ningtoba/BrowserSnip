@@ -266,7 +266,12 @@ export function FileCards({
               {' · '}
               {state?.pages != null
                 ? `${state.pages} ${state.pages === 1 ? 'page' : 'pages'}`
-                : 'counting pages…'}
+                // A card that stopped is not counting any more. `FileQueue` already
+                // says "pages unknown" for a row that is not busy; the stopped card
+                // kept "counting pages…" over a count that was never coming.
+                : state?.error
+                  ? 'pages unknown'
+                  : 'counting pages…'}
             </p>
             <FileLockRow
               name={file.name}
@@ -551,6 +556,10 @@ interface CardThumbProps {
 function CardThumb({ file, session, unreadable, imageInput, page }: CardThumbProps) {
   const { url, unavailable } = usePageThumbnail(imageInput ? null : session, page, 150);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  // An image input always has a URL, so a picture the engine cannot open — a HEIC
+  // on a build with no HEVC stack, measured — painted the browser's torn-image
+  // glyph and the honest placeholder below was unreachable for *every* image.
+  const [broken, setBroken] = useState(false);
 
   useEffect(() => {
     if (!imageInput) return;
@@ -560,13 +569,16 @@ function CardThumb({ file, session, unreadable, imageInput, page }: CardThumbPro
   }, [file, imageInput]);
 
   const shown = imageInput ? objectUrl : url;
+  useEffect(() => setBroken(false), [shown]);
 
-  if (shown) {
+  if (shown && !broken) {
     return (
       <img
         src={shown}
         alt=""
         data-card-thumb="image"
+        onError={() => setBroken(true)}
+        onLoad={() => setBroken(false)}
         className="h-[104px] w-full rounded border border-cream-border bg-cream-soft object-contain"
       />
     );
@@ -575,7 +587,7 @@ function CardThumb({ file, session, unreadable, imageInput, page }: CardThumbPro
   return (
     <span
       aria-hidden
-      data-card-thumb={unreadable || unavailable || session ? 'placeholder' : 'waiting'}
+      data-card-thumb={unreadable || unavailable || broken || session ? 'placeholder' : 'waiting'}
       className="flex h-[104px] w-full items-center justify-center rounded border border-dashed border-cream-border bg-cream-soft font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted"
     >
       {unreadable || unavailable
