@@ -893,6 +893,41 @@ describe('csv-to-pdf keeps the grid and repeats the header', () => {
     expect(find(runs, '3')[0]!.y).toBeCloseTo(Math.max(...cell.map((run) => run.y)), 1);
   });
 
+  it('drops a BOM from the first header and pads ragged rows to the widest', async () => {
+    const outcome = await run('csv-to-pdf', {}, [
+      fileFrom('\uFEFFname,qty\nWidget,3\nGizmo', 'ragged.csv', 'text/csv'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // A BOM left in place makes the first header cell `\ufeffname`, which is not
+    // the word in the file and does not line up with its own column.
+    expect(runs.some((run) => run.text === 'name')).toBe(true);
+    const shortRow = find(runs, 'Gizmo')[0];
+    const fullRow = find(runs, 'Widget')[0];
+    expect(shortRow).toBeTruthy();
+    // The short row is still one row of its own, in the first column.
+    expect(fullRow).toBeTruthy();
+    expect(shortRow!.x).toBeCloseTo(fullRow!.x, 1);
+    expect(shortRow!.y).toBeLessThan(fullRow!.y);
+  });
+
+  it('keeps a twelve-column table inside the margins', async () => {
+    const header = Array.from({ length: 12 }, (_, i) => `c${i + 1}`).join(',');
+    const row = Array.from({ length: 12 }, (_, i) => `${i + 1}.50`).join(',');
+    const outcome = await run('csv-to-pdf', { pageSize: 'a5' }, [
+      fileFrom(`${header}\n${row}`, 'wide.csv', 'text/csv'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    const [[pageW]] = await pageSizes(bytes);
+    const runs = await textRuns(bytes);
+    const cells = runs.filter((run) => /^(c\d+|\d+\.50)$/.test(run.text));
+    expect(cells.length).toBeGreaterThan(12);
+    // Every cell starts inside the sheet and its own text ends inside it too.
+    for (const cell of cells) {
+      expect(cell.x).toBeGreaterThan(0);
+      expect(cell.x + cell.text.length * cell.size * 0.6).toBeLessThan(pageW);
+    }
+  });
+
   it('repeats the header row on every sheet the table spills onto', async () => {
     const outcome = await run('csv-to-pdf', { pageSize: 'a5', fontSize: 12 }, [
       fileFrom(rows(60), 'long.csv', 'text/csv'),
