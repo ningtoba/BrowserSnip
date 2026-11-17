@@ -10,7 +10,7 @@
  * One reload per build, recorded in `sessionStorage`, so a page that keeps
  * failing to match cannot loop.
  */
-const CHECK_AFTER_MS = 20_000;
+const CHECK_AFTER_MS = 8_000;
 const CHECK_EVERY_MS = 60_000;
 const KEY = 'browsersnip.build.reloaded';
 
@@ -41,4 +41,10 @@ export function watchForNewBuild(): void {
     void check();
     window.setInterval(() => void check(), CHECK_EVERY_MS);
   }, CHECK_AFTER_MS);
+  // Coming back to the tab is the moment someone would look at a fix: ask again
+  // rather than wait for the next interval.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void check();
+  });
+  window.addEventListener('focus', () => void check());
 }
