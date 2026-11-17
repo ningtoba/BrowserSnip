@@ -87,8 +87,11 @@ if (!blockBox) { console.log('no block to click'); process.exit(1); }
 
 await h.click(blockBox.x, blockBox.y);
 await sleep(600);
-await h.click(blockBox.x, blockBox.y);
-await sleep(800);
+// Select, then press the panel's own Edit chip: a second click lands on the
+// already-selected block and commits it instead of opening a caret.
+const opened = await h.ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/^Edit$/i.test((x.innerText||'').trim()));if(!b)return 'no edit chip';b.click();return 'clicked'})()`);
+console.log('open', opened);
+await sleep(900);
 await h.shot(`${SHOTS}/campaign-text-2-block-open.png`);
 
 log('opened block DOM', await ev(`(() => {
@@ -132,10 +135,10 @@ const clickedExport = await ev(`(() => {
   return 'clicked ' + (b.getAttribute('aria-label') || b.innerText || 'button').slice(0, 40);
 })()`);
 log('export', clickedExport);
-await sleep(6000);
+await sleep(12000);
 const blobs = await ev(`JSON.stringify((window.__blobs || []).filter((b) => /pdf/i.test(b.type || '')))`);
 log('blobs', blobs);
-const list = JSON.parse(blobs || '[]');
+const list = JSON.parse(blobs || '[]').sort((a, b) => (b.size || 0) - (a.size || 0));
 if (list.length) {
   const b64 = await ev(`(async () => {
     const r = await fetch(${JSON.stringify(list[list.length - 1].u)});
