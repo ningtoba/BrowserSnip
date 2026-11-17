@@ -1188,6 +1188,32 @@ describe('legacy pane tools stay honest about what they are (E2, E18)', () => {
     expect((await inspectPdf(TINY_JPEG, 'photo-01.jpg')).error).toBe('NOT_A_PDF');
   });
 
+  it('scan-to-pdf writes the sheet the rail names, not A4 whatever is chosen', async () => {
+    // The pane held its own size and overrode the rail's answer: the control was
+    // live-looking and inert for every value. `fit` and `letter` are the two that
+    // cannot both come from a default.
+    const { runPdfTool } = await import('@/lib/pdf/tools/runner');
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/wD/7AAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const boxes = async (pageSize: string) => {
+      const outcome = await runPdfTool({
+        toolId: 'scan-to-pdf',
+        files: [new File([png], 'shot.png', { type: 'image/png' })],
+        values: { pageSize, margin: 0 },
+        onProgress: () => {},
+        onLog: () => {},
+      } as never);
+      const bytes = await (outcome as unknown as { outputs: { blob: Blob }[] }).outputs[0]!.blob.arrayBuffer();
+      const doc = await PDFDocument.load(new Uint8Array(bytes), { updateMetadata: false });
+      const { width, height } = doc.getPages()[0]!.getSize();
+      return [Math.round(width), Math.round(height)];
+    };
+    expect(await boxes('fit')).toEqual([1, 1]);
+    expect(await boxes('letter')).toEqual([612, 792]);
+  });
+
   it('says what each bespoke tool will not do', async () => {
     const notes = (id: string) => (getPdfTool(id)?.notes ?? []).join(' ');
     expect(notes('sign')).toMatch(/not a cryptographic signature/i);
