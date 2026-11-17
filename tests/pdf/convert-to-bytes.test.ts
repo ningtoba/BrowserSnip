@@ -989,6 +989,26 @@ describe('json-to-pdf and xml-to-pdf print nesting as geometry', () => {
     expect(text).not.toContain('deepestValue');
   });
 
+  it('prints an array of objects in order, and a scalar root at all', async () => {
+    const outcome = await run('json-to-pdf', {
+      source: 'paste',
+      paste: JSON.stringify([{ sku: 'AA' }, { sku: 'BB' }, { sku: 'CC' }]),
+    });
+    const runs = await textRuns(await firstPdf(outcome));
+    const ys = ['AA', 'BB', 'CC'].map((sku) => find(runs, sku)[0]?.y ?? -1);
+    expect(ys.every((y) => y >= 0)).toBe(true);
+    expect(ys[0]).toBeGreaterThan(ys[1]);
+    expect(ys[1]).toBeGreaterThan(ys[2]);
+
+    const scalar = await run('json-to-pdf', { source: 'paste', paste: '42' });
+    expect(squash(await extractText(await firstPdf(scalar)))).toContain('42');
+  });
+
+  it('refuses JSON that does not parse, in words', async () => {
+    await expect(run('json-to-pdf', { source: 'paste', paste: '{"a": }' }))
+      .rejects.toThrow(/JSON|parse/i);
+  });
+
   it('indents an XML tree one step deeper per level', async () => {
     const outcome = await run('xml-to-pdf', {
       source: 'paste',
