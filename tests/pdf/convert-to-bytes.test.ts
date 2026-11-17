@@ -1525,6 +1525,26 @@ describe('digitize-document writes a layer where the words are', () => {
     expect(outcome.message).toMatch(/2 recognised words/);
   });
 
+  it('places a word the recogniser put outside the picture back on the page', async () => {
+    OCR.words = [
+      { text: 'EDGE', x: 640, y: 20, width: 80, height: 18 },
+      { text: 'TOP', x: 10, y: 890, width: 60, height: 18 },
+    ];
+    const outcome = await run('digitize-document', {}, [fileFrom(realPng(600, 800), 'scan.png', 'image/png')]);
+    const bytes = await firstPdf(outcome);
+    const [[pageW, pageH]] = await pageSizes(bytes);
+    const runs = await textRuns(bytes);
+    // 640 + 80 runs past a 600 px picture and 890 past an 800 px one; a viewer
+    // cannot select text off the sheet, so both must be brought back inside.
+    for (const run of runs) {
+      expect(run.x).toBeGreaterThanOrEqual(0);
+      expect(run.x).toBeLessThanOrEqual(pageW);
+      expect(run.y).toBeGreaterThanOrEqual(0);
+      expect(run.y).toBeLessThanOrEqual(pageH);
+    }
+    expect(runs.length).toBe(2);
+  });
+
   it('ships the pages without a layer when OCR is switched off', async () => {
     OCR.words = [{ text: 'SHOULD_NOT_APPEAR', x: 60, y: 90, width: 120, height: 20 }];
     const outcome = await run('digitize-document', { keepImage: false }, [

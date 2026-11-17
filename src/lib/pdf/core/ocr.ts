@@ -408,13 +408,19 @@ export async function addSearchableTextLayer(
       const key = fontKeyFor(page, font, fontKeys);
       const natural = font.widthOfTextAtSize(text, size);
       const stretch = natural > 0 ? clamp(run.rect.width / natural, 0.05, maxStretch) : 1;
-      const baseline = round(run.rect.y + run.rect.height * 0.08, 3);
+      // A recogniser can name a box that runs off the picture (a margin word, a
+      // page-border artefact). Text placed at 640 on a 595 pt sheet cannot be
+      // clicked, so the run is brought back inside the page it belongs to.
+      const { width: pageWidth, height: pageHeight } = page.getSize();
+      const drawnWidth = natural * stretch;
+      const x = clamp(run.rect.x, 0, Math.max(0, pageWidth - drawnWidth));
+      const baseline = clamp(run.rect.y + run.rect.height * 0.08, 0, Math.max(0, pageHeight - size));
       if (mode === TextRenderingMode.Fill) ops.push(setFillingRgbColor(0, 0, 0));
       ops.push(
         beginText(),
         setFontAndSize(key, size),
         setTextRenderingMode(mode),
-        setTextMatrix(round(stretch, 5), 0, 0, 1, round(run.rect.x, 3), baseline),
+        setTextMatrix(round(stretch, 5), 0, 0, 1, round(x, 3), round(baseline, 3)),
         showText(font.encodeText(text)),
         endText(),
       );
