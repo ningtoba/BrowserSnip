@@ -1504,13 +1504,32 @@ function sameStyle(run: Inline, style: Partial<Inline>): boolean {
  * A pragmatic RTF reader.
  *
  * Handles the control words that carry meaning for a PDF conversion — \b \i \ul
- * \strike \fs \par \line \tab \u \ansicpg and {\pict} — plus {\row {\cell}}
- * tables. Colour tables, stylesheets, embedded objects and field codes are
+ * \strike \fs \par \line \tab \u \ansicpg, the colour table's \cf, and {\pict}
+ * — plus {\row {\cell}} tables. Stylesheets, embedded objects and field codes are
  * ignored, and nested destinations are skipped rather than guessed at.
  */
+/**
+ * The colours a document's own `{\colortbl …}` declares, as `#rrggbb`, by index.
+ *
+ * Slot 0 is the "automatic" colour and is deliberately empty. A table is
+ * `;`-separated with the components as `\redN\greenN\blueN` control words.
+ */
+function rtfColourTable(rtf: string): (string | undefined)[] {
+  const table = /\{\\colortbl([^}]*)\}/.exec(rtf)?.[1] ?? '';
+  const hex = (value: number) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
+  return table.split(';').map((entry) => {
+    const red = /\\red(\d{1,3})/.exec(entry)?.[1];
+    const green = /\\green(\d{1,3})/.exec(entry)?.[1];
+    const blue = /\\blue(\d{1,3})/.exec(entry)?.[1];
+    if (red === undefined && green === undefined && blue === undefined) return undefined;
+    return `#${hex(Number(red ?? 0))}${hex(Number(green ?? 0))}${hex(Number(blue ?? 0))}`;
+  });
+}
+
 export function rtfToBlocks(rtf: string): Block[] {
   const encoding = /\\ansicpg(\d{3,5})/.exec(rtf)?.[1] ?? '1252';
   const decoder = makeDecoder(encoding);
+  const palette = rtfColourTable(rtf);
   const blocks: Block[] = [];
   let paragraph: Inline[] = [];
   let current: Partial<Inline> = {};
@@ -1607,6 +1626,13 @@ export function rtfToBlocks(rtf: string): Block[] {
       case 'fs':
         if (argument) current = { ...current, size: argument / 2 };
         break;
+      case 'cf': {
+        // `\cf0` is the automatic colour; every other index is a slot in the
+        // document's own `{\colortbl …}`, which is read before this loop.
+        const colour = argument ? palette[argument] : undefined;
+        current = { ...current, ...(colour ? { color: colour } : { color: undefined }) };
+        break;
+      }
       case 'par':
       case 'line':
       case 'sect':

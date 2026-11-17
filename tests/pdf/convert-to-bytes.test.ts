@@ -1069,6 +1069,29 @@ describe('rtf-to-pdf recovers text, size and order', () => {
     expect(compact(heading)).toContain('bigheading');
   });
 
+  it('applies the colour table, italic and a \\u escape, and ends a group’s scope', async () => {
+    const source = String.raw`{\rtf1\ansi{\colortbl ;\red255\green0\blue0;}\cf1 red words\cf0  plain \i slanted\i0  tail \u233? e-acute\par}`;
+    const outcome = await run('rtf-to-pdf', { source: 'paste', paste: source });
+    const bytes = await firstPdf(outcome);
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const colours = pageContentOps(doc.getPages()[0]!)
+      .filter((op) => op.name === 'rg')
+      .map((op) => op.operands.filter((operand) => operand.kind === 'number').map((operand) => round((operand as { value: number }).value)));
+    expect(colours.some((c) => c[0] === 1 && c[1] === 0 && c[2] === 0)).toBe(true);
+    // Runs are one character each here, so italic is judged on the page's own
+    // font resources: `\i` must have selected an oblique face, and the `é` typed
+    // after `\i0` must be set in an upright one — that is the scope test.
+    const firstPage = doc.getPages()[0]!;
+    const fonts = firstPage.node.Resources()?.lookup(PDFName.of('Font'), PDFDict) as PDFDict;
+    const names = fonts.keys().map((key) => fonts.lookup(key)?.toString() ?? '');
+    expect(names.join(' ')).toMatch(/Oblique|Italic/);
+    expect(names.join(' ')).toMatch(/Helvetica(?!-)/);
+    const runs = await textRuns(bytes);
+    const accent = runs.find((run) => run.text === 'é');
+    expect(accent?.font ?? '').not.toMatch(/Italic|Oblique/i);
+    expect(squash(await extractText(bytes))).toContain('é');
+  });
+
   it('decodes an RTF escape into the accented character it names', async () => {
     const outcome = await run('rtf-to-pdf', { source: 'paste', paste: rtf });
     const words = squash(await extractText(await firstPdf(outcome)));
