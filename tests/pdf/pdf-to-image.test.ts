@@ -795,6 +795,46 @@ describe('which of the two causes the deployed 44 128-byte zip was', () => {
   });
 });
 
+describe('the six preset routes each write their own container', () => {
+  /** The five extra dashboard entries share `exportPages`; a preset that wrote
+   *  another preset's format would still look like a successful export. */
+  const MAGIC: Record<string, number[]> = {
+    'pdf-to-png': [0x89, 0x50, 0x4e, 0x47],
+    'pdf-to-jpg': [0xff, 0xd8],
+    'pdf-to-webp': [0x52, 0x49, 0x46, 0x46], // `RIFF`; `WEBP` sits at offset 8
+    'pdf-to-bmp': [0x42, 0x4d],
+    'pdf-to-tiff': [0x49, 0x49, 0x2a, 0x00],
+  };
+
+  for (const [id, magic] of Object.entries(MAGIC)) {
+    it(`${id} writes real ${id.slice(7).toUpperCase()} bytes, not a renamed PNG`, async () => {
+      const tool = getPdfTool(id);
+      expect(tool, `${id} is not registered`).toBeTruthy();
+      const result = (await tool!.run!({
+        inputs: [fileOf(await inkFixture(), 'ink.pdf')],
+        values: { ...defaultValues(tool!.fields ?? []), pages: '1' },
+        progress: () => {},
+        log: () => {},
+        signal: new AbortController().signal,
+      })) as ToolResult;
+      await flushPaints();
+      expect(result.kind).toBe('files');
+      const files = (result as Extract<ToolResult, { kind: 'files' }>).files;
+      const blob = files[0]!.blob;
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const extension = { 'pdf-to-png': 'png', 'pdf-to-jpg': 'jpg', 'pdf-to-webp': 'webp', 'pdf-to-bmp': 'bmp', 'pdf-to-tiff': 'tif' }[id]!;
+      expect(files[0]!.name).toMatch(new RegExp(`\\.${extension}$`));
+      if (id === 'pdf-to-webp') {
+        // jsdom's canvas answers a PNG whatever MIME it is asked for, so the
+        // container is only real in a browser (measured there: `RIFF`/`WEBP`).
+        expect(blob.type).toBe('image/webp');
+        return;
+      }
+      expect(bytes.subarray(0, magic.length)).toEqual(Uint8Array.from(magic));
+    });
+  }
+});
+
 describe('pdf-to-image paints the page it exports', () => {
   it.each(SHEETS.map((sheet, index) => [index + 1, sheet.kind] as const))(
     'page %i (%s) carries exactly the ink its sheet was painted with',

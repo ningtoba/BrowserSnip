@@ -107,12 +107,12 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 097 [x] pdf-to-word
 098 [x] pdf-to-svg
 099 [x] extract-images
-100 [ ] pdf-to-image
-101 [ ] pdf-to-png
-102 [ ] pdf-to-jpg
-103 [ ] pdf-to-webp
-104 [ ] pdf-to-bmp
-105 [ ] pdf-to-tiff
+100 [x] pdf-to-image
+101 [x] pdf-to-png
+102 [x] pdf-to-jpg
+103 [x] pdf-to-webp
+104 [x] pdf-to-bmp
+105 [x] pdf-to-tiff
 106 [ ] pdf-to-greyscale
 107 [ ] page-dimensions
 108 [ ] odt-to-pdf
