@@ -1362,6 +1362,22 @@ describe('extract-tables', () => {
     expect(md.split('\n')[0]).toMatch(/^# /);
   });
 
+  it('quotes a CSV cell that holds the delimiter', async () => {
+    // A table cell is free text. Left unquoted, `Total, inc. tax` becomes two
+    // columns and every later cell of its row shifts one place right.
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595.28, 841.89]);
+    const rows = [['Item', 'Note'], ['Widget', 'Total, inc. tax'], ['Gizmo', 'plain']];
+    rows.forEach((cells, r) => cells.forEach((cell, c) => {
+      page.drawText(cell, { x: 60 + c * 180, y: 760 - r * 30, size: 11, font });
+    }));
+    const file = [fileOf(await doc.save({ useObjectStreams: false }), 'tax.pdf')];
+    const body = await textOf(await run('extract-tables', { pages: 'all', format: 'csv' }, file));
+    expect(body).toContain('"Total, inc. tax"');
+    expect(body).toContain('plain');
+  });
+
   it('reports no tables rather than an empty archive of nothing (E13)', async () => {
     const outcome = await run('extract-tables', { pages: 'all' }, [
       fileOf(await blankPdf(), 'blank.pdf'),

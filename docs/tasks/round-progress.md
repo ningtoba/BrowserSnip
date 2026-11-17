@@ -97,12 +97,12 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 087 [x] epub-to-pdf
 088 [x] email-to-pdf
 089 [x] digitize-document
-090 [ ] pdf-to-text
-091 [ ] pdf-to-markdown
-092 [ ] pdf-to-json
-093 [ ] prepare-pdf-for-ai
-094 [ ] pdf-to-csv
-095 [ ] extract-tables
+090 [x] pdf-to-text
+091 [x] pdf-to-markdown
+092 [x] pdf-to-json
+093 [x] prepare-pdf-for-ai
+094 [x] pdf-to-csv
+095 [x] extract-tables
 096 [ ] pdf-to-excel
 097 [ ] pdf-to-word
 098 [ ] pdf-to-svg
