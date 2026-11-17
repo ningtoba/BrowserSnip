@@ -54,6 +54,7 @@ import {
   restoreConvertToEnv,
   run,
   squash,
+  textRunsOf,
   workbookBytes,
   xpsBytes,
   zipBytes,
@@ -693,6 +694,38 @@ describe('OpenDocument and XPS routes', () => {
     ]);
     const error = await run('odp-to-pdf', {}, [fileFrom(frameOnly, 'libreoffice.odp')]).catch((err) => err);
     expect((error as ToolInputError).message).toMatch(/no text frames this reader can see/);
+  });
+
+  it('gives an ODT heading its level and keeps the body under it', async () => {
+    const odt = await zipBytes([
+      {
+        name: 'content.xml',
+        data:
+          `${XML}<office:document-content ${ODF_NS}><office:body><office:text>` +
+          '<text:h text:outline-level="1">Vision statement</text:h>' +
+          '<text:p>Body paragraph under the heading.</text:p>' +
+          '</office:text></office:body></office:document-content>',
+      },
+    ]);
+    const bytes = await firstPdf(await run('odt-to-pdf', {}, [fileFrom(odt, 'plan.odt')]));
+    const runs = textRunsOf(await PDFDocument.load(bytes, { updateMetadata: false }));
+    const heading = runs.find((run) => run.text.includes('Vision statement'));
+    const body = runs.find((run) => run.text.includes('Body paragraph under'));
+    expect(heading && body).toBeTruthy();
+    expect(heading!.size).toBeGreaterThan(body!.size);
+    expect(heading!.y).toBeGreaterThan(body!.y);
+  });
+
+  it('gives every XPS page its own sheet, in order', async () => {
+    const outcome = await run('xps-to-pdf', {}, [
+      fileFrom(await xpsBytes(['First fixed page', 'Second fixed page']), 'two.xps'),
+    ]);
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    const runs = textRunsOf(doc);
+    const text = runs.map((run) => run.text).join('').replace(/\s+/g, ' ');
+    expect(text).toContain('First fixed page');
+    expect(text).toContain('Second fixed page');
+    expect(doc.getPageCount()).toBe(2);
   });
 
   it('recovers XPS text runs and admits the artwork loss', async () => {
