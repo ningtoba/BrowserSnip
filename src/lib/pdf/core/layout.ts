@@ -942,6 +942,8 @@ function formatScalar(node: unknown): string {
 export function xmlToBlocks(text: string): Block[] {
   const document = new DOMParser().parseFromString(text.replace(/^\uFEFF/, ''), 'application/xml');
   if (document.getElementsByTagName('parsererror').length > 0) {
+    // Printed as code rather than refused, because a half-tag document still
+    // carries the words — but the caller says so (see the tool's warning).
     return [{ kind: 'code', text: text.slice(0, 20000) }];
   }
   const blocks: Block[] = [];
@@ -949,7 +951,9 @@ export function xmlToBlocks(text: string): Block[] {
   const walk = (element: Element, depth: number): void => {
     const children = Array.from(element.children ?? []);
     const text = Array.from(element.childNodes ?? [])
-      .filter((node) => node.nodeType === 3)
+      // Text nodes, and CDATA sections: a `<![CDATA[a < b & c]]>` is prose the
+      // author wanted verbatim, and nodeType 4 is what the parser makes of it.
+      .filter((node) => node.nodeType === 3 || node.nodeType === 4)
       .map((node) => node.textContent?.trim() ?? '')
       .join(' ')
       .trim();

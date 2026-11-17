@@ -1212,7 +1212,13 @@ export const convertToTools: PdfToolDefinition[] = [
           });
         }
       }
-      const blocks: Block[] = sources.flatMap((source) => xmlToBlocks(source.text));
+      const blocks: Block[] = sources.flatMap((source) => {
+        const built = xmlToBlocks(source.text);
+        if (built.length === 1 && built[0]?.kind === 'code') {
+          warnings.push(`"${source.name}" is not well-formed XML, so it was printed as plain text instead of a tag tree.`);
+        }
+        return built;
+      });
       if (sources.some((source) => /<svg[\s>]/i.test(source.text))) {
         warnings.push('This is an SVG document printed as a tag tree; SVG to PDF paints it as artwork instead.');
       }

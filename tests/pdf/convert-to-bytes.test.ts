@@ -1009,6 +1009,26 @@ describe('json-to-pdf and xml-to-pdf print nesting as geometry', () => {
       .rejects.toThrow(/JSON|parse/i);
   });
 
+  it('prints attributes but not the XML declaration, and keeps CDATA words', async () => {
+    const outcome = await run('xml-to-pdf', {
+      source: 'paste',
+      paste: '<?xml version="1.0"?><root id="r1"><child lang="en">plain</child><cdata><![CDATA[a < b & c]]></cdata></root>',
+    });
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('r1');
+    expect(text).toContain('lang="en"');
+    expect(text).not.toContain('version="1.0"');
+    expect(text).toContain('a < b & c');
+  });
+
+  it('prints bad XML as text and says it could not be parsed', async () => {
+    // The tool prints a half-tag document rather than losing the words, so the
+    // card must say which happened. It used to be silent.
+    const outcome = await run('xml-to-pdf', { source: 'paste', paste: '<root><unclosed></root>' });
+    expect(squash(await extractText(await firstPdf(outcome)))).toContain('unclosed');
+    expect(outcome.warnings.join(' ')).toMatch(/not well-formed XML/);
+  });
+
   it('indents an XML tree one step deeper per level', async () => {
     const outcome = await run('xml-to-pdf', {
       source: 'paste',
