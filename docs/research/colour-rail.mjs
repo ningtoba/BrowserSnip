@@ -827,8 +827,12 @@ if (process.env.SHOT_BEFORE) {
   console.log('screenshot before:', process.env.SHOT_BEFORE);
 }
 
+// The intake preview already makes an object URL of the input, so a blob exists
+// before the run does: the wait has to grow past the count at the click, or a
+// slow tool — or a refusing one — is reported as its own source file.
+const blobsBefore = await ev('window.__blobs.length');
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL || TOOL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
-if (!(await wait('window.__blobs.length>0', TIMEOUT))) {
+if (!(await wait(`window.__blobs.length>${blobsBefore}`, TIMEOUT))) {
   console.log('NO OUTPUT — the screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
   // A refusal is a result: keep the screen that shows it.
   if (process.env.SHOT) await shoot(process.env.SHOT);

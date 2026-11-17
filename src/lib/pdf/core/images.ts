@@ -294,6 +294,11 @@ export async function decodeImagePages(
   if (mime !== 'image/tiff') return [await decodeImage(bytes, { ...options, mime })];
   const buffer = bufferOf(bytes);
   const ifds = UTIF.decode(buffer);
+  const short = tiffShortfall(ifds as unknown as { t273?: unknown; t279?: unknown }[], bytes.length);
+  if (short) {
+    throw new Error(`the file stops early: ${short}. The page would come out with its lower`
+      + ' part blank');
+  }
   const out: DecodedImage[] = [];
   for (let index = 0; index < ifds.length; index++) {
     out.push(ifdToCanvas(ifds[index], buffer, options, index + 1));
@@ -467,6 +472,42 @@ function decodeTiff(bytes: Uint8Array, options: DecodeOptions): DecodedImage {
   const ifds = UTIF.decode(buffer);
   if (ifds.length === 0) throw new Error('That TIFF file did not contain any decodable pages.');
   return ifdToCanvas(ifds[0], buffer, options, 1);
+}
+
+/**
+ * How far past the end of the file a TIFF's own strip table reaches, or `null`.
+ *
+ * UTIF and the browser's canvas pad a short file with white and answer a
+ * complete page, so a TIFF cut during transfer embedded as a full 200 x 120
+ * sheet with its lower 72 rows blank and nothing said (measured). The strip
+ * offsets and byte counts are in the directory, so the file can be asked
+ * whether it is all there before anything is drawn — the same question the BMP
+ * and WebP readers ask of their own headers.
+ */
+function tiffShortfall(ifds: { t273?: unknown; t279?: unknown }[], fileLength: number): string | null {
+  let longest = 0;
+  let needs = 0;
+  for (const ifd of ifds) {
+    const offsets = numberList(ifd.t273);
+    const counts = numberList(ifd.t279);
+    if (offsets.length === 0 || offsets.length !== counts.length) continue;
+    for (let index = 0; index < offsets.length; index += 1) {
+      const end = offsets[index] + counts[index];
+      if (end > longest) {
+        longest = end;
+        needs = counts[index];
+      }
+    }
+  }
+  if (longest === 0 || longest <= fileLength) return null;
+  return `${fileLength} byte(s) in the file, but a strip starts at ${longest - needs} and runs`
+    + ` ${needs} byte(s), to ${longest}`;
+}
+
+/** The numbers in a TIFF directory entry, whether UTIF stored one or a list. */
+function numberList(value: unknown): number[] {
+  const list = Array.isArray(value) ? value : [value];
+  return list.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item >= 0);
 }
 
 /**

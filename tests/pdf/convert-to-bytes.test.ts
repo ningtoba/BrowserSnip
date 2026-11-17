@@ -416,6 +416,21 @@ describe('the format-specific image routes keep real dimensions', () => {
     expect(placed?.pixels).toEqual([120, 60]);
   });
 
+  it('tiff-to-pdf refuses a truncated TIFF instead of padding it white', async () => {
+    // UTIF and the canvas pad a short file with white and answer a complete page:
+    // a TIFF cut to 40 % embedded as a full 200 x 120 sheet with 72 blank rows
+    // and nothing said. The strip table says whether the file is all there.
+    const whole = tiffBytes([{ width: 200, height: 120 }]);
+    const cut = whole.slice(0, Math.floor(whole.length * 0.4));
+    const outcome = await run('tiff-to-pdf', { pageSize: 'fit', margin: 0 }, [
+      fileFrom(cut, 'cut.tif', 'image/tiff'),
+      fileFrom(tiffBytes([{ width: 40, height: 30 }]), 'ok.tif', 'image/tiff'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(await pageSizes(bytes)).toEqual([[40, 30]]);
+    expect(outcome.warnings.join(' ')).toMatch(/cut\.tif.*stops early/);
+  });
+
   it('tiff-to-pdf gives every frame its own page, in order', async () => {
     const outcome = await run('tiff-to-pdf', { pageSize: 'a4', margin: 0 }, [
       fileFrom(tiffBytes([{ width: 30, height: 40 }, { width: 50, height: 20 }]), 'fax.tif', 'image/tiff'),

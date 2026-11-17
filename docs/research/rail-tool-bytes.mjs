@@ -70,8 +70,15 @@ await send('DOM.setFileInputFiles', { nodeId, files: [PDF] });
 if (!(await wait(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`))) {
   throw new Error(`no enabled button matching ${LABEL} after loading ${PDF}`);
 }
+// The *intake preview* already makes an object URL of the input, so "a blob
+// exists" is true before the run starts: it is the count at the click that the
+// wait has to grow past, or a slow tool's answer is the preview of its own
+// source. Measured on `tiff-to-pdf`, whose 3-frame run settles a second or two
+// after the click and was reported as a TIFF byte-for-byte identical to the
+// input.
+const before = await ev('window.__blobs.length');
 await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)},'i');const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`).then((t) => console.log('clicked', JSON.stringify(t)));
-if (!(await wait('window.__blobs.length>0', 60000))) {
+if (!(await wait(`window.__blobs.length>${before}`, 60000))) {
   // A refusal is an answer too: print what the rail says instead of a download,
   // so a tool that turns down a legitimate file is caught by this probe.
   const text = await ev(`(document.body.innerText || '').slice(0, 1600)`);
