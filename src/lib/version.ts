@@ -48,6 +48,33 @@ export function reloadForBuild(id: string): boolean {
   return true;
 }
 
+/**
+ * Get off a cached shell before it mounts its tools.
+ *
+ * The version check below cannot help the first time: it lives *in* the shell, so
+ * a tab served yesterday's HTML never runs it. A response that came from a cache
+ * (`transferSize` 0 for the document) is exactly that case — GitHub Pages puts
+ * `max-age=600` on the shell and its CDN can keep a stale copy of one encoding
+ * variant while another is fresh, so the reload is made against the *variant* by
+ * changing the query string. Once per session, so a cache-only environment cannot
+ * loop.
+ */
+export function leaveCachedShell(): void {
+  if (typeof window === 'undefined' || !import.meta.env.PROD) return;
+  try {
+    const [navigation] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    const fromCache = navigation && navigation.transferSize === 0;
+    const url = new URL(location.href);
+    if (!fromCache || url.searchParams.has('v')) return;
+    if (sessionStorage.getItem(KEY + '.shell') === '1') return;
+    sessionStorage.setItem(KEY + '.shell', '1');
+    url.searchParams.set('v', String(Date.now()));
+    location.replace(url.toString());
+  } catch {
+    // No navigation timing, no sessionStorage: carry on with what loaded.
+  }
+}
+
 /** Start watching, once per document. */
 export function watchForNewBuild(): void {
   if (typeof window === 'undefined' || !import.meta.env.PROD) return;
