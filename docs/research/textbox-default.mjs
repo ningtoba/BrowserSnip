@@ -71,6 +71,11 @@ if (process.env.KEYS) {
   // One real key event per character, which is how a person types: `insertText`
   // jumps straight to the value and skips the per-keystroke path.
   for (const ch of typed) {
+    if (ch === '\n') {
+      await h.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await h.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      continue;
+    }
     await h.send('Input.dispatchKeyEvent', { type: 'keyDown', text: ch, key: ch, unmodifiedText: ch });
     await h.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
   }

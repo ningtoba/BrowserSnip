@@ -295,6 +295,7 @@ export function AnnotationOverlay({
               data-text-size={preview.size}
               data-text-shrank={preview.shrank ? 'true' : 'false'}
               data-text-overflows={preview.overflows ? 'true' : 'false'}
+              data-text-lines={preview.lines.length}
               clipPath={clipUsable(annotation) ? `url(#${textClipId(annotation.id)})` : undefined}
               // A mark whose opacity came out 0 (or undefined on an older draft)
               // would paint nothing at all; the file shows it, so the screen must.

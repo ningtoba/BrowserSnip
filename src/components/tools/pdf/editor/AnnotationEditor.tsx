@@ -2286,6 +2286,16 @@ export function AnnotationEditor({
                             }
                           : null
                       }
+                      // Set when the selected text box's own layout came back
+                      // with no lines: the mark is in the file either way, so the
+                      // card has to say which half is empty rather than leaving a
+                      // box that looks like a lost paragraph.
+                      emptyLayout={
+                        !selectionGroup
+                        && primary.kind === 'FreeText'
+                        && previews[primary.id] !== undefined
+                        && (previews[primary.id]?.lines.length ?? 0) === 0
+                      }
                       onStyle={(shared) => patchStyle(shared)}
                       onAngle={rotateSelectedTo}
                       onTurn={(delta) => turnSelected(delta)}
@@ -3102,6 +3112,7 @@ function SelectionPanel({
   refusedLabel,
   refusedKind,
   styling,
+  emptyLayout = false,
   onStyle,
   onAngle,
   onTurn,
@@ -3120,6 +3131,8 @@ function SelectionPanel({
     families: FaceFamilySpec[];
     sample: string;
   } | null;
+  /** The selected box has a layout entry with no lines in it. */
+  emptyLayout?: boolean;
   onStyle: (shared: SharedStyle) => void;
   onAngle: (degrees: number) => void;
   onTurn: (delta: number) => void;
@@ -3140,6 +3153,13 @@ function SelectionPanel({
           {mixed.size > 0
             ? `${[...mixed].join(', ')} differ between these marks; setting one below writes it into all ${summary.count}.`
             : ''}
+        </p>
+      ) : null}
+
+      {emptyLayout ? (
+        <p className="text-[10px] leading-relaxed text-warn" data-preview-empty>
+          This box&rsquo;s own layout came back with no lines, so nothing is drawn on the page.
+          The words are in the file. Reopen the box and press a key to lay it out again.
         </p>
       ) : null}
 
