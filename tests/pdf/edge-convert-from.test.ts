@@ -2389,6 +2389,18 @@ describe('pdf-to-text: what the layout switch actually switches', () => {
   });
 });
 
+/** A portrait sheet carrying `/Rotate 90`, which displays landscape. */
+async function rotatedPdf(): Promise<Uint8Array> {
+  return cached('rotated', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595.28, 841.89]);
+    page.drawText('Turned page', { x: 60, y: 700, size: 18, font });
+    page.setRotation(degrees(90));
+    return doc.save({ useObjectStreams: false });
+  });
+}
+
 /** Text with every character that breaks an XML or HTML document. */
 async function symbolsPdf(): Promise<Uint8Array> {
   return cached('symbols', async () => {
@@ -2420,6 +2432,19 @@ describe('pdf-to-svg (E9, E11)', () => {
     const text = await textOf(symbols);
     expect(text).toContain('R&amp;D &lt;quarter&gt;');
     expect(new DOMParser().parseFromString(text, 'image/svg+xml').querySelector('parsererror')).toBeNull();
+  });
+
+  it('turns a /Rotate 90 page upright instead of exporting it sideways', async () => {
+    // The sheet is stored portrait and displayed landscape; an SVG of the stored
+    // frame puts every word on its side in a browser.
+    const outcome = await run('pdf-to-svg', { pages: '1' }, [
+      fileOf(await rotatedPdf(), 'turned.pdf'),
+    ]);
+    const svg = await textOf(outcome);
+    const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    expect(Number(root.getAttribute('width'))).toBeCloseTo(841.89, 1);
+    expect(Number(root.getAttribute('height'))).toBeCloseTo(595.28, 1);
+    expect(svg).toMatch(/rotate\(-?90|matrix\(/);
   });
 
   it('leaves the raster out when the toggle says so, and puts it in when it says yes', async () => {
