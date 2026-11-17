@@ -993,6 +993,52 @@ interface MdToken extends Record<string, unknown> {
 }
 
 /**
+ * Raw HTML out of a Markdown source, keeping the words it wraps.
+ *
+ * `marked` hands inline HTML straight through, and this renderer prints text:
+ * `<script>alert(1)</script>` and `<b>bold</b>` arrived on the page with their
+ * angle brackets, measured. Script and style blocks go with their contents (they
+ * are not prose), every other tag is removed and the basic entities decoded.
+ * Fenced code is left alone, because a fence is exactly where a literal `<div>`
+ * belongs.
+ */
+function stripRawHtml(markdown: string): string {
+  const out: string[] = [];
+  let fence: string | null = null;
+  for (const line of markdown.split('\n')) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1] ?? null;
+    if (marker) {
+      fence = fence === null ? marker : (marker[0] === fence[0] ? null : fence);
+      out.push(line);
+      continue;
+    }
+    if (fence) {
+      out.push(line);
+      continue;
+    }
+    out.push(line);
+  }
+  const joined = out.join('\n')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '');
+  // Re-split so the fence guard still holds for the tag strip.
+  const stripped: string[] = [];
+  let insideFence: string | null = null;
+  for (const line of joined.split('\n')) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1] ?? null;
+    if (marker) {
+      insideFence = insideFence === null ? marker : (marker[0] === insideFence[0] ? null : insideFence);
+      stripped.push(line);
+      continue;
+    }
+    stripped.push(insideFence ? line : line.replace(/<\/?[a-zA-Z][^<>]*>/g, ''));
+  }
+  return stripped.join('\n').replace(/&(amp|lt|gt|quot|#39);/g, (_, name: string) => ({
+    amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'",
+  } as Record<string, string>)[name]);
+}
+
+/**
  * Markdown via the `marked` lexer, so tables, task lists and fenced code are
  * real structure rather than a regex approximation.
  */
@@ -1005,7 +1051,7 @@ export async function markdownToBlocks(
   // run it lexed, so a single `\t` in a Markdown source threw and the whole file
   // was lost. CommonMark's tab stop is four columns, which is the expansion the
   // text route applies and the code branch draws with.
-  const lexed = markdown.replace(/\t/g, '    ');
+  const lexed = stripRawHtml(markdown).replace(/\t/g, '    ');
   // SAFETY: `marked` types its lexer output as a wide `TokensList` union whose
   // members carry the fields read below; `MdToken` is that shared shape narrowed
   // to what this renderer consumes, so no field is invented by the cast.

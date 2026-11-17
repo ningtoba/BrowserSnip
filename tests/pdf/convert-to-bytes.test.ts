@@ -687,6 +687,19 @@ describe('markdown-to-pdf keeps the structure it read', () => {
     expect(code!.y).toBeLessThan(body!.y);
   });
 
+  it('does not print raw HTML tags, and keeps an unterminated fence\'s words', async () => {
+    const outcome = await run('markdown-to-pdf', {
+      source: 'paste',
+      paste: '<script>alert(1)</script>\n\nStarts <b>bold</b> here\n\n```\nunclosed code line\nsecond line',
+    });
+    const runs = await textRuns(await firstPdf(outcome));
+    const printed = runs.map((run) => run.text).join(' ');
+    expect(printed).not.toContain('<script>');
+    expect(printed).toContain('Starts');
+    expect(printed).toContain('bold');
+    expect(printed).toContain('unclosed code line');
+  });
+
   it('embeds a data-URL image inside the text column', async () => {
     const png = `data:image/png;base64,${Buffer.from(realPng(60, 30)).toString('base64')}`;
     const outcome = await run('markdown-to-pdf', {

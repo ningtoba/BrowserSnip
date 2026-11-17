@@ -966,6 +966,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'Only `data:` images can be embedded: no network requests are made, so remote image URLs stay as alt text — and a picture written inside a sentence prints its alt text too, because pictures are placed between paragraphs, not between words.',
       'Maths is written out as its LaTeX source in a code face, not typeset — a server engine would run KaTeX.',
       'Footnotes, definition lists and Mermaid diagrams are not rendered.',
+      'Raw HTML inside the Markdown is stripped rather than rendered: `<b>` and `<script>` arrive as their words, and a `<script>` body is not printed. HTML inside a fenced code block is kept.'
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.markdown, '# Heading\n\nWrite **Markdown** here…', 'Source'),
