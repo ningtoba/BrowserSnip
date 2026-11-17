@@ -58,7 +58,7 @@ import {
 } from '@/lib/pdf/core/doc';
 import type { PDFPage } from '@/lib/pdf/core/doc';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
-import { pageUsesColor } from '@/lib/pdf/core/content';
+import { pageContentOps, pageUsesColor } from '@/lib/pdf/core/content';
 import { defaultValues, type ToolFile, type ToolValues } from '@/lib/pdf/tools/types';
 
 /* ── the sheet: named regions of known colour, five distinct pages ─────────── */
@@ -811,6 +811,30 @@ describe('pdf-to-greyscale, Method = Re-render: colour becomes grey', () => {
       'the grey tool moved pixels a plain rasterisation left alone — or filtered twice',
     ).toBe(true);
     expect(inkPixels(plainRaster), 'the achromatic sheet has no ink to compare').toBeGreaterThan(0);
+  });
+
+  it('gives the same red the same grey as the operator method', async () => {
+    // The two methods used to disagree: the operator path converted with BT.601
+    // and the re-render with the CSS Rec.709 filter, so one red square left at
+    // 86 by one method and 69 by the other. One luma, both paths.
+    const { rasters } = await runRaster({ pages: String(COLOUR_PAGE) });
+    const before = regionMean(painted(COLOUR_PAGE), 'red');
+    const expected = clamp255(recLuma(...before));
+    const raster = regionMean(rasters[0], 'red');
+
+    const vectors = await runTool('pdf-to-greyscale', { mode: 'vectors', pages: String(COLOUR_PAGE), dpi: 72 });
+    // A grey may be written as one operand (`g`) or as three equal channels
+    // (`rg`); both are achromatic, which is the property under test.
+    const greyOps = pageContentOps(vectors.doc.getPages()[0]!)
+      .filter((op) => op.name === 'g' || op.name === 'rg')
+      .map((op) => op.operands.filter((operand) => operand.kind === 'number').map((operand) => Math.round((operand as { value: number }).value * 255)))
+      .filter((channels) => channels.length > 0 && channels.every((channel) => channel === channels[0]));
+    expect(greyOps.length, 'the operator path wrote no achromatic fill').toBeGreaterThan(0);
+    const operator = greyOps.map((channels) => channels[0]!)
+      .sort((a, b) => Math.abs(a - expected) - Math.abs(b - expected))[0]!;
+    expect(Math.abs(raster[0] - expected), `raster grey ${raster[0]} vs luma ${expected}`).toBeLessThanOrEqual(2);
+    expect(Math.abs(operator - expected), `operator grey ${operator} vs luma ${expected}`).toBeLessThanOrEqual(2);
+    expect(Math.abs(operator - raster[0]), `the two methods disagree: ${operator} vs ${raster[0]}`).toBeLessThanOrEqual(2);
   });
 
   it('invents nothing on the empty control', async () => {
