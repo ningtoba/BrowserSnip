@@ -304,6 +304,32 @@ describe('the crop panel lets a margin be declared in the unit the card names', 
     expect(getCropRect().top).toBeCloseTo(20 / 900, 6);
   }, 180_000);
 
+  it('keeps the box on the sheet when every margin is larger than the page', async () => {
+    const source = await oneSheet();
+    await mountPanel(source);
+    // 1000 pt margins against a 500 × 900 sheet. The field clamps each edge
+    // against its opposite, so the last edge typed ends tiny rather than
+    // negative; the written box still has to sit on the page.
+    for (const edge of ['top', 'right', 'bottom', 'left'] as const) {
+      act(() => fireEvent.change(marginInput(edge), { target: { value: '1000' } }));
+    }
+    const button = document.getElementById('tool-process-btn') as HTMLButtonElement;
+    expect(button.disabled, 'an impossible crop is still offered').toBe(false);
+    await act(async () => {
+      fireEvent.click(button);
+      await new Promise((done) => setTimeout(done, 3000));
+    });
+    const store = useProcessStore.getState();
+    const bytes = new Uint8Array(await store.outputBlob!.arrayBuffer());
+    const [[media]] = await boxesOf(bytes);
+    // Whatever is written has to be a real box on the sheet, not an 882 pt top
+    // margin on a 900 pt page with a negative kept height.
+    expect(media![1]).toBeGreaterThanOrEqual(0);
+    expect(media![3]).toBeLessThanOrEqual(900 + 0.01);
+    expect(media![2] - media![0]).toBeGreaterThan(0);
+    expect(media![3] - media![1]).toBeGreaterThan(0);
+  }, 180_000);
+
   it('sends the margins in the chosen unit, and the box is the millimetres asked for', async () => {
     const source = await oneSheet();
     await mountPanel(source);

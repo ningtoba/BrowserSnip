@@ -159,6 +159,22 @@ export function describeCrop(input: CropReportInput): CropReport {
   }
 
   const margins = marginsInPoints(rect, page);
+  // Margins are typed in absolute units as well as dragged, so both edges of a
+  // pair can be bigger than the page they are measured against: 1000 pt on a
+  // 500 pt sheet gave a box 882 pt wide with its left edge off the paper. The
+  // pair is scaled to fit together, leaving whatever the kept-size rules then say.
+  for (const [a, b, size] of [
+    ['left', 'right', page.boxWidthPt],
+    ['top', 'bottom', page.boxHeightPt],
+  ] as const) {
+    const sum = margins[a] + margins[b];
+    const room = Math.max(0, size);
+    if (sum > room) {
+      const scale = sum > 0 ? room / sum : 0;
+      margins[a] = Math.round(margins[a] * scale * 100) / 100;
+      margins[b] = Math.round(margins[b] * scale * 100) / 100;
+    }
+  }
   const keptWidthPt = page.boxWidthPt - margins.left - margins.right;
   const keptHeightPt = page.boxHeightPt - margins.top - margins.bottom;
   const horizontal = rect.left + rect.right;
