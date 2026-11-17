@@ -86,7 +86,7 @@ One line per tool. `[ ]` queued, `[x]` round done (see the row in `docs/TOOL-CAM
 076 [x] cbz-to-pdf
 077 [x] txt-to-pdf
 078 [x] markdown-to-pdf
-079 [ ] html-to-pdf
+079 [x] html-to-pdf
 080 [ ] csv-to-pdf
 081 [ ] json-to-pdf
 082 [ ] xml-to-pdf

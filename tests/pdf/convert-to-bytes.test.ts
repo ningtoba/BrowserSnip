@@ -775,6 +775,21 @@ describe('html-to-pdf lays out markup as structure', () => {
     expect(baselines(rowCells).length).toBe(1);
   });
 
+  it('decodes entities, drops comments and breaks a line at <br>', async () => {
+    const outcome = await run('html-to-pdf', {
+      source: 'paste',
+      paste: '<p>Fish &amp; chips &lt;3</p><!-- a note --><p>first<br>second</p>',
+    });
+    const runs = await textRuns(await firstPdf(outcome));
+    const text = runs.map((run) => run.text).join(' ');
+    expect(text).toContain('Fish & chips <3');
+    expect(text).not.toContain('a note');
+    const first = find(runs, 'first')[0]!;
+    const second = find(runs, 'second')[0]!;
+    expect(baselines([first, second]).length).toBe(2);
+    expect(first.y).toBeGreaterThan(second.y);
+  });
+
   it('paints an inline colour rather than flattening it to black', async () => {
     const outcome = await run('html-to-pdf', { source: 'paste', paste: page });
     const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
@@ -782,6 +797,19 @@ describe('html-to-pdf lays out markup as structure', () => {
       .filter((op) => op.name === 'rg' || op.name === 'scn')
       .map((op) => op.operands.filter((operand) => operand.kind === 'number').map((operand) => round((operand as { value: number }).value)));
     expect(colours.some((c) => c[0] === 1 && c[1] === 0 && c[2] === 0)).toBe(true);
+  });
+
+  it('prints an anchor’s text, not its href, and keeps a <pre> block’s spacing', async () => {
+    const outcome = await run('html-to-pdf', {
+      source: 'paste',
+      paste: '<p>See <a href="https://example.org/very/long/path">the docs</a>.</p><pre>col1  col2</pre>',
+    });
+    const runs = await textRuns(await firstPdf(outcome));
+    const text = runs.map((run) => run.text).join(' ');
+    expect(text).toContain('the docs');
+    expect(text).not.toContain('example.org');
+    const pre = find(runs, 'col1')[0]!;
+    expect(pre.text).toMatch(/col1\s{2}col2/);
   });
 
   it('places a data-URL image block and never the script-written content', async () => {
