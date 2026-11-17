@@ -146,6 +146,23 @@ describe('a placed signature lands where the pane put it', () => {
     }
   });
 
+  it('still paints a mark the pane measured at zero size', async () => {
+    // A click without a drag can hand the tool a 0 × 0 box; a scale-0 `cm` would
+    // draw nothing at all and still count as placed.
+    const doc = await mixedDocument();
+    const outcome = await drawSignatureMarks(doc, [
+      { type: 'text', text: 'Ada', page: 1, x: 0.1, y: 0.1, width: 0, height: 0, fontFamily: 'Helvetica' },
+    ]);
+    expect(outcome.placed).toBe(1);
+    const paint = contentText(doc, 0);
+    // A text mark is set with `Tf`/`Tm` rather than a `cm` scale, so the size to
+    // check is the font size the fallback picked.
+    const set = /[\d.]+ Tf/.exec(paint);
+    expect(set, 'the mark was set with no font size').toBeTruthy();
+    expect(Number.parseFloat(set![0])).toBeGreaterThanOrEqual(1);
+    expect(paint).toMatch(/Tm/);
+  });
+
   it('keeps the document intact around the marks', async () => {
     const doc = await mixedDocument();
     await drawSignatureMarks(doc, [
