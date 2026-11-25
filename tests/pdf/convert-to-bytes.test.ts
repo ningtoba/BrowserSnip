@@ -19,6 +19,8 @@
  * decoded by the same rules a viewer uses.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PDFArray, PDFDict, PDFDocument, PDFName, type PDFPage, PDFRef, PDFStream, StandardFonts, type PDFObject } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import type { RunOutcome } from '@/lib/pdf/tools/runner';
@@ -132,6 +134,10 @@ afterAll(() => {
  * ------------------------------------------------------------------ */
 
 const round = (value: number) => Math.round(value * 100) / 100;
+
+/** A byte-for-byte copy of a real Excel workbook saved by its own producer. */
+const fixture = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(join(process.cwd(), 'tests/fixtures/office', name)));
 
 /** Runs in the order a viewer reads them: top to bottom, then left to right. */
 function inOrder(runs: TextRun[]): TextRun[] {
@@ -2568,6 +2574,103 @@ describe('excel-to-pdf prints the cells it was shown', () => {
   it('refuses a PDF dropped on it instead of printing the wrong thing', async () => {
     const error = await run('excel-to-pdf', {}, [fileFrom(await pdfBytes(), 'doc.pdf')]).catch((err) => err);
     expect((error as Error).message).toMatch(/is a PDF/);
+  });
+
+  it('prints the workbook’s own formats and booleans, from the spreadsheets Excel saved', async () => {
+    // `Booleans.xlsx` (Excel 2007): cells whose saved type is boolean. The
+    // route reads the display text, so the page says TRUE/FALSE as Excel said
+    // them — not 1/0 — and the empty spacer row between the two halves of the
+    // table is kept: it is what the author typed there.
+    const outcome = await run('excel-to-pdf', {}, [fileFrom(fixture('Booleans.xlsx'), 'Booleans.xlsx')]);
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
+    expect(find(runs, 'TRUE').length).toBeGreaterThan(0);
+    expect(find(runs, 'FALSE').length).toBeGreaterThan(0);
+    expect(find(runs, 'true from f').length).toBe(1);
+    const baseline = (text: string) => find(runs, text)[0]!.y;
+    const adjacent = Math.abs(baseline('true from f') - baseline('true from copy'));
+    const acrossGap = Math.abs(baseline('true from copy') - baseline('false from f'));
+    expect(acrossGap, 'the blank row between the two blocks is still a row').toBeGreaterThan(adjacent * 1.5);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Sheet2" in "Booleans\.xlsx" is empty and was skipped/);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Sheet3" in "Booleans\.xlsx" is empty and was skipped/);
+    // `DateFormatTests.xlsx` (Excel for Mac, 1904 system): a real date-format
+    // catalogue. Read raw, its value cells print their serial; the route prints
+    // the formatted text the cell was showing, which is the promise on the card.
+    const dates = squash(await extractText(await firstPdf(await run('excel-to-pdf', {}, [
+      fileFrom(fixture('DateFormatTests.xlsx'), 'DateFormatTests.xlsx'),
+    ]))));
+    expect(dates, 'a date prints as its saved format, not as a serial').toMatch(/11-Oct-1952/);
+    expect(dates).toContain('14:35:27');
+    expect(dates, 'the 1904-system serial behind that date never reaches the page').not.toMatch(/17816/);
+  });
+
+  it('prints the active sheet when told to, not the first tab', async () => {
+    // `TwoSheetsOneHidden.xlsx` (Excel 2007) opens on Sheet2 (`activeTab="1"`)
+    // and hides Sheet1; shipping `SheetNames[0]` printed the hidden sheet and
+    // dropped the visible one the file says the author was looking at.
+    const outcome = await run('excel-to-pdf', { allSheets: false }, [
+      fileFrom(fixture('TwoSheetsOneHidden.xlsx'), 'TwoSheetsOneHidden.xlsx'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('Sheet2A1');
+    expect(text, 'the hidden first tab is not the active sheet').not.toContain('Sheet1A1');
+    expect(outcome.warnings.join(' ')).toMatch(/active sheet "Sheet2"/);
+    expect(outcome.message).toMatch(/1 worksheet/);
+  });
+
+  it('refuses a workbook whose one sheet is only formatting', async () => {
+    // `absolute-anchor-over-empty-sheet.xlsx` (Excel 2016): a picture anchored
+    // over 237 rows that hold no value. The empty-sheet test has to ask the
+    // cells, not the range — the 50 000-row merged-empty stress workbook came
+    // out of the pre-fix build as 1 191 pages of grid lines with no value on
+    // any of them.
+    const error = await run('excel-to-pdf', {}, [
+      fileFrom(fixture('absolute-anchor-over-empty-sheet.xlsx'), 'picture.xlsx'),
+    ]).catch((err) => err);
+    expect((error as Error).message).toMatch(/no readable sheets/i);
+    // The whole batch is empty, too: measured on the live app, two such files
+    // first came back as one page carrying two filenames and no table, the
+    // receipt honestly reading “Converted 0 worksheet(s)”. A dangling name is
+    // not a conversion, so the refusal stands.
+    const both = await run('excel-to-pdf', {}, [
+      fileFrom(fixture('absolute-anchor-over-empty-sheet.xlsx'), 'picture.xlsx'),
+      fileFrom(fixture('absolute-anchor-over-empty-sheet.xlsx'), 'picture-again.xlsx'),
+    ]).catch((err) => err);
+    expect((both as Error).message).toMatch(/2 workbooks were added and none had readable sheets/);
+    // Control beside it: one empty and one speaking file still convert — the
+    // speaking file keeps its heading, the silent one leaves no trace.
+    const mixed = await run('excel-to-pdf', {}, [
+      fileFrom(fixture('absolute-anchor-over-empty-sheet.xlsx'), 'picture.xlsx'),
+      fileFrom(fixture('Booleans.xlsx'), 'Booleans.xlsx'),
+    ]);
+    const mixedText = squash(await extractText(await firstPdf(mixed)));
+    expect(mixedText).toContain('Booleans.xlsx');
+    expect(mixedText, 'the empty workbook prints neither a heading nor a blank rule').not.toContain('picture.xlsx');
+    expect(mixed.message).toMatch(/1 worksheet/);
+  });
+
+  it('keeps sheet order and every sheet that says something, even between blanks', async () => {
+    // `reordered_sheets.xlsx` (Excel 2003): tabs ordered Sheet4, Sheet2,
+    // Sheet3, Sheet1, the outer two empty. Tab order is the author’s order.
+    const outcome = await run('excel-to-pdf', {}, [
+      fileFrom(fixture('reordered_sheets.xlsx'), 'reordered_sheets.xlsx'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text.indexOf('Sheet2'), 'Sheet2 before Sheet3, as the tabs are ordered').toBeLessThan(text.indexOf('Sheet3'));
+    expect(text, 'the two empty sheets print neither heading nor table').not.toMatch(/Sheet[14]/);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Sheet4" in "reordered_sheets\.xlsx" is empty and was skipped/);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Sheet1" in "reordered_sheets\.xlsx" is empty and was skipped/);
+    expect(outcome.message).toMatch(/2 worksheet/);
+  });
+
+  it('prints the cached answer of a formula, never the formula', async () => {
+    // `formula-eval.xlsx` (Excel Online): D1 carries `=B1+C1` with cached 6.75
+    // over inputs 2.5 and 3.25 that the workbook itself stored as literals.
+    const text = squash(await extractText(await firstPdf(await run('excel-to-pdf', {}, [
+      fileFrom(fixture('formula-eval.xlsx'), 'formula-eval.xlsx'),
+    ]))));
+    expect(text).toContain('6.75');
+    expect(text, 'the formula text stays in the workbook').not.toMatch(/=/);
   });
 });
 

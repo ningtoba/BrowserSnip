@@ -587,7 +587,8 @@ describe('every conversion says what it dropped', () => {
     expect(text).toContain('Gizmo');
     expect(outcome.message).toMatch(/1 worksheet/);
     expect(outcome.warnings.join(' ')).toMatch(/formulas are not re-evaluated/);
-    expect(outcome.warnings.join(' ')).toMatch(/Merged cells, number and date formats/);
+    expect(outcome.warnings.join(' ')).toMatch(/number and date formats the workbook saved/);
+    expect(outcome.warnings.join(' ')).toMatch(/merged-cell spans, fills, borders/);
     expect(outcome.warnings.join(' ')).toMatch(/Sheet "Empty" in "sales\.xlsx" is empty/);
   });
 

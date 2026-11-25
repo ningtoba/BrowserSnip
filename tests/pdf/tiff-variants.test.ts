@@ -21,7 +21,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { ToolInputError } from '@/lib/pdf/core/guard';
 import {
-  bmpBytes, fileFrom, firstPdf, installConvertToEnv, pageSizes, resetConvertToEnv, run, tiffBytes,
+  bmpBytes, fileFrom, firstPdf, installConvertToEnv, jpegBytes, pageSizes, resetConvertToEnv, run, tiffBytes,
 } from './convert-to-harness';
 
 beforeAll(() => installConvertToEnv());
@@ -108,6 +108,26 @@ describe('a TIFF the reader colours wrongly is refused, not shipped', () => {
     // The parent shares the reader, so the parent card owes the same sentence.
     expect((getPdfTool('image-to-pdf')?.notes ?? []).join(' '))
       .toMatch(/A TIFF stores its pixels in one of many codings/);
+  });
+
+  it('says on both TIFF cards that alpha survives as a mask under white paper', async () => {
+    // Seam wave 2B proved a masked TIFF keeps a real `/Image` + `/SMask` pair
+    // and paints the page’s white through the see-through parts — the exact
+    // story the PNG and WebP cards tell. The TIFF cards had carried no alpha
+    // sentence at all, beside a comment calling PNG the family’s only carrier.
+    const expected = /transparent TIFF[\s\S]*soft mask[\s\S]*white paper/i;
+    expect((getPdfTool('tiff-to-pdf')?.notes ?? []).join(' ')).toMatch(expected);
+    expect((getPdfTool('image-to-pdf')?.notes ?? []).join(' ')).toMatch(expected);
+    // The result card owes it too, not only the notes accordion (PNG precedent).
+    const outcome = await run('tiff-to-pdf', { pageSize: 'fit' }, [
+      fileFrom(tiffBytes([{ width: 30, height: 20 }]), 'plain.tif', 'image/tiff'),
+    ]);
+    expect(outcome.warnings.join(' ')).toMatch(expected);
+    // Control: the format that cannot be transparent says nothing about masks.
+    const jpg = await run('jpg-to-pdf', { pageSize: 'fit' }, [
+      fileFrom(jpegBytes(30, 20), 'plain.jpg', 'image/jpeg'),
+    ]);
+    expect(jpg.warnings.join(' ')).not.toMatch(/soft mask/);
   });
 });
 

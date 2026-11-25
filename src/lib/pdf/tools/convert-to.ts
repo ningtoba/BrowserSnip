@@ -204,6 +204,21 @@ const WEBP_ALPHA =
   'A transparent WebP keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
 
 /**
+ * TIFF carries alpha the same way PNG and WebP do; the sentence travels under
+ * its own format's name. The old card said PNG was the family’s only transparency
+ * carrier and named no alpha for TIFF at all — false by omission. Measured in seam
+ * wave 2B (`docs/research/tiff-alpha-probe.py`, commit e938741): an ExtraSamples-tagged
+ * TIFF, associated (`t338=1`) or unassociated, keeps a real `/Image` + `/SMask` pair,
+ * and every masked pixel answers the separated formula over the page’s white paper
+ * (`C·a + 255·(1−a)`) — an all-`a=200` sheet paints paper, not a grey wash. The
+ * reader was already honest; the associated samples are straightened before the
+ * canvas (`core/images.ts` `straightenAssociatedAlpha`, the same era as `asBytes`), so
+ * what reaches the page is one composited result, matching PNG exactly.
+ */
+const TIFF_ALPHA =
+  'A transparent TIFF — including an associated-alpha or CMYK one, whose samples are straightened before they reach the page — keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
+
+/**
  * A BMP header carries its own byte count, and Chrome ignores it.
  *
  * Handed a short file the decoder paints the rows that are there and fills the
@@ -1223,6 +1238,7 @@ export const convertToTools: PdfToolDefinition[] = [
       RASTER_LOSS,
       'HEIC, AVIF and JXL depend on the browser decoder; when this browser cannot open one, the run says which file failed instead of guessing.',
       TIFF_VARIANTS,
+      TIFF_ALPHA,
       BMP_RLE4,
       PSD_COMPOSITE,
       'Scanned pages are still pictures. Digitize Document runs OCR and adds a real, selectable text layer on top.',
@@ -1314,7 +1330,8 @@ export const convertToTools: PdfToolDefinition[] = [
     // tasks/heic-decoder-claim-ticket.md`). What helps is the container change, or
     // a platform that owns the codec.
     const HEIC_DECODE_HINT = 'Re-save the photo as PNG or JPEG, or open this page where the system can decode HEIC (Safari on macOS or iOS), then try again.';
-    // PNG is the one format in this family that carries transparency.
+    // PNG, WebP and TIFF each carry alpha and each gets its own advice line;
+    // a format that cannot be transparent (JPG) carries none.
     const isPng = format === 'png';
     // BMP is the one whose header states, byte for byte, how much it must hold.
     const isBmp = format === 'bmp';
@@ -1357,7 +1374,7 @@ export const convertToTools: PdfToolDefinition[] = [
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
-        isPng ? PNG_ALPHA : isWebp ? WEBP_ALPHA : '',
+        isPng ? PNG_ALPHA : isWebp ? WEBP_ALPHA : isTiff ? TIFF_ALPHA : '',
         // Measured on the dev build: a 24-bit 243 x 160 BMP cut after 10 rows
         // embedded as a complete page with 150 white rows Chrome invented, and
         // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
@@ -1416,7 +1433,7 @@ export const convertToTools: PdfToolDefinition[] = [
             message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`
               + (refused.length ? ` ${refused.length} file(s) left out.` : ''),
           })),
-          warnings: [RASTER_LOSS, ...(isPng ? [PNG_ALPHA] : isWebp ? [WEBP_ALPHA] : []), RASTER_DENSITY, ...notices, ...refused],
+          warnings: [RASTER_LOSS, ...(isPng ? [PNG_ALPHA] : isWebp ? [WEBP_ALPHA] : isTiff ? [TIFF_ALPHA] : []), RASTER_DENSITY, ...notices, ...refused],
         };
       },
     };
@@ -2197,7 +2214,7 @@ export const convertToTools: PdfToolDefinition[] = [
     notes: [
       ...TEXT_NOTES,
       'Cells are printed as their last-saved values. Formulas are not re-evaluated, so a workbook whose cached values are stale prints stale numbers.',
-      'Formatting is lost: number and date formats, fonts, fills, borders, conditional formatting, merged cells, freeze panes, charts, pivot tables and images are not reproduced.',
+      'What a cell displays survives as text — a number shown as `$2,667.60` or a time as `15:43:09` prints those words — but the rest of the formatting is lost: fonts, fills, borders, conditional formatting, merged-cell spans, freeze panes, charts, pivot tables and images are not reproduced.',
       'Column widths are recomputed to fit the page, which reflows a wide sheet instead of honouring the original print area.',
       'Legacy binary .xls is read by the bundled SheetJS build; a .xls written by a newer engine may lose the sheets it cannot parse, which is reported.',
     ],
@@ -2218,7 +2235,7 @@ export const convertToTools: PdfToolDefinition[] = [
       const blocks: Block[] = [];
       const warnings: string[] = [
         'Values are printed as the workbook last saved them: formulas are not re-evaluated and no recalculation happens.',
-        'Merged cells, number and date formats, fills, borders, conditional formatting, charts, pivot tables and embedded images are dropped.',
+        'Values print with the number and date formats the workbook saved — a cell shown as `$2,667.60` prints that text — while merged-cell spans, fills, borders, conditional formatting, charts, pivot tables and embedded images are dropped.',
       ];
       let sheetCount = 0;
       for (const input of inputs) {
@@ -2226,7 +2243,10 @@ export const convertToTools: PdfToolDefinition[] = [
         if (lower.endsWith('.ods') || lower.endsWith('.ots')) {
           const { odsToBlocks } = await import('../core/office-in');
           const { blocks: sheetBlocks, emptySheets } = await odsToBlocks(input.bytes);
-          blocks.push(...sheetBlocks);
+          if (sheetBlocks.length > 0) {
+            if (inputs.length > 1) blocks.push({ kind: 'heading', level: 1, inlines: [{ text: input.name }] });
+            blocks.push(...sheetBlocks);
+          }
           sheetCount += countSheetHeadings(sheetBlocks);
           for (const sheet of emptySheets) {
             warnings.push(`Sheet "${sheet}" in "${input.name}" is empty and was skipped.`);
@@ -2246,30 +2266,43 @@ export const convertToTools: PdfToolDefinition[] = [
               : 'Re-save it as .xlsx and try again.',
           });
         }
-        const sheets = booleanValue(context.values, 'allSheets', true)
-          ? workbook.SheetNames
-          : workbook.SheetNames.slice(0, 1);
-        if (!booleanValue(context.values, 'allSheets', true) && workbook.SheetNames.length > 1) {
-          warnings.push(`Only the first of ${workbook.SheetNames.length} sheets in "${input.name}" was printed.`);
+        const allSheets = booleanValue(context.values, 'allSheets', true);
+        const active = activeSheetIndex(workbook);
+        const sheets = allSheets ? workbook.SheetNames : workbook.SheetNames.slice(active, active + 1);
+        if (!allSheets && workbook.SheetNames.length > 1) {
+          warnings.push(`Only the active sheet "${sheets[0]}" of ${workbook.SheetNames.length} sheets in "${input.name}" was printed.`);
         }
-        if (inputs.length > 1) blocks.push({ kind: 'heading', level: 1, inlines: [{ text: input.name }] });
+        const fileBlocks: Block[] = [];
         for (const name of sheets) {
-          const rows = (XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '' }) ?? []) as string[][];
+          const rows = printableRows(
+            (XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '' }) ?? []) as string[][],
+          );
           if (rows.length === 0) {
             warnings.push(`Sheet "${name}" in "${input.name}" is empty and was skipped.`);
             continue;
           }
           sheetCount += 1;
-          blocks.push({ kind: 'heading', level: 2, inlines: [{ text: inputs.length > 1 ? `${input.name} · ${name}` : name }] });
-          blocks.push(tableBlock(rows));
+          fileBlocks.push({ kind: 'heading', level: 2, inlines: [{ text: inputs.length > 1 ? `${input.name} · ${name}` : name }] });
+          fileBlocks.push(tableBlock(rows));
+        }
+        // A file that prints nothing earns no dangling name: measured, a batch
+        // of two format-only-empty workbooks shipped one page carrying two
+        // filenames and no table, under a receipt that honestly said
+        // "Converted 0 worksheet(s)".
+        if (fileBlocks.length > 0) {
+          if (inputs.length > 1) blocks.push({ kind: 'heading', level: 1, inlines: [{ text: input.name }] });
+          blocks.push(...fileBlocks);
         }
         if (workbook.SheetNames.length > sheets.length) {
           context.log(`${input.name}: ${workbook.SheetNames.length - sheets.length} sheet(s) not included.`);
         }
       }
-      if (blocks.length === 0) {
-        throw new ToolInputError('UNSUPPORTED', 'That workbook had no readable sheets.', {
-          hint: 'Chartsheets, pivot caches and macro-only sheets carry no cells to print.',
+      if (sheetCount === 0) {
+        throw new ToolInputError('UNSUPPORTED', inputs.length === 1
+          ? `"${inputs[0].name}" had no readable sheets.`
+          : `${inputs.length} workbooks were added and none had readable sheets.`, {
+          fileName: inputs.length === 1 ? inputs[0].name : undefined,
+          hint: 'Chartsheets, pivot caches, macro-only sheets and sheets whose only content is an anchored picture carry no cells to print.',
         });
       }
       warnings.push(`${sheetCount} sheet(s) were laid out on the page width; the original print area and column widths are not preserved.`);
@@ -3046,6 +3079,48 @@ async function twoUp(
 /** Count the worksheet headings among OpenDocument spreadsheet blocks. */
 function countSheetHeadings(blocks: Block[]): number {
   return blocks.filter((block) => block.kind === 'heading').length;
+}
+
+/**
+ * The tab the workbook was saved with selected, as `wb.SheetNames` index.
+ *
+ * The "Every worksheet" control promised the workbook’s *active* sheet and
+ * shipped `SheetNames[0]` — the first tab, active or not. Measured on a real
+ * Excel 2007 file (`activeTab="1"`, and its first tab `state="hidden"`), that
+ * printed the sheet the author hides on purpose and dropped the one the author
+ * left on screen: the file names the sheet it printed, so the name has to be
+ * the right one. SheetJS keeps the raw `WBView` records beside the typed
+ * `Views`, and the raw record is where `activeTab` actually lives; a missing
+ * or out-of-range index falls back to the first sheet, as before.
+ */
+function activeSheetIndex(workbook: { SheetNames: string[]; Workbook?: unknown }): number {
+  // The raw `WBView` records, not the typed `Views` — `activeTab` only survives there.
+  const view = (workbook.Workbook as { WBView?: Array<{ activeTab?: number | string }> } | undefined)?.WBView?.[0];
+  const raw = Number(view?.activeTab);
+  return Number.isInteger(raw) && raw >= 0 && raw < workbook.SheetNames.length ? raw : 0;
+}
+
+/**
+ * The cells a sheet actually says, cut back from its formatted extent.
+ *
+ * A worksheet’s used range is what was ever typed *or touched*: styling or
+ * merging a region without writing in it keeps the range alive, and
+ * `sheet_to_json(defval:'')` then hands back a row per formatted line. A real
+ * Excel 2016 file whose only content is an anchored picture over 237 empty
+ * rows came out of this tool as a table of 237 blank rules, and the 50 000-row
+ * merge stress workbook as 1 191 pages of grid lines with no value on a single
+ * one. Trailing all-blank rows and columns go — they are never read — so a
+ * formatted-but-unspeaking sheet reaches the empty-sheet refusal instead.
+ * Leading and interior blanks stay: an author’s spacer is content.
+ */
+function printableRows(rows: string[][]): string[][] {
+  let height = rows.length;
+  while (height > 0 && rows[height - 1].every((cell) => cell === '')) height -= 1;
+  const kept = rows.slice(0, height);
+  let width = 0;
+  for (const row of kept) width = Math.max(width, row.length);
+  while (width > 0 && kept.every((row) => (row[width - 1] ?? '') === '')) width -= 1;
+  return kept.map((row) => row.slice(0, width));
 }
 
 /** `{"a":{"b":1}}` → 3. Used to warn when the depth control truncates. */
