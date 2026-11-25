@@ -13,7 +13,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
-import { PDFDocument } from '@maxwbh/pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream } from '@maxwbh/pdf-lib';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { addAttachments, listAttachments } from '@/lib/pdf/core/attachments';
 import type { ToolValues } from '@/lib/pdf/tools/types';
@@ -157,5 +157,49 @@ describe('add-attachments writes /F as hex so a bracket in a name cannot end it'
     names.forEach((name, index) => {
       expect(carried.get(name)).toBe(latin1.decode(payload(index + 1)));
     });
+  }, 180_000);
+});
+
+/**
+ * A browser hands the picker `File.type === ''` for every type it does not
+ * recognise — any .csv, .txt, .dat, anything exotic (the c4 battery shapes
+ * `empty-mime-known-ext` and `no-mime-no-ext`, mime:'' in `mime-declared`).
+ * The tool used to pass that empty string straight to the writer, where
+ * `mimeType ?? mimeForFile(name)` only falls through on null/undefined, so an
+ * empty string VETOED the extension inference: the embedded stream shipped
+ * `/Subtype /` — a name token with nothing in it — where `shot.png` could have
+ * been named `image/png` for every reader that prints an attachment list. The
+ * tool now folds '' to undefined so the inference runs, and an unknown
+ * extension leaves `/Subtype` off, not named empty.
+ */
+describe('add-attachments lets an empty File.type reach the extension guess', () => {
+  /** The `/Subtype` of every EmbeddedFile stream, in creation order. */
+  async function embeddedSubtypes(blob: Blob): Promise<(string | null)[]> {
+    const doc = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), {
+      ignoreEncryption: true, updateMetadata: false,
+    });
+    const subs: (string | null)[] = [];
+    for (const [, object] of doc.context.enumerateIndirectObjects()) {
+      if (object instanceof PDFRawStream && String(object.dict.lookup(PDFName.of('Type'))) === '/EmbeddedFile') {
+        const subtype = object.dict.lookup(PDFName.of('Subtype'));
+        subs.push(subtype === undefined ? null : String(subtype));
+      }
+    }
+    return subs;
+  }
+
+  it('names the type an extension knows and omits the one it does not', async () => {
+    const typed = { name: 'shot.png', mimeType: '', bytes: bytes('png-bytes'), size: 9 };
+    const unknown = { name: 'mystery', mimeType: '', bytes: bytes('whoknows'), size: 8 };
+    const declared = { name: 'kept.dat', mimeType: 'application/octet-stream', bytes: bytes('kept'), size: 4 };
+    const outcome = (await runPdfTool({
+      toolId: 'add-attachments', files: [await source([])],
+      values: { files: [typed, unknown, declared] }, onProgress: () => {}, onLog: () => {},
+    })) as unknown as Outcome;
+    const subs = await embeddedSubtypes(outcome.outputs[0].blob);
+    // No `/Subtype /` empty-name anywhere: the typeless image is inferred from
+    // its extension, the typeless mystery names nothing, the declared type survives.
+    expect(subs).not.toContain('/');
+    expect(subs.sort()).toEqual(['/application#2Foctet-stream', '/image#2Fpng', null]);
   }, 180_000);
 });

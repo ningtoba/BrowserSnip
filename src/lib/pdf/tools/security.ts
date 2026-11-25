@@ -1403,7 +1403,13 @@ export const securityTools: PdfToolDefinition[] = [
       const wanted = extras.map((f) => ({
         name: f.name,
         bytes: f.bytes,
-        mimeType: f.mimeType,
+        // `File.type` is the EMPTY STRING for every type the browser does not
+        // recognise — a .csv, a .txt, anything exotic. Passed through as `''`
+        // it beat the writer's `?? mimeForFile(name)` (only null and undefined
+        // fall through to `??`), so the stream shipped `/Subtype /`: a name
+        // token with nothing in it, where the extension could have named the
+        // type. Folded to undefined so the inference actually runs.
+        mimeType: f.mimeType || undefined,
         description: description || undefined,
       }));
       const before = new Map(listAttachments(input.doc).map((a) => [a.name, a]));
