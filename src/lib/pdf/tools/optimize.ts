@@ -881,32 +881,197 @@ function dropOrphanObjects(doc: PDFDocument): number {
   return removed;
 }
 
+/** The trailer's own entries, so a reference written there counts as a holder. */
+const TRAILER = 'trailer';
+
+/** Every reference a value names, one level deep. */
+function refsNamedBy(value: unknown, into: PDFRef[]): void {
+  if (value instanceof PDFRef) {
+    into.push(value);
+  } else if (value instanceof PDFArray) {
+    for (const item of value.asArray()) refsNamedBy(item, into);
+  } else if (value instanceof PDFStream) {
+    for (const [, item] of value.dict.entries()) refsNamedBy(item, into);
+  } else if (value instanceof PDFDict) {
+    for (const [, item] of value.entries()) refsNamedBy(item, into);
+  }
+}
+
+/** `the object → who names it`, over every indirect object and the trailer. */
+function referrersOf(doc: PDFDocument): Map<string, Set<string>> {
+  const holders = new Map<string, Set<string>>();
+  const named = (target: PDFRef, source: string) => {
+    const key = target.toString();
+    const set = holders.get(key) ?? new Set<string>();
+    set.add(source);
+    holders.set(key, set);
+  };
+  for (const [ref, object] of doc.context.enumerateIndirectObjects()) {
+    const targets: PDFRef[] = [];
+    refsNamedBy(object, targets);
+    for (const target of targets) named(target, ref.toString());
+  }
+  for (const root of Object.values(doc.context.trailerInfo)) {
+    const targets: PDFRef[] = [];
+    refsNamedBy(root, targets);
+    for (const target of targets) named(target, TRAILER);
+  }
+  return holders;
+}
+
+/**
+ * Delete the objects a payload lives **in**, not just the pointers to them, and
+ * return how many objects went.
+ *
+ * Unlinking is not removing. pdf-lib's writer serialises every object the context
+ * still holds, so a sanitiser that only deletes a key ships the thing the key named
+ * — a FreeText note that still extracts, an XMP packet a search index still finds —
+ * under a card that says it was taken out. This is `core/attachments`'
+ * `deleteFilespecObjects` shape, one tier deeper: `forced` are the objects whose
+ * pointers the caller has already unlinked (a widget and the field it is, an
+ * appearance stream's owner, the info dictionary, a metadata stream); whatever only
+ * those objects held then goes with them, tier after tier. An object another
+ * surviving object still names is kept by construction, which is what saves a font
+ * shared between a kept page and a deleted appearance, and `keep` is for payloads the
+ * caller promised to leave alone.
+ */
+function deletePayloads(doc: PDFDocument, forced: PDFRef[], keep = new Set<string>()): number {
+  const context = doc.context;
+  const holders = referrersOf(doc);
+  const candidates: PDFRef[] = [];
+  let removed = 0;
+  const forget = (ref: PDFRef) => {
+    const object = context.lookup(ref);
+    if (object === undefined) return;
+    const targets: PDFRef[] = [];
+    refsNamedBy(object, targets);
+    context.delete(ref);
+    removed += 1;
+    // Freeing an object re-queues everything it named, so the pass below reaches
+    // every tier: an appearance stream shared by a note and its popup is skipped
+    // while the popup still holds it and picked up again when the popup goes.
+    for (const target of targets) holders.get(target.toString())?.delete(ref.toString());
+    candidates.push(...targets);
+  };
+  for (const ref of forced) forget(ref);
+  for (let index = 0; index < candidates.length; index += 1) {
+    const ref = candidates[index];
+    const key = ref.toString();
+    if (keep.has(key) || (holders.get(key)?.size ?? 0) > 0) continue;
+    forget(ref);
+  }
+  return removed;
+}
+
+/** A dictionary written inline in its parent, or named by reference, or absent. */
+function resolveDict(doc: PDFDocument, value: unknown): PDFDict | undefined {
+  return value instanceof PDFRef || value instanceof PDFDict
+    ? doc.context.lookupMaybe(value, PDFDict)
+    : undefined;
+}
+
+/**
+ * Every field dictionary of an interactive form: `/Fields`, then `/Kids` down.
+ *
+ * The widgets are already in those arrays — a widget and its field are one
+ * dictionary (§12.7.4.2) — but a non-terminal field with children and no appearance
+ * of its own is named nowhere else, and leaving it behind leaves a form this file no
+ * longer has.
+ */
+function fieldTree(doc: PDFDocument, acroForm: PDFDict | undefined): PDFRef[] {
+  const out: PDFRef[] = [];
+  const seen = new Set<string>();
+  const walk = (value: unknown): void => {
+    const array = value instanceof PDFRef || value instanceof PDFArray
+      ? doc.context.lookupMaybe(value, PDFArray)
+      : undefined;
+    if (!array) return;
+    for (const entry of array.asArray()) {
+      if (!(entry instanceof PDFRef) || seen.has(entry.toString())) continue;
+      if (doc.context.lookupMaybe(entry, PDFDict) === undefined) continue;
+      seen.add(entry.toString());
+      out.push(entry);
+      walk(resolveDict(doc, entry)?.get(PDFName.of('Kids')));
+    }
+  };
+  walk(acroForm?.get(PDFName.of('Fields')));
+  return out;
+}
+
+/**
+ * The objects an XFA packet is made of, so the annotation pass can take the pointer
+ * and leave the packet. The card promises exactly that: script inside an XFA form
+ * packet stays where it is, because this tool does not read that XML — and
+ * `inspectScript` names it from the same entry, so a sweep that deleted it would
+ * print a sentence about a packet that is no longer there.
+ */
+function xfaPacketRefs(doc: PDFDocument, hosts: (PDFDict | undefined)[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 3) return;
+    if (value instanceof PDFRef) {
+      const key = value.toString();
+      if (out.has(key)) return;
+      out.add(key);
+      walk(doc.context.lookup(value), depth + 1);
+    } else if (value instanceof PDFArray) {
+      for (const item of value.asArray()) walk(item, depth + 1);
+    } else if (value instanceof PDFDict) {
+      for (const [, item] of value.entries()) walk(item, depth + 1);
+    }
+  };
+  for (const host of hosts) walk(host?.get(PDFName.of('XFA')), 0);
+  return out;
+}
+
+/**
+ * Take every annotation off every page **and out of the file**: the annotation
+ * dictionaries, the appearance streams drawn for them, and the interactive form's
+ * field tree with its `/V` answers.
+ *
+ * Setting `/Annots` to an empty array is what this did first, and it moved the
+ * pointer only: measured on the outside-written `annotations.pdf` the switch came
+ * back "5 annotation(s) removed" with 9 of 9 payloads — note text, `/AP` operators,
+ * `/V` answers — still in the download and still extractable, byte for byte the same
+ * file as the run with the switch off.
+ *
+ * Annotations inherited from the `/Pages` node are left alone: no reader reaches them
+ * in a document this tool is fed (`annot-inherited.pdf` is byte-identical either
+ * way), and the shape is recorded rather than changed here.
+ */
 function removeAllAnnotations(doc: PDFDocument): number {
+  const context = doc.context;
+  const acroFormEntry = doc.catalog.get(PDFName.of('AcroForm'));
+  const acroForm = resolveDict(doc, acroFormEntry);
+  const keep = xfaPacketRefs(doc, [doc.catalog, acroForm]);
+  const forced: PDFRef[] = [];
   let count = 0;
   for (const page of doc.getPages()) {
     const annots = page.node.Annots();
     if (!annots) continue;
     count += annots.size();
-    page.node.set(PDFName.of('Annots'), doc.context.obj([]));
+    for (const entry of annots.asArray()) if (entry instanceof PDFRef) forced.push(entry);
+    const arrayRef = context.getObjectRef(annots);
+    page.node.delete(PDFName.of('Annots'));
+    if (arrayRef instanceof PDFRef) forced.push(arrayRef);
   }
+  const fields = fieldTree(doc, acroForm);
+  doc.catalog.delete(PDFName.of('AcroForm'));
+  doc.catalog.delete(PDFName.of('XFA'));
+  forced.push(...fields);
+  if (acroFormEntry instanceof PDFRef) forced.push(acroFormEntry);
+  if (count === 0 && fields.length === 0) return 0;
+  deletePayloads(doc, forced, keep);
   return count;
 }
 
 /** AcroForm field count, or 0 when the document has no interactive form. */
 function countFormFields(doc: PDFDocument): number {
-  const acroFormRef = doc.catalog.get(PDFName.of('AcroForm'));
-  const acroForm = acroFormRef instanceof PDFRef
-    ? doc.context.lookupMaybe(acroFormRef, PDFDict)
-    : acroFormRef instanceof PDFDict
-      ? acroFormRef
-      : undefined;
-  const fields = acroForm?.get(PDFName.of('Fields'));
-  const array = fields instanceof PDFRef
-    ? doc.context.lookupMaybe(fields, PDFArray)
-    : fields instanceof PDFArray
-      ? fields
-      : undefined;
-  return array ? array.size() : 0;
+  const acroForm = resolveDict(doc, doc.catalog.get(PDFName.of('AcroForm')));
+  const fields = acroForm === undefined
+    ? undefined
+    : doc.context.lookupMaybe(acroForm.get(PDFName.of('Fields')), PDFArray);
+  return fields ? fields.size() : 0;
 }
 
 export const optimizeTools: PdfToolDefinition[] = [
@@ -1635,30 +1800,42 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
       if (booleanValue(values, 'metadata', true)) {
         const had = xmpPacket(doc) !== null;
+        const pointer = doc.catalog.get(PDFName.of('Metadata'));
         doc.catalog.delete(PDFName.of('Metadata'));
+        // The packet is the payload; `/Metadata` in the catalogue is only where a
+        // reader is told to look for it. Deleting the key alone left the stream in
+        // the file unreferenced (`/Length 281 /Type /Metadata /Subtype /XML`) with
+        // `<x:xmpmeta` still searchable in the bytes of every file this switch
+        // reported clean — 2260 → 2250 B on a fixture whose whole XMP is 281 bytes.
+        if (pointer instanceof PDFRef) deletePayloads(doc, [pointer]);
         actions.push(had ? 'XMP metadata removed' : 'there was no XMP packet to remove');
         if (had) removed.push('XMP');
       }
       if (booleanValue(values, 'info')) {
-        const infoRef = doc.context.trailerInfo.Info;
-        if (infoRef instanceof PDFRef) {
-          doc.context.delete(infoRef);
-          actions.push('the info dictionary was removed');
-          removed.push('the info dictionary');
-        } else {
-          actions.push('there was no info dictionary');
-        }
+        const entry = doc.context.trailerInfo.Info;
+        // Both shapes a trailer can hold, and the trailer with them. Leaving the
+        // entry in place while deleting the object it names is a slot no reader can
+        // find (poppler on this tool's own output: `Syntax Error: Invalid XRef entry
+        // 6`), and a dictionary written *into* the trailer — which MuPDF, poppler and
+        // pypdf all read — used to be neither removed nor admitted: ON and OFF were
+        // the same bytes and the card said "there was no info dictionary" over a file
+        // that still carried a title and an author.
+        doc.context.trailerInfo.Info = undefined;
+        if (entry instanceof PDFRef) deletePayloads(doc, [entry]);
+        actions.push(entry === undefined ? 'there was no info dictionary' : 'the info dictionary was removed');
+        if (entry !== undefined) removed.push('the info dictionary');
       }
       if (booleanValue(values, 'annotations')) {
         const fields = countFormFields(doc);
+        // Removes the annotation dictionaries, their appearance streams and the
+        // field subtree too — see `removeAllAnnotations`.
         const annotations = removeAllAnnotations(doc);
-        doc.catalog.delete(PDFName.of('AcroForm'));
-        doc.catalog.delete(PDFName.of('XFA'));
         actions.push(
           annotations === 0 && fields === 0
             ? 'no annotations were present'
             : `${annotations} annotation(s)${fields > 0 ? ` including ${fields} form field(s)` : ''} removed`,
-        );        if (annotations > 0 || fields > 0) removed.push('annotations and form fields');
+        );
+        if (annotations > 0 || fields > 0) removed.push('annotations and form fields');
         if (fields > 0) {
           warnings.push(`${fields} form field value(s) were removed with their widgets; filled-in answers typed into a form can live in the page content and stay visible.`);
         }

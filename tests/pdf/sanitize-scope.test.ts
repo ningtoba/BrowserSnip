@@ -19,12 +19,30 @@
  *    sites measured here). The flat walk knew one of them.
  * 3. With the switch **off** nothing was said about a payload that stays, though
  *    the script switch had already been taught that sentence.
+ * 4. **`Remove XMP metadata` took the pointer and shipped the packet.** The
+ *    catalogue's `/Metadata` went, the stream stayed in the file unreferenced, and
+ *    `<x:xmpmeta` was still searchable — on all six of the rail's XMP shapes
+ *    (`2260 → 2250 B`, `2765 → 2756 B`, `3303 → 3296 B`) under *"XMP metadata removed"*.
+ * 5. **`Remove annotations and form fields` took the pointer and shipped the
+ *    payload.** `/Annots` emptied and the marks came off the sheet, while every
+ *    annotation dictionary, its `/AP` appearance stream and the field subtree
+ *    stayed — "A note from an outside writer" extracted from the ON output exactly as
+ *    from the OFF one, 9 of 9 payloads on that file, `/V` answers on `form.pdf` —
+ *    under *"5 annotation(s) removed"*.
+ * 6. **`Remove the document info dictionary` read one of the two shapes a trailer
+ *    can hold.** An `/Info` written *direct* into the trailer was neither removed nor
+ *    admitted (ON and OFF byte-identical, MuPDF still titled the file) and the card
+ *    said *"there was no info dictionary"*; the indirect shape deleted the object and
+ *    left the trailer naming it, which poppler reads as `Syntax Error: Invalid XRef
+ *    entry 6` and MuPDF as a slot it cannot find.
  *
  * Everything below is read back out of the produced file, never a call count: the
  * `/AF` array, the file-specification dictionary, the decompressed payload, the
  * kept annotation's `/Rect`, and the page's own content stream byte for byte (a
  * sanitiser that re-renders the page is a different tool).
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream } from '@maxwbh/pdf-lib';
 import { cleanup } from '@testing-library/react';
@@ -241,5 +259,306 @@ describe('sanitize-pdf Remove embedded files takes the payload, not just the poi
     const outcome = await run('sanitize-pdf', { ...OFF, annotations: true }, [fileFrom(await plainFixture(), 'plain.pdf', 'application/pdf')]);
     expect(outcome.message).toMatch(/no annotations were present/);
     expect(outcome.message).not.toMatch(/0 annotation\(s\) removed/);
+  });
+});
+
+/* ── the payload, not the pointer: metadata / annotations / info (rail audit c2) ── */
+
+/**
+ * One file carrying every payload the three switches above are about, in the shapes
+ * the rail drove: an `/Info` (indirect, or written straight into the trailer), an XMP
+ * packet behind the catalogue's `/Metadata`, a FreeText note with an appearance
+ * stream, a widget whose `/V` answer hangs in a field tree, a link with a popup of
+ * its own, and an `/XFA` packet this tool promises to leave where it is. Object
+ * numbers are fixed so a leftover cannot hide by shifting, and `null` entries keep
+ * the numbering contiguous.
+ */
+function scopeFixture(shape: { directInfo?: boolean; inherited?: boolean } = {}): Uint8Array {
+  const content = 'q BT /F1 12 Tf 20 100 Td (page body) Tj ET Q';
+  const appearance = '0 g /Helv 10.0 Tf (SANJANNOTAP19) Tj';
+  const packet = '<x:xmpmeta xmlns:x="adobe:ns:meta/">SANJXMPPACKET9</x:xmpmeta>';
+  const xfa = '<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">SANJXFAPACKET22</xdp:xdp>';
+  const inlineInfo = '<< /Title (SANJINFOTITLE6) /Author (SANJINFOAUTH6) >>';
+  const objects: (string | null)[] = [
+    '<< /Type /Catalog /Pages 2 0 R /Metadata 9 0 R'
+      + `${shape.inherited ? '' : ' /AcroForm 17 0 R'} >>`,
+    shape.inherited
+      ? '<< /Type /Pages /Kids [3 0 R] /Count 1 /Annots [14 0 R] >>'
+      : '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 20 0 R >> >>'
+      + ` /Contents 4 0 R${shape.inherited ? '' : ' /Annots [14 0 R 15 0 R 16 0 R]'} >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    null,
+    shape.directInfo ? null : '<< /Title (SANJINFOTITLE6) /Author (SANJINFOAUTH6) >>',
+    null,
+    null,
+    `<< /Type /Metadata /Subtype /XML /Length ${packet.length} >>\nstream\n${packet}\nendstream`,
+    null,
+    null,
+    null,
+    null,
+    '<< /Type /Annot /Subtype /FreeText /Rect [10 40 220 70] /Contents (SANJANNOTNOTE14)'
+      // Its appearance stream is shared with the popup below it, so the stream is
+      // still held by a doomed object when the sweep first reaches it: the pass that
+      // frees the popup has to come back for the stream.
+      + ' /AP << /N 19 0 R >> /Popup 21 0 R >>',
+    shape.inherited ? null : '<< /Type /Annot /Subtype /Widget /FT /Tx /T (answer) /V (SANJFIELDVAL15) /Parent 18 0 R /Rect [10 20 120 36] >>',
+    '<< /Type /Annot /Subtype /Link /Rect [10 150 120 168] /Popup 21 0 R /A << /S /URI /URI (https://example.org/SANJLINKURI16) >> >>',
+    shape.inherited ? null : '<< /Fields [18 0 R] /DR << /Font << /F1 20 0 R >> >> /XFA [(template) 22 0 R] >>',
+    shape.inherited ? null : '<< /T (SANJGROUPFIELD18) /Kids [15 0 R] >>',
+    `<< /Length ${appearance.length} >>\nstream\n${appearance}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Annot /Subtype /Popup /Parent 14 0 R /AP << /N 19 0 R >> /Rect [230 70 330 120] >>',
+    shape.inherited ? null : `<< /Length ${xfa.length} >>\nstream\n${xfa}\nendstream`,
+  ];
+  const info = shape.directInfo ? ` /Info ${inlineInfo}` : ' /Info 6 0 R';
+  return rawPdf(objects, ` /Root 1 0 R${info}`);
+}
+
+/** A file with none of the six scopes in it, and no `/Info` in its trailer either. */
+function emptyFixture(): Uint8Array {
+  const content = 'q BT /F1 12 Tf 20 100 Td (nothing here) Tj ET Q';
+  return rawPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R >> >>'
+      + ` /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]);
+}
+
+/** Hand-written objects, 1-based and in order, into a file with a classic xref table. */
+function rawPdf(objects: (string | null)[], trailer = ' /Root 1 0 R'): Uint8Array {
+  let body = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  objects.forEach((source, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${source ?? '<< >>'}\nendobj\n`;
+  });
+  const start = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1}${trailer} >>\nstartxref\n${start}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body, 'latin1'));
+}
+
+/**
+ * Every place a payload can hide once the file is written: the raw bytes, each
+ * object's source, and each stream's decoded contents. `savePDF` packs and flates, so
+ * a leftover is invisible in the raw bytes and obvious here — which is how the rail's
+ * judge searched, and the only reading that can tell "the key is gone" from "the
+ * thing is gone".
+ */
+async function readableOf(bytes: Uint8Array): Promise<string> {
+  const { decodePDFRawStream } = await import('@maxwbh/pdf-lib');
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const parts: string[] = [new TextDecoder('latin1').decode(bytes)];
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    parts.push(String(object));
+    try {
+      parts.push(new TextDecoder('latin1').decode(decodePDFRawStream(object as never).decode()));
+    } catch {
+      /* not a stream */
+    }
+  }
+  return parts.join('\n');
+}
+
+/** The references a value names, wherever it names them. */
+function namedRefs(value: unknown, into: Set<string>): void {
+  if (value instanceof PDFRef) into.add(value.toString());
+  else if (value instanceof PDFArray) value.asArray().forEach((item) => namedRefs(item, into));
+  else if (value instanceof PDFDict) for (const [, item] of value.entries()) namedRefs(item, into);
+  else if (value instanceof PDFStream) for (const [, item] of value.dict.entries()) namedRefs(item, into);
+}
+
+/**
+ * `N 0 R` written somewhere, and no object answering it. This is what makes MuPDF log
+ * `cannot find object in xref (6 0 R)` and poppler `Syntax Error: Invalid XRef entry
+ * 6` — a file that opens is not yet a file a reader can finish reading.
+ */
+async function danglingRefs(bytes: Uint8Array): Promise<string[]> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const named = new Set<string>();
+  for (const [, object] of doc.context.enumerateIndirectObjects()) namedRefs(object, named);
+  for (const root of Object.values(doc.context.trailerInfo)) namedRefs(root, named);
+  const missing: string[] = [];
+  for (const tag of named) {
+    const number = Number.parseInt(tag, 10);
+    if (doc.context.lookup(PDFRef.of(number)) === undefined) missing.push(tag);
+  }
+  return missing;
+}
+
+/** The annotation dictionaries left in the file, by subtype. */
+async function annotSubtypes(bytes: Uint8Array): Promise<string[]> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const out: string[] = [];
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    const dict = object instanceof PDFDict ? object : undefined;
+    if (dict?.lookupMaybe(PDFName.of('Type'), PDFName)?.asString() === '/Annot') {
+      out.push(dict.lookupMaybe(PDFName.of('Subtype'), PDFName)?.asString() ?? '(none)');
+    }
+  }
+  return out.sort();
+}
+
+/** How the trailer carries its `/Info`: by reference, written inline, or not at all. */
+async function trailerInfoShape(bytes: Uint8Array): Promise<'ref' | 'inline' | 'none'> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const info = doc.context.trailerInfo.Info;
+  if (info instanceof PDFRef) return 'ref';
+  return info instanceof PDFDict ? 'inline' : 'none';
+}
+
+/** The outside-written files the rail drove, read from the committed bank. */
+const foreign = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(resolve(process.cwd(), 'tests/fixtures/foreign', name)));
+
+const sanitize = (values: Partial<typeof OFF>, bytes: Uint8Array, name = 'scope.pdf') =>
+  run('sanitize-pdf', { ...OFF, ...values }, [fileFrom(bytes, name, 'application/pdf')]);
+
+describe('sanitize-pdf Remove XMP metadata takes the packet, not just the catalogue key', () => {
+  it('deletes the /Metadata stream object, so the packet is out of the bytes', async () => {
+    const source = scopeFixture();
+    expect(await readableOf(source), 'the fixture must carry the packet').toContain('SANJXMPPACKET9');
+    const outcome = await sanitize({ metadata: true }, source);
+    const bytes = await firstPdf(outcome);
+    const readable = await readableOf(bytes);
+    expect(readable).not.toContain('SANJXMPPACKET9');
+    expect(readable).not.toContain('<x:xmpmeta');
+    expect(outcome.message).toMatch(/XMP metadata removed/);
+    // Payload out means bytes off the file: the packet is 62 B of this fixture.
+    const kept = await firstPdf(await sanitize({}, source));
+    expect(bytes.byteLength).toBeLessThan(kept.byteLength);
+    expect(await danglingRefs(bytes)).toEqual([]);
+  });
+
+  it('leaves the packet in place, and named, when the switch is off', async () => {
+    const outcome = await sanitize({}, scopeFixture());
+    expect(await readableOf(await firstPdf(outcome))).toContain('SANJXMPPACKET9');
+    expect(outcome.message).not.toMatch(/XMP metadata removed/);
+  });
+
+  it('still says there was no packet on a file that has none', async () => {
+    const outcome = await sanitize({ metadata: true }, emptyFixture(), 'empty.pdf');
+    expect(outcome.message).toMatch(/there was no XMP packet to remove/);
+    expect(outcome.message).toMatch(/^Nothing to remove/);
+  });
+});
+
+describe('sanitize-pdf Remove annotations takes the dictionaries, the appearances and the field tree', () => {
+  it('deletes every annotation dictionary and the appearance stream drawn for it', async () => {
+    const source = scopeFixture();
+    expect(await annotSubtypes(source), 'the fixture must carry the marks').toEqual(
+      ['/FreeText', '/Link', '/Popup', '/Widget'],
+    );
+    const outcome = await sanitize({ annotations: true }, source);
+    const bytes = await firstPdf(outcome);
+    const readable = await readableOf(bytes);
+    expect(readable, 'the page itself went with its annotations').toContain('page body');
+    for (const needle of ['SANJANNOTNOTE14', 'SANJANNOTAP19', 'SANJLINKURI16']) {
+      expect(readable, `${needle} is still in the download`).not.toContain(needle);
+    }
+    expect(await annotSubtypes(bytes)).toEqual([]);
+    expect(outcome.message).toMatch(/3 annotation\(s\) including 1 form field\(s\) removed/);
+    expect(await danglingRefs(bytes)).toEqual([]);
+  });
+
+  it('deletes the typed /V answer and the field subtree it hangs in, and keeps the XFA packet the card names', async () => {
+    const outcome = await sanitize({ annotations: true }, scopeFixture());
+    const readable = await readableOf(await firstPdf(outcome));
+    expect(readable).not.toContain('SANJFIELDVAL15');
+    expect(readable).not.toContain('SANJGROUPFIELD18');
+    // The popup is named only by a deleted annotation, so it goes with it.
+    expect(await annotSubtypes(await firstPdf(outcome))).toEqual([]);
+    // `notes` promises the XFA packet stays: this switch drops the pointer, not the XML.
+    expect(readable).toContain('SANJXFAPACKET22');
+    expect(outcome.warnings.join(' ')).toMatch(/filled-in answers/);
+  });
+
+  it('keeps what a surviving page also names', async () => {
+    const outcome = await sanitize({ annotations: true }, scopeFixture());
+    const readable = await readableOf(await firstPdf(outcome));
+    // Object 20 is the face both the page's /Resources and the form's /DR name.
+    expect(readable).toContain('/BaseFont /Helvetica');
+    const before = await factsOf(scopeFixture());
+    const after = await factsOf(await firstPdf(outcome));
+    expect(after.pages).toBe(before.pages);
+    expect(after.pageContent, 'the sheet was redrawn along with its marks').toEqual(before.pageContent);
+  });
+
+  it('stops the note being extractable from an outside-written file, and its answers from a form', async () => {
+    const source = foreign('annotations.pdf');
+    expect(await readableOf(source)).toContain('A note from an outside writer');
+    const off = await firstPdf(await sanitize({}, source, 'annotations.pdf'));
+    expect(await readableOf(off)).toContain('A note from an outside writer');
+    const on = await sanitize({ annotations: true }, source, 'annotations.pdf');
+    const readable = await readableOf(await firstPdf(on));
+    expect(readable).not.toContain('A note from an outside writer');
+    expect(readable).not.toContain('Free text, drawn inline');
+    expect(on.message).toMatch(/removed/);
+
+    const form = foreign('form.pdf');
+    const answers = await readableOf(form);
+    const cleared = await readableOf(await firstPdf(await sanitize({ annotations: true }, form, 'form.pdf')));
+    for (const match of answers.matchAll(/\/V\s*\(((?:[^()\\]|\\.)*)\)/g)) {
+      const answer = match[1];
+      if (answer.trim() === '') continue;
+      expect(cleared, `the /V answer "${answer}" is still in the file`).not.toContain(answer);
+    }
+  });
+
+  it('leaves an /Annots inherited from the /Pages node exactly where it was', async () => {
+    const source = scopeFixture({ inherited: true });
+    const off = await firstPdf(await sanitize({}, source, 'inherited.pdf'));
+    const on = await firstPdf(await sanitize({ annotations: true }, source, 'inherited.pdf'));
+    expect(Buffer.from(on).equals(Buffer.from(off)), 'the inherited shape changed under this fix').toBe(true);
+    expect(await readableOf(on)).toContain('SANJANNOTNOTE14');
+    expect((await sanitize({ annotations: true }, source, 'inherited.pdf')).message)
+      .toMatch(/no annotations were present/);
+  });
+});
+
+describe('sanitize-pdf Remove the info dictionary clears the trailer, in both shapes', () => {
+  it('deletes an indirect /Info without leaving the trailer naming it', async () => {
+    const source = scopeFixture();
+    expect(await trailerInfoShape(source), 'the fixture must name /Info by reference').toBe('ref');
+    const outcome = await sanitize({ info: true }, source);
+    const bytes = await firstPdf(outcome);
+    const readable = await readableOf(bytes);
+    expect(readable).not.toContain('SANJINFOTITLE6');
+    expect(readable).not.toContain('SANJINFOAUTH6');
+    expect(await trailerInfoShape(bytes)).toBe('none');
+    // The dangling slot this used to write: poppler `Invalid XRef entry 6`, MuPDF a
+    // slot it cannot find.
+    expect(await danglingRefs(bytes)).toEqual([]);
+    expect(outcome.message).toMatch(/the info dictionary was removed/);
+    expect(outcome.message).not.toMatch(/there was no info dictionary/);
+  });
+
+  it('deletes a /Info written direct into the trailer, and the run differs from the one that left it', async () => {
+    const source = scopeFixture({ directInfo: true });
+    expect(await trailerInfoShape(source), 'the fixture must write /Info into the trailer').toBe('inline');
+    const off = await firstPdf(await sanitize({}, source, 'inline.pdf'));
+    expect(await readableOf(off)).toContain('SANJINFOTITLE6');
+    expect(await trailerInfoShape(off)).toBe('inline');
+    const outcome = await sanitize({ info: true }, source, 'inline.pdf');
+    const bytes = await firstPdf(outcome);
+    const readable = await readableOf(bytes);
+    expect(readable).not.toContain('SANJINFOTITLE6');
+    expect(readable).not.toContain('SANJINFOAUTH6');
+    expect(await trailerInfoShape(bytes)).toBe('none');
+    expect(Buffer.from(bytes).equals(Buffer.from(off)), 'ON and OFF wrote the same bytes').toBe(false);
+    expect(outcome.message).toMatch(/the info dictionary was removed/);
+    expect(outcome.message).not.toMatch(/there was no info dictionary/);
+    expect(await danglingRefs(bytes)).toEqual([]);
+  });
+
+  it('says there was no info dictionary only when the trailer names none', async () => {
+    const outcome = await sanitize({ info: true }, emptyFixture(), 'empty.pdf');
+    expect(outcome.message).toMatch(/there was no info dictionary/);
+    expect(outcome.message).toMatch(/^Nothing to remove/);
   });
 });
