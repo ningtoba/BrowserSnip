@@ -706,10 +706,16 @@ export const convertToTools: PdfToolDefinition[] = [
         // The tail is conditional on a decoder, because on a build without one a
         // mixed batch converts nothing at all (measured: HEIC + JPEG on the dev
         // build, both named, no PDF) — the flat sentence read as a promise about
-        // the very files that were about to be refused.
+        // the very files that were about to be refused. The same over-reach was
+        // measured for non-pictures on the other six routes: a text file in a
+        // batch of real JPEGs is named and stops the run at the gate
+        // (`tools/runner.ts:inputKindProblem`) — only files that *are* pictures
+        // of the wrong format are left out while the rest converts (measured on
+        // the rail: [photo.png, photo.jpg] → `1 JPG image(s) → 1 page(s).
+        // 1 file(s) left out.`).
         isHeic
           ? 'A file that is not really a HEIC is named and left out; where a decoder exists, the HEIC files beside it are still converted, never silently re-encoded.'
-          : `A file that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded.`,
+          : `A picture that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded. A file that is not a picture at all — text, a PDF, a ZIP, an MP3 — is named, and the run stops before any page is made.`,
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
