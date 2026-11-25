@@ -1300,25 +1300,30 @@ export const securityTools: PdfToolDefinition[] = [
     notes: [
       'Metadata is not the page. Words still sit in the content streams, bookmarks and annotations of a document, and text hidden under a redaction bar is removed by Redact PDF, not here.',
       "The catalogue's /Lang and an application's own /PieceInfo stay: they describe the text and the document, not who wrote it. A signature's permission record (/Perms) stays too, so a certified file keeps its badge.",
-      'A store that was already empty is reported as untouched rather than counted as removed.',
+      'A store that is not there is reported as untouched rather than counted as removed. A dictionary that is there and holds nothing — an empty /Info left by an earlier strip, an /ViewerPreferences whose only entry was this one — is taken out, and said.',
+      'An /OpenAction that jumps to a page, and a zoom recorded on the page itself, stay: measured, they were always left in place. They are part of how the document is meant to open, not a memory of the last reader.',
     ],
     fields: [
       { key: 'info', label: 'Document info dictionary', type: 'toggle', default: true, group: 'What to remove', help: 'The whole dictionary, vendor keys included: title, author, subject, keywords, producer, the dates. This is the panel a reader shows under Properties.' },
       { key: 'xmp', label: 'XMP metadata stream', type: 'toggle', default: true, group: 'What to remove', help: 'The XML copy of the same facts, plus history some applications embed. Removing one store and leaving the other is how a "cleaned" file still carries your name.' },
       { key: 'attachments', label: 'Embedded files', type: 'toggle', default: false, group: 'What to remove', help: 'Off by default because these are payload, not furniture: an attachment can be the contract itself.' },
-      { key: 'readerSettings', label: 'Last-opened page and zoom memory', type: 'toggle', default: true, group: 'What to remove', help: 'Which page and zoom the document opens at, and whether the title or the filename is shown. They reveal how the file was used.' },
+      { key: 'readerSettings', label: 'Last-opened page and zoom memory', type: 'toggle', default: true, group: 'What to remove', help: '/PageMode (which panel the file opens showing) and DisplayDocTitle (whether a reader titles the tab with the document title or the filename). They reveal how the file was used.' },
     ],
     async run(context) {
       const [input] = await openInputs(context);
-      const { stripInfo, stripXmp } = await import('../core/metadata');
+      const { infoDict, stripInfo, stripXmp } = await import('../core/metadata');
       const done: string[] = [];
       if (booleanValue(context.values, 'info', true)) {
         // Measured once: calling `stripInfo` a second time just to pick the
         // plural would report 0 properties because the first call already
         // removed them. A zero count is not something that was removed, so it
-        // is not added to the list either.
+        // is not added to the list either — unless the dictionary itself was
+        // standing there empty, which is a thing the run does take out.
+        const standing = infoDict(input.doc);
+        const standingEmpty = standing !== undefined && [...standing.keys()].length === 0;
         const cleared = stripInfo(input.doc);
         if (cleared > 0) done.push(`${cleared} propert${cleared === 1 ? 'y' : 'ies'}`);
+        else if (standingEmpty) done.push('an empty /Info dictionary');
       }
       if (booleanValue(context.values, 'xmp', true) && stripXmp(input.doc)) done.push('XMP packet');
       if (booleanValue(context.values, 'attachments')) {
@@ -1336,9 +1341,23 @@ export const securityTools: PdfToolDefinition[] = [
         // DocMDP record, and deleting it takes the certification badge off a
         // signed file. PageMode and DisplayDocTitle are what the card means.
         if (input.doc.catalog.delete(PDFName.of('PageMode'))) cleared.push('PageMode');
-        const viewerPrefs = input.doc.catalog.get(PDFName.of('ViewerPreferences'));
+        // The dictionary may be inlined in the catalogue (Acme's writer) or an
+        // indirect object (Microsoft Word's, measured on a real Word 2021 paper
+        // where the setting survived the strip because only `instanceof PDFDict`
+        // was accepted). Resolve it either way.
+        const stored = input.doc.catalog.get(PDFName.of('ViewerPreferences'));
+        const viewerPrefs = stored instanceof PDFRef
+          ? input.doc.context.lookup(stored, PDFDict)
+          : stored;
         if (viewerPrefs instanceof PDFDict && viewerPrefs.delete(PDFName.of('DisplayDocTitle'))) {
           cleared.push('ViewerPreferences/DisplayDocTitle');
+          // An emptied dictionary left standing is the same residue `stripInfo`
+          // was fixed for: a reader still shows the panel, and the run still
+          // claims the setting is out. The key and the object behind it go too.
+          if ([...viewerPrefs.keys()].length === 0) {
+            input.doc.catalog.delete(PDFName.of('ViewerPreferences'));
+            if (stored instanceof PDFRef) input.doc.context.delete(stored);
+          }
         }
         if (cleared.length > 0) done.push(`reader settings (${cleared.join(', ')})`);
       }

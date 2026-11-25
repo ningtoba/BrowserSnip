@@ -842,15 +842,79 @@ describe('remove-metadata clears /Info and the XMP packet', () => {
       { info: false, xmp: false, attachments: false, readerSettings: true }, [pdfFile(source, 'ctl.pdf')]);
     const reloaded = await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false });
     expect(reloaded.catalog.has(PDFName.of('PageMode'))).toBe(false);
-    expect(
-      reloaded.catalog.lookupMaybe(PDFName.of('ViewerPreferences'), PDFDict)?.has(PDFName.of('DisplayDocTitle')),
-    ).toBe(false);
+    // Chunk c3: with its only entry gone the dictionary itself goes too. Leaving
+    // `/ViewerPreferences << >>` standing was the same residue `stripInfo` was
+    // fixed for — a catalogue key a reader still resolves, and a run that claims
+    // the setting is out.
+    expect(reloaded.catalog.has(PDFName.of('ViewerPreferences')), 'an empty /ViewerPreferences was left standing').toBe(false);
     expect(outcome.message).toContain('reader settings (PageMode, ViewerPreferences/DisplayDocTitle)');
-    // Control: with the toggle off they stay.
+    // Control: a second preference in the dictionary keeps the dictionary alive.
+    const two = await PDFDocument.load(await textFixture(), { updateMetadata: false });
+    two.catalog.set(PDFName.of('ViewerPreferences'), two.context.obj({ DisplayDocTitle: true, Duplex: 'DuplexFlipLongEdge' }));
+    const keptBoth = await run('remove-metadata',
+      { info: false, xmp: false, attachments: false, readerSettings: true },
+      [pdfFile(await two.save({ useObjectStreams: false }), 'two.pdf')]);
+    const reloadedTwo = await PDFDocument.load(await bytesOf(keptBoth), { updateMetadata: false });
+    const prefs = reloadedTwo.catalog.lookupMaybe(PDFName.of('ViewerPreferences'), PDFDict);
+    expect(prefs, 'the dictionary went with the one key this tool owns').toBeTruthy();
+    expect(prefs?.has(PDFName.of('DisplayDocTitle'))).toBe(false);
+    expect(prefs?.has(PDFName.of('Duplex')), 'another reader setting was taken too').toBe(true);
+    // Control: with the toggle off both settings stay.
     const kept = await bytesOf(await run('remove-metadata',
       { info: false, xmp: false, attachments: false, readerSettings: false }, [pdfFile(source, 'ctl.pdf')]));
     const untouched = await PDFDocument.load(kept, { updateMetadata: false });
-    expect(untouched.catalog.has(PDFName.of('PageMode'))).toBe(true);
+    expect(untouched.catalog.has(PDFName.of('PageMode')), 'the toggle-off run took PageMode anyway').toBe(true);
+    expect(
+      untouched.catalog.lookupMaybe(PDFName.of('ViewerPreferences'), PDFDict)?.has(PDFName.of('DisplayDocTitle')),
+      'the toggle-off run took DisplayDocTitle anyway').toBe(true);
+  }, 300_000);
+
+  it('takes the setting out of an indirect /ViewerPreferences, the way Word writes it', async () => {
+    // Measured on a real Word 2021 paper: its catalogue holds
+    // `/ViewerPreferences 1468 0 R`, and the run matched only an inlined
+    // `PDFDict`, so the strip reported "Nothing was removed" over a file that did
+    // carry the setting the toggle names.
+    const doc = await PDFDocument.load(await textFixture(), { updateMetadata: false });
+    doc.catalog.set(PDFName.of('ViewerPreferences'), doc.context.register(
+      doc.context.obj({ DisplayDocTitle: true }),
+    ));
+    const stored = doc.catalog.get(PDFName.of('ViewerPreferences'));
+    expect(stored, 'the fixture must hold a reference, not a dictionary').toBeInstanceOf(PDFRef);
+    const outcome = await run('remove-metadata',
+      { info: false, xmp: false, attachments: false, readerSettings: true },
+      [pdfFile(await doc.save({ useObjectStreams: false }), 'word-shape.pdf')]);
+    expect(outcome.message).toContain('reader settings (ViewerPreferences/DisplayDocTitle)');
+    const reloaded = await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false });
+    expect(reloaded.catalog.has(PDFName.of('ViewerPreferences')), 'the reference outlived its only key').toBe(false);
+    // The orphan object is gone too: the setting must not survive in the bytes.
+    const bytes = await bytesOf(outcome);
+    expect(Buffer.from(bytes).toString('latin1')).not.toMatch(/\/DisplayDocTitle/);
+  }, 300_000);
+
+  it('says so when the only thing removed was a standing empty /Info', async () => {
+    // `/Info << >>` carries no values, so it is not a property count — but it is a
+    // properties panel in a reader and `present, 0 key(s)` in view-metadata, and
+    // the run deleted it while reporting that nothing was removed.
+    const doc = await PDFDocument.load(await textFixture(), { updateMetadata: false });
+    doc.context.trailerInfo.Info = doc.context.register(doc.context.obj({}));
+    const bytes = await doc.save({ useObjectStreams: false });
+    const before = await PDFDocument.load(bytes, { updateMetadata: false });
+    expect([...(infoDict(before)?.keys() ?? [])]).toHaveLength(0);
+
+    const outcome = await run('remove-metadata',
+      { info: true, xmp: false, attachments: false, readerSettings: false }, [pdfFile(bytes, 'empty.pdf')]);
+    expect(outcome.message, 'the removal of the dictionary went unreported').toContain('an empty /Info dictionary');
+    expect(outcome.message).not.toMatch(/Nothing was removed/);
+    const reloaded = await PDFDocument.load(await bytesOf(outcome), { updateMetadata: false });
+    expect(reloaded.context.trailerInfo.Info, 'the empty dictionary stayed').toBeUndefined();
+
+    // Control: a file with no /Info at all still answers honestly.
+    const none = await PDFDocument.load(bytes, { updateMetadata: false });
+    none.context.trailerInfo.Info = undefined;
+    const second = await run('remove-metadata',
+      { info: true, xmp: false, attachments: false, readerSettings: false },
+      [pdfFile(await none.save({ useObjectStreams: false }), 'none.pdf')]);
+    expect(second.message).toMatch(/Nothing was removed/);
   }, 300_000);
 
   it('clears an XMP packet that a producer inlined into the catalog', async () => {
