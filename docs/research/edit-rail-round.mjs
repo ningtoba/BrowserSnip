@@ -224,7 +224,7 @@ for (const c of CASES) {
   await ev(`(()=>{window.__blobs=[];window.__blobUrls={};const o=URL.createObjectURL.bind(URL);URL.createObjectURL=(b)=>{window.__blobs.push(b);return o(b)};return 1})()`);
   const { root } = await send('DOM.getDocument', { depth: -1 });
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
-  await send('DOM.setFileInputFiles', { files: [c.pdf], nodeId });
+  await send('DOM.setFileInputFiles', { files: c.pdfs ?? [c.pdf], nodeId });
   const btnReady = await wait(`[...document.querySelectorAll('button')].some(b=>new RegExp(${JSON.stringify(c.label)},'i').test((b.innerText||'').trim())&&!b.disabled)`, 60000);
   if (!btnReady) throw new Error(`${c.name}: no enabled button matching ${c.label} after upload`);
 
@@ -239,7 +239,7 @@ for (const c of CASES) {
   }
 
   const beforeCount = await ev('window.__blobs.length');
-  const srcSize = statSync(c.pdf).size;
+  const srcSize = (c.pdfs ?? [c.pdf]).reduce((n, f) => n + statSync(f).size, 0);
   const clicked = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>new RegExp(${JSON.stringify(c.label)},'i').test((x.innerText||'').trim())&&!x.disabled);if(b){b.click();return b.innerText.trim()}return null})()`);
   let gotOut = false;
   if (clicked !== null) {

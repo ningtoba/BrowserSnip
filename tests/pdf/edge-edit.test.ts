@@ -1143,6 +1143,25 @@ describe('Bates numbering (E9, E15, E16)', () => {
     expect(point.y).toBeGreaterThanOrEqual(0);
   });
 
+  it('grows the column past the width it was given, silently', async () => {
+    // The Number width help promises: "Shorter than the highest number you will
+    // reach and the sequence silently grows a column". Measured live at :5291 on
+    // five sheets with width 4 from 9998 — the file carries 9998, 9999, 10000,
+    // 10001, 10002: no clamp note, no truncated digit. The byte seam here:
+    const bytes = await fixture([
+      { size: A4 },
+      { size: A4 },
+      { size: A4 },
+    ], 'deep98');
+    const outcome = await run('bates-numbering', { format: '{n}', digits: 4, start: 9998 }, [bytes]);
+    const doc = await openPDF(await outputBytes(outcome));
+    expect(doc.getPages().map((page) => drawnRuns(page)[0]!.text)).toEqual(['9998', '9999', '10000']);
+    // The only thing the run may say is the small-production last-number sentence,
+    // and it must quote the literal that grew — never a padded phantom.
+    expect(outcome.warnings.join('\n')).toMatch(/last number written was 10000/);
+    expect(outcome.warnings.join('\n')).not.toMatch(/Number width must be|became/i);
+  });
+
   it('names a duplicate document instead of stamping it silently twice (E16)', async () => {
     const bytes = await fixture([{ size: A4 }], 'same');
     const outcome = await runPdfTool({
