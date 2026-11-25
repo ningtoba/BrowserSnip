@@ -2355,7 +2355,7 @@ export const organizeTools: PdfToolDefinition[] = [
       while (pages.length < padTo) pages.push(-1);
       const blanks = pages.length - source.length;
       if (blanks > 0) {
-        notes.add(`A booklet is made of sheets of four, so ${pageCountLabel(blanks)} were padded in to complete the last sheet.`);
+        notes.add(`A booklet is made of sheets of four, so ${pageCountLabel(blanks)} ${blanks === 1 ? 'was' : 'were'} padded in to complete the last sheet.`);
       }
       if (source.length < input.pageCount) {
         const left = resolvePages('all', input.pageCount).filter((page) => !source.includes(page));

@@ -28,11 +28,18 @@ import sys
 
 import pymupdf
 
-PAPER = {'a4': (595.28, 841.89), 'letter': (612, 792)}
+PAPER = {'a4': (595.28, 841.89), 'letter': (612, 792), 'legal': (612, 936),
+         'a3': (841.89, 1190.55), 'tabloid': (792, 1224)}
 
 
 def cells(width, height, gutter, margin):
-    """The two cells of a landscape sheet, gutter at the fold, margin outside."""
+    """The two cells of a sheet, gutter at the fold, margin outside.
+
+    The fold runs down the middle whatever the sheet's own orientation — that is what a
+    saddle-stitched booklet is — so the same asymmetry applies to a portrait sheet. The
+    tool warns in its notes that a portrait booklet folds the wrong way; it does not
+    refuse to build one, and this reader judges what it built (`--portrait`).
+    """
     cw = width / 2 - gutter - margin
     return [(margin, margin, cw, height - 2 * margin),
             (width / 2 + gutter, margin, cw, height - 2 * margin)]
@@ -91,6 +98,11 @@ def main():
     ap.add_argument('--gutter', type=float, default=12)
     ap.add_argument('--margin', type=float, default=12)
     ap.add_argument('--paper', default='a4')
+    ap.add_argument('--pages', default='',
+                    help="the rail's Pages selection, e.g. 1-6 (the signature is built on "
+                         "the imposed run, not on the whole file)")
+    ap.add_argument('--portrait', action='store_true',
+                    help="the rail's Landscape sheet toggle was switched off")
     ap.add_argument('--label', default='run')
     ap.add_argument('--control', action='store_true')
     args = ap.parse_args()
@@ -104,10 +116,23 @@ def main():
         print(f"{'PASS' if ok else 'FAIL'} {what} (got {got}, want {want})")
 
     src = source_measure(args.source)
+    if args.pages:
+        picked = []
+        for part in args.pages.replace(';', ',').split(','):
+            part = part.strip()
+            if not part:
+                continue
+            if '-' in part:
+                a, b = part.split('-', 1)
+                picked.extend(range(int(a) - 1, int(b)))
+            else:
+                picked.append(int(part) - 1)
+        src = [src[i] for i in picked if 0 <= i < len(src)]
     pad = -(-len(src) // 4) * 4
     want = signature(pad)
     want_w, want_h = PAPER[args.paper]
-    want_w, want_h = want_h, want_w  # the rail's Landscape sheet defaults on
+    if not args.portrait:
+        want_w, want_h = want_h, want_w  # the rail's Landscape sheet defaults on
 
     doc = pymupdf.open(args.out)
     judge(doc.page_count == (args.sheets or len(want)), 'printed side count',

@@ -2478,6 +2478,25 @@ describe('each tool is checked against its own output file', () => {
     expect(words).not.toMatch(/own cell/i);
   });
 
+  /**
+   * The padding is unconditional (a saddle-stitched sheet carries four pages), so the
+   * sentence is the only thing telling the user what landed in the file — and it printed
+   * "1 page were padded in" on a 7-page scan, measured on the live pane at `:5292`. The
+   * count itself is honest: 7 → 8 with one blank, 6 → 8 with two, 5 → 8 with three,
+   * 1 → 4 with three, judged side by side by `docs/research/booklet-round.py`.
+   */
+  it('a booklet says how many pages it padded in, in the right number', async () => {
+    const seven = fileOf(await sheets(grid(7)), 'seven.pdf');
+    const odd = await run('booklet', {}, [seven]);
+    expect((await open(await bytesOf(odd))).getPageCount(), 'four sides').toBe(4);
+    expect(warn(odd)).toMatch(/1 page was padded in to complete the last sheet/i);
+    const six = fileOf(await sheets(grid(6)), 'six.pdf');
+    expect(warn(await run('booklet', {}, [six]))).toMatch(/2 pages were padded in/i);
+    // Control: a whole signature pads nothing and must not claim it did.
+    expect(warn(await run('booklet', {}, [fileOf(await sheets(grid(8)), 'eight.pdf')])))
+      .not.toMatch(/padded in/i);
+  });
+
   it('a mixed-size base is described as the stamp being fitted, not the pages rescaled', async () => {
     const base = fileOf(await sheets([
       { width: 200, height: 100 }, { width: 100, height: 100 }, { width: 300, height: 300 },
