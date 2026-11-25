@@ -954,7 +954,8 @@ const ROMAN: [number, string][] = [
   [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
 ];
 
-function toRoman(value: number): string {
+/** Roman for page labels/folios: additive past 3999, matching MuPDF/pypdf renderings. */
+export function toRoman(value: number): string {
   // Past 3999 the classic table stops, but a page label is what the readers
   // say it is: MuPDF and pypdf both keep counting additively (mmmm, mmmmi)
   // off the same correct /St, and page-numbers/bates already stamp that way.
@@ -973,7 +974,7 @@ function toRoman(value: number): string {
 }
 
 /** Bijective base 26: 1 → A, 26 → Z, 27 → AA. */
-function toLetters(value: number): string {
+export function toLetters(value: number): string {
   if (value <= 0) return String(value);
   let rest = value;
   let out = '';
