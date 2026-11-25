@@ -32,6 +32,7 @@ import {
 } from './doc';
 import type { PDFFont } from './doc';
 import type { PDFObject } from './doc';
+import { quarterTurn, viewerRectToUserSpace, viewerSizeOf, type PageFrame, type QuadRect } from './tables';
 
 /** Shape accepted by `PDFContext.obj`; a bare string there becomes a PDF *name*. */
 type ObjValue = number | boolean | string | null | PDFObject | ObjValue[] | { [key: string]: ObjValue };
@@ -963,6 +964,8 @@ async function signatureAppearance(
   signedAt: Date,
   width: number,
   height: number,
+  area: QuadRect,
+  rotation: number,
 ): Promise<PDFRef> {
   const context = doc.context;
   const { body, head } = await blockFonts(doc);
@@ -980,16 +983,51 @@ async function signatureAppearance(
   if (options.reason?.trim()) write(body, 7, `Reason: ${options.reason}`, 8, height - 52);
   if (options.location?.trim()) write(body, 7, `Location: ${options.location}`, 8, height - 64);
 
-  const content = `${lines.join('\n')}\n`;
+  // The block is laid out upright in the *displayed* `width × height` frame, but a
+  // viewer paints a widget's appearance and then turns the whole page by `/Rotate`,
+  // which would leave the text reading sideways on a quarter-turned sheet (the D4
+  // probe: "Digitally signed by" ran down the displayed left edge, and the block sat
+  // in the wrong corner). The inverse turn baked inside the stream — the same recipe
+  // `core/annotations` uses for a stamp's appearance (census row 9) — cancels the
+  // page's, so the block reads upright as displayed. The `/BBox` stays the **stored**
+  // rect's own size (`area`), which is what the viewer scales onto `/Rect`.
+  const matrix = uprightMatrix(area, rotation);
+  const turned = matrix.join(' ') !== '1 0 0 1 0 0';
+  const ops = turned ? `q\n${matrix.join(' ')} cm\n${lines.join('\n')}\nQ` : lines.join('\n');
+  const content = `${ops}\n`;
   const stream = context.flateStream(content, {
     Type: 'XObject',
     Subtype: 'Form',
-    BBox: [0, 0, width, height],
+    BBox: [0, 0, Math.round(area.width), Math.round(area.height)],
     Matrix: [1, 0, 0, 1, 0, 0],
     Resources: { Font: { F1: body.ref, F2: head.ref } },
   });
   stream.dict.set(PDFName.of('Length'), PDFNumber.of(stream.contents.length));
   return context.register(stream);
+}
+
+/**
+ * The matrix that puts a box drawn as *displayed* into the appearance's own space,
+ * so the page's `/Rotate` turns the block's frame but not its words.
+ *
+ * Mirrors `core/annotations.uprightMatrix` (census row 9) exactly: the appearance is
+ * authored upright in the displayed `w × h` frame, and this maps it into the stored
+ * rect's `area.width × area.height` space so a viewer that rotates the page leaves
+ * the text reading normally. `/Rotate 0` is the identity, so an unturned sheet's
+ * appearance stream is byte-identical to before.
+ */
+function uprightMatrix(rect: QuadRect, rotation: number): number[] {
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  switch (((Math.round(rotation / 90) * 90) % 360 + 360) % 360) {
+    case 90:
+      return [0, 1, -1, 0, r(rect.width), 0];
+    case 180:
+      return [-1, 0, 0, -1, r(rect.width), r(rect.height)];
+    case 270:
+      return [0, -1, 1, 0, 0, r(rect.height)];
+    default:
+      return [1, 0, 0, 1, 0, 0];
+  }
 }
 
 async function installSignatureField(
@@ -1001,15 +1039,31 @@ async function installSignatureField(
   const context = doc.context;
   const pageIndex = Math.min(Math.max(0, options.page ?? 0), doc.getPageCount() - 1);
   const page = doc.getPage(pageIndex);
-  const pageWidth = page.getWidth();
-  const pageHeight = page.getHeight();
-  // A sheet smaller than the block still gets a block, and one that fits: the
-  // rect is shrunk to the sheet and then clamped inside it, so nothing hangs off
-  // a 150x100 page (the appearance is clipped to `/BBox`, which follows the rect).
-  const width = Math.max(Math.min(BLOCK_WIDTH, pageWidth - 8), 40);
-  const height = Math.max(Math.min(BLOCK_HEIGHT, pageHeight - 8), 24);
-  const left = Math.min(Math.max(36, 4), Math.max(pageWidth - width - 4, 4));
-  const bottom = Math.min(Math.max(pageHeight - 36 - height, 4), Math.max(pageHeight - height - 4, 4));
+  const box = page.getMediaBox();
+  const rotation = quarterTurn(page.getRotation().angle);
+  // The block is sized and aimed in the frame a viewer *shows* (`SignMain` and the
+  // card both speak of the top-left of the page as displayed), then mapped into
+  // stored user space through the shared viewer table — the census row-4 mapper.
+  // Anchoring it at the stored `getWidth()/getHeight()` corner instead put the
+  // signature in a different corner on every quarter-turned sheet (census #17).
+  const frame: PageFrame = {
+    x0: box.x,
+    y0: box.y,
+    width: box.width,
+    height: box.height,
+    rotation,
+  };
+  const sheet = viewerSizeOf(frame);
+  // A sheet smaller than the block still gets a block, and one that fits: the rect
+  // is shrunk to the displayed sheet and clamped inside it, so nothing hangs off a
+  // 150x100 page (the appearance is clipped to `/BBox`, which follows the rect).
+  const width = Math.max(Math.min(BLOCK_WIDTH, sheet.width - 8), 40);
+  const height = Math.max(Math.min(BLOCK_HEIGHT, sheet.height - 8), 24);
+  // 36 pt inside the DISPLAYED top-left corner, clamped onto the sheet.
+  const dLeft = Math.min(Math.max(36, 4), Math.max(sheet.width - width - 4, 4));
+  const dTop = Math.min(Math.max(36, 4), Math.max(sheet.height - height - 4, 4));
+  // Displayed-space box → stored user-space rect (origin top-left → bottom-left).
+  const area = viewerRectToUserSpace({ x: dLeft, y: dTop, width, height }, frame);
   const visible = options.visible !== false;
   const signedAt = new Date();
 
@@ -1067,11 +1121,13 @@ async function installSignatureField(
       Type: 'Annot',
       Subtype: 'Widget',
       Parent: field,
-      Rect: visible ? [left, bottom, left + width, bottom + height] : [0, 0, 0, 0],
+      Rect: visible ? [area.x, area.y, area.x + area.width, area.y + area.height] : [0, 0, 0, 0],
       P: page.ref,
       F: WIDGET_FLAGS,
       Border: context.obj([0, 0, 1]),
-      ...(visible ? { AP: { N: await signatureAppearance(doc, signer, options, signedAt, width, height) } } : {}),
+      ...(visible
+        ? { AP: { N: await signatureAppearance(doc, signer, options, signedAt, width, height, area, rotation) } }
+        : {}),
     }),
   );
   fields.push(field);
