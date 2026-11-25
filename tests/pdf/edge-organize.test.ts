@@ -512,6 +512,125 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
     }
     return out;
   };
+  /**
+   * One content stream translated into the numeric display list pdf.js makes
+   * from it — shared by page content and annotation appearances.
+   */
+  const translate = (
+    content: string,
+    subtypes: Record<string, string>,
+  ): { fnArray: number[]; argsArray: unknown[] } => {
+    const fnArray: number[] = [];
+    const argsArray: unknown[] = [];
+    let pendingName = '';
+    // The operands of the operator token in front of them, dropped once it
+    // has been emitted: `1 1 1 rg` is one colour, not three numbers.
+    const operand: number[] = [];
+    for (const token of content.split(/[\s\n]+/)) {
+      // A PDF name is anything after `/` up to whitespace or a delimiter —
+      // pdf-lib names its images `/Image-7098480789`, and a stricter pattern
+      // silently lost the operand, so `Do` resolved to the wrong id.
+      if (/^\/[^\s\]>]+$/.test(token)) {
+        pendingName = token.slice(1);
+        continue;
+      }
+      if (/^-?\d*\.?\d+$/.test(token)) {
+        operand.push(Number(token));
+        continue;
+      }
+      const state = stateOps[token];
+      // Every non-number, non-name token is an operator, so its operands are
+      // finished here even when the operator is one the double ignores
+      // (`/F1 12 Tf` would otherwise leave `12` in front of the next
+      // operator's own operand and the render mode would arrive as 12).
+      const operands = operand.slice();
+      operand.length = 0;
+      if (state) {
+        const [stateId, arg] = state(operands);
+        fnArray.push(stateId);
+        argsArray.push(arg);
+        continue;
+      }
+      let id = ids[token];
+      if (id === undefined) continue;
+      if (token === 'Do') {
+        const subtype = subtypes[pendingName];
+        // A `Do` whose target cannot be read is a broken double, not a
+        // judgment call: guessing here is how every image quietly went back
+        // to the invented `paintXObject` id and the blank-page rule passed in
+        // jsdom while the browser called a scan blank.
+        if (subtype === undefined) {
+          throw new Error(
+            `render double: /${pendingName || '?'} Do resolved to no XObject in this page's /Resources`,
+          );
+        }
+        // Real pdf.js: an image paints with `paintImageXObject`. A form's
+        // operators come from inside it, which the double does not inline, so
+        // a form keeps the single `paintXObject` id it always used here.
+        id = subtype === 'Image' ? imagePaint : OPS.paintXObject;
+      }
+      if (!paintable.has(id)) continue;
+      pendingName = '';
+      fnArray.push(id);
+      argsArray.push(
+        id === OPS.paintXObject || id === OPS.beginInlineImage || id === imagePaint
+          ? { width: 100, height: 50 }
+          : undefined,
+      );
+    }
+    return { fnArray, argsArray };
+  };
+  /**
+   * The annotation-appearance spans the real pdf.js appends to a page's
+   * display list (measured on 4.10.38: `r5-oplist-probe.mjs`, kept in
+   * `/tmp/lane-organize/r5`): `beginAnnotation [id, rect, …]`, the `/AP /N`
+   * stream's operators, `endAnnotation`. `Hidden`/`NoView` marks get no span
+   * at all, and a `/Invisible` one gets its span anyway — the worker drops
+   * the invisible bit for typed annotations and paints the appearance. A
+   * double without these spans could never fail on a flagged mark sneaking a
+   * paper sheet back in as `inkOps` (F-RB-1), so the double carries the same
+   * asymmetry the browser does.
+   */
+  const annotationSpans = (
+    loaderDoc: { context: { lookup(value: unknown): unknown } },
+    page: { node: { Annots?: () => unknown } },
+  ): { fnArray: number[]; argsArray: unknown[] } => {
+    const fnArray: number[] = [];
+    const argsArray: unknown[] = [];
+    let annots: unknown;
+    try {
+      annots = page.node.Annots?.();
+    } catch {
+      return { fnArray, argsArray };
+    }
+    if (!(annots instanceof PDFArray)) return { fnArray, argsArray };
+    for (let i = 0; i < annots.size(); i += 1) {
+      const dict = loaderDoc.context.lookup(annots.get(i));
+      if (!(dict instanceof PDFDict)) continue;
+      const flags = Number(String(dict.get(PDFName.of('F')) ?? '0')) || 0;
+      // The two bits the worker does suppress, in the numbers it carries
+      // them with (`AnnotationFlag`: Hidden 0x02, NoView 0x20).
+      if (flags & 0x02 || flags & 0x20) continue;
+      const ap = dict.get(PDFName.of('AP'));
+      const normal = ap instanceof PDFDict ? loaderDoc.context.lookup(ap.get(PDFName.of('N'))) : null;
+      if (!(normal instanceof PDFRawStream)) continue;
+      const rectValue = loaderDoc.context.lookup(dict.get(PDFName.of('Rect')));
+      const raw =
+        rectValue instanceof PDFArray
+          ? [0, 1, 2, 3].map((k) => Number(String(rectValue.get(k)).trim()))
+          : [0, 0, 0, 0];
+      const rect = [
+        Math.min(raw[0], raw[2]),
+        Math.min(raw[1], raw[3]),
+        Math.max(raw[0], raw[2]),
+        Math.max(raw[1], raw[3]),
+      ];
+      const body = translate(Buffer.from(streamBytes(normal)).toString('latin1'), {});
+      fnArray.push(OPS.beginAnnotation, ...body.fnArray, OPS.endAnnotation);
+      argsArray.push([`annot_${i}`, rect, null, null, false], ...body.argsArray, []);
+    }
+    return { fnArray, argsArray };
+  };
   return {
     ...real,
     openRender: async (bytes: Uint8Array) => {
@@ -520,69 +639,16 @@ vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
         const content = streams(page)
           .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
           .join('\n');
-        const fnArray: number[] = [];
-        const argsArray: unknown[] = [];
-        const subtypes = xObjectSubtypes(page, doc.context, { PDFDict, PDFName });
-        let pendingName = '';
-        // The operands of the operator token in front of them, dropped once it
-        // has been emitted: `1 1 1 rg` is one colour, not three numbers.
-        const operand: number[] = [];
-        for (const token of content.split(/[\s\n]+/)) {
-          // A PDF name is anything after `/` up to whitespace or a delimiter —
-          // pdf-lib names its images `/Image-7098480789`, and a stricter pattern
-          // silently lost the operand, so `Do` resolved to the wrong id.
-          if (/^\/[^\s\]>]+$/.test(token)) {
-            pendingName = token.slice(1);
-            continue;
-          }
-          if (/^-?\d*\.?\d+$/.test(token)) {
-            operand.push(Number(token));
-            continue;
-          }
-          const state = stateOps[token];
-          // Every non-number, non-name token is an operator, so its operands are
-          // finished here even when the operator is one the double ignores
-          // (`/F1 12 Tf` would otherwise leave `12` in front of the next
-          // operator's own operand and the render mode would arrive as 12).
-          const operands = operand.slice();
-          operand.length = 0;
-          if (state) {
-            const [stateId, arg] = state(operands);
-            fnArray.push(stateId);
-            argsArray.push(arg);
-            continue;
-          }
-          let id = ids[token];
-          if (id === undefined) continue;
-          if (token === 'Do') {
-            const subtype = subtypes[pendingName];
-            // A `Do` whose target cannot be read is a broken double, not a
-            // judgment call: guessing here is how every image quietly went back
-            // to the invented `paintXObject` id and the blank-page rule passed in
-            // jsdom while the browser called a scan blank.
-            if (subtype === undefined) {
-              throw new Error(
-                `render double: /${pendingName || '?'} Do resolved to no XObject in this page's /Resources`,
-              );
-            }
-            // Real pdf.js: an image paints with `paintImageXObject`. A form's
-            // operators come from inside it, which the double does not inline, so
-            // a form keeps the single `paintXObject` id it always used here.
-            id = subtype === 'Image' ? imagePaint : OPS.paintXObject;
-          }
-          if (!paintable.has(id)) continue;
-          pendingName = '';
-          fnArray.push(id);
-          argsArray.push(
-            id === OPS.paintXObject || id === OPS.beginInlineImage || id === imagePaint
-              ? { width: 100, height: 50 }
-              : undefined,
-          );
-        }
+        const own = translate(content, xObjectSubtypes(page, doc.context, { PDFDict, PDFName }));
+        const held = annotationSpans(doc, page);
         const items = shownStrings(content)
           .filter((str) => str.trim() !== '')
           .map((str) => ({ str, transform: [12, 0, 0, 12, 0, 0] }));
-        return { fnArray, argsArray, items };
+        return {
+          fnArray: [...own.fnArray, ...held.fnArray],
+          argsArray: [...own.argsArray, ...held.argsArray],
+          items,
+        };
       });
       const numPages = lists.length;
       return {
@@ -2971,6 +3037,92 @@ describe('each tool is checked against its own output file', () => {
     expect([dropped.blank, dropped.reason, dropped.profile.annotationKinds])
       .toEqual([true, 'nothing-drawn', []]);
     await held.destroy();
+  });
+
+  /**
+   * The blankfix p16 shape: a sheet that draws nothing of its own, holding a
+   * sticky note whose stored appearance paints a black 20 × 20 square (the
+   * first page is the control — real text, must survive every variant).
+   * Every finished viewer shows paper for the note sheet — measured 0 ink at
+   * 72/150/300 dpi in MuPDF with annotation mode on, flags 25 — and only the
+   * pdf.js display list argues otherwise, because the worker drops the
+   * invisible bit for typed annotations and paints the appearance anyway.
+   * `flags` chooses the side: 1 is the bare `Invisible` flag, 24 is
+   * `NoZoom|Print`, visible to everyone.
+   */
+  async function readableThenNote(flags: number): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const first = doc.addPage([200, 100]);
+    first.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: font.ref } }));
+    first.node.set(PDFName.of('Contents'), doc.context.stream(readable));
+    doc.addPage([200, 100]);
+    const ap = doc.context.stream('q 0 0 0 rg 0 0 20 20 re f Q', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, 20, 20],
+      Resources: doc.context.obj({}),
+    });
+    const dict = doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Text',
+      Rect: [60, 40, 80, 60],
+      F: flags,
+      Contents: 'a mark no finished sheet shows',
+      AP: { N: doc.context.register(ap) },
+    });
+    const note = doc.context.register(dict);
+    // The note's popup window, written the way PyMuPDF writes blankfix p16:
+    // flags clean, so only the parent rule can keep it from holding the sheet.
+    const popup = doc.context.register(doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Popup',
+      Rect: [90, 20, 190, 95],
+      Parent: note,
+    }));
+    doc.getPage(1).node.set(PDFName.of('Annots'), doc.context.obj([note, popup]));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('the judge reads the invisible flag the same on both halves (F-RB-1)', async () => {
+    // The double paints the note's appearance into the display list exactly
+    // as the browser does, so this fails without the span-aware predicate:
+    // the fill inside the invisible mark came back as `inkOps` and the paper
+    // sheet stayed in both toggle positions (measured live, blankfix p16).
+    const bytes = await readableThenNote(1);
+    const session = await openRender(bytes);
+    const judged = await PDFDocument.load(bytes, { updateMetadata: false });
+    const verdict = await pageBlankness(session, judged, 2);
+    expect(
+      [verdict.blank, verdict.reason, verdict.profile.inkOps, verdict.profile.annotationKinds],
+      'the ink side reads the same flag the rect side already refuses',
+    ).toEqual([true, 'nothing-drawn', 0, []]);
+    await session.destroy();
+  });
+
+  it('remove-blank-pages deletes the sheet whose only mark is flagged invisible (F-RB-1)', async () => {
+    const source = fileOf(await readableThenNote(1), 'invisible-note.pdf');
+    for (const keepAnnotated of [true, false]) {
+      const outcome = await run('remove-blank-pages', { keepAnnotated }, [source]);
+      const kept = await open(await bytesOf(outcome));
+      expect(outcome.message, `keepAnnotated=${keepAnnotated} deletes the paper sheet`).toMatch(
+        /Removed 1 page \(2\), kept 1 page/i,
+      );
+      expect(pageTexts(kept), 'the survivor is the readable sheet').toEqual(['readable']);
+    }
+  });
+
+  it('remove-blank-pages still treats a visible note icon as ink (F-RB-1 control)', async () => {
+    // The other side of the one predicate: a mark no flag hides paints its
+    // appearance, and the campaign verified that icon really prints — the
+    // fix must not sweep it away in either toggle position (blankfix p14).
+    const source = fileOf(await readableThenNote(24), 'visible-note.pdf');
+    for (const keepAnnotated of [true, false]) {
+      const outcome = await run('remove-blank-pages', { keepAnnotated }, [source]);
+      expect(outcome.message, `keepAnnotated=${keepAnnotated} keeps the painted icon`).toMatch(
+        /No blank pages were found in 2 pages/i,
+      );
+    }
   });
 
   it('remove-blank-pages keeps a document whose pages all have content', async () => {

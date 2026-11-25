@@ -115,6 +115,17 @@ const SAVE_STATE = OPS.save;
 const RESTORE_STATE = OPS.restore;
 const SHADING_FILL = OPS.shadingFill;
 /**
+ * The display-list markers around one annotation's stored appearance. pdf.js
+ * emits a span for every annotation it paints, and it paints flagged-away
+ * ones: the worker suppresses only `Hidden`/`NoView`, and it *strips* the
+ * `Invisible` bit for every typed annotation (`Annotation.setFlags`) —
+ * so a `/Invisible` sticky note reaches the page operator list with real
+ * paint operators inside its span. Measured on 4.10.38: a note flagged 25
+ * contributes its fill, a note flagged 2 or 32 contributes nothing.
+ */
+const ANNOTATION_BEGIN = OPS.beginAnnotation;
+const ANNOTATION_END = OPS.endAnnotation;
+/**
  * Every colour operator the worker normalises to. `rg`/`RG`, `g`/`G`,
  * `k`/`K`, `sc`/`scn` and a bare colour array all arrive as one of these two
  * ids with three `0`–`255` components (`PartialEvaluator` calls `getRgb`), so a
@@ -152,7 +163,17 @@ function isWhite(value: unknown): boolean {
 export async function profilePage(
   session: PdfSession,
   page: number,
-  options: { annotationRects?: number; annotationKinds?: string[] } = {},
+  options: {
+    annotationRects?: number;
+    annotationKinds?: string[];
+    /**
+     * Rects of the annotations `isHiddenAnnotation` keeps from the reader.
+     * Their stored appearances ride the display list anyway (see
+     * `ANNOTATION_BEGIN`); the walk below refuses to count them as ink, so
+     * the flag answers exactly one question across both halves of the rule.
+     */
+    hiddenAnnotationRects?: number[][];
+  } = {},
 ): Promise<PageContentProfile> {
   const proxy = await session.page(page);
   let profile: PageContentProfile;
@@ -171,7 +192,12 @@ export async function profilePage(
       const size = Math.hypot(item.transform[0], item.transform[1]);
       if (size === 0) invisible += 1;
     }
-    const seen = readDisplayList(operators.fnArray, operators.argsArray, viewport);
+    const seen = readDisplayList(
+      operators.fnArray,
+      operators.argsArray,
+      viewport,
+      options.hiddenAnnotationRects ?? [],
+    );
     invisible += seen.invisibleTextOps;
     const annotationRects = options.annotationRects ?? 0;
     profile = {
@@ -199,6 +225,36 @@ export async function profilePage(
     proxy.cleanup();
   }
   return profile;
+}
+
+/**
+ * The `/Rect` an annotation span carries. `beginAnnotation`'s args are
+ * `[id, rect, transform, matrix, hasOwnCanvas]` (measured on 4.10.38);
+ * anything else is a span this rule cannot place, and an unplaceable span
+ * counts as the ink the page really drew — the conservative direction.
+ */
+function spanRect(args: unknown): number[] | null {
+  const list = args as unknown[] | null;
+  if (!Array.isArray(list) || !Array.isArray(list[1])) return null;
+  return canonicalRect(list[1]);
+}
+
+/**
+ * `[llx, lly, urx, ury]`, or `null` unless the four corners are numbers.
+ * The worker reorders `/Rect` before putting it on the display list, so a
+ * dictionary written top-left-first has to meet its span in the middle.
+ */
+function canonicalRect(rect: unknown): number[] | null {
+  const list = rect as unknown[] | null;
+  if (!Array.isArray(list) || list.length !== 4) return null;
+  const n = list.map(Number);
+  if (!n.every(Number.isFinite)) return null;
+  return [
+    Math.min(n[0], n[2]),
+    Math.min(n[1], n[3]),
+    Math.max(n[0], n[2]),
+    Math.max(n[1], n[3]),
+  ];
 }
 
 function estimateImageArea(args: unknown, fallbackW: number, fallbackH: number): number {
@@ -234,11 +290,27 @@ interface DisplayListInk {
  * texture and a scan is a photograph of paper, so neither can be judged by a
  * single colour. An operator whose colour is a pattern keeps `setFillColorN`,
  * which is not one of the two white-capable ids, so it counts as ink too.
+ *
+ * The `hiddenAnnotationRects` half is the same promise read off the other
+ * side. `isHiddenAnnotation` already refuses a flagged mark as counted
+ * content; pdf.js, though, paints a `/Invisible` annotation's stored
+ * appearance into the display list anyway (only `Hidden`/`NoView` are
+ * suppressed there), so the appearance's operators used to sneak the page
+ * back in as `inkOps` — one flag, two answers, and the sheet a user got was
+ * paper. A `beginAnnotation` span whose rect matches a flagged annotation
+ * (consumed one-to-one, `/Rect` canonicalised like the worker canonicalises
+ * it) paints nothing here: its operators count for neither ink, white, nor
+ * raster. The rescue promise chooses this direction — "the pages that paint
+ * nothing" are deleted, and a mark flagged away from the reader holds
+ * nothing the reader asked to keep, which is the same reason its rect never
+ * counts. Hidden and NoView spans do not reach the list at all; matching
+ * them too costs nothing and keeps one predicate where two used to guess.
  */
 function readDisplayList(
   ops: number[],
   args: unknown[],
   viewport: { width: number; height: number },
+  hiddenAnnotationRects: number[][] = [],
 ): DisplayListInk {
   const seen: DisplayListInk = {
     paintOps: 0, inkOps: 0, whitePaintOps: 0, invisibleTextOps: 0, images: 0, inkArea: 0,
@@ -247,9 +319,32 @@ function readDisplayList(
   // (`ISO 32000-1` 8.4, Table 106), so an operator that sets no colour is ink.
   let paint = initialPaintState();
   const saved: PaintState[] = [];
+  // The flagged marks' rects, waiting to be matched one-for-one against the
+  // spans the list carries; `spans` then holds one entry per open
+  // `beginAnnotation`, true when its appearance is flagged away from the
+  // reader and nothing inside it may count.
+  const annotationPool = hiddenAnnotationRects
+    .map(canonicalRect)
+    .filter((rect): rect is number[] => rect !== null);
+  const spans: boolean[] = [];
   for (let i = 0; i < ops.length; i++) {
     const id = ops[i];
     const arg = args[i];
+    if (id === ANNOTATION_BEGIN) {
+      const rect = spanRect(arg);
+      const at =
+        rect === null ? -1 : annotationPool.findIndex((held) => held.every((v, j) => v === rect[j]));
+      if (at >= 0) annotationPool.splice(at, 1);
+      spans.push(at >= 0);
+      continue;
+    }
+    if (id === ANNOTATION_END) {
+      spans.pop();
+      continue;
+    }
+    // Inside a flagged mark's appearance every operator is invisible, its
+    // colour setters with it: the whole span is skipped, not just its paint.
+    if (spans.includes(true)) continue;
     if (id === SAVE_STATE) {
       saved.push(paint);
       paint = { ...paint };
@@ -383,11 +478,13 @@ export async function pageBlankness(
   options: BlankPageOptions = {},
 ): Promise<PageBlankness> {
   const keepAnnotated = options.keepAnnotated ?? true;
-  const { kinds } = pageAnnotations(doc, page - 1);
+  const { kinds, hiddenRects } = pageAnnotations(doc, page - 1);
   const profile = await profilePage(
     session,
     page,
-    keepAnnotated ? { annotationRects: kinds.length, annotationKinds: kinds } : {},
+    keepAnnotated
+      ? { annotationRects: kinds.length, annotationKinds: kinds, hiddenAnnotationRects: hiddenRects }
+      : { hiddenAnnotationRects: hiddenRects },
   );
   return { page, blank: profile.blankByAppearance, reason: classifyProfile(profile), profile };
 }
@@ -405,11 +502,13 @@ export async function findBlankPages(
   const profiles: PageContentProfile[] = [];
   for (let page = 1; page <= session.numPages; page++) {
     if (shouldAbort?.()) break;
-    const { kinds } = pageAnnotations(doc, page - 1);
+    const { kinds, hiddenRects } = pageAnnotations(doc, page - 1);
     const profile = await profilePage(
       session,
       page,
-      keepAnnotated ? { annotationRects: kinds.length, annotationKinds: kinds } : {},
+      keepAnnotated
+        ? { annotationRects: kinds.length, annotationKinds: kinds, hiddenAnnotationRects: hiddenRects }
+        : { hiddenAnnotationRects: hiddenRects },
     );
     profiles.push(profile);
     if (profile.blankByAppearance) blank.push(page);
@@ -419,39 +518,56 @@ export async function findBlankPages(
 }
 
 /**
- * One walk of `/Annots` answering what the page holds for a reader: the
- * `/Subtype` names of the marks `isLiveAnnotation` counts as content.
+ * One walk of `/Annots` answering both annotation halves of the judge: the
+ * `/Subtype` names of the marks `isLiveAnnotation` counts as content, and the
+ * canonical rects of the marks `isHiddenAnnotation` keeps from the reader —
+ * whose stored appearance the renderer paints anyway, and the operator walk
+ * therefore has to refuse by rect.
  */
 interface PageAnnotationVerdict {
   kinds: string[];
+  hiddenRects: number[][];
 }
 
 function pageAnnotations(doc: PDFDocument, pageIndex: number): PageAnnotationVerdict {
   const page = doc.getPage(pageIndex);
   const kinds: string[] = [];
+  const hiddenRects: number[][] = [];
   const annots = readAnnotsArray(page);
-  if (!annots) return { kinds };
+  if (!annots) return { kinds, hiddenRects };
   const context = pdfContext(doc);
   const box = cropBox(page);
   for (let i = 0; i < annots.size(); i++) {
     const resolved = resolveAnnotation(doc, annots.get(i));
-    if (resolved && isLiveAnnotation(context, resolved, box)) {
+    if (!resolved) continue;
+    if (isHiddenAnnotation(resolved)) {
+      const rect = canonicalRect(readRect(context, resolved));
+      if (rect) hiddenRects.push(rect);
+      continue;
+    }
+    if (isLiveAnnotation(context, resolved, box)) {
       kinds.push(readName(resolved, 'Subtype') ?? 'Annotation');
     }
   }
-  return { kinds };
+  return { kinds, hiddenRects };
 }
 
 /**
  * An annotation counts as content only where a reader can meet it: the
  * invisible / hidden / no-view flags are off **and** `/Rect` lands on the page.
  *
+ * A `Popup` is judged with its parent: the window of a mark flagged away
+ * from the reader is itself never opened — measured on `blankfix.pdf` p16,
+ * where the `/Invisible` note's own rect was refused while its satellite
+ * popup, flags clean, still held the paper sheet. One promise, one
+ * predicate: the pair is hidden together.
+ *
  * The second half is what stops `keepAnnotated` degrading into "keep
  * everything". A mark parked at `[900 900 940 920]` on a 200 × 100 sheet is
- * clipped away by every viewer, so a sheet whose only annotation is off-page is
- * still blank; a rect that merely hangs over the edge is not, because part of
- * it draws. `/Rect` is in default user space, so the crop box is the right frame
- * whether or not the page carries `/Rotate`.
+ * clipped away by every viewer, so a sheet whose only annotation is off-page
+ * is still blank; a rect that merely hangs over the edge is not, because part
+ * of it draws. `/Rect` is in default user space, so the crop box is the right
+ * frame whether or not the page carries `/Rotate`.
  *
  * An unreadable `/Rect` keeps the page. This is a deletion rule, and "I could
  * not place it" is not evidence that nothing is drawn.
@@ -462,6 +578,10 @@ function isLiveAnnotation(
   box: PageBox,
 ): boolean {
   if (isHiddenAnnotation(dict)) return false;
+  if (readName(dict, 'Subtype') === 'Popup') {
+    const parent = context.lookup(dictGet(dict, 'Parent'));
+    if (isAnnotationDict(parent) && isHiddenAnnotation(parent)) return false;
+  }
   const rect = readRect(context, dict);
   if (!rect) return true;
   const [x1, y1, x2, y2] = rect;
