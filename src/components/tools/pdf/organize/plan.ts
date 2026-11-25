@@ -358,7 +358,7 @@ export function cardLabel(
 
 // ── the `pageOrder` string grammar ──────────────────────────────────────────
 
-const TOKEN = /^(?:f(\d+):)?(\d+)(?:r(\d{1,3}))?$/i;
+const TOKEN = /^(?:f(\d+):)?(\d+)(?:-(\d+))?(?:r(\d{1,3}))?$/i;
 
 /**
  * Serialise a plan for `params.pageOrder`.
@@ -406,7 +406,11 @@ export function parsePageOrder(spec: string, sources: PlanSource[]): Plan {
   const text = (spec ?? '').trim();
   if (!text) return defaultPlan(sources, 0);
   const out: Plan = [];
-  for (const raw of text.split(/[,\s]+/)) {
+  // `2 - 5`, `2--5`, `2–5` and `2..5` are one range with the typing a person
+  // does, and `;` separates tokens: the same fold `core/pages` and the
+  // registry's `parsePlan` apply (and every dash spelling lands on `-`, which
+  // both token regexes read), so the field and the grid parse one plan.
+  for (const raw of text.replace(/\s*(?:-{1,2}|–|—|\.\.)\s*/g, '-').split(/[,\s;]+/)) {
     const token = raw.trim();
     if (!token) continue;
     if (/^blank$/i.test(token)) {
@@ -416,7 +420,7 @@ export function parsePageOrder(spec: string, sources: PlanSource[]): Plan {
     const match = TOKEN.exec(token);
     if (!match) {
       throw new PageSpecError(
-        `"${token}" is not a page token. Use 3, 3r90 or blank — f2:3 pulls page 3 of the second file.`,
+        `"${token}" is not a page token. Use 3, 3r90, 2-5 or blank — f2:3 pulls page 3 of the second file.`,
       );
     }
     const fileNumber = match[1] ? Number(match[1]) : 1;
@@ -428,19 +432,39 @@ export function parsePageOrder(spec: string, sources: PlanSource[]): Plan {
         } ${sources.length === 1 ? 'is' : 'are'} open.`,
       );
     }
-    const page = Number(match[2]) - 1;
-    if (page < 0 || page >= source.pages) {
+    const first = Number(match[2]);
+    const last = match[3] === undefined ? first : Number(match[3]);
+    // Both ends are checked, so a range that runs off the document names the page
+    // that is missing and the count that makes it missing.
+    for (const edge of [first, last]) {
+      if (edge === 0) {
+        throw new PageSpecError(
+          `"${token}" names page 0, which does not exist — pages are numbered from 1.`,
+        );
+      }
+      if (edge > source.pages) {
+        throw new PageSpecError(
+          `"${token}" refers to page ${edge} of file ${fileNumber}, which has ${source.pages} page${
+            source.pages === 1 ? '' : 's'
+          }.`,
+        );
+      }
+    }
+    if (last < first) {
       throw new PageSpecError(
-        `"${token}" refers to page ${page + 1} of file ${fileNumber}, which has ${source.pages} page${
-          source.pages === 1 ? '' : 's'
-        }.`,
+        `"${token}" runs backwards — page ${first} comes after page ${last}. `
+          + `Write ${last}-${first}${match[4] === undefined ? '' : `r${match[4]}`} to go forwards.`,
       );
     }
-    // `r<n>` is the absolute `/Rotate` the file will carry; the model wants the
-    // turn on top of the page's own angle.
-    const own = sourceRotation(sources, fileNumber - 1, page);
-    const absolute = match[3] ? normaliseRotation(Number(match[3])) : own;
-    out.push(pageItem(fileNumber - 1, page, normaliseRotation(absolute - own) as PlanRotation));
+    // `r<n>` is the absolute `/Rotate` the output will carry; the model wants the
+    // turn on top of each page's own angle, which for a range is a different
+    // number per page.
+    const absolute = match[4] === undefined ? null : normaliseRotation(Number(match[4]));
+    for (let page = first; page <= last; page++) {
+      const own = sourceRotation(sources, fileNumber - 1, page - 1);
+      const rotate = absolute === null ? 0 : (normaliseRotation(absolute - own) as PlanRotation);
+      out.push(pageItem(fileNumber - 1, page - 1, rotate));
+    }
   }
   if (out.length === 0) throw new PageSpecError('The page order is empty.');
   return out;

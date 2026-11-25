@@ -324,6 +324,54 @@ describe('planToPageOrder / parsePageOrder', () => {
     expect(() => parsePageOrder('1', [])).toThrow(/0 PDFs are open/);
   });
 
+  it('reads a range in the field, the way the registry already reads one', () => {
+    // The field's help says `a range like 2-5` is a plan token and so does the
+    // tool's own notes. The pane's reader did not know the dash, so typing the
+    // documented grammar was refused ("is not a page token") while the very same
+    // string ran from the registry — the one case where "the sidebar field and
+    // this grid always agree" was false, and the grid went on painting the old
+    // plan underneath the sentence.
+    expect(parsePageOrder('2-4', SOURCES)).toEqual([pageItem(0, 1), pageItem(0, 2), pageItem(0, 3)]);
+    // Spaces around the dash, an en dash, two dots and a semicolon are all the
+    // same input to a person typing, and all of them are what `core/pages` and
+    // the registry already fold.
+    const wanted = [pageItem(0, 1), pageItem(0, 2), pageItem(0, 3)];
+    for (const spec of ['2 - 4', '2–4', '2..4', '2--4', '  2  -  4  ']) {
+      expect(parsePageOrder(spec, SOURCES), spec).toEqual(wanted);
+    }
+    expect(parsePageOrder('1;3', SOURCES)).toEqual([pageItem(0, 0), pageItem(0, 2)]);
+    // A turn written on a range is the `/Rotate` every page it names will carry.
+    expect(parsePageOrder('2-3r0', SOURCES)).toEqual([pageItem(0, 1, 0), pageItem(0, 2, 0)]);
+    // Cross-file ranges expand inside the file they name.
+    expect(parsePageOrder('f2:1-2', SOURCES)).toEqual([pageItem(1, 0), pageItem(1, 1)]);
+    // A single page and an open run of one still read as one page.
+    expect(parsePageOrder('3-3', SOURCES)).toEqual([pageItem(0, 2)]);
+  });
+
+  it('refuses a range that runs off the end, or backwards, naming the numbers', () => {
+    expect(() => parsePageOrder('2-9', SOURCES)).toThrow(/refers to page 9 of file 1, which has 4 pages/);
+    expect(() => parsePageOrder('f2:1-4', SOURCES)).toThrow(/page 4 of file 2, which has 2 pages/);
+    expect(() => parsePageOrder('4-2', SOURCES)).toThrow(/"4-2" runs backwards — page 4 comes after page 2/);
+    // The turn still belongs to the corrected range.
+    expect(() => parsePageOrder('4-2r90', SOURCES)).toThrow(/Write 2-4r90 to go forwards/);
+  });
+
+  it('turns a pre-rotated page in a range relative to what it already carries', () => {
+    const turned: PlanSource[] = [{ name: 'a.pdf', pages: 3, rotations: [90, 0, 270] }];
+    // `r0` straightens: the model holds the turn that gets there from the page's
+    // own angle, so 90 needs 270 and 270 needs 90.
+    expect(parsePageOrder('1-3r0', turned)).toEqual([
+      pageItem(0, 0, 270),
+      pageItem(0, 1, 0),
+      pageItem(0, 2, 90),
+    ]);
+    // Control: a bare range keeps each page's own angle — no turn at all.
+    expect(parsePageOrder('1-3', turned)).toEqual([pageItem(0, 0), pageItem(0, 1), pageItem(0, 2)]);
+    // And the serialiser writes back what a range expanded to — page 2 arrived
+    // upright, so its straighten is a bare token that means the same thing.
+    expect(planToPageOrder(parsePageOrder('1-3r0', turned), turned)).toBe('1r0, 2, 3r0');
+  });
+
   it('parses a blank-only plan without needing a source page', () => {
     expect(parsePageOrder('blank, blank', SOURCES)).toEqual([BLANK_ITEM, BLANK_ITEM]);
   });

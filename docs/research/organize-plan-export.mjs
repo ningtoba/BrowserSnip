@@ -76,8 +76,20 @@ await send('Network.enable', { maxPostDataSize: 65536 }).catch(() => {});
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: `${BASE}/#/tool/organize` });
 await wait(`!!document.querySelector('input[type=file]')`);
-if (DARK) await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('theme','dark')}catch{}return 1})()`);
-await ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.createObjectURL=(b)=>{window.__blobs.push(b);return o(b)};return 1})()`);
+// DARK=1 paints the theme before the document loads; DARK=2 presses the header's
+// own theme button once the grid holds content, which is the order a user does it
+// in — and the only order that tells you whether the pane repaints its thumbnails.
+if (DARK === '1') await ev(`(()=>{document.documentElement.classList.add('dark');try{localStorage.setItem('theme','dark')}catch{}return 1})()`);
+// Every blob the tab makes, keyed by the URL it was handed out under, plus the
+// anchor clicks: the last blob is not necessarily the one the user downloads (the
+// result screen paints its preview after it), so the download is identified by the
+// name on the anchor that carried it away.
+await ev(`(()=>{window.__blobs=[];window.__urls=new Map();window.__files=[];
+  const o=URL.createObjectURL.bind(URL);
+  URL.createObjectURL=(b)=>{const u=o(b);window.__urls.set(u,b);window.__blobs.push(b);return u};
+  const click=HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click=function(){if(this.download&&window.__urls.has(this.href)){window.__files.push([this.download,this.href]);return}return click.apply(this,arguments)};
+  return 1})()`);
 const { root } = await send('DOM.getDocument', { depth: -1 });
 const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
 await send('DOM.setFileInputFiles', { nodeId, files: [PDF] });
@@ -101,20 +113,31 @@ console.log('the grid now paints', cards.map((c) => c.item + (c.rot ? `@${c.rot}
 console.log('status', await ev(`[...document.querySelectorAll('[aria-live]')].map(n=>n.textContent.trim()).join('|').slice(0,300)`));
 console.log('input error', await ev(`(()=>{const p=[...document.querySelectorAll('p.text-danger, [role=alert]')];return p.map(n=>n.innerText.trim()).join(' | ')||null})()`));
 
+await sleep(SETTLE);
+if (DARK === '2') {
+  console.log('theme button', await ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/[☀☾]/u.test(x.innerText||''));if(!b)return 'NO BUTTON';b.click();return document.documentElement.classList.contains('dark')?'dark':'CLICK DID NOT STICK'})()`));
+  await sleep(1500);
+}
+console.log('cards after settle', await ev(`document.querySelectorAll('[data-plan-card]').length`), '· painted', await ev(`(()=>[...document.querySelectorAll('[data-plan-card] img')].filter((i)=>i.naturalWidth).length)()`));
 if (SHOT) {
   const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   mkdirSync(dirname(SHOT), { recursive: true });
   writeFileSync(SHOT, Buffer.from(data, 'base64'));
   console.log('screenshot:', SHOT);
 }
-await sleep(SETTLE);
+console.log('the grid still paints', await ev(`(()=>JSON.stringify([...document.querySelectorAll('[data-plan-card]')].map(c=>{const l=c.getAttribute('aria-label')||'';return l.startsWith('Blank')?'blank':('pg'+((l.match(/page (\\d+)/)||[])[1]||'?'))})))()`));
+console.log('field now holds', await ev(`(()=>{const f=document.querySelector('#plan-order-field');return f?f.value:null})()`));
 console.log('save ready?', await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/Save reordered PDF/.test(x.innerText||''));return b?!b.disabled:'no button'})()`));
 
 const before = await ev('window.__blobs.length');
 console.log('save button', await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/Save reordered PDF/.test(x.innerText||''));if(!b)return 'NO BUTTON';if(b.disabled)return 'DISABLED: '+(b.title||'');b.click();return 'saved'})()`));
-const got = await wait(`window.__blobs.length > ${before}`, 120000);
+const got = await wait(`window.__blobs.length > ${before} || window.__files.length > 0`, 120000);
 if (OUT && got) {
-  const b64 = await ev(`(async()=>{var b=window.__blobs.at(-1);var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)})()`);
+  // Prefer the blob that left through a download anchor; fall back to the last.
+  const at = await ev(`(()=>{const f=window.__files.at(-1);if(!f)return window.__blobs.length-1;
+    for(let i=window.__blobs.length-1;i>=0;i--)if(window.__urls.get(f[1])===window.__blobs[i])return i;return window.__blobs.length-1})()`);
+  console.log('blob index', at, 'names', await ev(`(()=>JSON.stringify(window.__files.map(f=>f[0])))()`));
+  const b64 = await ev(`(async()=>{var b=window.__blobs[${at}];var u=new Uint8Array(await b.arrayBuffer());var s='';for(var i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)})()`);
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, Buffer.from(b64, 'base64'));
   console.log('export', JSON.stringify({ file: OUT, bytes: Buffer.from(b64, 'base64').length }));
