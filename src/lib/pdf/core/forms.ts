@@ -18,6 +18,7 @@
  */
 import type { PDFDocument, PDFPage, PDFFont } from '@maxwbh/pdf-lib';
 import {
+  PDFArray,
   PDFBool,
   PDFCheckBox,
   PDFDict,
@@ -204,13 +205,25 @@ function fieldDescription(field: PDFField): Pick<FormFieldInfo, 'value' | 'optio
     out.checked = field.isChecked();
     out.value = out.checked ? 'On' : 'Off';
   } else if (field instanceof PDFRadioGroup) {
-    const selected = field.getSelected();
-    out.options = field.getOptions();
-    if (selected !== undefined) out.value = selected;
-    out.checked = selected !== undefined;
+    // Both halves come from `choicesOf`: pdf-lib's own accessors are pair-blind, so a
+    // group whose `/Opt` are pairs reported no options (the filler pane drew a text
+    // box instead of the radios) and could not name the selected kid either.
+    const choices = choicesOf(field);
+    out.options = choices.map((choice) => choice.label);
+    const selected = sampleText(field.acroField.dict.get(PDFName.of('V')));
+    if (selected !== undefined && selected !== 'Off') {
+      out.value = choices.find((choice) => choice.value === selected)?.label ?? selected;
+      out.checked = true;
+    } else {
+      out.value = undefined;
+      out.checked = false;
+    }
   } else if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
-    out.options = field.getOptions();
-    const selected = field.getSelected();
+    const choices = choicesOf(field);
+    out.options = choices.length > 0 ? choices.map((choice) => choice.label) : field.getOptions();
+    const selected = field.getSelected().map((value) => (
+      choices.find((choice) => choice.value === value)?.label ?? value
+    ));
     if (selected.length > 0) out.value = selected.join(', ');
   }
   return out;
@@ -287,7 +300,120 @@ function checkboxIsOn(value: string | boolean): boolean {
   return !['', '0', 'false', 'off', 'no'].includes(value.trim().toLowerCase());
 }
 
-function applyValue(field: PDFField, value: string | boolean): boolean {
+/** A choice value or a display label, read out of whatever object holds it. */
+function sampleText(object: unknown): string | undefined {
+  if (object instanceof PDFString || object instanceof PDFHexString) return object.decodeText();
+  if (object instanceof PDFName) return object.asString().replace(/^\//, '');
+  return undefined;
+}
+
+/**
+ * Every choice a field offers, with both halves of an `/Opt` pair kept.
+ *
+ * `/Opt` entries are either a single string (export = display) or the pair
+ * `[export, display]` a producer writes when the words in the list are not the words
+ * in the data (PDF 32000-1 §12.7.4.3). pdf-lib reads only one half at a time:
+ * `PDFDropdown.getOptions()` answers with the **display** text and `select()` then
+ * writes whatever it is handed straight into `/V`, so answering the offered
+ * "New York" shipped `/V (New York)` where the export value is `(ny)` — measured on
+ * the forms lane's `pairs2.pdf`, matrix item 1 — while `PDFRadioGroup.getOptions()`
+ * calls `getExportValues()`, which drops pair entries entirely and leaves the group
+ * with **no** options: the filler pane renders a raw text box instead of the radios
+ * and every answer is refused as "could not be written".
+ *
+ * A radio is labelled by the group's `/Opt` but *answered* by each kid's own on-state
+ * (`/V` and the kid `/AS` carry that name), so the pairs are zipped onto the kids in
+ * kid order and the value stays the on-state.
+ */
+function choicesOf(field: PDFField): { value: string; label: string }[] {
+  const opt = field.acroField.dict.lookupMaybe(PDFName.of('Opt'), PDFArray);
+  const pairs = (opt?.asArray() ?? []).flatMap((entry) => {
+    if (entry instanceof PDFArray) {
+      const value = sampleText(entry.get(0));
+      return value === undefined ? [] : [{ value, label: sampleText(entry.get(1)) ?? value }];
+    }
+    const value = sampleText(entry);
+    return value === undefined ? [] : [{ value, label: value }];
+  });
+  if (field instanceof PDFRadioGroup) {
+    return field.acroField.getOnValues().flatMap((on, index) => {
+      const value = sampleText(on);
+      return value === undefined
+        ? []
+        : [{ value, label: pairs[index]?.label ?? pairs[index]?.value ?? value }];
+    });
+  }
+  return pairs;
+}
+
+/** The answer for a choice field, whether the caller knew the label or the value. */
+function matchChoice(
+  choices: { value: string; label: string }[],
+  answer: string,
+): { value: string; label: string } | undefined {
+  const wanted = answer.trim();
+  return choices.find((choice) => choice.label === wanted) ?? choices.find((choice) => choice.value === wanted);
+}
+
+/**
+ * pdf-lib's "regenerate this field's appearance" flag is set by every `select()` and
+ * `setText()` and cleared only by its own private `markAsClean`, and `PDFDocument.save`
+ * re-runs the whole pass over whatever is still flagged — with Helvetica. One non-WinAnsi
+ * answer therefore throws out of `save()` after the seam was finished: the raw library
+ * sentence in the banner and no file at all (forms lane matrix item 2). The flag is set
+ * and cleared here in the same call that owns the field's bytes, so the seam says so.
+ */
+function markAppearancesBuilt(field: PDFField): void {
+  // `markAsClean` is `protected` on PDFField but present at runtime (every setter calls
+  // it), and clearing the flag is the only way to stop `save()` re-running the pass.
+  const cleanable = field as unknown as { markAsClean?: () => void };
+  cleanable.markAsClean?.();
+}
+
+/** A choice field answered by label, whose `/V` still has to be pointed at the exports. */
+interface ChoiceWrite {
+  field: PDFField;
+  values: string[];
+  /** For a radio group: the kid on-state that carries the answer. */
+  on?: string;
+}
+
+/**
+ * Write the answer's own bytes, after pdf-lib's appearance pass has run.
+ *
+ * The order is the whole point: pdf-lib draws the appearance out of `/V` and re-derives
+ * a radio's `/AS` from `getExportValues()`, which cannot see `/Opt` pairs — so `/V`
+ * briefly holds the **label** (what the picker showed and what the page keeps showing),
+ * and the export value / kid on-state is written only once that stream exists. A
+ * multi-select field takes an array, as §12.7.4.2 requires; a single one takes the bare
+ * string, which is what the producers of the corpus fixtures write.
+ */
+function writeExportValues(doc: PDFDocument, { field, values, on }: ChoiceWrite): void {
+  const dict = field.acroField.dict;
+  if (on !== undefined && field instanceof PDFRadioGroup) {
+    dict.set(PDFName.of('V'), PDFName.of(on));
+    const onStates = field.acroField.getOnValues();
+    field.acroField.getWidgets().forEach((widget, index) => {
+      const state = sampleText(onStates[index]);
+      widget.dict.set(PDFName.of('AS'), PDFName.of(state === on ? on : 'Off'));
+    });
+    markAppearancesBuilt(field);
+    return;
+  }
+  const multiselect = field instanceof PDFDropdown
+    ? field.isMultiselect()
+    : field instanceof PDFOptionList && field.isMultiselect();
+  if (values.length > 1 || multiselect) {
+    const list = PDFArray.withContext(context(doc));
+    for (const value of values) list.push(PDFString.of(value));
+    dict.set(PDFName.of('V'), list);
+    return;
+  }
+  dict.set(PDFName.of('V'), PDFString.of(values[0] ?? ''));
+  markAppearancesBuilt(field);
+}
+
+function applyValue(field: PDFField, value: string | boolean, pending: ChoiceWrite[]): boolean {
   if (field instanceof PDFTextField) {
     field.setText(asText(value));
     return true;
@@ -298,36 +424,48 @@ function applyValue(field: PDFField, value: string | boolean): boolean {
     return true;
   }
   if (field instanceof PDFRadioGroup) {
-    const options = field.getOptions();
-    let wanted: string | undefined;
-    if (typeof value === 'boolean') wanted = value ? options[0] : undefined;
-    else wanted = value;
+    const choices = choicesOf(field);
+    const wanted = typeof value === 'boolean'
+      ? (value ? choices[0] : undefined)
+      : matchChoice(choices, value);
     if (wanted === undefined) {
-      field.clear();
-      return true;
+      if (value === false || asText(value).trim() === '') {
+        field.clear();
+        return true;
+      }
+      return false;
     }
-    if (!options.includes(wanted)) return false;
-    field.select(wanted);
+    // A radio's answer is the kid's on-state and that kid is painted by its own
+    // `/AS` — its appearance is a per-state stream, not something generated from
+    // `/V`. Written after the appearance pass (`writeExportValues`), because pdf-lib
+    // derives both halves from `getExportValues()` and pair entries are invisible to
+    // it: run over a pair group it rewrote the kid's `/AS /a` to `/Off`, so the
+    // selection stopped being drawn for an answer nobody gave.
+    pending.push({ field, values: [], on: wanted.value });
     return true;
   }
   if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
     const requested = asText(value);
-    const wanted = requested
-      .split(',')
-      .map((option) => option.trim())
-      .filter(Boolean);
-    const available = field.getOptions();
-    if (wanted.length === 0) {
+    const choices = choicesOf(field);
+    // An option whose own words contain a comma (`["ab", "Alpha, Beta"]`) is one
+    // answer, not two: split only when the whole string is not something the field
+    // offers. Before this, selecting the offered "Alpha, Beta" was refused as
+    // "could not be written" and `/V` stayed empty.
+    const answers = matchChoice(choices, requested)
+      ? [requested]
+      : requested.split(',').map((option) => option.trim()).filter(Boolean);
+    if (answers.length === 0) {
       field.clear();
       return true;
     }
-    if (!wanted.every((option) => available.includes(option))) return false;
-    // Replace, not merge. `merge: true` concatenates onto whatever `/V` the
-    // field already carries and switches the choice on to MultiSelect, so a
-    // dropdown that held "Alpha" and was answered "Beta" kept both, drew the
-    // *first* of them into the appearance stream — the old value on screen and
-    // on the flattened page — and read back as two answers.
-    field.select(wanted);
+    const matched = answers.map((answer) => matchChoice(choices, answer));
+    if (matched.some((match) => match === undefined)) return false;
+    // Select by **label** so the appearance pdf-lib draws carries the words the
+    // picker showed; `/V` then has to be pointed back at the export values, which
+    // `fillForm` does once those appearances exist (`writeExportValues`).
+    const multiselect = field.isMultiselect();
+    field.select(matched.length === 1 && !multiselect ? matched[0]!.label : matched.map((match) => match!.label));
+    pending.push({ field, values: matched.map((match) => match!.value) });
     return true;
   }
   // Push buttons and signature fields hold no settable value.
@@ -357,6 +495,7 @@ export function fillForm(
   }
   const form = doc.getForm();
   const missing: string[] = [];
+  const pending: ChoiceWrite[] = [];
   let filled = 0;
   let needsViewerAppearance = false;
 
@@ -366,12 +505,13 @@ export function fillForm(
       missing.push(name);
       continue;
     }
-    if (!applyValue(field, value)) {
+    if (!applyValue(field, value, pending)) {
       missing.push(name);
       continue;
     }
     filled++;
-    if (typeof value === 'string' && !isWinAnsiSafe(value)) needsViewerAppearance = true;  }
+    if (typeof value === 'string' && !isWinAnsiSafe(value)) needsViewerAppearance = true;
+  }
 
   if (opts.appearance ?? true) {
     try {
@@ -381,10 +521,19 @@ export function fillForm(
     } catch {
       needsViewerAppearance = true;
     }
+    // Only now: the streams above were drawn from the labels, and `/V` has to end up
+    // holding what the data model asked for.
+    for (const write of pending) writeExportValues(doc, write);
     if (needsViewerAppearance) setNeedAppearances(doc, true);
   } else {
     setNeedAppearances(doc, true);
   }
+
+  // Nothing may be left flagged for pdf-lib's own pass: `PDFDocument.save` re-runs it
+  // over every dirty field with Helvetica, and one non-WinAnsi answer threw there —
+  // raw library sentence in the banner, no file (forms lane matrix item 2, `Ada 中文
+  // Łovélace`). Whatever this call could not draw is handed to the viewer instead.
+  for (const field of form.getFields()) markAppearancesBuilt(field);
 
   return { filled, missing };
 }
