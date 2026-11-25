@@ -193,6 +193,32 @@ describe('the export sentence counts bytes, not the model', () => {
     expect((await savedTexts(doc, [target])).join(' ')).not.toContain('Original');
   });
 
+  it('says when the words left and the replacement never went down', () => {
+    // `undrawn` is the case the byte count must not hide: the deletion moved
+    // bytes (the block still counts as written) but no face put a glyph down,
+    // so the spot is empty in the file and the sentence has to say so.
+    const object = editedObject('u1', [box(45, 128, 200, 14)], REAL_LINE, 'typed words');
+    const report = exportReport(
+      {
+        written: 1,
+        failed: [],
+        partial: [],
+        raster: [],
+        covered: [],
+        substituted: [],
+        reflowed: [],
+        undrawn: ['u1'],
+        fitted: [],
+        placed: [],
+      },
+      [object],
+      {},
+    );
+    expect(report.headline).toMatch(/^Wrote 1 text block on 1 page\.$/);
+    expect(report.warnings.join(' ')).toMatch(/original words were removed, but its new text was not drawn/i);
+    expect(report.warnings.join(' ')).toMatch(/empty in the saved file/i);
+  });
+
   it('moves no bytes for an untouched page (control)', async () => {
     const doc = await helvPage(REAL_OPS);
     const outcome = await applyEdits(doc, []);
