@@ -36,8 +36,10 @@
  *    warn the user.
  *
  * Approximations a reviewer should know about: glyph boxes use the embedded
- * font's declared widths (a 0.5 em estimate when a code has none) and the
- * font's own ascent/descent, so coverage is only as good as those metrics; the
+ * font's declared widths, the standard-14 AFM tables for a face the file only
+ * names (`/Helvetica` with no `/Widths` and no font program, which is how MuPDF
+ * and LibreOffice write it) and a 0.5 em estimate when neither is available, so
+ * coverage is only as good as those metrics; the
  * centre test above is the tie-break, and whatever pokes into the rect without
  * a covered centre is left to the fill painted over it. Text-space displacement
  * from `TJ` numbers and `Tz` follows PDF 32000-1 §9.4.3/§9.4.5, and operators
@@ -67,6 +69,8 @@ import {
 import type { PDFContext, PDFDocument, PDFPage, PDFObject } from './doc';
 import { annotationArrays } from './annotations';
 import type { QuadRect } from './annotations';
+import { standardMetrics } from './content';
+import type { StandardFace } from './content';
 
 export interface RedactionRect {
   page: number;
@@ -540,7 +544,11 @@ function glyphSpaceOf(context: PDFContext, dict: PDFDict): number {
   return Number.isFinite(raw) && raw > 0 ? raw / 0.001 : 1;
 }
 
-function verticalExtents(context: PDFContext, dict: PDFDict): { ascent: number; descent: number } {
+function verticalExtents(
+  context: PDFContext,
+  dict: PDFDict,
+  face?: StandardFace | null,
+): { ascent: number; descent: number } {
   const descriptor = descriptorOf(context, dict);
   if (descriptor) {
     const ascent = numberAt(context, descriptor, PDFName.of('Ascent'));
@@ -556,7 +564,26 @@ function verticalExtents(context: PDFContext, dict: PDFDict): { ascent: number; 
       return { ascent: bbox[3], descent: bbox[1] };
     }
   }
+  // A standard-14 reference ships no descriptor at all, and its AFM knows where
+  // the face's box is (Helvetica 718 / −207 per em), which is closer to the ink a
+  // reader paints than the 0.75 / −0.25 em guess this module keeps for unknowns.
+  if (face) return { ascent: face.ascent, descent: face.descent };
   return { ascent: UNKNOWN_ASCENT_EM * 1000, descent: UNKNOWN_DESCENT_EM * 1000 };
+}
+
+/** `/BaseFont` as written; `standardMetrics` strips the slash and any subset tag. */
+function baseFontName(context: PDFContext, dict: PDFDict): string {
+  const name = deref(context, dict.get(PDFName.of('BaseFont')));
+  return name instanceof PDFName ? decodeName(name.asString()) : '';
+}
+
+/** True when a font program travels with the face, so its own metrics rule. */
+function hasFontProgram(context: PDFContext, dict: PDFDict): boolean {
+  const descriptor = descriptorOf(context, dict);
+  if (!descriptor) return false;
+  return ['FontFile', 'FontFile2', 'FontFile3'].some(
+    (key) => deref(context, descriptor.get(PDFName.of(key))) !== undefined,
+  );
 }
 
 function simpleMetrics(context: PDFContext, dict: PDFDict): GlyphMetrics {
@@ -566,18 +593,32 @@ function simpleMetrics(context: PDFContext, dict: PDFDict): GlyphMetrics {
   const descriptor = descriptorOf(context, dict);
   const missing = descriptor ? numberAt(context, descriptor, PDFName.of('MissingWidth')) : NaN;
   const fallback = Number.isFinite(missing) && missing > 0 ? missing : UNKNOWN_GLYPH_EM * 1000;
-  const { ascent, descent } = verticalExtents(context, dict);
   const hasWidths = widths.some((w) => Number.isFinite(w));
+  // No `/Widths` **and** no font program is a standard-14 reference: the widths
+  // live in the reader, and `core/content.ts` already carries the AFM tables it
+  // measures such a page with. Guessing 0.5 em per glyph instead lays the line on
+  // a uniform grid the producer never used — Helvetica advances run 222 to 833 per
+  // 1000 em — so every estimated centre sits further from the drawn one the deeper
+  // in the line it is. Measured on a MuPDF-written sheet, that is how a band exactly
+  // over `BRAVO` (x 148.0→204.1) deleted `RAVO`, the space and the neighbour's `CH`:
+  // the window landed one glyph late, and the re-emitted `TJ` displacement moved the
+  // text that stayed.
+  const face = hasWidths || hasFontProgram(context, dict)
+    ? null
+    : standardMetrics(baseFontName(context, dict));
+  const { ascent, descent } = verticalExtents(context, dict, face);
   return {
     codeBytes: 1,
     widthOf: (code) => {
       const width = hasWidths ? widths[code - base] : NaN;
-      return Number.isFinite(width) ? width : fallback;
+      if (Number.isFinite(width)) return width;
+      if (face) return face.width(code);
+      return fallback;
     },
     ascent,
     descent,
     glyphSpace: glyphSpaceOf(context, dict),
-    measured: hasWidths,
+    measured: hasWidths || face !== null,
   };
 }
 
@@ -1068,9 +1109,6 @@ class RedactionWalk {
       const spacing = text.charSpacing + (size === 1 && chunk[0] === 0x20 ? text.wordSpacing * horizontal : 0);
       const advance = ((metrics.widthOf(code) / 1000) * em + spacing) * horizontal;
       const box = rectOf(transformBox(trm, pen, bottom, pen + Math.max(advance, em * 0.01), top));
-      if ((globalThis as any).__redactDebug && i < 3) {
-        console.log('DBG', JSON.stringify({ em, top, bottom, advance, pen, box, rects: this.rects, trm, tm: text.tm, metrics: { a: metrics.ascent, d: metrics.descent, cb: metrics.codeBytes, gs: metrics.glyphSpace, measured: metrics.measured } }));
-      }
       if (this.rects.some((rect) => covered(box, rect))) {
         skipped += advance;
         lost += 1;

@@ -1442,7 +1442,7 @@ export interface SourceFont {
 }
 
 /** The AFM-derived metrics of one standard-14 face, in 1/1000 em units. */
-interface StandardFace {
+export interface StandardFace {
   width(code: number): number;
   unicode(code: number): number | undefined;
   /** `/Ascender` equivalent, in 1/1000 units (the caller divides by 1000). */
@@ -1570,7 +1570,14 @@ function buildStandardFace(name: string): StandardFace | null {
   }
 }
 
-function standardMetrics(baseFont: string): StandardFace | null {
+/**
+ * The face behind a `/BaseFont`, or `null` when it is not a standard-14 font.
+ *
+ * `core/redact.ts` measures its glyph boxes through this too: a base-14
+ * reference carries no `/Widths` in the file, and a redaction that lays its
+ * deletion window on a uniform grid cuts the wrong letters out of the line.
+ */
+export function standardMetrics(baseFont: string): StandardFace | null {
   const name = normaliseStandardFontName(baseFont);
   if (!name) return null;
   if (!STANDARD_FACES.has(name)) STANDARD_FACES.set(name, buildStandardFace(name));
