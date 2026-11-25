@@ -2997,7 +2997,7 @@ describe('email-to-pdf prints the message, not the MIME plumbing', () => {
     const outcome = await run('email-to-pdf', {}, [fileFrom(fixture('nested-mixed.eml'), 'nested-mixed.eml')]);
     const text = squash(await extractText(await firstPdf(outcome)));
     expect(text, 'the inner alternative carries the body the card promises').toContain('The html body paragraph MARKHTML here.');
-    expect(text).not.toMatch(/part \(multipart/, 'a container is not a file');
+    expect(text, 'a container is not a file').not.toMatch(/part \(multipart/);
     expect(text).toContain('report-final.pdf');
     expect(text, 'the Type column prints the type, not the raw Content-Type line').not.toMatch(/application\/pdf; name=/);
     expect(outcome.message).toMatch(/1 message/);
@@ -3008,7 +3008,7 @@ describe('email-to-pdf prints the message, not the MIME plumbing', () => {
       fileFrom(fixture('gmail-sample.eml'), 'gmail-sample.eml'),
     ]))));
     expect(text).toContain('bookmarks-really-short.html');
-    expect(text).toMatch(/text\/html(?![;=])/, 'the attachment type is the media type alone');
+    expect(text, 'the attachment type is the media type alone').toMatch(/text\/html(?![;=])/);
     expect(text).not.toMatch(/multipart/);
     expect(text, 'a folded Received header never reaches the page').not.toMatch(/PDT|by 10\.220/);
   });
