@@ -643,6 +643,9 @@ async function readSources(
 /** Terminal tab stops — the `expand` default that ASCII tables and code indent by. */
 const TAB_STOP = 8;
 
+/** The csv route's own size floor; `layoutOptionsFor` always sets one, this keeps the type honest. */
+const DEFAULTS_FONT = 9;
+
 /**
  * Tabs to the next stop, counted in columns along each line.
  *
@@ -824,6 +827,29 @@ function orderedListStartsHtml(source: string, ordered: number): number[] {
   const tags = [...source.matchAll(/<ol\b[^>]*>/gi)];
   if (tags.length !== ordered) return [];
   return tags.map((tag) => Number(/\bstart\s*=\s*["']?(\d+)/i.exec(tag[0])?.[1] ?? 1));
+}
+
+/**
+ * The characters a legal CSV cell can hold that the table branch cannot draw.
+ *
+ * `renderTable` hands a cell's text to the writer untouched — unlike the paragraph
+ * and code branches, which expand tabs — so a tab inside a quoted field, which
+ * RFC 4180 allows and which `Tab` files carry between quoted fields, ended the whole
+ * run with `WinAnsi cannot encode "\t" (0x0009)` and no file; a form feed did the
+ * same at `(0x000c)`. The card says quoted fields are handled and that the delimiter
+ * is the only thing rows split on, so both belong to the cell: the tab stops at the
+ * next eighth column, the form feed breaks the line inside the cell.
+ */
+function cellsToDrawable(blocks: Block[]): Block[] {
+  const clean = (run: Inline): Inline => ({
+    ...run,
+    text: expandTabs(run.text.replace(/\f/g, '\n')),
+  });
+  return blocks.map((block) => (block.kind !== 'table' ? block : {
+    ...block,
+    header: block.header?.map((cell) => cell.map(clean)),
+    rows: block.rows.map((row) => row.map((cell) => cell.map(clean))),
+  }));
 }
 
 /** The number each ordered list in the source began with, in document order. */
@@ -1535,6 +1561,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['spreadsheet', 'excel', 'table', 'delimiter'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.csv,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_csv.pdf',
     actionLabel: 'Tabulate',
@@ -1542,7 +1569,7 @@ export const convertToTools: PdfToolDefinition[] = [
     notes: [
       ...TEXT_NOTES,
       'Cells are text. Number, date and currency formats are whatever the file literally contains — a spreadsheet is not re-evaluated.',
-      'Quoted fields, embedded newlines and CRLF are handled; a very wide table is scaled down and may drop to a small type size.',
+      'Quoted fields, embedded newlines and CRLF are handled; a very wide table is scaled down and may drop to a small type size. A tab inside a quoted field becomes spaces up to the next eighth column, and a form feed breaks the line inside the cell. Where the columns cannot carry the size you chose, the type is dropped and the run says so; a single word longer than its column still runs over the column beside it.',
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.csv, 'name,qty,price\nWidget,3,9.99', 'Source'),
@@ -1560,17 +1587,21 @@ export const convertToTools: PdfToolDefinition[] = [
       const blocks: Block[] = [];
       let widest = 0;
       const delimiter = stringValue(context.values, 'delimiter', ',');
-      for (const source of sources) {
-        const tableBlocks = await csvToBlocks(source.text, {
+      for (const [index, source] of sources.entries()) {
+        const tableBlocks = cellsToDrawable(await csvToBlocks(source.text, {
           delimiter: delimiter === 'auto' ? undefined : delimiter,
           header: booleanValue(context.values, 'headerRow', true),
-        });
+        }));
         // Counted from the grid that is about to be drawn, so the warning below
         // cannot disagree with the table the user sees.
         for (const block of tableBlocks) {
           if (block.kind !== 'table') continue;
           widest = Math.max(widest, block.header?.length ?? 0, ...block.rows.map((row) => row.length));
         }
+        // The file field promises "one after another in a single PDF", so a second
+        // file starts on a sheet of its own instead of continuing the first table —
+        // which would otherwise read as one grid whose header changed mid-column.
+        if (index > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
         blocks.push(...tableBlocks);
       }
       if (blocks.length === 0) {
@@ -1581,7 +1612,27 @@ export const convertToTools: PdfToolDefinition[] = [
       if (widest > 12) {
         warnings.push(`${widest} columns on the widest row: the table is squeezed onto the page, so narrow columns may wrap hard.`);
       }
-      return blocksResult(blocks, layoutOptions(context), `Tabulated ${sources.length} file(s) into`, warnings);
+      // The promise is "columns sized to fit", and `renderTable` splits the text
+      // width evenly between the columns: measured with 15 columns at 18 pt, the
+      // header words printed on top of each other (the download read one run
+      // `namenotesqty`). So the size is capped at what a column can carry — five
+      // average glyphs inside the space left after the cell padding — which is the
+      // card's "may drop to a small type size" implemented, not merely promised.
+      const options = layoutOptions(context);
+      const [pageWidth] = options.pageSize as [number, number];
+      const margin = options.margin ?? 56;
+      const chosen = options.baseFontSize ?? DEFAULTS_FONT;
+      const column = (pageWidth - margin * 2) / (options.columns === 2 ? 2 : 1) / Math.max(1, widest);
+      const cap = Math.max(5, (column - 8) / 2.15);
+      const baseFontSize = Math.min(chosen, cap);
+      return blocksResult(
+        blocks,
+        { ...options, baseFontSize },
+        `Tabulated ${sources.length} file(s) into`,
+        [...warnings, ...(baseFontSize < chosen
+          ? [`Type size dropped from ${chosen} pt to ${Math.round(baseFontSize * 100) / 100} pt so all ${widest} columns fit the page.`]
+          : [])],
+      );
     },
   },
 

@@ -1,0 +1,189 @@
+## before-fix — /tmp/csvstruct, judged by MuPDF outside this app
+
+=== bom-semicolon-detect  src_rows=2 src_widest=1  sheets=1 runs=6/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=3 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 235.7, 348.8]
+      y72.3: 'name'B@60.0 | 'qty'B@235.7 | 'price'B@348.8
+      y90.1: 'Widget'@60.0 | '3'@235.7 | '9.99 MKEND'@348.8
+
+=== cell-long-word  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 480.1]
+      y72.3: 'name'B@60.0 | 'qty'B@480.1
+      y90.1: 'supercalifragilisticsupercal'@60.0 | '3 MKEND'@480.1
+      off-page runs: 1 e.g. [('supercalifragilisticsupercal', 60.0, 90.1)]
+
+=== csv-then-blank-lines  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 289.4]
+      y72.3: 'name'B@60.0 | 'qty'B@289.4
+      y90.1: 'Widget'@60.0 | '3 MKEND'@289.4
+
+=== drift-13-cols  src_rows=2 src_widest=13  sheets=1 runs=27/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    warning : 13 columns on the widest row: the table is squeezed onto the page, so narrow columns may wrap hard.
+    sheet 1: baselines=3 cols=13 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 94.8, 129.6, 164.4, 199.2, 234.1, 268.9, 303.7, 338.5, 373.3, 410.0, 446.7, 483.4]
+      y72.3: 'c1'B@60.0 | 'c2'B@94.8 | 'c3'B@129.6 | 'c4'B@164.4 | 'c5'B@199.2 | 'c6'B@234.1 | 'c7'B@268.9 | 'c8'B@303.7
+      y90.1: '1v'@60.0 | '2v'@94.8 | '3v'@129.6 | '4v'@164.4 | '5v'@199.2 | '6v'@234.1 | '7v'@268.9 | '8v'@303.7
+      y100.0: 'MKEND'@483.4
+
+=== drift-20-cols  src_rows=2 src_widest=20  sheets=1 runs=41/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    warning : 20 columns on the widest row: the table is squeezed onto the page, so narrow columns may wrap hard.
+    sheet 1: baselines=3 cols=20 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 81.8, 103.6, 125.4, 147.2, 169.0, 190.8, 212.6, 234.4, 256.2, 281.6, 307.0, 332.4, 357.7]
+      y72.3: 'col1'B@60.0 | 'col2'B@81.8 | 'col3'B@103.6 | 'col4'B@125.4 | 'col5'B@147.2 | 'col6'B@169.0 | 'col7'B@190.8 | 'col8'B@212.6
+      y90.1: 'v1'@60.0 | 'v2'@81.8 | 'v3'@103.6 | 'v4'@125.4 | 'v5'@147.2 | 'v6'@169.0 | 'v7'@190.8 | 'v8'@212.6
+      y100.0: 'MKEND'@510.0
+
+=== drift-mixed  src_rows=4 src_widest=6  sheets=1 runs=16/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=4 cols=6 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 131.9, 203.8, 275.7, 347.6, 419.6]
+      y72.3: 'a'B@60.0 | 'b'B@131.9 | 'c'B@203.8 | 'd'B@275.7
+      y90.1: '1'@60.0 | '2'@131.9 | '3'@203.8 | '4'@275.7
+      y108.0: '5'@60.0 | '6'@131.9
+      y125.9: '7'@60.0 | '8'@131.9 | '9'@203.8 | '10'@275.7 | '11'@347.6 | '12 MKEND'@419.6
+
+=== drift-wide-row  src_rows=2 src_widest=4  sheets=1 runs=6/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=4 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 196.1, 283.7, 392.6]
+      y72.3: 'name'B@60.0 | 'qty'B@196.1
+      y90.1: 'Widget'@60.0 | '3'@196.1 | 'extra'@283.7 | 'more MKEND'@392.6
+
+=== header-off  src_rows=42 src_widest=3  sheets=2 runs=124/outside=0
+    message : Tabulated 1 file(s) into 2 page(s).
+    sheet 1: baselines=22 cols=3 size=[10.32] page=419.5x595.3 bold_rows=[]
+      col_x=[60.0, 188.3, 269.0]
+      y76.3: 'name'@60.0 | 'qty'@188.3 | 'price'@269.0
+      y97.5: 'row1'@60.0 | '0'@188.3 | '0.50'@269.0
+      y118.7: 'row2'@60.0 | '1'@188.3 | '1.50'@269.0
+      y139.9: 'row3'@60.0 | '2'@188.3 | '2.50'@269.0
+      … 18 more baselines; last: 'row21'@60.0 | '20'@188.3 | '20.50'@269.0
+    sheet 2: baselines=20 cols=3 size=[10.32] page=419.5x595.3 bold_rows=[]
+      col_x=[60.0, 188.3, 269.0]
+      y76.3: 'row22'@60.0 | '21'@188.3 | '21.50'@269.0
+      y97.5: 'row23'@60.0 | '22'@188.3 | '22.50'@269.0
+      y118.7: 'row24'@60.0 | '23'@188.3 | '23.50'@269.0
+      y139.9: 'row25'@60.0 | '24'@188.3 | '24.50'@269.0
+      … 16 more baselines; last: 'MKEND'@60.0
+
+=== header-on-long  src_rows=42 src_widest=3  sheets=2 runs=127/outside=0
+    message : Tabulated 1 file(s) into 2 page(s).
+    sheet 1: baselines=22 cols=3 size=[10.32] page=419.5x595.3 bold_rows=[76.4]
+      col_x=[60.0, 188.3, 269.0]
+      y76.4: 'name'B@60.0 | 'qty'B@188.3 | 'price'B@269.0
+      y97.5: 'row1'@60.0 | '0'@188.3 | '0.50'@269.0
+      y118.7: 'row2'@60.0 | '1'@188.3 | '1.50'@269.0
+      y139.9: 'row3'@60.0 | '2'@188.3 | '2.50'@269.0
+      … 18 more baselines; last: 'row21'@60.0 | '20'@188.3 | '20.50'@269.0
+    sheet 2: baselines=21 cols=3 size=[10.32] page=419.5x595.3 bold_rows=[76.4]
+      col_x=[60.0, 188.3, 269.0]
+      y76.4: 'name'B@60.0 | 'qty'B@188.3 | 'price'B@269.0
+      y97.5: 'row22'@60.0 | '21'@188.3 | '21.50'@269.0
+      y118.7: 'row23'@60.0 | '22'@188.3 | '22.50'@269.0
+      y139.9: 'row24'@60.0 | '23'@188.3 | '23.50'@269.0
+      … 17 more baselines; last: 'MKEND'@60.0
+
+=== one-column  src_rows=3 src_widest=1  sheets=1 runs=3/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=3 cols=1 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0]
+      y72.3: 'name'B@60.0
+      y90.1: 'Widget'@60.0
+      y108.0: 'Gizmo MKEND'@60.0
+
+=== rfc-crlf-in-field  src_rows=2 src_widest=2  sheets=1 runs=5/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=3 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 272.5]
+      y72.3: 'name'B@60.0 | 'note'B@272.5
+      y90.1: 'line one'@60.0 | 'ok MKEND'@272.5
+      y100.0: 'line two'@60.0
+
+=== rfc-delimiter-in-field  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 314.8]
+      y72.3: 'name'B@60.0 | 'note'B@314.8
+      y90.1: 'Widget, large; tab'@60.0 | '"a,b;c" MKEND'@314.8
+
+=== rfc-doubled-quotes  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 272.5]
+      y72.3: 'name'B@60.0 | 'note'B@272.5
+      y90.1: 'He said "hi"'@60.0 | 'ok MKEND'@272.5
+
+=== rfc-empty-quoted  src_rows=2 src_widest=3  sheets=1 runs=5/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=3 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 220.3, 339.0]
+      y72.3: 'name'B@60.0 | 'qty'B@220.3 | 'note'B@339.0
+      y90.1: '3'@220.3 | '"" MKEND'@339.0
+
+=== rfc-lf-in-field  src_rows=2 src_widest=2  sheets=1 runs=6/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=4 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 272.5]
+      y72.3: 'name'B@60.0 | 'note'B@272.5
+      y90.1: 'line one'@60.0 | 'ok MKEND'@272.5
+      y100.0: 'line two'@60.0
+      y109.9: 'line three'@60.0
+
+=== rfc-mid-quote  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 272.5]
+      y72.3: 'name'B@60.0 | 'note'B@272.5
+      y90.1: 'a"b'@60.0 | 'c"d MKEND'@272.5
+
+=== rfc-spaces  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 289.4]
+      y72.3: 'name'B@60.0 | ' note'B@289.4
+      y90.1: '  Widget  '@60.0 | '  3  MKEND'@289.4
+
+=== rfc-unterminated  src_rows=2 src_widest=2  sheets=1 runs=5/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=4 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 376.7]
+      y72.3: 'name'B@60.0 | 'note'B@376.7
+      y90.1: '"Widget, large, still'@60.0
+      y100.0: 'open MKEND'@60.0
+      y109.9: 'second,row'@60.0
+
+=== semicolon-with-commas  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 311.3]
+      y72.3: 'name,full'B@60.0 | 'qty'B@311.3
+      y90.1: 'Widget, the Great'@60.0 | '3 MKEND'@311.3
+
+=== tab-delimited  src_rows=2 src_widest=1  sheets=1 runs=6/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=3 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 235.7, 348.8]
+      y72.3: 'name'B@60.0 | 'qty'B@235.7 | 'price'B@348.8
+      y90.1: 'Widget'@60.0 | '3'@235.7 | '9.99 MKEND'@348.8
+
+=== two-files  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 237.6]
+      y72.3: 'a'B@60.0 | 'b'B@237.6
+      y90.1: '1'@60.0 | '2 MKEND'@237.6
+
+=== utf16le-bom-csv  src_rows=2 src_widest=2  sheets=1 runs=4/outside=0
+    message : Tabulated 1 file(s) into 1 page(s).
+    warning : "utf16.csv" was decoded from UTF-16LE.
+    sheet 1: baselines=2 cols=2 size=[7.74] page=595.3x841.9 bold_rows=[72.3]
+      col_x=[60.0, 289.4]
+      y72.3: 'name'B@60.0 | 'qty'B@289.4
+      y90.1: 'Widget'@60.0 | '3 MKEND'@289.4

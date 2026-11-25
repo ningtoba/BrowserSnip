@@ -1313,6 +1313,101 @@ describe('csv-to-pdf keeps the grid and repeats the header', () => {
     expect(onRow.map((run) => run.text)).toEqual([label!.text, String(Number(label!.text.slice(3)) - 1), `${Number(label!.text.slice(3)) - 1}.50`]);
   });
 
+  it('keeps a tab inside a quoted field as aligned spaces, not a crash', async () => {
+    // Pre-fix the table branch handed the writer the raw tab and the whole run died
+    // with `WinAnsi cannot encode "\t" (0x0009)` — the same reason `csv-tab` still
+    // produced no file in `docs/research/table-list-tail-after.txt`.
+    const outcome = await run('csv-to-pdf', {}, [
+      fileFrom('name,note\n"col1\tcol2",ok MKEND\n', 'tab.csv', 'text/csv'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(runs.some((run) => /^col1 {4}col2$/.test(run.text)), 'the tab reached the next 8-column stop').toBe(true);
+    expect(find(runs, 'ok MKEND').length).toBe(1);
+  });
+
+  it('breaks the cell at a form feed instead of losing the file', async () => {
+    const outcome = await run('csv-to-pdf', {}, [
+      fileFrom('name,note\n"page one\fpage two",ok MKEND\n', 'ff.csv', 'text/csv'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const both = runs.filter((run) => run.text.startsWith('page '));
+    expect(both.map((run) => run.text)).toEqual(['page one', 'page two']);
+    expect(new Set(both.map((run) => run.x)).size, 'one column, two lines').toBe(1);
+  });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    // The file control promises "one after another in a single PDF"; the gate said
+    // "This tool works on one file at a time" and refused the pair.
+    const outcome = await run('csv-to-pdf', {}, [
+      fileFrom('a,b\n1,2 MKEND\n', 'one.csv', 'text/csv'),
+      fileFrom('c,d,e\n3,4,5 MKEND\n', 'two.csv', 'text/csv'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(String(outcome.message)).toMatch(/Tabulated 2 file\(s\) into 2 page\(s\)/);
+    const runs = await textRuns(bytes);
+    expect(find(runsOn(runs, 0), 'a').length).toBe(1);
+    expect(runsOn(runs, 0).some((run) => run.text === 'c')).toBe(false);
+    expect(find(runsOn(runs, 1), 'c').length).toBe(1);
+    expect(runsOn(runs, 1).some((run) => run.text === '1'), 'the first file stays on the first sheet').toBe(false);
+  });
+
+  it('bolds and repeats the header only while the header row is on', async () => {
+    const data = ['name,qty,price'].concat(Array.from({ length: 40 }, (_, i) => `row${i + 1},${i},${i}.50`)).join('\n');
+    const on = await textRuns(await firstPdf(await run('csv-to-pdf', { headerRow: true, pageSize: 'a5', fontSize: 12 }, [
+      fileFrom(data, 'on.csv', 'text/csv'),
+    ])));
+    const off = await textRuns(await firstPdf(await run('csv-to-pdf', { headerRow: false, pageSize: 'a5', fontSize: 12 }, [
+      fileFrom(data, 'off.csv', 'text/csv'),
+    ])));
+    // Every sheet of the header-on run repeats and bolds the row; the off run prints
+    // it once, as ordinary data.
+    expect(runsOn(on, 1).filter((run) => run.text === 'name').length).toBe(1);
+    expect(runsOn(off, 1).filter((run) => run.text === 'name').length).toBe(0);
+    expect(off.filter((run) => run.text === 'name').length).toBe(1);
+    expect(on.filter((run) => run.text === 'name').length).toBe(2);
+  });
+
+  it('unescapes doubled quotes and keeps the rest of the field', async () => {
+    const outcome = await run('csv-to-pdf', {}, [
+      fileFrom('name,note\n"He said ""hi""",ok MKEND\n', 'quotes.csv', 'text/csv'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(find(runs, 'He said "hi"').length).toBe(1);
+    expect(runs.some((run) => run.text.includes('""'))).toBe(false);
+  });
+
+  it('drops the type size instead of printing columns on top of each other', async () => {
+    // Measured with 15 columns at 18 pt: the header words shared one baseline at 32 pt
+    // per column, so the reader saw a single run `namenotesqty`.
+    const header = ['id', 'name', 'notes', 'qty', 'price', ...Array.from({ length: 10 }, (_, i) => `col${i + 1}`)].join(',');
+    const row = ['1', 'Widget', 'plain note', '3', '1.50', ...Array.from({ length: 10 }, (_, i) => `v${i + 1}`)].join(',');
+    const outcome = await run('csv-to-pdf', { fontSize: 18 }, [
+      fileFrom(`${header}\n${row} MKEND\n`, 'wide18.csv', 'text/csv'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect(outcome.warnings.join(' ')).toMatch(/Type size dropped from 18 pt/);
+    const runs = await textRuns(bytes);
+    expect(Math.max(...runs.map((run) => run.size))).toBeLessThanOrEqual(12);
+    // No cell's own text reaches into the column to its right.
+    const byRow = new Map<number, typeof runs>();
+    for (const run of runs.filter((one) => !/^\d+$/.test(one.text))) {
+      const key = Math.round(run.y * 10) / 10;
+      byRow.set(key, [...(byRow.get(key) ?? []), run]);
+    }
+    for (const line of byRow.values()) {
+      const sorted = [...line].sort((a, b) => a.x - b.x);
+      for (const [index, left] of sorted.entries()) {
+        const right = sorted[index + 1];
+        if (!right) continue;
+        // A conservative average advance (0.42 em) has to fit in the space between
+        // the two cells, or the left one is printed over the right one.
+        expect(right.x - left.x, `${left.text} reaches into ${right.text}`).toBeGreaterThanOrEqual(
+          left.text.length * left.size * 0.42,
+        );
+      }
+    }
+  });
+
   it('prints every row once, in file order', async () => {
     const outcome = await run('csv-to-pdf', {}, [fileFrom(rows(9), 'nine.csv', 'text/csv')]);
     const runs = await textRuns(await firstPdf(outcome));
