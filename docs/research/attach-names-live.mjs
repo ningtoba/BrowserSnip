@@ -156,7 +156,11 @@ for (const testCase of cases) {
   const clicked = await h.ev(`(() => { const b = document.querySelector('#tool-process-btn'); if (!b) return 'missing'; if (b.disabled) return 'disabled'; b.click(); return b.innerText.trim(); })()`);
   const ran = await h.wait(`window.__blobs.length > ${before}`, 180000);
   await sleep(1200);
-  const card = await h.ev(`(() => document.body.innerText.split('\n')
+  // `\\n` not `\n`: this lives in a template literal, and an unescaped `\n`
+  // arrives at the page as a REAL newline inside a string literal — V8 then
+  // answers `Invalid or unexpected token` and the harness reports that as the
+  // card. (578cece tripped the same escape in another rig.)
+  const card = await h.ev(`(() => document.body.innerText.split('\\n')
     .filter((l) => /Embed|carries|attach|Attach|enclosure|saved|Reader|name|file/i.test(l))
     .slice(0, 14).join(' ;; '))()`);
   const warnings = await h.ev(`(() => [...document.querySelectorAll('[data-result-warnings] li, [data-result-warnings] p, [data-result-warnings] div')]
