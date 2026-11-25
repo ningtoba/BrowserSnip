@@ -28,7 +28,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
-import { PDFDocument, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
+import { PDFDocument, PDFName, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import UTIF from 'utif';
 import * as pdfjs from 'pdfjs-dist';
 import { convertFromTools } from '@/lib/pdf/tools/convert-from';
@@ -2000,6 +2000,29 @@ describe('page-dimensions', () => {
     const page1 = rows.find((row) => row.label === 'Page 1')!.value;
     expect(page1).toMatch(/210(\.0)? × 297(\.0)? mm|8\.2\\d? × 11\.6\\d? in/);
     expect(page1).toMatch(/mm|in/);
+  });
+
+  it('sizes a page from its CropBox, not its MediaBox, the way a viewer shows it (E8)', async () => {
+    // `page-dimensions` promises the crop box "as a viewer displays it." A page
+    // whose /CropBox is smaller than its /MediaBox must report the cropped
+    // rectangle; a MediaBox-blind implementation prints the full 800 × 600 sheet.
+    const created = await PDFDocument.create();
+    const page = created.addPage([800, 600]);
+    page.drawText('cropped sheet', {
+      x: 20,
+      y: 300,
+      size: 12,
+      font: await created.embedFont(StandardFonts.Helvetica),
+    });
+    page.node.set(PDFName.of('CropBox'), created.context.obj([100, 100, 500, 500]));
+    const outcome = await run('page-dimensions', {}, [
+      fileOf(await created.save({ useObjectStreams: false }), 'crop.pdf'),
+    ]);
+    const rows = outcome.report!.sections.flatMap((section) => section.rows ?? []);
+    const value = rows.find((row) => row.label === 'Page 1')!.value;
+    expect(value).toContain('400.0 × 400.0 pt'); // the crop box, square
+    expect(value).toContain('square');
+    expect(value).not.toContain('800.0 × 600.0'); // never the un-clipped media box
   });
 
   it('reports every page of a 500-page document (E7)', async () => {
