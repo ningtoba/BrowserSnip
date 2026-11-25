@@ -210,19 +210,27 @@ export function showRequired(
 /**
  * The value bag to hand `fillForm`.
  *
- * Unknown names would be reported as failures, and an empty radio value is not
- * a selectable export value — clearing a group is `undefined`, not `''` — so an
- * untouched radio group is left alone instead of being counted as a miss.
+ * Only answers that differ from what the file already carries, because every
+ * value sent is a value *written*: measured live, saving one typed answer with
+ * the rest untouched rewrote eight fields with their own contents and the card
+ * claimed "Filled 8 fields", while a prefilled choice holding an export value
+ * (or a typed-over entry) that no edit needed came back as "could not be
+ * written". A read-only field is left out for the same reason: the pane renders
+ * it as text, so an unchanged rewrite is the only thing its value could ever be.
+ * An empty radio value is not a selectable export value — clearing a group is
+ * `undefined`, not `''` — so a radio left empty is dropped as well.
  */
 export function fillPayload(
   values: Record<string, FormValue>,
   fields: FormFieldInfo[],
+  original: Record<string, FormValue> = {},
 ): Record<string, FormValue> {
   const out: Record<string, FormValue> = {};
   for (const field of fields) {
-    if (!isFillable(field)) continue;
+    if (!isFillable(field) || field.readOnly) continue;
     const value = values[field.name];
     if (value === undefined) continue;
+    if (value === original[field.name]) continue;
     if (field.type === 'radio' && String(value).trim() === '') continue;
     out[field.name] = value;
   }
@@ -236,12 +244,19 @@ export function fillPayload(
  * Built outside `save` so it can be read back without a rendered pane — the
  * pane unmounts as soon as it sets an output, so this sentence *is* the whole
  * of what the user is told once the file exists.
+ *
+ * `nothingChanged` is its own sentence: a save that wrote no answer is not a
+ * save that "filled 0 fields" — the file kept its own values, and saying the
+ * plain thing keeps the count honest about what reached the bytes.
  */
 export function saveReport(
   result: { filled: number; missing: string[] },
   requiredEmpty: string[],
+  nothingChanged = false,
 ): string {
-  let report = `Filled ${result.filled} field${result.filled === 1 ? '' : 's'}`;
+  let report = nothingChanged
+    ? 'No answer changed, so the file was saved with the values its own fields hold'
+    : `Filled ${result.filled} field${result.filled === 1 ? '' : 's'}`;
   if (result.missing.length > 0) {
     const shown = result.missing.slice(0, 4).join(', ');
     report += `; ${result.missing.length} could not be written (${shown}${
@@ -255,6 +270,17 @@ export function saveReport(
       .join(', ')}${requiredEmpty.length > 3 ? ', …' : ''}).`;
   }
   return report;
+}
+
+/**
+ * The strip under the page when an answer carries characters the 14 standard
+ * PDF faces cannot encode. Measured: with the fields left interactive such a
+ * value survives only as a field value the viewer must draw for itself —
+ * printing and merging keep the field's own (unencodable) appearance — so the
+ * sentence routes the user to the one path that bakes the glyphs for certain.
+ */
+export function unicodeBanner(count: number): string {
+  return `${count} value${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} a font the standard PDF faces do not carry. Tick Fill and flatten to draw them into the page with an embedded font; saved with the fields left interactive, they depend on each viewer redrawing the field, and printing or merging keeps the field as the file held it.`;
 }
 
 /**
@@ -348,9 +374,13 @@ export default function FormFillMain(): JSX.Element {
   const unicodeNeeded = useMemo(
     () =>
       fillable.filter(
-        (field) => typeof values[field.name] === 'string' && needsUnicodeFont(values[field.name] as string),
+        (field) =>
+          !field.readOnly &&
+          values[field.name] !== original[field.name] &&
+          typeof values[field.name] === 'string' &&
+          needsUnicodeFont(values[field.name] as string),
       ).length,
-    [fillable, values],
+    [fillable, original, values],
   );
   const requiredMissing = useMemo(
     () =>
@@ -395,10 +425,15 @@ export default function FormFillMain(): JSX.Element {
         session = opened;
         sessionRef.current = opened;
         const doc = await openPDF(bytes, { password: passwordRef.current || undefined });
+        // The packet must be looked for *before* anything calls `getForm()`:
+        // pdf-lib deletes `/XFA` the first time the form is touched, so a check
+        // made after `listFormFields` can never report an XFA form — and every
+        // XFA sentence in this pane was dead code measured live.
+        const withXfa = hasXfa(doc);
         const read = listFormFields(doc);
         if (!token.alive) return;
         setFields(read);
-        setXfa(hasXfa(doc));
+        setXfa(withXfa);
         const base = initialValuesFor(read);
         // The answers this browser kept for *this* file (name and size), put back
         // over whatever the form already carries, and said out loud.
@@ -542,10 +577,18 @@ export default function FormFillMain(): JSX.Element {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const doc = await openPDF(bytes, { password: password || undefined });
-      const result = fillForm(doc, fillPayload(values, fields));
+      const payload = fillPayload(values, fields, original);
+      // An empty payload skips `fillForm` itself: even with nothing to write it
+      // regenerates every field's appearance, and measured live that reset an
+      // untouched `/Opt`-pair radio group's selected widget `/AS` to `/Off`.
+      const result =
+        Object.keys(payload).length > 0
+          ? fillForm(doc, payload)
+          : { filled: 0, missing: [] as string[] };
       const report = saveReport(
         result,
         requiredMissing.map((field) => field.alternateName || field.name),
+        Object.keys(payload).length === 0,
       );
 
       let full = report;
@@ -581,7 +624,7 @@ export default function FormFillMain(): JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [file, fields, fillable.length, flatten, password, requiredMissing, values]);
+  }, [file, fields, fillable.length, flatten, original, password, requiredMissing, values]);
 
   // ── render ────────────────────────────────────────────────────────────────
   if (phase === 'empty') {
@@ -912,9 +955,7 @@ export default function FormFillMain(): JSX.Element {
 
       {unicodeNeeded > 0 && (
         <p className="shrink-0 border-t border-warn/25 bg-warn/5 px-3 py-1.5 text-[10px] leading-relaxed text-warn">
-          {unicodeNeeded} value{unicodeNeeded === 1 ? '' : 's'} need a Unicode font. Viewers will draw them
-          correctly; tick <strong>Fill and flatten</strong> to embed them in the page so they also survive
-          printing and merging.
+          {unicodeBanner(unicodeNeeded)}
         </p>
       )}
     </div>
@@ -1182,11 +1223,11 @@ function XfaNotice({ fieldCount }: { fieldCount: number }): JSX.Element {
   return (
     <div className="shrink-0 border-b border-warn/25 bg-warn/5 px-3 py-2 text-[10px] leading-relaxed text-warn">
       <strong>This document carries an XFA form packet.</strong> What works here: the AcroForm mirror below
-      ({fieldCount} field{fieldCount === 1 ? '' : 's'}), the values written into it, and flattening, which
-      removes the packet so the result opens identically everywhere. What does not: the pixel-perfect XFA
-      layout, XFA calculations and validation — those need Adobe Acrobat, or Chrome&apos;s built-in XFA
-      viewer in older releases. If the field list is empty, the form is XFA-only and cannot be filled in a
-      browser without Acrobat.
+      ({fieldCount} field{fieldCount === 1 ? '' : 's'}) and the values written into it. The XFA packet does
+      not survive a save from this page — the output carries the AcroForm alone, so it opens identically
+      everywhere, at the cost of the pixel-perfect XFA layout, XFA calculations and validation. Those need
+      Adobe Acrobat, or Chrome&apos;s built-in XFA viewer in older releases. If the field list is empty, the
+      form is XFA-only and cannot be filled in a browser without Acrobat.
     </div>
   );
 }

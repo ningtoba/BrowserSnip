@@ -2046,14 +2046,18 @@ export const editTools: PdfToolDefinition[] = [
       const notes: string[] = [];
       const [input] = await openInputs(context);
       const { fillForm } = await import('../core/forms');
+      // Look for the packet before touching the form: pdf-lib's `getForm()` —
+      // reached by `listFormFields` — deletes `/XFA` the first time it runs, so
+      // every XFA sentence below read as false when checked afterwards.
+      const xfaForm = hasXfa(input.doc);
       const fields = listFormFields(input.doc);
       if (fields.length === 0) {
-        throw new Error(hasXfa(input.doc)
+        throw new Error(xfaForm
           ? 'This form’s fields live only in its XFA stream, which nothing here can render. Use Create PDF Form to add real AcroForm fields.'
           : 'This PDF has no fillable form fields. Try Create PDF Form to add some.');
       }
-      if (hasXfa(input.doc)) {
-        note(notes, 'This document also carries an XFA form. Only the AcroForm values were written, so a viewer that renders XFA may still show the old text.');
+      if (xfaForm) {
+        note(notes, 'This document also carries an XFA form. Its packet does not survive the save — the result is the AcroForm mirror with your values in it, so every viewer reads the same answers.');
       }
       const values = context.values['fieldValues'];
       const record = values && typeof values === 'object' && !Array.isArray(values)
