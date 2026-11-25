@@ -966,11 +966,26 @@ export const optimizeTools: PdfToolDefinition[] = [
       // is about to be downloaded. Nothing here is estimated from the preset.
       const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
       const images = report.images;
+      // `skipped` and `undecodable` only count a picture the run **reached a
+      // canvas with**. At the lossless strength no image is ever attempted, so
+      // all three counters sit at nought while `total` is 1 — and the tool used
+      // to describe that untouched picture as one that “could not be re-encoded
+      // smaller”, over a sentence two lines below saying nothing was
+      // re-encoded. Measured on `<127.0.0.1:5295>` with `Strength=Lossless` on
+      // a 665 KB JPEG page: *“None of the 1 image(s) could be re-encoded
+      // smaller, so they are byte-for-byte the originals.”* + *“0 of 1 image(s)
+      // re-encoded, 0 left untouched.”* — a count that does not add up, and an
+      // attempt that never happened.
+      const attempted = images.replaced + images.skipped + images.undecodable;
       if (images.total === 0) {
         warnings.push('This PDF contains no images, so only the file structure could be rebuilt.');
+      } else if (attempted === 0) {
+        warnings.push(
+          `The “${report.preset}” strength re-encodes no pictures at all, so all ${images.total} image(s) in the file are byte-for-byte as they were stored.`,
+        );
       } else if (images.replaced === 0) {
         warnings.push(
-          `None of the ${images.total} image(s) could be re-encoded smaller, so they are byte-for-byte the originals.`,
+          `None of the ${images.total} image(s) was re-encoded: each was already at or under the size this strength asks for, or is stored in an encoding this tool leaves alone (fax, 1/2/4/16-bit samples, layered filters), so they are byte-for-byte the originals.`,
         );
       }
       for (const note of report.notes) warnings.push(note);
@@ -986,7 +1001,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           ? `The rebuild came out larger (${sizeSentence(change)}), so the original ${describeSize(change.before)} file is returned.`
           : `Compressed ${sizeSentence(change)}.`;
       const detail = images.total > 0
-        ? `${images.replaced} of ${images.total} image(s) re-encoded, ${images.skipped} left untouched.`
+        ? `${images.replaced} of ${images.total} image(s) re-encoded, ${images.total - images.replaced} left untouched.`
         : 'Text stays selectable: no page was rasterised.';
       const target = targetBytes === undefined
         ? ''

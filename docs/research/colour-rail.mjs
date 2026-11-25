@@ -208,6 +208,12 @@ await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 1;
 const pending = new Map();
 const errors = [];
+// The campaign's network half: every request the tab makes while a tool runs. A
+// tool that is "100 % client-side" must not send *file bytes* to a remote origin,
+// and the only way to know is to watch. Same-origin assets, the TSA hash POST and
+// the documented engine/model CDNs are expected; they are printed, not failed.
+const net = [];
+const ORIGIN = new URL(BASE).origin;
 ws.onmessage = (raw) => {
   const m = JSON.parse(raw.data);
   if (m.id && pending.has(m.id)) {
@@ -217,6 +223,17 @@ ws.onmessage = (raw) => {
     else res(m.result);
   } else if (m.method === 'Runtime.exceptionThrown') {
     errors.push((m.params.exceptionDetails?.exception?.description ?? '').slice(0, 200));
+  } else if (m.method === 'Network.requestWillBeSent') {
+    const url = m.params?.request?.url || '';
+    if (/^(data|blob|chrome-extension):/.test(url)) return;
+    net.push({
+      url: url.slice(0, 160),
+      method: m.params.request.method,
+      remote: !url.startsWith(ORIGIN),
+      post: !!m.params.request.hasPostData,
+      kind: m.params.type,
+      by: m.params.initiator?.type,
+    });
   }
 };
 const send = (method, params = {}) => new Promise((res, rej) => {
@@ -252,6 +269,17 @@ const wait = async (expr, ms = TIMEOUT) => {
 
 await send('Page.enable');
 await send('Runtime.enable');
+await send('Network.enable');
+/** What the tab reached out to, collapsed to one printable line. */
+const netSummary = (from = 0) => {
+  const seen = net.slice(from);
+  const remote = seen.filter((r) => r.remote);
+  const hosts = [...new Set(remote.map((r) => new URL(r.url).origin))];
+  const posts = remote.filter((r) => r.method !== 'GET');
+  return `${seen.length} request(s), ${remote.length} off-origin${hosts.length ? ` [${hosts.join(' ')}]` : ''}${
+    posts.length ? `, off-origin non-GET: ${JSON.stringify(posts.map((p) => `${p.method} ${p.url}`))}` : ''
+  }`;
+};
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 
 /**
@@ -590,6 +618,23 @@ async function runTool(run) {
   for (const expr of run.readback ?? []) {
     record.readback.push(`read: ${String(await ev(expr).catch((e) => `threw ${e}`)).slice(0, 160)}`);
   }
+  // The card's own lock box (`[data-file-password]`), for an encrypted input: the
+  // single-run form of this probe has had it since round 051 and a batch run did
+  // not, so every locked fixture in a spec stopped at "Enter the password" and
+  // reported `fail: error` instead of producing bytes to measure.
+  if (run.cardPassword) {
+    const box = `document.querySelector('[data-file-password]')`;
+    if (await wait(`${box} !== null`, 20000)) {
+      record.cardPassword = await ev(`(()=>{const c=${box};
+        const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+        set.call(c,${JSON.stringify(run.cardPassword)});
+        c.dispatchEvent(new Event('input',{bubbles:true})); c.dispatchEvent(new Event('change',{bubbles:true}));
+        return c.value})()`);
+      await sleep(1200);
+    } else {
+      record.cardPassword = 'NO BOX ON THE CARD';
+    }
+  }
   // The card's own words — the promise and the standing notes — are only on the
   // screen *before* the run, so a probe that wants to read them asks for this.
   if (run.shotBefore) {
@@ -602,6 +647,7 @@ async function runTool(run) {
   // for its preview, so "the biggest blob" would hand back the file it started with.
   const blobsBefore = await ev(`window.__blobs.length`).catch(() => 0);
   const beforeErrorCount = errors.length;
+  const netBefore = net.length;
 
   const clicked = await ev(`(()=>{
     const b=document.querySelector('#tool-process-btn')||document.querySelector('[data-run]');
@@ -642,6 +688,7 @@ async function runTool(run) {
     record.shot = path;
   }
   record.errors = [...new Set(errors.slice(beforeErrorCount))].slice(0, 4);
+  record.network = netSummary(netBefore);
   if (!finished) {
     record.fail = 'timed out with no output and no error';
     return record;
@@ -831,6 +878,7 @@ if (process.env.SHOT_BEFORE) {
 // before the run does: the wait has to grow past the count at the click, or a
 // slow tool — or a refusing one — is reported as its own source file.
 const blobsBefore = await ev('window.__blobs.length');
+const netBeforeRun = net.length;
 // Counting past the click is not enough on its own. A run that *refuses* still
 // mints a URL: the card re-renders into its stopped state and re-previews the
 // file it stopped on, so on `psd-to-pdf` a refusal arrived here as a "58904
@@ -852,6 +900,7 @@ const info = JSON.parse(await ev(`(async()=>{var b=window.__blobs[${resultAt}];v
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output', JSON.stringify({ type: info.type, bytes: info.size, file: OUT }));
 console.log('report line:', await ev(`(()=>{const card=document.querySelector('section[aria-label="Result"]');if(card) return card.innerText;return (document.body.innerText.match(/[^\\n]*(page|pages|dpi|invert|adjust|scan)[^\\n]*/gi)||[]).slice(0,6).join(' ;; ')})()`));
+console.log('network:', netSummary(netBeforeRun));
 console.log('console errors:', JSON.stringify([...new Set(errors)].slice(0, 3)));
 ws.close();
 chrome.kill('SIGKILL');

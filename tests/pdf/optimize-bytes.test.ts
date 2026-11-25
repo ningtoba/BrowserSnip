@@ -1777,6 +1777,252 @@ describe('optimize tools print numbers the output bytes agree with', () => {
   });
 });
 
+/* ── pdf-compress: the sentences about pictures it never touched ──────────── */
+
+/**
+ * `pdf-compress` prints a count of what it did to the images. Two states made
+ * that count lie, both measured on the dev build with
+ * `docs/research/colour-rail.mjs` over `docs/research/compress-decode-forms.py`
+ * fixtures (`/tmp/lane-optimize/batch1.jsonl`, 17:0x):
+ *
+ *  - **`Strength=Lossless`** decodes nothing at all (`core/compress.ts:196`
+ *    gates the loop on `resample || quality < 0.95`; lossless is `false`/`0.99`),
+ *    so `replaced`, `skipped` and `undecodable` all stay nought while `total`
+ *    is 1. The screen read *“None of the 1 image(s) could be re-encoded smaller,
+ *    so they are byte-for-byte the originals.”* and *“0 of 1 image(s)
+ *    re-encoded, 0 left untouched.”* over a 665 KB JPEG that came back
+ *    byte-identical — a failed attempt that was never made, and a count whose
+ *    halves do not add up to the file.
+ *  - **A picture in an encoding this tool does not decode** (CCITT fax,
+ *    1/2/4/16-bit samples, a filter stack) is returned as `skipped` before any
+ *    canvas is touched, and got the same “could not be re-encoded smaller”
+ *    sentence — the other wrong reason. The fax sheet is also the brief's
+ *    “could not reduce” case: 1 925 B in, the original handed back.
+ */
+describe('pdf-compress names the pictures it never attempted', () => {
+  /** One page, one stored image whose stream is exactly `payload`. */
+  async function storedImage(
+    imageDict: (doc: PDFDocument) => PDFDict,
+    payload: Uint8Array,
+  ): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([300, 300]);
+    page.drawText('text beside the picture', { x: 20, y: 260, size: 12, font });
+    const ref = doc.context.register(PDFRawStream.of(imageDict(doc), payload));
+    placeImage(doc, page, ref, 'Im0', 200);
+    return doc.save({ useObjectStreams: false });
+  }
+
+  /** A 1-bit Group-4 fax image: an encoding `pdf-compress` never decodes. */
+  function faxDict(doc: PDFDocument): PDFDict {
+    return doc.context.obj({
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: 8,
+      Height: 8,
+      BitsPerComponent: 1,
+      ColorSpace: 'DeviceGray',
+      Filter: 'CCITTFaxDecode',
+      DecodeParms: { K: -1, Columns: 8 },
+    }) as PDFDict;
+  }
+  const faxStream = Uint8Array.from(Buffer.from('00ff00ff00ff00ff', 'hex'));
+
+  async function compress(bytes: Uint8Array, values: ToolValues, name = 'fax.pdf') {
+    const outcome = await runPdfTool({
+      toolId: 'pdf-compress',
+      files: [pdfFile(bytes, name)],
+      values,
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    return {
+      bytes: new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()),
+      message: outcome.message ?? '',
+      warnings: outcome.warnings,
+    };
+  }
+
+  it('the lossless strength says it re-encoded nothing', async () => {
+    const source = await storedImage(faxDict, faxStream);
+    const outcome = await compress(source, { preset: 'lossless' });
+    const joined = outcome.warnings.join(' ');
+
+    expect(joined, joined).not.toMatch(/could be re-encoded smaller/i);
+    expect(joined, joined).toMatch(/re-encodes no pictures at all/i);
+    expect(joined).toContain('1 image(s) in the file are byte-for-byte as they were stored');
+    // The report line has to add up to the pictures the file holds.
+    expect(outcome.message, outcome.message).toContain('0 of 1 image(s) re-encoded, 1 left untouched.');
+    // Both sentences are true: the stored stream is the stream it came in as.
+    const before = imageObjects(await openPDF(source));
+    const after = imageObjects(await openPDF(outcome.bytes));
+    expect(after.map((image) => Array.from(image.bytes))).toEqual(before.map((image) => Array.from(image.bytes)));
+  });
+
+  it('a format the tool refuses is named as refused, not as a failed re-encode', async () => {
+    const source = await storedImage(faxDict, faxStream);
+    const outcome = await compress(source, { preset: 'balanced' });
+    const joined = outcome.warnings.join(' ');
+    expect(joined, joined).not.toMatch(/could be re-encoded smaller/i);
+    expect(joined, joined).toMatch(/None of the 1 image\(s\) was re-encoded/i);
+    expect(joined).toMatch(/encoding this tool leaves alone/i);
+    expect(outcome.message, outcome.message).toContain('0 of 1 image(s) re-encoded, 1 left untouched.');
+    const after = imageObjects(await openPDF(outcome.bytes));
+    expect(Array.from(after[0].bytes)).toEqual(Array.from(faxStream));
+  });
+
+  it('still calls a re-encode a re-encode (control)', async () => {
+    // The new branches must not swallow the honest case: the same tool over a
+    // picture it does shrink keeps saying so, in the file as well as on screen.
+    const source = await rasterFixture({ px: 64, boxPt: 32, store: 'raw' });
+    const outcome = await compress(source, { preset: 'balanced', maxDpi: 72 }, 'scan.pdf');
+    const joined = `${outcome.message} ${outcome.warnings.join(' ')}`;
+    expect(joined, joined).toMatch(/1 of 1 image\(s\) re-encoded, 0 left untouched\./);
+    expect(joined).not.toMatch(/re-encodes no pictures/i);
+    expect(joined).not.toMatch(/was re-encoded: /i);
+    const after = imageObjects(await openPDF(outcome.bytes));
+    expect(dictName(after[0].dict, 'Filter')).toBe('DCTDecode');
+  });
+});
+
+/* ── optimize-pdf: what a "lossless" rebuild is allowed to say ────────────── */
+
+/**
+ * The corpus audit (`docs/research/optimize-lossless.py --batch` over the 38
+ * fixtures of `/tmp/triage`) drew three sentences from this tool that its own
+ * bytes contradicted:
+ *
+ *  - `deflateAll` answers "how many streams did I convert", and the tool printed
+ *    *"no uncompressed stream was large enough to be worth compressing"* when the
+ *    count was nought — including on the 30-odd fixtures that hold **no
+ *    uncompressed stream at all** (`uncompressed.pdf`, `colour.pdf`, `heavy.pdf`,
+ *    `scanned.pdf`, `ink.pdf`: every stream in them already carries a `/Filter`).
+ *  - `Remove metadata` deleted the `/Info` object but not the trailer's name for
+ *    it: the download carried `/Info 3 0 R` with object 3 gone from the table, so
+ *    the "cleared the info dictionary" line shipped a reference to nothing.
+ *  - The writer stamps `%PDF-1.7` whatever came in (`PDFWriter.computeBufferSize`
+ *    hard-codes it), so three `%PDF-1.5` fixtures left declaring 1.7, and the only
+ *    sentence about versions (`"…a strict reader may ignore them, and the file is
+ *    still valid"`) described a file the tool never produced.
+ */
+describe('optimize-pdf keeps the facts it promises to keep', () => {
+  /**
+   * A hand-written PDF whose only stream already carries `/FlateDecode`, so the
+   * Flate option has literally nothing to work on — the state 30-odd corpus
+   * fixtures are in and the state the old sentence described as "not large
+   * enough". `%PDF-1.5` so the version cases can start from a known declaration.
+   */
+  function allCompressedPdf(version = '1.5'): Uint8Array {
+    const zlibStream = deflateSync(Buffer.from('BT /F1 12 Tf 60 700 Td (compressed here) Tj ET'));
+    const objects = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>',
+      `<< /Filter /FlateDecode /Length ${zlibStream.length} >>`,
+      '<< /Title (a titled file) /Producer (fixture) >>',
+    ];
+    const chunks: Buffer[] = [Buffer.from(`%PDF-${version}\n`, 'latin1')];
+    const offsets: number[] = [];
+    objects.forEach((body, index) => {
+      offsets.push(Buffer.concat(chunks).length);
+      chunks.push(Buffer.from(`${index + 1} 0 obj\n`, 'latin1'));
+      if (index === 3) {
+        chunks.push(
+          Buffer.from('stream\n', 'latin1'),
+          zlibStream,
+          Buffer.from('\nendstream\n', 'latin1'),
+        );
+      } else {
+        chunks.push(Buffer.from(`${body}\n`, 'latin1'));
+      }
+      chunks.push(Buffer.from('endobj\n', 'latin1'));
+    });
+    const start = Buffer.concat(chunks).length;
+    let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const offset of offsets) xref += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    chunks.push(
+      Buffer.from(
+        `${xref}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n${start}\n%%EOF\n`,
+        'latin1',
+      ),
+    );
+    return Uint8Array.from(Buffer.concat(chunks));
+  }
+
+  /** The `%PDF-M.m` a produced file declares, read back off its bytes. */
+  function declared(bytes: Uint8Array): string {
+    return new TextDecoder('latin1').decode(bytes.subarray(0, 8));
+  }
+
+  it('says there was no uncompressed stream when there was none', async () => {
+    const source = allCompressedPdf();
+    const outcome = await runTool('optimize-pdf', {}, [pdfFile(source, 'tight.pdf')]);
+    const text = `${outcome.message} ${outcome.warnings.join(' ')}`;
+    expect(text, text).toMatch(/no uncompressed stream/i);
+    expect(text).not.toMatch(/large enough/i);
+    // Control: a file whose uncompressed streams exist but sit under the floor
+    // gets the floor named, not the "there are none" sentence.
+    const small = await rasterFixture({ px: 16, boxPt: 16, store: 'flate' });
+    const other = await runTool('optimize-pdf', {}, [pdfFile(small, 'small.pdf')]);
+    const otherText = `${other.message} ${other.warnings.join(' ')}`;
+    expect(otherText, otherText).toMatch(/512 B floor/);
+    expect(otherText).not.toMatch(/no uncompressed stream/i);
+  });
+
+  it('takes /Info out of the trailer as well as out of the object table', async () => {
+    const source = allCompressedPdf();
+    const outcome = await runTool('optimize-pdf', { stripMetadata: true }, [pdfFile(source, 'tight.pdf')]);
+    const text = latin1.decode(outcome.bytes);
+    // "Remove metadata" removes the dictionary; the trailer must stop naming it.
+    // Measured before the fix, on three corpus fixtures: `trailer <</Size 22
+    // /Root 2 0 R /Info 3 0 R>>` with object 3 no longer in the table, i.e. every
+    // reader of the download resolves `/Info` to nothing.
+    expect(/\/Info\s+\d+\s+0\s+R/.test(text), text.slice(-260)).toBe(false);
+    // And the metadata really went, which is the half that was already right.
+    expect(text).not.toMatch(/\/Title\s*\(a titled file\)/);
+    expect(outcome.message).toMatch(/cleared the info dictionary/);
+    expect((await openPDF(outcome.bytes)).getPageCount()).toBe(1);
+  });
+
+  /** Rewrite the `%PDF-M.m` line of a finished file; every version is 8 bytes. */
+  function withHeader(bytes: Uint8Array, version: string): Uint8Array {
+    const copy = Uint8Array.from(bytes);
+    copy[5] = version.charCodeAt(0);
+    copy[7] = version.charCodeAt(2);
+    return copy;
+  }
+
+  it('hands back the PDF version the file declared', async () => {
+    // A real fixture whose 12 KB of unfiltered samples gives the rebuild something
+    // to take out, so the delivered bytes are the rebuild and not the input.
+    const source = withHeader(await rasterFixture({ px: 64, boxPt: 32, store: 'raw' }), '1.5');
+    const outcome = await runTool('optimize-pdf', { objectStreams: true }, [pdfFile(source, 'v15.pdf')]);
+    expect(outcome.bytes.byteLength, outcome.message).toBeLessThan(source.byteLength);
+    expect(declared(outcome.bytes), outcome.message).toBe('%PDF-1.5');
+    expect(outcome.warnings.join(' ')).not.toMatch(/declares 1\.5/);
+
+    // A 1.4 file that gains object streams cannot keep its number: it has to be
+    // raised, and the report is the place that says so.
+    const four = withHeader(await rasterFixture({ px: 64, boxPt: 32, store: 'raw' }), '1.4');
+    const raised = await runTool('optimize-pdf', { objectStreams: true }, [pdfFile(four, 'v14.pdf')]);
+    expect(raised.bytes.byteLength, raised.message).toBeLessThan(four.byteLength);
+    expect(declared(raised.bytes), raised.message).toBe('%PDF-1.5');
+    expect(raised.warnings.join(' '), raised.warnings.join(' ')).toMatch(/declared PDF 1\.4.*declares 1\.5/s);
+
+    // Control: the same 1.4 file with object streams off keeps 1.4 untouched —
+    // whether the rebuild was delivered or the input handed back, the answer is
+    // the version the file came in with.
+    const kept = await runTool(
+      'optimize-pdf',
+      { objectStreams: false, compressStreams: false },
+      [pdfFile(four, 'v14.pdf')],
+    );
+    expect(declared(kept.bytes), kept.message).toBe('%PDF-1.4');
+    expect(kept.warnings.join(' ')).not.toMatch(/object streams are a PDF 1\.5 feature/);
+  });
+});
+
 /* ── legacy.ts: the panes that write numbers ──────────────────────────────── */
 
 describe('legacy panes measure what they claim', () => {
