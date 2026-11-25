@@ -550,14 +550,26 @@ describe('optimize-pdf does only what it can prove it did', () => {
     expect(doc.getPages().map((page) => page.getSize().width)).toEqual([595, 595, 595]);
   });
 
-  it('names the version mismatch when it packs a 1.4 file into object streams', async () => {
+  it('names the version mismatch only about the file it actually hands over', async () => {
     const old = linearizedFixture(1, '1.4');
     const outcome = await run(
       'optimize-pdf',
       { compressStreams: false, dropOrphans: false, objectStreams: true, stripMetadata: false },
       [pdfFile(old, 'old.pdf')],
     );
-    expect(outcome.warnings.join(' ')).toMatch(/declares PDF 1\.4, but object streams need 1\.5/);
+    const head = new TextDecoder('latin1').decode(outcome.bytes.subarray(0, 8));
+    // The old sentence promised "this file declares PDF 1.4, but object streams
+    // need 1.5 or newer; a strict reader may ignore them, and the file is still
+    // valid" of every 1.4 input — while the bytes on the other side of the
+    // Download button declared `%PDF-1.7`, which pdf-lib's writer stamps whatever
+    // came in (`PDFWriter.computeBufferSize`, measured: three `%PDF-1.5` corpus
+    // fixtures came back `%PDF-1.7`). The tool now keeps the input's number,
+    // raises it to the 1.5 object streams need when it delivers that rebuild
+    // (`optimize-bytes.test.ts`), and says nothing about a rebuild it threw away:
+    // this 425 B fixture grows to 456 B, so the original comes back at 1.4.
+    expect(outcome.message, outcome.message).toMatch(/original is returned/);
+    expect(head).toBe('%PDF-1.4');
+    expect(outcome.warnings.join(' ')).not.toMatch(/declares 1\.5/);
   });
 
   it('returns the input untouched and warns when nothing was selected (E13)', async () => {

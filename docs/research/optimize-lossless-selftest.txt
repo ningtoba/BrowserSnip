@@ -1,0 +1,6 @@
+PASS colour.pdf: src vs src -> 0 failure(s) (want 0)
+PASS colour.pdf: src vs last-page-turned -> 4 failure(s) (want >0): ['page 8 pixels', 'page 8 rect', 'page 8 rotation']
+PASS annot.pdf: src vs src -> 0 failure(s) (want 0)
+PASS annot.pdf: src vs last-page-turned -> 4 failure(s) (want >0): ['page 8 pixels', 'page 8 rect', 'page 8 rotation']
+PASS cross-fixture a.pdf vs b.pdf -> 2 failure(s) (want >0)
+SELFTEST OK

@@ -1,0 +1,74 @@
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+MuPDF error: format error: cannot find object in xref (3 0 R)
+
+{"case": "optimize-annot", "src": "annot.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339905, 2339905], "sha_equal": true, "bytes": [7110, 4333], "chars": [1829, 1829], "failures": [], "notes": []}
+{"case": "optimize-attach", "src": "attach.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5551, 3342], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-blanks", "src": "blanks.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [751349, 751349], "sha_equal": true, "bytes": [82384, 80234], "chars": [1900, 1900], "failures": [], "notes": []}
+{"case": "optimize-bookmarked", "src": "bookmarked.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5659, 3179], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-form", "src": "form.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2341029, 2341029], "sha_equal": true, "bytes": [6883, 4139], "chars": [1800, 1800], "failures": [], "notes": []}
+{"case": "optimize-heavy", "src": "heavy.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 6, "ink": [2869397, 2869397], "sha_equal": true, "bytes": [81531, 79747], "chars": [1812, 1812], "failures": [], "notes": []}
+{"case": "optimize-js", "src": "js.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5217, 3062], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-layers", "src": "layers.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2341213, 2341213], "sha_equal": true, "bytes": [6112, 3573], "chars": [1818, 1818], "failures": [], "notes": []}
+{"case": "optimize-locked", "verdict": "NO OUTPUT", "screen": "LOCKED.PDF\"locked.pdf\" is password protected.\n\nEnter the password for \"locked.pdf\" and run again.\n\nRetry", "fail": "error"}
+{"case": "optimize-locked128", "verdict": "NO OUTPUT", "screen": "LOCKED128.PDF\"locked128.pdf\" is password protected.\n\nEnter the password for \"locked128.pdf\" and run again.\n\nRetry", "fail": "error"}
+{"case": "optimize-lockedrc4", "verdict": "NO OUTPUT", "screen": "LOCKEDRC4.PDF\"lockedrc4.pdf\" is password protected.\n\nEnter the password for \"lockedrc4.pdf\" and run again.\n\nRetry", "fail": "error"}
+{"case": "optimize-meta", "src": "meta.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5061, 3303], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-repaired-target", "verdict": "NO OUTPUT", "screen": "REPAIRED-TARGET.PDF\"repaired-target.pdf\" is damaged: its PDF structure could not be parsed.\n\nThe file has no end-of-file", "fail": "error"}
+{"case": "optimize-scanned", "src": "scanned.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 3, "ink": [417479, 417479], "sha_equal": true, "bytes": [105987, 105572], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-table", "src": "table.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [17944, 17944], "sha_equal": true, "bytes": [5210, 4658], "chars": [103, 103], "failures": [], "notes": []}
+{"case": "optimize-a", "src": "a.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 3, "ink": [39274, 39274], "sha_equal": true, "bytes": [2511, 1714], "chars": [468, 468], "failures": [], "notes": []}
+{"case": "optimize-b", "src": "b.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 3, "ink": [98830, 98830], "sha_equal": true, "bytes": [2549, 1752], "chars": [468, 468], "failures": [], "notes": []}
+{"case": "optimize-blank", "src": "blank.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [0, 0], "sha_equal": true, "bytes": [863, 576], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-colour", "src": "colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2938], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-h-a", "src": "h-a.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [13449, 13449], "sha_equal": true, "bytes": [1435, 1090], "chars": [165, 165], "failures": [], "notes": []}
+{"case": "optimize-h-b", "src": "h-b.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [13449, 13449], "sha_equal": true, "bytes": [1436, 1091], "chars": [165, 165], "failures": [], "notes": []}
+{"case": "optimize-h-hi", "src": "h-hi.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [65663, 65663], "sha_equal": true, "bytes": [1471, 1127], "chars": [165, 165], "failures": [], "notes": []}
+{"case": "optimize-ink", "src": "ink.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 4, "ink": [725438, 725438], "sha_equal": true, "bytes": [187151, 185543], "chars": [1795, 1795], "failures": [], "notes": []}
+{"case": "optimize-planted", "src": "planted.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 3, "ink": [413453, 413453], "sha_equal": true, "bytes": [7167, 6168], "chars": [204, 204], "failures": [], "notes": []}
+{"case": "optimize-rot90", "src": "rot90.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [154423, 154423], "sha_equal": true, "bytes": [2023, 1332], "chars": [695, 695], "failures": [], "notes": []}
+{"case": "optimize-sheets", "src": "sheets.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 5, "ink": [2073454, 2073454], "sha_equal": true, "bytes": [5375, 3761], "chars": [1393, 1393], "failures": [], "notes": []}
+{"case": "optimize-tilt-n3", "src": "tilt-n3.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [259417, 259417], "sha_equal": true, "bytes": [7257, 1315], "chars": [3640, 3640], "failures": [], "notes": []}
+{"case": "optimize-tilt-n6", "src": "tilt-n6.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [259398, 259398], "sha_equal": true, "bytes": [7257, 1315], "chars": [3640, 3640], "failures": [], "notes": []}
+{"case": "optimize-tilt-p3", "src": "tilt-p3.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [259825, 259825], "sha_equal": true, "bytes": [7252, 1311], "chars": [3640, 3640], "failures": [], "notes": []}
+{"case": "optimize-tilt-p6", "src": "tilt-p6.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [258724, 258724], "sha_equal": true, "bytes": [7251, 1311], "chars": [3637, 3637], "failures": [], "notes": []}
+{"case": "optimize-compress-alpha-raw", "src": "compress-alpha-raw.pdf", "verdict": "1 FAILURE(S)", "rebuild": "rewritten", "pages": 1, "ink": [955764, 955764], "sha_equal": true, "bytes": [7040927, 1931044], "chars": [0, 0], "failures": ["info/format"], "notes": ["NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)"]}
+{"case": "optimize-compress-ccitt", "src": "compress-ccitt.pdf", "verdict": "1 FAILURE(S)", "rebuild": "rewritten", "pages": 1, "ink": [54952, 54952], "sha_equal": true, "bytes": [1924, 1923], "chars": [0, 0], "failures": ["info/format"], "notes": []}
+{"case": "optimize-compress-dct", "src": "compress-dct.pdf", "verdict": "IDENTICAL", "rebuild": "as-input", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [680826, 680826], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-compress-flate", "src": "compress-flate.pdf", "verdict": "IDENTICAL", "rebuild": "as-input", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [1311028, 1311028], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-compress-indexed", "src": "compress-indexed.pdf", "verdict": "IDENTICAL", "rebuild": "as-input", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [715435, 715435], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-compress-predicted", "src": "compress-predicted.pdf", "verdict": "IDENTICAL", "rebuild": "as-input", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [1487355, 1487355], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-compress-raw", "src": "compress-raw.pdf", "verdict": "1 FAILURE(S)", "rebuild": "rewritten", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [5280738, 1923149], "chars": [0, 0], "failures": ["info/format"], "notes": ["NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)"]}
+{"case": "optimize-uncompressed", "src": "uncompressed.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5163, 3016], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "optimize-raw-streamsonly", "src": "compress-raw.pdf", "verdict": "1 FAILURE(S)", "rebuild": "rewritten", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [5280738, 1923165], "chars": [0, 0], "failures": ["info/format"], "notes": ["NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)"]}
+{"case": "optimize-raw-nothing", "src": "compress-raw.pdf", "verdict": "IDENTICAL", "rebuild": "as-input", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [5280738, 5280738], "chars": [0, 0], "failures": [], "notes": []}
+{"case": "optimize-colour-stripmeta", "src": "colour.pdf", "verdict": "7 FAILURE(S)", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2727], "chars": [1792, 1792], "failures": ["dangling refs", "info keys", "info/creationDate", "info/creator", "info/modDate", "info/producer", "info/title"], "notes": []}
+  optimize-compress-alpha-raw: NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)
+  optimize-compress-raw: NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)
+  optimize-raw-streamsonly: NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)
+
+41 case(s) for `optimize-pdf`: 32 identical, 9 not, 32 actually rewritten by the tool, 9 handed back byte-for-byte as input
+  NOT IDENTICAL: optimize-locked -> NO OUTPUT 
+  NOT IDENTICAL: optimize-locked128 -> NO OUTPUT 
+  NOT IDENTICAL: optimize-lockedrc4 -> NO OUTPUT 
+  NOT IDENTICAL: optimize-repaired-target -> NO OUTPUT 
+  NOT IDENTICAL: optimize-compress-alpha-raw -> 1 FAILURE(S) ['info/format']
+  NOT IDENTICAL: optimize-compress-ccitt -> 1 FAILURE(S) ['info/format']
+  NOT IDENTICAL: optimize-compress-raw -> 1 FAILURE(S) ['info/format']
+  NOT IDENTICAL: optimize-raw-streamsonly -> 1 FAILURE(S) ['info/format']
+  NOT IDENTICAL: optimize-colour-stripmeta -> 7 FAILURE(S) ['dangling refs', 'info keys', 'info/creationDate', 'info/creator', 'info/modDate', 'info/producer', 'info/title']
+LOSSLESS_DONE exit=1

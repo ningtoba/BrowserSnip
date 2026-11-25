@@ -465,13 +465,34 @@ function headerVersionOf(doc: PDFDocument): string {
   return /^[0-9]+\.[0-9]+$/.test(version) ? version : '1.7';
 }
 
-/** Object streams are a PDF 1.5 feature; saying so beats a silent 1.4 header. */
-function versionWarning(doc: PDFDocument, objectStreams: boolean): string | null {
-  if (!objectStreams) return null;
-  const version = headerVersionOf(doc);
-  const [major, minor] = version.split('.').map((part) => Number.parseInt(part, 10) || 0);
-  if (major > 1 || (major === 1 && minor >= 5)) return null;
-  return `This file declares PDF ${version}, but object streams need 1.5 or newer; a strict reader may ignore them, and the file is still valid.`;
+/** `1.5 < 1.7` — the numeric compare a version string cannot get by with. */
+function compareVersions(a: string, b: string): number {
+  const [am = 0, an = 0] = a.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const [bm = 0, bn = 0] = b.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  return am !== bm ? am - bm : an - bn;
+}
+
+/** The `%PDF-M.m` line a finished file carries, read back off its bytes. */
+function declaredVersionOf(bytes: Uint8Array): string | null {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 8));
+  return /^%PDF-(\d\.\d)$/.test(head) ? head.slice(5) : null;
+}
+
+/**
+ * Rewrite that line in place.
+ *
+ * Every version string is the same nine bytes, so no offset an xref points at can
+ * move — which is why this is safe to do to a saved file rather than only to the
+ * document before it is written. Returns false when the bytes do not start with a
+ * header this shape recognises, so the caller can say so instead of silently
+ * handing over whatever version the writer stamped.
+ */
+function stampDeclaredVersion(bytes: Uint8Array, version: string): boolean {
+  if (!/^\d\.\d$/.test(version)) return false;
+  if (declaredVersionOf(bytes) === null) return false;
+  bytes[5] = version.charCodeAt(0);
+  bytes[7] = version.charCodeAt(2);
+  return true;
 }
 
 /* ── linearization probe ─────────────────────────────────────────────────── */
@@ -700,9 +721,30 @@ ${' '.repeat(1980)}
 export interface DeflateOutcome {
   /** Streams rewritten to Flate. */
   converted: number;
+  /**
+   * Streams stored without a filter, whatever their size. `0` here is a different
+   * fact from `converted: 0`: a file whose every stream is already compressed has
+   * nothing this option can do, and saying "none was large enough" about it is a
+   * sentence about a size that was never the reason. Measured across the 38-file
+   * triage corpus: `uncompressed.pdf`, `colour.pdf`, `heavy.pdf`, `scanned.pdf`
+   * and `ink.pdf` carry **no** unfiltered stream at all, and every one of them
+   * was told "no uncompressed stream was large enough to be worth compressing".
+   */
+  uncompressed: number;
+  /** Of those, how many sat under `DEFLATE_MIN_BYTES` and were left alone. */
+  belowFloor: number;
+  /** Of those, how many came back no smaller once deflated. */
+  noGain: number;
   /** False when this browser has no Flate encoder — which is not "nothing to do". */
   supported: boolean;
 }
+
+/**
+ * The floor below which a stream is left as stored: a zlib wrapper costs roughly
+ * a dozen bytes, so a 200-byte content stream usually *grows* when deflated.
+ * Named because the tool now has to say it out loud.
+ */
+const DEFLATE_MIN_BYTES = 512;
 
 /**
  * Rewrite every uncompressed stream to Flate.
@@ -712,7 +754,13 @@ export interface DeflateOutcome {
  * assured the user their file had no large streams.
  */
 async function deflateAll(doc: PDFDocument): Promise<DeflateOutcome> {
-  const outcome: DeflateOutcome = { converted: 0, supported: true };
+  const outcome: DeflateOutcome = {
+    converted: 0,
+    uncompressed: 0,
+    belowFloor: 0,
+    noGain: 0,
+    supported: true,
+  };
   if (typeof CompressionStream === 'undefined') {
     outcome.supported = false;
     return outcome;
@@ -721,14 +769,21 @@ async function deflateAll(doc: PDFDocument): Promise<DeflateOutcome> {
   for (const [ref, object] of entries) {
     if (!(object instanceof PDFRawStream)) continue;
     if (object.dict.has(PDFName.of('Filter'))) continue;
+    outcome.uncompressed += 1;
     const contents = object.contents;
-    if (contents.byteLength < 512) continue;
+    if (contents.byteLength < DEFLATE_MIN_BYTES) {
+      outcome.belowFloor += 1;
+      continue;
+    }
     const deflated = await deflateBytes(contents);
     if (deflated === null) {
       outcome.supported = false;
       continue;
     }
-    if (deflated.byteLength >= contents.byteLength) continue;
+    if (deflated.byteLength >= contents.byteLength) {
+      outcome.noGain += 1;
+      continue;
+    }
     const updated = object.dict instanceof PDFDict ? object.dict.clone() : (doc.context.obj({}) as PDFDict);
     updated.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
     updated.set(PDFName.of('Length'), doc.context.obj(deflated.byteLength));
@@ -736,6 +791,29 @@ async function deflateAll(doc: PDFDocument): Promise<DeflateOutcome> {
     outcome.converted += 1;
   }
   return outcome;
+}
+
+/**
+ * What `deflateAll` managed, in the user's words — one clause, three truths.
+ *
+ * The counts come out of the pass itself, so the sentence cannot claim a size
+ * that was never the reason, nor a stream that does not exist.
+ */
+function deflateSentence(outcome: DeflateOutcome): string {
+  if (outcome.converted > 0) {
+    const left = outcome.belowFloor + outcome.noGain;
+    return left > 0
+      ? `${outcome.converted} stream(s) gained Flate compression, ${left} left as stored (under ${DEFLATE_MIN_BYTES} B, or no smaller deflated)`
+      : `${outcome.converted} stream(s) gained Flate compression`;
+  }
+  if (outcome.uncompressed === 0) {
+    return 'the file holds no uncompressed stream for this option to work on';
+  }
+  const reasons = [
+    outcome.belowFloor > 0 ? `${outcome.belowFloor} under the ${DEFLATE_MIN_BYTES} B floor` : '',
+    outcome.noGain > 0 ? `${outcome.noGain} that came back no smaller deflated` : '',
+  ].filter(Boolean);
+  return `${outcome.uncompressed} uncompressed stream(s) were left alone (${reasons.join(', ')})`;
 }
 
 /**
@@ -1023,7 +1101,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     actionLabel: 'Optimize',
     promise: 'A lossless rebuild that reports the size it actually saved, or admits there was nothing to save.',
     fields: [
-      { key: 'compressStreams', label: 'Flate-compress uncompressed streams', type: 'toggle', default: true, group: 'What to tidy', help: 'Re-compresses stream data that was stored raw. Nothing drawn changes.' },
+      { key: 'compressStreams', label: 'Flate-compress uncompressed streams', type: 'toggle', default: true, group: 'What to tidy', help: 'Re-compresses stream data that was stored raw. Nothing drawn changes. Streams under 512 B are left as they are: the compression header costs more than such a stream saves.' },
       { key: 'objectStreams', label: 'Pack objects into object streams', type: 'toggle', default: true, group: 'What to tidy', help: 'Packs the object table into streams. A reader older than PDF 1.5 cannot open the result.' },
       { key: 'dropOrphans', label: 'Remove unreferenced objects', type: 'toggle', default: true, group: 'What to tidy', help: 'Removes objects nothing refers to any more. They cost space but cannot be lost in a way the page can show.' },
       {
@@ -1038,6 +1116,7 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'Lossless: no image is re-encoded and no text is rasterised.',
       'Nothing is deleted unless it is unreachable from the document catalog.',
+      'The rebuilt file declares the PDF version the input declared. Object streams are a 1.5 feature, so a file that said less and gets them says 1.5 afterwards, and the report says so.',
     ],
     async run(context) {
       const [input] = await openInputs(context);
@@ -1068,11 +1147,7 @@ export const optimizeTools: PdfToolDefinition[] = [
             'This browser cannot compress streams, so nothing was deflated and any size change comes from the rebuild alone.',
           );
         } else {
-          did.push(
-            deflated.converted > 0
-                              ? `${deflated.converted} stream(s) gained Flate compression`
-                              : 'no uncompressed stream was large enough to be worth compressing',
-          );
+          did.push(deflateSentence(deflated));
         }
       }
       if (dropOrphans) {
@@ -1087,13 +1162,34 @@ export const optimizeTools: PdfToolDefinition[] = [
         const hadXmp = doc.catalog.get(PDFName.of('Metadata')) !== undefined;
         if (hadXmp) doc.catalog.delete(PDFName.of('Metadata'));
         const infoRef = doc.context.trailerInfo.Info;
-        if (infoRef instanceof PDFRef) doc.context.delete(infoRef);
+        if (infoRef instanceof PDFRef) {
+          doc.context.delete(infoRef);
+          // The writer takes `/Info` from the trailer, not from the object table,
+          // so deleting the dictionary while the trailer still names it hands the
+          // user a reference to nothing. Measured on `<127.0.0.1:5295>` with
+          // `Remove metadata` on: `colour.pdf` came back as
+          // `trailer <</Size 22 /Root 2 0 R /Info 3 0 R>>` with object 3 gone from
+          // the table (`docs/research/optimize-lossless.py` → `dangling refs` →
+          // **FAIL [3] vs []**), and MuPDF prints
+          // `cannot find object in xref (3 0 R)` while opening the download.
+          doc.context.trailerInfo.Info = undefined;
+        }
         did.push(`cleared the info dictionary${hadXmp ? ' and the XMP packet' : ''}`);
       }
-      const version = versionWarning(doc, objectStreams);
-      if (version) warnings.push(version);
 
+      const sourceVersion = headerVersionOf(doc);
       const bytes = await savePDF(doc, { useObjectStreams: objectStreams });
+      // pdf-lib's full-save writer hard-codes `%PDF-1.7` (its own
+      // `PDFWriter.computeBufferSize`), so a tidy-up of a file that declared 1.4
+      // or 1.5 used to hand back a document claiming a newer PDF than it came in
+      // as — measured: three of the 38 corpus fixtures, all `%PDF-1.5`, came back
+      // `%PDF-1.7`, which `docs/research/optimize-lossless.py` scores as a changed
+      // file fact. The rebuild now says what the file said, raised only as far as
+      // what it actually wrote (object streams are a 1.5 feature).
+      const floor = objectStreams ? '1.5' : sourceVersion;
+      const declared = compareVersions(sourceVersion, floor) >= 0 ? sourceVersion : floor;
+      const stamped = stampDeclaredVersion(bytes, declared);
+
       const rebuilt = sizeChange(original.before, bytes.byteLength);
       const check = await verifyOutput(bytes, input.name, input.pageCount);
       let out = bytes;
@@ -1102,6 +1198,20 @@ export const optimizeTools: PdfToolDefinition[] = [
         out = input.bytes;
       } else if (keepSmaller(rebuilt, warnings)) {
         out = input.bytes;
+      }
+      // Said only about the file the user is being handed: a warning that the
+      // rebuild declares 1.5 over a download that is the untouched input is the
+      // same mistake the old sentence made.
+      if (out === bytes) {
+        if (!stamped) {
+          warnings.push(
+            `The rebuilt file declares PDF ${declaredVersionOf(bytes) ?? '?'}; this build could not rewrite it to the ${declared} the input carried.`,
+          );
+        } else if (compareVersions(declared, sourceVersion) > 0) {
+          warnings.push(
+            `The file declared PDF ${sourceVersion}; object streams are a PDF 1.5 feature, so the rebuilt file declares ${declared}.`,
+          );
+        }
       }
       const delivered = sizeChange(original.before, out.byteLength);
       // Three honest headlines, never a saving that is not there (E14).

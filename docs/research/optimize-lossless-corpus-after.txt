@@ -1,0 +1,11 @@
+{"case": "after-optimize-raw", "src": "compress-raw.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 1, "ink": [1910382, 1910382], "sha_equal": true, "bytes": [5280738, 1923149], "chars": [0, 0], "failures": [], "notes": ["NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)"]}
+{"case": "after-optimize-stripmeta", "src": "colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2715], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "after-optimize-header15", "src": "header-1.5-colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2938], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "after-optimize-header14", "src": "header-1.4-colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2938], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "after-optimize-locked", "src": "locked.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2342967, 2342967], "sha_equal": true, "bytes": [6505, 6874], "chars": [1835, 1835], "failures": [], "notes": []}
+{"case": "after-optimize-uncompressed", "src": "uncompressed.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5163, 3016], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "after-optimize-pane", "src": "colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2938], "chars": [1792, 1792], "failures": [], "notes": []}
+{"case": "after-optimize-dark", "src": "colour.pdf", "verdict": "IDENTICAL", "rebuild": "rewritten", "pages": 8, "ink": [2339388, 2339388], "sha_equal": true, "bytes": [5361, 2938], "chars": [1792, 1792], "failures": [], "notes": []}
+  after-optimize-raw: NOTE page 1 image filter none -> FlateDecode (decoded pixels equal)
+
+8 case(s) for `optimize-pdf`: 8 identical, 0 not, 8 actually rewritten by the tool, 0 handed back byte-for-byte as input
