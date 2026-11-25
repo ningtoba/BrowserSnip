@@ -1,0 +1,44 @@
+# alternate-merge — 8 live runs on dev server 5292 (docs/research/alternate-merge-round.mjs:
+# 1-1, 2-2, reverse-alternate, both of the first two after 'Move sheets.pdf earlier',
+# two equal-length files, a one-file refusal, and a dark pane). Judged by
+# docs/research/alternate-merge-bytes.py, whose fingerprint now carries the page's own
+# content-stream hashes: the corpus's two blank sheets (colour.pdf 3 and 6) are both
+# 420x595 at ink 0, so without the hashes the checker labelled both 'c3/c6' and an
+# exact interleave read back as a mismatch.
+
+#### base --expect c1,s1,c2,s2,c3,s3,c4,s4,c5,s5,c6,c7,c8 --info-of /tmp/triage/colour.pdf
+sequence: c1,s1,c2,s2,c3,s3,c4,s4,c5,s5,c6,c7,c8
+expected: c1,s1,c2,s2,c3,s3,c4,s4,c5,s5,c6,c7,c8
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+#### p22 --expect c1,c2,s1,s2,c3,c4,s3,s4,c5,c6,s5,c7,c8 --info-of /tmp/triage/colour.pdf
+sequence: c1,c2,s1,s2,c3,c4,s3,s4,c5,c6,s5,c7,c8
+expected: c1,c2,s1,s2,c3,c4,s3,s4,c5,c6,s5,c7,c8
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+#### rev --expect c1,s5,c2,s4,c3,s3,c4,s2,c5,s1,c6,c7,c8 --info-of /tmp/triage/colour.pdf
+sequence: c1,s5,c2,s4,c3,s3,c4,s2,c5,s1,c6,c7,c8
+expected: c1,s5,c2,s4,c3,s3,c4,s2,c5,s1,c6,c7,c8
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+#### order --expect s1,c1,s2,c2,s3,c3,s4,c4,s5,c5,c6,c7,c8 --info-of /tmp/triage/sheets.pdf
+sequence: s1,c1,s2,c2,s3,c3,s4,c4,s5,c5,c6,c7,c8
+expected: s1,c1,s2,c2,s3,c3,s4,c4,s5,c5,c6,c7,c8
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+#### orderrev --expect s1,c8,s2,c7,s3,c6,s4,c5,s5,c4,c3,c2,c1 --info-of /tmp/triage/sheets.pdf
+sequence: s1,c8,s2,c7,s3,c6,s4,c5,s5,c4,c3,c2,c1
+expected: s1,c8,s2,c7,s3,c6,s4,c5,s5,c4,c3,c2,c1
+danger: pages with an UNKNOWN fingerprint -> 0
+RESULT pass
+#### CONTROL: base judged as a plain stack (must FAIL)
+FAIL order: got c1,s1,c2,s2,c3,s3,c4,s4,c5,s5,c6,c7,c8, expected c1,c2,c3,c4,c5,c6,c7,c8,s1,s2,s3,s4,s5
+RESULT 1 failure(s)
+#### equal (colour.pdf twice: no tail note, 16 pages)
+sequence: c1,c1,c2,c2,c3,c3,c4,c4,c5,c5,c6,c6,c7,c7,c8,c8
+RESULT pass
+#### card sentences (from the probes' own captures)
+Each page kept its own size, so the mixed file has mixed page sizes. 
+Mixed 13 pages from 2 files.
+The files are unequal (pages per file: 
+no document info, and a mixed file has one slot for it, so the 1 other file’s was left behind. Put the file whose info you w

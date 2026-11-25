@@ -19,6 +19,7 @@ Control: run it with `--expect 'c1,c2,c3,c4,s1,s2,s3,s4,s5'` (a plain stack) aga
 an interleaved file — a checker that passes on that is not measuring the order.
 """
 import argparse
+import hashlib
 import sys
 
 import pymupdf
@@ -34,8 +35,21 @@ def first_line(page: pymupdf.Page) -> str:
 
 
 def fingerprint(page: pymupdf.Page) -> tuple:
+    """What identifies one sheet.
+
+    Geometry, ink, text length, images, marks — and the hash of the page's own
+    content streams. The streams are what tell the corpus's two blank sheets apart:
+    `colour.pdf` sheets 3 and 6 are both 420x595 at ink 0, so without them the
+    checker labels both `c3/c6` and an exact interleave reads back as a mismatch
+    that is really the instrument being blind. A page copy keeps its streams
+    byte-for-byte, so the hash travels with the page it identifies.
+    """
     pix = page.get_pixmap(dpi=DPI)
     ink = sum(1 for i in range(0, len(pix.samples), pix.n) if pix.samples[i] < WHITE)
+    doc = page.parent
+    streams = tuple(
+        hashlib.sha256(doc.xref_stream(xref) or b"").hexdigest()[:12] for xref in page.get_contents()
+    )
     return (
         round(page.rect.width, 1),
         round(page.rect.height, 1),
@@ -45,6 +59,7 @@ def fingerprint(page: pymupdf.Page) -> tuple:
         len(page.get_images()),
         len(list(page.annots() or [])),
         len(page.get_links()),
+        streams,
     )
 
 
