@@ -56,6 +56,7 @@ import {
   baseInline,
   imageMatrix,
   inlineFor,
+  invertMatrix,
   layoutBlock,
   pointInObject,
   textMatrixForRun,
@@ -795,8 +796,13 @@ function substitutionText(reason: SubstitutionReason): string {
 }
 
 /** User-space rect → viewer-space box: the inverse of the deletion mapping. */
-function userRectToBox(rect: QuadRect, frame: PageFrame): TopLeftBox {
-  const back = viewerToUserMatrix(frame);
+export function userRectToBox(rect: QuadRect, frame: PageFrame): TopLeftBox {
+  // `viewerToUserMatrix` maps viewer→user; this is the user→viewer direction, so
+  // the map has to be inverted. Applying the forward matrix as if it were its own
+  // inverse — which it is only at x0=y0=0 with rot ∈ {0, 90, 180} — landed the
+  // patch a half-page away on /Rotate 270 sheets and anywhere the CropBox origin
+  // was not the MediaBox origin (census #14).
+  const back = invertMatrix(viewerToUserMatrix(frame));
   const corners = [
     applyMatrix(back, { x: rect.x, y: rect.y }),
     applyMatrix(back, { x: rect.x + rect.width, y: rect.y }),
