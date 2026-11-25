@@ -136,8 +136,47 @@ export function parsePdfDateParts(value: string): PdfDateParts | undefined {
     };
   }
 
-  // Not a PDF date: allow ISO 8601 and locale text, but only when unambiguous
-  // enough for `Date` to accept it (no `NaN`).
+  // Not a PDF date. ISO 8601 typed into the properties form is read by shape,
+  // never through the generic `Date` parse alone: that took a date-only value
+  // as **UTC** midnight — under New York emulation `2026-01-31` then stored as
+  // the 30th — and dropped the explicit zone of `…T13:06:07Z`, re-stamping the
+  // writer's own offset in its place (sweep/edit defect 4, /tmp/seam2a/repro-4-*
+  // .json). Decision, pinned in tests/pdf/metadata.test.ts: the typed zone
+  // survives verbatim; a zone-less entry is the writer's local wall clock
+  // (midnight of the typed day), the way Acrobat and Word stamp it.
+  const iso =
+    /^(\d{4})-(\d{2})(?:-(\d{2}))?(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?(Z|[+-]\d{2}:?\d{2}|[+-]\d{2})?$/i
+      .exec(text);
+  if (iso) {
+    const [, year, month, day, hours, minutes, seconds, zone] = iso;
+    const offsetMinutes = parseZone(zone);
+    const numbers = [
+      Number(year), Number(month), Number(day ?? '01'),
+      Number(hours ?? '00'), Number(minutes ?? '00'), Number(seconds ?? '00'),
+    ];
+    // Typed values are checked, not rolled: `2026-13-45` is a refusal, the way
+    // the form already refuses `not-a-date`. (Stored `D:` garbage keeps its
+    // producer's arithmetic — the rollover is poppler-identical and pinned.)
+    if (numbers.some((n) => !Number.isFinite(n))
+      || numbers[1] < 1 || numbers[1] > 12 || numbers[2] < 1 || numbers[2] > 31
+      || numbers[3] > 23 || numbers[4] > 59 || numbers[5] > 59) {
+      return undefined;
+    }
+    const fields: [number, number, number, number, number, number] =
+      [numbers[0], numbers[1] - 1, numbers[2], numbers[3], numbers[4], numbers[5]];
+    const date = offsetMinutes === undefined
+      ? new Date(...fields)
+      : new Date(Date.UTC(...fields) - offsetMinutes * 60_000);
+    if (Number.isNaN(date.getTime())) return undefined;
+    return {
+      date,
+      offsetMinutes,
+      components: [numbers[0], numbers[1], numbers[2], numbers[3], numbers[4], numbers[5]],
+    };
+  }
+
+  // Anything else `Date` accepts unambiguously (locale text, RFC forms) still
+  // parses, so the refusal wording for true garbage is unchanged.
   const fallback = new Date(text);
   if (!Number.isNaN(fallback.getTime())) return { date: fallback };
   return undefined;

@@ -125,13 +125,15 @@ describe('edit-metadata dates are typed, written as PDF dates, and refused when 
       creationDate: '2026-03-04T05:06:07Z', modDate: '2026-03-05', touchDates: true,
     }));
     const info = readInfo(typed);
-    // The typed instant survives the trip, written back in the file's own form
-    // (`D:` with the runtime's offset) rather than as the ISO text typed. UTC
-    // writes the `Z` the format allows for zero offset, which a UTC CI runner
-    // produces and a local machine does not — both are the same instant.
-    expect(info.creationDate).toMatch(/^D:\d{14}([+-]\d\d'\d\d'|Z)$/);
+    // The zone the user typed is the zone the file keeps: a `Z` input is
+    // stored with `Z`, not re-stamped with the runtime's own offset
+    // (measured defect, sweep/edit + /tmp/seam2a/repro-4-iso-plus08.json).
+    expect(info.creationDate).toBe('D:20260304050607Z');
+    // A date-only entry is local midnight — the typed calendar day, never the
+    // day-before or day-after that the UTC-midnight parse produced under
+    // western runtime zones (31 → 30 under New York emulation).
+    expect(info.modDate).toMatch(/^D:20260305000000([+-]\d\d'\d\d'|Z)$/);
     expect(parsePdfDateParts(info.creationDate!)?.date.toISOString()).toBe('2026-03-04T05:06:07.000Z');
-    expect(parsePdfDateParts(info.modDate!)?.date.toISOString()).toBe('2026-03-05T00:00:00.000Z');
     // A typed ModDate wins over the "set to now" toggle, which is on here.
     expect(parsePdfDateParts(info.modDate!)?.date.toISOString()).not.toBe(undefined);
 

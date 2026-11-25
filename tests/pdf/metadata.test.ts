@@ -52,6 +52,41 @@ describe('PDF dates', () => {
     expect(parsePdfDate('not a date')).toBeUndefined();
     expect(parsePdfDate('')).toBeUndefined();
   });
+
+  it('keeps the zone typed into an ISO date and the day typed into a date-only one', () => {
+    // Measured against the edit-metadata form (sweep/edit defect 4, driven via
+    // CDP Emulation.setTimezoneOverride and reproduced in-process,
+    // /tmp/seam2a/repro-4-iso-plus08.json / repro-4-iso-ny.json): typing
+    // `2026-03-04T13:06:07Z` stored `D:20260304210607+08'00'` — the same
+    // instant, but the Z the user typed was rewritten into the machine's own
+    // offset — and typing the calendar date `2026-01-31` stored
+    // `D:20260130190000-05'00'` under New York emulation, because the generic
+    // Date parse took date-only as UTC midnight and the writer then moved it
+    // back to local. The typed zone survives; the typed day never moves.
+    // A zone-less value is the writer's own wall clock (local midnight), like
+    // Acrobat and Word stamp — documented decision, pinned under both zones.
+    const zone = process.env.TZ;
+    try {
+      for (const tz of ['Asia/Kuala_Lumpur', 'America/New_York']) {
+        process.env.TZ = tz;
+        const zulu = parsePdfDateParts('2026-03-04T13:06:07Z')!;
+        expect(zulu.offsetMinutes).toBe(0);
+        expect(formatPdfDate(zulu.date, zulu.offsetMinutes)).toBe('D:20260304130607Z');
+        const offsetTyped = parsePdfDateParts('2026-03-04T13:06:07+05:30')!;
+        expect(offsetTyped.offsetMinutes).toBe(330);
+        expect(formatPdfDate(offsetTyped.date, offsetTyped.offsetMinutes)).toBe("D:20260304130607+05'30'");
+        const day = parsePdfDateParts('2026-01-31')!;
+        expect(day.offsetMinutes).toBeUndefined();
+        expect(day.components).toEqual([2026, 1, 31, 0, 0, 0]);
+        // The written day is the typed day in both emulations — only the
+        // recorded offset follows the machine.
+        expect(formatPdfDate(day.date, day.offsetMinutes)).toMatch(/^D:20260131000000/);
+      }
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
 });
 
 describe('readInfo / writeInfo', () => {
