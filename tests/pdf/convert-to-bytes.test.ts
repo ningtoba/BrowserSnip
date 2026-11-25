@@ -2283,6 +2283,22 @@ describe('word-to-pdf keeps headings, tables and non-Latin text', () => {
     expect(first!.x).toBe(second!.x);
   });
 
+  it('says what it does with a picture and a link', async () => {
+    const tool = getPdfTool('word-to-pdf');
+    const notes = String(tool?.notes);
+    // Measured on a DOCX whose body holds a `w:drawing` blip and a `w:hyperlink`: the
+    // produced file carries no image object and no /Annots at all, and the page prints
+    // `[image: image]` where the picture was. The card used to promise "embedded images";
+    // both limits are now stated, the link one in the same words HTML to PDF uses.
+    expect(tool?.promise ?? '', 'the promise still sells embedded images').not.toMatch(/images/i);
+    expect(notes).toMatch(/picture inside the document is not carried into the PDF/);
+    expect(notes).toMatch(/drawn blue and underlined, but the file carries no clickable target/);
+    const outcome = await run('word-to-pdf', {}, [fileFrom(await docxBytes(), 'report.docx')]);
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    const annotated = doc.getPages()[0]!.node.get(PDFName.of('Annots'));
+    expect(annotated instanceof PDFArray ? annotated.size() : 0, 'no clickable target is written').toBe(0);
+  });
+
   it('starts the document on the first sheet, not after a blank one', async () => {
     const outcome = await run('word-to-pdf', {}, [fileFrom(await headingDocx, 'report.docx')]);
     const bytes = await firstPdf(outcome);

@@ -2078,10 +2078,12 @@ export const convertToTools: PdfToolDefinition[] = [
     surface: 'none',
     outputSuffix: '_from_word.pdf',
     actionLabel: 'Convert to PDF',
-    promise: 'Re-flowed text with headings, lists, tables and embedded images as selectable PDF text.',
+    promise: 'Re-flowed text with headings, lists and tables as selectable PDF text.',
     notes: [
       ...TEXT_NOTES,
       'The DOCX route reads the document body (mammoth), so it is content-faithful but not page-faithful: your pagination, section breaks, headers and footers, footnotes, comments, tracked changes, text boxes and floating images do not survive, and Word’s own layout is not reproduced.',
+      'A picture inside the document is not carried into the PDF: the reader hands mammoth a fixed one-pixel placeholder, so the file holds no image object and the page prints the alt text where the chart was (`[image: chart]`). ODT is the same.',
+      'A link is drawn blue and underlined, but the file carries no clickable target and its address is not printed — the same limit HTML to PDF states.',
       'Table cell shading, merged-cell formatting and column widths are flattened to a plain bordered table.',
       'ODT keeps its text, headings, lists and tables through the OpenDocument reader; the same pagination caveats apply.',
       'Legacy binary .doc needs the optional LibreOffice module, which BrowserSnip does not bundle — the refusal names it instead of producing an empty page.',
