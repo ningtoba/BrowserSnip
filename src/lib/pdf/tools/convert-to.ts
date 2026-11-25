@@ -898,8 +898,8 @@ export const convertToTools: PdfToolDefinition[] = [
       'SVG is painted through the browser canvas, so the result is a high-resolution bitmap: strokes, gradients and text become pixels and cannot be re-coloured or searched afterwards. A server-grade engine keeps them as vector operators.',
       'The artwork’s own `width`/`height` decide the sheet in “Fit the artwork”; “Square” keeps the long edge and pads the short one.',
       'Text inside the SVG renders in whatever font this browser resolved, not an embedded copy of yours.',
-      'An SVG with no `width`/`height` is laid out at the browser default 300 × 150, because the file states no size of its own.',
-      'Animations, filters and external references (`<image href="…">`) are not reproduced.',
+      'An SVG with no `width`/`height` is laid out in the browser default 300 × 150 box, kept to the drawing’s aspect: a 2:1 `viewBox` measures 300 × 150 and a square one 150 × 150 — the drawing is fitted to the box, never stretched into it (measured on Chrome for Testing 151).',
+      'Animations never play and external references (`<image href="…">`, remote fonts) are not fetched: whatever they point at is simply missing from the page. SVG filter effects do paint — a blurred rectangle arrives blurred, measured — and an image carried inside the file as a `data:` URL is kept.',
     ],
     fields: [
       {
@@ -926,6 +926,24 @@ export const convertToTools: PdfToolDefinition[] = [
         label: 'an SVG drawing',
         hint: 'A raster file was named .svg — use Images to PDF instead.',
       })) {
+        // Ask the browser's own XML parser before the image decoder: a broken
+        // document is a broken document, and "this browser has no decoder for
+        // SVG" — the sentence the decode route reaches for — tells the user to
+        // change the file's format when the file needs a `</rect>`.
+        const parsed = new DOMParser().parseFromString(
+          new TextDecoder('utf-8', { fatal: false }).decode(batch.bytes),
+          'image/svg+xml',
+        );
+        const failure = parsed.querySelector('parsererror');
+        if (failure) {
+          const detail = (failure.textContent ?? '')
+            .split('\n')
+            .map((row) => row.trim())
+            .find((row) => /error|Line Number|unclosed|mismatched/i.test(row) && !/^xml parsing failed/i.test(row))
+            ?? 'the parser stopped before the document ended';
+          skipped.push(`"${batch.name}" is not well-formed XML (${detail}).`);
+          continue;
+        }
         try {
           const decoded = await decodeImage(batch.bytes, { mime: 'image/svg+xml', maxSide: 4096 });
           pages.push({ data: decoded.canvas });
