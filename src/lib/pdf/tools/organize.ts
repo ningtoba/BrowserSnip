@@ -673,6 +673,21 @@ const PAGE_COPY_INFO_NOTE =
 const FLATTEN_NOTE =
   'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. No optional engine is asked to save them — this tab draws the new pages, so what a page carried has to be put back afterwards.';
 
+/**
+ * What `duplex-collate` assumes about the machine at both ends, said on the card.
+ *
+ * Measured on `:5292` with a scan whose back block was stored turned (`/Rotate 180`
+ * on the backs, `docs/research/duplex-round-bytes.py`, per-sheet `/Rotate`): the
+ * collation is a pure permutation — the output rotations came back
+ * `[0, 180, 0, 180, 0, 180, 90, 180]` — so the tool pairs each sheet and turns
+ * nothing. The old help leaned on "single-pass duplex scanners output the back side
+ * upside-down", which is doubly wrong: a single-pass duplex feeder reads both sides
+ * in one trip and needs no re-collation at all (the two-block scan is a simplex
+ * re-feed), and an upside-down back was never straightened here.
+ */
+const DUPLEX_ORDER_NOTE =
+  'The collation is a reordering and nothing else: every sheet keeps the rotation it was scanned with, so a back that came off the feeder turned 180° is still turned in the output — straighten those with Rotate. The pairs assume a printer that puts page 1 and page 2 on the two sides of one sheet, so print it duplex with the flip on the long edge for upright pages, or on the short edge for a landscape sheet.';
+
 /* ── shared fields ────────────────────────────────────────────────────────── */
 
 const ALL_PAGES: ToolField = pagesField();
@@ -1913,7 +1928,7 @@ export const organizeTools: PdfToolDefinition[] = [
     outputSuffix: '_collated.pdf',
     actionLabel: 'Collate',
     promise: 'A re-ordered PDF where each front page is followed by its own back page.',
-    notes: [PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
+    notes: [DUPLEX_ORDER_NOTE, PAGE_COPY_NOTE, PAGE_COPY_INFO_NOTE],
     fields: [
       {
         key: 'backReversed',
@@ -1921,7 +1936,11 @@ export const organizeTools: PdfToolDefinition[] = [
         type: 'toggle',
         default: true,
         group: 'Scan order',
-        help: 'Most single-pass duplex scanners output the back side upside-down and last-page-first.',
+        // Was "Most single-pass duplex scanners output the back side upside-down and
+        // last-page-first": a single-pass duplex feeder reads both sides in one trip and
+        // hands over already-paired pages, and nothing here has ever straightened a
+        // turned sheet (measured: the backs kept `/Rotate 180` through the collation).
+        help: 'For the two-pass scan — all fronts, then the same stack turned over — which feeds the backs last-page-first, and this turns them back. Switch it off when the backs already came in sheet order. Reordering only: no sheet is turned.',
       },
       OFFSET,
     ],
@@ -1959,8 +1978,23 @@ export const organizeTools: PdfToolDefinition[] = [
       if (duplicates.size > 0) {
         notes.add(`The plan repeats ${pageCountLabel(duplicates.size)} (${formatPages([...duplicates])}) — reduce the offset if that is not what you meant.`);
       }
-      if (total % 2 === 1) {
-        notes.add(`An odd ${pageCountLabel(total)} scan splits ${half} + ${total - half}, so the last sheet has no back page.`);
+      // What leaves a sheet without a back is the two blocks being unequal, which an
+      // odd scan does and an offset does too: measured on `colour.pdf` (8 pages) with
+      // `offset=1` the run printed "4 + 3" on the receipt and said nothing about the
+      // dangling sheet, while on a 5-page scan with `offset=1` the parity sentence
+      // promised "splits 3 + 2" over a file its own receipt called "3 + 1". Keying on
+      // `total % 2` got both wrong; the block sizes are the measurement. A surplus of
+      // one leaves the last sheet's back unprinted; a bigger surplus runs the leftover
+      // fronts back to back on the following sheets, so the sentence has to say which.
+      const unpaired = front.length - back.length;
+      if (unpaired > 0) {
+        const cause = offset > 0
+          ? `The offset pairs ${front.length} front${front.length === 1 ? '' : 's'} with ${back.length} back${back.length === 1 ? '' : 's'}`
+          : `An odd ${pageCountLabel(total)} scan splits ${front.length} + ${back.length}`;
+        const tail = unpaired === 1
+          ? 'the last sheet has no back page'
+          : `the last ${unpaired} fronts have no backs of their own — printed duplex they come out back to back${unpaired % 2 === 1 ? ', and the run ends on a sheet with no back page' : ''}`;
+        notes.add(`${cause}, so ${tail}.`);
       }
       const doc = await collectPages([{ doc: input.doc, pages: interleaved }]);
       notePageCopy([input.doc], doc.fidelity, notes);

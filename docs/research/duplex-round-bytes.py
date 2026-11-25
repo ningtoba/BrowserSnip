@@ -111,18 +111,18 @@ def main():
     # packet stay, the producer becomes this app's, and nothing is invented.
     # Only fields the source actually carries are compared: `openPDF` stamps a
     # creator on a file that had none before the tool ever sees it, which is a
-    # shared seam rather than this tool's claim. Keywords compare as tokens —
-    # the PDF `/Keywords` string is comma-separated by convention, and the carry
-    # re-joins the same words with spaces.
-    for key in ("title", "author", "subject", "creator"):
+    # shared seam rather than this tool's claim.
+    # `keywords` joins the whole-string comparison rather than a token set:
+    # `carryDocInfo` used to split it on commas and let pdf-lib rejoin it with single
+    # spaces, so `alpha, beta, gamma` came back as `alpha beta gamma`. That corruption
+    # is fixed, and a checker that normalises the separators away before comparing
+    # cannot tell the two bytes apart — it passes on the broken file. Same finding the
+    # `reverse-pages` re-audit made against its own checker.
+    for key in ("title", "author", "subject", "creator", "keywords"):
         if not src["info"].get(key):
             continue
         check((out["info"].get(key) or "") == src["info"].get(key),
               f"/Info {key} {src['info'].get(key)!r} (got {out['info'].get(key)!r})")
-    if src["info"].get("keywords"):
-        want = sorted(w for w in src["info"]["keywords"].replace(",", " ").split() if w)
-        got = sorted(w for w in (out["info"].get("keywords") or "").replace(",", " ").split() if w)
-        check(got == want, f"/Info keywords {want} (got {got})")
     check(out["xmp"] == src["xmp"], f"XMP packet {src['xmp']} (got {out['xmp']})")
     check(out["info"].get("producer") == "BrowserSnip", f"producer BrowserSnip (got {out['info'].get('producer')!r})")
 

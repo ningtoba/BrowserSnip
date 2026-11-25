@@ -2172,6 +2172,86 @@ describe('each tool is checked against its own output file', () => {
     expect(doc.catalog.get(PDFName.of('Metadata'))).toBeUndefined();
   });
 
+  /**
+   * The two claims the card makes about the sheet itself, measured on the dev build.
+   *
+   * A scan whose back block was stored turned (`/Rotate 180` on the backs — what a
+   * stack flipped end-over-end between passes really produces) comes out of the
+   * collation turned the same way: `[0, 180, 0, 180]`, the pairs correct and the
+   * turns untouched, matching `docs/research/duplex-round-bytes.py` judging
+   * `backflip8.pdf` on a live run (`/Rotate` equal per sheet, 0 failures).
+   *
+   * The old help justified the toggle with "Most single-pass duplex scanners output
+   * the back side upside-down and last-page-first". Both halves of that were wrong:
+   * a single-pass duplex feeder reads both sides in one trip and emits already-paired
+   * pages — the two-block file is a simplex re-feed, which is what the tool's own
+   * `simplex` keyword says — and no sheet is ever straightened here. So the card now
+   * names the workflow it undoes, says it reorders only, and states the printer
+   * spread the output assumes.
+   */
+  it('duplex-collate pairs the sheets without turning them, and says so on the card', async () => {
+    const turned = fileOf(await sheets([
+      { width: 200, height: 100 },
+      { width: 200, height: 100 },
+      { width: 200, height: 100, rotate: 180 },
+      { width: 200, height: 100, rotate: 180 },
+    ]), 'twopass.pdf');
+    const outcome = await run('duplex-collate', { backReversed: true, offset: 0 }, [turned]);
+    const doc = await open(await bytesOf(outcome));
+    // Front 1 with its own back (4), then front 2 with back 3 — and the turned
+    // sheets are still turned, because this tool only moves pages.
+    expect(pageTexts(doc)).toEqual(['sheet 1', 'sheet 4', 'sheet 2', 'sheet 3']);
+    expect(doc.getPages().map((page) => page.getRotation().angle)).toEqual([0, 180, 0, 180]);
+
+    const tool = getPdfTool('duplex-collate');
+    const words = [
+      tool?.description ?? '',
+      tool?.promise ?? '',
+      ...(tool?.notes ?? []),
+      ...(tool?.fields ?? []).map((field) => field.help ?? ''),
+    ].join(' ');
+    expect(words).toMatch(/reordering and nothing else|no sheet is turned/i);
+    expect(words).toMatch(/flip on the long edge/i);
+    expect(words).toMatch(/two-pass/i);
+    // The misattribution the measurement killed, kept out of the card for good.
+    expect(words).not.toMatch(/single-pass/i);
+  });
+
+  /**
+   * Which sheet is left without a back is arithmetic on the two blocks, not on the
+   * page count: an offset shortens the back block. Measured on the live pane, the old
+   * `total % 2` key printed "Collated 7 pages from a 4 + 3 scan." with no word about
+   * the dangling sheet (8 pages is even), and on a 5-page scan with `offset=1` it
+   * printed "splits 3 + 2" over a file the receipt itself called "3 + 1".
+   */
+  it('duplex-collate says which sheets are left without a back, in the sizes it used', async () => {
+    // An even scan cut short by an offset: 4 fronts against 3 backs, 7 pages out.
+    const even = fileOf(await sheets(grid(8)), 'eight.pdf');
+    const cut = await run('duplex-collate', { backReversed: true, offset: 1 }, [even]);
+    const cutDoc = await open(await bytesOf(cut));
+    expect(cutDoc.getPageCount(), 'one page dropped between the blocks').toBe(7);
+    expect(warn(cut)).toMatch(/leaves 1 page out \(5\)/i);
+    expect(warn(cut)).toMatch(/pairs 4 fronts with 3 backs, so the last sheet has no back page/i);
+
+    // The odd scan keeps its sentence, but with the numbers the file carries.
+    const odd = fileOf(await sheets(grid(5)), 'five.pdf');
+    const plain = await run('duplex-collate', { backReversed: true, offset: 0 }, [odd]);
+    expect((await open(await bytesOf(plain))).getPageCount()).toBe(5);
+    expect(warn(plain)).toMatch(/An odd 5 pages scan splits 3 \+ 2, so the last sheet has no back page/i);
+    const oddCut = await run('duplex-collate', { backReversed: true, offset: 1 }, [odd]);
+    expect((await open(await bytesOf(oddCut))).getPageCount()).toBe(4);
+    expect(warn(oddCut)).toMatch(/pairs 3 fronts with 1 back, so the last 2 fronts have no backs of their own — printed duplex they come out back to back/i);
+    expect(warn(oddCut)).not.toMatch(/splits 3 \+ 2/);
+  });
+
+  it('a scan whose blocks already pair up claims no dangling sheet (control)', async () => {
+    // Same fixture as the run above, offset 0, so the note must NOT appear: an
+    // instrument that always warns cannot see the case it warns about.
+    const outcome = await run('duplex-collate', { backReversed: true, offset: 0 });
+    expect((await open(await bytesOf(outcome))).getPageCount()).toBe(4);
+    expect(warn(outcome)).not.toMatch(/no back page/i);
+  });
+
   it('posterize keeps every tile at one scale and overlaps its neighbour', async () => {
     const one = fileOf(await sheets([{ width: 200, height: 100 }]), 'one.pdf');
     const outcome = await run('posterize', { columns: 2, rows: 2, bleed: 10, pages: 'all' }, [one]);
