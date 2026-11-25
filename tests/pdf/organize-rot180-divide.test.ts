@@ -19,7 +19,9 @@
  * that happened to carry no content boundary.
  */
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
@@ -84,11 +86,12 @@ describe('divide-pages cuts a /Rotate 180 sheet along the line the user sees (#1
     });
     expect(outcome.outputs.length).toBeGreaterThan(0);
     const bytes = new Uint8Array(await outcome.outputs[0].blob.arrayBuffer());
-    writeFileSync('/tmp/seam2e/d2-divided.pdf', bytes);
+    const OUT_PDF = mkdtempSync(join(tmpdir(), 'seam2e-')) + '/d2-divided.pdf';
+    writeFileSync(OUT_PDF, bytes);
 
     const doc = await PDFDocument.load(bytes);
     expect(doc.getPageCount()).toBe(2);
-    const ink = [0, 1].map((index) => darkPixels('/tmp/seam2e/d2-divided.pdf', index));
+    const ink = [0, 1].map((index) => darkPixels(OUT_PDF, index));
     console.log('D2 divided pieces dark-pixel counts', JSON.stringify(ink));
     const total = ink[0] + ink[1];
     expect(total, 'the divide painted the band onto no piece at all').toBeGreaterThan(1000);

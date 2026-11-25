@@ -13,13 +13,16 @@
  * This file measures the difference on the bytes, judged by libqpdf and MuPDF.
  */
 import { describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PDFDict, PDFHexString, PDFName, PDFString } from '@maxwbh/pdf-lib';
 import { newPDF, openPDF, savePDF, context } from '@/lib/pdf/core/doc';
 import { addAttachments, listAttachments } from '@/lib/pdf/core/attachments';
 
 const NAMES = ['plain.txt', 'report (draft.txt', 'report draft).txt', 'back\\slash.txt', 'تقرير سنة.txt', 'über-𓂀.txt'];
-const OUT = process.env.C4_CAUSE_DIR || '/tmp/lane-security/c4/cause';
+// The CI runner has no lane scratch: mint a private dir instead of assuming one.
+const OUT = process.env.C4_CAUSE_DIR || mkdtempSync(join(tmpdir(), 'c4-cause-'));
 
 const bytes = Uint8Array.from({ length: 64 }, (_, i) => i + 1);
 
