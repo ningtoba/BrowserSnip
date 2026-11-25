@@ -2987,6 +2987,31 @@ describe('email-to-pdf prints the message, not the MIME plumbing', () => {
     expect(text).toContain('Quarterly results');
     expect(text).not.toContain('deck.pdf');
   });
+
+  it('reads a nested multipart body, not a phantom attachment', async () => {
+    // Real Gmail export: `mixed` wrapping `alternative` wrapping the plain and
+    // html bodies, plus a named part. The reader stopped at the first
+    // boundary, so the container itself was listed as an attachment named
+    // `part (multipart/alternative; …)` and the message printed with NO body
+    // at all — a success card over an empty page.
+    const outcome = await run('email-to-pdf', {}, [fileFrom(fixture('nested-mixed.eml'), 'nested-mixed.eml')]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text, 'the inner alternative carries the body the card promises').toContain('The html body paragraph MARKHTML here.');
+    expect(text).not.toMatch(/part \(multipart/, 'a container is not a file');
+    expect(text).toContain('report-final.pdf');
+    expect(text, 'the Type column prints the type, not the raw Content-Type line').not.toMatch(/application\/pdf; name=/);
+    expect(outcome.message).toMatch(/1 message/);
+  });
+
+  it('prints a real Gmail message by its clean parts', async () => {
+    const text = squash(await extractText(await firstPdf(await run('email-to-pdf', {}, [
+      fileFrom(fixture('gmail-sample.eml'), 'gmail-sample.eml'),
+    ]))));
+    expect(text).toContain('bookmarks-really-short.html');
+    expect(text).toMatch(/text\/html(?![;=])/, 'the attachment type is the media type alone');
+    expect(text).not.toMatch(/multipart/);
+    expect(text, 'a folded Received header never reaches the page').not.toMatch(/PDT|by 10\.220/);
+  });
 });
 
 /* ------------------------------------------------------------------ *

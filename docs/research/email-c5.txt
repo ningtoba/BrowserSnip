@@ -1,0 +1,28 @@
+email-to-pdf real-producer audit — measurement log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+  fixtures: gmail-sample.eml — raw Gmail export (MIME-Version, multipart/mixed → multipart/alternative
+  → text/plain + text/html, then a base64 text/html part named on BOTH Content-Type name= and
+  disposition filename), sha 8e0db27df90809c0; nested-mixed.eml — same producer shape with a real
+  body marker + application/pdf part named only on Content-Type (Gmail/Outlook write names that way).
+  BEFORE (live + jsdom, build de522e7+): “Printed 1 message(s) into 1 page(s)” — the page held the
+  header table and an “Attachments” table whose first row was
+      part (multipart/alternative; boundary=bcaec54eecc63acce604a3050f77) | multipart/alternative; boundary=bcaec54eecc63acce604a3050f77 | 0 KB
+  a phantom “file” made of the container, its raw content-type bleeding into the Type column — and
+  NO body: the reader stopped at the first boundary, so the alternative’s plain/html parts never
+  became the message text promised by “Headers, body and an attachment list”. Success card over a
+  bodyless page (bars 1/6).
+  AFTER: header table (folded Received headers stay out: no “PDT”, no “by 10.220” — the fold-join
+  class re-settled on the real file), body restored (“Bill Jncjkq” signature prints between rule and
+  attachment list; MARKHTML paragraph prints in the crafted message), attachments list = one row
+  `bookmarks-really-short.html | text/html | 1 KB` — bare media type, name from disposition or the
+  Content-Type `name=` parameter.
+  FIX: core/office-in.ts decodeMimeBody (blocker-faithful, cause-local, not the rowText spine):
+  nested multipart recurses — a container is not a leaf; the type column takes the bare media type;
+  unnamed non-text leaves keep the `part (type)` fallback; named parts match regardless of which
+  header carries the name.
+  PINS (tests/pdf/convert-to-bytes.test.ts, email describe): 2 new tests — RED without the fix: 2
+  (body+phantom; gmail clean-parts). Controls kept: existing fold-join pin, includeAttachments=off
+  (list vanishes, body stays), .msg refusal.
+  LIVE half: printed card read with own eyes (docs/research/email-c5-gmail.png — header table +
+  Attachments in the preview, “Printed 1 message(s) into 1 page(s)”, honest “26% larger” size line);
+  network 3 requests, 0 off-origin; console errors [].

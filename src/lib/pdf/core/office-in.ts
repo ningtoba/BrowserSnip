@@ -745,23 +745,43 @@ function decodeMimeBody(
   let text = '';
   let html: string | undefined;
   const attachments: { filename?: string; mimeType: string; size: number }[] = [];
-  for (const part of parts) {
-    const type = part.headers['content-type'] ?? 'text/plain';
-    const disposition = part.headers['content-disposition'] ?? '';
-    // The value ends at the closing quote or the end of the header line: a
-    // quoted `filename="deck.pdf"` is `deck.pdf`, and the CR that follows it in
-    // a CRLF message must not ride along — a drawn `\r` is not encodable in a
-    // Latin-1 face, so the listing used to fail the whole message.
-    const filename = /filename\s*=\s*("?)([^";\r\n]+)\1/i.exec(disposition)?.[2];
-    if (filename) {
-      attachments.push({ filename, mimeType: type, size: part.body.length });
-      continue;
+  const collect = (
+    parts: MimePart[],
+  ): void => {
+    for (const part of parts) {
+      const rawType = part.headers['content-type'] ?? 'text/plain';
+      const type = rawType.split(';')[0].trim() || 'text/plain';
+      const disposition = part.headers['content-disposition'] ?? '';
+      // The value ends at the closing quote or the end of the header line: a
+      // quoted `filename="deck.pdf"` is `deck.pdf`, and the CR that follows it in
+      // a CRLF message must not ride along — a drawn `\r` is not encodable in a
+      // Latin-1 face, so the listing used to fail the whole message. A real
+      // producer (Gmail) names an attachment only on the Content-Type `name=`
+      // and leaves disposition off, so read the name from either header.
+      const filename =
+        /filename\s*=\s*("?)([^";\r\n]+)\1/i.exec(disposition)?.[2]?.trim() ??
+        /\bname\s*=\s*("?)([^";\r\n]+)\1/i.exec(rawType)?.[2]?.trim();
+      // A nested multipart is a container, not a leaf: its own boundary holds the
+      // text and html bodies. Treated as a leaf it printed no body at all and a
+      // phantom `part (multipart/alternative; …)` attachment — measured on a real
+      // Gmail message (mixed → alternative → plain + html), whose visible body
+      // came out empty.
+      if (/^multipart\//i.test(type) && /boundary\s*=/i.test(rawType)) {
+        const nested = /boundary\s*=\s*"?([^";\s]+)"?/i.exec(rawType);
+        if (nested) collect(splitMultipart(part.body, nested[1]));
+        continue;
+      }
+      if (filename) {
+        attachments.push({ filename, mimeType: type, size: part.body.length });
+        continue;
+      }
+      const decoded = transfer(decodeHeader(part.body), type, part.headers['content-transfer-encoding']);
+      if (/^text\/html/i.test(type) && !html) html = decoded;
+      else if (/^text\/plain/i.test(type) && !text) text = decoded;
+      else if (!/^(text|multipart)\//i.test(type)) attachments.push({ filename: `part (${type})`, mimeType: type, size: part.body.length });
     }
-    const decoded = transfer(decodeHeader(part.body), type, part.headers['content-transfer-encoding']);
-    if (/^text\/html/i.test(type) && !html) html = decoded;
-    else if (/^text\/plain/i.test(type) && !text) text = decoded;
-    else attachments.push({ filename: `part (${type})`, mimeType: type, size: part.body.length });
-  }
+  };
+  collect(parts);
   return { text, html, attachments };
 }
 
