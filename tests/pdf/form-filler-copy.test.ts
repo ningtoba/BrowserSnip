@@ -165,3 +165,42 @@ describe('XFA is seen before pdf-lib throws the packet away', () => {
     expect(back.getForm().getTextField('note').getText()).toBe('mirror answer');
   });
 });
+
+describe('the rail flatten bakes leftovers instead of delegating them', () => {
+  it('handles an answer the appearance pass cannot draw, naming what stayed interactive', async () => {
+    // A field whose /V is non-WinAnsi and whose widget carries no /AP: pdf-lib's
+    // Helvetica pass (inside flattenForm's refresh) cannot draw it, so the baker
+    // skips it. run() now hands that leftover to the same drawTextU loop the pane
+    // uses: the answer is either drawn into the page or admitted to still be
+    // interactive — never the old "may be missing from the flattened page"
+    // shrug. In this node environment the bundled face is a browser asset, so
+    // the deterministic outcome is the honest interactive note plus a file that
+    // really does keep the field.
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([400, 700]);
+    const form = doc.getForm();
+    form.createTextField('answer').addToPage(page, { ...RECT });
+    const first = await doc.save({ useObjectStreams: false });
+    const re = await PDFDocument.load(first);
+    const acro = re.getForm().getField('answer').acroField.dict;
+    acro.set(PDFName.of('V'), PDFString.of('Ada Łovélace'));
+    const widget = re.getForm().getField('answer').acroField.getWidgets()[0];
+    widget.dict.delete(PDFName.of('AP'));
+    const bytes = await re.save({ useObjectStreams: false });
+
+    const outcome = await runFiller(bytes, { fieldValues: { answer: 'Ada Łovélace' }, flatten: true });
+    const report = `${outcome.message ?? ''} ${outcome.warnings.join(' ')}`;
+    expect(report).not.toMatch(/may be missing from the flattened page/u);
+    const produced = await PDFDocument.load(await outcome.outputs[0].blob.arrayBuffer());
+    const interactive = produced.getForm().getFields().map((f) => f.getName());
+    if (report.includes('stayed interactive')) {
+      // The loop could not fetch the face: the field keeps its answer, live.
+      expect(interactive).toContain('answer');
+      expect(produced.getForm().getField('answer').acroField.dict.get(PDFName.of('V'))).toBeDefined();
+    } else {
+      // The loop baked it (face available): nothing interactive is left at all.
+      expect(interactive).not.toContain('answer');
+      expect(report).toMatch(/became page content/u);
+    }
+  });
+});

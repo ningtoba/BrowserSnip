@@ -27,7 +27,8 @@ import { createElement } from 'react';
 import { PDFArray, PDFDict, PDFDocument, PDFRef, PDFName, PDFNumber, PDFRawStream, PDFStream, decodePDFRawStream } from '@maxwbh/pdf-lib';
 import { PDFCheckBox } from '@maxwbh/pdf-lib';
 import { createFormField, fillForm, flattenForm, listFormFields } from '@/lib/pdf/core/forms';
-import { initialValuesFor, isFillable, listedFields, saveReport } from '@/components/tools/pdf/edit/FormFillMain';
+import { initialValuesFor, listedFields, saveReport } from '@/components/tools/pdf/edit/FormFillMain';
+import { isFillable } from '@/lib/pdf/tools/edit';
 
 const RECT = { x: 40, y: 700, width: 180, height: 20 };
 

@@ -30,7 +30,7 @@ import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/page
 // cannot carry a second copy that drifts; the module is plain data + the face table, no UI.
 import { BUILT_IN_STAMPS, LEGACY_STAMP_SPELLINGS } from '@/components/tools/pdf/editor/tools';
 import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, toRoman, toLetters, type OutlineNode } from '../core/bookmarks';
-import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
+import { hasXfa, listFormFields, type CreateFieldSpec, type FormFieldInfo } from '../core/forms';
 import { ocrSilentPageOf } from '../core/ocr';
 import type { OcrPageResult, OcrSilentKind, OcrSilentPage } from '../core/ocr';
 import { canvasToBlob } from '../core/render';
@@ -2072,13 +2072,20 @@ export const editTools: PdfToolDefinition[] = [
         // which turned "flatten when saving" into a crash on our own forms.
         const { flattenForm } = await import('../core/forms');
         const outcome = await flattenForm(input.doc);
-        if (outcome.flattened === 0) {
+        // What the baker could not paint — a value whose appearance stream is
+        // missing, a field the seam's refresh could not draw — is baked here
+        // through `core/fonts` and removed, exactly as the pane does: the
+        // flattened page carries the answer instead of leaving it to the
+        // viewer through `/NeedAppearances`.
+        const drawn = await bakeRemainingText(input.doc, listFormFields(input.doc).filter(isFillable));
+        const total = outcome.flattened + drawn.drawn;
+        if (total === 0) {
           note(notes, 'Nothing could be baked into the page, so the fields were left interactive.');
         } else {
-          baked = ` ${countLabel(outcome.flattened, 'field')} became page content.`;
+          baked = ` ${countLabel(total, 'field')} became page content.`;
         }
-        if (outcome.needsRender) {
-          note(notes, 'Some answers had no appearance this browser could draw, so they may be missing from the flattened page.');
+        if (total > 0 && drawn.skipped > 0) {
+          note(notes, `${countLabel(drawn.skipped, 'field')} stayed interactive (no value to draw, a rotated page, or a field the baker could not paint).`);
         }
       }
       if (result.filled === 0) {
@@ -2966,3 +2973,75 @@ function textToOutline(raw: string, total: number, notes: string[]): OutlineNode
   return root;
 }
 
+
+// ── form-filler's shared field helpers ──────────────────────────────────────
+// The pane (components/tools/pdf/edit/FormFillMain) and this file's run both
+// list, filter and bake fields. The baker lives here, next to the tool, so a
+// rail flatten ships the same bytes the pane does — including non-WinAnsi
+// answers, which the fill seam otherwise hands to the viewer through
+// `/NeedAppearances` (the seam's own split, a524400).
+
+/** Fields that hold a value the fill paths can write. */
+export function isFillable(field: FormFieldInfo): boolean {
+  return field.type !== 'button' && field.type !== 'signature';
+}
+
+/** Font size (pt) to draw a value with, derived from the widget height. */
+export function drawSizeFor(field: FormFieldInfo): number {
+  const height = field.rect.height || 12;
+  return Math.max(6, Math.min(14, height * 0.62));
+}
+
+/**
+ * Draw the values that `flattenForm` could not bake and remove those widgets,
+ * so a flattened file really is static. Text goes through `core/fonts`, which is
+ * what keeps CJK/Cyrillic/emoji answers renderable. A widget's own `/Rot` is
+ * not applied here: the page's `/Rotate` does the turning and the viewer
+ * re-applies it (measured in seam wave 2b — turning twice misplaces the run).
+ */
+export async function bakeRemainingText(
+  doc: PDFDocument,
+  leftovers: FormFieldInfo[],
+): Promise<{ drawn: number; skipped: number }> {
+  const pages = doc.getPages();
+  const form = doc.getForm();
+  let drawn = 0;
+  let skipped = 0;
+
+  for (const field of leftovers) {
+    const page = pages[field.page];
+    const text = typeof field.value === 'string' ? field.value : '';
+    const rotated = page ? page.getRotation().angle % 360 !== 0 : true;
+    const drawable = field.type === 'text' || field.type === 'dropdown' || field.type === 'list';
+    if (!page || !text || rotated || !drawable) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await drawTextU(page, {
+        text,
+        x: field.rect.x + 1,
+        y: field.rect.y + Math.max(1, field.rect.height * 0.2),
+        size: drawSizeFor(field),
+        color: rgb(0, 0, 0),
+        maxWidth: Math.max(1, field.rect.width - 2),
+        lineHeight: drawSizeFor(field) * 1.15,
+      });
+      // `removeField` wants the live object; it drops the widget annotation and
+      // the `/AcroForm /Fields` entry, which is what makes the page static.
+      const live = form.getFieldMaybe(field.name);
+      if (live) form.removeField(live);
+      drawn += 1;
+    } catch {
+      // The face could not be fetched (offline CJK, for instance): leave the
+      // field interactive rather than dropping the answer.
+      skipped += 1;
+    }
+  }
+  // Same reason as in `flattenForm`: an /AcroForm with no fields left in it is
+  // still a form as far as a reader is concerned.
+  if (form.getFields().length === 0) {
+    doc.catalog.delete(PDFName.of('AcroForm'));
+  }
+  return { drawn, skipped };
+}

@@ -21,9 +21,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore } from '@/stores/process-store';
-import type { PDFDocument } from '@maxwbh/pdf-lib';
-import { openPDF, rgb, savePDF, PasswordRequiredError } from '@/lib/pdf/core/doc';
-import { drawTextU, needsUnicodeFont } from '@/lib/pdf/core/fonts';
+
+import { openPDF, savePDF, PasswordRequiredError } from '@/lib/pdf/core/doc';
+import { needsUnicodeFont } from '@/lib/pdf/core/fonts';
+import { bakeRemainingText, isFillable } from '@/lib/pdf/tools/edit';
 import {
   fillForm,
   flattenForm,
@@ -75,11 +76,6 @@ export function initialValuesFor(fields: FormFieldInfo[]): Record<string, FormVa
     else out[field.name] = field.value ?? '';
   }
   return out;
-}
-
-/** Fields that hold a value this pane can write. */
-export function isFillable(field: FormFieldInfo): boolean {
-  return field.type !== 'button' && field.type !== 'signature';
 }
 
 /* ── autosave ─────────────────────────────────────────────────────────────── */
@@ -313,12 +309,6 @@ export function listedFields(fields: FormFieldInfo[], filter: string): FormField
       .toLowerCase()
       .includes(needle),
   );
-}
-
-/** Font size (pt) to draw a value with, derived from the widget height. */
-export function drawSizeFor(field: FormFieldInfo): number {
-  const height = field.rect.height || 12;
-  return Math.max(6, Math.min(14, height * 0.62));
 }
 
 type Phase = 'empty' | 'loading' | 'ready' | 'locked' | 'error';
@@ -960,59 +950,6 @@ export default function FormFillMain(): JSX.Element {
       )}
     </div>
   );
-}
-
-/**
- * Draw the values that `flattenForm` could not bake and remove those widgets,
- * so a flattened file really is static. Text goes through `core/fonts`, which is
- * what keeps CJK/Cyrillic/emoji answers renderable.
- */
-async function bakeRemainingText(
-  doc: PDFDocument,
-  leftovers: FormFieldInfo[],
-): Promise<{ drawn: number; skipped: number }> {
-  const pages = doc.getPages();
-  const form = doc.getForm();
-  let drawn = 0;
-  let skipped = 0;
-
-  for (const field of leftovers) {
-    const page = pages[field.page];
-    const text = typeof field.value === 'string' ? field.value : '';
-    const rotated = page ? page.getRotation().angle % 360 !== 0 : true;
-    const drawable = field.type === 'text' || field.type === 'dropdown' || field.type === 'list';
-    if (!page || !text || rotated || !drawable) {
-      skipped += 1;
-      continue;
-    }
-    try {
-      await drawTextU(page, {
-        text,
-        x: field.rect.x + 1,
-        y: field.rect.y + Math.max(1, field.rect.height * 0.2),
-        size: drawSizeFor(field),
-        color: rgb(0, 0, 0),
-        maxWidth: Math.max(1, field.rect.width - 2),
-        lineHeight: drawSizeFor(field) * 1.15,
-      });
-      // `removeField` wants the live object; it drops the widget annotation and
-      // the `/AcroForm /Fields` entry, which is what makes the page static.
-      const live = form.getFieldMaybe(field.name);
-      if (live) form.removeField(live);
-      drawn += 1;
-    } catch {
-      // The face could not be fetched (offline CJK, for instance): leave the
-      // field interactive rather than dropping the answer.
-      skipped += 1;
-    }
-  }
-  // Same reason as in `flattenForm`: an /AcroForm with no fields left in it is
-  // still a form as far as a reader is concerned.
-  if (form.getFields().length === 0) {
-    const { PDFName } = await import('@maxwbh/pdf-lib');
-    doc.catalog.delete(PDFName.of('AcroForm'));
-  }
-  return { drawn, skipped };
 }
 
 // ── one field, in either the overlay or the flat list ───────────────────────
