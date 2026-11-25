@@ -572,6 +572,38 @@ function jsonFile(name: string, suffix: string, value: unknown, options: { prett
  * `headingHeights` list as "work the heights out yourself", so `[]` meant the
  * rail's "Detect headings" toggle could never actually be turned off.
  */
+/**
+ * The `extra` metadata box promises "one flat object of strings and numbers …
+ * anything nested is rejected before the run", but `JSON.parse` happily accepts
+ * `{"a":{"b":1}}` and `{"tags":[1,2]}`, and a spread of those down into the
+ * LlamaIndex `metadata` puts a whole object or array under a metadata key — a
+ * shape an embedding index cannot store, and the exact thing the help text
+ * said would never reach it. So the gate the copy advertises has to be real:
+ * the value must be a JSON object, and every entry in it a scalar.
+ */
+function flatMetadata(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ToolInputError(
+      'OUT_OF_RANGE',
+      'The extra metadata must be a JSON object like {"source": "contracts"}, not a list or a bare value.',
+      { hint: 'One flat object of strings and numbers, which is what an index stores.' },
+    );
+  }
+  const record = value as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(record)) {
+    if (entry !== null && typeof entry === 'object') {
+      const kind = Array.isArray(entry) ? 'a list' : 'a nested object';
+      throw new ToolInputError(
+        'OUT_OF_RANGE',
+        `The extra metadata must stay flat: "${key}" holds ${kind}, which an index cannot store.`,
+        { hint: 'One flat object of strings and numbers, for example {"source": "contracts"}.' },
+      );
+    }
+  }
+  return record;
+}
+
+
 const NO_HEADING_HEIGHT = 0.01;
 
 export const convertFromTools: PdfToolDefinition[] = [
@@ -721,7 +753,7 @@ export const convertFromTools: PdfToolDefinition[] = [
       let parsed: Record<string, unknown> | undefined;
       if (extra) {
         try {
-          parsed = JSON.parse(extra) as Record<string, unknown>;
+          parsed = JSON.parse(extra) as unknown;
         } catch {
           throw new ToolInputError(
             'OUT_OF_RANGE',
@@ -729,6 +761,7 @@ export const convertFromTools: PdfToolDefinition[] = [
             { hint: 'One flat object of strings and numbers, which is what an index stores.' },
           );
         }
+        parsed = flatMetadata(parsed);
       }
       const doc = jsonToLlamaIndex(json, {
         title: stringValue(context.values, 'title') || input.name,

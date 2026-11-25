@@ -1278,6 +1278,24 @@ describe('prepare-pdf-for-ai', () => {
     expect(message).toMatch(/valid JSON/i);
   });
 
+  it('rejects nested extra metadata, which the field promises never reaches the index (E15)', async () => {
+    const fixture = [fileOf(await textPdfCached())];
+    // A nested object and an array are both "not flat"; the help says "Anything
+    // nested is rejected before the run", so each must refuse, naming the cause.
+    expect(await failures('prepare-pdf-for-ai', { extra: '{"a":{"b":1}}' }, fixture)).toMatch(/flat|nested/i);
+    expect(await failures('prepare-pdf-for-ai', { extra: '{"tags":[1,2]}' }, fixture)).toMatch(/flat|list|nested/i);
+    expect(await failures('prepare-pdf-for-ai', { extra: '[1,2]' }, fixture)).toMatch(/object/i);
+    // The control that keeps the gate honest: a genuinely flat object still runs,
+    // merged onto the chunk, so the refusal is about nesting and not about JSON.
+    const flat = await run('prepare-pdf-for-ai', { extra: '{"source":"contracts","year":2024}' }, fixture);
+    const doc = JSON.parse(await textOf(flat)) as {
+      ref_doc_info: Record<string, { metadata: Record<string, unknown> }>;
+    };
+    const meta = Object.values(doc.ref_doc_info)[0].metadata;
+    expect(meta.source).toBe('contracts');
+    expect(meta.year).toBe(2024);
+  });
+
   it('says so when there is nothing to chunk (E13)', async () => {
     const outcome = await run('prepare-pdf-for-ai', { pages: 'all' }, [
       fileOf(await scanPdf(1), 'scan.pdf'),
