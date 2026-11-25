@@ -781,6 +781,27 @@ describe('legacy containers keep an honest reason and an alternative (E20)', () 
     expect((error as ToolInputError).hint).toMatch(/DOCX, XLSX or PPTX/);
   });
 
+  it('names the real container when a .docx hides a legacy binary document', async () => {
+    // Before: the extension routed it to the zip reader and the card printed
+    // jszip's own sentence — "Can't find end of central directory : is this a
+    // zip file ?" — raw library text that named neither the file's format nor
+    // a way out.
+    const error = await run('word-to-pdf', {}, [fileFrom(OLE_BYTES, 'legacy.docx')]).catch((err) => err);
+    expect((error as ToolInputError).code).toBe('NEEDS_ENGINE');
+    expect((error as ToolInputError).message).toMatch(/"legacy\.docx" holds a legacy binary Word document/);
+    expect((error as ToolInputError).message).toMatch(/Word 97–2003 bytes under a \.docx name/);
+    expect((error as ToolInputError).message).not.toMatch(/central directory|jszip/i);
+    expect((error as ToolInputError).hint).toMatch(/Re-save it as a real \.docx/);
+  });
+
+  it('names a text file wearing the .docx name instead of failing inside the zip reader', async () => {
+    const error = await run('word-to-pdf', {}, [fileFrom('just words here', 'notes.docx')]).catch((err) => err);
+    expect((error as ToolInputError).code).toBe('UNSUPPORTED');
+    expect((error as ToolInputError).message).toMatch(/"notes\.docx" is a text file, not a DOCX package/);
+    expect((error as ToolInputError).message).not.toMatch(/central directory|jszip/i);
+    expect((error as ToolInputError).hint).toMatch(/Re-save or re-export/);
+  });
+
   it('names PPT the same way for a legacy deck', async () => {
     const error = await run('powerpoint-to-pdf', {}, [fileFrom(OLE_BYTES, 'deck.ppt')]).catch((err) => err);
     expect((error as ToolInputError).message).toMatch(/legacy PPT container/);

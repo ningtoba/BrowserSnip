@@ -21,6 +21,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PDFArray, PDFDict, PDFDocument, PDFName, type PDFPage, PDFRef, PDFStream, StandardFonts, type PDFObject } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
+import type { RunOutcome } from '@/lib/pdf/tools/runner';
 import { clearFontCache } from '@/lib/pdf/core/fonts';
 import { ToolInputError } from '@/lib/pdf/core/guard';
 import { pageContentOps, type ContentOp, type NumberOperand } from '@/lib/pdf/core/content';
@@ -31,6 +32,7 @@ import {
   cbzBytes,
   compact,
   docxBytes,
+  docxPictureBytes,
   epubBytes,
   extractText,
   fileFrom,
@@ -2357,15 +2359,18 @@ describe('word-to-pdf keeps headings, tables and non-Latin text', () => {
     expect(first!.x).toBe(second!.x);
   });
 
-  it('says what it does with a picture and a link', async () => {
+  it('says what it does with a link, and with pictures', async () => {
     const tool = getPdfTool('word-to-pdf');
     const notes = String(tool?.notes);
-    // Measured on a DOCX whose body holds a `w:drawing` blip and a `w:hyperlink`: the
-    // produced file carries no image object and no /Annots at all, and the page prints
-    // `[image: image]` where the picture was. The card used to promise "embedded images";
-    // both limits are now stated, the link one in the same words HTML to PDF uses.
-    expect(tool?.promise ?? '', 'the promise still sells embedded images').not.toMatch(/images/i);
-    expect(notes).toMatch(/picture inside the document is not carried into the PDF/);
+    // Measured on `word-img.docx` (both halves): a standalone picture now reaches
+    // the sheet as an image object, a picture linked outside the file is counted
+    // and skipped without a request, a Word vector picture keeps its
+    // placeholder — all three states are in the card's words. The hyperlink still
+    // draws blue and underlined with no clickable target in the file, in the same
+    // words HTML to PDF uses.
+    expect(tool?.promise ?? '', 'the promise sells what the file now carries').toMatch(/standalone pictures/i);
+    expect(notes).toMatch(/stands alone in its paragraph is carried into the PDF/);
+    expect(notes).toMatch(/linked to an address outside the file is skipped and counted on the card, never fetched/);
     expect(notes).toMatch(/drawn blue and underlined, but the file carries no clickable target/);
     const outcome = await run('word-to-pdf', {}, [fileFrom(await docxBytes(), 'report.docx')]);
     const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
@@ -2399,6 +2404,107 @@ describe('word-to-pdf keeps headings, tables and non-Latin text', () => {
       expect(step.x, `${marker.text} and its text`).toBeCloseTo(edge, 1);
     }
     expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
+  });
+});
+
+describe('word-to-pdf carries the pictures the document holds', () => {
+  const imagesOf = async (outcome: RunOutcome) =>
+    (await imagesPerPage(await firstPdf(outcome))).flat()
+      .filter((placed) => placed.kind === 'Image');
+
+  it('places a standalone picture as a real image object, captioned', async () => {
+    const docx = await docxPictureBytes([
+      { rel: 'rId9', file: 'chart.png', bytes: realPng(60, 40), alt: 'Sales chart' },
+    ]);
+    const outcome = await run('word-to-pdf', {}, [fileFrom(docx, 'report.docx')]);
+    const images = await imagesOf(outcome);
+    expect(images, 'the picture reaches the file').toHaveLength(1);
+    expect(images[0]!.pixels).toEqual([60, 40]);
+    // Small enough for its native size, so it is drawn at 60 pt, centred on the
+    // 483 pt column — never enlarged past the pixels the document gave.
+    expect(Math.abs(images[0]!.box[2] - 60)).toBeLessThan(1);
+    expect(Math.abs(images[0]!.box[0] + images[0]!.box[2] / 2 - (56 + (595.28 - 112) / 2))).toBeLessThan(1);
+    const bytes = await firstPdf(outcome);
+    const words = squash(await extractText(bytes));
+    expect(words).toContain('Chart heading MKEND');
+    expect(words).toContain('End marker MKEND');
+    expect(words, 'the alt text prints under the picture as a caption').toContain('Sales chart');
+    expect(words, 'no placeholder survives where the picture was placed').not.toContain('[image:');
+    const second = await run('word-to-pdf', {}, [fileFrom(docx, 'report.docx')]);
+    expect(await imagesOf(second), 'two runs of one document agree').toHaveLength(1);
+  });
+
+  it('carries a JPEG picture too', async () => {
+    const docx = await docxPictureBytes([
+      { rel: 'rId9', file: 'photo.jpg', bytes: jpegBytes(48, 36), alt: 'Doorway' },
+    ]);
+    const outcome = await run('word-to-pdf', {}, [fileFrom(docx, 'letter.docx')]);
+    const images = await imagesOf(outcome);
+    expect(images).toHaveLength(1);
+    expect(images[0]!.pixels).toEqual([48, 36]);
+  });
+
+  it('keeps a picture mixed into a paragraph of words a placeholder', async () => {
+    const docx = await docxPictureBytes([
+      { rel: 'rId9', file: 'chart.png', bytes: realPng(60, 40), alt: 'Line picture', inline: true },
+    ]);
+    const outcome = await run('word-to-pdf', {}, [fileFrom(docx, 'report.docx')]);
+    expect(await imagesOf(outcome), 'the re-flowed line is not broken for a picture').toHaveLength(0);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    expect(words).toContain('[image: Line picture]');
+    expect(words).toContain('words before');
+    expect(words).toContain('words after');
+  });
+
+  it('refuses a linked picture without fetching it', async () => {
+    const docx = await docxPictureBytes([
+      { rel: 'rId9', url: 'https://example.invalid/missing.png', alt: 'Remote logo' },
+    ]);
+    const requested: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return Promise.reject(new Error('the converter must not fetch'));
+    }) as unknown as typeof fetch;
+    try {
+      const outcome = await run('word-to-pdf', {}, [fileFrom(docx, 'report.docx')]);
+      expect(outcome.warnings.join(' '), 'the card counts the skipped picture').toMatch(/links an address outside the file/);
+      expect(outcome.warnings.join(' ')).toMatch(/skipped, not fetched/);
+      expect(requested, 'no network request for a linked picture').toEqual([]);
+      expect(await imagesOf(outcome), 'the unreachable picture stays out of the file').toHaveLength(0);
+      // The count is the document's, not one error text's: mammoth's message for
+      // an outside link differs between hosts (jsdom names the external image,
+      // Chromium's bundle throws a bare TypeError from its file shim), so the
+      // number comes from the body's blips and the relationships they name —
+      // `r:link`, and `r:embed` whose relationship says TargetMode="External".
+      const two = await docxPictureBytes([
+        { rel: 'rId9', url: 'https://example.invalid/a.png', alt: 'First remote' },
+        { rel: 'rId10', url: 'https://example.invalid/b.png', alt: 'Second remote' },
+        { rel: 'rId11', url: 'https://example.invalid/c.png', embedExternal: true, alt: 'Embedded-at-remote' },
+      ]);
+      const both = await run('word-to-pdf', {}, [fileFrom(two, 'report.docx')]);
+      expect(both.warnings.join(' ')).toMatch(/3 pictures in "report\.docx" link addresses outside the file/);
+      expect(await imagesOf(both)).toHaveLength(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('leaves a Word vector picture a counted placeholder', async () => {
+    const docx = await docxPictureBytes([
+      // PNG bytes declared as EMF: the gate must trust the document's own type,
+      // keep the picture out of the file, and the run alive.
+      { rel: 'rId9', file: 'clip.emf', bytes: realPng(30, 20), alt: 'Clip art' },
+    ]);
+    const outcome = await run('word-to-pdf', {}, [fileFrom(docx, 'report.docx')]);
+    expect(outcome.warnings.join(' ')).toMatch(/Word vector format \(EMF or WMF\) the page cannot draw/);
+    expect(await imagesOf(outcome)).toHaveLength(0);
+    expect(squash(await extractText(await firstPdf(outcome)))).toContain('[image: Clip art]');
+  });
+
+  it('still places nothing for a document with no pictures', async () => {
+    const outcome = await run('word-to-pdf', {}, [fileFrom(await docxBytes(), 'report.docx')]);
+    expect(await imagesOf(outcome)).toHaveLength(0);
   });
 });
 

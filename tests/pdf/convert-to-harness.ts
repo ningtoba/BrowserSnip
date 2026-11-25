@@ -851,6 +851,86 @@ export function numberedDocxBytes(items: string[]): Promise<Uint8Array> {
   ]);
 }
 
+export type DocxPicture = {
+  /** Relationship id used by both the body and `document.xml.rels`. */
+  rel: string;
+  /** `wp:docPr descr` — the alt text mammoth hands to `<img alt>`. */
+  alt: string;
+  /** Mix the picture into a paragraph of words instead of its own paragraph. */
+  inline?: boolean;
+} & ({ file: string; bytes: Uint8Array; url?: undefined; embedExternal?: undefined }
+  | { url: string; embedExternal?: boolean; file?: undefined; bytes?: undefined });
+
+const DOCX_EXT_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tiff: 'image/tiff',
+  emf: 'image/x-emf',
+  wmf: 'image/x-wmf',
+};
+
+/**
+ * A DOCX whose body carries pictures.
+ *
+ * An entry with `file`/`bytes` is embedded (`r:embed` → `word/media/<file>`,
+ * MIME from `[Content_Types].xml`); one with `url` is linked out of the file
+ * (`r:link`, TargetMode="External"), the case a client-side converter must
+ * refuse rather than fetch. `inline: true` mixes the drawing into a paragraph
+ * of words rather than leaving it alone in its own paragraph, which is what
+ * decides whether the re-flowing block walk can place it.
+ */
+export async function docxPictureBytes(pictures: DocxPicture[]): Promise<Uint8Array> {
+  const drawing = (pic: DocxPicture, id: number) =>
+    '<w:drawing><wp:inline>' +
+    `<wp:docPr id="${id}" name="Picture ${id}" descr="${pic.alt}"/>` +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${pic.file ?? 'linked.png'}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip ${pic.url && !pic.embedExternal ? 'r:link' : 'r:embed'}="${pic.rel}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    '<pic:spPr><a:xfrm><a:ext cx="1828800" cy="1097280"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing>';
+  const body =
+    '<w:p><w:r><w:t>Chart heading MKEND</w:t></w:r></w:p>' +
+    pictures.map((pic, index) => {
+      const art = drawing(pic, index + 1);
+      return pic.inline
+        ? `<w:p><w:r><w:t xml:space="preserve">words before </w:t></w:r><w:r>${art}</w:r><w:r><w:t xml:space="preserve"> words after</w:t></w:r></w:p>`
+        : `<w:p><w:r>${art}</w:r></w:p>`;
+    }).join('') +
+    '<w:p><w:r><w:t>End marker MKEND</w:t></w:r></w:p>';
+  const defaults = [...new Set(pictures
+    .filter((pic): pic is DocxPicture & { file: string } => pic.file !== undefined)
+    .map((pic) => pic.file.split('.').pop()?.toLowerCase() ?? ''))]
+    .map((ext) => `<Default Extension="${ext}" ContentType="${DOCX_EXT_TYPES[ext] ?? 'application/octet-stream'}"/>`)
+    .join('');
+  const relationships = pictures.map((pic) => pic.url
+    ? `<Relationship Id="${pic.rel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${pic.url}" TargetMode="External"/>`
+    : `<Relationship Id="${pic.rel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${pic.file}"/>`).join('');
+  return zipBytes([
+    {
+      name: '[Content_Types].xml',
+      data: `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${defaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      data: `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+    },
+    {
+      name: 'word/_rels/document.xml.rels',
+      data: `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships}</Relationships>`,
+    },
+    ...pictures
+      .filter((pic): pic is DocxPicture & { bytes: Uint8Array } => pic.bytes !== undefined)
+      .map((pic) => ({ name: `word/media/${pic.file}`, data: pic.bytes })),
+    {
+      name: 'word/document.xml',
+      data: `${XML}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}</w:body></w:document>`,
+    },
+  ]);
+}
+
 export const ODF_NS = [
   'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
   'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"',

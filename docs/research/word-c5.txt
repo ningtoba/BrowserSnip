@@ -1,0 +1,48 @@
+word-to-pdf carry-over 2 + 3 — measurement log (lane convert, 2026-11-25)
+
+fixture: /tmp/lane-convert5b/fx/word-img.docx — body: marker, standalone PNG(200x120),
+marker, standalone JPEG(160x90), marker, standalone EMF-typed part (PNG bytes,
+declared image/x-emf), r:link picture to https://example.invalid/missing.png, marker.
+fixture: /tmp/lane-convert5b/fx/legacy.docx — OLE compound magic under a .docx name.
+
+BEFORE (build e762133, real Chromium via docs/research/colour-rail.mjs, PORT 9842, dpi 100 MuPDF):
+  word-img: sheets=1 images=0 inkpx=6645 band-ink(100,100,500,400)=1456
+    text: "Chart heading MKEND [image: Sales chart] Words after the picture [image: Sunset
+    photo] Words between two pictures [image: Clip art] End marker MKEND"
+    -> every embedded picture lost; remote link left nothing at all; annots=0.
+    network: 3 request(s), 0 off-origin. console errors: [].
+  legacy.docx + notes.docx(text): raw jszip leak —
+    "Error: Can't find end of central directory : is this a zip file ? If it is,
+    see https://stuk.github.io/jszip/documentation/howto/read_zip.html"
+
+mammoth surface (scratch probe zz-scratch-docx-image.test.ts, run before folding):
+  top-level imgElement: undefined (the shipped placeholder call was dead code:
+  `?.attributes` short-circuited, mammoth emitted its default data: URLs anyway);
+  images.imgElement: function (live builder). TODAY/DRAFTED blocks identical
+  ["paragraph","paragraph","paragraph"]; LIFTED (image-only <p> -> bare <img>)
+  ["paragraph","image","paragraph"] -> the block walk, not the reader, dropped bytes.
+  Chromium import of the optimized dep (mammoth_mammoth__browser.js) on the fixture:
+  messages=[warning "Image of type image/x-emf is unlikely to display in web browsers",
+  error "Cannot read properties of null (reading 'async')"], imgCount=3 —
+  the external-link error TEXT is host-dependent (jsdom says "external image ..."),
+  so skipped-link counts come from the document parts (r:link / external r:embed).
+
+AFTER (fixed build, same driver, same fixture, same dpi):
+  word-img: sheets=1 images=2 [(200x120 FlateDecode), (160x90 DCTDecode)]
+    inkpx=80646 band-ink=35392 (both pictures sit inside the band, centred)
+    text: "Chart heading MKEND Sales chart Words after the picture Sunset photo ...
+    [image: Clip art] End marker MKEND" (captions print; EMF keeps placeholder;
+    remote link prints nothing, counted on card)
+    card notices (4): 2 static + "links an address outside the file: it was skipped,
+    not fetched" + "Word vector format (EMF or WMF) the page cannot draw".
+    network: 3 request(s), 0 off-origin (example.invalid never fetched). console errors [].
+  legacy.docx refusal (after-legacy.png): names file + container + why + remedy + Retry,
+    no jszip text. notes.docx(text) -> '"notes.docx" is a text file, not a DOCX package.'
+
+shots: word-img-c5-before.png (text-only sheet), word-img-c5-after.png (checker PNG +
+  striped JPEG on the sheet, 4 notices), word-img-c5-dark.png (same, dark tokens,
+  avg RGB (26,28,27)), word-ole-c5-after.png (STOPPED chip + honest refusal).
+
+pins: tests/pdf/convert-to-bytes.test.ts 'word-to-pdf carries the pictures the document
+  holds' (6 tests) + refreshed copy test; tests/pdf/edge-convert-to.test.ts 2 refusal tests.
+  RED without the fix (git stash of src/lib/pdf/tools/convert-to.ts): 7 failed | 251 passed.

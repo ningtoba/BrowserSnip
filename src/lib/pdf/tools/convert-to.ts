@@ -2094,15 +2094,16 @@ export const convertToTools: PdfToolDefinition[] = [
     surface: 'none',
     outputSuffix: '_from_word.pdf',
     actionLabel: 'Convert to PDF',
-    promise: 'Re-flowed text with headings, lists and tables as selectable PDF text.',
+    promise: 'Re-flowed text with headings, lists and tables as selectable PDF text, and standalone pictures carried in.',
     notes: [
       ...TEXT_NOTES,
       'The DOCX route reads the document body (mammoth), so it is content-faithful but not page-faithful: your pagination, section breaks, headers and footers, footnotes, comments, tracked changes, text boxes and floating images do not survive, and Word’s own layout is not reproduced.',
-      'A picture inside the document is not carried into the PDF: the reader hands mammoth a fixed one-pixel placeholder, so the file holds no image object and the page prints the alt text where the chart was (`[image: chart]`). ODT is the same.',
+      'A picture that stands alone in its paragraph is carried into the PDF with its real bytes: centred on the sheet, scaled down to fit, with its alt text printed under it as a caption. A picture mixed into a paragraph of words keeps its `[image: …]` placeholder — the re-flowed line is not broken around it — and so does a Word vector picture (EMF or WMF) the page cannot draw; both counts appear on the card.',
+      'A picture linked to an address outside the file is skipped and counted on the card, never fetched — the conversion makes no network request for it. Pictures inside an ODT are not read at all.',
       'A link is drawn blue and underlined, but the file carries no clickable target and its address is not printed — the same limit HTML to PDF states.',
       'Table cell shading, merged-cell formatting and column widths are flattened to a plain bordered table.',
       'ODT keeps its text, headings, lists and tables through the OpenDocument reader; the same pagination caveats apply.',
-      'Legacy binary .doc needs the optional LibreOffice module, which BrowserSnip does not bundle — the refusal names it instead of producing an empty page.',
+      'Legacy binary .doc needs the optional LibreOffice module, which BrowserSnip does not bundle — the refusal names it instead of producing an empty page, and a legacy binary file wearing a .docx name is refused the same honest way: by what its bytes are, not by the name it wears.',
     ],
     fields: [
       PAGE_FIELD,
@@ -2125,6 +2126,7 @@ export const convertToTools: PdfToolDefinition[] = [
       let route = '';
       for (const input of inputs) {
         const lower = input.name.toLowerCase();
+        const sniffed = sniffSource(input.bytes, input.name);
         const before = blocks.length;
         if (lower.endsWith('.odt') || lower.endsWith('.ott')) {
           const { odtToBlocks } = await import('../core/office-in');
@@ -2134,9 +2136,33 @@ export const convertToTools: PdfToolDefinition[] = [
           const { rtfToBlocks } = await import('../core/layout');
           blocks.push(...rtfToBlocks(decodeText(input.bytes).text));
           route = mergeRoute(route, 'RTF reader');
-        } else if (lower.endsWith('.docx') || lower.endsWith('.docm') || sniffSource(input.bytes, input.name).kind === 'zip') {
-          blocks.push(...(await docxToBlocks(input.bytes)));
+        } else if (sniffed.kind === 'zip') {
+          const produced = await docxToBlocks(input.bytes, input.name);
+          blocks.push(...produced.blocks);
+          warnings.push(...produced.warnings);
           route = mergeRoute(route, 'mammoth (bundled, offline)');
+        } else if (lower.endsWith('.docx') || lower.endsWith('.docm')) {
+          // The name says DOCX package and the bytes say otherwise. Both used to
+          // reach the zip reader and fail inside it with its own sentence:
+          // "Can't find end of central directory : is this a zip file ?" — a
+          // legacy Word 97–2003 binary under a modern name, or a plain text file,
+          // is now refused by what it is.
+          const { officeReady } = await import('../core/office-in');
+          if (sniffed.kind === 'ole' && officeReady()) {
+            await convertWithLibreOffice(context, input.bytes, input.name, 'pdf');
+          } else if (sniffed.kind === 'ole') {
+            throw new ToolInputError(
+              'NEEDS_ENGINE',
+              `"${input.name}" holds a legacy binary Word document — Word 97–2003 bytes under a .docx name — not a DOCX package: a faithful conversion needs the optional LibreOffice module that BrowserSnip does not bundle (~100 MB of WASM).`,
+              { fileName: input.name, hint: 'Re-save it as a real .docx from Word or LibreOffice — those are read entirely in this tab — or export it to PDF from your office suite.' },
+            );
+          } else {
+            throw new ToolInputError(
+              'UNSUPPORTED',
+              `"${input.name}" is ${sniffed.label}, not a DOCX package.`,
+              { fileName: input.name, hint: 'Re-save or re-export the document as .docx from your word processor — a DOCX is a ZIP package that this tab reads by itself.' },
+            );
+          }
         } else {
           await convertWithLibreOffice(context, input.bytes, input.name, 'pdf');
         }
@@ -2603,28 +2629,121 @@ async function readDataUrl(src: string): Promise<Uint8Array | null> {
 }
 
 /**
- * DOCX through mammoth, with images kept only when they are inline.
+ * Image types the page can actually draw.
  *
- * The browser bundle has no shipped type declarations and its `imgElement`
- * helper is a builder object, so the surface actually used is narrowed here
- * rather than typed as `any`.
+ * `renderBlocks` embeds PNG and JPEG bytes directly and routes everything else
+ * through the browser's own decoder; a Word vector picture (EMF, WMF) reaches
+ * neither, and one placed on the sheet would take the whole document down with
+ * it. Such pictures keep their printed placeholder instead — and the card
+ * counts them.
  */
-async function docxToBlocks(bytes: Uint8Array): Promise<Block[]> {
+const DOCX_DRAWABLE = /^image\/(png|jpe?g|gif|bmp|webp|tiff)$/i;
+
+/**
+ * How many pictures of the document live outside the file.
+ *
+ * Word links a picture with `r:link`, and — when re-saving a linked file
+ * whose bytes it declined to embed — may even point `r:embed` at a
+ * relationship marked TargetMode="External". Neither has bytes inside the
+ * ZIP, so read from a browser tab mammoth drops the element, and the error it
+ * leaves in `result.messages` is host-dependent: jsdom's names the external
+ * image, Chromium's bundle dies with a bare TypeError inside its file shim.
+ * The number a card owes the reader is in the document parts either way, and
+ * the converter fetches nothing regardless.
+ */
+async function countLinkedPictures(bytes: Uint8Array): Promise<number> {
+  const JSZip = (await import('jszip')).default;
+  try {
+    const zip = await JSZip.loadAsync(bytes);
+    const body = await zip.file('word/document.xml')?.async('string');
+    if (!body) return 0;
+    const rels = await zip.file('word/_rels/document.xml.rels')?.async('string');
+    const external = new Set((rels?.match(/<Relationship\b[^>]*>/g) ?? [])
+      .filter((rel) => /TargetMode="External"/.test(rel))
+      .map((rel) => /Id="([^"]+)"/.exec(rel)?.[1])
+      .filter((id): id is string => id !== undefined));
+    return (body.match(/<a:blip\b[^>]*>/g) ?? []).filter((blip) => {
+      const link = /r:link="([^"]+)"/.exec(blip)?.[1];
+      const embed = /r:embed="([^"]+)"/.exec(blip)?.[1];
+      if (embed) return external.has(embed);
+      return link !== undefined;
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * DOCX through mammoth: pictures keep their real bytes, and a picture that
+ * stands alone in its paragraph becomes a picture on the sheet.
+ *
+ * mammoth 1.13's browser bundle has no top-level `imgElement` — the one-pixel
+ * placeholder this route used to hand it was dead code (`?.` short-circuited to
+ * `undefined`, so mammoth emitted its default `data:` URLs and the bytes
+ * survived to the HTML). What dropped them was the block walk: mammoth writes a
+ * standalone drawing as a `<p>` holding only the `<img>`, and an image inside a
+ * paragraph is text to `htmlToBlocks`, so the page printed `[image: …]` and the
+ * bytes went no further. Image-only paragraphs are therefore lifted to
+ * block-level `<img>` here before the walk; a picture mixed into a paragraph of
+ * words stays a placeholder by the same rule, which is what the card says.
+ * `images.imgElement` now names the data URL explicitly rather than leaning on
+ * the default, and `fetchImage` is wired the way the HTML route wires it —
+ * `data:` URLs decode, nothing is ever fetched.
+ *
+ * A `r:link` picture points outside the file: mammoth rejects its bytes before
+ * the callback runs (external file access is off, and this tab fetches
+ * nothing); the count is taken from the document part — `countLinkedPictures`
+ * — because the error text mammoth leaves behind differs between hosts, and
+ * the caller puts the sentence on the card. A picture in a type the page
+ * cannot draw is not lifted and is counted the same way.
+ */
+async function docxToBlocks(bytes: Uint8Array, name: string): Promise<{ blocks: Block[]; warnings: string[] }> {
   const mammoth = await import('mammoth/mammoth.browser');
   const { htmlToBlocks } = await import('../core/layout');
-  // SAFETY: `mammoth/mammoth.browser` ships no declarations; these are the two
-  // members the UMD export really provides (verified against mammoth 1.13).
+  // SAFETY: `mammoth/mammoth.browser` ships no declarations; these are the members
+  // the UMD export really provides (verified against mammoth 1.13: `images.imgElement`
+  // is the live builder; the top-level `imgElement` is undefined).
   const api = (mammoth.default ?? mammoth) as unknown as {
-    convertToHtml: (input: { arrayBuffer: ArrayBuffer }, options: unknown) => Promise<{ value: string }>;
-    imgElement?: { attributes: (attrs: Record<string, string>) => unknown };
+    convertToHtml: (input: { arrayBuffer: ArrayBuffer }, options: unknown) => Promise<{
+      value: string;
+      messages?: { message?: string }[];
+    }>;
+    images?: {
+      imgElement?: (fn: (image: { contentType: string; readAsBase64String: () => Promise<string> }) => Promise<Record<string, string>>) => unknown;
+    };
   };
   const result = await api.convertToHtml(
     { arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer },
     {
-      convertImage: api.imgElement?.attributes({ src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
+      convertImage: api.images?.imgElement?.(async (image) => ({
+        src: `data:${image.contentType};base64,${await image.readAsBase64String()}`,
+      })),
     },
   );
-  return htmlToBlocks(result.value);
+  const warnings: string[] = [];
+  const linked = (result.messages ?? [])
+    .filter((message) => /external image/i.test(String(message?.message ?? ''))).length;
+  const linkedInDocument = await countLinkedPictures(bytes);
+  const skippedLinks = Math.max(linked, linkedInDocument);
+  if (skippedLinks > 0) {
+    warnings.push(skippedLinks === 1
+      ? `One picture in "${name}" links an address outside the file: it was skipped, not fetched — this conversion makes no network request.`
+      : `${skippedLinks} pictures in "${name}" link addresses outside the file: they were skipped, not fetched — this conversion makes no network request.`);
+  }
+  let undrawable = 0;
+  const html = result.value.replace(/<p>\s*(<img\b[^>]*\/?>)\s*<\/p>/gi, (whole, tag: string) => {
+    const src = /src="([^"]*)"/i.exec(tag)?.[1] ?? '';
+    const drawable = src.startsWith('data:') && DOCX_DRAWABLE.test(/^data:([^;,]+)/i.exec(src)?.[1] ?? '');
+    if (!drawable && src.startsWith('data:')) undrawable += 1;
+    return drawable ? tag : whole;
+  });
+  if (undrawable > 0) {
+    warnings.push(undrawable === 1
+      ? `One picture in "${name}" is in a Word vector format (EMF or WMF) the page cannot draw: it stays an "[image: …]" placeholder in the text.`
+      : `${undrawable} pictures in "${name}" are in Word vector formats (EMF, WMF) the page cannot draw: they stay "[image: …]" placeholders in the text.`);
+  }
+  const blocks = await htmlToBlocks(html, { fetchImage: async (src) => readDataUrl(src) });
+  return { blocks, warnings };
 }
 
 /**
