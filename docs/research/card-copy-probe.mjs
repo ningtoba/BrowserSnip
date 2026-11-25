@@ -9,7 +9,8 @@
 //     PORT=9842 SHOT=/tmp/r/duplex-card-light.png node docs/research/card-copy-probe.mjs
 //   ... DARK=1 SHOT=/tmp/r/duplex-card-dark.png ...   # the one dark shot a UI round owes
 //
-// Prints JSON: { title, subtitle, fields: [[label, help]], notes: [..], receipt }.
+// Prints JSON: { heading, fields, paragraphs, notes, cardText } — the card's own words
+// in reading order, so a copy pass reads sentences rather than inferred pairings.
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -106,23 +107,16 @@ const card = await ev(`(()=>{
   // backslash-s arrives as plain "s" and the regex then eats every "s" in the card
   // (measured: "The collation i  a reordering and nothing el e").
   const norm=(s)=>String(s ?? '').replace(/\\s+/g,' ').trim();
-  const h1=document.querySelector('h1');
-  const sub=h1&&h1.parentElement?[...h1.parentElement.children].find((n)=>n!==h1&&norm(n.innerText)):null;
-  const fields=[...document.querySelectorAll('label')].map((l)=>{
-    // The rail can nest a field as a box holding only the label, with the help line
-    // as its SIBLING, so looking inside the label's own div finds nothing (measured:
-    // both duplex controls came back with an empty help). Climb until a long
-    // paragraph appears.
-    let scope=l.parentElement; let help=[];
-    for(let i=0;i<4&&scope;i++){
-      help=[...scope.querySelectorAll('p,span,small')].map(norm).filter((t)=>t.length>40&&!norm(l.innerText).includes(t.slice(0,20)));
-      if(help.length) break;
-      scope=scope.parentElement;
-    }
-    return [norm(l.innerText), help.join(' | ')];
-  }).filter(([label])=>label);
+  const h1=[...document.querySelectorAll('h1,h2,[class*=title]')].map((n)=>norm(n.innerText)).find((t)=>t&&t.length<60)||'';
+  // The rail renders a field's help as a sibling of a wrapper several levels up, so a
+  // scope-climb from the label found nothing for either duplex control (measured).
+  // A copy pass needs the words the user reads, in the order they appear: the card's
+  // own text, plus every paragraph over one line long, plus the notes list.
+  const cardText=norm(document.body.innerText);
+  const paragraphs=[...new Set([...document.querySelectorAll('p')].map(norm).filter((t)=>t.length>40))];
+  const fields=[...document.querySelectorAll('label')].map((l)=>norm(l.innerText)).filter(Boolean);
   const notes=[...document.querySelectorAll('ul li')].map((li)=>norm(li.innerText)).filter((t)=>t.length>60);
-  return JSON.stringify({title:norm(h1&&h1.innerText), subtitle:norm(sub&&sub.innerText), fields, notes});
+  return JSON.stringify({heading:h1, fields, paragraphs, notes, cardText});
 })()`);
 console.log(JSON.stringify(JSON.parse(card), null, 1));
 await shoot(SHOT);
