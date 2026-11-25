@@ -59,6 +59,7 @@ import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { openRender } from '@/lib/pdf/core/render';
+import { pageBlankness } from '@/lib/pdf/core/blank';
 import { defaultPlan, planToPageOrder, rotatePlanItem } from '@/components/tools/pdf/organize/plan';
 import { outputRotation } from '@/components/tools/pdf/organize/preview';
 
@@ -2932,6 +2933,44 @@ describe('each tool is checked against its own output file', () => {
     expect(Array.from(fills[0] as Uint8ClampedArray)).toEqual([255, 255, 255]);
     expect(fills[0], 'the shape the browser hands over').toBeInstanceOf(Uint8ClampedArray);
     await session.destroy();
+  });
+
+  /**
+   * The judge every blank-sheet sentence will be asked to share: one call per
+   * page, the delete verdict of `findBlankPages`, the class that explains it,
+   * and the kinds of the marks holding a paper sheet. The campaign measured
+   * four tools answering "how many of these twenty sheets are paper" with
+   * 6 / 10 / 12 / 16 — the accessor exists so they cannot each keep a judge
+   * of their own.
+   */
+  it('the exported blank judge answers the verdict, the reason class and the kinds', async () => {
+    const bytes = await streamed([readable, whiteWash, hidden, '']);
+    const session = await openRender(bytes);
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const inked = await pageBlankness(session, doc, 1);
+    expect([inked.blank, inked.reason]).toEqual([false, 'inked']);
+    const wash = await pageBlankness(session, doc, 2);
+    expect([wash.blank, wash.reason]).toEqual([true, 'painted-white']);
+    const ocr = await pageBlankness(session, doc, 3);
+    expect([ocr.blank, ocr.reason]).toEqual([true, 'invisible-text']);
+    const nothing = await pageBlankness(session, doc, 4);
+    expect([nothing.blank, nothing.reason]).toEqual([true, 'nothing-drawn']);
+    await session.destroy();
+
+    // A link paints nothing, so the page is held rather than inked — and the
+    // kinds name what holds it, which is the half the receipt was blind to.
+    const linked = await annotate();
+    const held = await openRender(linked);
+    const heldDoc = await PDFDocument.load(linked, { updateMetadata: false });
+    const keptByMark = await pageBlankness(held, heldDoc, 1);
+    expect([keptByMark.blank, keptByMark.reason, keptByMark.profile.annotationKinds])
+      .toEqual([false, 'held-by-annotations', ['Link']]);
+    // With the toggle off the count goes with the kinds: the page is blank
+    // again, not held by a mark nobody asked to keep.
+    const dropped = await pageBlankness(held, heldDoc, 1, { keepAnnotated: false });
+    expect([dropped.blank, dropped.reason, dropped.profile.annotationKinds])
+      .toEqual([true, 'nothing-drawn', []]);
+    await held.destroy();
   });
 
   it('remove-blank-pages keeps a document whose pages all have content', async () => {

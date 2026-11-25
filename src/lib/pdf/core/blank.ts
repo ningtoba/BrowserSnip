@@ -30,6 +30,13 @@ export interface PageContentProfile {
   whitePaintOps: number;
   images: number;
   annotationRects: number;
+  /**
+   * `/Subtype` of every annotation counted in `annotationRects`, in `/Annots`
+   * order — the names a result card spells out when it says *what* kept a
+   * page that paints nothing (link, form field, mark). Empty when the count
+   * is zero, which includes every scan made with `keepAnnotated` off.
+   */
+  annotationKinds: string[];
   inkArea: number;
   blankByContent: boolean;
   /** True when the page draws only things that show nothing (see above). */
@@ -145,7 +152,7 @@ function isWhite(value: unknown): boolean {
 export async function profilePage(
   session: PdfSession,
   page: number,
-  options: { annotationRects?: number } = {},
+  options: { annotationRects?: number; annotationKinds?: string[] } = {},
 ): Promise<PageContentProfile> {
   const proxy = await session.page(page);
   let profile: PageContentProfile;
@@ -176,6 +183,7 @@ export async function profilePage(
       whitePaintOps: seen.whitePaintOps,
       images: seen.images,
       annotationRects,
+      annotationKinds: options.annotationKinds ?? [],
       inkArea: seen.inkArea,
       // `inkOps` is the whole answer: it counts what a reader can see, so a page
       // of painting operators that are all invisible or all white is as blank as
@@ -317,6 +325,73 @@ export interface BlankPageOptions {
   keepAnnotated?: boolean;
 }
 
+/**
+ * What a sheet's verdict comes from, one class per page: the way the display
+ * list answers "does this page paint anything a reader can see", spelled out so
+ * a result card can say *why*, not only *that*. `pageBlankness` produces these;
+ * the classes mirror the sentences `remove-blank-pages` already speaks, so any
+ * tool reporting a blank sheet through the judge words it the same way.
+ */
+export type PageBlankReason =
+  /** Something a reader can see paints: `inkOps > 0`. */
+  | 'inked'
+  /** Paints nothing; a live link, field or mark holds the page (`keepAnnotated`). */
+  | 'held-by-annotations'
+  /** Ran paint operators and every colour was paper-white. */
+  | 'painted-white'
+  /** Ran text only in invisible render modes — an OCR layer. */
+  | 'invisible-text'
+  /** Ran no paint operator at all: no `/Contents`, an empty stream, or `q Q`. */
+  | 'nothing-drawn';
+
+/** One page's display-list verdict, as the exported judge answers it. */
+export interface PageBlankness {
+  page: number;
+  /** The same predicate `findBlankPages` deletes on. */
+  blank: boolean;
+  reason: PageBlankReason;
+  profile: PageContentProfile;
+}
+
+/**
+ * The class behind one sheet's verdict. A blank page that both washed white
+ * and carried invisible text classifies as `painted-white` — the wash is the
+ * louder half — and the raw counts ride on the profile for a tool that needs
+ * both sentences.
+ */
+function classifyProfile(profile: PageContentProfile): PageBlankReason {
+  if (!profile.blankByAppearance) {
+    return profile.inkOps > 0 ? 'inked' : 'held-by-annotations';
+  }
+  if (profile.whitePaintOps > 0) return 'painted-white';
+  if (profile.invisibleTextItems > 0) return 'invisible-text';
+  return 'nothing-drawn';
+}
+
+/**
+ * Judge one page exactly as a blank-page scan would: the same annotation walk
+ * `findBlankPages` feeds `profilePage`, the same operator walk, the same
+ * delete predicate. Tools that name blank sheets (posterize, divide-pages,
+ * fix-page-size) call this so every card answers from one judge, not one per
+ * file — the campaign measured four different tools disagreeing about the
+ * same twenty sheets.
+ */
+export async function pageBlankness(
+  session: PdfSession,
+  doc: PDFDocument,
+  page: number,
+  options: BlankPageOptions = {},
+): Promise<PageBlankness> {
+  const keepAnnotated = options.keepAnnotated ?? true;
+  const { kinds } = pageAnnotations(doc, page - 1);
+  const profile = await profilePage(
+    session,
+    page,
+    keepAnnotated ? { annotationRects: kinds.length, annotationKinds: kinds } : {},
+  );
+  return { page, blank: profile.blankByAppearance, reason: classifyProfile(profile), profile };
+}
+
 /** Identify blank pages. Returns 1-based page numbers. */
 export async function findBlankPages(
   session: PdfSession,
@@ -330,8 +405,12 @@ export async function findBlankPages(
   const profiles: PageContentProfile[] = [];
   for (let page = 1; page <= session.numPages; page++) {
     if (shouldAbort?.()) break;
-    const annotationRects = keepAnnotated ? countVisibleAnnotations(doc, page - 1) : 0;
-    const profile = await profilePage(session, page, { annotationRects });
+    const { kinds } = pageAnnotations(doc, page - 1);
+    const profile = await profilePage(
+      session,
+      page,
+      keepAnnotated ? { annotationRects: kinds.length, annotationKinds: kinds } : {},
+    );
     profiles.push(profile);
     if (profile.blankByAppearance) blank.push(page);
     onProgress?.(page, session.numPages);
@@ -339,18 +418,28 @@ export async function findBlankPages(
   return { blank, profiles };
 }
 
-function countVisibleAnnotations(doc: PDFDocument, pageIndex: number): number {
+/**
+ * One walk of `/Annots` answering what the page holds for a reader: the
+ * `/Subtype` names of the marks `isLiveAnnotation` counts as content.
+ */
+interface PageAnnotationVerdict {
+  kinds: string[];
+}
+
+function pageAnnotations(doc: PDFDocument, pageIndex: number): PageAnnotationVerdict {
   const page = doc.getPage(pageIndex);
+  const kinds: string[] = [];
   const annots = readAnnotsArray(page);
-  if (!annots) return 0;
+  if (!annots) return { kinds };
   const context = pdfContext(doc);
   const box = cropBox(page);
-  let count = 0;
   for (let i = 0; i < annots.size(); i++) {
     const resolved = resolveAnnotation(doc, annots.get(i));
-    if (resolved && isLiveAnnotation(context, resolved, box)) count += 1;
+    if (resolved && isLiveAnnotation(context, resolved, box)) {
+      kinds.push(readName(resolved, 'Subtype') ?? 'Annotation');
+    }
   }
-  return count;
+  return { kinds };
 }
 
 /**
