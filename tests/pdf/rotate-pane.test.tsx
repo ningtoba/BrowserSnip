@@ -168,9 +168,14 @@ describe('the rotate rail', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Rotate' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Rotate' }));
 
-    // "1 of the selected 1 page were" — the verb agreed with nothing.
+    // "1 of the selected 1 page were" — the verb agreed with nothing, and the
+    // second verb of the same sentence agreed with nothing either: the card that
+    // dev server 5292 printed read "… was upside-down or sideways before this turn and
+    // are now upright." The whole line is pinned now, not the half of it.
     expect(
-      await screen.findByText(/1 of the selected 1 page was upside-down or sideways/),
+      await screen.findByText(
+        '1 of the selected 1 page was upside-down or sideways before this turn and is now upright.',
+      ),
     ).toBeInTheDocument();
   });
 });

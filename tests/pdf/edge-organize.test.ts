@@ -976,6 +976,53 @@ describe('geometry is respected, not flattened', () => {
     expect(warn(outcome)).toMatch(/now upright/i);
   });
 
+  it('says how many sheets it straightened in both verbs of the sentence (E15)', async () => {
+    // Measured live on dev server 5292: the card of `docs/research/rotate-pane.mjs`
+    // stage B and of `r270p7` printed "1 of the selected 1 page **was**
+    // upside-down or sideways before this turn and **are** now upright." The last
+    // test pinned the first verb and let the second one go.
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100, rotate: 90 },
+        { width: 200, height: 100, rotate: 90 },
+        { width: 200, height: 100 },
+      ]),
+      'three.pdf',
+    );
+    const angles = async (outcome: RunOutcome) =>
+      (await open(await bytesOf(outcome))).getPages().map((page) => page.getRotation().angle);
+
+    const single = await run('rotate', { degrees: 270, pages: '1' }, [source]);
+    expect(single.warnings).toContain(
+      '1 of the selected 1 page was upside-down or sideways before this turn and is now upright.',
+    );
+    expect(await angles(single)).toEqual([0, 90, 0]);
+
+    // The two numbers are different counts: one sheet straightened out of two
+    // selected, and the sentence has to agree with each in its own place.
+    const mixed = await run('rotate', { degrees: 270, pages: '1,3' }, [source]);
+    expect(mixed.warnings).toContain(
+      '1 of the selected 2 pages was upside-down or sideways before this turn and is now upright.',
+    );
+    expect(await angles(mixed)).toEqual([0, 90, 270]);
+
+    const both = await run('rotate', { degrees: 270, pages: '1,2' }, [source]);
+    expect(both.warnings).toContain(
+      '2 of the selected 2 pages were upside-down or sideways before this turn and are now upright.',
+    );
+    expect(await angles(both)).toEqual([0, 0, 0]);
+
+    // Controls: a turn that lands a sheet sideways, and a turn of a sheet that was
+    // upright, must announce nothing — the count is of sheets that reached 0°.
+    const sideways = await run('rotate', { degrees: 90, pages: '1' }, [source]);
+    expect(warn(sideways)).not.toMatch(/upside-down/);
+    expect(await angles(sideways)).toEqual([180, 90, 0]);
+
+    const wasUpright = await run('rotate', { degrees: 180, pages: '3' }, [source]);
+    expect(warn(wasUpright)).not.toMatch(/upside-down/);
+    expect(await angles(wasUpright)).toEqual([90, 90, 180]);
+  });
+
   it('stamps rotated pages upright into an N-up sheet (E9)', async () => {
     // 200 × 100 with /Rotate 90 displays as a portrait sheet. A stamp that
     // ignores /Rotate puts a sideways landscape box in the cell.

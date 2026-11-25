@@ -1,0 +1,42 @@
+readback: ["Rotation=270 -> no label","pages=4,7 -> 4,7"]
+run button: "Rotate"
+finished: true
+tail of surface: "Browser\nSnip\nVideo\nPDF\n⌕\nSearch tools\n⌘K\n☀\nGitHub\nBrowserSnip\n/\nPDF Tools\n/\nOrganize PDF\n/\nRotate PDF\n☆\nStar\n✓\nYour file is ready\n\nRotate PDF finished in this tab — nothing was uploaded.\n\nFinished — one file ready to download\n\n1\n2\n3\n4\n5\n6\n7\n8\n\nPage 1 of 8 of colour_rotated.pdf, drawn in this tab — a picture of the file, not the file itself.\n\ncolour_rotated.pdf\n\nREADY\nSIZE\n5.2 KB → 2.9 KB · 45% smaller\nPAGES\n8 → 8\n\nRotated 2 pages by 90°, left 6 pages alone.\n\nDownload\nDo another\nBack to all tools"
+saved /tmp/lane-organize2/r/net-rotate.pdf 2939 bytes
+{
+ "sameOriginRequests": 158,
+ "foreignOrigins": {
+  "https://fonts.googleapis.com": {
+   "count": 1,
+   "uploaded": 0,
+   "downloaded": 1371,
+   "sample": [
+    "GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap up=0"
+   ]
+  },
+  "https://fonts.gstatic.com": {
+   "count": 2,
+   "uploaded": 0,
+   "downloaded": 71222,
+   "sample": [
+    "GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2 up=0",
+    "GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2 up=0"
+   ]
+  },
+  "null": {
+   "count": 16,
+   "uploaded": 0,
+   "downloaded": 0,
+   "sample": [
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0",
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0",
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0",
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0",
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0",
+    "GET data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAA up=0"
+   ]
+  }
+ },
+ "biggestForeignUpload": 0,
+ "consoleErrors": []
+}

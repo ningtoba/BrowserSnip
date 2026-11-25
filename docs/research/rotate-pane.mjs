@@ -3,6 +3,11 @@
 //
 //   PORT=9831 BASE=http://localhost:5271 node docs/research/rotate-pane.mjs
 //
+// The fixture is the campaign's `colour.pdf`: eight sheets, 3 and 6 blank (ink 0),
+// 4 stored 420×595 with `/Rotate 90` (displayed landscape), 7 stored 595×420 with
+// `/Rotate 90` (displayed portrait), 8 a 336×71 `/CropBox` slip. Every stage reads
+// each tile's caption, its `data-turn-to` and the *natural size of the picture* it
+// was handed, so a preview can be judged against the box the download carries.
 // Stage A: colour.pdf, page 4 (its own `/Rotate` is 90) picked in the strip and
 //          270 written on the Rotation field. Screenshots the pane before the
 //          click and prints each tile's `data-turn-to`, so a preview showing the
@@ -10,6 +15,9 @@
 // Stage B: the run itself — the card's sentence, the download, and a screenshot.
 // Stage C: the same source again with one 90° turn, to read the card's sentence
 //          for a page that is not straightened.
+// Stage D: the *typed* selection (`4,7`) — the route the field's help advertises,
+//          which the tile clicks never drove — preview and bytes.
+// Stage E: the same pane in dark mode.
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
@@ -74,7 +82,11 @@ const pickChip = async (words) => {
     const c=[...g.querySelectorAll('button')].find((b)=>(b.innerText||'').includes(${JSON.stringify(words)}));
     if(!c) return 'NO CHIP'; c.click(); return 'clicked '+c.innerText.trim()})()`);
 };
-const TILES = `JSON.stringify([...document.querySelectorAll('[data-thumb]')].map((e)=>[e.getAttribute('aria-label'),e.dataset.thumb,e.dataset.turnTo??null]))`;
+// The tile's own picture, not just its caption: a preview of a turn is only a
+// preview if the bitmap is that angle. `naturalWidth/naturalHeight` is the raster
+// `thumbnails({ rotateBy })` painted, so a landscape tile over a portrait download
+// is the old defect, whatever `data-turn-to` says.
+const TILES = `JSON.stringify([...document.querySelectorAll('[data-thumb]')].map((e)=>{const im=e.querySelector('img');return [e.getAttribute('aria-label'),e.dataset.thumb,e.dataset.turnTo??null,im?[im.naturalWidth,im.naturalHeight]:'no-img']}))`;
 const runIt = async (name) => {
   await ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/^Rotate$/.test((x.innerText||'').trim())&&!x.disabled); if(b) b.click(); return !!b})()`);
   const got = await wait('window.__blobs && window.__blobs.length>0', 60000);
@@ -138,6 +150,53 @@ await sleep(800);
 console.log('tiles with 90 on page 4:', await ev(TILES));
 const second = await runIt('after90-p4');
 console.log('run 2:', second.got, second.bytes, JSON.stringify(second.words));
+
+// Stage D — the *typed* selection, which is the route the help advertises
+// (`1,3,5-7, odd, even`) and which the last round never drove: it picked sheets by
+// clicking tiles. The strip has to preview the sum for the pages the typed list
+// names, and the download has to carry exactly those angles.
+const typePages = async (words) => {
+  const back = await ev(`(()=>{
+    const norm=(s)=>(s||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    const lab=[...document.querySelectorAll('label[for]')].find((l)=>norm(l.innerText)==='pages');
+    const el=lab?document.getElementById(lab.getAttribute('for')):null;
+    if(!el) return 'NO INPUT';
+    const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+    set.call(el,${JSON.stringify(String(words))});
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    return el.value})()`);
+  console.log('pages field read back:', JSON.stringify(back));
+  return back;
+};
+await ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/Do another/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
+await wait(`!!document.querySelector('input[type=file]')`, 60000);
+await upload();
+await wait(`document.body.innerText.includes('READY')`, 30000);
+await typePages('4,7');
+await sleep(600);
+await pickChip('270');
+await sleep(2600);
+console.log('tiles with 270 typed on 4,7:', await ev(TILES));
+const third = await runIt('after270-typed47');
+console.log('run 3:', third.got, third.bytes, JSON.stringify(third.words));
+
+// Stage E — the same pane in dark mode, for the tokens of the angle caption and
+// the turned tile.
+await ev(`(()=>{const b=[...document.querySelectorAll('button')].find((x)=>/Do another/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
+await wait(`!!document.querySelector('input[type=file]')`, 60000);
+await ev(`(()=>{localStorage.setItem('browsersnip:theme','dark');document.documentElement.classList.add('dark');document.documentElement.dataset.theme='dark';return 1})()`);
+await send('Page.reload');
+await wait(`document.readyState === 'complete' && !!document.querySelector('input[type=file]')`, 90000);
+await upload();
+await wait(`document.body.innerText.includes('READY')`, 30000);
+await typePages('4,7');
+await sleep(600);
+await pickChip('270');
+await sleep(2600);
+console.log('dark tiles:', await ev(TILES));
+console.log('dark bg:', JSON.stringify(await ev(`getComputedStyle(document.body).backgroundColor`)));
+await shot('pane-dark');
 
 console.log('console errors:', JSON.stringify(errors));
 chrome.kill('SIGKILL');

@@ -1,0 +1,234 @@
+# rotate round — dev server 5292, worktree sweep/organize, 2025-11-25
+# instrument first: python3 docs/research/rotate-round-bytes.py --selfcheck
+selfcheck blank.pdf: [0] streams [[]]
+selfcheck colour.pdf ink: [110031, 94882, 0, 274962, 482968, 0, 46700, 46700] stable: True
+AS PROMISED — 0 problem lines
+# control: the turned sheet judged as if the delta were 0 must FAIL
+== CONTROL r270all-as-identity: r270all.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=0 (5361 -> 2946 bytes)
+   sheet 1: rot 270 (want 0, /Rotate ('int', '270')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 110029 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] 
+   sheet 2: rot 270 (want 0, /Rotate ('int', '270')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 94878 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] 
+   sheet 3: rot 270 (want 0, /Rotate ('int', '270')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] 
+   sheet 4: rot 0 (want 90, /Rotate ('int', '0')) box (420.0, 595.0) (want (595.0, 420.0)) render (584, 827) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] 
+   sheet 5: rot 270 (want 0, /Rotate ('int', '270')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] 
+   sheet 6: rot 270 (want 0, /Rotate ('int', '270')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] 
+   sheet 7: rot 0 (want 90, /Rotate ('int', '0')) box (595.0, 420.0) (want (420.0, 595.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] 
+   sheet 8: rot 270 (want 0, /Rotate ('int', '270')) box (71.4, 336.0) (want (336.0, 71.4)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] 
+   /Info unchanged
+
+control: 16 problem lines (must be > 0)
+# the matrix (BYTES=/tmp/lane-organize2/bytes python3 docs/research/rotate-round-bytes.py)
+
+== r180all: r180all.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=180 (5361 -> 2946 bytes)
+   sheet 1: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110012 (src 110031 ratio 0.9998) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94620 (src 94882 ratio 0.9972) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 270 (want 270, /Rotate ('int', '270')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 180 (want 180, /Rotate ('int', '180')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r180p4: r180p4.pdf  source=/tmp/triage/colour.pdf picked=[4] delta=180 (5361 -> 2941 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r180rng: r180rng.pdf  source=/tmp/triage/colour.pdf picked=[2, 3, 4] delta=180 (5361 -> 2948 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94620 (src 94882 ratio 0.9972) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270all: r270all.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=270 (5361 -> 2946 bytes)
+   sheet 1: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 110029 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94878 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 0 (want 0, /Rotate ('int', '0')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 0 (want 0, /Rotate ('int', '0')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 270 (want 270, /Rotate ('int', '270')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270evn: r270evn.pdf  source=/tmp/triage/colour.pdf picked=[2, 4, 6, 8] delta=270 (5361 -> 2950 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94878 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 0 (want 0, /Rotate ('int', '0')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 270 (want 270, /Rotate ('int', '270')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270p4: r270p4.pdf  source=/tmp/triage/colour.pdf picked=[4] delta=270 (5361 -> 2940 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 0 (want 0, /Rotate ('int', '0')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270p47-afterfix: r270p47-afterfix.pdf  source=/tmp/triage/colour.pdf picked=[4, 7] delta=270 (5361 -> 2938 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 0 (want 0, /Rotate ('int', '0')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 0 (want 0, /Rotate ('int', '0')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270p7-afterfix: r270p7-afterfix.pdf  source=/tmp/triage/colour.pdf picked=[7] delta=270 (5361 -> 2939 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 0 (want 0, /Rotate ('int', '0')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r270p7: r270p7.pdf  source=/tmp/triage/colour.pdf picked=[7] delta=270 (5361 -> 2939 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 0 (want 0, /Rotate ('int', '0')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r360: r360.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=90 (5361 -> 2945 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109986 (src 110031 ratio 0.9996) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94623 (src 94882 ratio 0.9973) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 180 (want 180, /Rotate ('int', '180')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 90 (want 90, /Rotate ('int', '90')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r4chip: r4chip.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=90 (5361 -> 2945 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109986 (src 110031 ratio 0.9996) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94623 (src 94882 ratio 0.9973) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 180 (want 180, /Rotate ('int', '180')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 90 (want 90, /Rotate ('int', '90')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r90all: r90all.pdf  source=/tmp/triage/colour.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=90 (5361 -> 2945 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109986 (src 110031 ratio 0.9996) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94623 (src 94882 ratio 0.9973) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 180 (want 180, /Rotate ('int', '180')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 90 (want 90, /Rotate ('int', '90')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r90list: r90list.pdf  source=/tmp/triage/colour.pdf picked=[1, 3, 6] delta=90 (5361 -> 2946 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109986 (src 110031 ratio 0.9996) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r90odd: r90odd.pdf  source=/tmp/triage/colour.pdf picked=[1, 3, 5, 7] delta=90 (5361 -> 2950 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109986 (src 110031 ratio 0.9996) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 180 (want 180, /Rotate ('int', '180')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r90p4: r90p4.pdf  source=/tmp/triage/colour.pdf picked=[4] delta=90 (5361 -> 2941 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== r90p8: r90p8.pdf  source=/tmp/triage/colour.pdf picked=[8] delta=90 (5361 -> 2940 bytes)
+   sheet 1: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 110031 (src 110031 ratio 1.0) chars 1779 ann 0 (raw =) link 0 (raw =) streams ['6f7bd64760018a95'] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 90 (want 90, /Rotate ('int', '90')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== a270p1: a270p1.pdf  source=/tmp/triage/in/annot.pdf picked=[1] delta=270 (7110 -> 4343 bytes)
+   sheet 1: rot 270 (want 270, /Rotate ('int', '270')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109995 (src 110001 ratio 0.9999) chars 1816 ann 3 (raw =) link 1 (raw =) streams ['6f7bd64760018a95'] marks src [[200.0, 200.0, 216.0, 216.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [60.0, 300.0, 200.0, 316.0]] -> out [[184.0, 200.0, 200.0, 216.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [300.0, 220.0, 316.0, 360.0]] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== a90all: a90all.pdf  source=/tmp/triage/in/annot.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] delta=90 (7110 -> 4345 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109931 (src 110001 ratio 0.9994) chars 1816 ann 3 (raw =) link 1 (raw =) streams ['6f7bd64760018a95'] marks src [[200.0, 200.0, 216.0, 216.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [60.0, 300.0, 200.0, 316.0]] -> out [[200.0, 184.0, 216.0, 200.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [279.0, 60.0, 295.0, 200.0]] OK
+   sheet 2: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 94623 (src 94882 ratio 0.9973) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 274300 (src 274962 ratio 0.9976) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 180 (want 180, /Rotate ('int', '180')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 90 (want 90, /Rotate ('int', '90')) box (71.4, 336.0) (want (71.4, 336.0)) render (100, 467) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== a90p1: a90p1.pdf  source=/tmp/triage/in/annot.pdf picked=[1] delta=90 (7110 -> 4341 bytes)
+   sheet 1: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 109931 (src 110001 ratio 0.9994) chars 1816 ann 3 (raw =) link 1 (raw =) streams ['6f7bd64760018a95'] marks src [[200.0, 200.0, 216.0, 216.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [60.0, 300.0, 200.0, 316.0]] -> out [[200.0, 184.0, 216.0, 200.0], [60.0, 120.0, 300.0, 150.0], [56.7, 89.12, 263.3, 104.88], [279.0, 60.0, 295.0, 200.0]] OK
+   sheet 2: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 94882 (src 94882 ratio 1.0) chars 13 ann 0 (raw =) link 0 (raw =) streams ['9f9d7482163d5d44'] OK
+   sheet 3: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams [] OK
+   sheet 4: rot 90 (want 90, /Rotate ('int', '90')) box (595.0, 420.0) (want (595.0, 420.0)) render (827, 584) ink 274962 (src 274962 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['74860df8dda6e2a2'] OK
+   sheet 5: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 482968 (src 482968 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['aeed2d34939a19a1'] OK
+   sheet 6: rot 0 (want 0, /Rotate ('null', 'null')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 0 (src 0 ratio None) chars 0 ann 0 (raw =) link 0 (raw =) streams ['7435e476c99d626a'] OK
+   sheet 7: rot 90 (want 90, /Rotate ('int', '90')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['e6b8f1b980cb7189'] OK
+   sheet 8: rot 0 (want 0, /Rotate ('null', 'null')) box (336.0, 71.4) (want (336.0, 71.4)) render (467, 100) ink 46700 (src 46700 ratio 1.0) chars 0 ann 0 (raw =) link 0 (raw =) streams ['db9bd889ff4c766c'] OK
+   /Info unchanged
+
+== z90all: z90all.pdf  source=/tmp/triage/rot90.pdf picked=[1] delta=90 (2023 -> 1332 bytes)
+   sheet 1: rot 180 (want 180, /Rotate ('int', '180')) box (420.0, 595.0) (want (420.0, 595.0)) render (584, 827) ink 74978 (src 74846 ratio 1.0018) chars 695 ann 0 (raw =) link 0 (raw =) streams ['52ff3480e43bdff4'] OK
+   /Info unchanged
+
+AS PROMISED — 0 problem lines

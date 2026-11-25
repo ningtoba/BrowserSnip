@@ -1561,7 +1561,15 @@ export const organizeTools: PdfToolDefinition[] = [
         context.progress((i + 1) / pages.length, `Rotated page ${pages[i] + 1}`);
       }
       if (straightened > 0) {
-        notes.add(`${straightened} of the selected ${pageCountLabel(pages.length)} ${straightened === 1 ? 'was' : 'were'} upside-down or sideways before this turn and are now upright.`);
+        // The sentence changes number twice: the verb before "upside-down" and the
+        // one after it. One straightened sheet reads "was … and is now upright";
+        // "are" was left to agree with nothing (measured live on dev server 5292,
+        // on the card `docs/research/rotate-pane.mjs` stage B printed and on `r270p7`).
+        notes.add(
+          straightened === 1
+            ? `1 of the selected ${pageCountLabel(pages.length)} was upside-down or sideways before this turn and is now upright.`
+            : `${straightened} of the selected ${pageCountLabel(pages.length)} were upside-down or sideways before this turn and are now upright.`,
+        );
       }
       const doc = await savable(input, notes);
       const untouched = input.pageCount - pages.length;
