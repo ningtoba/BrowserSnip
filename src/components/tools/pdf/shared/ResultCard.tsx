@@ -129,7 +129,11 @@ export function describeDelta(before: number | null | undefined, after: number |
   const head = `${formatFileSize(before)} → ${formatFileSize(after)}`;
   if (pct <= -1) return `${head} · ${Math.abs(pct)}% smaller`;
   if (pct >= 1) return `${head} · ${pct}% larger`;
-  return `${head} · unchanged`;
+  // Rounding away sub-1% growth must not call the file UNCHANGED while the
+  // card's byte-level growth flag paints the amber 'came out bigger' warning
+  // two rows below — one sentence, one truth.
+  if (after === before) return `${head} · unchanged`;
+  return `${head} · ${after > before ? 'grew' : 'shrank'} within 1%`;
 }
 
 /**

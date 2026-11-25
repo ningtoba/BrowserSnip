@@ -739,6 +739,14 @@ describe('describeDelta', () => {
     expect(describeDelta(1000, 1000)).toMatch(/unchanged/);
   });
 
+  // The byte-level `grew` flag turns amber for ANY increase; a row that
+  // rounded +10 B to “unchanged” contradicted it on the same card.
+  it('names sub-1 percent movement instead of claiming unchanged', () => {
+    expect(describeDelta(5200, 5210)).toMatch(/grew within 1%/);
+    expect(describeDelta(5200, 5210)).not.toMatch(/unchanged/);
+    expect(describeDelta(5200, 5190)).toMatch(/shrank within 1%/);
+  });
+
   it('has nothing to compare when the input size is unknown', () => {
     expect(describeDelta(null, 1000)).toBe('1000 B');
   });
