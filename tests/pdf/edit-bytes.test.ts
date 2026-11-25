@@ -582,6 +582,39 @@ describe('header-footer fills its six slots per page', () => {
     expect((stream.match(/ m\n?[\d.-]+ [\d.-]+ l S/g) ?? stream.match(/ l S/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
+  it('paints the rule in the colour it gives the text', async () => {
+    // The colour help promises it is "Applied to the text and to the rule
+    // together"; the live tab measured #aa0000 in the run fill and in the rule
+    // stroke (0.667, 0, 0). The style-diff suite proves the run changes but not
+    // the line, so the stroke colour gets its own byte pin here.
+    const outcome = await runPdf(
+      'header-footer',
+      {
+        headerLeft: '',
+        headerCenter: 'RED',
+        headerRight: '',
+        footerLeft: '',
+        footerCenter: '',
+        footerRight: '',
+        color: '#aa0000',
+        rule: true,
+      },
+      [{ text: 'a' }],
+    );
+    const doc = await reopen(outcome);
+    const stream = streamText(doc.getPages()[0]);
+    const stroke = /([\d.]+) ([\d.]+) ([\d.]+) RG[\s\S]{0,80}l S/.exec(stream);
+    expect(stroke, 'the rule drew no stroke colour').toBeTruthy();
+    expect(Number(stroke![1])).toBeCloseTo(170 / 255, 3);
+    expect(Number(stroke![2])).toBe(0);
+    expect(Number(stroke![3])).toBe(0);
+    // And the text of the same page carries the identical fill triple (written
+    // with the writer's own precision, so compare the numbers, not the string).
+    const fills = [...stream.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg/g)]
+      .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+    expect(fills.some(([r, g, b]) => Math.abs(r - 170 / 255) < 1e-3 && g === 0 && b === 0), 'no run shares the rule colour').toBe(true);
+  });
+
   it('reports a header that cannot fit the page instead of overlapping silently', async () => {
     const outcome = await runPdf(
       'header-footer',
