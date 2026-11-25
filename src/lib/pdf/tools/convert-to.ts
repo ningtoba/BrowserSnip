@@ -959,6 +959,131 @@ function treeInsideSheet(blocks: Block[], columnWidth: number): Block[] {
   });
 }
 
+/** The RTF character words, written back as the character each one names. */
+const RTF_CHARACTERS: Record<string, string> = {
+  bullet: '\u2022',
+  tab: '\t',
+  lquote: '\u2018',
+  rquote: '\u2019',
+  ldblquote: '\u201c',
+  rdblquote: '\u201d',
+  endash: '\u2013',
+  emdash: '\u2014',
+  hyph: '\u2010',
+  sim: '\u223C',
+  times: '\u00D7',
+  div: '\u00F7',
+  deg: '\u00B0',
+  pm: '\u00B1',
+  inf: '\u221E',
+  copyright: '\u00A9',
+  registered: '\u00AE',
+  trade: '\u2122',
+  section: '\u00A7',
+  para: '\u00B6',
+};
+
+/** What each stripped destination is called on the card, as a countable noun. */
+const RTF_DROP_NAMES: [string, string][] = [
+  ['fonttbl', 'font table'],
+  ['stylesheet', 'style sheet'],
+  ['info', 'document-info block'],
+  ['header', 'page header'],
+  ['footer', 'page footer'],
+  ['footnote', 'footnote'],
+  ['shppict', 'picture'],
+  ['nonshppict', 'picture'],
+  ['pict', 'picture'],
+  ['object', 'embedded object'],
+  ['listtable', 'list definition'],
+  ['listoverride', 'list override'],
+  ['generator', 'generator string'],
+  ['themedata', 'theme definition'],
+  ['colorschememapping', 'colour scheme'],
+  ['latentstyles', 'latent style'],
+  ['rsidtable', 'revision-save ID'],
+  ['xmlnstbl', 'namespace table'],
+  ['datastore', 'data store'],
+  ['fchars', 'end-of-word character set'],
+  ['lchars', 'list character set'],
+  ['pnchars', 'paragraph-number character set'],
+];
+
+/**
+ * The destinations whose contents a reader might actually go looking for.
+ *
+ * Stripping the font table or the revision-save IDs is not a loss worth a warning —
+ * they are plumbing every RTF file carries — but a picture, a footnote and a page
+ * header hold words and pictures someone put in the document, so those are counted and
+ * named on the card.
+ */
+const RTF_REPORTED_DROPS = /^(shppict|nonshppict|pict|object|footnote|header\d*|footer\d*)$/;
+
+/** `"2 pictures"`, `"1 footnote"`. */
+function dropName(word: string, count: number): string {
+  const noun = RTF_DROP_NAMES.find(([name]) => word.startsWith(name))?.[1] ?? word;
+  return counted(count, noun);
+}
+
+/** Groups whose contents are the document's plumbing: tables of fonts and colours,
+ *  metadata, pictures, embedded objects and footnote text. */
+const RTF_DESTINATIONS = /^\{\*?\\(fonttbl|stylesheet|info|header\d*|footer\d*|footnote|pict|nonshppict|shppict|object|listtable|listoverrideTable|generator|themedata|colorschememapping|latentstyles|rsidtable|xmlnstbl|datastore|fchars|lchars|pnchars)\b/i;
+
+/**
+ * The RTF handed to the shared reader, rewritten so what survives is prose.
+ *
+ * Three measured gaps in `rtfToBlocks`, none of which needs the renderer's attention:
+ * a destination group stops being skipped at its first inner `}`, so a Word font table
+ * printed `Helvetica-Bold;Courier;` as document text (every real file has several
+ * `{\fN …}` siblings); `{\pict …}` is deliberately *not* skipped, so a picture's hex
+ * dump landed in the sentence (`… before 89504e470d0a … after`); `\tab` pushes a raw
+ * tab the writer cannot encode — which ended the run with no file — while `\bullet`,
+ * the typographic quotes and the dashes have no case at all and simply vanished,
+ * though the card promises bullet lists. Removing the destinations here, naming the
+ * characters here, and dropping the `\uNNNN?` fallback character (the reader can do
+ * Unicode, and printed every accent as `é ?`) leaves the reader a document made of
+ * text it already draws correctly.
+ */
+function rtfSource(text: string): { text: string; dropped: string[] } {
+  let out = '';
+  let i = 0;
+  const counts = new Map<string, number>();
+  while (i < text.length) {
+    if (text[i] === '{') {
+      const group = RTF_DESTINATIONS.exec(text.slice(i, i + 64));
+      if (group) {
+        let depth = 0;
+        let j = i;
+        for (; j < text.length; j++) {
+          if (text[j] === '{') depth += 1;
+          else if (text[j] === '}' && (depth -= 1) === 0) break;
+        }
+        const name = group[1]!.toLowerCase();
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+        i = j + 1;
+        continue;
+      }
+    }
+    out += text[i];
+    i += 1;
+  }
+  // `\pntext` carries a list's own number (`{\pntext1.\tab}`); read as a control word
+  // with an argument it ate the digit, so the line printed `. numbered one`. Dropping
+  // the word keeps the number as the text Word meant to be shown when a reader cannot
+  // build list numbers itself.
+  const characters = out.replace(/\\pntext/g, '').replace(new RegExp(`\\\\(${Object.keys(RTF_CHARACTERS).join('|')})(\\d*)([ ]?)`, 'gi'), (_all, word: string, _digits: string, space: string) => (RTF_CHARACTERS[word.toLowerCase()] ?? '') + space);
+  // `\uc0` says the writer sent no fallback character, so a `?` after an escape is then
+  // the document's own question mark.
+  const plain = /\\uc\s*0\b/i.test(characters) ? characters : characters.replace(/\\u(-?\d+)\?/g, String.raw`\u$1`);
+  const visible = plain.replace(/\\v\s?\d*[^{}]*?\\v0/g, '');
+  return {
+    text: visible,
+    dropped: [...counts.entries()]
+      .filter(([name]) => RTF_REPORTED_DROPS.test(name))
+      .map(([name, count]) => dropName(name, count)),
+  };
+}
+
 /** The number each ordered list in the source began with, in document order, */
 function orderedListStarts(source: string): number[] {
   const starts: number[] = [];
@@ -1887,6 +2012,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['rich text', 'write', 'wordpad'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.rtf,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_rtf.pdf',
     actionLabel: 'Convert to PDF',
@@ -1916,17 +2042,20 @@ export const convertToTools: PdfToolDefinition[] = [
           );
         }
       }
-      const dropped = sources
-        .map((source) => {
-          const count = countMatches(source.text, /\\(object|shppict|pict|footnote|sect|trowd|cell)\b/g);
-          return count > 0 ? `${source.name}: ${count} construct(s)` : null;
-        })
-        .filter((line): line is string => line !== null);
-      if (dropped.length > 0) {
-        warnings.push(`Dropped unsupported RTF controls (${dropped.join('; ')}) — images, tables and section properties are not reproduced.`);
-      }
       const { rtfToBlocks } = await import('../core/layout');
-      const blocks: Block[] = sources.flatMap((source) => rtfToBlocks(source.text));
+      const blocks: Block[] = [];
+      for (const [index, source] of sources.entries()) {
+        // The file control promises "one after another in a single PDF": each later file
+        // starts on its own sheet rather than continuing the first document's page.
+        if (index > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        const prepared = rtfSource(source.text);
+        if (prepared.dropped.length > 0) {
+          warnings.push(`Left out of "${source.name}": ${prepared.dropped.join(', ')} — pictures and embedded parts are not reproduced.`);
+        }
+        const drawable = blocksToDrawable(rtfToBlocks(prepared.text));
+        if (drawable.dropped > 0) warnings.push(undrawableWarning(source.name, '', drawable.dropped));
+        blocks.push(...drawable.blocks);
+      }
       if (blocks.length === 0) {
         throw new ToolInputError('UNSUPPORTED', 'No readable RTF text could be recovered.', {
           hint: 'Re-save the document as .txt or .docx, or open it in WordPad and save again.',

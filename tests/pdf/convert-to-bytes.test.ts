@@ -2076,6 +2076,125 @@ describe('rtf-to-pdf recovers text, size and order', () => {
   });
 });
 
+/**
+ * The control words the card says this reader understands.
+ *
+ * Measured before the round: a `\tab` — the word every WordPad list and two-column
+ * layout uses — ended the run with `WinAnsi cannot encode "\t" (0x0009)` and no file;
+ * `\bullet`, the quoted typographic characters and `\pntext` printed nothing or a bare
+ * dot; the fallback character of `\uNNNN?` reached the page as a `?` after every
+ * accented letter; the font table's siblings (`{\f1 Helvetica-Bold;}`) and a picture's
+ * hex dump printed as prose; `\v … \v0` hidden annotations showed up in the sentence;
+ * and two files were refused although the loop reads every source.
+ */
+describe('rtf-to-pdf reads the control words it advertises', () => {
+  const head = String.raw`{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0 Helvetica;}{\f1 Helvetica-Bold;}{\f2 Courier;}}{\colortbl ;\red255\green0\blue0;}`;
+  const convert = (body: string) => run('rtf-to-pdf', {}, [fileFrom(`${head}${body}`, 'note.rtf', 'application/rtf')]);
+  // `rtfToBlocks` builds one inline per character, so the text layer arrives letter by
+  // letter; every phrase below is judged on the letters with the joins removed.
+  const letters = (runs: Awaited<ReturnType<typeof textRuns>>, page = -1) =>
+    runs.filter((run) => page < 0 || run.page === page).map((run) => run.text).join('').replace(/\s+/g, '');
+
+  it('keeps a \\tab at its column instead of losing the file', async () => {
+    const outcome = await convert('col1\\tab col2\\tabcol3 MKEND\\par}');
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(runs.some((run) => run.text.includes('\t')), 'a raw tab reached the writer').toBe(false);
+    const one = runs.find((run) => run.text === '1')!;
+    const two = runs.find((run) => run.text === '2')!;
+    expect(one, 'col1').toBeTruthy();
+    // The tab is eight columns wide from where the line stood, so the second field
+    // cannot start where the first ended: measured 33.6 pt between the two digits.
+    expect(two.x - one.x, 'the tab kept a column').toBeGreaterThan(25);
+  });
+
+  it('prints the bullet the document asked for', async () => {
+    const outcome = await convert('\\pard\\fi-360\\li720\\bullet Item one\\par\\bullet Item two MKEND\\par}');
+    const runs = await textRuns(await firstPdf(outcome));
+    // Pre-fix `\bullet` had no case in the reader at all, so a "bullet list" printed as
+    // two indented sentences with no mark — while the promise named bullet lists.
+    const marks = runs.filter((run) => [0x95, 0x2022].includes(run.text.charCodeAt(0)) || run.text === '•');
+    expect(marks.length, 'the two bullets painted').toBe(2);
+    for (const mark of marks) expect(mark.x, 'the bullet sits at the text edge').toBeLessThan(62);
+  });
+
+  it('shows the number a {\\pntext} group carries', async () => {
+    const outcome = await convert('\\pard\\fi-360\\li720{\\pntext1.\\tab}numbered one\\par{\\pntext2.\\tab}numbered two MKEND\\par}');
+    const runs = await textRuns(await firstPdf(outcome));
+    // The word took `1` as its argument, so the page read `. numbered one`.
+    const text = letters(runs);
+    expect(text, 'the list numbers survive').toContain('1.');
+    expect(text).toContain('2.');
+    expect(text).toContain('numberedone');
+  });
+
+  it('leaves the fallback of a \\u escape out of the sentence', async () => {
+    const outcome = await convert('MKSTART caf\\u233? e-acute and \\u8212? dash MKEND\\par}');
+    const words = squash(await extractText(await firstPdf(outcome)));
+    expect(words).toContain('é');
+    // The claim of the fallback is only that it stays out of the sentence: `?` is what
+    // the reader used to print after every accent.
+    expect(words, 'the `?` fallback printed').not.toContain('?');
+    // 0x97 is the em dash's WinAnsi byte in the standard face, which is what a viewer
+    // decodes back to `—`.
+    expect(letters(await textRuns(await firstPdf(outcome)))).toMatch(/e-acuteand?dash/);
+  });
+
+  it('keeps a \\uc0 document’s own question marks', async () => {
+    const outcome = await convert('\\uc0 MKSTART is this a question? MKEND\\par}');
+    expect(letters(await textRuns(await firstPdf(outcome)))).toContain('question?');
+  });
+
+  it('does not print the font table, and keeps the colour table working', async () => {
+    const outcome = await convert('MKSTART words in colour: \\cf1 red bit\\cf0  plain MKEND\\par}');
+    const bytes = await firstPdf(outcome);
+    const words = squash(await extractText(bytes));
+    // The skip stopped at the first `{\fN …}`, so every font after it printed as prose.
+    expect(words).not.toMatch(/Helvetica|Courier/);
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const red = pageContentOps(doc.getPages()[0]!)
+      .filter((op) => op.name === 'rg')
+      .map((op) => op.operands.filter((operand) => operand.kind === 'number').map((operand) => round((operand as { value: number }).value)));
+    expect(red.some((c) => c[0] === 1 && c[1] === 0 && c[2] === 0)).toBe(true);
+    // A font table alone is plumbing, not a loss the user should be told about.
+    expect(outcome.warnings.join(' ')).toBe('');
+  });
+
+  it('drops a picture and names it, hex dump and all', async () => {
+    const outcome = await convert('before {\\pict\\pngblip\\picw10\\pich10 89504e470d0a1a0a} after MKEND\\par}');
+    const runs = await textRuns(await firstPdf(outcome));
+    const words = letters(runs);
+    expect(words).toContain('before');
+    expect(words).toContain('after');
+    // `{\pict …}` was the one destination the reader did not skip, so the file's own
+    // bytes printed inside the sentence as `89504e470d0a…`.
+    expect(words).not.toMatch(/8950_?4e47|504e470d0a/);
+    expect(outcome.warnings.join(' ')).toMatch(/Left out of "note\.rtf": 1 picture — pictures and embedded parts are not reproduced\./);
+  });
+
+  it('hides what the document hid, and the footnote with it', async () => {
+    const outcome = await convert('MKSTART shown \\v the hidden annotation \\v0 and plain {\\footnote the note text} MKEND\\par}');
+    const words = letters(await textRuns(await firstPdf(outcome)));
+    expect(words).toContain('shownandplain');
+    expect(words).not.toContain('hiddenannotation');
+    expect(words).not.toContain('thenotetext');
+    expect(outcome.warnings.join(' ')).toMatch(/1 footnote/);
+  });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    const outcome = await run('rtf-to-pdf', {}, [
+      fileFrom(`${head}FIRST FILE BODY MKEND\\par}`, 'one.rtf', 'application/rtf'),
+      fileFrom(`${head}SECOND FILE BODY MKEND\\par}`, 'two.rtf', 'application/rtf'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    expect(letters(runs, 0)).toContain('FIRSTFILEBODY');
+    expect(letters(runs, 0)).not.toContain('SECOND');
+    expect(letters(runs, 1)).toContain('SECONDFILEBODY');
+    expect(outcome.message).toMatch(/Converted 2 RTF file\(s\) into 2 page\(s\)/);
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * Office documents                                                   *
  * ------------------------------------------------------------------ */
