@@ -99,7 +99,7 @@ const PAGE_W = 612;
 const PAGE_H = 792;
 
 /** A US-letter page drawn at 1 CSS px per point, not rotated. */
-const flat: PageGeom = { zoom: 1, cssWidth: PAGE_W, cssHeight: PAGE_H, rotation: 0 };
+const flat: PageGeom = { zoom: 1, cssWidth: PAGE_W, cssHeight: PAGE_H, x0: 0, y0: 0, rotation: 0 };
 
 const geomAt = (zoom: number, rotation: PageGeom['rotation'] = 0): PageGeom => {
   const swap = rotation === 90 || rotation === 270;
@@ -107,6 +107,8 @@ const geomAt = (zoom: number, rotation: PageGeom['rotation'] = 0): PageGeom => {
     zoom,
     cssWidth: (swap ? PAGE_H : PAGE_W) * zoom,
     cssHeight: (swap ? PAGE_W : PAGE_H) * zoom,
+    x0: 0,
+    y0: 0,
     rotation,
   };
 };

@@ -156,7 +156,7 @@ describe('a stamp drawn on a turned sheet still reads in the corner', () => {
         page: 0,
         style: defaultStyleFor('stamp'),
         drag: { x: 100, y: 100, width: 0, height: 0 },
-        geom: { zoom: 1, cssWidth: 595, cssHeight: 420, rotation },
+        geom: { zoom: 1, cssWidth: 595, cssHeight: 420, x0: 0, y0: 0, rotation },
       });
       expect(rect, `no box at rotation ${rotation}`).toBeTruthy();
       expect(rect!.width, `rotation ${rotation}: stored width is the displayed height`).toBeCloseTo(44, 0);
@@ -169,7 +169,7 @@ describe('a stamp drawn on a turned sheet still reads in the corner', () => {
       page: 0,
       style: defaultStyleFor('stamp'),
       drag: { x: 592, y: 2, width: 0, height: 0 },
-      geom: { zoom: 1, cssWidth: 595, cssHeight: 420, rotation: 90 },
+      geom: { zoom: 1, cssWidth: 595, cssHeight: 420, x0: 0, y0: 0, rotation: 90 },
     });
     expect(edge!.x).toBeGreaterThanOrEqual(0);
     expect(edge!.y).toBeGreaterThanOrEqual(0);
@@ -180,7 +180,7 @@ describe('a stamp drawn on a turned sheet still reads in the corner', () => {
       page: 0,
       style: defaultStyleFor('stamp'),
       drag: { x: 100, y: 100, width: 0, height: 0 },
-      geom: { zoom: 1, cssWidth: 420, cssHeight: 595, rotation: 0 },
+      geom: { zoom: 1, cssWidth: 420, cssHeight: 595, x0: 0, y0: 0, rotation: 0 },
     });
     expect([flat!.width, flat!.height]).toEqual([140, 44]);
   });

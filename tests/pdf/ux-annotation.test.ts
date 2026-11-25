@@ -123,7 +123,7 @@ import { fakeJpeg, inkOfSpecs } from './appearance-harness';
 
 const PAGE_W = 612;
 const PAGE_H = 792;
-const flat = { zoom: 1, cssWidth: PAGE_W, cssHeight: PAGE_H, rotation: 0 as const };
+const flat = { zoom: 1, cssWidth: PAGE_W, cssHeight: PAGE_H, x0: 0, y0: 0, rotation: 0 as const };
 
 function word(str: string, x: number, y: number, w: number, h: number): ExtractedTextItem {
   return {
@@ -883,7 +883,7 @@ describe('palette regression guards', () => {
  * one boundary at a time.
  */
 
-const overlayGeom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, rotation: 0 };
+const overlayGeom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, x0: 0, y0: 0, rotation: 0 };
 
 function renderOverlay(over: Partial<Parameters<typeof AnnotationOverlay>[0]> = {}) {
   const noop = () => {};
@@ -1142,6 +1142,8 @@ describe('every markup and segment tool paints an area', () => {
     zoom,
     cssWidth: (rotation === 90 ? PAGE_H : PAGE_W) * zoom,
     cssHeight: (rotation === 90 ? PAGE_W : PAGE_H) * zoom,
+    x0: 0,
+    y0: 0,
     rotation,
   });
 
@@ -1341,7 +1343,7 @@ describe('what the overlay paints is in the file', () => {
     // The audit's number for a link was 3 726 px² of canvas against 0 pt² of file.
     // Both sides now come from the same two numbers, in the mark's own colour, so
     // a link recoloured in the inspector cannot look right here and print blue.
-    const geom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, rotation: 0 };
+    const geom: PageGeom = { zoom: 2, cssWidth: PAGE_W * 2, cssHeight: PAGE_H * 2, x0: 0, y0: 0, rotation: 0 };
     const mark = build(
       'link',
       { drag: { x: 70, y: 95, width: 148, height: 12 }, link: { type: 'uri', uri: 'https://example.com/audit' } },

@@ -66,7 +66,7 @@ async function surfaceExport(stampName: string): Promise<PDFDocument> {
     tool: 'stamp',
     page: 0,
     style: { ...defaultStyleFor('stamp'), stampName },
-    geom: { zoom: 1, cssWidth: 420, cssHeight: 595, rotation: 0 },
+    geom: { zoom: 1, cssWidth: 420, cssHeight: 595, x0: 0, y0: 0, rotation: 0 },
     drag: { x: 70, y: 70, width: 140, height: 44 },
   });
   expect(placed, 'the surface built no stamp for ' + stampName).toBeTruthy();
@@ -188,7 +188,7 @@ describe('a stamp export carries the words a reader searches, from either surfac
       tool: 'stamp',
       page: 0,
       style: { ...defaultStyleFor('stamp'), stampName: 'Approved' },
-      geom: { zoom: 1, cssWidth: 420, cssHeight: 595, rotation: 0 },
+      geom: { zoom: 1, cssWidth: 420, cssHeight: 595, x0: 0, y0: 0, rotation: 0 },
       drag: { x: 70, y: 70, width: 140, height: 44 },
       raster: { bytes: new Uint8Array([0]), url: 'blob:x', width: 40, height: 20 },
     });

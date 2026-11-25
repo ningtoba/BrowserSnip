@@ -351,7 +351,14 @@ export function AnnotationEditor({
   const [passwordTry, setPasswordTry] = useState(0);
   const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
   const [renderError, setRenderError] = useState('');
-  const [pageInfo, setPageInfo] = useState<{ width: number; height: number; rotation: Rotation } | null>(null);
+  const [pageInfo, setPageInfo] = useState<{
+    width: number;
+    height: number;
+    rotation: Rotation;
+    /** The drawn box's lower-left in user space — pdf.js `page.view[0]/[1]`. */
+    x0: number;
+    y0: number;
+  } | null>(null);
   const [textItems, setTextItems] = useState<ExtractedTextItem[]>([]);
   /** Read at open time so typing a password does not re-open on each key. */
   const passwordRef = useRef(password);
@@ -458,6 +465,8 @@ export function AnnotationEditor({
       zoom,
       cssWidth: pageInfo.width * zoom,
       cssHeight: pageInfo.height * zoom,
+      x0: pageInfo.x0,
+      y0: pageInfo.y0,
       rotation: pageInfo.rotation,
     };
   }, [pageInfo, zoom]);
@@ -475,6 +484,10 @@ export function AnnotationEditor({
           width: viewport.width,
           height: viewport.height,
           rotation: normaliseRotation(pageProxy.rotate),
+          // User space is numbered from the drawn box's own corner; pdf.js
+          // normalises `/CropBox`∩`/MediaBox` into `view` (census #8).
+          x0: pageProxy.view[0],
+          y0: pageProxy.view[1],
         };
         pageProxy.cleanup();
         if (!disposed) setPageInfo(info);
@@ -1364,7 +1377,7 @@ export function AnnotationEditor({
           setStatus(selectionNotice(0, page));
           return;
         }
-        const ids = marksInMarquee(annotations, page, box, geom ?? { zoom: 1, cssWidth: 0, cssHeight: 0, rotation: 0 });
+        const ids = marksInMarquee(annotations, page, box, geom ?? { zoom: 1, cssWidth: 0, cssHeight: 0, x0: 0, y0: 0, rotation: 0 });
         const merged = current.additive ? addToSelection(work?.selection ?? [], ids) : ids;
         updateWork((next) => ({ ...next, selection: merged }));
         setStatus(marqueeNotice(ids.length, page));
@@ -3024,6 +3037,8 @@ async function burnRotatedRedactions(
         zoom: BURN_SCALE,
         cssWidth: viewport.width,
         cssHeight: viewport.height,
+        x0: proxy.view[0],
+        y0: proxy.view[1],
         rotation,
       };
       proxy.cleanup();

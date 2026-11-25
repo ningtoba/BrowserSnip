@@ -45,6 +45,17 @@ export interface PageGeom {
   /** Rendered page size in CSS pixels. */
   cssWidth: number;
   cssHeight: number;
+  /**
+   * The page's own box origin in user space — pdf.js `page.view`'s lower-left,
+   * i.e. the `/CropBox` (clipped to `/MediaBox`) the viewer actually draws.
+   *
+   * User coordinates are numbered from that corner, not from (0, 0): a cropped
+   * scan keeps the marks inside its crop counted from wherever the crop starts,
+   * and every mapping in this file has to add the offset or annotations drift
+   * across the sheet by exactly it (census #8). `0, 0` is an uncropped page.
+   */
+  x0: number;
+  y0: number;
   /** Page `/Rotate`, normalised clockwise. */
   rotation: Rotation;
 }
@@ -136,30 +147,39 @@ function viewportToScreenPoint(point: Point, geom: PageGeom): Point {
 /** Viewport top-left point → PDF user space point (bottom-left origin). */
 function viewportToPdfPoint(point: Point, geom: PageGeom): Point {
   const { width, height } = pageSize(geom);
-  switch (geom.rotation) {
-    case 90:
-      return { x: point.y, y: point.x };
-    case 180:
-      return { x: width - point.x, y: point.y };
-    case 270:
-      return { x: width - point.y, y: height - point.x };
-    default:
-      return { x: point.x, y: height - point.y };
-  }
+  // The quarter-turns below map onto coordinates *relative to the page's own
+  // box*; user space is numbered from its lower-left, so the origin goes on last
+  // (census #8 — `core/tables.viewerRectToUserSpace` has carried these terms all
+  // along, and agrees with pdf.js `convertToPdfPoint` on a cropped sheet).
+  const turned = (() => {
+    switch (geom.rotation) {
+      case 90:
+        return { x: point.y, y: point.x };
+      case 180:
+        return { x: width - point.x, y: point.y };
+      case 270:
+        return { x: width - point.y, y: height - point.x };
+      default:
+        return { x: point.x, y: height - point.y };
+    }
+  })();
+  return { x: geom.x0 + turned.x, y: geom.y0 + turned.y };
 }
 
 /** PDF user space point → viewport top-left point. */
 function pdfToViewportPoint(point: Point, geom: PageGeom): Point {
   const { width, height } = pageSize(geom);
+  const x = point.x - geom.x0;
+  const y = point.y - geom.y0;
   switch (geom.rotation) {
     case 90:
-      return { x: point.y, y: point.x };
+      return { x: y, y: x };
     case 180:
-      return { x: width - point.x, y: point.y };
+      return { x: width - x, y: y };
     case 270:
-      return { x: height - point.y, y: width - point.x };
+      return { x: height - y, y: width - x };
     default:
-      return { x: point.x, y: height - point.y };
+      return { x, y: height - y };
   }
 }
 
@@ -334,8 +354,10 @@ export function clampRectToPage(rect: QuadRect, geom: PageGeom): QuadRect {
   const page = pageSize(geom);
   const width = Math.min(rect.width, page.width);
   const height = Math.min(rect.height, page.height);
-  const x = Math.min(Math.max(rect.x, 0), Math.max(page.width - width, 0));
-  const y = Math.min(Math.max(rect.y, 0), Math.max(page.height - height, 0));
+  // The page's user space starts at its box origin: clamping to 0 would slide a
+  // mark into the strip of MediaBox the CropBox hides.
+  const x = Math.min(Math.max(rect.x, geom.x0), Math.max(geom.x0 + page.width - width, geom.x0));
+  const y = Math.min(Math.max(rect.y, geom.y0), Math.max(geom.y0 + page.height - height, geom.y0));
   return { x, y, width, height };
 }
 

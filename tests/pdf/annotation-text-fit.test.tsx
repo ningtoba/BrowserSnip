@@ -38,7 +38,7 @@ afterAll(() => {
   globalThis.fetch = realFetch;
 });
 
-const GEOM: PageGeom = { zoom: 2, cssWidth: 1224, cssHeight: 1584, rotation: 0 };
+const GEOM: PageGeom = { zoom: 2, cssWidth: 1224, cssHeight: 1584, x0: 0, y0: 0, rotation: 0 };
 const BOX = { x: 72, y: 500, width: 240, height: 40 };
 
 /** A text box on the page, styled the way the pen styles one. */
