@@ -221,6 +221,60 @@ const BMP_RLE4 =
   'A 4-bit run-length BMP (RLE4) is refused by name: this browser decodes it to an empty picture — measured on Chrome for Testing 151 on Linux, which painted none of its pixels — and an empty picture would ship as a blank page carrying a success count. 8-bit run-length BMPs convert exactly.';
 
 /**
+ * The flattened picture a PSD carries, in the coding the file itself names.
+ *
+ * Measured at :5296 (convert-psd-svg-spec.json, runs8): JPEG-coded composites
+ * (compression 5) and appended PNG previews convert pixel-exact — 16-bit and
+ * CMYK documents among them, since those previews carry 8-bit RGB — while raw,
+ * RLE and ZIP-coded composites (what Photoshop itself writes for layered
+ * documents) are answered by the shared reader with "no flattened preview
+ * embedded", a sentence the file contradicts: the preview IS embedded, only
+ * unreadable here. Walking the three length-prefixed sections and reading the
+ * first compression code costs what the lie is worth; anything that cannot be
+ * parsed cleanly defers to the reader, so the refusal only ever rests on the
+ * file's own header words.
+ */
+function psdCompositeProblem(name: string, bytes: Uint8Array): string | null {
+  if (bytes.length < 30) return null;
+  if (!(bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53)) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint16(4, false) !== 1) return null; // PSD v1 only; v2 defers
+  const channels = view.getUint16(12, false);
+  const depth = view.getUint16(22, false);
+  const mode = view.getUint16(24, false);
+  let at = 26;
+  for (let section = 0; section < 3; section += 1) {
+    // colour-mode data, image resources, layer & mask info — skip by length.
+    if (at + 4 > bytes.length) return null;
+    at += 4 + view.getUint32(at, false);
+  }
+  if (at + 4 > bytes.length || channels < 1 || channels > 56) return null;
+  const coding = view.getUint16(at + 2, false);
+  const codingName: Record<number, string> = {
+    0: 'uncompressed', 1: 'run-length encoded', 2: 'ZIP', 3: 'ZIP with prediction',
+  };
+  const words = codingName[coding];
+  if (!words) return null; // 5/7 store JPEG — that one opens; unknown codes try anyway
+  const kind = mode === 4 ? ' CMYK' : mode === 9 ? ' Lab' : mode === 1 ? ' greyscale' : '';
+  const bitness = depth > 8 ? ` ${depth}-bit` : '';
+  return `"${name}" keeps its flattened picture as ${words}${kind}${bitness} channel data, which this page’s PSD reader cannot open — it converts only previews stored as JPEG or PNG.`;
+}
+
+const PSD_PREVIEW_HINT = 'Export a flattened PNG or JPEG, or re-save the PSD with a JPEG-compatibility preview, then try again; this page never re-composes PSD layers.';
+
+/**
+ * What the PSD route actually converts — measured, not assumed.
+ *
+ * The family's generic line ("pixels are embedded as they decode") was true of
+ * the previews this page can open and silent about the ones it cannot: the
+ * layered Photoshop file format keeps its composite raw/RLE/ZIP-coded, and
+ * before the gate above those files were refused with a sentence ("no flattened
+ * preview embedded") that the file itself disproves.
+ */
+const PSD_COMPOSITE =
+  'A PSD converts through the flattened preview the file itself carries — layers, masks and blend modes are never re-composed here, so what you see is what the last save baked in. A preview stored uncompressed, run-length or ZIP-coded (the shape Photoshop writes for a layered document) is refused by name with its coding named; JPEG-coded previews convert — 16-bit and CMYK documents among them, because their previews carry 8-bit RGB — and so does an appended PNG.';
+
+/**
  * The two TIFF codings the bundled reader gets wrong, and the honest split.
  *
  * Measured at :5296 against Pillow/libjpeg decodes of the same files:
@@ -629,6 +683,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'HEIC, AVIF and JXL depend on the browser decoder; when this browser cannot open one, the run says which file failed instead of guessing.',
       TIFF_VARIANTS,
       BMP_RLE4,
+      PSD_COMPOSITE,
       'Scanned pages are still pictures. Digitize Document runs OCR and adds a real, selectable text layer on top.',
     ],
     fields: [
@@ -768,6 +823,7 @@ export const convertToTools: PdfToolDefinition[] = [
         isBmp ? BMP_TRUNCATED : '',
         isBmp ? BMP_RLE4 : '',
         isTiff ? TIFF_VARIANTS : '',
+        format === 'psd' ? PSD_COMPOSITE : '',
         isWebp ? WEBP_TRUNCATED : '',
         isWebp ? WEBP_FIRST_FRAME : '',
         RASTER_DENSITY,
@@ -798,7 +854,9 @@ export const convertToTools: PdfToolDefinition[] = [
               ? TIFF_VARIANT_HINT
               : isBmp
                 ? BMP_RLE4_HINT
-                : undefined,
+                : format === 'psd'
+                  ? PSD_PREVIEW_HINT
+                  : undefined,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
           refused,
@@ -2084,7 +2142,9 @@ async function decodeImageBatch(
       ? tiffVariantProblem(batch.name, batch.bytes)
       : mime === 'image/bmp'
         ? bmpVariantProblem(batch.name, batch.bytes)
-        : null;
+        : mime === 'image/vnd.adobe.photoshop'
+          ? psdCompositeProblem(batch.name, batch.bytes)
+          : null;
     if (variant) {
       decodeRefused = true;
       if (!expected.refused) {
