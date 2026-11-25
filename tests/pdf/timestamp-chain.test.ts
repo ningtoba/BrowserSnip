@@ -32,6 +32,7 @@ import { runPdfTool } from '@/lib/pdf/tools/runner';
 import {
   createSelfSignedCertificate,
   readSignatures,
+  signBytes,
   signDocument,
 } from '@/lib/pdf/core/signature';
 
@@ -186,6 +187,82 @@ afterEach(() => {
 });
 
 describe('timestamping the file this app signed', () => {
+  it('answers a mistyped field name with the names the document has, and asks no authority', async () => {
+    const calls: string[] = [];
+    const bodies: Uint8Array[] = [];
+    const restore = stubAuthority(calls, { bodies });
+    try {
+      // A second field name in the form, so "which signature?" is a question a person
+      // can get wrong. It goes in BEFORE signing: re-saving a signed file moves the
+      // offsets and would put the fixture in the "cannot be read" state instead.
+      const base = await PDFDocument.create();
+      base.addPage([595, 842]);
+      base.addPage([400, 300]);
+      const prepared = await PDFDocument.load(await base.save({ useObjectStreams: false }));
+      const acro = prepared.context.obj({ Fields: prepared.context.obj([]) }) as PDFDict;
+      prepared.catalog.set(PDFName.of('AcroForm'), prepared.context.register(acro));
+      (acro.get(PDFName.of('Fields')) as PDFArray).push(prepared.context.register(prepared.context.obj({
+        Type: 'Annot', Subtype: 'Widget', FT: 'Sig', T: 'Signature2', Rect: [0, 0, 100, 50],
+      })));
+      const twoNames = (await signBytes(await prepared.save({ useObjectStreams: false, updateFieldAppearances: false }), {
+        certificate: encoder.encode(certificate.certificatePem),
+        privateKey: encoder.encode(certificate.privateKeyPem),
+        reason: 'I approve this document',
+      })).bytes;
+
+      let refusal = '';
+      try {
+        await timestamp(twoNames, { fieldName: 'Nope' });
+      } catch (error) {
+        refusal = (error as Error).message;
+      }
+      expect(refusal).toMatch(/No signature in this PDF is named "Nope"/);
+      expect(refusal).toMatch(/"Signature1"/);
+      expect(refusal).toMatch(/"Signature2"/);
+      expect(refusal).toMatch(/Leave the box empty to stamp the newest one/i);
+      // A typo on a signed file used to be answered "This PDF has no digital signature
+      // to timestamp. Run Digital Signature on it first" — the regex tested core's
+      // "no signature field named" sentence as if it meant an unsigned document.
+      expect(refusal, 'a naming mistake was reported as an unsigned document')
+        .not.toMatch(/no digital signature to timestamp|Run Digital Signature on it first/i);
+      expect(calls, 'a naming mistake still cost a network round trip').toEqual([]);
+
+      // The control: the name that exists stamps, once, and the bytes the authority
+      // saw are a request — tens of bytes, no document header in them.
+      const stamped = await timestamp(twoNames, { fieldName: 'Signature1' });
+      expect(stamped.outputs.length).toBeGreaterThan(0);
+      expect(calls).toEqual(['https://tsa.example.org/tsa']);
+      const sent = bodies[0] as Uint8Array;
+      expect(sent.length, `the request carried ${sent.length} bytes`).toBeLessThan(120);
+      expect(sent.subarray(0, 5).join(',')).not.toBe('37,80,68,70,45');
+    } finally {
+      restore();
+    }
+  }, 300_000);
+
+  it('says what it did when the signature already carried a timestamp', async () => {
+    const calls: string[] = [];
+    const restore = stubAuthority(calls);
+    try {
+      const signed = await signedSource();
+      const once = await fileBytes(await timestamp(signed));
+      expect(once.length, 'the first stamp changed the file length').toBe(signed.length);
+      const twice = await timestamp(once);
+      expect(twice.outputs.length, 'a second stamp was refused without saying why')
+        .toBeGreaterThan(0);
+      expect(twice.warnings.join(' '))
+        .toMatch(/already carried 1 trusted timestamp[\s\S]*the file now holds 2/i);
+      // Control: the first stamp of a file has no earlier one to mention.
+      const fresh = await timestamp(signed);
+      expect(fresh.warnings.join(' ')).not.toMatch(/already carried/i);
+      // And the seal still holds with two tokens stacked inside the placeholder.
+      const [entry] = await readSignatures(await fileBytes(twice));
+      expect(entry.digestMatches, 'stacking a second stamp broke the signature').toBe(true);
+    } finally {
+      restore();
+    }
+  }, 300_000);
+
   it('accepts its own signature instead of refusing the chain it asks for', async () => {
     const calls: string[] = [];
     const restore = stubAuthority(calls);
