@@ -2498,11 +2498,11 @@ export const convertToTools: PdfToolDefinition[] = [
     actionLabel: 'Recognise text',
     promise: 'Your page image kept at full quality with a real, invisible text layer written on top — selectable and searchable.',
     notes: [
-      'The recogniser is the bundled ONNX model running in this tab; nothing is uploaded.',
+      'The recogniser is an ONNX model running in this tab; nothing is uploaded. The model is not shipped with the app: the first run downloads about 12 MB (4.7 MB detection, 7.6 MB recognition, measured 2026-11-26) from the vendor’s GitHub model repo (media.githubusercontent.com) and serves it from cache inside the tab after that.',
       'OCR output is selectable text, but it is machine-read: expect errors in small print, handwriting, tables and low-contrast scans, and no recovery of fonts, colours or layout.',
       'The page image is not downscaled or deskewed — only the optional white-point pass touches it — and it is embedded as PNG, so the PDF is at least as large as the scan.',
-      'The Language control is a hint for the status line: the bundled model is dictionary-driven and recognises scripts without a language switch.',
-      'The first run downloads the recognition models; after that they are cached for the session.',
+      'The Language control is a hint for the status line: the model is dictionary-driven and recognises scripts without a language switch.',
+      'The first run downloads the recognition models from GitHub; after that they are cached for the session.',
     ],
     fields: [
       PAGE_FIELD,

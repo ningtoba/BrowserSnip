@@ -2819,6 +2819,18 @@ describe('email-to-pdf prints the message, not the MIME plumbing', () => {
  * ------------------------------------------------------------------ */
 
 describe('digitize-document writes a layer where the words are', () => {
+  it('names where the recognition model actually comes from', () => {
+    // V3 ruling: the card said "the bundled ONNX model" while the engine
+    // fetches the vendor defaults on first use — measured 2026-11-26 from
+    // the vendor host: 4,896,928 B detection + 7,962,368 B recognition on
+    // media.githubusercontent.com. Not bundled; the copy must say so and
+    // name the host (bar 12: fetches disclosed exactly, never glossed).
+    const said = (getPdfTool('digitize-document')?.notes ?? []).join(' ');
+    expect(said).not.toMatch(/bundled/i);
+    expect(said).toMatch(/githubusercontent\.com/);
+    expect(said).toMatch(/nothing is uploaded/i);
+  });
+
   it('keeps the scan and hides recognisable words under it', async () => {
     OCR.words = [
       { text: 'INVOICE', x: 60, y: 90, width: 120, height: 20 },
