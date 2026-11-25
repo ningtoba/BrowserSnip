@@ -73,13 +73,19 @@ def sheets(doc):
 
 
 def info(doc):
-    """The identity a reader knows the document by, as a comparable list.
+    """The identity a reader knows the document by, as a comparable dict.
 
-    `keywords` comes back from `carryDocInfo` space-separated where the source
-    stored commas, so the *list* is what is compared, not the string. A key the
-    source does not have is not compared at all: `pdf-lib` writes its own
-    `Creator` on every document it creates, which is pre-existing behaviour of the
-    shared writer rather than something this tool adds.
+    `keywords` is compared as the **whole string**, separators and all:
+    `carryDocInfo` used to split it on commas and hand pdf-lib a list, which
+    rejoined it with single spaces, so `alpha, beta, gamma` arrived as
+    `alpha beta gamma`. That corruption is fixed (the merge round), and a checker
+    that normalises the separators away before comparing cannot tell the two
+    values apart — it would pass on the broken bytes and fail on the correct ones,
+    which is exactly what this function did until the `reverse-pages` re-audit read
+    `keywords 'alpha, beta, gamma' != 'alpha, beta, gamma'` out of a file whose
+    keywords were perfect. A key the source does not have is not compared at all:
+    `pdf-lib` writes its own `Creator` on every document it creates, which is
+    pre-existing behaviour of the shared writer rather than something this tool adds.
     """
     meta = doc.metadata or {}
     return {key: meta.get(key) or "" for key in ("title", "author", "subject", "keywords", "creator")}
@@ -90,11 +96,9 @@ def missing_info(source, out):
     want = {key: value for key, value in source_info.items() if value}
     problems = []
     for key, value in want.items():
-        if key == "keywords":
-            if sorted(value.replace(",", " ").split()) != sorted(out_info[key].split()):
-                problems.append(f"keywords {out_info[key]!r} != {value!r}")
-        elif out_info[key] != value:
-            problems.append(f"/Info {key} {out_info[key]!r} != {value!r}")
+        if out_info[key] != value:
+            label = "keywords" if key == "keywords" else f"/Info {key}"
+            problems.append(f"{label} {out_info[key]!r} != {value!r}")
     return problems
 
 
