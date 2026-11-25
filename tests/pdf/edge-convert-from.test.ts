@@ -2672,6 +2672,67 @@ describe('browser-generated PDFs: a run boundary is not a word boundary', () => 
     expect(outcome.message).toBe('Extracted 262 words from 8 page(s).');
   });
 
+  it('carries the whole words into the WordprocessingML, not run fragments', async () => {
+    const xml = await documentXml(await run('pdf-to-word', { pages: 'all' }, [browserFile('head.pdf')]));
+    expect(xml).toContain('test reflow');
+    expect(xml).toContain('First finding item');
+    expect(xml).not.toMatch(/re fl ow|fi nding/);
+  });
+
+  it('builds a workbook whose grid is the table the page wrote (5 rows, not 7)', async () => {
+    const XLSX = await import('xlsx');
+    const outcome = await run('pdf-to-excel', { pages: 'all' }, [browserFile('cells.pdf')]);
+    const blob = (outcome as unknown as { outputs: { blob: Blob }[] }).outputs[0]!.blob;
+    const book = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: 'array' });
+    const sheet = book.Sheets[book.SheetNames[0]!]!;
+    expect(sheet['B4']?.v).toBe('Ünïcødé 世界 naïve');
+    // The `<br>` row is one spreadsheet row again: it used to arrive as three,
+    // the last two of them half-empty.
+    expect(sheet['A5']?.v).toBe('Line one Line two');
+    expect(sheet['B5']?.v).toBe('newline cell');
+    expect(sheet['C5']?.v).toBe(4);
+    expect(sheet['A6'], 'no sixth row: the fracture is gone').toBeUndefined();
+  });
+
+  it('prints the Markdown table with its header once and four body rows', async () => {
+    const md = await textOf(
+      await run('extract-tables', { pages: 'all', format: 'md' }, [browserFile('cells.pdf')]),
+    );
+    const headers = md.split('\n').filter((line) => /\|\s*Item\s*\|\s*Note\s*\|\s*Val\s*\|/.test(line));
+    expect(headers, 'the header must not also be a data row').toHaveLength(1);
+    expect(md).toContain('Ünïcødé 世界 naïve');
+    expect(md).toMatch(/\|\s*Line one Line two\s*\|\s*newline cell\s*\|\s*4\s*\|/);
+    // The two junk fragments the fracture used to print are gone.
+    expect(md).not.toMatch(/\|\s*Line one\s*\|\s*\|\s*\|/);
+    expect(md).not.toMatch(/\|\s*\|\s*newline cell\s*\|\s*4\s*\|/);
+    const body = md
+      .split('\n')
+      .filter((line) => line.startsWith('|') && !line.includes('---') && !/^\|\s*Item\s*\|/.test(line));
+    expect(body).toHaveLength(4);
+  });
+
+  it('hands an AI index chunk text that reads like the page (with flat metadata still merged)', async () => {
+    const outcome = await run('prepare-pdf-for-ai', { pages: 'all', extra: '{"source":"browser"}' }, [
+      browserFile('lig.pdf'),
+    ]);
+    const doc = JSON.parse(await textOf(outcome)) as {
+      ref_doc_info: Record<string, { metadata: Record<string, unknown>; text: string }>;
+    };
+    const [record] = Object.values(doc.ref_doc_info);
+    expect(record.text).toContain('The efficient officer finally affirmed a sufficient profile offline.');
+    expect(record.text).not.toMatch(/e ff icient|o ff icer|fi nally/);
+    // Q1's gate survives the new spine: a flat object still merges onto the chunk.
+    expect(record.metadata.source).toBe('browser');
+  });
+
+  it('keeps the words whole with the layout switch off (paragraph flow)', async () => {
+    const outcome = await run('pdf-to-text', { layout: false }, [browserFile('head.pdf')]);
+    const text = await textOf(outcome);
+    expect(text).toContain('to test reflow');
+    expect(text).toContain('First finding item');
+    expect(text).not.toMatch(/re fl ow|fi nding/);
+  });
+
   it('rebuilds a table cell the page split into runs as the cell the author wrote', async () => {
     const outcome = await run('pdf-to-csv', {}, [browserFile('cells.pdf')]);
     const csv = await textOf(outcome);

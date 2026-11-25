@@ -1,0 +1,61 @@
+# family golden sensitivity inventory (seam 2C, step 5)
+# built by tests/pdf/zz-sensitivity.test.ts (throwaway rig): every fixture the convert-from /
+# office families build in-suite or vendor on disk, run through the real spine and counted for
+#   junctions      — run boundaries the gap rule can act on at all
+#   foldableRowPairs — row pairs the <br> fold could merge
+# Run:
+#   npx vitest run tests/pdf/zz-sensitivity.test.ts --reporter=verbose
+#   (then the @@INVENTORY@@ block, verbatim, below)
+
+@@INVENTORY@@
+suite fixture: tablePdf(5)         pages=1 rows=5 multiRunRows=5 junctions=10 tables=1 foldableRowPairs=0
+suite fixture: textPdf (4p)        pages=4 rows=48 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+suite fixture: header-once rev.pdf pages=1 rows=4 multiRunRows=4 junctions=4 tables=1 foldableRowPairs=0
+tests/fixtures/attachments/_base.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/af-no-name.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/af-only.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/annot-only.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/catalog-and-annot.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/direct-namespec.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/doc-annot-only.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/attachments/ef-dict-indirect.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/encrypted/aes-128-user.pdf (unreadable headless: PasswordRequiredError: This PDF is passw)
+tests/fixtures/encrypted/aes-256-owner.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/encrypted/aes-256-user.pdf (unreadable headless: PasswordRequiredError: This PDF is passw)
+tests/fixtures/encrypted/mu-aes-128-user.pdf (unreadable headless: PasswordRequiredError: This PDF is passw)
+tests/fixtures/encrypted/mu-aes-256-owner.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/encrypted/mu-aes-256-user.pdf (unreadable headless: PasswordRequiredError: This PDF is passw)
+tests/fixtures/encrypted/mu-rc4-128-user.pdf (unreadable headless: PasswordRequiredError: This PDF is passw)
+tests/fixtures/encrypted/plain.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/annotations.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/attachment.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/form.pdf    pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/layers.pdf  pages=3 rows=7 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/metadata.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/outlines-dests-flat-direct.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/outlines-dests-flat-ref.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/foreign/outlines-dests-tree-ref.pdf pages=3 rows=6 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-absent.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-kids-deep.pdf pages=6 rows=12 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-kids-mixed.pdf pages=6 rows=12 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-kids-prefix.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-native-mupdf.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-nums-A-st2.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-nums-R-st4.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/readers/labels-nums-a.pdf pages=4 rows=8 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/rowjoin/cells.pdf   pages=1 rows=7 multiRunRows=5 junctions=12 tables=1 foldableRowPairs=2
+tests/fixtures/rowjoin/colour.pdf  pages=8 rows=27 multiRunRows=0 junctions=0 tables=0 foldableRowPairs=0
+tests/fixtures/rowjoin/head.pdf    pages=1 rows=11 multiRunRows=7 junctions=14 tables=0 foldableRowPairs=0
+tests/fixtures/rowjoin/lig.pdf     pages=1 rows=2 multiRunRows=2 junctions=24 tables=0 foldableRowPairs=0
+tests/fixtures/rowjoin/uni-html.pdf pages=1 rows=18 multiRunRows=13 junctions=52 tables=0 foldableRowPairs=0
+@@END@@
+
+# summary: 41 fixtures + 3 rebuilt suite shapes. The pre-existing family fixtures present 14
+# run junctions in total (tablePdf(5): 10, the header-once rev.pdf: 4) and every one of them is
+# an inter-COLUMN boundary — the cells are drawn 160 pt apart, so the blank between runs is
+# ~12 em against the 0.1 em threshold. The join therefore emits a space exactly where the old
+# unconditional space already sat: no pre-existing golden moves. foldableRowPairs is 0 for every
+# fixture except the vendored browser table (cells.pdf: 2 — the <br> row).
+# The same is proven end to end: with the pre-fix spine checked out (be2e383) and the new pins
+# in the tree, the full suite fails 20 tests and passes 3866 — every failure is a new pin,
+# no pre-existing golden. Log: /tmp/lane-seam2c/red-old-spine.txt

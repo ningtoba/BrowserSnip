@@ -121,3 +121,45 @@ wrote, not three" and the `pdf-to-csv` pin in `edge-convert-from.test.ts`).
   262-word parity control that must not move.
 
 Red without the fix: **11 tests** across those three files (175 still green).
+
+## Family goldens re-anchored (step 5) — one before/after table
+
+**Did any existing golden move?** No, and that is measured rather than assumed. Two
+independent instruments say so:
+
+1. **Sensitivity inventory** (`docs/research/rowjoin-goldens.log`): every fixture the
+   convert-from / office families build in-suite or vendor on disk (41 files + 3 rebuilt
+   suite shapes) was run through the real spine and counted for the junctions the gap rule
+   can act on. The pre-existing fixtures present **14 junctions in total** — `tablePdf(5)` 10,
+   the header-once `rev.pdf` 4 — and all 14 are inter-*column* boundaries drawn 160 pt apart,
+   i.e. ~12 em against a 0.1 em threshold, where the new rule emits a space exactly where the
+   old unconditional space already sat. `foldableRowPairs` is 0 everywhere except the vendored
+   browser table (2, the `<br>` row).
+2. **Old-spine full-suite run**: with `be2e383`'s `core/convert.ts` + `core/tables.ts` checked
+   out and the new pins in the tree, `npx vitest run` fails **20 tests and passes 3866** — every
+   failure is one of the new pins, none is a pre-existing golden.
+
+So the re-anchor is *additive*: the family's assertions were written against MuPDF- and
+pdf-lib-written pages, which hand over one run per line, and this is the first time any of
+them has been pinned against a browser-written page. The table below is what each tool's
+golden says on the old vs the new spine.
+
+| tool (suite: `tests/pdf/edge-convert-from.test.ts`) | fixture | golden before the spine change | golden after | status |
+| --- | --- | --- | --- | --- |
+| pdf-to-text | `lig.pdf` | *none existed* — card counted **38 words** on a 16-word page | `Extracted 16 words from 1 page(s).`, sentence verbatim | **new pin** |
+| pdf-to-text (layout off) | `head.pdf` | *none* — paragraph flow carried `re fl ow` too | `…to test reflow`, `First finding item` | **new pin** |
+| pdf-to-markdown | `head.pdf` | *none* | `reflow` / `finding` whole, `Widget 3 29.97` table row | **new pin** |
+| pdf-to-json | `uni-html.pdf` | *none* — `page.text`/`block.text` printed `世 界`, `😀 🎉 🚀` | `世界`, `😀🎉🚀` unsplit, 134-word count | **new pin** |
+| prepare-pdf-for-ai | `lig.pdf` | *none* over the chunk text; Q1's pin covered only the metadata gate | LlamaIndex `ref_doc_info[*].text` holds the whole sentence **and** flat `extra` still merges (Q1's gate re-verified in the same assertion) | **new pin + Q1 re-verify** |
+| pdf-to-csv | `cells.pdf` | *none* | `Ünïcødé 世界 naïve`; grid is **5 lines**, last row `Line one Line two,newline cell,4` | **new pin** (moved once by the fold: 7 → 5 rows) |
+| pdf-to-excel | `cells.pdf` | *none* | workbook cells `B4=Ünïcødé 世界 naïve`, `A5/B5/C5` = the `<br>` row, **no 6th row** | **new pin** |
+| extract-tables | `cells.pdf` | *none* | header printed **once**, body **4 rows**, no `\| Line one \|  \|  \|` fragments | **new pin** (moved once by the fold: body 6 → 4) |
+| pdf-to-word | `head.pdf` | 3 pins on pdf-lib/MuPDF fixtures only | `word/document.xml` carries `test reflow`, `First finding item` | **new pin** |
+| pdf-to-svg `embedImages` | vendored raster fixtures | one pure-builder pin with an injected `image:` callback (blind to the transport) | browser-shaped payload pins + the rail/live proof | **moved with defect 2** |
+| colour 262-word parity | `colour.pdf` | *none* | `Extracted 262 words from 8 page(s).` — the control that must not move | **new pin** |
+| Q1: prepare-pdf-for-ai flatMetadata | `textPdfCached()` (0 junctions) | passes | passes unchanged (insensitive fixture) | **re-verified** |
+| Q1: extract-tables header-once | `rev.pdf` (4 inter-column junctions, `foldableRowPairs=0`) | passes | passes unchanged; grid still 4 rows, header still once | **re-verified** |
+
+Red for the nine new family pins against the pre-fix spine: **9 of 9** (measured by checking
+out `be2e383`'s two seam files and running the suite: `9 failed | 91 passed` in
+`edge-convert-from.test.ts`).
