@@ -9,6 +9,7 @@
  * component only has to collect gestures.
  */
 import type { AnnotationKind, AnnotationSpec, QuadRect } from '@/lib/pdf/core/annotations';
+import { stampLabel } from '@/lib/pdf/core/annotations';
 import {
   boundsOfPoints,
   boxToMarkFrame,
@@ -1196,7 +1197,16 @@ export function annotationToSpec(annotation: EditorAnnotation): AnnotationSpec {
     spec.textStyle = { style: annotation.textStyle };
     if (annotation.textLines) spec.textStyle.lines = annotation.textLines;
   }
-  if (annotation.stampName) spec.stampName = annotation.stampName;
+  if (annotation.stampName) {
+    spec.stampName = annotation.stampName;
+    // The words a reader searches and tooltips, not the `/S` token: a stamp placed on
+    // the surface used to carry no `/Contents` at all, so the same "Not approved" that
+    // the rail route wrote as two searchable words arrived here as nothing, and
+    // `MuPDF`/`pdf.js` found the mark only by drawing its appearance. Measured on the
+    // exported dictionary (`Contents=None` from the surface, `Contents="Not approved"`
+    // from the rail) before this line existed.
+    if (!spec.contents) spec.contents = stampLabel(annotation.stampName);
+  }
   if (annotation.imageBytes) spec.stampImage = annotation.imageBytes;
   if (annotation.link) spec.link = annotation.link;
   // A /Redact annotation is what Acrobat lists after the content is rewritten.

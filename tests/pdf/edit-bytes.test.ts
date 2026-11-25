@@ -44,7 +44,7 @@ import {
   rgb,
 } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
-import { pageContentStreams, recolourText, textRects } from '@/lib/pdf/core/content';
+import { pageContentStreams, parseHexColor, recolourText, strokeLine, textRects } from '@/lib/pdf/core/content';
 import { addAnnotations, listAnnotations } from '@/lib/pdf/core/annotations';
 import { clearFontCache, drawTextU } from '@/lib/pdf/core/fonts';
 import { openPDF } from '@/lib/pdf/core/doc';
@@ -1110,6 +1110,78 @@ describe('add-stamps writes standard annotations', () => {
     const xobjects = dictOf(doc, resources?.get(PDFName.of('XObject')));
     const image = xobjects && dictOf(doc, [...xobjects.entries()][0]?.[1]);
     expect(image?.lookupMaybe(PDFName.of('Subtype'), PDFName)?.asString()).toBe('/Image');
+  });
+});
+
+describe('a shorthand hex colour paints the colour it names', () => {
+  // `parseHexColor` documented `#rgb` support but read the digits as `0f 08 00`,
+  // so a typed `#f80` painted 1/17 of the colour: measured on the shipped build,
+  // background-color's artifact carried `0.05882 0.03137 0 rg` and the page's paper
+  // pixel read (14,7,0) — near-black, not orange. CSS colours `#f80` as `#ff8800`,
+  // the app's own swatch does the same (`#0f0` comes back `#00ff00`), and the repo's
+  // two other hex parsers already doubled the digits.
+  it('unit: the shorthand doubles, the long form is untouched', () => {
+    expect(parseHexColor('#f80')).toEqual([1, 136 / 255, 0]);
+    expect(parseHexColor('#abc')).toEqual([170 / 255, 187 / 255, 204 / 255]);
+    expect(parseHexColor('f80')).toEqual([1, 136 / 255, 0]);
+    // Controls: the 6-digit path and the grey it must not disturb.
+    expect(parseHexColor('#ff8800')).toEqual([1, 136 / 255, 0]);
+    expect(parseHexColor('#123456')).toEqual([18 / 255, 52 / 255, 86 / 255]);
+  });
+
+  it('background-color: the wash a person typed is the wash in the bytes', async () => {
+    const outcome = await runPdf('background-color', { color: '#f80', pages: '1' });
+    const stream = streamText((await reopen(outcome)).getPages()[0]);
+    expect(stream).toContain('1 0.53333 0 rg');
+    expect(stream).not.toMatch(/0\.05882 0\.03137 0 rg/u);
+  });
+
+  it('text-color: a recoloured run carries the doubled digits', async () => {
+    const source = await openPDF(await pdfFixture([{ text: 'Body text' }]));
+    const edited = await outBytes(await run('text-color', { to: '#f80', from: 'any', pages: 'all' }, [
+      pdfFile(await source.save({ useObjectStreams: false }), 'shorthand.pdf'),
+    ]));
+    expect(streamText((await openPDF(edited)).getPages()[0])).toContain('1 0.53333 0 rg');
+  });
+
+  it('strokeLine, the third consumer, gets the same colour it was handed', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([420, 595]);
+    strokeLine(page, { x: 10, y: 10 }, { x: 100, y: 10 }, { thickness: 2, color: '#0f0' });
+    expect(streamText(page)).toContain('0 1 0 RG');
+  });
+});
+
+describe('a second background run wins over the first', () => {
+  // The artifact is prepended, so the newer wash used to land behind the older one:
+  // red then blue left `/Contents [blue, red, own]` with the sheet still 78.2 % red
+  // and the card naming `#0000ff`. The newest wash now sits just behind the page's
+  // own drawing, so what a person chose last is what a reader paints.
+  it('orders the newest artifact after the one it replaces, still under the content', async () => {
+    const first = await runPdf('background-color', { color: '#ff0000', pages: '1' });
+    const firstBytes = await outBytes(first);
+    const again = await run('background-color', { color: '#0000ff', pages: '1' }, [
+      pdfFile(firstBytes, 'twice.pdf'),
+    ]);
+    const page = (await openPDF(await outBytes(again))).getPages()[0];
+    const streams = pageContentStreams(page).map((entry) =>
+      Buffer.from(entry.bytes).toString('latin1'),
+    );
+    const red = streams.findIndex((text) => /1 0 0 rg/.test(text) && text.includes('/Type /Background'));
+    const blue = streams.findIndex((text) => /0 0 1 rg/.test(text) && text.includes('/Type /Background'));
+    expect(red, 'the first wash is gone from /Contents').toBeGreaterThanOrEqual(0);
+    expect(blue, 'the second wash is missing').toBeGreaterThanOrEqual(0);
+    expect(blue, 'the newest wash is still buried behind the older one').toBeGreaterThan(red);
+    // And the page still draws over both: the washes lead, the page follows.
+    expect(streams.length).toBeGreaterThan(blue + 1);
+    expect(streams[streams.length - 1]).not.toContain('/Type /Background');
+  });
+
+  it('control: a single run still leads the page, and one artifact only', async () => {
+    const page = (await reopen(await runPdf('background-color', { color: '#ff0000', pages: '1' }))).getPages()[0];
+    const streams = pageContentStreams(page).map((entry) => Buffer.from(entry.bytes).toString('latin1'));
+    expect(streams.filter((text) => text.includes('/Type /Background'))).toHaveLength(1);
+    expect(streams[0]).toContain('/Type /Background');
   });
 });
 

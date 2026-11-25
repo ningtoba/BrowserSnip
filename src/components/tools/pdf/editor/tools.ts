@@ -9,20 +9,59 @@
 import type { EditorToolId, ToolMeta, ToolStyle } from './types';
 import { DEFAULT_FACE_STYLE, defaultFaceStyle, type FaceSurfaceId } from '@/lib/pdf/core/text-style';
 
-/** Built-in stamp names. Written verbatim to `/S`, so no spaces (PDF names). */
+/**
+ * Built-in stamp names — the ONE list both surfaces offer.
+ *
+ * The rail used to carry its own copy of this list in `tools/edit.ts`, spelled with
+ * spaces (`NOT APPROVED`), and it had drifted in both directions: five names the
+ * engine can write (`Experimental`, `Expired`, `Final`, `NotForPublicRelease`,
+ * `Void`) were unreachable there, while two entries it did offer — `EXPRESS`,
+ * `PRELIMINARY RESULTS` — are not in PDF 32000-1 Table 265 at all, so the promise
+ * that "other readers recognise it" was false for exactly those two. A value typed
+ * or stored in the old spelling still resolves: `stampNameOf` folds case and
+ * spacing, and `tests/pdf/stamp-orientation.test.ts` pins that.
+ *
+ * The last two rows stay because a reader can still *show* them — the appearance
+ * this app draws carries the words — but their labels say what they are, and the
+ * card's help line says it too.
+ */
 export const BUILT_IN_STAMPS: { value: string; label: string }[] = [
   { value: 'Approved', label: 'Approved' },
-  { value: 'NotApproved', label: 'Not approved' },
   { value: 'AsIs', label: 'As is' },
   { value: 'Confidential', label: 'Confidential' },
+  { value: 'Departmental', label: 'Departmental' },
   { value: 'Draft', label: 'Draft' },
   { value: 'Experimental', label: 'Experimental' },
   { value: 'Expired', label: 'Expired' },
   { value: 'Final', label: 'Final' },
+  { value: 'ForComment', label: 'For comment' },
+  { value: 'ForPublicRelease', label: 'For public release' },
+  { value: 'NotApproved', label: 'Not approved' },
   { value: 'NotForPublicRelease', label: 'Not for public release' },
   { value: 'Sold', label: 'Sold' },
   { value: 'TopSecret', label: 'Top secret' },
   { value: 'Void', label: 'Void' },
+  { value: 'EXPRESS', label: 'Express (no standard name)' },
+  { value: 'PRELIMINARY RESULTS', label: 'Preliminary results (no standard name)' },
+];
+
+/**
+ * Spellings the rail carried before the two lists were joined (`APPROVED`,
+ * `NOT APPROVED`, …). They stay *accepted* so a value a person had already chosen,
+ * or a call site that names the old token, is not refused by the select's own
+ * validation — `stampNameOf` folds them onto the row above, and
+ * `tests/pdf/stamp-orientation.test.ts` pins that mapping on produced bytes.
+ * They are offered separately (labelled "saved spelling") rather than silently, so
+ * the picker still tells the truth about which name lands in `/S`.
+ */
+export const LEGACY_STAMP_SPELLINGS: { value: string; label: string }[] = [
+  { value: 'APPROVED', label: 'Approved (saved spelling)' },
+  { value: 'AS IS', label: 'As is (saved spelling)' },
+  { value: 'CONFIDENTIAL', label: 'Confidential (saved spelling)' },
+  { value: 'DRAFT', label: 'Draft (saved spelling)' },
+  { value: 'NOT APPROVED', label: 'Not approved (saved spelling)' },
+  { value: 'SOLD', label: 'Sold (saved spelling)' },
+  { value: 'TOP SECRET', label: 'Top secret (saved spelling)' },
 ];
 
 /** Quick colour choices, echoing the highlighter palette people expect. */

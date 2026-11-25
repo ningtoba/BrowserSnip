@@ -25,6 +25,9 @@ import { drawTextU, measureText, wrapText } from '../core/fonts';
 import { mergeFaceStyle, standardFamilyFace, standardFacesSpell, type FaceStyle } from '../core/text-style';
 import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './textStyleFields';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
+// The stamp list lives with the surface that renders it (`editor/tools.ts`), so the rail
+// cannot carry a second copy that drifts; the module is plain data + the face table, no UI.
+import { BUILT_IN_STAMPS, LEGACY_STAMP_SPELLINGS } from '@/components/tools/pdf/editor/tools';
 import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, toRoman, toLetters, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
 import { ocrSilentPageOf } from '../core/ocr';
@@ -430,6 +433,26 @@ async function drawBehind(page: PDFPage, paint: () => Promise<void> | void): Pro
   const first = kept[0].ref;
   joinContentStreams(page, kept.map((stream) => stream.ref), { into: first });
   setContentStreams(page, [mark, first]);
+}
+
+/**
+ * How many of a page's leading content streams are background artifacts this app wrote.
+ *
+ * `prependBackground` puts its stream at the head of `/Contents`, and draw order is array
+ * order, so a *second* run landed further back than the first one's wash: the colour the
+ * user had just chosen was the colour nobody could see. Measured on the shipped build —
+ * `#ff0000` on page 1, then that file again with `#0000ff` — the export carried
+ * `/Contents [pass-2, pass-1, the page's own]`, its paper pixel read (214.3,0.3,0.4),
+ * 78.2 % of the sheet the *first* red and 0.0 % of the blue the card named.
+ */
+function leadingBackgroundArtifacts(streams: { bytes: Uint8Array }[]): number {
+  let count = 0;
+  for (const stream of streams) {
+    const head = Buffer.from(stream.bytes.slice(0, 96)).toString('latin1');
+    if (!head.trimStart().startsWith('/Artifact') || !head.includes('/Type /Background')) break;
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -1395,14 +1418,17 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Place stamps',
     promise: 'A standard or image stamp as a real PDF annotation, one per page you click or per page you list.',
     fields: [
-      { key: 'stamp', label: 'Stamp', group: 'Stamp', type: 'select', default: 'APPROVED', options: [
-        { value: 'APPROVED', label: 'Approved' }, { value: 'AS IS', label: 'As is' },
-        { value: 'CONFIDENTIAL', label: 'Confidential' }, { value: 'DRAFT', label: 'Draft' },
-        { value: 'EXPRESS', label: 'Express' }, { value: 'NOT APPROVED', label: 'Not approved' },
-        { value: 'PRELIMINARY RESULTS', label: 'Preliminary results' },
-        { value: 'SOLD', label: 'Sold' }, { value: 'TOP SECRET', label: 'Top secret' },
+      // The same list the surface's picker maps (editor `tools.ts`), so the two
+      // surfaces cannot drift again (the legacy spellings below are accepted, labelled,
+      // and fold onto the same name): this copy used to offer nine spellings of the
+      // Table 265 names plus two names the table does not contain, while the surface
+      // offered twelve the table does. See `BUILT_IN_STAMPS`.
+      { key: 'stamp', label: 'Stamp', group: 'Stamp', type: 'select', default: 'Approved', options: [
+        ...BUILT_IN_STAMPS,
+        // Accepted, not chosen: a value saved before the lists were joined must still run.
+        ...LEGACY_STAMP_SPELLINGS,
         { value: 'custom', label: 'Custom image…' },
-      ], help: 'A standard stamp is a named PDF annotation, so other readers recognise it and let people move or delete it.' },
+      ], help: 'The standard names are PDF\u2019s own stamp table, so other readers can show their own picture of the mark and let people move or delete it. The two marked \u201cno standard name\u201d are not in that table: they travel as the words this app draws, and another reader shows exactly that. Custom image stamps your own picture.' },
       { key: 'image', label: 'Stamp image', type: 'file', accept: 'image/*', when: (v) => v.stamp === 'custom', group: 'Stamp', help: 'Used when the stamp above is set to Custom image. Kept as an annotation, so it can still be moved later.' },
       { key: 'position', label: 'Position', type: 'select', default: 'top-right', options: ANCHOR_OPTIONS, group: 'Mark', help: 'The corner of each page as it is displayed, so a rotated page stamps where you can see it.' },
       { key: 'width', label: 'Width', type: 'number', default: 140, min: 20, max: 600, step: 1, unit: 'pt', half: true, group: 'Mark', help: 'The stamp is scaled to this width and keeps its own proportion. On a rotated page it is measured against the page as displayed.' },
@@ -1436,7 +1462,7 @@ export const editTools: PdfToolDefinition[] = [
       const notes: string[] = [];
       const [input] = await openInputs(context);
       const { addAnnotations, stampLabel } = await import('../core/annotations');
-      const name = stringValue(context.values, 'stamp', 'APPROVED');
+      const name = stringValue(context.values, 'stamp', 'Approved');
       const custom = name === 'custom' ? firstFileBytes(context.values, 'image') : null;
       if (name === 'custom' && !custom) throw new Error('Choose the image to stamp.');
       const pages = resolvePages(stringValue(context.values, 'pages', '1'), input.pageCount);
@@ -1524,7 +1550,7 @@ export const editTools: PdfToolDefinition[] = [
     async run(context) {
       const notes: string[] = [];
       const [input] = await openInputs(context);
-      const { prependBackground } = await import('../core/content');
+      const { prependBackground, pageContentStreams, setContentStreams } = await import('../core/content');
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const color = stringValue(context.values, 'color', '#f7f7f4');
       const opacity = readNumber(context, notes, { key: 'opacity', label: 'Opacity', fallback: 1, min: 0.05, max: 1 });
@@ -1541,7 +1567,17 @@ export const editTools: PdfToolDefinition[] = [
           note(notes, `Page ${pages[i] + 1} has an empty crop box, so it was left unpainted.`);
           continue;
         }
+        // The wash a person chose last is the wash a reader paints: the artifact is
+        // prepended, so a second run used to bury its own colour behind the first one's
+        // (measured: red then blue → paper 78.2 % red, 0.0 % blue, card naming blue).
+        // Insert the new stream after the background artifacts the page already leads
+        // with, which keeps every wash under the page's own drawing operators.
+        const leading = leadingBackgroundArtifacts(pageContentStreams(page));
         prependBackground(page, { x: box.x, y: box.y, width: box.width, height: box.height }, color, { opacity });
+        if (leading > 0) {
+          const [newest, ...rest] = pageContentStreams(page).map((stream) => stream.ref);
+          setContentStreams(page, [...rest.slice(0, leading), newest, ...rest.slice(leading)]);
+        }
         painted += 1;
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }

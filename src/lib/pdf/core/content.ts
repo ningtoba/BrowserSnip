@@ -67,7 +67,13 @@ export function parseHexColor(hex: string, field = 'color'): RGB {
   const value = String(hex ?? '').trim().replace(/^#/, '');
   const m =
     value.length === 3
-      ? [value[0], value[1], value[2]].map((part) => Number.parseInt(part, 16))
+      ? // A shorthand triple doubles its digits: CSS colours `#f80` as `#ff8800`, and
+      // reading it as `0f 08 00` painted 1/17 of the colour the user asked for. Measured
+      // on the shipped build through the typed half of the colour picker: `#f80` landed
+      // `0.05882 0.03137 0 rg` and the page's paper pixel read (14,7,0) — near-black,
+      // not orange. `core/bookmarks.ts` and `tools/helpers.ts` already doubled them;
+      // Chromium's own colour input does too (`#0f0` comes back `#00ff00`).
+      [value[0], value[1], value[2]].map((part) => Number.parseInt(part + part, 16))
       : value.length === 6
         ? [value.slice(0, 2), value.slice(2, 4), value.slice(4, 6)].map((part) =>
             Number.parseInt(part, 16),
