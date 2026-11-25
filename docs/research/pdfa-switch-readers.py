@@ -15,6 +15,16 @@ assumed:
     profile, and what lcms2 makes of it;
   * **the Info/XMP mirror** — every `/Info` entry PDF/A §6.6.2.2 wants reflected;
   * **the trailer `/ID`** — §6.1.3, the duty pdf-lib's writer does not perform;
+  * **the cross-reference structure** — §6.1.4 test 3: part 1 forbids an xref
+    stream, so a file that writes `/Type /XRef` cannot be a part-1 file whatever
+    else about it is right;
+  * **the mirror by property, not by substring** — §6.7.3 tests 1/4/5/8: `/Info`
+    `Subject` → `dc:description['x-default']`, `/Info` `Keywords` → `pdf:Keywords`,
+    `/Info` `Creator` → `xmp:CreatorTool`, and the two dates compared **as instants
+    at the resolution the format allows** — a packet writing `…:39.376Z` over an
+    `/Info` `D:…39Z` mirrors the same wall-clock second and still fails tests 1/8,
+    which the substring check above cannot see;
+  * **links** — the `/Link` annotations the file had before the rewrite;
   * **transparency** — soft masks and alpha graphic states, which part 1 forbids;
   * **attachments** — carried in part 3, forbidden in part 1;
   * **fonts** — every face with or without a font program;
@@ -27,6 +37,7 @@ import re
 import struct
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 import pymupdf
@@ -68,6 +79,61 @@ def icc_facts(profile: bytes) -> dict:
     return out
 
 
+DC = "{http://purl.org/dc/elements/1.1/}"
+PDF_NS = "{http://ns.adobe.com/pdf/1.3/}"
+XMP_NS = "{http://ns.adobe.com/xap/1.0/}"
+DATE_SPelling = re.compile(
+    r"^D?:?\s*(\d{4})-?(\d{2})?-?(\d{2})?[T ]?(\d{2})?:?(\d{2})?:?(\d{2})?(\.\d+)?"
+    r"(Z|[+-]\d{2}:?\d{2})?$"
+)
+
+
+def parse_date(value: str | None):
+    """(the instant, does the string carry a fraction of a second) or None.
+
+    Both spellings a PDF/A file uses are accepted: the `/Info` form
+    `D:YYYYMMDDHHmmSS` with an optional zone (§7.9.4), which **has no fractional
+    field at all**, and the XMP ISO-8601 form `YYYY-MM-DDThh:mm:ss[.sss](Z|±hh:mm)`.
+    A missing zone is read as UTC and reported, never silently.
+    """
+    if not value:
+        return None
+    match = DATE_SPelling.match(value.strip().replace("'", ""))
+    if not match:
+        return None
+    year, month, day, hour, minute, second, fraction, zone = match.groups()
+    offset = timezone.utc
+    if zone and zone != "Z":
+        sign = 1 if zone[0] == "+" else -1
+        digits = zone[1:].replace(":", "")
+        offset = timezone(sign * timedelta(hours=int(digits[:2]), minutes=int(digits[2:4] or 0)))
+    moment = datetime(
+        int(year), int(month or 1), int(day or 1), int(hour or 0), int(minute or 0), int(second or 0), tzinfo=offset
+    )
+    return moment, bool(fraction)
+
+
+def literal(tree, name: str) -> str | None:
+    """An XMP property written as an attribute or as element text."""
+    for node in tree.iter():
+        if node.get(name) is not None:
+            return node.get(name).strip()
+        if node.tag == name and (node.text or "").strip():
+            return node.text.strip()
+    return None
+
+
+def alt(tree, name: str) -> str | None:
+    """An XMP unordered-array property — `dc:title`, `dc:description` — first item."""
+    for node in tree.iter():
+        if node.get(name) is None and node.tag != name:
+            continue
+        for item in node.iter(f"{{{RDF}}}li"):
+            if (item.text or "").strip():
+                return item.text.strip()
+    return None
+
+
 def report(path: str, expected: str | None) -> None:
     doc = pymupdf.open(path)
     catalog = doc.pdf_catalog()
@@ -75,6 +141,7 @@ def report(path: str, expected: str | None) -> None:
     lines = [f"== {path} ({len(open(path,'rb').read())} B) claimed part {expected or '?'}"]
     identification = None
     utf8 = None
+    tree = None
     if raw:
         bom = raw.startswith(b"\xef\xbb\xbf") or b"<?xpacket begin=" in raw[:60] and "\ufeff".encode("utf-8") in raw[:60]
         try:
@@ -156,8 +223,71 @@ def report(path: str, expected: str | None) -> None:
                 missing.append(key)
         lines.append(f"  /Info entries not mirrored in the packet: {missing or 'none'}")
 
+    # ── the duties the substring scan cannot see, graded by rule ──────────────────
+    # A validator compares *properties* and the *cross-reference structure*; it does
+    # not grep. So each of these is looked at on its own terms:
+    #   §6.1.4 t3  part 1 forbids the xref stream (`/Type /XRef`) and object streams,
+    #              which is a fact about how the file is written, not about the packet;
+    #   §6.7.3 t4/t5/t6  `/Info` Subject/Keywords/Creator mirrored into
+    #              dc:description['x-default'], pdf:Keywords, xmp:CreatorTool;
+    #   §6.7.3 t1/t8  the dates equal **as instants at the resolution the format
+    #              allows** — `…T11:01:39.376Z` over `D:20261125110139Z` is the same
+    #              wall-clock second and still fails, because PDF dates have no
+    #              fractional field for a validator to match.
+    fails: list[str] = []
+    file_bytes = open(path, "rb").read()
+    xref_at, objstm_at = file_bytes.find(b"/Type /XRef"), file_bytes.find(b"/Type /ObjStm")
+    part1 = (expected or "").startswith("1")
+    lines.append(
+        f"  §6.1.4 t3 cross-reference: /Type /XRef {'at byte ' + str(xref_at) if xref_at >= 0 else 'absent'}"
+        f", /Type /ObjStm {'at byte ' + str(objstm_at) if objstm_at >= 0 else 'absent'}"
+        + ("" if xref_at < 0 or not part1 else " — part 1 forbids xref streams, so this cannot be a part-1 file")
+    )
+    if xref_at >= 0 and part1:
+        fails.append("6.1.4/3 xref stream in a part-1 file")
+    if raw and tree is not None:
+        for rule, entry, prop, have, written in (
+            ("6.7.3/4", "Subject", "dc:description['x-default']", info.get("subject"), alt(tree, DC + "description")),
+            ("6.7.3/5", "Keywords", "pdf:Keywords", info.get("keywords"), literal(tree, PDF_NS + "Keywords")),
+            ("6.7.3/6", "Creator", "xmp:CreatorTool", info.get("creator"), literal(tree, XMP_NS + "CreatorTool")),
+        ):
+            want, got = str(have or ""), str(written or "")
+            if not want:
+                lines.append(f"  §{rule} mirror {entry}: nothing in /Info to mirror")
+                continue
+            ok = want == got
+            lines.append(
+                f"  §{rule} mirror {entry} → {prop}: {'equivalent' if ok else 'NOT mirrored'}"
+                f" /Info={want[:70]!r} packet={got[:70]!r}"
+            )
+            if not ok:
+                fails.append(f"{rule} {entry} not mirrored")
+        for rule, key, prop in (
+            ("6.7.3/1", "creationDate", XMP_NS + "CreateDate"),
+            ("6.7.3/8", "modDate", XMP_NS + "ModifyDate"),
+        ):
+            pdf_raw, xmp_raw = str(info.get(key) or ""), literal(tree, prop) or ""
+            if not pdf_raw and not xmp_raw:
+                lines.append(f"  §{rule} dates {key}: nothing on either side")
+                continue
+            left, right = parse_date(pdf_raw), parse_date(xmp_raw)
+            if left is None or right is None:
+                ok = False
+                verdict = f"UNPARSEABLE /Info={pdf_raw!r} packet={xmp_raw!r}"
+            else:
+                ok = left[0] == right[0] and not left[1] and not right[1]
+                verdict = (
+                    f"{'equivalent' if ok else 'NOT equivalent'}: /Info {pdf_raw!r} ({left[0].isoformat() if left else '?'})"
+                    f" vs {xmp_raw!r} ({right[0].isoformat() if right else '?'})"
+                )
+                if left and right and left[0] == right[0] and (left[1] or right[1]):
+                    verdict += " — same instant, but a sub-second field is written where PDF has none"
+            lines.append(f"  §{rule} dates {key}: {verdict}")
+            if not ok:
+                fails.append(f"{rule} {key} not equivalent")
+
     # Transparency, attachments, fonts, and what survived the rewrite.
-    soft_masks = alpha = 0
+    soft_masks = alpha = link_objects = 0
     for x in range(1, doc.xref_length()):
         try:
             head = doc.xref_object(x, compressed=False)
@@ -167,6 +297,8 @@ def report(path: str, expected: str | None) -> None:
             soft_masks += 1
         if "/CA" in head or "/ca" in head or "/BM" in head:
             alpha += 1
+        if "/Subtype /Link" in head:
+            link_objects += 1
     attachments = doc.embfile_count()
     fonts = []
     for page in doc:
@@ -185,6 +317,11 @@ def report(path: str, expected: str | None) -> None:
         f"  transparency: {soft_masks} /SMask reference(s), {alpha} graphic-state entries with alpha"
         f" | attachments {attachments} | faces {len(fonts)} embedded {sum(1 for f in fonts if f[2])}"
     )
+    lines.append(
+        f"  links: {link_objects} /Subtype /Link object(s), MuPDF answers {sum(len(p.get_links()) for p in doc)} link(s)"
+        f" | marks: {sum(len(list(p.annots())) for p in doc)} annot(s) reachable from a page"
+    )
+    lines.append(f"  §-graded duties FAILED here: {fails or 'none'}")
     print("\n".join(lines))
 
 
