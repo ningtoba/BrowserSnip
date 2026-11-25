@@ -73,18 +73,28 @@ out words the file then drops.
 
 ## 3. Left open, measured here
 
-1. **Our own writer's subset is broken, independently of this row.** A Noto subset
-   emitted by `UnicodeFaceEmbedder` (`core/fonts.ts`) — and by pdf-lib's own
-   subsetter — carries glyph data that MuPDF, pdf.js *and* fontTools all fail to
-   read past the second included glyph: `#`/`A`/`4` ink 1 213 / 1 042 / 961 px,
-   `B`/`—`/`Z` ink **0**, while the text still extracts correctly (so copy and
-   Ctrl-F are fine and the eye is not). Identical at `b6f985b` and at the tip, so
-   it is not a regression from this row — but it *is* a "boxes where text should
-   be" report, it lives in a file this row owns, and it only bites on the
-   substitution path, which is one more argument for keeping the page's own face.
-   Repro: `docs/research/text-edit-proof.mjs /tmp/tf/type3.pdf`, or
-   `page.drawText` one character at a time with a `getFont(..., 'noto')` face and
-   count ink per word with PyMuPDF.
+1. **Our own writer's subset is broken, independently of this row.** — *closed
+   and re-measured 2026-11-28: it was fixed by `aae5110` and this note had gone
+   stale.* A Noto subset emitted by `UnicodeFaceEmbedder` (`core/fonts.ts`) — and
+   by pdf-lib's own subsetter — carried glyph data that MuPDF, pdf.js *and*
+   fontTools all failed to read past the second included glyph: `#`/`A`/`4` ink
+   1 213 / 1 042 / 961 px, `B`/`—`/`Z` ink **0**, while the text still extracted
+   correctly (so copy and Ctrl-F are fine and the eye is not). Cause: fontkit's
+   subsetter halves `loca` offsets in the short form and the bundled Noto faces
+   keep glyph records at odd bytes; `alignTrueTypeGlyphs` moves every record onto
+   a long word where face bytes enter the embedder. Re-measured with the rig
+   that now ships beside this file (`text-subset-ink.mjs` +
+   `text-subset-ink.py`, live tab on :5291, 30 pt, ink at 150 dpi):
+   with the two align calls disabled the tail comes straight back —
+   `#`/`A`/`4` **700 / 599 / 557**, `B`/`—`/`Z` **0 / 0 / 0**, text still
+   extracting, and fontTools dying in `glyf` decompile on the fourth glyph —
+   and at the tip every character has ink (700 / 599 / 557 / 779 / 290 / 566)
+   with fontTools parsing all seven subset glyphs
+   (`contours=[2,2,2,2,3,1,1]`). Pinned in `tests/pdf/fonts.test.ts`
+   ("carries ink for every character the source face has ink for",
+   "starts every subset glyph record on a long word"): disabling either align
+   site turns 4 of its 14 tests red, the tip is 14/14 green. The page's-own-face
+   preference of §2 is untouched by all of this.
 2. **Re-flow is reported, not fitted** — *closed in round 032; it was worse than
    "can run past".* Measured on `/tmp/rf/reflow.pdf`, a two-line block replaced
    with ten lines' worth: the pane printed 46 px of the new text over the next
