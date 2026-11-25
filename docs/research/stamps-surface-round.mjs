@@ -106,7 +106,7 @@ for (const c of CASES) {
   await sleep(2500);
   record.panel = JSON.parse(await ev(`JSON.stringify([...document.querySelectorAll('select,input,textarea')]
     .filter((e)=>e.offsetParent)
-    .map((e)=>({tag:e.tagName.toLowerCase(),type:e.type||'',label:(e.closest('label')?.innerText||e.getAttribute('aria-label')||(e.parentElement?.parentElement?.innerText||'')).replace(/\\s+/g,' ').trim().slice(0,44),value:String(e.value).slice(0,24),options:e.tagName==='SELECT'?[...e.options].map((o)=>o.text).slice(0,14):undefined})))`));
+    .map((e)=>({tag:e.tagName.toLowerCase(),type:e.type||'',label:(e.closest('label')?.innerText||e.getAttribute('aria-label')||(e.parentElement?.parentElement?.innerText||'')).replace(/\\s+/g,' ').trim().slice(0,44),value:String(e.value).slice(0,24),options:e.tagName==='SELECT'?[...e.options].map((o)=>o.text).slice(0,24):undefined})))`));
 
   if (c.stamp) {
     record.readback.push(`stamp: ${JSON.stringify(await ev(`(() => {

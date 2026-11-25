@@ -328,6 +328,20 @@ const CONTROL = (label) => `(()=>{
     if(byId.tagName==='SELECT') return out('select',byId,{id:byId.id,value:byId.value,options:[...byId.options].map(o=>[o.value,o.text])});
     return out('input',byId,{id:byId.id,type:byId.type,value:byId.value,min:byId.min,max:byId.max});
   }
+  // A field can also be addressed by the exact words its control carries in its own
+  // aria-label. The colour pair is the case this exists for: the label "Colour"
+  // resolves to the swatch, which rewrites whatever it is given (a typed 3-digit
+  // shorthand comes back as the long form, a CSS name as its hex), so the typed half
+  // of a colour picker — the hex box, and the values a person can get wrong there —
+  // is unreachable without it. Groups and checkboxes are excluded so a role=group or
+  // a toggle keeps resolving the way it always did.
+  const exact=[...document.querySelectorAll('input[aria-label],textarea[aria-label],select[aria-label]')]
+    .find((e)=>norm(e.getAttribute('aria-label'))===want&&e.type!=='checkbox'&&e.type!=='radio');
+  if(exact){
+    if(exact.tagName==='TEXTAREA') return out('textarea',exact,{id:exact.id});
+    if(exact.tagName==='SELECT') return out('select',exact,{id:exact.id,value:exact.value,options:[...exact.options].map((o)=>[o.value,o.text])});
+    return out('input',exact,{id:exact.id,type:exact.type,value:exact.value,min:exact.min,max:exact.max,aria:'exact'});
+  }
   const hex=[...document.querySelectorAll('[aria-label]')].find((e)=>norm(e.getAttribute('aria-label'))===want+' hex value');
   if(hex) return out('input',hex,{type:hex.type,value:hex.value,aria:'hex'});
   const swatch=[...document.querySelectorAll('[aria-label]')].find((e)=>norm(e.getAttribute('aria-label'))===want+' colour');
@@ -379,6 +393,9 @@ const AT = (label) => {
     const lab=[...document.querySelectorAll('label[for]')].find((l)=>norm(l.innerText)===want);
     const el=lab?document.getElementById(lab.getAttribute('for')):null;
     if(el) return el;
+    const ex=[...document.querySelectorAll('input[aria-label],textarea[aria-label],select[aria-label]')]
+      .find((e)=>norm(e.getAttribute('aria-label'))===want&&e.type!=='checkbox'&&e.type!=='radio');
+    if(ex) return ex;
     const aria=[...document.querySelectorAll('[aria-label]')].find((e)=>{const n=norm(e.getAttribute('aria-label'));return n===want+' hex value'||n===want+' colour';});
     if(aria) return aria;
     const box=[...document.querySelectorAll('label')].find((l)=>norm(l.innerText)===want&&l.querySelector('input[type=checkbox]'));
