@@ -1981,7 +1981,10 @@ const MATRIX_ORDER = ['Idx', 'Bi1', 'G4', 'G8', 'Rgb', 'Cmy', 'R16', 'Icc'];
 
 /** The first pixel of each, which is what the exported PNG has to reproduce. */
 const MATRIX_FIRST_PIXEL: Record<string, number[]> = {
-  Idx: [16, 32, 48],
+  // Index 2 — triple (112,128,144): the two high bytes are exactly the values
+  // CP1252 remaps (0x80→€, 0x90→undefined). A palette read through
+  // decodeText() turns this pixel into the measured (112,34,25).
+  Idx: [112, 128, 144],
   Bi1: [255, 255, 255],
   G4: [0, 0, 0],
   G8: [10, 10, 10],
@@ -2016,7 +2019,7 @@ function imageMatrixPdf(): Uint8Array {
       name: 'Idx',
       colorSpace: `[/Indexed /DeviceRGB 3 <${Buffer.from(MATRIX_PALETTE).toString('hex')}>]`,
       bits: 8,
-      samples: grey([0, 1, 2, 3, 3, 2, 1, 0, 0, 0, 1, 1, 2, 2, 3, 3], 8),
+      samples: grey([2, 1, 0, 3, 3, 2, 1, 0, 0, 0, 1, 1, 2, 2, 3, 3], 8),
     },
     { name: 'Bi1', colorSpace: '/DeviceGray', bits: 1, samples: grey([1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1], 1) },
     { name: 'G4', colorSpace: '/DeviceGray', bits: 4, samples: grey([0, 5, 10, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 4) },

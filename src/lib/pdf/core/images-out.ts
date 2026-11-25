@@ -385,15 +385,11 @@ function indexedPlan(doc: PDFDocument, array: PDFArray): ColorSpacePlan | ColorS
 function paletteBytes(doc: PDFDocument, value: unknown): Uint8Array | null {
   const object = value instanceof PDFRef ? doc.context.lookup(value) : value;
   if (object instanceof PDFRawStream) return safeDecode(object);
-  // `decodeText()` hands back one character per source byte, so the char codes
-  // are the palette bytes; a palette is binary data that merely travels in a
-  // string.
-  if (object instanceof PDFString || object instanceof PDFHexString) {
-    const text = object.decodeText();
-    const out = new Uint8Array(text.length);
-    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-    return out;
-  }
+  // A palette is BINARY data that merely travels in a string: decodeText()
+  // applies CP1252, silently remapping 44 of the 256 byte values (0x1e→218).
+  // asBytes() is the byte-exact read — entry (10,20,30) must extract as
+  // (10,20,30), and the old pin only checked entries that dodged the range.
+  if (object instanceof PDFString || object instanceof PDFHexString) return object.asBytes();
   return null;
 }
 
