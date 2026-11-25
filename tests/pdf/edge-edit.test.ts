@@ -1367,6 +1367,50 @@ describe('stamps, annotations and redaction (E9, E13, E15)', () => {
     expect(corners[0]!.y).toBeCloseTo(corners[1]!.y, 0);
   });
 
+  it('tells the truth about a stamp on a turned sheet (E9)', async () => {
+    // The card's standing note says the label is drawn upright on the page it lands
+    // on; the run used to admit the opposite ("the label follows the page
+    // orientation") in the same breath. The bytes settle it: the appearance carries
+    // the counter-rotation (`cm 0 1 -1 0`, pinned in stamp-orientation.test.ts) and
+    // the stored box is transposed, which is what makes the mark 140 pt wide as
+    // displayed. The sentence has to say the same thing.
+    const bytes = await fixture([{ size: A4, rotation: 90 }], 'turn-note');
+    const outcome = await run('add-stamps', { stamp: 'APPROVED', position: 'top-right', width: 140, pages: 'all' }, [bytes]);
+    const warnings = outcome.warnings.join('\n');
+    expect(warnings).toMatch(/the label is turned back so it reads across that sheet rather than running down its edge/i);
+    expect(warnings).not.toMatch(/follows the page orientation/i);
+    const doc = await openPDF(await outputBytes(outcome));
+    const mark = listAnnotations(doc).filter((entry) => entry.kind === 'Stamp')[0]!;
+    expect(Math.round(mark.rect.height)).toBe(140);
+    expect(mark.rect.width).toBeLessThan(mark.rect.height);
+  });
+
+  it('agrees with itself when several placements are refused (E13, E15)', async () => {
+    const bytes = await fixture([{ size: A4 }], 'one-page');
+    const outcome = await run('add-stamps', {
+      stamp: 'SOLD', pages: 'all',
+      regions: 'page:1:10,10,80,40;page:2:10,10,80,40;page:3:5,5,20,20;junk',
+    }, [bytes]);
+    const warnings = outcome.warnings.join('\n');
+    expect(warnings).toMatch(/2 boxes named a page outside this 1-page document and were ignored/i);
+    expect(warnings).toMatch(/1 entry could not be read/i);
+    expect(outcome.message).toMatch(/Placed 1 stamp on 1 page/i);
+    // Control: a single refused box keeps the singular.
+    const one = await run('add-stamps', { stamp: 'SOLD', pages: 'all', regions: 'page:1:10,10,80,40;page:9:0,0,10,10' }, [bytes]);
+    expect(one.warnings.join('\n')).toMatch(/1 box named a page outside this 1-page document and was ignored/i);
+    // And the bare `1:x,y,w,h` spelling the pane's own value used still lands:
+    // widening the grammar may not break the form that worked before.
+    const bare = await run('add-stamps', { stamp: 'SOLD', pages: 'all', regions: '1:10,10,80,40' }, [bytes]);
+    expect(bare.warnings.join('\n')).not.toMatch(/could not be read/i);
+    expect(bare.message).toMatch(/Placed 1 stamp on 1 page/i);
+    const stamped = await openPDF(await outputBytes(bare));
+    const placed = listAnnotations(stamped)[0]!;
+    expect([Math.round(placed.rect.x), Math.round(placed.rect.y)]).toEqual([10, 10]);
+    const spelled = await openPDF(await outputBytes(outcome));
+    const first = listAnnotations(spelled)[0]!;
+    expect([Math.round(first.rect.x), Math.round(first.rect.y)]).toEqual([10, 10]);
+  });
+
   it('shrinks a stamp wider than its page and says so (E8, E15)', async () => {
     const bytes = await fixture([{ size: CARD }], 'card');
     const outcome = await run('add-stamps', { stamp: 'SOLD', width: 900, pages: 'all' }, [bytes]);

@@ -494,7 +494,12 @@ function parseRegions(
   } else {
     for (const chunk of text.split(/[;\n]+/)) {
       if (!chunk.trim()) continue;
-      const match = /^\s*(\d+)\s*:\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*$/.exec(chunk);
+      // The field's help and its own refusal sentence both teach
+      // "page:x,y,w,h"; the parser only read "1:x,y,w,h", so following the printed
+      // instruction produced "could not be read — use page:x,y,w,h". Accept the
+      // word the card teaches and keep the bare number working.
+      const body = chunk.trim().replace(/^page\s*:\s*/i, '');
+      const match = /^(\d+)\s*:\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)$/.exec(body);
       if (!match) {
         unparseable += 1;
         continue;
@@ -511,7 +516,8 @@ function parseRegions(
     note(notes, `${countLabel(unparseable, 'entry', 'entries')} could not be read — use page:x,y,w,h, separated by semicolons.`);
   }
   if (offDocument > 0) {
-    note(notes, `${countLabel(offDocument, 'box', 'boxes')} named a page outside this ${doc.getPageCount()}-page document and was ignored.`);
+    // The verb follows the count: "2 boxes … and was ignored" read wrong on the card.
+    note(notes, `${countLabel(offDocument, 'box', 'boxes')} named a page outside this ${doc.getPageCount()}-page document and ${offDocument === 1 ? 'was' : 'were'} ignored.`);
   }
   return out;
 }
@@ -1446,7 +1452,13 @@ export const editTools: PdfToolDefinition[] = [
         throw new Error(`No stamp could be placed. ${notes[0] ?? 'The page selection matched no page of this document.'}`);
       }
       if (targets.some((region) => frameOf(input.doc.getPage(region.page)).rotation !== 0)) {
-        note(notes, 'Some stamps landed on rotated pages: they sit in the corner as you see it, but the label follows the page orientation.');
+        // Measured on the bytes and the bitmap: the appearance carries the counter
+        // rotation (`cm 0 1 -1 0` on a quarter-turned sheet) and the stored rect is
+        // the transposed box, so the mark renders 140 pt wide and reads across the
+        // sheet as it is displayed. The sentence used to claim the opposite — "the
+        // label follows the page orientation" — which contradicted both the standing
+        // note on this card and the file itself.
+        note(notes, 'Some stamps landed on rotated pages: they sit in the corner as you see it, and the label is turned back so it reads across that sheet rather than running down its edge.');
       }
       // The label is type, so it takes the shared style model. A family past the
       // three named ones has its face embedded here — `addAnnotations` is

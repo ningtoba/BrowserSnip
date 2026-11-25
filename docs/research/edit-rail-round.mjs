@@ -221,11 +221,17 @@ for (const c of CASES) {
   await sleep(150);
   await send('Page.navigate', { url: `${BASE}/#/tool/${c.tool}` });
   await wait(`!!document.querySelector('input[type=file]')`, 60000);
+  // A tool with its own editor surface can mount more than one file input; the
+  // document is the one that is not a field's picker inside an options group.
+  await ev(`(()=>{const all=[...document.querySelectorAll('input[type=file]')];
+    const i=all.findIndex((x)=>!x.closest('[role=group]'));const el=all[i<0?0:i];
+    if(el)el.setAttribute('data-probe-doc','1');return all.length})()`);
   await ev(`(()=>{window.__blobs=[];window.__blobUrls={};const o=URL.createObjectURL.bind(URL);URL.createObjectURL=(b)=>{window.__blobs.push(b);return o(b)};return 1})()`);
   const { root } = await send('DOM.getDocument', { depth: -1 });
-  const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
+  let { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[data-probe-doc]' });
+  if (!nodeId) ({ nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' }));
   await send('DOM.setFileInputFiles', { files: c.pdfs ?? [c.pdf], nodeId });
-  const btnReady = await wait(`[...document.querySelectorAll('button')].some(b=>new RegExp(${JSON.stringify(c.label)},'i').test((b.innerText||'').trim())&&!b.disabled)`, 60000);
+  const btnReady = await wait(`[...document.querySelectorAll('button')].some(b=>new RegExp(${JSON.stringify(c.label)},'i').test((b.innerText||'').trim())&&!b.disabled)`, 150000);
   if (!btnReady) throw new Error(`${c.name}: no enabled button matching ${c.label} after upload`);
 
   const readback = [];
@@ -254,6 +260,22 @@ for (const c of CASES) {
   if (c.thumb) {
     await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/^Page ${c.thumb}$/.test(x.getAttribute('aria-label')||''));if(b)b.click();return !!b})()`);
     await sleep(1500);
+  }
+  // The pane's own pixels, off the pdf.js canvas — the only way to ask whether the
+  // preview and the download draw the same mark in the same place.
+  if (c.canvas) {
+    const grab = await ev(`(()=>{const cv=[...document.querySelectorAll('canvas')].sort((a,b)=>b.width*b.height-a.width*a.height)[0];
+      if(!cv) return JSON.stringify({missing:true});
+      const r=cv.getBoundingClientRect();
+      try{return JSON.stringify({w:cv.width,h:cv.height,css:[r.width,r.height],png:cv.toDataURL('image/png')})}
+      catch(e){return JSON.stringify({error:String(e&&e.message||e)})}})()`);
+    const g = JSON.parse(grab);
+    if (g.png) {
+      writeFileSync(`${OUTDIR}/${c.name}-canvas.png`, Buffer.from(g.png.split(',')[1], 'base64'));
+      writeFileSync(`${OUTDIR}/${c.name}-canvas.json`, JSON.stringify({ w: g.w, h: g.h, css: g.css }));
+    } else {
+      writeFileSync(`${OUTDIR}/${c.name}-canvas.err.txt`, JSON.stringify(g));
+    }
   }
   if (c.dark) { await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/dark/i.test(x.getAttribute('aria-label')||''));if(b)b.click();return !!b})()`); await sleep(600); }
   const s2 = await send('Page.captureScreenshot', { format: 'png' });
