@@ -2783,6 +2783,78 @@ describe('powerpoint-to-pdf gives each slide its own page', () => {
     const error = await run('powerpoint-to-pdf', {}, [fileFrom(OLE_BYTES, 'deck.ppt')]).catch((err) => err);
     expect((error as Error).message).toMatch(/LibreOffice/);
   });
+
+  it('keeps a blank FIRST slide as its own page', async () => {
+    // The “PPTX blank-slide pattern” left open by c5: the reader turned only
+    // slides after the first, so a deck opening on a blank beat printed N−1
+    // pages for N slides — while a blank slide in the middle already got its
+    // page (the pin above) and LibreOffice’s own exporter counts every slide.
+    const outcome = await run('powerpoint-to-pdf', {}, [
+      fileFrom(await pptxBytes(['', 'Second slide', 'Third slide']), 'pause-first.pptx'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(3);
+    const runs = await textRuns(bytes);
+    expect(runsOn(runs, 0).filter((run) => run.text.trim()).length, 'the first page stays blank').toBe(0);
+    expect(runsOn(runs, 1).some((run) => run.text === 'Second slide')).toBe(true);
+    expect(runsOn(runs, 2).some((run) => run.text === 'Third slide')).toBe(true);
+  });
+
+  it('refuses a zero-slide PowerPoint by name, not by raw library error', async () => {
+    // `minimal.pptx`: real Microsoft Macintosh PowerPoint deck saved with every
+    // slide deleted. The reader used to abort the run — and a whole batch —
+    // with `Error('That PPTX has no slides.')`: no file named, no hint, and
+    // not the tool’s own sentence.
+    const error = await run('powerpoint-to-pdf', {}, [fileFrom(fixture('minimal.pptx'), 'minimal.pptx')]).catch((err) => err);
+    expect((error as Error).message).toMatch(/"minimal\.pptx" has no text frames/);
+    expect((error as Error).message).not.toMatch(/That PPTX has no slides/);
+  });
+
+  it('keeps every deck in a batch on its own pages and names the silent one', async () => {
+    // `LO-100610-0.pptx` (LibreOffice Impress, 17 slides incl. five blank at the
+    // end) + `sld-blank.pptx` (Mac PowerPoint, one blank slide): measured on
+    // the pre-fix build the blank deck after a real one vanished with no name
+    // and no page (17 for 18), a blank deck first aborted the whole batch, and
+    // two real decks bled together — the second file’s first slide laid out on
+    // the first file’s last page, 33 sheets for 34 slides.
+    const lo = () => fileFrom(fixture('LO-100610-0.pptx'), 'LO-100610-0.pptx');
+    const blank = () => fileFrom(fixture('sld-blank.pptx'), 'sld-blank.pptx');
+    const after = await run('powerpoint-to-pdf', {}, [lo(), blank()]);
+    expect((await pageSizes(await firstPdf(after))).length).toBe(17);
+    expect(after.warnings.join(' ')).toMatch(/"sld-blank\.pptx" has no text frames.*left out/);
+    expect(after.message).toMatch(/Converted 1 of 2 presentation\(s\)/);
+    const before = await run('powerpoint-to-pdf', {}, [blank(), lo()]);
+    expect((await pageSizes(await firstPdf(before))).length).toBe(17);
+    expect(before.warnings.join(' ')).toMatch(/"sld-blank\.pptx"/);
+    const pair = await run('powerpoint-to-pdf', {}, [lo(), lo()]);
+    expect((await pageSizes(await firstPdf(pair))).length).toBe(34);
+    expect(pair.message).toMatch(/Converted 2 presentation\(s\)/);
+  });
+
+  it('prints the notes under their slide’s own text, on the slide’s page', async () => {
+    // The help used to promise “a page of speaker notes” — a whole page the
+    // layout never made: the quote rides on the slide’s own sheet.
+    const deck = await zipBytes([
+      {
+        name: 'ppt/slides/slide1.xml',
+        data: '<?xml version="1.0"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Budget slide</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
+      },
+      {
+        name: 'ppt/notesSlides/notesSlide1.xml',
+        data: '<?xml version="1.0"?><p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>whisper the deficit</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>',
+      },
+    ]);
+    const outcome = await run('powerpoint-to-pdf', { notes: true }, [fileFrom(deck, 'd.pptx')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const slide = runs.find((run) => run.text.includes('Budget slide'));
+    const note = runs.find((run) => run.text.includes('whisper the deficit'));
+    expect(slide, 'the slide text printed').toBeTruthy();
+    expect(note, 'the note printed').toBeTruthy();
+    expect(note!.page, 'the note rides the slide’s own page').toBe(slide!.page);
+    const help = getPdfTool('powerpoint-to-pdf')?.fields?.find((field) => field.key === 'notes')?.help ?? '';
+    expect(help).toMatch(/on that slide’s page/);
+    expect(help, 'the copy no longer promises a page per note').not.toMatch(/adds a page/);
+  });
 });
 
 describe('epub-to-pdf follows the spine, not the manifest', () => {

@@ -1,0 +1,51 @@
+powerpoint-to-pdf real-deck battery — measurement log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+CORPUS (producers from the files’ own docProps; vendored under tests/fixtures/office/)
+  minimal.pptx      Microsoft Macintosh PowerPoint, ZERO slide parts (deleted-every-slide save). sha 203d…
+  sld-blank.pptx    Microsoft Macintosh PowerPoint, ONE slide, no text at all.
+  LO-100610-0.pptx  LibreOffice 5.1.3 Impress, 17 slides — 12 with text, 13–17 none (real trailing blanks).
+  stress022.pptx    MS PowerPoint 15, 45 slides all textual, 44 notes parts (slide-number fields only),
+                    16 media, French+Arabic; jsdom cannot lay it out offline (NotoSansArabic CDN refusal —
+                    the TEXT_NOTES promise working as said, [image] words absent → OOXML reader keeps text
+                    order only, per card).
+
+BEFORE (build de522e7+excel commit; jsdom harness + live rail):
+  * blank FIRST slide (harness deck ['', 'Second', 'Third']): 2 pages for 3 slides — the reader’s
+    `if (blocks.length > 0) push(pagebreak)` spine gives a leading text-less slide neither a break nor a
+    block; the second slide starts the document. (The c5-named leftover, reproduced; ODP had exactly
+    this class and odp-c5 fixed it there with a blankSlide placeholder + per-slide turn.)
+  * minimal.pptx alone: raw `Error: That PPTX has no slides.` — not the tool sentence, no file named,
+    no hint; and inside a batch it aborted every other deck with it (the loop guard reads the
+    ACCUMULATED blocks, not the file’s own).
+  * batch [LO, sld-blank] → 17 pages, blank deck silently gone (no warning, no page).
+    batch [sld-blank, LO] → whole batch refused naming the blank deck.
+    batch [LO, LO]        → 33 pages for 34 slides: the second file’s first slide laid out ON the first
+    file’s last page (no inter-file page break; the ODF/text routes got separators in c5, PPTX didn’t).
+  * notes field help promised “adds a page of speaker notes under each slide that has them”; measured,
+    the quote rides the SLIDE’S OWN page (it always did — the sentence invented a page).
+  * LO deck live: 17 pages, pages 13–17 text-empty — trailing blanks survived before too (consecutive
+    breaks turn pages), recorded so the number holds.
+AFTER (this commit; same probes):
+  blank-led → 3 pages (first blank); minimal alone → `"minimal.pptx" has no text frames … blank.` + hint;
+  [LO, blank] → 17 pages + '"sld-blank.pptx" … left out with no page.' + "Converted 1 of 2";
+  [blank, LO] → converts, same naming; [LO, LO] → 34 pages, "Converted 2 presentation(s)";
+  LO live unchanged at 17 (blank pages 13–17 = the deck’s own).
+
+CAUSE FIX (core/office-in.ts `pptxToBlocks` — blocker-faithful, cause-only, NOT the rowText spine; the
+  same file received the ODP-parity fixes in c5): assemble per slide like `odpToBlocks` (break between
+  slides, blankSlide paragraph for text-less slides); zero-slide and all-blank decks both return [] and
+  the CALLER owns the sentence. Tool side (convert-to.ts, owned): per-file block isolation, inter-file
+  pagebreak, per-file guard (single-file → refusal naming the file, batch → named skip + honest count
+  "Converted N of M"), notes help copy rewritten to the measured shape (quote under the slide’s text,
+  on its page; pin asserts the copy and the page index).
+PINS (tests/pdf/convert-to-bytes.test.ts, powerpoint describes): 4 new tests — RED without the fix: 4
+  (blank-first 3→2; minimal raw-error; batch 17-silent/abort/33-bleed; notes copy+page). Existing
+  middle-blank (3) and two-slides-two-pages pins hold unchanged.
+CONTROL: [LO,LO] at exactly 34 (if breaks piled one per slide the count would drift; if none bled, 33).
+LIVE: LO deck 17/17 (screen + file halves read); refusal card for the blank deck (screen); console
+  errors []; network: rail tally per run, 3 requests 0 off-origin on the excel runs of the same build.
+LEFT OPEN (recorded): slide order = slideN.xml numeric sort; sldIdLst checked against it on all three
+  real decks (PowerPoint/Impress renumber files to match display order, so no real-world mismatch was
+  measurable; a hand-relabelled deck could still disagree — feature-hardening, not a bug).
+  SmartArt/charts/pictures → card already says not reproduced; [image] placeholders do NOT print (word
+  route has them, slide route never did) — parity is a feature gap, recorded.

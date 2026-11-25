@@ -276,14 +276,17 @@ export async function pptxToBlocks(
   const slides = [...byName.keys()]
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((a, b) => indexIn(a) - indexIn(b));
-  if (slides.length === 0) throw new Error('That PPTX has no slides.');
-  const blocks: Block[] = [];
-  for (const slide of slides) {
-    // See `odpToBlocks`: the first slide starts the document, it does not turn it.
-    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+  // A deck with zero slide parts — PowerPoint saves one after “delete every
+  // slide” — used to abort the whole run (a batch too) with a raw
+  // `Error('That PPTX has no slides.')`: no file named, no hint, not even the
+  // tool’s own refusal sentence. It is the same nothing-to-print case as an
+  // all-blank deck, so it returns the same empty answer and the caller owns
+  // the sentence.
+  const slideBlocks = slides.map((slide) => {
+    const perSlide: Block[] = [];
     const texts = textsOf(parseXml(byName.get(slide)!, 'That slide is not readable XML.'));
     texts.forEach((text, index) => {
-      blocks.push(
+      perSlide.push(
         index === 0
           ? { kind: 'heading', level: 2, inlines: [{ text }] }
           : { kind: 'paragraph', inlines: [{ text }] },
@@ -293,9 +296,22 @@ export async function pptxToBlocks(
       const notes = byName.get(`ppt/notesSlides/notesSlide${indexIn(slide)}.xml`);
       if (notes) {
         const note = textsOf(parseXml(notes, 'notes')).filter((text) => text.length > 1).join(' ');
-        if (note) blocks.push({ kind: 'quote', inlines: [{ text: `Notes: ${note}`, italic: true }] });
+        if (note) perSlide.push({ kind: 'quote', inlines: [{ text: `Notes: ${note}`, italic: true }] });
       }
     }
+    return perSlide;
+  });
+  if (!slideBlocks.some((blocks) => blocks.length > 0)) return [];
+  // Turn per slide, as `odpToBlocks` does. The old “break before every slide
+  // after the first” spine lost a blank FIRST slide outright — it contributed
+  // no block and no break, so slide 2 opened the document and the deck printed
+  // N−1 pages for N slides. A blank slide is a beat in the deck (the pause
+  // before the point), which is what the middle-blank pin already says.
+  const blocks: Block[] = [];
+  const blankSlide: Block = { kind: 'paragraph', inlines: [{ text: '' }] };
+  for (const perSlide of slideBlocks) {
+    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+    blocks.push(...(perSlide.length > 0 ? perSlide : [blankSlide]));
     if (blocks.length > BLOCK_LIMIT) break;
   }
   return blocks;

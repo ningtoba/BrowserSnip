@@ -2344,7 +2344,7 @@ export const convertToTools: PdfToolDefinition[] = [
         ],
       },
       { key: 'margin', label: 'Margin', type: 'number', default: 28, min: 0, max: 144, step: 1, integer: true, unit: 'pt', group: 'Slide', help: 'White space kept around each slide so a printed copy is not edge-to-edge ink.' },
-      { key: 'notes', label: 'Include speaker notes', type: 'toggle', default: false, group: 'Output', help: 'Off prints the slides only. On adds a page of speaker notes under each slide that has them.' },
+      { key: 'notes', label: 'Include speaker notes', type: 'toggle', default: false, group: 'Output', help: 'Off prints the slides only. On prints each speaking note as a quoted line under its own slide’s text, on that slide’s page.' },
     ],
     async run(context) {
       const inputs = await sourceBatches(context, {
@@ -2353,6 +2353,7 @@ export const convertToTools: PdfToolDefinition[] = [
       });
       const blocks: Block[] = [];
       let route = '';
+      let converted = 0;
       const warnings = [
         'Slide geometry is approximate: text frames are read in order, but their position, theme, masters, SmartArt, charts, animations and pictures are not reproduced.',
       ];
@@ -2361,24 +2362,46 @@ export const convertToTools: PdfToolDefinition[] = [
       }
       for (const input of inputs) {
         const lower = input.name.toLowerCase();
+        let fileBlocks: Block[] = [];
         if (lower.endsWith('.odp') || lower.endsWith('.otp')) {
           const { odpToBlocks } = await import('../core/office-in');
-          blocks.push(...(await odpToBlocks(input.bytes, { notes: booleanValue(context.values, 'notes') })));
+          fileBlocks = await odpToBlocks(input.bytes, { notes: booleanValue(context.values, 'notes') });
           route = mergeRoute(route, 'OpenDocument reader');
         } else if (lower.endsWith('.pptx') || lower.endsWith('.pptm') || sniffSource(input.bytes, input.name).kind === 'zip') {
           const { pptxToBlocks } = await import('../core/office-in');
-          blocks.push(...(await pptxToBlocks(input.bytes, { notes: booleanValue(context.values, 'notes') })));
+          fileBlocks = await pptxToBlocks(input.bytes, { notes: booleanValue(context.values, 'notes') });
           route = mergeRoute(route, 'OOXML reader');
         } else {
           await convertWithLibreOffice(context, input.bytes, input.name, 'pdf');
         }
-        if (!blocks.some((block) => block.kind !== 'pagebreak')) {
-          throw new ToolInputError(
-            'UNSUPPORTED',
-            `"${input.name}" has no text frames this reader can see, so every slide would come out blank.`,
-            { fileName: input.name, hint: 'If the deck is only images or SmartArt, export it to PDF from PowerPoint instead.' },
-          );
+        if (!fileBlocks.some((block) => block.kind !== 'pagebreak')) {
+          // Per file, not over the pile: measured, a blank deck first in the
+          // batch aborted two perfectly printable decks behind it (the guard
+          // saw the accumulated blocks — empty at that point), and a blank
+          // deck last vanished with no name and no page.
+          if (inputs.length === 1) {
+            throw new ToolInputError(
+              'UNSUPPORTED',
+              `"${input.name}" has no text frames this reader can see, so every slide would come out blank.`,
+              { fileName: input.name, hint: 'If the deck is only images or SmartArt, export it to PDF from PowerPoint instead.' },
+            );
+          }
+          warnings.push(`"${input.name}" has no text frames this reader can see, so it was left out with no page.`);
+          continue;
         }
+        // One page per slide holds at the seam too: measured on a two-deck
+        // batch, the second deck’s first slide laid out under the first
+        // deck’s last one.
+        if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        blocks.push(...fileBlocks);
+        converted += 1;
+      }
+      if (converted === 0) {
+        throw new ToolInputError(
+          'UNSUPPORTED',
+          `${inputs.length} presentations were added and none has text frames this reader can see.`,
+          { hint: 'If a deck is only images or SmartArt, export it to PDF from PowerPoint instead.' },
+        );
       }
       const [width, height] = stringValue(context.values, 'slideSize', '16:9') === '4:3' ? [720, 540] : [960, 540];
       const margin = clampNumber(numberValue(context.values, 'margin', 28), 0, 144);
@@ -2386,7 +2409,9 @@ export const convertToTools: PdfToolDefinition[] = [
       return blocksResult(
         blocks,
         { pageSize: [width, height], margin, baseFontSize: 14 },
-        `Converted ${inputs.length} presentation(s) via ${route} into`,
+        converted === inputs.length
+          ? `Converted ${inputs.length} presentation(s) via ${route} into`
+          : `Converted ${converted} of ${inputs.length} presentation(s) via ${route} into`,
         warnings,
       );
     },
