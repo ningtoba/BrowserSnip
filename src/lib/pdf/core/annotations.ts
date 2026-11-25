@@ -45,6 +45,7 @@ import {
   PDFNull,
   PDFNumber,
   PDFRef,
+  PDFStream,
   StandardFonts,
 } from './doc';
 import type { PDFDocument, PDFPage, PDFFont } from './doc';
@@ -669,6 +670,9 @@ export function removeAnnotations(
   let removed = 0;
   const handled = new Set<string>();
   const removedRefs = new Set<string>();
+  // The objects a deleted dictionary alone named — appearances, filespecs,
+  // actions kept behind a ref. See `deleteOrphanedPayloads`.
+  const stranded: PDFRef[] = [];
 
   doc.getPages().forEach((page, index) => {
     if (pagesWanted && !pagesWanted.has(index)) return;
@@ -687,6 +691,7 @@ export function removeAnnotations(
         array.remove(i);
         if (entry instanceof PDFRef) {
           removedRefs.add(entry.toString());
+          collectRefs(dict, stranded);
           context.delete(entry);
         }
         removed += 1;
@@ -696,7 +701,71 @@ export function removeAnnotations(
   // A widget annotation and its field are one dictionary (§12.7.4.2), so the
   // pages gave up form fields too; `/AcroForm` still names them otherwise.
   pruneFormFields(doc, removedRefs);
+  deleteOrphanedPayloads(doc, stranded);
   return removed;
+}
+
+/** Every indirect object `value` names, at any depth of its inline children. */
+function collectRefs(value: unknown, into: PDFRef[]): void {
+  if (value instanceof PDFRef) into.push(value);
+  else if (value instanceof PDFArray) for (const item of value.asArray()) collectRefs(item, into);
+  else if (value instanceof PDFStream) collectRefs(value.dict, into);
+  else if (value instanceof PDFDict) for (const [, item] of value.entries()) collectRefs(item, into);
+}
+
+/**
+ * Delete what only the removed annotations pointed at — one tier at a time.
+ *
+ * An annotation is not just its dictionary: `/AP` holds the stream that drew
+ * the note's visible words, `/FS` leads to the bytes an attachment carries,
+ * and an indirect `/A`, `/Dest` or unlisted `/Popup` names more objects behind
+ * it. Unlinking the dictionary alone leaves all of those in the context, and
+ * the writer serialises everything the context still holds — so a download
+ * whose receipt says the note was removed still contains the note for anyone
+ * who inflates the file. This is `remove-attachments`' `deleteFilespecObjects`
+ * discipline on annotation payloads: an object another surviving object still
+ * names is kept by construction, which is what saves a font shared with a page
+ * and a filespec the `/EmbeddedFiles` tree holds next to the annotation.
+ */
+function deleteOrphanedPayloads(doc: PDFDocument, stranded: PDFRef[]): void {
+  if (stranded.length === 0) return;
+  const context = doc.context;
+  const holders = new Map<string, Set<string>>();
+  const named = (holder: string, value: unknown): void => {
+    const targets: PDFRef[] = [];
+    collectRefs(value, targets);
+    for (const target of targets) {
+      const set = holders.get(target.toString()) ?? new Set<string>();
+      set.add(holder);
+      holders.set(target.toString(), set);
+    }
+  };
+  named('catalog', doc.catalog);
+  for (const [ref, object] of context.enumerateIndirectObjects()) {
+    const key = ref.toString();
+    // A stream's body cannot name an object a dict cannot already reach; its
+    // dictionary can (XObjects, resources), and that is what is walked.
+    named(key, object instanceof PDFStream ? object.dict : object);
+  }
+  const queue = [...stranded];
+  const seen = new Set<string>();
+  for (let index = 0; index < queue.length; index += 1) {
+    const ref = queue[index];
+    const key = ref.toString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if ((holders.get(key)?.size ?? 0) > 0) continue;
+    const object = context.lookup(ref);
+    context.delete(ref);
+    holders.delete(key);
+    if (object === undefined) continue;
+    const targets: PDFRef[] = [];
+    collectRefs(object, targets);
+    for (const target of targets) {
+      holders.get(target.toString())?.delete(key);
+      queue.push(target);
+    }
+  }
 }
 
 /**

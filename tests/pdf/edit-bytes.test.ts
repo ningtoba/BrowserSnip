@@ -2051,6 +2051,123 @@ describe('remove-annotations and redact delete from the bytes', () => {
     expect(outcome.report?.sections?.[0]?.text).toMatch(/^What this document carries sits outside the 1 page you selected: 1 annotation and 1 note pop-up\./u);
   });
 
+  /**
+   * One sheet whose marks own bytes: the FreeText's words live in its `/AP`
+   * stream, a solo attachment hangs filespec and payload off its `/FS`, and a
+   * second attachment shares its filespec with the `/EmbeddedFiles` name tree.
+   * Streams are uncompressed so a marker search is a literal byte search.
+   */
+  async function payloadFixture(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(A4);
+    await drawTextU(page, { text: 'carrier sheet', x: 40, y: 700, size: 12 });
+    const ctx = doc.context;
+    const apRef = ctx.register(ctx.stream('BT (AP-VISIBLE-77) Tj ET', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 40, 20] }));
+    const freeRef = ctx.register(ctx.obj({
+      Type: 'Annot', Subtype: 'FreeText', Rect: [40, 600, 200, 620],
+      DA: '(Helvetica 10 Tf 0 g)', AP: { N: apRef },
+    }));
+    const soloEf = ctx.register(ctx.stream('attached-secret-bytes', { Type: 'EmbeddedFile' }));
+    const sharedEf = ctx.register(ctx.stream('shared-tree-bytes', { Type: 'EmbeddedFile' }));
+    const soloFs = ctx.register(ctx.obj({ Type: 'Filespec', F: '(solo.bin)', EF: { F: soloEf } }));
+    const sharedFs = ctx.register(ctx.obj({ Type: 'Filespec', F: '(shared.bin)', EF: { F: sharedEf } }));
+    const soloAtt = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'FileAttachment', Rect: [40, 500, 60, 520], FS: soloFs }));
+    const sharedAtt = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'FileAttachment', Rect: [70, 500, 90, 520], FS: sharedFs }));
+    for (const ref of [freeRef, soloAtt, sharedAtt]) page.node.addAnnot(ref);
+    doc.catalog.set(PDFName.of('Names'), ctx.obj({
+      EmbeddedFiles: ctx.obj({ Names: ['shared.bin', sharedFs] }),
+    }));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  const latin1 = (bytes: Uint8Array): string => Buffer.from(bytes).toString('latin1');
+
+  /** Every indirect object's readable text: stream bodies verbatim, dicts as syntax. */
+  function objectTexts(doc: PDFDocument): string[] {
+    const texts: string[] = [];
+    for (const [, object] of doc.context.enumerateIndirectObjects()) {
+      if (object instanceof PDFStream) texts.push(latin1(object.getContents()));
+      else texts.push(object.toString());
+    }
+    return texts;
+  }
+
+  it('takes the payloads with the dictionaries, and keeps what a tree still names', async () => {
+    const bytes = await payloadFixture();
+    // The instrument on the raw sheet: every payload is present before, so a
+    // "gone" verdict afterwards is about the run, not about markers never written.
+    const source = objectTexts(await openPDF(bytes));
+    for (const marker of ['AP-VISIBLE-77', 'attached-secret-bytes', 'shared-tree-bytes', 'solo.bin', 'shared.bin']) {
+      expect(source.join('\n'), `the fixture itself lacks ${marker}`).toContain(marker);
+    }
+    const outcome = await run('remove-annotations', { pages: 'all' }, [pdfFile(bytes, 'payloads.pdf')]);
+    expect(outcome.message).toMatch(/Removed 3 annotations/u);
+    // Unlinking is not removing: the writer serialises every object the context
+    // holds, so the appearance that drew the note and the solo attachment behind
+    // its filespec have to go with the dictionary that named them.
+    const written = objectTexts(await reopen(outcome));
+    expect(listAnnotations(await reopen(outcome))).toHaveLength(0);
+    for (const stranded of ['AP-VISIBLE-77', 'attached-secret-bytes', 'solo.bin']) {
+      expect(written.join('\n'), `${stranded} still sits in the produced file`).not.toContain(stranded);
+    }
+    // The filespec the name tree still names — and the payload behind it — stay.
+    expect(written.join('\n')).toContain('shared-tree-bytes');
+    expect(written.join('\n')).toContain('shared.bin');
+  });
+
+  /** Three sheets; one note hangs off a shared parent node, under which the last two sit. */
+  async function inheritedFixture(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const p1 = doc.addPage(A4);
+    const p2 = doc.addPage(A4);
+    const p3 = doc.addPage(A4);
+    await drawTextU(p1, { text: 'sheet one', x: 40, y: 700, size: 12 });
+    await drawTextU(p2, { text: 'sheet two', x: 40, y: 700, size: 12 });
+    await drawTextU(p3, { text: 'sheet three', x: 40, y: 700, size: 12 });
+    const ctx = doc.context;
+    const annot = ctx.register(ctx.obj({
+      Type: 'Annot', Subtype: 'Text', Rect: [100, 400, 120, 420],
+      Contents: '(INHERITED-55)',
+      AP: { N: ctx.register(ctx.stream('%AP-INH-56%', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 40, 20] })) },
+    }));
+    const root = doc.catalog.lookup(PDFName.of('Pages'), PDFDict);
+    const rootRef = ctx.getObjectRef(root)!;
+    const mid = ctx.register(ctx.obj({
+      Type: 'Pages', Parent: rootRef, Kids: [ctx.getObjectRef(p2.node), ctx.getObjectRef(p3.node)],
+      Count: 2, Annots: [annot],
+    }));
+    for (const p of [p1, p2, p3]) {
+      // Pages carry their own empty `/Annots` once anything touched them, and a
+      // page with an array of its own is served that array alone: the inherited
+      // shape a foreign producer writes is the page with no key at all.
+      p.node.delete(PDFName.of('Annots'));
+    }
+    p2.node.set(PDFName.of('Parent'), mid);
+    p3.node.set(PDFName.of('Parent'), mid);
+    root.set(PDFName.of('Kids'), ctx.obj([ctx.getObjectRef(p1.node), mid]));
+    root.set(PDFName.of('Count'), PDFNumber.of(3));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('counts an inherited mark once and never claims a cascade left it behind', async () => {
+    const bytes = await inheritedFixture();
+    // The shared shape is really there, one dict drawn under two sheets: the
+    // app's own lister sees the same object per page it appears on.
+    expect(listAnnotations(await openPDF(bytes))).toHaveLength(2);
+    const only2 = await run('remove-annotations', { pages: '2' }, [pdfFile(bytes, 'inherited.pdf')]);
+    // One annotation object went; two pages lost its drawing. And page 3 is NOT
+    // "still there" — the shared array it drew from was emptied.
+    expect(only2.message).toBe('Removed 1 annotation from 2 pages.');
+    expect(only2.warnings.join('\n')).not.toMatch(/still there/u);
+    const written = await outBytes(only2);
+    expect(latin1(written)).not.toContain('%AP-INH-56%');
+    expect(listAnnotations(await openPDF(written))).toHaveLength(0);
+    const refused = await run('remove-annotations', { pages: '1' }, [pdfFile(bytes, 'inherited.pdf')]);
+    expect(refused.outputs).toHaveLength(0);
+    expect(refused.report?.sections?.[0]?.text)
+      .toMatch(/sits outside the 1 page you selected: 1 annotation\./u);
+  });
+
   it('deletes the text under a redaction box rather than covering it', async () => {
     // The mark is the band over the fixture's line (user-space y 781.89 of an
     // 841.89 pt sheet) in the frame the redaction pane hands the tool: the page as

@@ -2308,24 +2308,37 @@ export const editTools: PdfToolDefinition[] = [
       const pages = resolvePages(stringValue(context.values, 'pages', 'all'), input.pageCount);
       const scope = new Set(pages);
       const before = listAnnotations(input.doc);
-      const outsideAll = before.filter((mark) => !scope.has(mark.page));
-      const outside = outsideAll.length;
-      // The same split the report below uses: a `/Popup` is an entry in `/Annots`
-      // but not a mark, so "5 annotations" over four marks and their pop-up is
-      // the count the file does not back up.
-      const outsideMarks = outsideAll.filter((mark) => mark.kind !== 'Popup').length;
-      const outsidePopups = outside - outsideMarks;
-      const remaining = countLabel(outsideMarks, 'annotation')
-        + (outsidePopups > 0 ? ` and ${countLabel(outsidePopups, 'note pop-up', 'note pop-ups')}` : '');
       const removed = removeAnnotations(input.doc, { pages });
+      // Dicts, not appearances. A mark carried on a shared parent `/Annots` is one
+      // object drawn on every page beneath it; removing it empties all of those
+      // arrays at once. Counting the pre-run appearances would report that one
+      // inherited note as "2 annotations", and counting them again afterwards
+      // would claim the copy on the page you did not select is "still there" when
+      // the shared object — and with it the drawing — is gone.
+      const after = listAnnotations(input.doc);
+      const remaining = new Set(after.map((mark) => mark.ref.toString()));
+      const goneByRef = new Map<string, (typeof before)[number]>();
+      for (const mark of before) {
+        if (!remaining.has(mark.ref.toString())) goneByRef.set(mark.ref.toString(), mark);
+      }
+      const outsideByRef = new Map<string, (typeof after)[number]>();
+      for (const mark of after) {
+        if (!scope.has(mark.page) && !outsideByRef.has(mark.ref.toString())) {
+          outsideByRef.set(mark.ref.toString(), mark);
+        }
+      }
+      const outsideMarks = [...outsideByRef.values()].filter((mark) => mark.kind !== 'Popup').length;
+      const outsidePopups = outsideByRef.size - outsideMarks;
+      const outsideLabel = countLabel(outsideMarks, 'annotation')
+        + (outsidePopups > 0 ? ` and ${countLabel(outsidePopups, 'note pop-up', 'note pop-ups')}` : '');
       if (removed === 0) {
         // E13: an unchanged file is not a result. Say what is actually there.
         return admit(
           reportResult(
             [{
               title: 'Nothing to remove',
-              text: outside > 0
-                ? `What this document carries sits outside the ${countLabel(pages.length, 'page')} you selected: ${remaining}. Widen the Pages range and run again.`
+              text: outsideByRef.size > 0
+                ? `What this document carries sits outside the ${countLabel(pages.length, 'page')} you selected: ${outsideLabel}. Widen the Pages range and run again.`
                 : 'This document has no annotations at all — nothing was removed, and the download would be byte-for-byte the file you started with.',
             }],
             { message: 'There were no annotations to remove.' },
@@ -2333,15 +2346,14 @@ export const editTools: PdfToolDefinition[] = [
           notes,
         );
       }
-      if (outside > 0) {
-        note(notes, `${remaining} on the pages you did not select ${outside === 1 ? 'is' : 'are'} still there.`);
+      if (outsideByRef.size > 0) {
+        note(notes, `${outsideLabel} on the pages you did not select ${outsideByRef.size === 1 ? 'is' : 'are'} still there.`);
       }
       // Two numbers the written file has to back up. A note's `/Popup` is an entry
       // in `/Annots` but not a mark a reader lists as a comment, so it is counted
-      // and named apart; and the page count is the pages whose array actually
-      // shrank, not the pages this run was asked to look at.
-      const after = new Set(listAnnotations(input.doc).map((mark) => mark.ref.toString()));
-      const gone = before.filter((mark) => !after.has(mark.ref.toString()));
+      // and named apart; and the page count is every page that lost an appearance
+      // — the inherited shape takes its one dict off several sheets at once.
+      const gone = [...goneByRef.values()];
       const popups = gone.filter((mark) => mark.kind === 'Popup').length;
       const marks = gone.length - popups;
       // A widget is the field's own dictionary, so the field went with it — a
@@ -2350,7 +2362,7 @@ export const editTools: PdfToolDefinition[] = [
       if (fields > 0) {
         note(notes, `${countLabel(fields, 'form field')} went with ${fields === 1 ? 'its widget' : 'their widgets'}: those pages no longer carry a fillable field, and the answers written into ${fields === 1 ? 'it' : 'them'} went too.`);
       }
-      const changed = new Set(gone.map((mark) => mark.page)).size;
+      const changed = new Set(before.filter((mark) => !remaining.has(mark.ref.toString())).map((mark) => mark.page)).size;
       return pdfOutput(
         input.doc,
         notes,
