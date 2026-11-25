@@ -15,8 +15,10 @@ import {
   fmtNumber,
   gridFromRules,
   gridRow,
+  gridRows,
   isVisibleText,
   joinRuns,
+  logicalRows,
   looksLikeHeader,
   pageFrameOfView,
   rowToCsv,
@@ -300,6 +302,71 @@ describe('the run join inside cells', () => {
     expect(joinRuns([first, item({ str: 'two', x: 200, y: 112, w: 14 })])).toBe('one two');
     // The same junction 0.8 pt off the baseline is one word, not two.
     expect(joinRuns([first, item({ str: 'two', x: 234, y: 99.2, w: 14 })])).toBe('onetwo');
+  });
+});
+
+/**
+ * A cell with a `<br>` (or a wrapped phrase) is painted as several text lines
+ * whose boxes reach into each other vertically; every genuine row break leaves a
+ * positive gap. `logicalRows` folds only the overlap class — measured as 2 of the
+ * 217 consecutive row pairs across the bar fixtures and the 49-PDF corpus, both of
+ * them this case, and 0 changes in the other 54 tables.
+ */
+describe('logicalRows — folding the lines of one cell', () => {
+  const line = (str: string, x: number, top: number, w = 40, h = 9.75): ExtractedTextItem =>
+    item({ str, x, y: top, w, h });
+
+  it('folds rows whose boxes overlap into one row', () => {
+    // The geometry cells.pdf really reports: 141.00–150.75, 147.00–156.75,
+    // 152.25–162.00 — each pair overlapping by 3.75 / 4.5 pt.
+    const rows = clusterRows([
+      line('Line one', 71.66, 141),
+      line('newline cell', 166.85, 147),
+      line('4', 271.71, 147),
+      line('Line two', 71.66, 152.25),
+    ]);
+    expect(rows).toHaveLength(3);
+    const folded = logicalRows(rows);
+    expect(folded).toHaveLength(1);
+    expect(folded[0].top).toBeCloseTo(141, 2);
+    expect(folded[0].bottom).toBeCloseTo(162, 2);
+  });
+
+  it('builds the row the author wrote, not three', () => {
+    const rows = clusterRows([
+      line('Item', 71.66, 66),
+      line('Note', 166.85, 66),
+      line('Val', 271.71, 66),
+      line('Line one', 71.66, 141),
+      line('newline cell', 166.85, 147),
+      line('4', 271.71, 147),
+      line('Line two', 71.66, 152.25),
+    ]);
+    const columns = columnsFromRows(rows);
+    expect(gridRows(rows, columns)).toEqual([
+      ['Item', 'Note', 'Val'],
+      ['Line one Line two', 'newline cell', '4'],
+    ]);
+  });
+
+  it('leaves tight-but-separated rows alone (the control)', () => {
+    // Spreadsheet exports run 6.88 pt lines 1.93 pt apart: every one of those
+    // pairs is a real row, and none of them overlaps.
+    const rows = clusterRows([
+      line('Q1', 68.92, 68, 20, 6.88),
+      line('Q2', 68.92, 76.81, 20, 6.88),
+      line('Q3', 68.92, 85.62, 20, 6.88),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(logicalRows(rows)).toHaveLength(3);
+  });
+
+  it('folds nothing at all when a row starts exactly where the last ended', () => {
+    const rows = clusterRows([
+      line('a', 50, 100),
+      line('b', 50, 109.75),
+    ]);
+    expect(logicalRows(rows)).toHaveLength(2);
   });
 });
 

@@ -377,7 +377,41 @@ export function columnsFromRows(
 
 /** Rectangular cell matrix for `rows` given fixed `columns` (missing cells ''). */
 export function gridRows(rows: TextRow[], columns: ColumnRange[]): string[][] {
-  return rows.map((row) => gridRow(row, columns));
+  return logicalRows(rows).map((row) => gridRow(row, columns));
+}
+
+/**
+ * Fold the physical lines of **one** logical row back together.
+ *
+ * A cell that wraps, or carries a `<br>`, is painted as several text lines whose
+ * boxes reach into each other vertically: the fixture that starts this measures
+ * `Line one` (141.00–150.75), `newline cell`/`4` (147.00–156.75) and `Line two`
+ * (152.25–162.00) — each pair overlapping — while every genuine row break on that
+ * page leaves a positive gap of 8.25 pt or more. Measured over all 55 tables in
+ * the bar fixtures and the 49-PDF corpus: of 217 consecutive row pairs, 2 overlap,
+ * 94 are tight-but-separated (0 ≤ gap < 0.5 × line height, the tight leading of
+ * spreadsheet exports, where every pair is a real row) and 121 are normally
+ * spaced. Only the overlap class is folded, which changes exactly one grid in
+ * those 55 tables — from 7 rows to the 5 the author wrote — and the ruled path
+ * already folded the same way, because it buckets rows by their band.
+ *
+ * The runs of a folded row arrive top line first, so `joinRuns` sees a step of a
+ * whole line between them ({@link LINE_STEP_EM}) and puts a space where the cell
+ * had a line break: `Line one Line two`.
+ */
+export function logicalRows(rows: TextRow[]): TextRow[] {
+  const folded: TextRow[] = [];
+  for (const row of rows) {
+    const previous = folded[folded.length - 1];
+    if (previous && row.top < previous.bottom) {
+      previous.items = [...previous.items, ...row.items];
+      previous.bottom = Math.max(previous.bottom, row.bottom);
+      previous.top = Math.min(previous.top, row.top);
+      continue;
+    }
+    folded.push({ ...row, items: [...row.items] });
+  }
+  return folded;
 }
 
 /** One row as a rectangular cell array (see {@link gridRows}). */

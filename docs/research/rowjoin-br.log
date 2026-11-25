@@ -1,0 +1,35 @@
+# <br> / wrapped-cell fold — measurement (step 3)
+# docs/research/rowjoin-table-probe.mts dumps, per detected table, the physical rows
+# that fed it: y extents, grid column of every run, gap to the next row.
+#   node /tmp/rowjoin/tables-probe.mjs <out>.jsonl <pdf...>
+# judged by:
+#   python3 docs/research/rowjoin-br-check.py <out>.jsonl
+
+row-pair classes inside detected tables: {'normal': 121, 'overlap': 2, 'tight': 94}
+
+files with overlapping row pairs:
+  cells.pdf                          {'normal': 4, 'overlap': 2}
+
+grid under the merge clause (only tables whose row count changes):
+  cells.pdf p1: grid rows 7 -> 5
+      ["He said \"hi\"", "quoted", "2"]
+      ["semi;colon", "Ünïcødé 世界 naïve", "3"]
+      ["Line one Line two", "newline cell", "4"]
+
+merges that stack two rows claiming the SAME column (wrapped-cell cases): 0
+
+## MuPDF find_tables witness on the same fixture (the structure the fold must reach)
+Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+    ['Item', 'Note', 'Val']
+    ['Gizmo, large', 'plain', '1']
+    ['He said "hi"', 'quoted', '2']
+    ['semi;colon', 'Ünïcødé 世界 naïve', '3']
+    ['Line one Line two', 'newline cell', '4']
+
+## app grid after the fold (real spine run, pdf-to-csv path)
+   rows=5
+    ["Item", "Note", "Val"]
+    ["Gizmo, large", "plain", "1"]
+    ["He said \"hi\"", "quoted", "2"]
+    ["semi;colon", "Ünïcødé 世界 naïve", "3"]
+    ["Line one Line two", "newline cell", "4"]

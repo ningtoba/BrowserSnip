@@ -2678,6 +2678,12 @@ describe('browser-generated PDFs: a run boundary is not a word boundary', () => 
     expect(csv).toContain('Ünïcødé 世界 naïve');
     expect(csv).not.toContain('世 界');
     expect(csv).toContain('"Gizmo, large",plain,1');
+    // Four data rows, as the page wrote them: the `<br>` cell is one row whose
+    // two lines read left to right, not three rows with two holes in them.
+    const lines = csv.replace(/^\uFEFF/, '').trimEnd().split(/\r?\n/);
+    expect(lines).toHaveLength(5);
+    expect(lines[4]).toBe('Line one Line two,newline cell,4');
+    expect(outcome.message).toMatch(/1 table\(s\) totalling 5 rows/);
   });
 });
 

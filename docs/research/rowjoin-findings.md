@@ -60,16 +60,46 @@ Whole corpus: 28 148 → 28 110 words (−38 false spaces), 7 of 49 files change
 all, 11 lines total, every one of them checked against `get_text` **and**
 `pdftotext -raw` (see the log; the two `©` lines keep one lost space each).
 
+## The `<br>` / wrapped-cell clause: measured, then implemented
+
+**Symptom.** `cells.pdf` row 5 is `Line one<br>Line two | newline cell | 4`; the
+whitespace grid emitted **three** rows for it —
+`["Line one","",""] / ["","newline cell","4"] / ["Line two","",""]` — so a
+four-row table printed as seven lines with holes in them.
+
+**Measurement** (`docs/research/rowjoin-table-probe.mts` dumps the physical rows
+behind every detected table; `rowjoin-br-check.py` scores the candidate clause;
+`rowjoin-br.log` holds the run). Of **217** consecutive row pairs inside the 55
+tables found across the bar fixtures and the 49-PDF corpus:
+
+| relation between the next row's top and this row's bottom | pairs | what it is |
+| --- | --- | --- |
+| overlap (`gap < 0`) | **2** | both in `cells.pdf`: the lines of the `<br>` cell (141.00–150.75, 147.00–156.75, 152.25–162.00) |
+| tight but separated (`0 ≤ gap < 0.5 × height`) | 94 | spreadsheet exports (6.88 pt lines 1.93 pt apart) — every one a real row |
+| normal spacing | 121 | real rows |
+
+So overlap is the discriminator: it fires on exactly the two pairs that are one
+logical row and on none of the 194 that are not. `logicalRows()` (exported from
+`core/tables.ts`, used by `gridRows`) folds it; `joinRuns`' `LINE_STEP_EM` clause
+then writes a space where the cell had its line break. Ruled mode already folded
+the same way — it buckets rows by their band — so the two modes now agree.
+
+**Result, against the witness.** PyMuPDF `find_tables` reads that table as 5 rows
+whose last cell is `Line one\nLine two`; the app now produces the same 5 rows and
+`Line one Line two` in that cell (a space, not a newline, because the cell goes
+into CSV, where a raw newline would have to be quoted). Row count, grid shape and
+every other table in the corpus: 1 change in 55.
+
+**Red without the fold:** 2 tests (`tables.test.ts` "builds the row the author
+wrote, not three" and the `pdf-to-csv` pin in `edge-convert-from.test.ts`).
+
 ## Recorded, not fixed (this seam is the join)
 
-- **In-cell `<br>` fractures a table row.** `cells.pdf` row 5 is
-  `Line one<br>Line two | newline cell | 4`; the app emits **three** grid rows —
-  `["Line one","",""]`, `["","newline cell","4"]`, `["Line two","",""]`. The
-  decision is made by which physical rows share a table row band
-  (`clusterRows` / `gridRows`), not by the junction between two runs, so it is
-  out of the join's reach. With `LINE_STEP_EM` the *cell* now at least reads
-  correctly whenever a caller hands it several rows, which is what a ruled
-  `gridFromRules` cell does; the whitespace-grid path still groups per visual line.
+- **The fold is scoped to the grid, not to prose.** `logicalRows` runs inside
+  `gridRows` only; `clusterRows` — which paragraph blocking, column detection and
+  the whole `rowText` path share — still returns every visual line. A two-column
+  page (`uni-html.pdf`: `LEFT col A1 … RIGHT col B1 …`) keeps its two boxes on one
+  line instead of collapsing them into one row.
 - **Bidi order and presentation forms** (`uni-html.pdf`): the Arabic line comes
   back as `رﺎﺒﺘﺧا اﺬﻫ ﻢﻟﺎﻌﻟﺎﺑ ﺎﺒﺣﺮﻣ` — joined into words now
   instead of `ر ﺎ ﺒ ﺘ ﺧ ا …`, but still visual order with presentation
