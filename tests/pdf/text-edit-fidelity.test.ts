@@ -782,6 +782,7 @@ describe('honest results', () => {
         covered: [{ id: 'b9', boxes: [box(50, 102, 30, 11), box(84, 102, 26, 11)], color: '#f2efe6' }],
         substituted: [],
         reflowed: [],
+        undrawn: [],
     fitted: [],
         placed: [],
       },

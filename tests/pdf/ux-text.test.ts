@@ -219,6 +219,7 @@ function outcome(overrides: Partial<ApplyOutcome> = {}): ApplyOutcome {
     covered: [],
     substituted: [],
     reflowed: [],
+    undrawn: [],
     fitted: [],
     placed: [],
     ...overrides,

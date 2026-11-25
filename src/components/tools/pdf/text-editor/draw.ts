@@ -44,7 +44,7 @@ import {
 import type { PDFDocument, PDFImage, PDFPage } from '@/lib/pdf/core/doc';import { PDFDict, PDFName, rgb } from '@/lib/pdf/core/doc';
 import { cropBox } from '@/lib/pdf/core/pages';
 import type { QuadRect, TopLeftBox, PageFrame } from '@/lib/pdf/core/tables';
-import { removeTextInRects, textRects, makeOp, operand } from '@/lib/pdf/core/content';
+import { removeTextInRects, textInRects, textRects, makeOp, operand } from '@/lib/pdf/core/content';
 import type { RemovalReason, SourceFont } from '@/lib/pdf/core/content';
 import { toEmbeddableImage } from '@/lib/pdf/core/images';
 import { prepareTextForDirection } from '@/lib/pdf/core/fonts';
@@ -280,21 +280,36 @@ export function pageWriters(page: PDFPage): PageWriters {
   };
 }
 
-/** Draw one prepared block. Text is selectable and searchable in the output. */
+/** What one `writeTextObject` call actually put into the page's content. */
+export interface WriteOutcome {
+  /** Non-blank text pieces whose operators really went down, markers included. */
+  pieces: number;
+  /** Those pieces as claims, for `ApplyOutcome.placed`. */
+  placed: PlacedPiece[];
+}
+
+/**
+ * Draw one prepared block. Text is selectable and searchable in the output.
+ *
+ * The return value is the byte-level truth of the draw: a piece counts only if
+ * its `writeRun` pushed operators, because the export report has to say what
+ * was written, not what the model intended.
+ */
 export function writeTextObject(
   page: PDFPage,
   frame: PageFrame,
   prepared: PreparedObject,
   writers: PageWriters,
-): void {
+): WriteOutcome {
   const { object, layout, faces } = prepared;
+  const wrote: WriteOutcome = { pieces: 0, placed: [] };
   for (const line of layout.lines) {
     if (line.marker) {
       const markerParagraph = line.pieces[0]?.source.paragraph ?? 0;
       const style = baseInline({ ...object.style, ...paragraphStyle(object, markerParagraph) });
       const face = faceOf(faces, style, line.marker);
       if (face) {
-        writeRun(page, frame, object, {
+        const emitted = writeRun(page, frame, object, {
           text: line.marker,
           anchorX: line.indent,
           width: 0,
@@ -304,6 +319,7 @@ export function writeTextObject(
           rise: 0,
           writers,
         });
+        if (emitted && line.marker.trim().length > 0) wrote.pieces += 1;
       }
     }
     for (const piece of line.pieces) {
@@ -312,7 +328,7 @@ export function writeTextObject(
       const style = inlineFor(run, { ...object.style, ...paragraphStyle(object, piece.source.paragraph) });
       const face = faceOf(faces, style, run.text);
       if (!face) continue;
-      writeRun(page, frame, object, {
+      const emitted = writeRun(page, frame, object, {
         text: piece.text,
         anchorX: piece.x,
         width: piece.width,
@@ -325,8 +341,22 @@ export function writeTextObject(
       const size = style.size;
       if (style.underline) drawRule(page, frame, object, piece, line, size * 0.12, size, style);
       if (style.strike) drawRule(page, frame, object, piece, line, -size * 0.28, size, style);
+      if (emitted && piece.text.trim().length > 0) {
+        wrote.pieces += 1;
+        wrote.placed.push({
+          id: object.id,
+          page: object.page,
+          text: piece.text,
+          x: object.box.x + piece.x,
+          baseline: object.box.y + line.baseline,
+          size,
+          face: face.label,
+          fromSource: Boolean(face.fromSource),
+        });
+      }
     }
   }
+  return wrote;
 }
 
 function paragraphStyle(object: TextObject, index: number) {
@@ -345,8 +375,8 @@ interface RunWrite {
   writers: PageWriters;
 }
 
-function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunWrite): void {
-  if (run.text.length === 0) return;
+function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunWrite): boolean {
+  if (run.text.length === 0) return false;
   const { style, line, face } = run;
   const anchor = { x: object.box.x + run.anchorX, y: object.box.y + line.baseline };
   const tm = textMatrixForRun(anchor, object.rotation, frame, object.box);
@@ -357,7 +387,7 @@ function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunW
   const text = prepareTextForDirection(run.text, style.direction);
   const fontKey = ensureFontKey(page, face, run.writers.fontKeys);
   const codes = face.codes(text);
-  if (!codes) return; // the face cannot spell it: nothing was promised otherwise
+  if (!codes) return false; // the face cannot spell it: nothing was promised otherwise
 
   if (face.source) {
     // The document's own font: write its codes directly, so the glyphs a viewer
@@ -372,7 +402,7 @@ function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunW
       endText(),
       popGraphicsState(),
     );
-    return;
+    return true;
   }
 
   page.pushOperators(
@@ -392,6 +422,7 @@ function writeRun(page: PDFPage, frame: PageFrame, object: TextObject, run: RunW
     endText(),
     popGraphicsState(),
   );
+  return true;
 }
 
 /**
@@ -542,6 +573,12 @@ export interface CoverReport {
 }
 
 export interface ApplyOutcome {
+  /**
+   * Objects whose bytes really moved: a shape drawn, an image placed, a text
+   * block that either drew at least one glyph or had its original words
+   * removed. Blocks that changed nothing are reported in `failed` instead —
+   * the count is of the file, never of the model.
+   */
   written: number;
   /** Blocks the built-in engine could not clean at all; the optional engine can. */
   failed: { id: string; reason: string }[];
@@ -559,6 +596,12 @@ export interface ApplyOutcome {
   substituted: { id: string; from: string; to: string; reason: string }[];
   /** Blocks whose new text no longer fits the source line structure. */
   reflowed: string[];
+  /**
+   * Blocks whose original words were deleted but whose replacement drew no
+   * glyph — the space is empty in the file. Counted in `written` (the deletion
+   * moved bytes) but never claimable as a finished rewrite.
+   */
+  undrawn: string[];
   /** Blocks that had to be set smaller to stay in the space they came from. */
   fitted: { id: string; from: number; to: number }[];
   /**
@@ -608,6 +651,7 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
     covered: [],
     substituted: [],
     reflowed: [],
+    undrawn: [],
     fitted: [],
     placed: [],
   };
@@ -627,7 +671,18 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
     const withSource = textObjects.filter((object) => object.deletion.length > 0);
     const faces = new Map<string, SourceFont[]>();
     const leftovers = new Map<string, QuadRect[]>();
+    // Before anything is removed, ask the page how many of each block's own
+    // runs sit under its boxes — by the exact matcher a deletion uses. That is
+    // the per-block truth of "the deletion moved bytes for this block", which
+    // one shared `nothingRemoved` flag cannot express when several blocks are
+    // exported together: the big block whose stale boxes matched nothing used
+    // to ride out under "Wrote N" because a smaller block deleted fine.
+    const preHits = new Map<string, number>();
     if (withSource.length > 0) {
+      for (const object of withSource) {
+        const rects = object.deletion.map((box) => viewerBoxToUserSpace(box, frame));
+        preHits.set(object.id, textInRects(page, rects).length);
+      }
       const report = deleteOriginalText(
         page,
         withSource.map((object) => ({ id: object.id, boxes: object.deletion })),
@@ -679,26 +734,26 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
           page.drawRectangle({ x: rect.x, y: rect.y, width: rect.width, height: rect.height, color: colorOf(cover.color) });
         }
       }
-      writeTextObject(page, frame, prepared, writers);
-      for (const line of prepared.layout.lines) {
-        for (const piece of line.pieces) {
-          if (piece.text.trim().length === 0) continue;
-          const style = inlineFor(
-            object.paragraphs[piece.source.paragraph]?.runs[piece.source.run] ?? { text: piece.text },
-            { ...object.style, ...(object.paragraphs[piece.source.paragraph]?.style ?? {}) },
-          );
-          const face = faceOf(prepared.faces, style, object.paragraphs[piece.source.paragraph]?.runs[piece.source.run]?.text ?? piece.text);
-          outcome.placed.push({
-            id: object.id,
-            page: object.page,
-            text: piece.text,
-            x: object.box.x + piece.x,
-            baseline: object.box.y + line.baseline,
-            size: style.size,
-            face: face?.label ?? '',
-            fromSource: Boolean(face?.fromSource),
-          });
-        }
+      const wrote = writeTextObject(page, frame, prepared, writers);
+      outcome.placed.push(...wrote.placed);
+      const typed = object.paragraphs.some((paragraph) =>
+        paragraph.runs.some((run) => run.text.trim().length > 0),
+      );
+      const removed = (preHits.get(object.id) ?? 0) > 0;
+      // A rewrite whose every piece failed to encode still emptied the page:
+      // the words are gone and nothing stands in their place.
+      if (wrote.pieces === 0 && typed && removed) outcome.undrawn.push(object.id);
+      // The count is of the file, not of the model: `written` moves only when
+      // this block's bytes moved — a glyph down, or its original words out.
+      if (wrote.pieces > 0 || removed) {
+        outcome.written += 1;
+      } else {
+        outcome.failed.push({
+          id: object.id,
+          reason:
+            'no words in the page content matched this block’s spot, and its new text put no glyphs down, ' +
+            'so the export changed nothing for it. Its original words stay where they are.',
+        });
       }
       for (const entry of prepared.substitutions) {
         outcome.substituted.push({
@@ -710,7 +765,6 @@ export async function applyEdits(doc: PDFDocument, objects: EditObject[]): Promi
       }
       if (prepared.reflowed) outcome.reflowed.push(object.id);
       if (object.fitFrom) outcome.fitted.push({ id: object.id, from: object.fitFrom, to: object.style.size });
-      outcome.written += 1;
     }
   }
 
@@ -819,6 +873,11 @@ export function exportReport(
   }
   for (const entry of blocked) {
     warnings.push(`Page ${pageOf(entry.id) ?? '?'}: skipped, so its original words are still there. ${entry.reason}`);
+  }
+  for (const id of outcome.undrawn ?? []) {
+    warnings.push(
+      `Page ${pageOf(id) ?? '?'}: the block’s original words were removed, but its new text was not drawn — no face could put a glyph down. That spot is empty in the saved file.`,
+    );
   }
   for (const entry of outcome.covered) {
     warnings.push(
