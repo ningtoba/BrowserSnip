@@ -67,3 +67,28 @@ Mapper families:
   pdf-lib rotation-blindness of #17's `getWidth()`; two of its equalities were
   refined by closed-form + MuPDF re-derivation (its "displayRegion cross-checked
   equal" holds only for rot 0/90/270; the 180 y-term disagrees).
+
+# Wave 2D — item 5 side-record (SignTool image/png)
+
+Charter premise checked against this revision (master `be2e383` + wave 2D commits):
+the sign pane's draw pad (`SignTool.tsx`) has **no quality slider** — its controls
+are text/font/colour/width, upload file + w/h, draw + w/h. So the PNG hardcode
+(`toBlob(..., 'image/png')` at :174/:236, `toDataURL('image/png')` :239,
+`mime: 'image/png'` :304) moots nothing. Consequences as they stand: an uploaded
+JPEG signature is decoded and re-encoded **lossless PNG** (bigger bytes, zero
+quality loss — matching Q3's deployed-site note "container drop, no promise
+attached"); the engine's `embedImageBytes(..., format: 'png')` agrees with what
+the pane sends. The separate annotation-editor pad
+(`editor/SignaturePad.tsx:95-98`) exports JPEG at a hardcoded 0.92 — also no
+slider. **No fix attempted**: switching SignTool to JPEG-with-quality would
+LOWER fidelity for no requested gain and change shipped byte shapes; adding a
+slider is new scope. Nothing the sign tool promises (`promise`/`notes` in
+`tools/legacy.ts` `sign`) mentions quality or file format. Verdict:
+side-record only — the premise did not survive measurement.
+
+# Gate record (step 6)
+
+- `npx vitest run` — full repo: **150 files, 3863 passed, 13 skipped, 0 failed** (32.2 s).
+- `npx tsc -p tsconfig.tests.json --noEmit` — clean (last src change preceded it; only docs commits followed).
+- eslint: inert repo-wide (no flat config committed on master).
+- Live: `legacy-pane-cards.mjs SCENARIO=sign-turned` lands at drag point, upright, post-fix; other pages' content streams byte-identical pre/post; rotate-0 live control unchanged; `compare-pdfs`/`sign`/`pdf-crop` routes load in Chromium with zero page errors (the lib→component import bundles fine).
