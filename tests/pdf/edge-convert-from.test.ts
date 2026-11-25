@@ -1380,6 +1380,27 @@ describe('extract-tables', () => {
     expect(md.split('\n')[0]).toMatch(/^# /);
   });
 
+  it('prints the Markdown header row once, not as the header and again as data', async () => {
+    // A label row over numeric data is exactly the shape `looksLikeHeader` flags,
+    // so the detected table carries a `headerRow`. The Markdown writer emitted it
+    // twice — as the `| … |` header and again as the first body row — because it
+    // only skipped the first row in the no-header branch.
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595.28, 841.89]);
+    const rows = [['Month', 'Revenue'], ['January', '100'], ['February', '200'], ['March', '300']];
+    rows.forEach((cells, r) => cells.forEach((cell, c) => {
+      page.drawText(cell, { x: 60 + c * 160, y: 760 - r * 24, size: 11, font });
+    }));
+    const file = [fileOf(await doc.save({ useObjectStreams: false }), 'rev.pdf')];
+    const md = await textOf(await run('extract-tables', { pages: 'all', format: 'md' }, file));
+    const headerRows = md.split('\n').filter((line) => /\|\s*Month\s*\|\s*Revenue\s*\|/.test(line));
+    expect(headerRows).toHaveLength(1);
+    // And the body rows survive: the data still all appears.
+    for (const cell of ['January', 'February', 'March', '300']) expect(md).toContain(cell);
+  });
+
+
   it('quotes a CSV cell that holds the delimiter', async () => {
     // A table cell is free text. Left unquoted, `Total, inc. tax` becomes two
     // columns and every later cell of its row shifts one place right.

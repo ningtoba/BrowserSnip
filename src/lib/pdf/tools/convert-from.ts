@@ -828,7 +828,7 @@ export const convertFromTools: PdfToolDefinition[] = [
     promise: 'Every table on the selected pages, as one file in the format you choose, with the page it came from.',
     actionLabel: 'Extract tables',
     notes: [
-      'Tables are found from ruled lines and aligned columns, so a table drawn as free text with no gaps can be missed — the report says which pages were checked.',
+      'Tables are found from aligned columns of text, not from the ruled borders around them — so a grid is caught only where its cells line up in columns. A paragraph or heading line sitting in the same block as the table, or a cell that spans several columns, breaks that alignment and the table is missed; the report names the pages it checked.',
     ],
     fields: [
       PAGES_FIELD,
@@ -1491,7 +1491,13 @@ function emptyImageReport(skipped: SkippedImage[], pages: number, smallest: numb
 
 function toMarkdownTable(table: DetectedTable): string {
   const header = table.headerRow ?? table.rows[0] ?? [];
-  const body = table.headerRow ? table.rows : table.rows.slice(1);
+  // The markdown header line already prints the first row, so the body starts at
+  // the second row whether or not a header was detected. Reading
+  // `table.headerRow ? table.rows : table.rows.slice(1)` re-emitted the header as
+  // a body row whenever `headerRow` was set — and it is set for exactly the common
+  // shape of a text label row over numeric data (an invoice, a report), so
+  // `## Table 1` showed `| Month | Rev |` twice: once as the header, once as data.
+  const body = table.rows.slice(1);
   const line = (cells: string[]) => `| ${cells.map((cell) => cell.replace(/\|/g, '\\|')).join(' | ')} |`;
   if (header.length === 0) return line(body[0] ?? []);
   return [
