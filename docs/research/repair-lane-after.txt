@@ -1,0 +1,35 @@
+repair — fresh live re-drive of the damage corpus, dev build :5295, 2026-11-25.
+Corpus written by `node docs/research/repair-damage-corpus.mjs --dir /tmp/lane-optimize/rd`
+(18 files), driven by colour-rail.mjs (`LABEL='^Repair$'`), measured by
+`docs/research/repair-lane-measure.py` over /tmp/lane-optimize/batch3.jsonl: per produced
+file the page count, each sheet's planted word (Alpha/Beta/Gamma/Delta), the body line,
+non-white pixels at 100 dpi, /Annots, image count, and dangling `N 0 R` references.
+
+case                         produced                        screen
+base.pdf (healthy control)   4 sheets, A B G D, 4 body lines  "4 page(s) readable ... without
+                              ink 50 860/50 832/51 076/50 891   losing pages (4 in, 4 out)"
+truncated-tail (45 % gone)   2 sheets, A only, ink           "2 of 4 page(s) recovered: 1 still
+                              50 860 / 0                       holds content, 1 is blank" +
+                                                               "2 page(s) could not be recovered"
+lying-xref / missing-startxref / duplicate-endobj /           "4 page(s) readable", 4 words each,
+  missing-endobj / wrong-length / plain-content-tailcut /      ink equal to the healthy base,
+  triage-report / dangling-image-and-annots                    dangling refs: none in any file
+objstm-wrong-offsets         4 sheets, A B G D               "The input would not open ... has no
+                                                              pages." + "No page tree survived..."
+orphaned-page-object         4 sheets (input opens as 3)     "4 page(s) recovered, 1 of them
+                                                              re-hooked from page object(s) the
+                                                              tree no longer named"
+dangling-image-and-annots    4 sheets, annots 0, images 0    "2 reference(s) ... named objects the
+                                                              cut took (1 annotation(s), 1 image(s))
+                                                              and were removed ... not in the copy"
+dangling-contents            ink 50 860/0/51 076/50 891      "3 still hold content, 1 is blank" —
+                                                              identical to the input's own profile
+ledger-32-input / repaired-target  8 sheets, ink             "8 page(s) recovered: 7 still hold
+  105 129/94 842/0/274 962/482 968/0/46 700/46 700            content, 1 is blank" + fresh index
+  (= the input's profile, byte-for-byte the same sheets)      written over 8 page objects
+
+Left open, measured: two sheets of `repaired-target.pdf` paint nothing (pages 3 and 6, ink 0)
+while the report names one as blank — its count is of sheets whose content stream holds no
+drawing operator, and page 6 carries invisible-text operators. The definition lives in
+`src/lib/pdf-engine/commands.ts` (`repairPDF` / `sheetsWithoutContent`), a shared seam.
+No src/ change: nothing measured this round contradicted the card.
