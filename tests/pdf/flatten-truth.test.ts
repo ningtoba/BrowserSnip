@@ -71,6 +71,7 @@ import {
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import { addAnnotation } from '@/lib/pdf/core/annotations';
 import { createFormField } from '@/lib/pdf/core/forms';
+import { honestSummary } from '@/components/tools/pdf/shared/ResultCard';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import type { ToolValues } from '@/lib/pdf/tools/types';
 
@@ -397,19 +398,20 @@ it('opens the wash\u2019s transparency around the paint, not after it', async ()
     const index = addAnnotation(doc, {
       kind: 'Link', page: 0, rect: LINK, link: { type: 'uri', uri: 'https://www.browsersnip.com' },
     });
-    // A link a producer stored without an appearance: nothing to copy, so it stays
-    // live — as a link. The card used to count it as a comment as well, and said
-    // "1 comment(s) are still live" over a page whose only entry is the link.
+    // A link a producer stored without an appearance: nothing to copy, and the one
+    // thing it carries — the target — is what the toggle asked to lose. It used to
+    // be counted twice and named wrongly: once as "1 annotation(s) … left as live
+    // comments" and again as a link, over a page whose only entry was the link.
     const annots = doc.getPages()[0].node.Annots() as PDFArray;
     (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
     const outcome = await runFlatten(await doc.save({ useObjectStreams: false }), {
       forms: false, annotations: true, keepLinks: false,
     });
     const all = [outcome.message ?? '', ...outcome.warnings].join(' ');
-    expect(await liveKinds(await bytesOf(outcome))).toContain('Link');
-    expect(all, 'the link was named as a comment as well as a link').toMatch(/1 link\(s\) still clickable/);
+    expect(await liveKinds(await bytesOf(outcome))).not.toContain('Link');
+    expect(all, 'the link was named as a comment as well as a link').toMatch(/1 link\(s\) had no appearance to bake/);
     expect(all, 'a comment that is not there was reported live').not.toMatch(/comment\(s\)/);
-    expect(all).toMatch(/1 link\(s\) carry no appearance/);
+    expect(all, 'the same object was counted as a mark left live too').not.toMatch(/1 annotation\(s\) had no appearance/);
   });
 
   it('does not count a popup as a mark that failed to bake when links are off', async () => {
@@ -644,5 +646,201 @@ describe('the result says what the bytes do', () => {
     // The annotation pass must not eat a widget out from under the form pass: a
     // field whose box was drawn into the page is neither interactive nor flattened.
     expect((await liveKinds(bytes)).filter((kind) => kind === 'Widget')).toHaveLength(3);
+  });
+});
+
+// ── what the chunk-2 live re-drive found ─────────────────────────────────────
+//
+// `docs/research/flatten-round.mjs` drove this tool on a real tab at :5294 over
+// fixtures written by MuPDF (`docs/research/flatten-c2-build.py`) and
+// `docs/research/flatten-c2-measure.py` / `flatten-c2-visual.py` judged the
+// downloads against the untouched source, with MuPDF's own `Document.bake()` as
+// the outside bar. Two of the findings were this tool's to fix; both are pinned
+// below against the shared surface that ate one of them.
+
+describe('the receipt reaches the screen, and a link with no ink still loses its target', () => {
+  /**
+   * A file with one drawable square and one note stripped of its appearance: the
+   * run has something to report as still live, and the bytes come out bigger.
+   */
+  async function oneLiveOneBaked(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    addAnnotation(doc, { kind: 'Square', page: 0, rect: SQUARE, color: '#00aa00', borderWidth: 2 });
+    const index = addAnnotation(doc, { kind: 'Text', page: 0, rect: NOTE, contents: 'no appearance here' });
+    const annots = page.node.Annots() as PDFArray;
+    (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('words the summary so the card prints it when the file grew', async () => {
+    const outcome = await runFlatten(await oneLiveOneBaked());
+    expect(outcome.message).toMatch(/1 comment\(s\) still live/);
+    // The shared card drops any summary that reads as a size promise once the
+    // download is bigger (`honestSummary`, `SHRINK_CLAIM` in shared/ResultCard).
+    // The sentence used to end "…in the saved file"; `saved` is on that word list,
+    // so a measured run that baked one mark and left one live printed the warnings
+    // and no count at all — the receipt the promise promises.
+    expect(
+      honestSummary(outcome.message, true),
+      `the card swallows "${outcome.message}" because it reads as a saving claim`,
+    ).toBe(outcome.message);
+  });
+
+  it('drops a link that has no appearance when the toggle asks for no targets', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    addAnnotation(doc, { kind: 'Square', page: 0, rect: SQUARE, color: '#00aa00', borderWidth: 2 });
+    const index = addAnnotation(doc, {
+      kind: 'Link', page: 0, rect: LINK, link: { type: 'uri', uri: 'https://www.browsersnip.com' },
+    });
+    const annots = page.node.Annots() as PDFArray;
+    (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
+    const source = await doc.save({ useObjectStreams: false });
+
+    const outcome = await runFlatten(source, { forms: false, annotations: true, keepLinks: false });
+    const bytes = await bytesOf(outcome);
+    const after = await load(bytes);
+    // Measured before the fix: the file kept both hot rectangles alive with their
+    // `/A` actions while the card said so — and the field's own sentence promised
+    // the target was gone. A link with no appearance has no ink to invent, so the
+    // only thing it carries is the target, and that is what the toggle is for.
+    expect(await liveKinds(bytes)).not.toContain('Link');
+    expect(after.getPages()[0].node.get(PDFName.of('Annots')), 'an empty /Annots is still a key').toBeUndefined();
+    expect((await pageContent(bytes, 0)).length).toBeGreaterThan(0);
+    const all = [outcome.message ?? '', ...outcome.warnings].join(' ');
+    expect(all).toMatch(/1 link\(s\) had no appearance to bake/);
+    expect(all, 'the dropped link was also counted as a mark left live').not.toMatch(/1 annotation\(s\) had no appearance/);
+    expect(all, 'a link is not a comment').not.toMatch(/1 comment\(s\) still live/);
+    expect(outcome.message).toMatch(/nothing of the selected kind is left live/);
+
+    // Control: the same file with the toggle left on keeps its clickable area, and
+    // a run over a page with only that link still says the square was baked.
+    const kept = await runFlatten(source, { forms: false, annotations: true, keepLinks: true });
+    expect(await liveKinds(await bytesOf(kept))).toContain('Link');
+  });
+
+  it('says what a link-only run gave up when the comments were left alone', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    addAnnotation(doc, { kind: 'Text', page: 0, rect: NOTE, contents: 'a comment that stays' });
+    const index = addAnnotation(doc, {
+      kind: 'Link', page: 0, rect: LINK, link: { type: 'uri', uri: 'https://www.browsersnip.com' },
+    });
+    const annots = page.node.Annots() as PDFArray;
+    (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
+    const outcome = await runFlatten(await doc.save({ useObjectStreams: false }), {
+      forms: false, annotations: false, keepLinks: false,
+    });
+    const bytes = await bytesOf(outcome);
+    expect(await liveKinds(bytes)).toEqual(['Text']);
+    const all = outcome.warnings.join(' ');
+    expect(all).toMatch(/annotation flattening was off/i);
+    expect(all, 'a link with no stored appearance was claimed as baked ink').toMatch(/the links gave up their targets/);
+    expect(all).not.toMatch(/only the links were baked/);
+    expect(outcome.message).toMatch(/^0 form field\(s\) removed from the form/);
+  });
+
+  it('names an unpaintable link as dropped, not as a mark left off the page', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    addAnnotation(doc, { kind: 'Square', page: 0, rect: SQUARE, color: '#00aa00', borderWidth: 2 });
+    const index = addAnnotation(doc, {
+      kind: 'Link', page: 0, rect: LINK, flags: ['Hidden'],
+      link: { type: 'uri', uri: 'https://www.browsersnip.com' },
+    });
+    const annots = page.node.Annots() as PDFArray;
+    (doc.context.lookup(annots.get(index) as PDFRef, PDFDict) as PDFDict).delete(PDFName.of('AP'));
+    const outcome = await runFlatten(await doc.save({ useObjectStreams: false }), {
+      forms: false, annotations: true, keepLinks: false,
+    });
+    expect(await liveKinds(await bytesOf(outcome))).not.toContain('Link');
+    expect(outcome.warnings.join(' '), 'a hidden link was counted among the marks kept off the page')
+      .not.toMatch(/Invisible, Hidden or NoView/);
+    expect(outcome.warnings.join(' ')).toMatch(/1 link\(s\) had no appearance to bake/);
+  });
+});
+
+describe('the bake is judged against the readers that painted the input', () => {
+  /**
+   * Two sheets turned 180 and 270, each with a mark in the same displayed corner.
+   * `docs/research/flatten-c2-measure.py` measured the produced bytes at 150 dpi
+   * against MuPDF's rendering of the same page, annots on: 0 of 2.17 M pixels
+   * moved on every quarter turn, which is what these two placements pin in bytes.
+   */
+  it('lands a mark in its own box on a half- and a three-quarter-turned sheet', async () => {
+    const doc = await PDFDocument.create();
+    const half = doc.addPage(PAGE);
+    half.setRotation(degrees(180));
+    const back = doc.addPage(PAGE);
+    back.setRotation(degrees(270));
+    addAnnotation(doc, { kind: 'Square', page: 0, rect: SQUARE, color: '#00aa00', fillColor: '#eeffee', borderWidth: 2 });
+    addAnnotation(doc, { kind: 'Ink', page: 1, rect: INK, color: '#0000aa', borderWidth: 3,
+      inkPath: [[[INK.x, INK.y + 40], [INK.x + 60, INK.y + 90], [INK.x + 140, INK.y + 20]]] });
+    const bytes = await bytesOf(await runFlatten(await doc.save({ useObjectStreams: false })));
+    expect(await liveKinds(bytes)).toEqual([]);
+    expect(placedAt(await pageContent(bytes, 0), SQUARE.x, SQUARE.y), 'the 180 sheet lost its box').toBe(true);
+    expect(placedAt(await pageContent(bytes, 1), INK.x, INK.y), 'the 270 sheet lost its stroke').toBe(true);
+    expect((await load(bytes)).getPages().map((p) => p.getRotation().angle), 'a turn was ironed out')
+      .toEqual([180, 270]);
+  });
+
+  /**
+   * An appearance that is a form XObject drawing a nested form XObject, over a
+   * page that owns a DIFFERENT object under the same resource name. Adoption that
+   * forgets to rename paints the page's own box inside the mark instead of the
+   * mark's own ink — `docs/research/flatten-c2-measure.py` sees it as magenta where
+   * cyan belongs; this sees it in the bytes.
+   */
+  it('carries a nested appearance in with its own resources', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    const context = doc.context;
+    const font = context.register(context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' } as never));
+    const pageOwnInner = context.register(context.flateStream('1 0 1 rg 0 0 100 40 re f\n', {
+      Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 40],
+    } as never));
+    // Whatever name the page ends up holding its own box under, that name is the
+    // one the appearance also uses for `/Inner` — the collision the bake has to
+    // resolve by renaming the arriving object, not the page's.
+    const ownName = page.node.newXObject('Inner', pageOwnInner).asString().slice(1);
+    const nested = context.register(context.flateStream('BT /F1 9 Tf 2 4 Td (INNER-FORM-TEXT) Tj ET\n', {
+      Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 40], Resources: { Font: { F1: font } },
+    } as never));
+    const outer = context.register(context.flateStream('q 1 0 0 1 4 8 cm /Inner Do Q\n', {
+      Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 40],
+      Resources: { Font: { F1: font }, XObject: { Inner: nested } },
+    } as never));
+    const mark = context.register(context.obj({
+      Type: 'Annot', Subtype: 'Square', Rect: [60, 600, 160, 640], Border: [0, 0, 1], AP: { N: outer },
+    } as never));
+    (page.node.Annots() as PDFArray).push(mark);
+
+    const bytes = await bytesOf(await runFlatten(await doc.save({ useObjectStreams: false })));
+    const after = await load(bytes);
+    expect(await liveKinds(bytes)).toEqual([]);
+    const content = await pageContent(bytes, 0);
+    /** The decoded body of one `/XObject` of the page, by resource name. */
+    const drawnBy = (name: string): string => {
+      const sheet = after.getPages()[0].node.Resources();
+      const resources = sheet instanceof PDFRef ? after.context.lookupMaybe(sheet, PDFDict) : sheet;
+      const box = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+      const ref = box?.get(PDFName.of(name));
+      const stream = ref instanceof PDFRef
+        ? after.context.lookupMaybe(ref, PDFStream)
+        : ref instanceof PDFStream ? ref : undefined;
+      if (!stream) return '';
+      const raw = stream.getContents();
+      const flate = stream.dict.lookupMaybe(PDFName.of('Filter'), PDFName)?.asString() === '/FlateDecode';
+      return latin1.decode(flate ? inflateSync(raw) : raw);
+    };
+    const adopted = [...content.matchAll(/\/([\w-]+) Do/g)].map((match) => match[1]);
+    expect(adopted.length, 'the nested form never reached the page').toBeGreaterThan(0);
+    expect(drawnBy(ownName), 'the page’s own box was displaced by the appearance’s').toContain('1 0 1 rg');
+    const travelled = adopted.filter((name) => name !== ownName);
+    expect(travelled.length, 'the appearance brought no object of its own').toBeGreaterThan(0);
+    expect(adopted.map(drawnBy).join(''), 'the appearance’s own inner form did not travel with it')
+      .toContain('INNER-FORM-TEXT');
+    expect(drawnBy(ownName), 'the page’s box now draws the appearance’s words').not.toContain('INNER-FORM-TEXT');
   });
 });

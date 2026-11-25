@@ -676,6 +676,7 @@ export const securityTools: PdfToolDefinition[] = [
       let skippedNoAppearance = 0;
       let skippedUnpainted = 0;
       let fieldsBaked = 0;
+      let linksDropped = 0;
       try {
         const fields = bakeFields
           ? await flattenForm(input.doc, session ?? undefined)
@@ -705,6 +706,19 @@ export const securityTools: PdfToolDefinition[] = [
             'The comments could not be drawn into the page content, so they were left as live annotations rather than reported as flattened.',
           );
         }
+        if (!keepLinks) {
+          // A link is the one mark whose *ink* is optional and whose *target* is
+          // the whole point, and most producers store it with no appearance — the
+          // dashes a viewer draws around a hot span are not in the file. Baking
+          // then has nothing to copy, and leaving the annotation alone keeps the
+          // target clickable in the copy the user asked to be print-ready. Those
+          // leftovers are dropped here, and the counts the warnings read from are
+          // corrected with them: an object that left the file was not "left live".
+          const dropped = dropLiveLinks(input.doc);
+          linksDropped = dropped.total;
+          skippedNoAppearance = Math.max(0, skippedNoAppearance - (dropped.total - dropped.unpainted));
+          skippedUnpainted = Math.max(0, skippedUnpainted - dropped.unpainted);
+        }
       } finally {
         await session?.destroy();
       }
@@ -728,13 +742,24 @@ export const securityTools: PdfToolDefinition[] = [
       if (bakeMarks && liveMarksLeft > 0) {
         warnings.push(`${liveMarksLeft} comment(s) are still live annotations in the saved file rather than page content.`);
       }
+      if (linksDropped > 0) {
+        warnings.push(
+          `${linksDropped} link(s) had no appearance to bake, so nothing was drawn for them and their target was removed with them.`,
+        );
+      }
       if (bakeMarks && liveLinksLeft > 0) {
         warnings.push(`${liveLinksLeft} link(s) carry no appearance of their own, so they were left clickable rather than baked.`);
       }
       if (!bakeMarks) {
         warnings.push(keepLinks
           ? 'Annotation flattening was off, so every comment was left live in the saved file.'
-          : 'Annotation flattening was off, so comments were left live; only the links were baked into the page.');
+          : linksDropped > 0
+            // Both halves have to be said: a link that stored dashes gained them as
+            // page content, one that stored none only gave up its target.
+            ? `Annotation flattening was off, so comments were left live; the links gave up their targets${
+                bakedAnnotations > 0 ? ', and the dashes they stored were baked into the page.' : '.'
+              }`
+            : 'Annotation flattening was off, so comments were left live; only the links were baked into the page.');
       }
       // What the run was actually asked to bake, read off the input rather than
       // out of the counters: a file that carries nothing of the selected kind is a
@@ -743,7 +768,7 @@ export const securityTools: PdfToolDefinition[] = [
       // `commentCount` never counts them.
       const askedFor =
         (bakeMarks ? commentCount(had) + (keepLinks ? 0 : had.links) : 0) + (bakeFields ? had.fields : 0);
-      if (bakedAnnotations === 0 && fieldsBaked === 0) {
+      if (bakedAnnotations === 0 && fieldsBaked === 0 && linksDropped === 0) {
         warnings.push(askedFor === 0
           ? 'This PDF had nothing of the selected kind to flatten, so the file is effectively unchanged.'
           : `Nothing could be baked: the ${askedFor} item(s) of the selected kind in this file had no appearance this app can draw, so all of them are still live.`);
@@ -763,10 +788,13 @@ export const securityTools: PdfToolDefinition[] = [
         // 0 page(s)" while two field values were in fact painted.
         message: bakeMarks
           ? `${bakedAnnotations} annotation(s) drawn into the content of ${pagesTouched} page(s) and ${fieldsBaked} form field(s) removed from the form${
-              stillLive.length > 0 ? `; ${andList(stillLive)} in the saved file` : '; nothing of the selected kind is left live'
+              // "in the saved file" read as a saving claim to the card's growth
+              // filter, which drops the whole line — measured on a run that baked
+              // two marks and left a note live: the count never reached the screen.
+              stillLive.length > 0 ? `; ${andList(stillLive)} in the download` : '; nothing of the selected kind is left live'
             }.`
           : `${fieldsBaked} form field(s) removed from the form and drawn into the page content${
-              saved.fields > 0 ? `; ${saved.fields} field(s) are still interactive in the saved file` : ''
+              saved.fields > 0 ? `; ${saved.fields} field(s) are still interactive in the download` : ''
             }. Turn on flatten comments to bake the marks as well.`,
         warnings,
       };
@@ -2194,6 +2222,41 @@ interface LiveMarks {
   widgets: number;
   /** The `/Popup` subset — a note's bubble, which no user counts as a comment. */
   popups: number;
+}
+
+/**
+ * Take every remaining `/Link` out of the pages, and say how many went.
+ *
+ * Only reached with "Keep clickable links" off, and only ever holds leftovers: the
+ * bake has already drawn and dropped every link that carried an appearance. What
+ * is left is a hot rectangle with no ink of its own — the dashes a reader paints
+ * around a link are drawn by the reader, not stored — and a file the user asked to
+ * be print-ready must not keep its target clickable behind their back.
+ *
+ * The split counts what the pass had already set aside for a different reason:
+ * a link flagged `Invisible`, `Hidden` or `NoView` was never a candidate for ink,
+ * so the warning about marks left off the page has to keep owning it.
+ */
+function dropLiveLinks(doc: PDFDocument): { total: number; unpainted: number } {
+  let total = 0;
+  let unpainted = 0;
+  for (const page of doc.getPages()) {
+    const list = arrayAt(doc, page.node.get(PDFName.of('Annots')));
+    if (!list) continue;
+    for (let index = list.size() - 1; index >= 0; index -= 1) {
+      const annotation = dictAt(doc, list.get(index));
+      const subtype = annotation?.get(PDFName.of('Subtype'));
+      if (!(subtype instanceof PDFName) || subtype.asString() !== '/Link') continue;
+      const flags = annotation?.get(PDFName.of('F'));
+      if (flags instanceof PDFNumber && (flags.asNumber() & (1 | 2 | 32)) !== 0) unpainted += 1;
+      list.remove(index);
+      total += 1;
+    }
+    // A sheet that gave up its last hot rectangle is a plain page: no reader lists
+    // an empty annotation array, and neither should the file.
+    if (list.size() === 0) page.node.delete(PDFName.of('Annots'));
+  }
+  return { total, unpainted };
 }
 
 /**

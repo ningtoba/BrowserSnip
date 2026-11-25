@@ -41,6 +41,11 @@ await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 1;
 const pending = new Map();
 const errors = [];
+// Network half: every request the tab makes from now on. The page is already
+// loaded when the capture starts, so the dev server's own assets are in here but
+// anything off-origin or carrying a body stands out.
+const net = [];
+const SAME_ORIGIN = new URL(BASE).origin;
 ws.onmessage = (raw) => {
   const m = JSON.parse(raw.data);
   if (m.id && pending.has(m.id)) {
@@ -49,6 +54,10 @@ ws.onmessage = (raw) => {
     m.error ? rej(new Error(JSON.stringify(m.error))) : res(m.result);
   } else if (m.method === 'Runtime.exceptionThrown') {
     errors.push((m.params.exceptionDetails?.exception?.description ?? '').slice(0, 200));
+  } else if (m.method === 'Network.requestWillBeSent') {
+    const r = m.params.request;
+    net.push({ url: r.url, method: r.method, body: (r.postData || '').length || (r.hasPostData ? -1 : 0),
+      remote: !r.url.startsWith(SAME_ORIGIN) && !/^(data|blob|about):/.test(r.url) });
   }
 };
 const send = (method, params = {}) => new Promise((res, rej) => { const i = id++; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
@@ -71,6 +80,7 @@ const shot = async (path) => {
 
 await send('Page.enable');
 await send('Runtime.enable');
+await send('Network.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: `${BASE}/#/tool/flatten-pdf` });
 await wait(`!!document.querySelector('input[type=file]')`, 60000);
@@ -148,6 +158,13 @@ for (let run = 1; run <= RUNS; run++) {
 }
 await sleep(200);
 console.log('console errors', JSON.stringify([...new Set(errors)].slice(0, 3)));
+const remote = net.filter((r) => r.remote);
+console.log('network:', JSON.stringify({
+  total: net.length,
+  sameOrigin: net.filter((r) => !r.remote).length,
+  remote: remote.map((r) => `${r.method} ${r.url.slice(0, 120)}`),
+  bodies: net.filter((r) => r.body !== 0).map((r) => `${r.method} ${r.url.slice(0, 80)} ${r.body}B`),
+}));
 ws.close();
 chrome.kill('SIGKILL');
 process.exit(0);
