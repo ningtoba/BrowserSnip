@@ -2651,12 +2651,18 @@ async function verifyProtection(
   warnings.push(...permissionMismatches(requested, inspection.permissions));
   if (!inspection.encrypted) return { inspection, warnings };
   // A restrictions-only file must still open on double-click; a file with an
-  // open password must not. `PDFDocument.load` with an empty password is the
-  // reader's point of view here, because the guard reports any /Encrypt as
-  // needing a password (it cannot know the user password is empty).
+  // open password must not. `openPDF` with the empty password is the app's own
+  // open path — the one that runs when the user re-opens this file here — and
+  // its crypto layer checks the empty user secret at both revisions. The bare
+  // `PDFDocument.load(bytes, { password: '' })` this used to call cannot ask
+  // the question at `/R 6` at all: it refuses every revision-6 file, measured
+  // on this app's own AES-256 permissions copy (pdf.js, MuPDF, pikepdf,
+  // poppler and pypdf each opened that file with nothing typed while the load
+  // threw), and the card answered "does not open on the empty password"
+  // against its own sentence naming a reader that had just opened it.
   let opensWithoutOne = false;
   try {
-    await PDFDocument.load(bytes, { password: '', updateMetadata: false });
+    await openPDF(bytes, { password: '' });
     opensWithoutOne = true;
   } catch {
     opensWithoutOne = false;

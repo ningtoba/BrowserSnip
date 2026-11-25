@@ -508,6 +508,48 @@ describe('a permissions-only file is restricted, not locked', () => {
     }
   }, 300_000);
 
+  it('opens an AES-256 permissions copy on nothing typed, and the card says so', async () => {
+    // The revision-6 shape of the case above. `PDFDocument.load(bytes,
+    // { password: '' })` — the probe `verifyProtection` used to ask "does this
+    // open without a password?" — refuses EVERY `/R 6` file, including this
+    // app's own AES-256 permissions copy, measured live on :5294 and here in
+    // node: pdf.js, MuPDF, pikepdf, poppler and pypdf all open that file with
+    // nothing typed while the bare load threw, and the card carried
+    // "does not open on the empty password" against its own sentence naming a
+    // reader that opened it. Both tools that write the dictionary are covered:
+    // `protect` with permissions only, and `change-permissions` re-sealing an
+    // AES-256 file at the strength it arrived at.
+    const sealed = await bytesOf(await run('protect', {
+      mode: 'user', userPassword: 'reader-key', cipher: 'AES-256', ...RESTRICTIVE,
+    }));
+    expect(latin1.decode(sealed)).toMatch(/\/R 6/);
+
+    const resealed = await run('change-permissions', {
+      action: 'set', ownerPassword: 'reader-key', cipher: 'keep',
+      allowPrinting: true, printLevel: 'high', allowModifying: true, allowCopying: true,
+      allowAnnotating: true, allowFillingForms: true, allowAccessibility: true, allowAssembling: false,
+    }, [pdfFile(sealed, 'aes-256.pdf')]);
+    const bytes = await bytesOf(resealed);
+    expect(latin1.decode(bytes), 're-sealing an AES-256 file dropped its strength').toMatch(/\/R 6/);
+
+    // The bar is a reader with its own revision-6 implementation, not this app's
+    // crypto: pdf.js opens the copy with no password argument at all.
+    expect(await readerPageCount(bytes)).toBe(3);
+    // So the empty-secret claim on the card must stand: no refusal warning.
+    const warnings = resealed.warnings.join(' ');
+    expect(warnings, 'the card refused its own openable file').not.toMatch(/does not open on the empty password/i);
+    expect(resealed.message).toMatch(/A PDF reader opens it with no password/);
+
+    // And the same shape written fresh by `protect` (permissions only, AES-256).
+    const owned = await run('protect', {
+      mode: 'owner', userPassword: '', ownerPassword: 'owner-key', cipher: 'AES-256', ...RESTRICTIVE,
+    });
+    const ownedBytes = await bytesOf(owned);
+    expect(latin1.decode(ownedBytes)).toMatch(/\/R 6/);
+    expect(await readerPageCount(ownedBytes)).toBe(3);
+    expect(owned.warnings.join(' ')).not.toMatch(/does not open on the empty password/i);
+  }, 300_000);
+
   it('reports an empty user password as no password in View Metadata', async () => {
     const locked = await bytesOf(await run('protect', {
       mode: 'owner', userPassword: '', ownerPassword: 'owner-key', version: '4', ...RESTRICTIVE,
