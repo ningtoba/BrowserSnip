@@ -55,10 +55,21 @@ def ink_of(image):
 
 
 def tiff_pages(blob):
-    # `utif`-style minimal split is not worth it here; PyMuPDF opens TIFF too.
-    doc = pymupdf.open(stream=blob, filetype="tiff")
-    return [Image.open(io.BytesIO(pix.tobytes("png"))) for pix in
-            (page.get_pixmap(dpi=72) for page in doc)]
+    # Read every frame at its *native* pixel size, the way the zip branch already
+    # reads each stored image (`Image.open`, not `get_pixmap`). Opening through
+    # PyMuPDF at a fixed `dpi=72` ignored the density the exporter stamps into
+    # `XResolution`/`YResolution`, so a page rendered at 200 dpi came back at its
+    # point-box size (1167×1653 px became 420×595) and the dimension check false-
+    # failed a TIFF whose resolution metadata was exactly right.
+    im = Image.open(io.BytesIO(blob))
+    frames = []
+    try:
+        while True:
+            im.seek(len(frames))
+            frames.append(im.convert("RGB"))
+    except EOFError:
+        pass
+    return frames
 
 
 def produced(path):
