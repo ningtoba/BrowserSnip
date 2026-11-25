@@ -115,9 +115,19 @@ def main():
     stamp_pix = render(args.stamp, args.page)
     stamp_m = mask(stamp_pix)
 
+    # The base page is the frame the tool draws into, but the stamp's own sheet can
+    # be any size: measured, `colour.pdf`'s `/Rotate 90` side renders 595 × 420 px at
+    # 72 dpi while `sheets.pdf` page 4 is 420 × 595, and indexing the base mask by the
+    # stamp's row length raised `IndexError` — the checker died instead of reporting.
+    # Walk the shared raster and count the stamp's overhang separately, so a size
+    # mismatch is a number in the report rather than a crash or a silently dropped band.
     regions = {"stamp_only": [], "base_only": [], "both": []}
+    overhang = 0
     for y, row in enumerate(stamp_m):
         for x, v in enumerate(row):
+            if y >= len(base_m) or x >= len(base_m[y]):
+                overhang += 1 if v else 0
+                continue
             if v and not base_m[y][x]:
                 regions["stamp_only"].append((x, y))
             elif base_m[y][x] and not v:
@@ -126,9 +136,15 @@ def main():
                 regions["both"].append((x, y))
 
     def hits(points, m):
-        return sum(1 for x, y in points if m[y][x])
+        return sum(1 for x, y in points if y < len(m) and x < len(m[y]) and m[y][x])
 
-    report = {"case": "regions", "page": args.page + 1}
+    report = {
+        "case": "regions",
+        "page": args.page + 1,
+        "base_raster": [base_pix.width, base_pix.height],
+        "stamp_raster": [stamp_pix.width, stamp_pix.height],
+        "stamp_pixels_outside_base_raster": overhang,
+    }
     for name, pts in regions.items():
         report[name] = {
             "n": len(pts),

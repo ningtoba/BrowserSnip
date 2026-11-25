@@ -161,6 +161,30 @@ const TOOL_LABELS = {
     syncXmp: 'Write the same values into the XMP packet',
     touchDates: 'Set the modification date to now',
   },
+  // The four imposition/ordering panes of `organize.ts`: none of their keys is
+  // the printed label, so a bare `perSheet=4` reads NO CONTROL and the run goes
+  // ahead on the default — the same silent-default failure round 018 measured on
+  // `fix-page-size`. Measured on `:5292` while re-driving this lane's rigs.
+  'duplex-collate': {
+    backReversed: 'Second half was scanned in reverse',
+    offset: 'Back-side page offset',
+  },
+  'n-up': {
+    perSheet: 'Pages per sheet',
+    sheetSize: 'Sheet size',
+    landscape: 'Landscape sheet',
+    order: 'Fill order',
+    border: 'Hairline around each page',
+  },
+  booklet: {
+    sheetSize: 'Sheet size',
+    landscape: 'Landscape sheet',
+  },
+  'combine-single-page': {
+    gap: 'Gap between pages',
+    width: 'Target width',
+    splitOverflow: 'Start a new page when the PDF height limit is reached',
+  },
   protect: {
     mode: 'Protection type',
     allowPrinting: 'Allow printing',

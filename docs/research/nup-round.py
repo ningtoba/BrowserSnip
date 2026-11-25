@@ -88,7 +88,11 @@ def main():
     ap.add_argument('--portrait', action='store_true')
     ap.add_argument('--pages', default='')
     ap.add_argument('--label', default='run')
-    ap.add_argument('--want-title', default='')
+    # Identity carry is the contract on this build (`carryDocInfo` + `setProducer`),
+    # so the default is the source's own `/Info` title rather than the pre-fix `''` —
+    # a rebuild that silently drops the title must FAIL, not pass a stale expectation.
+    ap.add_argument('--want-title', default=None,
+                    help="default: the source's own /Info title (identity must survive the rebuild)")
     ap.add_argument('--control', action='store_true')
     ap.add_argument('--border', action='store_true')
     args = ap.parse_args()
@@ -184,7 +188,10 @@ def main():
         print(f'\n{failures} failure(s) [{args.label}]')
         return failures
     info = doc.metadata or {}
-    judge(info.get('title') == args.want_title, '/Info title', repr(info.get('title')), repr(args.want_title))
+    want_title = args.want_title
+    if want_title is None:
+        want_title = (pymupdf.open(args.source).metadata or {}).get('title') or ''
+    judge(info.get('title') == want_title, '/Info title', repr(info.get('title')), repr(want_title))
     judge(info.get('producer') == 'BrowserSnip', 'producer', repr(info.get('producer')), 'BrowserSnip')
     source_packet = bool(pymupdf.open(args.source).get_xml_metadata())
     judge(bool(doc.get_xml_metadata()) == source_packet, 'XMP packet carried like the source',
