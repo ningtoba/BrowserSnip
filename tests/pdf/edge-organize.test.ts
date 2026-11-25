@@ -1523,6 +1523,33 @@ async function bytesFrom(file: File): Promise<Uint8Array> {
 /* ── E13: nothing to do, and plans that would produce nothing ────────────── */
 
 describe('empty results are reported, not downloaded', () => {
+  it('names the side a one-page document has no pages on, instead of a range it never asked for (E13)', async () => {
+    const one = fileOf(await sheets(grid(1)), 'one.pdf');
+    // Asking for the side that does not exist leaves nothing to write, and the
+    // tool already knows why — it says so in the note when the other side is also
+    // wanted. Throwing the generic sentence threw that reason away, and its hint
+    // pointed at a range box that mode does not show.
+    // `run` resolves with an outcome only on success, so the catch is the shape
+    // this assertion reads.
+    const refusal = await run('split', { mode: 'oddEven', oddEven: 'even' }, [one]).then(
+      () => null,
+      (error: unknown) => error as Error & { hint?: string },
+    );
+    expect(refusal).not.toBeNull();
+    expect(refusal?.message).toMatch(/no even pages/i);
+    // The hint is the second line of the alert, so it is asserted where it lives.
+    expect(refusal?.hint).toMatch(/Its only sheet is odd/);
+    expect(refusal?.hint).toMatch(/Every page/);
+    // Control: the side that exists still cuts, and "both" still says so in a note.
+    const odd = await run('split', { mode: 'oddEven', oddEven: 'odd' }, [one]);
+    expect(odd.outputs).toHaveLength(1);
+    const both = await run('split', { mode: 'oddEven', oddEven: 'both' }, [one]);
+    expect(both.outputs).toHaveLength(1);
+    expect(warn(both)).toMatch(/has no even pages/i);
+    // Control: the generic sentence stays for a mode with no sides to name.
+    await expect(run('split', { mode: 'ranges', ranges: ' ' }, [one])).rejects.toThrow(/enter at least one page range/i);
+  });
+
   it('produces no empty even-pages file for a one-page document (E13)', async () => {
     const source = fileOf(await sheets(grid(1)), 'one.pdf');
     const outcome = await run('split', { mode: 'oddEven', oddEven: 'both' }, [source]);

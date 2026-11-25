@@ -123,6 +123,9 @@ const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, select
 await send('DOM.setFileInputFiles', { nodeId, files: PDFS });
 await wait(`document.querySelectorAll('button').length > 3`, 60000);
 await sleep(2500);
+// The rail folds every field but its lead one; a user opens it, so the probe does.
+await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/more option/i.test(x.innerText||''));if(b)b.click();return !!b})()`);
+await sleep(400);
 
 const readback = [];
 for (const [key, want] of WANTED) {
@@ -131,11 +134,15 @@ for (const [key, want] of WANTED) {
     const want=${JSON.stringify(want.toLowerCase())}, key=norm(${JSON.stringify(key)});
     const lab=[...document.querySelectorAll('label')].find((l)=>norm(l.innerText).includes(key));
     if(!lab) return 'no label';
-    const box=lab.querySelector('input[type=checkbox],input[type=radio]');
+    // A rail label may wrap its control or point at it with a for attribute; both
+    // are the same control to a user, so find the field either way.
+    const forEl=lab.getAttribute('for')?document.getElementById(lab.getAttribute('for')):null;
+    const host=forEl?forEl.closest('div,section')||lab:lab;
+    const box=[lab,host].map((h)=>h.querySelector('input[type=checkbox],input[type=radio]')).find(Boolean);
     if(box){const on=box.checked||(box.type==='radio'&&box.checked);const wantOn=['true','on','yes','1'].includes(want);
       if(on!==wantOn) box.click();
       return String((lab.querySelector('input[type=checkbox],input[type=radio]')||{}).checked);}
-    const inp=lab.querySelector('input,select,textarea');
+    const inp=[lab,host].map((h)=>h.querySelector('input:not([type=checkbox]):not([type=radio]),select,textarea')).find(Boolean)||forEl;
     if(!inp) return 'no control';
     const proto=inp.tagName==='SELECT'?HTMLSelectElement.prototype:(inp.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype);
     Object.getOwnPropertyDescriptor(proto,'value').set.call(inp,${JSON.stringify(want)});
@@ -152,7 +159,20 @@ console.log('readback:', JSON.stringify(readback));
 const before = await ev('window.__blobs.length');
 const clicked = await ev(`(()=>{const re=new RegExp(${JSON.stringify(LABEL)});const b=[...document.querySelectorAll('button')].find(x=>re.test((x.innerText||'').replace(/\\s+/g,' ').trim()));if(!b)return null;b.click();return (b.innerText||'').trim()})()`);
 console.log('run button:', JSON.stringify(clicked));
-const got = await wait(`window.__blobs.length > ${before}`, TIMEOUT);
+let got = await wait(`window.__blobs.length > ${before}`, Math.min(TIMEOUT, 30000));
+if (!got) {
+  // A multi-file result holds its bytes until the card is pressed: click every
+  // row's own download, the way the user takes the files.
+  const pressed = await ev(`(()=>{const card=document.querySelector('section[aria-label="Result"]');if(!card)return 'no card';
+    const per=[...card.querySelectorAll('button[aria-label^="Download "]')];
+    if(per.length){per.forEach((b)=>b.click());return 'each:'+per.length;}
+    const one=[...card.querySelectorAll('button')].find((b)=>/^Download/.test((b.innerText||'').trim()));
+    if(one){one.click();return 'one';}
+    return 'no download button'})()`);
+  console.log('downloads pressed:', pressed);
+  await sleep(2000);
+  got = await wait(`window.__blobs.length > ${before}`, Math.min(TIMEOUT, 60000));
+}
 await sleep(600);
 const screen = await ev(`(()=>{const m=document.querySelector('main')||document.body;return m.innerText.slice(-900)})()`);
 console.log('finished:', got);

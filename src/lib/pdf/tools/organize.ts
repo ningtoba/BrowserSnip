@@ -1131,6 +1131,10 @@ export const organizeTools: PdfToolDefinition[] = [
       // so the files sort the way they were cut (see `rangeName`).
       const width = String(total).length;
       const groups: { name: string; pages: number[] }[] = [];
+      // The side a one-page document does not have; remembered so the refusal
+      // below can say which side that was instead of gesturing at a range field
+      // this mode does not show.
+      let missingSide: string | null = null;
 
       if (mode === 'every') {
         for (let i = 0; i < total; i++) {
@@ -1148,6 +1152,7 @@ export const organizeTools: PdfToolDefinition[] = [
             // E13: a one-page document has no even side. Say so instead of
             // shipping a PDF whose only content is pdf-lib's filler page.
             notes.add(`This document has no ${side.key} pages, so no ${side.file} file was made.`);
+            missingSide = side.key;
             continue;
           }
           groups.push({ name: side.file, pages: side.pages });
@@ -1192,6 +1197,21 @@ export const organizeTools: PdfToolDefinition[] = [
       }
 
       if (groups.length === 0) {
+        if (missingSide) {
+          // The reason is already known here: the document has no page on that
+          // side. Saying it beats sending the user to a range box they never used.
+          const present = missingSide === 'even' ? 'odd' : 'even';
+          throw new ToolInputError(
+            'NO_PAGES',
+            `This document has no ${missingSide} pages, so this split would produce no files.`,
+            {
+              hint:
+                total === 1
+                  ? `Its only sheet is ${present}. Ask for "${present === 'odd' ? 'Odd' : 'Even'} pages only", or switch to "Every page".`
+                  : `Ask for the ${present} side, or switch to "Every page".`,
+            },
+          );
+        }
         throw new ToolInputError('NO_PAGES', 'This split would produce no files at all.', {
           hint: `Pick a range inside 1-${total}, or switch to "Every page".`,
         });
