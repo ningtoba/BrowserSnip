@@ -38,6 +38,15 @@ def cells(width, height, cols, rows, gutter, margin):
     return out
 
 
+INK_BELOW = 200  # "grey below 200" on a **greyscale** render — the ink definition the
+# other readers in this campaign use (`duplex-round-bytes.py`, `overlay-ink.py`,
+# `combine-round.py`). Reading the same pixels per-channel on an RGB render counts a
+# coloured band's antialiased edge as ink for two pixels further out on every side, which
+# is what made the `n-up` 9-per-sheet cell of the `/Rotate 90` band sheet read 4.857
+# against a source 4.718 (+2.9 %) while the identical geometry measured in grey reads
+# 4.682 against 4.667 (+0.3 %).
+
+
 def ink(pm, box):
     """(count, centroid, bbox) of non-white pixels inside a top-down pixel box."""
     x0, y0, x1, y1 = [int(round(v)) for v in box]
@@ -50,7 +59,7 @@ def ink(pm, box):
         base = py * width * stride
         for px in range(x0, x1):
             at = base + px * stride
-            if samples[at:at + 3] != b'\xff\xff\xff':
+            if samples[at] < INK_BELOW:
                 count += 1
                 sx += px
                 sy += py
@@ -66,12 +75,13 @@ def source_measure(path):
     doc = pymupdf.open(path)
     pages = []
     for page in doc:
-        pm = page.get_pixmap(dpi=72)
+        pm = page.get_pixmap(dpi=72, colorspace=pymupdf.csGRAY)
         count, _, bbox = ink(pm, (0, 0, pm.width, pm.height))
         aspect = None if not bbox else (bbox[2] - bbox[0]) / max(1, (bbox[3] - bbox[1]))
         text = str(page.get_text() or '')
         first = (text.strip().split('\n') or [''])[0][:34]
         pages.append({'first': first, 'aspect': aspect, 'ink': count,
+                      'span': None if not bbox else (bbox[2] - bbox[0], bbox[3] - bbox[1]),
                       'box': (round(pm.width, 1), round(pm.height, 1)), 'rot': page.rotation})
     return pages
 
@@ -130,7 +140,7 @@ def main():
               (round(want_w, 1), round(want_h, 1)))
         judge(int(sheet.rotation or 0) == 0, f'sheet {number + 1} /Rotate', sheet.rotation, 0)
         width, height = float(sheet.rect.width), float(sheet.rect.height)
-        pm = sheet.get_pixmap(dpi=72)
+        pm = sheet.get_pixmap(dpi=72, colorspace=pymupdf.csGRAY)
         every = cells(width, height, cols, rows, args.gutter, args.margin)
         inside = set()
         for (x, y, w, h) in every:
@@ -143,7 +153,7 @@ def main():
             base = py * pm.width * stride
             for px in range(pm.width):
                 at = base + px * stride
-                if samples[at:at + 3] != b'\xff\xff\xff' and (px, py) not in inside:
+                if samples[at] < INK_BELOW and (px, py) not in inside:
                     outside += 1
         # A selected hairline sits on the cell edge, so half its 0.5 pt stroke
         # falls outside the rect the cell owns: the bound is that half-perimeter.
@@ -157,9 +167,21 @@ def main():
             want_page = selected[slot] - 1
             # `across` fills the row; `down` fills the column, so the cell of a
             # slot is a permutation of the index the other way round.
+            #
+            # The permutation belongs to the SHEET, exactly as the tool computes it
+            # (`slot = index % perSheet`, then the turn within that grid). Derived over
+            # the whole document it silently mis-assigns every sheet after the first:
+            # measured on `ndown.pdf` (4 per sheet, 8 pages), the tool put p5 top-left of
+            # sheet 2 and p6 below it — column-major, which is what the card's "down fills
+            # each column first" means — while the old reader asked sheet 2 cell 0 for p1
+            # and failed 6 lines. Judged correctly the same file is clean, and the same
+            # file judged `across` fails, so the model still discriminates.
             if args.order == 'down':
-                cell_order = [(s % rows) * cols + s // rows for s in range(len(selected))]
-                want_page = selected[cell_order.index(index)] - 1 if index in cell_order else -1
+                cell_of_slot = [(s % rows) * cols + s // rows for s in range(args.per_sheet)]
+                slot_of_cell = {cell: s for s, cell in enumerate(cell_of_slot)}
+                inner = slot_of_cell.get(index, -1)
+                global_slot = number * args.per_sheet + inner
+                want_page = selected[global_slot] - 1 if inner >= 0 and global_slot < len(selected) else -1
             box = pymupdf.Rect(x, height - y - h, x + w, height - y)
             first = sheet.get_textbox(box).strip().split('\n')[0][:34]
             count, centre, bbox = ink(pm, (x, height - y - h, x + w, height - y))
@@ -172,18 +194,38 @@ def main():
             judge(count > 0 if want_ink else count == 0,
                   f'sheet {number + 1} cell {index} inked like its source', count, want_ink)
             if source['aspect'] and bbox and not args.border:
-                aspect = (bbox[2] - bbox[0]) / max(1, (bbox[3] - bbox[1]))
-                # Tolerance is the source's own aspect against itself: a 2 % band
-                # covers the antialiased edge of the ink, not a stretch (a stretch
-                # of a 0.71 page into a 1.45 cell would read 1.45).
-                judge(abs(aspect - source['aspect']) / source['aspect'] < 0.02,
+                cw_px, ch_px = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                sw_px, sh_px = source['span']
+                aspect = cw_px / max(1, ch_px)
+                # A box measured in whole device pixels is uncertain by ±1 pixel on every
+                # side, so an aspect inherits `(1/w + 1/h)` of relative error — and the
+                # comparison involves two such boxes. That, not a guessed percentage, is
+                # the band this row is judged inside. The flat 2 % it used to carry was
+                # smaller than the instrument's own error: the `/Rotate 90` band sheet in a
+                # 9-per-sheet cell measures 102 x 21 pixels, where ±1 px is already 5.8 %,
+                # and the row failed at 4.857 against a source 4.718 (+2.9 %) while the
+                # geometry was exact — re-measured at 150 and 300 dpi the same cell closes
+                # on its source (4.652 vs 4.705, then 4.692 vs 4.698), which is what
+                # quantisation looks like and what a fit error never would.
+                #
+                # The band still separates a stretch from a faithful cell: a 0.705 page
+                # drawn into a 1.417 cell is 100 % out, and the reader's own controls (a
+                # 9-per-sheet file judged as 4, a column-major file judged row-major) fail
+                # 6 lines each.
+                quantisation = (1 / max(1, cw_px) + 1 / max(1, ch_px)
+                                + 1 / max(1, sw_px) + 1 / max(1, sh_px))
+                tolerance = max(0.02, quantisation)
+                drift = abs(aspect - source['aspect']) / source['aspect']
+                judge(drift <= tolerance,
                       f'sheet {number + 1} cell {index} keeps the source aspect',
-                      round(aspect, 3), f"{source['aspect']:.3f} ±2%")
+                      round(aspect, 3),
+                      f"{source['aspect']:.3f} ±{tolerance * 100:.1f}% "
+                      f"(cell box {cw_px}x{ch_px} px, source box {sw_px}x{sh_px} px)")
     if args.control:
         print('control: the same sheet judged with the grid shifted half a row')
         empty = pymupdf.open(args.out)
         blank = all(not str(page.get_text() or '').strip()
-                    and ink(page.get_pixmap(dpi=72), (0, 0, 10, 10))[0] == 0 for page in empty)
+                    and ink(page.get_pixmap(dpi=72, colorspace=pymupdf.csGRAY), (0, 0, 10, 10))[0] == 0 for page in empty)
         judge(blank, 'control sheet carries no text', blank, True)
         print(f'\n{failures} failure(s) [{args.label}]')
         return failures
