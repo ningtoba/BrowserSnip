@@ -99,12 +99,17 @@ describe('edit-metadata patches the XMP packet instead of rebuilding it', () => 
     expect(readXmp(doc)?.title, 'the packet was rewritten anyway').toBe('Original title');
   }, 120_000);
 
-  it('removes a property the file does not have rather than leaving an empty one', async () => {
+  it('never writes an empty property, and keeps one only the packet holds', async () => {
+    // Chunk c3 refined this: the property is dropped when *neither* store holds a
+    // value (an empty `<rdf:li>` is a title a reader prefers over `/Info`), but a
+    // value the packet holds on its own is the document's current value — a save
+    // that typed nothing has to keep it, not delete it.
     const doc = await produced(await run(await fixture({ title: undefined, lang: '' }), { author: 'Only Author', touchDates: false }));
     const packet = readXmpText(doc) ?? '';
     expect(readInfo(doc).title, 'the control: this file has no /Title').toBeUndefined();
-    expect(packet, 'an empty dc:title reader-trusted titles stay blank').not.toContain('dc:title');
-    expect(packet, 'a dc:language the file does not declare disagrees with /Lang').not.toContain('dc:language');
+    expect(packet, 'the packet-only title was deleted by a blank box').toContain('Original title');
+    expect(packet, 'an empty dc:title reader-trusted titles stay blank').not.toContain('<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\"></rdf:li>');
+    expect(packet, 'a dc:language neither store declares disagrees with /Lang').not.toContain('dc:language');
   }, 120_000);
 
   it('carries the typed language into dc:language', async () => {

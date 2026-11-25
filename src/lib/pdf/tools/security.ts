@@ -1205,7 +1205,7 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Save properties',
     notes: [
       'Only the info dictionary and the XMP packet change — the page content is not re-written, so this cannot alter what the document says. In the XMP packet only the properties this form owns are rewritten; an `xmp:CreateDate`, a `dc:rights` or a vendor property is carried over untouched.',
-      'Anything you leave blank keeps its current value — the key is not emptied. To erase every property rather than replace one, use Remove Metadata.',
+      'Anything you leave blank keeps its current value — the key is not emptied, and a title, author, description or keywords value the file holds only in its XMP packet is read from there. To erase every property rather than replace one, use Remove Metadata.',
       'A date is written as the PDF date it parses to. Text that is not a date is refused by name rather than stored verbatim in a key readers date-sort on.',
     ],
     fields: [
@@ -1225,15 +1225,36 @@ export const securityTools: PdfToolDefinition[] = [
       const [input] = await openInputs(context);
       const { writeInfo, readInfo, syncXmp } = await import('../core/metadata');
       const current = readInfo(input.doc);
+      const packet = readXmp(input.doc);
+      // One rule for both stores. The `/Info` writer used to split only on commas
+      // while the packet split on commas *and* semicolons: typing
+      // `alpha; beta , gamma` wrote two keywords into `/Info` and three into
+      // `dc:subject`, so the two stores disagreed about how many keywords exist.
+      const words = (value: string): string[] =>
+        value.split(/[,;]+/).map((word) => word.trim()).filter(Boolean);
       const keywords = stringValue(context.values, 'keywords');
+      // A blank box changes nothing, in either store. `/Info` answering `''` (a
+      // key present but empty) used to fall through as an empty string, and
+      // `writeInfo` reads an empty string as a delete — so a save with every box
+      // empty removed `/Title` and `/Subject` from a real pdfTeX paper.
+      const held = (typed: string, inInfo: string | undefined): string | undefined => {
+        if (typed.trim() !== '') return typed;
+        return inInfo === '' ? undefined : inInfo;
+      };
+      // `syncXmp` drops a packet property whose `/Info` twin is absent, so a fact
+      // the file keeps only in its XMP — `dc:title` with `/Title ""`, measured on
+      // a file built the way pdfTeX and Word leave them — was deleted by a save
+      // that typed nothing. The twin is filled from the packet before the patch.
+      const twin = (inInfo: string | undefined, inPacket: string | undefined): string | undefined =>
+        (inInfo ?? '').trim() !== '' ? inInfo : inPacket;
       const written: Parameters<typeof writeInfo>[1] = {
-        title: stringValue(context.values, 'title') || current.title,
-        author: stringValue(context.values, 'author') || current.author,
-        subject: stringValue(context.values, 'subject') || current.subject,
-        keywords: keywords ? keywords.split(',').map((k) => k.trim()).filter(Boolean).join(', ') : current.keywords,
-        creator: stringValue(context.values, 'creator') || current.creator,
-        producer: stringValue(context.values, 'producer') || current.producer,
-        lang: stringValue(context.values, 'docLanguage') || current.lang,
+        title: held(stringValue(context.values, 'title'), current.title),
+        author: held(stringValue(context.values, 'author'), current.author),
+        subject: held(stringValue(context.values, 'subject'), current.subject),
+        keywords: keywords ? words(keywords).join(', ') : held(keywords, current.keywords),
+        creator: held(stringValue(context.values, 'creator'), current.creator),
+        producer: held(stringValue(context.values, 'producer'), current.producer),
+        lang: held(stringValue(context.values, 'docLanguage'), current.lang),
       };
       // Both dates are typable. A typed value wins over the "set to now" toggle —
       // a user who named a date asked for that date — and the toggle only fills
@@ -1247,11 +1268,16 @@ export const securityTools: PdfToolDefinition[] = [
       writeInfo(input.doc, written);
       if (booleanValue(context.values, 'syncXmp', true)) {
         const info = readInfo(input.doc);
+        // `pdf:Producer`, `xmp:CreatorTool` and `dc:language` have no twin in
+        // `XmpSummary` (the seam gap `view-metadata` reports the same way), so a
+        // packet-only one of those is still replaced by the `/Info` answer.
         syncXmp(input.doc, {
-          title: info.title,
-          author: info.author,
-          subject: info.subject,
-          keywords: (info.keywords ?? '').split(/[,;]+/).map((word) => word.trim()).filter(Boolean),
+          title: twin(info.title, packet?.title),
+          author: twin(info.author, packet?.creator),
+          subject: twin(info.subject, packet?.description),
+          keywords: words(info.keywords ?? '').length > 0
+            ? words(info.keywords ?? '')
+            : (packet?.keywords ?? []),
           producer: info.producer,
           creatorTool: info.creator,
           lang: info.lang,
