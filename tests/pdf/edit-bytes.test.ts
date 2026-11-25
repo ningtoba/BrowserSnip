@@ -957,6 +957,116 @@ describe('table-of-contents inserts a contents page that still points correctly'
     expect(y0).toBeLessThan(title!.rect.y);
     expect(y1).toBeGreaterThan(title!.rect.y);
   });
+  it('says how many entries have no target, in a sentence that agrees with itself', async () => {
+    // Measured on the card: "2 entries has no page target, so it is listed without
+    // a number." The headings really are listed without numbers — the sentence was
+    // the only thing wrong.
+    const fixture = pdfFile(await pdfFixture([{ text: 'a' }, { text: 'b' }, { text: 'c' }]), 'fixture.pdf');
+    const marked = await run('bookmarks', { outline: 'Front matter\n  Alpha :: 2\n  Beta :: 3\nBack matter' }, [fixture]);
+    const outcome = await run('table-of-contents', { insertAt: 1, title: 'Contents' }, [
+      pdfFile(await outBytes(marked), 'fixture.pdf'),
+    ]);
+    const warnings = outcome.warnings.join(' ');
+    expect(warnings).toMatch(/2 entries have no page target, so they are listed without a number\./u);
+    expect(warnings).not.toMatch(/entries has|it is listed without a number\.\s*$/u);
+
+    const doc = await reopen(outcome);
+    const runs = pageRuns(doc.getPages()[0]);
+    const texts = runs.map((item) => item.text);
+    expect(texts).toEqual(expect.arrayContaining(['Front matter', 'Back matter']));
+    // Only the two entries that name a page get a number, and both name page 2 and 3
+    // of the finished four-page file.
+    expect(texts.filter((text) => /^\d+$/u.test(text))).toEqual(['3', '4']);
+
+    // Control: a single missing target reads in the singular.
+    const one = await run('bookmarks', { outline: 'Front matter\n  Alpha :: 2' }, [fixture]);
+    const tocOne = await run('table-of-contents', { insertAt: 1, title: 'Contents' }, [
+      pdfFile(await outBytes(one), 'fixture.pdf'),
+    ]);
+    expect(tocOne.warnings.join(' ')).toMatch(/1 entry has no page target, so it is listed without a number\./u);
+  });
+
+  it('lands every entry of a spilling list inside the sheet it was drawn on', async () => {
+    // The spill class, byte-wise: 60 entries over a four-page fixture, at a size that
+    // forces more than one contents page. The card counts what the paper holds.
+    const fixture = pdfFile(await pdfFixture([{ text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd' }]), 'fixture.pdf');
+    const outline = Array.from({ length: 60 }, (_unused, index) => `Entry ${index + 1} :: ${(index % 4) + 1}`).join('\n');
+    const marked = await run('bookmarks', { outline }, [fixture]);
+    const outcome = await run('table-of-contents', { insertAt: 1, title: 'Contents' }, [
+      pdfFile(await outBytes(marked), 'fixture.pdf'),
+    ]);
+    const doc = await reopen(outcome);
+    const inserted = doc.getPageCount() - 4;
+    expect(inserted).toBeGreaterThan(1);
+    expect(outcome.message).toBe(
+      `Inserted a ${inserted} pages table of contents at page 1, listing 60 entries from the outline.`,
+    );
+
+    let listed = 0;
+    let links = 0;
+    for (let index = 0; index < inserted; index++) {
+      const page = doc.getPages()[index];
+      const { width, height } = page.getSize();
+      const runs = pageRuns(page);
+      for (const run of runs) {
+        // On the paper, every time: nothing drawn at or below the sheet's edge.
+        expect(run.rect.y).toBeGreaterThanOrEqual(0);
+        expect(run.rect.y + run.rect.height).toBeLessThanOrEqual(height);
+        expect(run.rect.x).toBeGreaterThanOrEqual(0);
+        expect(run.rect.x + run.rect.width).toBeLessThanOrEqual(width);
+      }
+      listed += runs.filter((run) => /^Entry \d+$/u.test(run.text)).length;
+      links += arrayOf(doc, page.node.get(PDFName.of('Annots')))?.size() ?? 0;
+    }
+    expect(listed).toBe(60);
+    expect(links).toBe(60);
+
+    // And the number beside a row is that sheet's position in the finished file.
+    const first = pageRuns(doc.getPages()[0]);
+    const title = first.find((run) => run.text === 'Entry 1')!;
+    const beside = first.filter((run) => /^\d+$/u.test(run.text)
+      && Math.abs(run.rect.y - title.rect.y) < 2);
+    expect(beside.map((run) => run.text)).toEqual([String(1 + inserted)]);
+  });
+
+  it('leaves every entry off a sheet too short to hold them — blocker, core layout', async () => {
+    // Measured live (`toc-append-back.pdf`: insert at page 8 of a mixed-size file
+    // whose eighth sheet is 336 × 71.4 pt): the inserted sheet takes that strip for
+    // its size, its usable band is `height - 48 = 23.4` above a `bottom` of 48, so
+    // the heading prints and each entry is placed at a negative y — below the paper.
+    // Four pages were inserted, each holding a `Contents` heading and no entry, while
+    // the card read "Inserted a 4 pages table of contents at page 8, listing 3
+    // entries from the outline." The layout is `generateTocPage`
+    // (src/lib/pdf/core/bookmarks.ts), outside this lane; flip this pin to the
+    // assertion it wants to be (every entry inside its sheet) when that lands.
+    const fixture = pdfFile(await pdfFixture([
+      { text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd', size: [336, 71.4] },
+    ]), 'mixed.pdf');
+    const marked = await run('bookmarks', { outline: 'Alpha :: 1\nBeta :: 2\nGamma :: 4' }, [fixture]);
+    const outcome = await run('table-of-contents', { insertAt: 4, title: 'Contents' }, [
+      pdfFile(await outBytes(marked), 'mixed.pdf'),
+    ]);
+    const doc = await reopen(outcome);
+    const inserted = doc.getPageCount() - 4;
+    expect(inserted).toBeGreaterThan(1);
+    expect(outcome.message).toMatch(/listing 3 entries from the outline\./u);
+
+    const titles = ['Alpha', 'Beta', 'Gamma'];
+    let onPaper = 0;
+    let headings = 0;
+    // `insertAt: 4` puts the contents at index 3, ahead of the strip it copied.
+    for (let index = 3; index < 3 + inserted; index++) {
+      const page = doc.getPages()[index];
+      const { height } = page.getSize();
+      expect(height).toBeCloseTo(71.4, 1);
+      for (const run of pageRuns(page)) {
+        if (run.text === 'Contents') headings += 1;
+        if (titles.includes(run.text) && run.rect.y >= 0 && run.rect.y + run.rect.height <= height) onPaper += 1;
+      }
+    }
+    expect(headings).toBe(inserted);
+    expect(onPaper).toBe(0);
+  });
 });
 
 describe('add-stamps writes standard annotations', () => {

@@ -1351,7 +1351,12 @@ export const editTools: PdfToolDefinition[] = [
       }
       const size = countOutline(outline);
       if (size.targetless > 0) {
-        note(notes, `${countLabel(size.targetless, 'entry', 'entries')} has no page target, so it is listed without a number.`);
+        // The verb has to follow the count: measured on the card, a five-entry
+        // outline with two targetless headings read "2 entries has no page target,
+        // so it is listed without a number."
+        note(notes, `${countLabel(size.targetless, 'entry', 'entries')} ${size.targetless === 1
+          ? 'has no page target, so it is listed'
+          : 'have no page target, so they are listed'} without a number.`);
       }
       const insertAt = bounded(notes, 'Insert at page', numberValue(context.values, 'insertAt', 1), { min: 1, max: input.pageCount, integer: true });
       const fontSize = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 7, max: 24, unit: 'pt' });
