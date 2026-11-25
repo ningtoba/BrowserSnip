@@ -1,0 +1,26 @@
+# rebuild-loss note, live on dev server 5292 (n-up over /tmp/triage/in/bookmarked.pdf,
+# 8 pages -> 4 sheets, LABEL='^Lay out$' through docs/research/colour-rail.mjs).
+# Before the reword the same card ended:
+#   "... its page numbering — the optional CoherentPDF engine edits bookmarks without a rebuild."
+# No tool declares cpdf and nothing in src/ calls loadCpdf, so that engine is never asked.
+# After:
+report line: bookmarked_nup.pdf
+
+READY
+SIZE
+5.5 KB → 7.5 KB · 36% larger
+PAGES
+8 → 4
+
+Placed 8 pages on 4 sheets (2 per sheet).
+
+The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant.
+
+WHAT YOU SHOULD KNOW (2)
+
+N-up: this selection holds 3 different page sizes, so each page is scaled to fit its own cell — the printed sizes will differ.
+N-up rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering. No optional engine is asked to save them — this tab draws the new pages, so the outline has to be written again afterwards with Edit Bookmarks.
+Download
+Keep original
+network: 1 request(s), 0 off-origin
+console errors: []

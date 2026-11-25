@@ -1747,7 +1747,12 @@ describe('compromises reach the result card', () => {
 
     const nup = await run('n-up', { perSheet: 2, sheetSize: 'a4', landscape: false }, [fileOf(bytes, 'merged.pdf')]);
     expect(warn(nup)).toMatch(/bookmarks are not in the output/i);
-    expect(warn(nup)).toMatch(/CoherentPDF/i);
+    // The sentence used to send the user to "the optional CoherentPDF engine",
+    // which no tool in this app calls. It now states the cost and names the one
+    // thing that can put an outline back.
+    expect(warn(nup)).toMatch(/No optional engine is asked to save them/i);
+    expect(warn(nup)).toMatch(/Edit Bookmarks/i);
+    expect(warn(nup)).not.toMatch(/CoherentPDF/i);
   });
 
   it('fills a booklet to whole sheets instead of dropping the odd pages (E13)', async () => {

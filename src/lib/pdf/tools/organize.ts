@@ -454,7 +454,7 @@ function noteRebuildLoss(subject: string, doc: PDFDocument, indices: number[], n
   }
   if (hasOutlines(doc)) {
     notes.add(
-      `${subject} rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering — the optional CoherentPDF engine edits bookmarks without a rebuild.`,
+      `${subject} rebuilt the pages, so this document's bookmarks are not in the output, and neither is its page numbering. No optional engine is asked to save them — this tab draws the new pages, so the outline has to be written again afterwards with Edit Bookmarks.`,
     );
   }
   // Both of these are page-independent structures the rebuild has no handle on:
@@ -671,7 +671,7 @@ const PAGE_COPY_INFO_NOTE =
   'This document’s own info — its title, author, subject, keywords, creator and XMP packet — stays with the file, because that is what a reader knows it by. The producer becomes this app’s, because this app wrote the new file.';
 
 const FLATTEN_NOTE =
-  'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. The optional CoherentPDF engine edits a file without rebuilding it.';
+  'Imposition draws each page as vector content inside a new page: text stays selectable, but links, form fields and bookmarks on those pages do not survive the rebuild. No optional engine is asked to save them — this tab draws the new pages, so what a page carried has to be put back afterwards.';
 
 /* ── shared fields ────────────────────────────────────────────────────────── */
 
