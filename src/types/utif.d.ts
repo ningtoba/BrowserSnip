@@ -14,6 +14,14 @@ declare module 'utif' {
     samples: number;
     config: number;
     compression: number;
+    /**
+     * `ExtraSamples` (tag 338), as the directory states it: `[1]` means the colour
+     * samples have already been multiplied by the alpha (associated), `[2]` means
+     * they have not (unassociated), and no entry means the file says nothing.
+     * `toRGBA8` copies the samples either way, so a caller that hands them to a
+     * straight-alpha canvas has to ask this first.
+     */
+    t338?: number[];
   }
 
   export interface Utif {

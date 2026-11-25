@@ -15,6 +15,26 @@ import PIL.Image as I
 DIR = sys.argv[1] if len(sys.argv) > 1 else '/tmp/r73'  # noqa: S108 — a scratch dir, by argument
 
 
+def set_extra_samples(path: str, value: int) -> None:
+    """Rewrite tag 338 in every IFD of a little-endian TIFF (Pillow always writes 2)."""
+    with open(path, 'rb') as handle:
+        raw = bytearray(handle.read())
+    assert raw[:2] == b'II', 'this patcher only reads little-endian TIFFs'
+    offset = struct.unpack_from('<I', raw, 4)[0]
+    for _ in range(16):
+        if not offset or offset + 2 > len(raw):
+            break
+        count = struct.unpack_from('<H', raw, offset)[0]
+        for index in range(count):
+            entry = offset + 2 + index * 12
+            if struct.unpack_from('<H', raw, entry)[0] == 338:
+                struct.pack_into('<H', raw, entry + 8, value)
+        follower = offset + 2 + count * 12
+        offset = struct.unpack_from('<I', raw, follower)[0] if follower + 4 <= len(raw) else 0
+    with open(path, 'wb') as handle:
+        handle.write(raw)
+
+
 def main() -> None:
     # 1. three frames, distinct sizes and distinct colours: "one page per frame,
     #    in frame order" and "not frame 0 repeated" are both measurable.
@@ -82,6 +102,36 @@ def main() -> None:
     # 7. another container under a .tif name.
     I.new('RGB', (120, 80), (220, 30, 40)).save(f'{DIR}/png-in.tif', format='PNG')
     I.new('RGB', (120, 80), (220, 30, 40)).save(f'{DIR}/jpg-in.tif', format='JPEG')
+
+    # 8. one alpha declaration each way. `ExtraSamples` (tag 338) says whether the
+    #    colour samples have already been multiplied by the alpha: 1 = associated,
+    #    2 = unassociated (TIFF 6.0 §22). Both files here are the same picture — a
+    #    78 % red band beside 78 % white — so the page they convert to must be the
+    #    same page. Pillow always writes 2, so the associated pair is stored
+    #    premultiplied by hand and the tag is patched afterwards.
+    alpha = I.new('RGBA', (120, 90), (0, 0, 0, 0))
+    for x in range(120):
+        colour = (220, 30, 40) if x < 60 else (255, 255, 255)
+        for y in range(90):
+            alpha.putpixel((x, y), (*colour, 200))
+    alpha.save(f'{DIR}/alpha-plain.tif', compression='raw')
+    assoc = I.new('RGBA', (120, 90), (0, 0, 0, 0))
+    for x in range(120):
+        colour = (220, 30, 40) if x < 60 else (255, 255, 255)
+        for y in range(90):
+            assoc.putpixel((x, y), (*[round(c * 200 / 255) for c in colour], 200))
+    assoc.save(f'{DIR}/alpha-assoc.tif', compression='raw')
+    set_extra_samples(f'{DIR}/alpha-assoc.tif', 1)
+
+    # Pillow is the oracle for what the two files mean, and it says the same picture:
+    # un-associating 173/24/31 at alpha 200 returns 220/30/40 (±1 of rounding), and
+    # the white band is white at 200 in both.
+    for name in ('alpha-plain.tif', 'alpha-assoc.tif'):
+        with I.open(f'{DIR}/{name}') as handle:
+            red = handle.convert('RGBA').getpixel((10, 10))
+            white = handle.convert('RGBA').getpixel((110, 10))
+        assert max(abs(a - b) for a, b in zip(red, (220, 30, 40, 200))) <= 2, (name, red)
+        assert white == (255, 255, 255, 200), (name, white)
 
     # the hand-built one must read back the way it was drawn.
     be = I.open(f'{DIR}/bigendian.tif').convert('RGB')

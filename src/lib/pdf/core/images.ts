@@ -9,6 +9,7 @@
  * actually embed.
  */
 import UTIF from 'utif';
+import type { UtifIFD } from 'utif';
 import type { PDFDocument, PDFImage } from '@maxwbh/pdf-lib';
 import { canvasContext2d, canvasToBlob, encodeBmp, encodeTiff } from './raster';
 
@@ -571,6 +572,7 @@ function ifdToCanvas(
     );
   }
   const rgba = UTIF.toRGBA8(ifd);
+  straightenAssociatedAlpha(ifd, rgba);
   const scale = sizeScale(width, height, options.maxSide);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width * scale));
@@ -587,6 +589,43 @@ function ifdToCanvas(
   stageCtx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
   ctx.drawImage(stage, 0, 0, canvas.width, canvas.height);
   return { canvas, width: canvas.width, height: canvas.height, mime: 'image/tiff' };
+}
+
+/**
+ * Put an associated-alpha TIFF's samples back on the straight axis.
+ *
+ * A TIFF can carry its alpha two ways, and `ExtraSamples` (tag 338) says which:
+ * `1` = *associated*, every colour sample already multiplied by the alpha; `2` =
+ * *unassociated*, the samples are what the pixel is. UTIF hands both back verbatim
+ * (`toRGBA8` copies a 4-channel RGB page byte for byte), while everything this seam
+ * feeds is straight — `putImageData`, a PNG canvas export, and the `/Image` +
+ * `/SMask` pair `embedPng` writes. PDF composites a source colour with a separate
+ * alpha (ISO 32000-1 §11.3.3.4), and measured against MuPDF across seven colour/mask
+ * pairs (`docs/research/tiff-alpha-probe.py`) a `/SMask` answers `C·a + 255·(1−a)`
+ * and never `C + (1−a)·255`. So leaving an associated page as the decoder produced it
+ * charges the alpha twice: the corpus fixture `pages.tif` (`200 200 200` at `a = 200`
+ * — 78 % white, which paints paper) came back as a 211 grey wash on every pixel of
+ * both sheets, where the same file flattened onto white by PIL is 255.
+ *
+ * The rule, pinned in `tests/pdf/png-to-pdf-alpha.test.ts`:
+ *
+ * * `alpha === 255` — untouched; the division is the identity and re-rounding it
+ *   would drift an opaque page's colour by a byte.
+ * * `alpha === 0` — untouched; associated data is black there, the straight colour is
+ *   undefined, and the pixel is invisible either way.
+ * * otherwise — `min(255, round(C × 255 / a))`: round to nearest, then clamp, because
+ *   a file whose colour exceeds its alpha is over-bright (illegal for associated
+ *   samples) and must come out solid rather than past full scale.
+ */
+function straightenAssociatedAlpha(ifd: UtifIFD, rgba: Uint8Array): void {
+  if (ifd.t338?.[0] !== 1) return;
+  for (let at = 0; at < rgba.length; at += 4) {
+    const alpha = rgba[at + 3];
+    if (alpha === 0 || alpha === 255) continue;
+    for (let channel = 0; channel < 3; channel++) {
+      rgba[at + channel] = Math.min(255, Math.round((rgba[at + channel] * 255) / alpha));
+    }
+  }
 }
 
 async function decodeSvg(bytes: Uint8Array, options: DecodeOptions): Promise<DecodedImage> {

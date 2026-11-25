@@ -36,6 +36,9 @@ const CASES_SPEC = {
   cut: { files: [`${DIR}/cut.tif`, `${DIR}/full.tif`], out: `${DIR}/${TAG}-cut.pdf`, shot: `${DIR}/${TAG}-cut-card.png` },
   // PNG and JPEG bytes under a .tif name, beside a real TIFF
   fake: { files: [`${DIR}/png-in.tif`, `${DIR}/jpg-in.tif`, `${DIR}/single.tif`], out: `${DIR}/${TAG}-fake.pdf`, shot: `${DIR}/${TAG}-fake-card.png` },
+  // the same 78 % picture declared associated (338 = 1) and unassociated (338 = 2):
+  // two files, one page each, must convert to one identical pair of pages
+  alpha: { files: [`${DIR}/alpha-assoc.tif`, `${DIR}/alpha-plain.tif`], out: `${DIR}/${TAG}-alpha.pdf`, shot: `${DIR}/${TAG}-alpha-card.png` },
 };
 
 const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox',

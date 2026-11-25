@@ -22,6 +22,13 @@
  * The card's own words are pinned here too: the two facts a transparent-PNG run
  * has to state (alpha is kept and flattened onto paper; the page is sized from
  * pixels at 72 dpi, not from a recorded density) were unstated before this round.
+ *
+ * The last block is the same question asked of a TIFF, which declares its alpha
+ * twice over: `ExtraSamples` 1 (associated — the samples already carry the alpha)
+ * or 2 (unassociated). UTIF hands both back verbatim, the canvas and the `/SMask`
+ * both mean unassociated, and an associated page therefore had its alpha charged a
+ * second time in the produced file (`pages.tif`: 211 grey where the picture is
+ * paper). `core/images.ts` now asks the tag and divides back out.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { deflateSync, inflateSync } from 'node:zlib';
@@ -34,6 +41,7 @@ import {
   PDFRef,
   type PDFObject,
 } from '@maxwbh/pdf-lib';
+import UTIF from 'utif';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { pageContentOps } from '@/lib/pdf/core/content';
@@ -211,8 +219,13 @@ function installCanvas(): void {
           }
         }
       },
-      drawImage: (source: Pixels, x: number, y: number, w = source.width, h = source.height) => {
-        putPixels(storeOf(canvas), x, y, source, Math.round(w), Math.round(h));
+      drawImage: (source: Pixels | HTMLCanvasElement, x: number, y: number, w?: number, h?: number) => {
+        // `ifdToCanvas` stages decoded samples on a second canvas and draws that, so a
+        // canvas source has to be followed back to its pixels.
+        const pixels = source instanceof HTMLCanvasElement
+          ? stores.get(source) ?? { width: source.width, height: source.height, data: new Uint8Array(source.width * source.height * 4) }
+          : source;
+        putPixels(storeOf(canvas), x, y, pixels, Math.round(w ?? pixels.width), Math.round(h ?? pixels.height));
       },
       getImageData: (x: number, y: number, w: number, h: number) => {
         const store = storeOf(canvas);
@@ -257,6 +270,18 @@ function restoreCanvas(): void {
   HTMLCanvasElement.prototype.getContext = real.getContext;
   HTMLCanvasElement.prototype.toBlob = real.toBlob;
   delete (globalThis as { createImageBitmap?: unknown }).createImageBitmap;
+}
+
+// `ifdToCanvas` hands the decoded samples to `new ImageData(...)`, which jsdom does not have.
+if (typeof globalThis.ImageData === 'undefined') {
+  class ShimImageData {
+    constructor(
+      public data: Uint8ClampedArray,
+      public width: number,
+      public height: number,
+    ) {}
+  }
+  Object.defineProperty(globalThis, 'ImageData', { value: ShimImageData, configurable: true, writable: true });
 }
 
 beforeEach(installCanvas);
@@ -407,5 +432,122 @@ describe('the card says what happens to transparency and to a recorded density',
     const shown = outcome.warnings.join(' ');
     expect(shown).toMatch(/white paper/i);
     expect(shown).toMatch(/72 dpi/);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A TIFF declares its alpha twice over, and only one of them is the pixels
+ * ------------------------------------------------------------------ */
+
+/**
+ * A baseline uncompressed RGBA TIFF of `frames` identical pages.
+ *
+ * Built the way the corpus fixtures are (`convert-to-harness`): UTIF writes the
+ * directories, the pixel body is written here, so the `ExtraSamples` entry and the
+ * samples cannot drift apart by accident. `extra === undefined` leaves the tag out.
+ */
+function tiffOf(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  frames: number,
+  extra?: number,
+): Uint8Array {
+  let pixelOffset = 1000;
+  const ifds = Array.from({ length: frames }, () => {
+    const offset = pixelOffset;
+    pixelOffset += width * height * 4;
+    return {
+      t256: [width], t257: [height], t258: [8, 8, 8, 8], t259: [1], t262: [2],
+      t273: [offset], t277: [4], t278: [height], t279: [width * height * 4],
+      t282: [1], t283: [1], t284: [1], t286: [0], t287: [0], t296: [1], t305: ['fixture'],
+      ...(extra === undefined ? {} : { t338: [extra] }),
+    };
+  });
+  const header = new Uint8Array(UTIF.encode(ifds));
+  const body = new Uint8Array(pixelOffset);
+  body.set(header.subarray(0, Math.min(header.length, pixelOffset)));
+  for (let page = 0; page < frames; page++) body.set(pixels, 1000 + page * pixels.length);
+  return body;
+}
+
+/** One row of grey RGBA samples from `colour / alpha` pairs. */
+function samplesOf(pairs: [number, number][]): Uint8Array {
+  const out = new Uint8Array(pairs.length * 4);
+  pairs.forEach(([colour, alpha], index) => out.set([colour, colour, colour, alpha], index * 4));
+  return out;
+}
+
+/** What a viewer paints for one masked pixel over the page’s own white paper. */
+function overPaper(channel: number, alpha: number): number {
+  return Math.min(255, Math.round((channel * alpha) / 255 + (255 * (255 - alpha)) / 255));
+}
+
+async function runTiff(bytes: Uint8Array, name: string): Promise<Outcome> {
+  return (await runPdfTool({
+    toolId: 'image-to-pdf',
+    files: [new File([bytes as BlobPart], name, { type: 'image/tiff' })],
+    values: { pageSize: 'fit', margin: 0 },
+    onProgress: () => {}, onLog: () => {},
+  })) as unknown as Outcome;
+}
+
+describe('an associated-alpha TIFF is un-associated before it reaches the canvas', () => {
+  /**
+   * Every branch of the rule in `straightenAssociatedAlpha`, on pixels that a canvas
+   * can hold exactly (an 8-bit premultiplied store cannot carry `1 at alpha 2` in
+   * either direction, so the sample that survives the round trip is the assertion).
+   */
+  const LADDER: { stored: number; alpha: number; straight: number }[] = [
+    { stored: 200, alpha: 200, straight: 255 }, // 255.0, and the clamp: pages.tif’s own shape
+    { stored: 100, alpha: 128, straight: 199 }, // 199.2 → rounds down
+    { stored: 50, alpha: 200, straight: 64 }, // 63.75 → rounds up
+    { stored: 128, alpha: 1, straight: 255 }, // 32640 → clamped to full scale
+    { stored: 200, alpha: 255, straight: 200 }, // opaque: the division is the identity
+    { stored: 0, alpha: 0, straight: 0 }, // nothing to recover, and no division by zero
+  ];
+
+  it('divides the alpha back out at every level the tag can arrive with', async () => {
+    const drawn = await drawnOnPage(await firstPdf(await runTiff(
+      tiffOf(samplesOf(LADDER.map((entry) => [entry.stored, entry.alpha])), LADDER.length, 1, 1, 1),
+      'assoc.tif',
+    )));
+    expect([...(drawn.alpha ?? [])], 'the mask changed under the correction')
+      .toEqual(LADDER.map((entry) => entry.alpha));
+    for (const [index, entry] of LADDER.entries()) {
+      expect(at(drawn, index, 0).rgb, `sample ${entry.stored} at alpha ${entry.alpha}`)
+        .toEqual([entry.straight, entry.straight, entry.straight]);
+    }
+  });
+
+  /**
+   * The corpus fixture: `pages.tif` is two 120×90 pages of `200 200 200` at `a = 200`
+   * tagged `338 = 1` — 78 % white, which paints paper. Measured at :5298 before the
+   * fix, both sheets came out `rgb [200,200,200] / mask 200`, a **211–212 grey wash on
+   * every pixel** (26750 non-white pixels per sheet at 150 dpi) where PIL’s flatten of
+   * the same file is 255 with none. `docs/research/tiff-alpha-probe.py` proves the
+   * reader innocent: MuPDF answers `C·a + 255·(1−a)` for every colour/mask pair, so the
+   * double charge was ours.
+   */
+  it('paints paper for the fixture the tag calls associated, and the wash for the one it does not', async () => {
+    const uniform = samplesOf([[200, 200]]);
+    const claimed = await firstPdf(await runTiff(tiffOf(uniform, 1, 1, 2, 1), 'pages-1.tif'));
+    for (const page of [0, 1]) {
+      const drawn = await drawnOnPage(claimed, page);
+      expect(at(drawn, 0, 0), 'the alpha was charged twice again').toEqual({
+        rgb: [255, 255, 255], alpha: 200,
+      });
+      expect(overPaper(255, 200), 'white at 78 % is not paper').toBe(255);
+    }
+    // Control: identical bytes, tag 338 = 2. Nothing may be divided, and the grey the
+    // file then really holds is the wash — which is the correct answer for *that* file.
+    const stated = await firstPdf(await runTiff(tiffOf(uniform, 1, 1, 1, 2), 'pages-2.tif'));
+    expect(at(await drawnOnPage(stated), 0, 0), 'an unassociated page was corrected anyway')
+      .toEqual({ rgb: [200, 200, 200], alpha: 200 });
+    expect(overPaper(200, 200)).toBe(212);
+    // …and so is a file that never declared one.
+    const untagged = await firstPdf(await runTiff(tiffOf(uniform, 1, 1, 1), 'pages-0.tif'));
+    expect(at(await drawnOnPage(untagged), 0, 0), 'a missing tag was read as an association')
+      .toEqual({ rgb: [200, 200, 200], alpha: 200 });
   });
 });
