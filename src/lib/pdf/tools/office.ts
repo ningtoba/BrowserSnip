@@ -129,7 +129,7 @@ export const officeTools: PdfToolDefinition[] = [
     async run(context) {
       const input = await readPrimarySource(context, OPC);
       const { odsToBlocks } = await import('../core/office-in');
-      const blocks = await odsToBlocks(input.bytes);
+      const { blocks, emptySheets } = await odsToBlocks(input.bytes);
       if (blocks.length === 0) {
         throw new ToolInputError('UNSUPPORTED', `"${input.name}" has no cells to print.`, {
           fileName: input.name,
@@ -138,6 +138,7 @@ export const officeTools: PdfToolDefinition[] = [
       }
       return blocksToPdf(blocks, context.values, 'Converted the OpenDocument spreadsheet', [
         'Values are printed as last saved: no recalculation, and number formats, merged cells, styles and charts are dropped.',
+        ...emptySheets.map((sheet) => `Sheet "${sheet}" in "${input.name}" is empty and was skipped.`),
         ...(input.extra > 0 ? [`Only "${input.name}" was converted; this tool handles one document at a time.`] : []),
       ]);
     },

@@ -46,6 +46,7 @@ import {
   makeCanvas,
   odpBytes,
   odsBytes,
+  odsGridBytes,
   odtBytes,
   odtRichBytes,
   palmBytes,
@@ -768,6 +769,50 @@ describe('OpenDocument and XPS routes', () => {
     const h1 = runs.find((run) => run.text.includes('Quarterly ODT'))!;
     const h2 = runs.find((run) => run.text.includes('Second Level'))!;
     expect(h1.size).toBeGreaterThan(h2.size);
+  });
+
+  it('keeps a value under its own column when a merge swallows the ones before it', async () => {
+    // Before: `covered-table-cell` was no cell at all — the fourth column's
+    // cached `4` slid left and printed under the first column's header.
+    const outcome = await run('ods-to-pdf', {}, [fileFrom(await odsGridBytes(), 'ledger.ods')]);
+    const runs = textRunsOf(await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false }));
+    const right = runs.find((run) => run.text.trim() === 'Right')!;
+    const four = runs.find((run) => run.text.trim() === '4')!;
+    expect(four, 'the formula prints its cached value').toBeTruthy();
+    expect(four.x, 'the fourth column sits under the fourth header').toBeCloseTo(right.x, 0);
+    const merged = runs.find((run) => run.text.trim() === 'Merged')!;
+    const a = runs.find((run) => run.text.trim() === 'a')!;
+    expect(a.x).toBeCloseTo(merged.x, 0);
+  });
+
+  it('skips an empty sheet, names it, and keeps the sheets in file order', async () => {
+    const outcome = await run('ods-to-pdf', {}, [fileFrom(await odsGridBytes(), 'ledger.ods')]);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Empty" in "ledger\.ods" is empty and was skipped/);
+    const runs = textRunsOf(await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false }));
+    expect(runs.some((run) => run.text.trim() === 'Empty'), 'no heading for a sheet with no table').toBe(false);
+    const zeta = runs.find((run) => run.text === 'Zeta')!;
+    const alpha = runs.find((run) => run.text === 'Alpha')!;
+    expect(zeta && alpha).toBeTruthy();
+    // Sheets print in workbook order, not alphabetically: Zeta was saved first.
+    expect(zeta.y).toBeGreaterThan(alpha.y);
+  });
+
+  it('refuses a workbook of nothing but empty sheets in the tool’s own words', async () => {
+    const blank = await zipBytes([{
+      name: 'content.xml',
+      data: `${XML}<office:document-content ${ODF_NS}><office:body><office:spreadsheet>` +
+        '<table:table table:name="Only"><table:table-row><table:table-cell/></table:table-row></table:table>' +
+        '</office:spreadsheet></office:body></office:document-content>',
+    }]);
+    const error = await run('ods-to-pdf', {}, [fileFrom(blank, 'nothing.ods')]).catch((err) => err);
+    expect((error as ToolInputError).message).toMatch(/"nothing\.ods" has no cells to print/);
+    expect((error as ToolInputError).message).not.toMatch(/readable sheets/);
+  });
+
+  it('counts only the ODS sheets it actually printed', async () => {
+    const outcome = await run('excel-to-pdf', {}, [fileFrom(await odsGridBytes(), 'ledger.ods')]);
+    expect(outcome.message).toMatch(/Converted 2 worksheet/);
+    expect(outcome.warnings.join(' ')).toMatch(/Sheet "Empty" in "ledger\.ods" is empty and was skipped/);
   });
 
   it('gives every XPS page its own sheet, in order', async () => {

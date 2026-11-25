@@ -1,0 +1,24 @@
+ods-to-pdf + excel-to-pdf ODS route (c5 audit item 2) — measurement log
+
+fixture: /tmp/lane-convert5b/fx/ods-rich.ods (harness mirror: odsGridBytes) —
+sheet order Zeta, Alpha, Empty; Zeta row 1 = 2-wide merged "Merged" + 1 covered +
+"Right"; row 2 = "a" + 2 covered + cached-formula cell (office:value=4, text "4");
+Alpha one cell; Empty all-blank.
+
+BEFORE (live :5296-line colour-rail, port 9846, MuPDF text order + harness geometry):
+  page text: "Zeta Merged Merged Right a 4 Alpha Empty" — the covered cells were
+  no cells: row 2 held only ["a","4"], so 4 printed under the second column,
+  not under "Right"; "Empty" printed as a heading with no table, and the receipt
+  counted it as a worksheet ("counts only the ODS sheets it actually printed"
+  measured 3 before). A workbook whose sheets are all empty printed 3 headings
+  over an otherwise blank page; the tool's own refusal "has no cells to print"
+  was unreachable because the reader threw a raw Error first.
+AFTER (same fixture): values stand under their own headers (pin: x(4)==x(Right),
+  x(a)==x(Merged) via PDFDocument run geometry); "Sheet "Empty" in "ods-rich.ods"
+  is empty and was skipped." on the card (live drive), no phantom heading;
+  all-empty workbook refuses with the tool sentence naming the file; sheets print
+  in workbook order (Zeta above Alpha, not alphabetical); excel-to-pdf route
+  reports "Converted 2 worksheet(s)" for the same file. network: 3 requests,
+  0 off-origin; console errors [].
+shots: ods-c5-before.png / ods-c5-after.png (card notices differ).
+pins: edge-convert-to.test.ts 4 tests. RED without the fix: 4 failed.

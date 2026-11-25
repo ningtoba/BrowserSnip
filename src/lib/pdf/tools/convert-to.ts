@@ -2225,9 +2225,12 @@ export const convertToTools: PdfToolDefinition[] = [
         const lower = input.name.toLowerCase();
         if (lower.endsWith('.ods') || lower.endsWith('.ots')) {
           const { odsToBlocks } = await import('../core/office-in');
-          const sheetBlocks = await odsToBlocks(input.bytes);
+          const { blocks: sheetBlocks, emptySheets } = await odsToBlocks(input.bytes);
           blocks.push(...sheetBlocks);
           sheetCount += countSheetHeadings(sheetBlocks);
+          for (const sheet of emptySheets) {
+            warnings.push(`Sheet "${sheet}" in "${input.name}" is empty and was skipped.`);
+          }
           continue;
         }
         const XLSX = await import('xlsx');

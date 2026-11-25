@@ -161,10 +161,19 @@ function odtTableBlock(table: Element): Extract<Block, { kind: 'table' }> {
   // row so wrapped — tables lost their header while the card promised tables.
   for (const row of byLocalName(table, 'table-row')) {
     const cells: Inline[][] = [];
-    for (const cell of childrenNamed(row, 'table-cell')) {
-      const repeat = Math.min(Number(cell.getAttribute('table:number-columns-repeated') ?? '1'), 32);
-      const text = Array.from(cell.children ?? []).map(bodyText).filter(Boolean).join(' ');
-      for (let i = 0; i < repeat; i++) cells.push([{ text }]);
+    for (const cell of Array.from(row.children ?? [])) {
+      const name = localName(cell);
+      if (name === 'table-cell') {
+        const repeat = Math.min(Number(cell.getAttribute('table:number-columns-repeated') ?? '1'), 32);
+        const text = Array.from(cell.children ?? []).map(bodyText).filter(Boolean).join(' ');
+        for (let i = 0; i < repeat; i++) cells.push([{ text }]);
+      } else if (name === 'covered-table-cell') {
+        // The columns a merge swallowed still occupy their grid slots: dropping
+        // the covered cell slid every later value one column left, so `4` from
+        // the fourth column landed under the first column's header.
+        const span = Math.min(Number(cell.getAttribute('table:number-columns-covered') ?? '1'), 32);
+        for (let i = 0; i < span; i++) cells.push([{ text: '' }]);
+      }
     }
     if (cells.some((cell) => (cell[0]?.text ?? '') !== '')) rows.push(cells);
     if (rows.length > 2000) break;
@@ -174,17 +183,26 @@ function odtTableBlock(table: Element): Extract<Block, { kind: 'table' }> {
 }
 
 /** OpenDocument Spreadsheet. */
-export async function odsToBlocks(bytes: Uint8Array): Promise<Block[]> {
+export async function odsToBlocks(bytes: Uint8Array): Promise<{ blocks: Block[]; emptySheets: string[] }> {
   const document = await openDocumentXml(bytes, 'content.xml');
   const blocks: Block[] = [];
+  const emptySheets: string[] = [];
   for (const table of byLocalName(document, 'table')) {
     const name = table.getAttribute('table:name') ?? `Sheet ${blocks.length + 1}`;
-    blocks.push({ kind: 'heading', level: 2, inlines: [{ text: name }] });
     const block = odtTableBlock(table);
-    if (block.kind === 'table' && (block.rows?.length ?? 0) > 0) blocks.push(block);
+    // A sheet whose every cell is blank used to print its name under a heading
+    // with no table — the receipt counted a worksheet the file never showed.
+    // The caller owns the sentence; it knows the file's name.
+    if ((block.header?.length ?? 0) === 0 && block.rows.length === 0) {
+      emptySheets.push(name);
+      continue;
+    }
+    blocks.push({ kind: 'heading', level: 2, inlines: [{ text: name }] });
+    blocks.push(block);
   }
-  if (blocks.length === 0) throw new Error('That ODS had no readable sheets.');
-  return blocks;
+  // Never throws: both callers refuse an empty workbook in their own words —
+  // one names the file, the other counts what a batch still converted.
+  return { blocks, emptySheets };
 }
 
 /** OpenDocument Presentation — one page per draw page. */
