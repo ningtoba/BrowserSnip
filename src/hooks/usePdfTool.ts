@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileStore } from '@/stores/file-store';
 import { useProcessStore, type FileLockState, type ToolPhase } from '@/stores/process-store';
 import { fileProblem, runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
+import { setFaceFetchNotice } from '@/lib/pdf/core/fonts';
 import { engineReady } from '@/lib/pdf/core/engine-ops';
 import { ENGINE_LABELS } from '@/lib/pdf/engines/provider';
 import {
@@ -565,6 +566,17 @@ export function usePdfTool(
 
       const lines: string[] = [];
       try {
+        // A run whose text needs a script face waits on a multi-megabyte CDN
+        // download in the middle of the work; say so on the rail's own log the
+        // moment it is about to happen — the way `TextEditor.buildOutput` wraps
+        // its export — instead of letting the fetch look like a hung tab. The
+        // document never leaves the device and the line says which way the
+        // bytes go.
+        setFaceFetchNotice((line) => {
+          if (local.signal.aborted) return;
+          lines.push(line);
+          store.getState().appendLog(line);
+        });
         const outcome = await runPdfTool({
           toolId: tool.id,
           files: activeFiles,
@@ -667,6 +679,7 @@ export function usePdfTool(
         if (controller.current === local) {
           controller.current = null;
           setIsRunning(false);
+          setFaceFetchNotice(null);
         }
       }
     },
