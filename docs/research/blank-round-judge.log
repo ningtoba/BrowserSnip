@@ -1,0 +1,176 @@
+# add-blank-page — 20-case spec re-driven on dev server 5292 (colour-rail SPEC mode,
+# docs/research/blank-round-spec.json, downloads under $BYTES, records in blanks.jsonl),
+# judged by the new --judge mode of this round's measure script:
+#   python3 docs/research/blank-round-measure.py --judge docs/research/blank-round-spec.json $BYTES
+# Expectations are derived per case from what the spec asked (position, count with the
+# field's own 1..200 bounds, anchor clamped to the document, neighbour's displayed box for
+# 'same as neighbour'), so position, size, zero ink and the untouched originals are all
+# asserted against the source measured the same way.
+
+== 01-default: colour.pdf position=end count=1 (asked 1) anchor=8 (asked -) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 02-start1: colour.pdf position=start count=1 (asked 1) anchor=1 (asked -) size=same as neighbour
+   blank 1: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 2 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 02b-repeat: colour.pdf position=start count=1 (asked 1) anchor=1 (asked -) size=same as neighbour
+   blank 1: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 2 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 03-end1: colour.pdf position=end count=1 (asked 1) anchor=8 (asked -) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 04-after4: colour.pdf position=after count=1 (asked 1) anchor=4 (asked 4) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   blank 5: disp=(595.0, 420.0) (want (595.0, 420.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 595.0, 420.0) OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 05-before4: colour.pdf position=before count=1 (asked 1) anchor=4 (asked 4) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 4: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 06-end3: colour.pdf position=end count=3 (asked 3) anchor=8 (asked -) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   blank 10: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   blank 11: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 07-before4x3: colour.pdf position=before count=3 (asked 3) anchor=4 (asked 4) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 4: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   blank 5: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   blank 6: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 7 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 10 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 11 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 08-after0: colour.pdf position=after count=1 (asked 1) anchor=1 (asked 0) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 2: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 09-after99: colour.pdf position=after count=1 (asked 1) anchor=8 (asked 99) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 10-after5: colour.pdf position=after count=1 (asked 1) anchor=5 (asked 5) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   blank 6: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 11-after1: colour.pdf position=after count=1 (asked 1) anchor=1 (asked 1) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 2: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 12-before1: colour.pdf position=before count=1 (asked 1) anchor=1 (asked 1) size=same as neighbour
+   blank 1: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 2 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 13-count0: colour.pdf position=end count=1 (asked 0) anchor=8 (asked -) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 14-count300: colour.pdf position=end count=200 (asked 300) anchor=8 (asked -) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 7 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 8 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   blank 9: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   blank 109: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   blank 208: disp=(336.0, 71.4) (want (336.0, 71.4)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 336.0, 71.4) OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 15-after4-a4: colour.pdf position=after count=1 (asked 1) anchor=4 (asked 4) size=A4 (210
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   blank 5: disp=(595.3, 841.9) (want (595.3, 841.9)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 595.3, 841.9) OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 16-annots: annot.pdf position=after count=1 (asked 1) anchor=1 (asked 1) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=32819 annots=3 links=1 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 2: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+== 17-bookmarked: bookmarked.pdf position=after count=1 (asked 1) anchor=1 (asked 1) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 2: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 3 entries, 0 embedded, xmp 0
+
+== 18-attach: attach.pdf position=after count=1 (asked 1) anchor=1 (asked 1) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   blank 2: disp=(420.0, 595.0) (want (420.0, 595.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 420.0, 595.0) OK
+   page 5 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 1 embedded, xmp 0
+
+== 19-dark: colour.pdf position=after count=1 (asked 1) anchor=4 (asked 4) size=same as neighbour
+   page 1 = source 1: disp=(420.0, 595.0) rot=0 ink=33011 annots=0 links=0 text='01 Quarterly reconciliation of the scanned l' OK
+   page 4 = source 4: disp=(595.0, 420.0) rot=90 ink=69334 annots=0 links=0 text='' OK
+   blank 5: disp=(595.0, 420.0) (want (595.0, 420.0)) ink=0 text='' annots=0 links=0 mb=(0.0, 0.0, 595.0, 420.0) OK
+   page 8 = source 7: disp=(420.0, 595.0) rot=90 ink=11700 annots=0 links=0 text='' OK
+   page 9 = source 8: disp=(336.0, 71.4) rot=0 ink=11700 annots=0 links=0 text='' OK
+   identity: carried; outline 0 entries, 0 embedded, xmp 0
+
+AS PROMISED — 0 problem lines
