@@ -210,6 +210,17 @@ const BMP_TRUNCATED =
   'A BMP header states exactly how many pixel bytes the file must hold, and the file is checked against it: one cut short — an interrupted copy or save — is refused by name instead of converting with the missing rows painted white.';
 
 /**
+ * The one BMP coding this browser answers with nothing.
+ *
+ * Measured at :5296: both RLE4 encodings the SDK documents came back as a fully
+ * transparent bitmap — a blank page under a card that said
+ * `1 BMP image(s) → 1 page(s)` — while 8-bit run-length decoded pixel-exact
+ * against the same source (`c2-rle8` maxdiff 0, `c2-rle4`/`c2-rle4sdk` blank).
+ */
+const BMP_RLE4 =
+  'A 4-bit run-length BMP (RLE4) is refused by name: this browser decodes it to an empty picture — measured on Chrome for Testing 151 on Linux, which painted none of its pixels — and an empty picture would ship as a blank page carrying a success count. 8-bit run-length BMPs convert exactly.';
+
+/**
  * The two TIFF codings the bundled reader gets wrong, and the honest split.
  *
  * Measured at :5296 against Pillow/libjpeg decodes of the same files:
@@ -617,6 +628,7 @@ export const convertToTools: PdfToolDefinition[] = [
       RASTER_LOSS,
       'HEIC, AVIF and JXL depend on the browser decoder; when this browser cannot open one, the run says which file failed instead of guessing.',
       TIFF_VARIANTS,
+      BMP_RLE4,
       'Scanned pages are still pictures. Digitize Document runs OCR and adds a real, selectable text layer on top.',
     ],
     fields: [
@@ -754,6 +766,7 @@ export const convertToTools: PdfToolDefinition[] = [
         // embedded as a complete page with 150 white rows Chrome invented, and
         // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
         isBmp ? BMP_TRUNCATED : '',
+        isBmp ? BMP_RLE4 : '',
         isTiff ? TIFF_VARIANTS : '',
         isWebp ? WEBP_TRUNCATED : '',
         isWebp ? WEBP_FIRST_FRAME : '',
@@ -779,7 +792,13 @@ export const convertToTools: PdfToolDefinition[] = [
         const { images } = await decodeImageBatch(context, {
           label: `one or more ${label} images`,
           hint: `Re-save the file as ${label}, or use Images to PDF, which sniffs the real format.`,
-          decodeHint: isHeic ? HEIC_DECODE_HINT : isTiff ? TIFF_VARIANT_HINT : undefined,
+          decodeHint: isHeic
+            ? HEIC_DECODE_HINT
+            : isTiff
+              ? TIFF_VARIANT_HINT
+              : isBmp
+                ? BMP_RLE4_HINT
+                : undefined,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
           refused,
@@ -1929,7 +1948,24 @@ function advertisedFormats(mimes: string[]): string {
  * hint underneath, so advice inside the sentence would print twice with
  * different punctuation.
  */
+const BMP_RLE4_HINT = 'Re-save it as an uncompressed BMP, or as PNG or JPEG, then try again.';
 const TIFF_VARIANT_HINT = 'Re-save the file uncompressed or with LZW/Deflate coding, or as PNG or JPEG, then try again.';
+
+/**
+ * RLE4 in header terms: a BMP whose `biCompression` says 4-bit run-length.
+ *
+ * Only 40-byte-and-up headers are judged — an OS/2 12-byte header carries no
+ * compression field at all, and guessing about a coding the browser answers
+ * blank is worse than the blank. Same rule the shared BMP length reader uses:
+ * a refusal only on what the file's own header states.
+ */
+function bmpVariantProblem(name: string, bytes: Uint8Array): string | null {
+  if (bytes.length < 34 || bytes[0] !== 0x42 || bytes[1] !== 0x4d) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(14, true) < 40) return null;
+  if (view.getUint32(30, true) !== 2) return null;
+  return `"${name}" is a 4-bit run-length BMP, which this browser decodes to an empty picture — its page would come out blank (measured on Chrome for Testing 151 on Linux).`;
+}
 
 /**
  * The two misdecoded TIFF codings in header terms: tag 259 (Compression) 6/7
@@ -2044,7 +2080,11 @@ async function decodeImageBatch(
     // Codings whose decode is known-wrong here — a blank page (RLE4) or wrong
     // colours (JPEG-in-TIFF, planar 2) — are refused on the header before the
     // decoder is asked, so a success count can never print over bad pixels.
-    const variant = mime === 'image/tiff' ? tiffVariantProblem(batch.name, batch.bytes) : null;
+    const variant = mime === 'image/tiff'
+      ? tiffVariantProblem(batch.name, batch.bytes)
+      : mime === 'image/bmp'
+        ? bmpVariantProblem(batch.name, batch.bytes)
+        : null;
     if (variant) {
       decodeRefused = true;
       if (!expected.refused) {
