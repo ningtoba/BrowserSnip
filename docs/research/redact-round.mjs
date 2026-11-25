@@ -58,6 +58,9 @@ await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 1;
 const pending = new Map();
 const errors = [];
+// Network half: nothing may leave the tab but the page's own assets.
+const net = [];
+const SAME_ORIGIN = new URL(BASE).origin;
 ws.onmessage = (raw) => {
   const m = JSON.parse(raw.data);
   if (m.id && pending.has(m.id)) {
@@ -66,6 +69,10 @@ ws.onmessage = (raw) => {
     m.error ? rej(new Error(JSON.stringify(m.error))) : res(m.result);
   } else if (m.method === 'Runtime.exceptionThrown') {
     errors.push((m.params.exceptionDetails?.exception?.description ?? '').slice(0, 200));
+  } else if (m.method === 'Network.requestWillBeSent') {
+    const r = m.params.request;
+    net.push({ url: r.url, method: r.method, body: (r.postData || '').length,
+      remote: !r.url.startsWith(SAME_ORIGIN) && !/^(data|blob|about):/.test(r.url) });
   }
 };
 const send = (method, params = {}) => new Promise((res, rej) => { const i = id++; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
@@ -90,6 +97,7 @@ const mouse = (type, x, y, buttons = 0, modifiers = 0) =>
 
 await send('Page.enable');
 await send('Runtime.enable');
+await send('Network.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: `${BASE}/#/tool/redact-pdf` });
 if (!await wait(`!!document.querySelector('input[type=file]')`, 60000)) throw new Error('no file input on the route');
@@ -220,6 +228,9 @@ await sleep(1200);
 const info = JSON.parse(await ev(`(async()=>{const b=window.__blobs.at(-1);const u=new Uint8Array(await b.arrayBuffer());let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return JSON.stringify({size:u.length,b64:btoa(s)})})()`));
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('output:', OUT, info.size, 'B | download click:', dl);
+console.log('network:', JSON.stringify({ total: net.length, sameOrigin: net.filter((r) => !r.remote).length,
+  remote: [...new Set(net.filter((r) => r.remote).map((r) => `${r.method} ${r.url.slice(0, 110)}`))],
+  bodies: net.filter((r) => r.body > 0).map((r) => `${r.method} ${r.url.slice(0, 80)} ${r.body}B`) }));
 ws.close();
 chrome.kill('SIGKILL');
 process.exit(0);

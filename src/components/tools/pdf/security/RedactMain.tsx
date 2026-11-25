@@ -93,6 +93,14 @@ const HANDLE_SIZE = 10;
 const HANDLE_SLOP = 6;
 /** Below this a drag is a mouse twitch, not an intention. */
 const MIN_DRAG_FRAC = 0.003;
+/**
+ * What a Shift-drag (an area mark, not a word snap) actually does, measured on a
+ * scanned sheet: the page keeps its image object and gains one filled rectangle,
+ * and the word drawn inside the bitmap is still in the file as pixels. It used to
+ * promise the page "will be re-rendered", which nothing in the redaction path does.
+ */
+export const AREA_MARK_NOTICE =
+  'Area mark added — it covers pixels, so the area will be painted over; a word drawn inside an image stays in the file as pixels.';
 /** A resized mark never shrinks below this fraction of the page. */
 const MIN_SIZE_FRAC = 0.01;
 
@@ -431,7 +439,10 @@ export function RedactMain() {
         if (drawing.w > MIN_DRAG_FRAC && drawing.h > MIN_DRAG_FRAC) {
           if (gesture.free) {
             addRedaction({ ...drawing, free: true });
-            setNotice('Area mark added — it covers pixels, so this page will be re-rendered.');
+            // Measured against a scanned sheet: the page keeps its image and gains a
+            // fill — nothing is re-rendered — and the word drawn inside the bitmap is
+            // still in the file as pixels. The notice has to promise exactly that.
+            setNotice(AREA_MARK_NOTICE);
           } else {
             const size = canvasSize();
             const drag = {

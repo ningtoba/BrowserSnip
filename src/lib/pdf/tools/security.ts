@@ -906,10 +906,26 @@ export const securityTools: PdfToolDefinition[] = [
       const bytes = await savePDF(input.doc);
       const after = before.ok ? await readMarkedWords(bytes, undefined, marked) : null;
       const survivors = after ? before.unique.filter((word) => after.all.includes(word)) : [];
-      const destroyed = before.unique.length > 0 ? before.unique.filter((word) => !survivors.includes(word)) : [];
+      // A whole-word comparison passes a redaction that leaves a *fragment* of the
+      // word behind. Measured live on a MuPDF-written sheet: a drag across `BRAVO`
+      // deleted `RAVO` plus the first letter of the neighbour, so the saved file no
+      // longer extracted `BRAVO` while a `B` still sat inside the black bar and
+      // `CHARLIE` had become `HARLIE`. Both halves are read off the produced bytes:
+      // what still lies under the bars, and what vanished outside them.
+      const residue = after ? after.under.filter((left) => !survivors.includes(left)) : [];
+      const collateral = after
+        ? before.all.filter((word) => !after.all.includes(word) && !before.under.includes(word))
+        : [];
       if (survivors.length > 0) {
         warnings.push(`${survivors.length} word(s) under the marked areas are still extractable from the saved file: ${previewList(survivors)}. They are covered, not gone — widen the mark to cover the whole line, or convert that page to an image and redact the image.`);
       }
+      if (residue.length > 0) {
+        warnings.push(`${residue.length} piece(s) of text still sit under the marked areas (${previewList(residue.slice(0, 3))}) — the letters around them were deleted, so the box does not cover the whole word it was drawn across. Widen the mark and run it again.`);
+      }
+      if (collateral.length > 0) {
+        warnings.push(`${collateral.length} word(s) outside the marked areas lost text as well: ${previewList(collateral.slice(0, 3))}${collateral.length > 3 ? `, and ${collateral.length - 3} more` : ''}. Nothing that was not under a box should disappear from the page.`);
+      }
+      const destroyed = before.unique.length > 0 ? before.unique.filter((word) => !survivors.includes(word)) : [];
       return {
         kind: 'pdf',
         bytes,
@@ -921,9 +937,11 @@ export const securityTools: PdfToolDefinition[] = [
               ? `Deleted ${outcome.removed} text run(s) under ${marked.length} area(s) and painted the fill, but ${survivors.length} word(s) under those areas still extract from the saved file.`
               : `Redacted ${outcome.removed} text run(s) under ${marked.length} area(s) by deleting the glyphs themselves${
                   after
-                    ? destroyed.length > 0
+                    ? destroyed.length > 0 && residue.length === 0 && collateral.length === 0
                       ? `, then read the saved file back: none of the ${destroyed.length} word(s) that were under the marks still extracts.`
-                      : '; no whole word under the marks could be located in the page text layer, so the deletion was confirmed from the page content alone.'
+                      : destroyed.length > 0
+                        ? `, then read the saved file back: of the ${destroyed.length} word(s) that were under the marks, ${residue.length} piece(s) are still on the page and ${collateral.length} word(s) outside the marks disappeared with them.`
+                        : '; no whole word under the marks could be located in the page text layer, so the deletion was confirmed from the page content alone.'
                     : '.'
                 }`
         }${outcome.marksRemoved > 0 ? ` ${outcome.marksRemoved} comment(s) under the marks were deleted from the page rather than left drawn over the fill.` : ''}`,
