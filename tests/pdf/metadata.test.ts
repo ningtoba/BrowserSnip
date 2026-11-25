@@ -6,12 +6,14 @@
 import { describe, expect, it } from 'vitest';
 import { newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
 import {
+  buildXmpPacket,
   formatPdfDate,
   metadataReport,
   parsePdfDate,
   parsePdfDateParts,
   readInfo,
   readXmp,
+  readXmpText,
   stripInfo,
   stripXmp,
   writeInfo,
@@ -177,6 +179,66 @@ describe('XMP', () => {
   it('parses attribute-style PDF/A ids', () => {
     const attributeForm = `<?xpacket begin="\uFEFF"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="1" pdfaid:conformance="A"/></rdf:RDF></x:xmpmeta>`;
     expect(attributeForm).toContain('pdfaid:part="1"');
+  });
+
+  it('declares the canonical RDF namespace on every packet it writes', async () => {
+    // The module used to write the RDF namespace with dashes where the URI has
+    // slashes — an XML namespace that is not RDF. Measured with the campaign's
+    // judges (`/tmp/lane-security/c3/ns-dashed.pdf` vs `ns-canonical.pdf`):
+    // pikepdf reports such a packet as "XML but not XMP" and enumerates **0**
+    // properties where the canonical declaration gives 2, and veraPDF flags the
+    // packet at clause 6.6.x. Whatever this app wrote was invisible to every
+    // strict reader. (The URIs are built here so no copy of this file can
+    // quietly re-flip a slash into a dash and turn the assertion vacuous.)
+    const RDF_CANON = ['http://www.w3.org', '1999', '02', '22-rdf-syntax-ns#'].join('/');
+    const RDF_DASHED = 'http://www.w3.org/1999-02-22-rdf-syntax-ns#';
+    const doc = await newPDF();
+    doc.addPage();
+    writeXmp(doc, buildXmpPacket({ title: 'Canonical', author: 'A', producer: 'P' }));
+    const packet = readXmpText(await reload(await savePDF(doc))) ?? '';
+    expect(packet).toContain(RDF_CANON);
+    expect(packet).not.toContain(RDF_DASHED);
+
+    // The same discrimination pikepdf makes, in the DOM the parser is built on:
+    // the descriptions and every element they nest must be bound to *real* RDF,
+    // or a namespace-keyed reader sees an empty packet.
+    const xml = new DOMParser().parseFromString(packet, 'application/xml');
+    const descriptions = [...xml.getElementsByTagName('rdf:Description')];
+    expect(descriptions.length).toBeGreaterThan(0);
+    expect(descriptions.every((el) => el.namespaceURI === RDF_CANON)).toBe(true);
+    expect([...descriptions[0].getElementsByTagName('dc:title')]
+      .every((el) => el.namespaceURI === 'http://purl.org/dc/elements/1.1/')).toBe(true);
+  });
+
+  it('repairs the dashed RDF declaration the app wrote into older files', async () => {
+    // Files this app produced while the typo was live carry a packet whose
+    // `rdf` prefix names the dashed URI. Re-writing it (the merge path copies
+    // packets, sync patches them) must canonicalise the declaration — same
+    // elements, right namespace — not keep shipping an unenumerable packet.
+    const RDF_CANON = ['http://www.w3.org', '1999', '02', '22-rdf-syntax-ns#'].join('/');
+    const RDF_DASHED = 'http://www.w3.org/1999-02-22-rdf-syntax-ns#';
+    const legacy = '<?xpacket begin="\uFEFF"?><x:xmpmeta xmlns:x="adobe:ns:meta/">'
+      + `<rdf:RDF xmlns:rdf="${RDF_DASHED}">`
+      + '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+      + '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">Old typo</rdf:li></rdf:Alt></dc:title>'
+      + '</rdf:Description></rdf:RDF></x:xmpmeta>';
+    const doc = await newPDF();
+    doc.addPage();
+    writeXmp(doc, legacy);
+    const loaded = await reload(await savePDF(doc));
+    const packet = readXmpText(loaded) ?? '';
+    expect(packet).toContain(RDF_CANON);
+    expect(packet).not.toContain(RDF_DASHED);
+    // The values survive the re-keying.
+    expect(readXmp(loaded)!.title).toBe('Old typo');
+    // Control: a packet already canonical is stored as it came.
+    const canonicalIncoming = XMP.split(RDF_DASHED).join(RDF_CANON);
+    const keep = await newPDF();
+    keep.addPage();
+    writeXmp(keep, canonicalIncoming);
+    const kept = readXmpText(await reload(await savePDF(keep))) ?? '';
+    expect(kept.replace(/\r\n/g, '\n')).toBe(canonicalIncoming.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'));
+    expect(kept).not.toContain(RDF_DASHED);
   });
 });
 

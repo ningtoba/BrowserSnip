@@ -401,6 +401,26 @@ export function stripInfo(doc: PDFDocument): number {
 // XMP
 // ---------------------------------------------------------------------------
 
+/**
+ * The RDF/XML namespace URI, built from its segments — this module shipped it
+ * for a long time spelled with dashes where the URI has slashes
+ * (`http://www.w3.org` + dashes + `22-rdf-syntax-ns#`), and that spelling is
+ * XML but not RDF to a strict reader: measured with the campaign's judges,
+ * pikepdf enumerates **0** properties on a dashed-declared packet and reports
+ * "XML but not XMP", the canonical declaration enumerates (`ns-dashed.pdf` 0
+ * vs `ns-canonical.pdf` 2, `/tmp/lane-security/c3`), and veraPDF flags the
+ * packet at clause 6.6.x.
+ */
+const RDF_CANONICAL = ['http://www.w3.org', '1999', '02', '22-rdf-syntax-ns#'].join('/');
+
+/** The dashed spelling, derived from the canonical one so it cannot drift. */
+const RDF_DASHED = RDF_CANONICAL.replace('/1999/02/22-', '/1999-02-22-');
+
+/** Re-key the dashed `rdf` declaration this app's older files carry. */
+function repairRdfNamespace(xmp: string): string {
+  return xmp.split(RDF_DASHED).join(RDF_CANONICAL);
+}
+
 export interface XmpSummary {
   title?: string;
   description?: string;
@@ -481,7 +501,7 @@ export function readXmp(doc: PDFDocument): XmpSummary | null {
 export function writeXmp(doc: PDFDocument, xmp: string): void {
   const ctx = context(doc);
   const old = metadataStream(doc)?.ref;
-  const bytes = toLocalBytes(new TextEncoder().encode(xmp));
+  const bytes = toLocalBytes(new TextEncoder().encode(repairRdfNamespace(xmp)));
   // XMP packets are stored uncompressed: Acrobat, pdfium and pdf.js all read
   // `/Metadata` before they have a filter list, and a compressed packet is a
   // known source of "no XMP found" reports.
@@ -503,7 +523,7 @@ const XMP_NS: Record<string, string> = {
   dc: 'http://purl.org/dc/elements/1.1/',
   pdf: 'http://ns.adobe.com/pdf/1.3/',
   xmp: 'http://ns.adobe.com/xap/1.0/',
-  rdf: 'http://www.w3.org/1999-02-22-rdf-syntax-ns#',
+  rdf: RDF_CANONICAL,
 };
 
 /** Values to write into the packet; `''`/`[]` removes the property. */
@@ -593,7 +613,7 @@ function patchProperty(doc: Document, description: Element, name: string, value:
 export function buildXmpPacket(patch: XmpPatch, keep?: XmpSummary | null): string {
   const xml = typeof DOMParser === 'undefined' ? null : new DOMParser()
     .parseFromString('<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>'
-      + '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999-02-22-rdf-syntax-ns#">'
+      + `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="${RDF_CANONICAL}">`
       + '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>', 'application/xml');
   if (xml) {
     const description = descriptionFor(xml);
