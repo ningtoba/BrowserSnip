@@ -1127,15 +1127,98 @@ function fallbackXmpFields(raw: string): MetadataRow[] {
   return rows;
 }
 
-function xmpFieldRow(rows: MetadataRow[], label: string, value: string | undefined): void {
-  rows.push({ label, value: value && value !== '' ? value : 'not in the packet' });
+/** One XMP property the packet declares, in the form the pane lists it. */
+export interface XmpProperty {
+  /** `dc:title`, `xmpMM:DocumentID`, `acme:Vendor` — the prefix the packet itself declares. */
+  name: string;
+  /** The namespace URI that prefix binds to. */
+  schema: string;
+  /** The value as the packet holds it; arrays and language alts flatten to one readable line. */
+  value: string;
+}
+
+/** RDF's own keywords — they ride on descriptions but are not properties. */
+const RDF_RESERVED = new Set(['about', 'ID', 'bagID', 'parseType', 'resource', 'nodeID', 'li']);
+
+const isRdfNamespace = (uri: string | null): boolean =>
+  uri === RDF_CANONICAL || uri === RDF_DASHED;
+
+/** The longest property value the pane shows before saying how long the rest is. */
+const XMP_VALUE_LIMIT = 500;
+
+function readablePropertyText(value: string): string {
+  const flat = value.replace(/\s+/g, ' ').trim();
+  if (flat.length <= XMP_VALUE_LIMIT) return flat;
+  return `${flat.slice(0, XMP_VALUE_LIMIT)}… (${flat.length} characters)`;
+}
+
+/** The text of one property element, with `rdf:Alt/Bag/Seq` containers flattened. */
+function propertyValue(element: Element): string {
+  for (let i = 0; i < element.children.length; i++) {
+    const container = element.children[i];
+    const local = container.localName;
+    if (!isRdfNamespace(container.namespaceURI) || (local !== 'Alt' && local !== 'Bag' && local !== 'Seq')) continue;
+    const items: string[] = [];
+    for (let j = 0; j < container.children.length; j++) {
+      const item = container.children[j];
+      if (!isRdfNamespace(item.namespaceURI) || item.localName !== 'li') continue;
+      const text = (item.textContent ?? '').trim();
+      if (!text) continue;
+      const lang = item.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang');
+      items.push(lang && lang !== 'x-default' ? `${text} (${lang})` : text);
+    }
+    if (items.length > 0) return items.join('; ');
+  }
+  return element.textContent ?? '';
 }
 
 /**
- * The XMP section: the declared packet, its size, and its key fields — not a wall
- * of XML. A packet that is not well-formed XML is reported as that and read as
- * text, because the fields are still in it and a silent empty section reads like
- * a packet with no properties.
+ * Every property the packet declares — attribute form and element form, arrays,
+ * language alts and custom schemas alike, grouped by the schema each first
+ * appears under.
+ *
+ * This path used to name six properties and call the rest absent: measured with
+ * pikepdf on the campaign's fixtures (`/tmp/lane-security/c3`, now committed
+ * under `tests/fixtures/foreign/`), the real pdfTeX-derived packet holds 23
+ * enumerable properties and the pane showed 6 of them, `dc:rights`,
+ * `xmpRights:WebStatement`, the `xmpMM` UUIDs, the three `xmp` dates,
+ * `prism:*` and `pdf:Producer`/`pdf:Keywords` among the invisible — while the
+ * fallback for *unparseable* packets listed more than the parsed path did.
+ */
+export function listXmpProperties(xml: Document): XmpProperty[] {
+  const properties: XmpProperty[] = [];
+  for (const description of [...xml.getElementsByTagName('rdf:Description')]) {
+    for (let a = 0; a < description.attributes.length; a++) {
+      const attribute = description.attributes[a];
+      if (attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:')) continue;
+      if (isRdfNamespace(attribute.namespaceURI) && RDF_RESERVED.has(attribute.localName)) continue;
+      properties.push({ name: attribute.name, schema: attribute.namespaceURI ?? '', value: readablePropertyText(attribute.value) });
+    }
+    for (let c = 0; c < description.children.length; c++) {
+      const child = description.children[c];
+      if (isRdfNamespace(child.namespaceURI)) continue;
+      properties.push({ name: child.tagName, schema: child.namespaceURI ?? '', value: readablePropertyText(propertyValue(child)) });
+    }
+  }
+  const unique: XmpProperty[] = [];
+  const seen = new Set<string>();
+  const bySchema: string[] = [];
+  for (const property of properties) {
+    const key = `${property.schema} ${property.name}`;
+    if (seen.has(key)) continue; // first declaration wins, like a reader's
+    seen.add(key);
+    unique.push(property);
+    if (!bySchema.includes(property.schema)) bySchema.push(property.schema);
+  }
+  return bySchema.flatMap((schema) => unique.filter((property) => property.schema === schema));
+}
+
+/**
+ * The XMP section: the declared packet, its size, and **every property it
+ * declares** — not a wall of XML and not six hand-picked fields. A packet that
+ * is not well-formed XML is reported as that and read as text, because the
+ * fields are still in it and a silent empty section reads like a packet with
+ * no properties.
  */
 function xmpRows(doc: PDFDocument): MetadataRow[] {
   const xmp = readXmp(doc);
@@ -1152,14 +1235,12 @@ function xmpRows(doc: PDFDocument): MetadataRow[] {
     rows.push(...fallbackXmpFields(xmp.raw ?? ''));
     return rows;
   }
-  xmpFieldRow(rows, 'Title', xmp.title);
-  xmpFieldRow(rows, 'Creator', xmp.creator);
-  xmpFieldRow(rows, 'Description', xmp.description);
-  xmpFieldRow(rows, 'Keywords', xmp.keywords?.join(', '));
-  xmpFieldRow(rows, 'Declared PDF version', xmp.pdfVersion);
-  if (xmp.pdfaPart !== undefined) {
-    rows.push({ label: 'PDF/A', value: `${xmp.pdfaPart}${xmp.pdfaConformance ? `-${xmp.pdfaConformance}` : ''}` });
+  const xml = parseXml(xmp.raw ?? '');
+  const properties = xml ? listXmpProperties(xml) : [];
+  if (properties.length === 0) {
+    rows.push({ label: 'Properties', value: 'the packet declares none' });
   }
+  for (const property of properties) rows.push({ label: property.name, value: property.value });
   return rows;
 }
 

@@ -192,5 +192,17 @@
   "producer": "MuPDF 1.28.2 (pages) + libqpdf 12.3.2 (/Sig x2) + OpenSSL 3.6.5 (key, certificate) + scripts/pdf_fixture_pkcs7.py (PKCS#7)",
   "sha256": "9cc6b445b33208882d47e32494f2d2b8bfbbb08826a11a1d6966f8ec28c37451",
   "shape": "two /Sig fields, the second naming a /ByteRange over the whole file"
+ },
+ "xmp-pdftex.pdf": {
+  "payloads": {},
+  "producer": "packet: pdfTeX + hyperref (TeX Live 2025) via a journal `94291-main.pdf` (sweep/security c3 `vm-pdftex`); carrier: MuPDF 1.28.2 set_xml_metadata",
+  "sha256": "43ebf72f6bafabbeab0400dd46d3bccb4901d9ade8332dd9d4127604a9632806",
+  "shape": "one blank page carrying the real pdfTeX-derived XMP packet verbatim; pikepdf 10.9.1 enumerates 23 properties"
+ },
+ "xmp-rich.pdf": {
+  "payloads": {},
+  "producer": "packet: sweep/security c3 `vm-rich` with the dashed RDF declaration canonicalised (c3-metadata-probe fixtures); MuPDF 1.28.2 set_xml_metadata",
+  "sha256": "359b8f70262e3b375664e473ae4458f04c8089664a00ba811e304579f39fca35",
+  "shape": "pikepdf-enumerable packet: dc alts/bags, pdf/xmp/xmpMM attribute form, custom acme: schema, pdfaid element form; pikepdf enumerates 18 properties"
  }
 }

@@ -17,8 +17,10 @@
 import { describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { render, cleanup } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PDFDocument } from '@maxwbh/pdf-lib';
-import { PDFArray, PDFDict, PDFHexString, PDFName, PDFNumber, PDFString } from '@/lib/pdf/core/doc';
+import { PDFArray, PDFDict, PDFHexString, PDFName, PDFNumber, PDFString, openPDF } from '@/lib/pdf/core/doc';
 import { infoDict, metadataReport, toLocalBytes, type MetadataRow } from '@/lib/pdf/core/metadata';
 import { ReportView } from '@/components/tools/pdf/shared/PdfToolPanel';
 
@@ -207,15 +209,18 @@ describe('XMP', () => {
       .toBe('absent — the catalogue has no /Metadata stream');
   });
 
-  it('shows declared presence and its key fields, not the XML', async () => {
+  it('shows declared presence and every property, not the XML', async () => {
     const doc = await docWith(() => {});
     writePacket(doc, "<?xpacket?><x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999-02-22-rdf-syntax-ns#'>"
       + "<rdf:Description xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title><rdf:Alt>"
       + "<rdf:li xml:lang='x-default'>XMP title</rdf:li></rdf:Alt></dc:title></rdf:Description></rdf:RDF></x:xmpmeta>");
     const rows = rowsOf(metadataReport(doc, bytesOf()), XMP_SECTION);
     expect(row(rows, 'Packet')).toMatch(/^present, \d+(\.\d+)? (B|KiB) at catalogue \/Metadata$/);
-    expect(row(rows, 'Title')).toBe('XMP title');
-    expect(row(rows, 'Creator')).toBe('not in the packet');
+    // The property names as the packet declares them — the pane used to answer
+    // `Title`/`Creator` rows and call everything the six names excluded absent.
+    expect(row(rows, 'dc:title')).toBe('XMP title');
+    expect(rows.some((candidate) => candidate.label === 'Title')).toBe(false);
+    expect(rows.some((candidate) => candidate.value === 'not in the packet')).toBe(false);
     expect(rows.some((candidate) => candidate.value.includes('<rdf:'))).toBe(false);
   });
 
@@ -238,7 +243,71 @@ describe('XMP', () => {
       + 'Pad sentence. '.repeat(400) + '</rdf:li></rdf:Alt></dc:description></rdf:Description></rdf:RDF></x:xmpmeta>');
     const rows = rowsOf(metadataReport(doc, bytesOf()), XMP_SECTION);
     expect(row(rows, 'Packet')).toMatch(/KiB at catalogue/);
-    expect(row(rows, 'Description').startsWith('Pad sentence.')).toBe(true);
+    expect(row(rows, 'dc:description').startsWith('Pad sentence.')).toBe(true);
+  });
+});
+
+describe('the XMP section enumerates what a reader enumerates', () => {
+  /** Property names pikepdf 10.9.1 (`Pdf.open_metadata()`) lists for each committed
+   * carrier, rendered with the prefixes those packets declare. Produced by the same
+   * enumeration sweep the c3 audit recorded (`/tmp/lane-security/c3/audit-view-metadata.md`
+   * D1: the pane showed 6-7 of 23/21; the fallback path for broken packets listed MORE
+   * than the parseable one). */
+  const PDFTEX_PROPERTIES = [
+    'dc:date', 'dc:format', 'dc:language', 'dc:rights', 'dc:source', 'dc:type',
+    'pdf:Keywords', 'pdf:PDFVersion', 'pdf:Producer',
+    'pdfaExtension:schemas',
+    'prism:complianceProfile', 'prism:pageCount',
+    'xmp:CreateDate', 'xmp:CreatorTool', 'xmp:MetadataDate', 'xmp:ModifyDate',
+    'xmpMM:DocumentID', 'xmpMM:InstanceID', 'xmpMM:RenditionClass', 'xmpMM:VersionID',
+    'xmpRights:Marked', 'xmpRights:WebStatement',
+    'xmpTPg:NPages',
+  ];
+  const RICH_PROPERTIES = [
+    'acme:JobId', 'acme:Vendor',
+    'dc:creator', 'dc:description', 'dc:language', 'dc:rights', 'dc:subject', 'dc:title',
+    'pdf:Keywords', 'pdf:Producer',
+    'pdfaid:conformance', 'pdfaid:part',
+    'xmp:CreateDate', 'xmp:CreatorTool', 'xmp:MetadataDate', 'xmp:ModifyDate',
+    'xmpMM:DocumentID', 'xmpMM:InstanceID',
+  ];
+
+  async function packetRows(fixture: string): Promise<MetadataRow[]> {
+    const bytes = new Uint8Array(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'foreign', fixture)));
+    const doc = await openPDF(bytes, { updateMetadata: false });
+    return rowsOf(metadataReport(doc, bytes), XMP_SECTION);
+  }
+
+  it('lists every property of the real pdfTeX-derived packet, names and values', async () => {
+    const rows = await packetRows('xmp-pdftex.pdf');
+    const named = rows.filter((r) => r.label !== 'Packet').map((r) => r.label).sort();
+    expect(named).toEqual([...PDFTEX_PROPERTIES].sort());
+    // Values verbatim, not summaries of them (the audit's invisible list, judged read).
+    const value = (label: string) => rows.find((r) => r.label === label)?.value ?? '';
+    expect(value('xmpRights:WebStatement')).toBe('https://creativecommons.org/licenses/by/4.0/deed.en');
+    expect(value('dc:rights')).toContain('Creative Commons');
+    expect(value('xmpMM:DocumentID')).toMatch(/^uuid:/u);
+    expect(value('pdf:Producer')).toContain('pdfTeX');
+    expect(value('xmp:CreateDate')).toBe('2025-09-09T18:00:54-03:00');
+    // A long structured value is admitted with its length, not a silent wall.
+    expect(value('pdfaExtension:schemas')).toMatch(/\(\d+ characters\)$/u);
+  });
+
+  it('lists every property of the rich synthetic packet, arrays readable', async () => {
+    const rows = await packetRows('xmp-rich.pdf');
+    const named = rows.filter((r) => r.label !== 'Packet').map((r) => r.label).sort();
+    expect(named).toEqual([...RICH_PROPERTIES].sort());
+    const value = (label: string) => rows.find((r) => r.label === label)?.value ?? '';
+    // Unknown prefixes render as the packet declares them; alts and bags flatten.
+    expect(value('acme:Vendor')).toBe('Acme Corp');
+    expect(value('dc:title')).toBe('Packet title (XMP only); Paket-Titel (de-DE)');
+    expect(value('dc:subject')).toBe('alpha; beta');
+    expect(value('dc:rights')).toBe('(c) 2026 ACME, all rights reserved');
+    expect(value('xmpMM:InstanceID')).toBe('xmp.iid:DDDD-4444');
+    // Control: the pane never shows raw XML, and absence is omission, not a lie —
+    // this packet has no `pdf:PDFVersion`, and no row claims one.
+    expect(value('pdf:PDFVersion')).toBe('');
+    expect(rows.some((r) => r.value.includes('<rdf:'))).toBe(false);
   });
 });
 
