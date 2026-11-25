@@ -6,7 +6,7 @@
  * document plus a stubbed `PdfSession`, and the SVG builder takes a synthesised
  * operator list with the operator codes read out of the installed pdf.js.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PDFDict, PDFDocument, PDFName, PDFString, decodePDFRawStream } from '@maxwbh/pdf-lib';
 import type { PdfSession } from '@/lib/pdf/core/render';
 import type { ExtractedTextItem } from '@/lib/pdf/core/render';
@@ -23,6 +23,7 @@ import {
   documentToSvg,
   escapeHtml,
   headingLevelFor,
+  imageSourceOf,
   jsonToHtml,
   jsonToLlamaIndex,
   jsonToMarkdown,
@@ -38,6 +39,7 @@ import {
 import type {
   PdfJsonBlock,
   PdfJsonPage,
+  PdfObjectValue,
   SvgOpCodes,
   SvgOperatorList,
 } from '@/lib/pdf/core/convert';
@@ -493,12 +495,106 @@ describe('documentToSvg', () => {
     expect(svg.endsWith('</svg>')).toBe(true);
   });
 
+  /**
+   * The `embedImages` half of the builder, end to end through a session whose
+   * object store hands over what the worker really sends. jsdom has no
+   * `OffscreenCanvas`, so the `ImageBitmap` shape a browser gets is pinned on
+   * {@link imageSourceOf} above; the JPEG pass (a `Blob`) is encodable here and
+   * proves the chain: operator list → `objs.get` → data URL → `<image>`.
+   */
+  it('embeds the raster the object store hands over', async () => {
+    const created = await PDFDocument.create();
+    created.addPage([40, 30]);
+    const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' });
+    const proxy = {
+      view: [0, 0, 40, 30],
+      rotate: 0,
+      objs: {
+        has: () => false,
+        get: (_id: string, cb?: (v: unknown) => void) => {
+          cb?.({ data: jpeg, width: 40, height: 30 });
+        },
+      },
+      commonObjs: { has: () => false, get: () => undefined },
+      getOperatorList: async () => ({
+        fnArray: [OPS.transform, OPS.paintImageXObject],
+        argsArray: [[40, 0, 0, 30, 0, 0], ['img_p0_1', 40, 30]],
+      }),
+    };
+    const svg = await documentToSvg(created, { numPages: 1, page: async () => proxy } as unknown as PdfSession, 1, {
+      embedImages: true,
+    });
+    expect(svg).toContain('<image href="data:image/jpeg;base64,' );
+    expect(svg).not.toMatch(/operator\(s\) skipped/);
+    // The control: with the switch off the same page carries no raster and says so.
+    const off = await documentToSvg(created, { numPages: 1, page: async () => proxy } as unknown as PdfSession, 1, {
+      embedImages: false,
+    });
+    expect(off).not.toContain('<image');
+    expect(off).toContain('1 operator(s) skipped');
+  });
+
   it('rejects a page the document does not have', async () => {
     const created = await PDFDocument.create();
     created.addPage([200, 200]);
     await expect(documentToSvg(created, stubSession([], []), 3)).rejects.toThrow(
       /Page 3 is outside this document/,
     );
+  });
+});
+
+describe('imageSourceOf — the payload shapes pdf.js really delivers', () => {
+  // jsdom has no `OffscreenCanvas`, so it never defines ImageBitmap and the real
+  // transport here only ever produces `data`. The browser shape is the one the
+  // defect hid behind (docs/research/svg-img-intent-probe.mjs records it), so the
+  // realm gets the constructor the worker's transfer would give it.
+  class TransferredBitmap {
+    constructor(readonly width: number, readonly height: number) {}
+    close(): void {}
+  }
+
+  it('takes the raster from `bitmap` when `data` is null (what Chromium gets)', () => {
+    vi.stubGlobal('ImageBitmap', TransferredBitmap);
+    try {
+      const bitmap = new TransferredBitmap(40, 30);
+      const found = imageSourceOf(
+        { data: null, width: 40, height: 30, bitmap, kind: 2, dataLen: 4800 } as unknown as PdfObjectValue,
+      );
+      expect(found).toEqual({ kind: 'drawable', value: bitmap, width: 40, height: 30 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('sizes the picture off the bitmap when the payload has no width', () => {
+    vi.stubGlobal('ImageBitmap', TransferredBitmap);
+    try {
+      const bitmap = new TransferredBitmap(12, 8);
+      const found = imageSourceOf({ data: null, width: undefined, bitmap } as unknown as PdfObjectValue);
+      expect(found && 'width' in found ? [found.width, found.height] : null).toEqual([12, 8]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the pixel array (the jsdom / no-OffscreenCanvas shape) working', () => {
+    const bytes = new Uint8ClampedArray(40 * 30 * 4).fill(7);
+    const found = imageSourceOf({ data: bytes, width: 40, height: 30 } as unknown as PdfObjectValue);
+    expect(found?.kind).toBe('bytes');
+    expect(found && found.kind === 'bytes' ? found.value.length : 0).toBe(40 * 30 * 4);
+  });
+
+  it('still prefers a Blob, which is how JPEG passes arrive', () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+    const found = imageSourceOf({ data: blob, width: 40, height: 30 } as unknown as PdfObjectValue);
+    expect(found?.kind).toBe('blob');
+  });
+
+  it('reports nothing for a payload that holds no pixels at all', () => {
+    expect(imageSourceOf({ data: null, width: 40, height: 30 } as unknown as PdfObjectValue)).toBeUndefined();
+    expect(imageSourceOf({ data: undefined, width: 0, height: 0 } as unknown as PdfObjectValue)).toBeUndefined();
+    expect(imageSourceOf('g_d0_f1')).toBeUndefined();
+    expect(imageSourceOf(undefined)).toBeUndefined();
   });
 });
 

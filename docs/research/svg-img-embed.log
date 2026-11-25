@@ -1,0 +1,33 @@
+# pdf-to-svg embedImages — real Chromium measurement (seam 2C, defect 2)
+# captured 2026-11-26 on branch fix/seam-wave2c, dev server :5293, headless Chromium (CDP).
+#   docs/research/svg-img-intent-probe.mjs  — what the object transport actually delivers
+#   docs/research/svg-img-onoff-probe.mjs   — documentToSvg with the switch on vs off
+#   docs/research/colour-rail.mjs / svggrab — the same through the rail UI
+
+## cause, measured: the payload rides on `bitmap`, not `data`
+   stdimg.pdf  objs.get("img_p0_1") -> {"width":40,"height":30,"bitmap":"40x30 ImageBitmap","data":null}
+   photo640.pdf objs.get("img_p0_1") -> {"width":50,"height":40,"bitmap":"50x40 ImageBitmap","data":null}
+   (jsdom defines no OffscreenCanvas, so the tests there always received {data: Uint8ClampedArray} —
+    the shape the old reader understood, which is why the pin could never fail.)
+
+## before the fix (rail, live, embedImages=on default)
+   stdimg.pdf   -> 353 bytes, 0 <image>, '<!-- 1 operator(s) skipped -->' (byte-identical to the staged /tmp/lane-q2/std.svg.0)
+   photo640.pdf -> 365 bytes, 0 <image>, 1 skipped op (the 640x360 photo absent; only the caption text survived)
+   on == off: the switch was inert.
+
+## after the fix (docs/research/svg-img-onoff-probe.mjs, live Chromium)
+   photo640.pdf  on : {"bytes":740,"images":1,"skipped":"0","href":"data:image/png"}   off: {"bytes":365,"images":0,"skipped":"1"}
+   stdimg.pdf    on : {"bytes":668,"images":1,"skipped":"0","href":"data:image/png"}   off: {"bytes":353,"images":0,"skipped":"1"}
+
+## pixels (PIL vs the source raster and vs MuPDF's render of the drawn region)
+   stdimg.pdf   embedded 40x30 vs MuPDF extract_image(png 40x30): max=0 mean=0.00000 nonzero=0/1200   (PIL-equal)
+   photo640.pdf embedded 50x40 vs MuPDF extract_image(jpeg 50x40): max=0 mean=0.00000 nonzero=0/2000   (PIL-equal)
+   vs MuPDF page render of the region: photo640 mean=0.0075 (2/2000 px, JPEG resample edges);
+   stdimg mean=2.84333 confined to bbox (2,24,40,30) — that is the caption text MuPDF composites over the
+   image inside the same rect, which the extracted raster by definition does not carry.
+
+## screen half
+   docs/research/svg-img-on-chromium.png: the exported SVG painted in Chromium — the crimson photo
+   filling the 450x360 box at x=95 (162463 of 294000 pixels non-white) with the live text
+   'photo page 640x360' at the top left. Pre-fix the same file rendered as a blank frame.
+   geometry agrees with MuPDF: get_image_rects -> (95.0, 0.0, 545.0, 360.0) == the <image> transform 450 0 0 -360 95 360.

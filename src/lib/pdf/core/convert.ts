@@ -1593,9 +1593,89 @@ export type PdfObjectValue = string | SvgFontInfo | PdfImagePayload | undefined;
 
 /** A raster handed over by the pdf.js worker. */
 export interface PdfImagePayload {
-  data?: Uint8Array | Uint8ClampedArray | Blob | HTMLCanvasElement | ImageBitmap;
+  data?: Uint8Array | Uint8ClampedArray | Blob | HTMLCanvasElement | ImageBitmap | null;
   width?: number;
   height?: number;
+  /**
+   * What Chromium gets: `createImageData(false, /* isOffscreenCanvasSupported *\/)`
+   * transfers the decoded raster as an **`ImageBitmap` on this field** and leaves
+   * `data` null, while an environment without `OffscreenCanvas` (jsdom, a worker
+   * without it) gets the pixel array in `data`.
+   */
+  bitmap?: HTMLCanvasElement | ImageBitmap | null;
+}
+
+/** What {@link imageSourceOf} picked out of a pdf.js raster payload. */
+export type PdfImageSource =
+  | { kind: 'blob'; value: Blob; width: number; height: number }
+  | { kind: 'bytes'; value: Uint8Array | Uint8ClampedArray; width: number; height: number }
+  | { kind: 'drawable'; value: HTMLCanvasElement | ImageBitmap; width: number; height: number };
+
+/**
+ * The drawable thing the worker actually sent, whichever of its two shapes that is.
+ *
+ * Looking only at `data` was defect-sized: in a real browser the pixels arrive as
+ * `payload.bitmap` (an `ImageBitmap`) with `data: null`, so every raster on every
+ * page decoded to nothing, `Embed raster images as data URIs` was inert, and the
+ * exported SVG was an empty frame with an honest `1 operator(s) skipped` note.
+ * jsdom has no `OffscreenCanvas`, so it always got `data` — the shape the tests
+ * handed over — which is why the unit pin could never see this.
+ */
+export function imageSourceOf(payload: PdfObjectValue): PdfImageSource | undefined {
+  if (!payload || typeof payload === 'string') return undefined;
+  if (!('data' in payload) || !('width' in payload)) return undefined;
+  const record = payload as PdfImagePayload;
+  const bitmap = record.bitmap;
+  const width = Math.max(0, Math.floor(Number(record.width ?? (bitmap as ImageBitmap)?.width ?? 0)));
+  const height = Math.max(0, Math.floor(Number(record.height ?? (bitmap as ImageBitmap)?.height ?? 0)));
+  if (width === 0 || height === 0) return undefined;
+  const raw = record.data ?? bitmap ?? null;
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof Blob !== 'undefined' && raw instanceof Blob) return { kind: 'blob', value: raw, width, height };
+  const drawable =
+    (typeof HTMLCanvasElement !== 'undefined' && raw instanceof HTMLCanvasElement) ||
+    (typeof ImageBitmap !== 'undefined' && raw instanceof ImageBitmap);
+  if (drawable) return { kind: 'drawable', value: raw as HTMLCanvasElement | ImageBitmap, width, height };
+  const bytes = asLocalBytes(raw);
+  return bytes ? { kind: 'bytes', value: bytes, width, height } : undefined;
+}
+
+/**
+ * pdf.js hands over raw RGBA, a `Blob` (JPEG/PNG passes), a canvas or an
+ * `ImageBitmap` (what a browser gets, under `bitmap`); all four become data URLs.
+ * Returns `undefined` when this environment cannot encode (jsdom has no canvas),
+ * which the caller reports as a skipped operator instead of guessing.
+ */
+async function imageDataUrl(payload: PdfObjectValue): Promise<string | undefined> {
+  const source = imageSourceOf(payload);
+  if (!source) return undefined;
+  if (source.kind === 'blob') {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : undefined);
+      reader.onerror = () => resolve(undefined);
+      reader.readAsDataURL(source.value);
+    });
+  }
+  if (typeof document === 'undefined') return undefined;
+  const { width, height } = source;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+    if (source.kind === 'drawable') {
+      ctx.drawImage(source.value, 0, 0, width, height);
+      return canvas.toDataURL('image/png');
+    }
+    const bytes = toRgba(source.value, width, height);
+    if (!bytes) return undefined;
+    ctx.putImageData(new ImageData(bytes, width, height), 0, 0);
+    return canvas.toDataURL('image/png');
+  } catch {
+    return undefined;
+  }
 }
 
 /** The transfer-store shape used by `PDFPageProxy`. */
@@ -1709,55 +1789,6 @@ function resolveObject(store: PdfObjectStore | undefined, id: string): Promise<P
     // A page that never finishes streaming must not hang the export.
     setTimeout(() => finish(undefined), 2000);
   });
-}
-
-/**
- * pdf.js hands over raw RGBA, a `Blob` (JPEG/PNG passes), a canvas or an
- * `ImageBitmap`; all four become data URLs. Returns `undefined` when this
- * environment cannot encode (jsdom has no canvas), which the caller reports as
- * a skipped operator instead of guessing.
- */
-async function imageDataUrl(payload: PdfObjectValue): Promise<string | undefined> {
-  if (!payload || typeof payload === 'string') return undefined;
-  if (!('data' in payload) || !('width' in payload)) return undefined;
-  const record = payload as PdfImagePayload;
-  const width = Math.max(0, Math.floor(Number(record.width ?? 0)));
-  const height = Math.max(0, Math.floor(Number(record.height ?? 0)));
-  const raw = record.data;
-  if (typeof Blob !== 'undefined' && raw instanceof Blob) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : undefined);
-      reader.onerror = () => resolve(undefined);
-      reader.readAsDataURL(raw);
-    });
-  }
-  if (typeof document === 'undefined' || width === 0 || height === 0) return undefined;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return undefined;
-    const samples = asLocalBytes(raw);
-    if (samples) {
-      const bytes = toRgba(samples, width, height);
-      if (!bytes) return undefined;
-      ctx.putImageData(new ImageData(bytes, width, height), 0, 0);
-      return canvas.toDataURL('image/png');
-    }
-    if (typeof HTMLCanvasElement !== 'undefined' && raw instanceof HTMLCanvasElement) {
-      ctx.drawImage(raw, 0, 0, width, height);
-      return canvas.toDataURL('image/png');
-    }
-    if (typeof ImageBitmap !== 'undefined' && raw instanceof ImageBitmap) {
-      ctx.drawImage(raw, 0, 0, width, height);
-      return canvas.toDataURL('image/png');
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**
