@@ -50,6 +50,7 @@ import { pageContentOps, pageContentStreams, parseContentStream } from '../pdf/c
 import { pageSize as resolvePageSize } from '../pdf/core/pages';
 import { openRender } from '../pdf/core/render';
 import { drawTextU } from '../pdf/core/fonts';
+import { diffAreasOf, diffAreaWords } from '@/components/tools/pdf/security/CompareMain';
 import {
   quarterTurn,
   viewerRectToUserSpace,
@@ -996,8 +997,9 @@ export async function comparePDFs(
       const pageImage = await embedImageBytes(out, await canvasPng(sheet), { mime: 'image/png' });
       const outPage = out.addPage([width / scale, height / scale]);
       outPage.drawImage(pageImage, { x: 0, y: 0, width: width / scale, height: height / scale });
+      const lines = [`Page ${page} — comparison`];
       if (overlay) {
-        const overlayImage = await embedImageBytes(out, await canvasPng(overlay), { mime: 'image/png' });
+        const overlayImage = await embedImageBytes(out, await canvasPng(overlay.canvas), { mime: 'image/png' });
         outPage.drawImage(overlayImage, {
           x: 0,
           y: 0,
@@ -1005,13 +1007,36 @@ export async function comparePDFs(
           height: height / scale,
           opacity: 0.7,
         });
+        // The sentence beside the pages names every changed area in the page's own
+        // points (`CompareMain.publishDiff` → `diffAreaWords`); the sheet carries
+        // the same coordinates through the same region-joining code over the same
+        // mask at the same density, or the file quietly drops the half of the
+        // verdict a reader can check. Both draw from the frame's top-left, so the
+        // points need no re-anchoring.
+        const areas = diffAreasOf(overlay.changed, width, height).map((area) => ({
+          x0: area.x0 / scale,
+          y0: area.y0 / scale,
+          x1: area.x1 / scale,
+          y1: area.y1 / scale,
+        }));
+        lines.push(`${count(areas.length, 'changed area')}, from the top-left of the page:`);
+        // The pane lists twelve areas and counts the rest; the sheet keeps that
+        // cap (its `AREA_LIMIT`) so the two name the same list.
+        for (const [index, area] of areas.slice(0, 12).entries()) {
+          lines.push(`${index + 1}. ${diffAreaWords(area)}`);
+        }
+        if (areas.length > 12) {
+          lines.push(`${areas.length - 12} more, marked on the copy all the same.`);
+        }
       }
-      outPage.drawText(`Page ${page} — comparison`, {
-        x: 10,
-        y: height / scale - 14,
-        size: 10,
-        font: labelFont,
-        color: rgb(0.5, 0.5, 0.5),
+      lines.forEach((line, index) => {
+        outPage.drawText(line, {
+          x: 10,
+          y: height / scale - 14 - index * 11,
+          size: 10,
+          font: labelFont,
+          color: rgb(0.5, 0.5, 0.5),
+        });
       });
       renderA.cancel();
       renderB.cancel();
@@ -1043,6 +1068,10 @@ export async function comparePDFs(
  * The alpha is `distance × 1.5` clamped, the same rule the pane paints with
  * (`CompareMain.publishDiff`), so one change is not two opacities depending on which
  * path reached it.
+ *
+ * Alongside the canvas it returns the plain changed-pixel mask, so the export can
+ * run the pane's own `diffAreasOf` over it and write the same area coordinates the
+ * sentence beside the pages names.
  */
 function diffCanvas(
   a: { canvas: HTMLCanvasElement; width: number; height: number },
@@ -1051,7 +1080,7 @@ function diffCanvas(
   height: number,
   sensitivity: number,
   highlight: { r: number; g: number; b: number },
-): HTMLCanvasElement | null {
+): { canvas: HTMLCanvasElement; changed: Uint8Array } | null {
   const grab = (source: HTMLCanvasElement): Uint8ClampedArray => {
     const holder = document.createElement('canvas');
     holder.width = width;
@@ -1072,6 +1101,7 @@ function diffCanvas(
   if (!context) return null;
   const paint = context.createImageData(width, height);
   const target = paint.data;
+  const changed = new Uint8Array(width * height);
   let marked = 0;
   for (let i = 0; i < width * height; i++) {
     const j = i * 4;
@@ -1083,12 +1113,13 @@ function diffCanvas(
       target[j + 1] = Math.round(highlight.g * 255);
       target[j + 2] = Math.round(highlight.b * 255);
       target[j + 3] = Math.min(255, Math.round(distance * 1.5));
+      changed[i] = 1;
       marked += 1;
     }
   }
   if (marked === 0) return null;
   context.putImageData(paint, 0, 0);
-  return out;
+  return { canvas: out, changed };
 }
 
 async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {

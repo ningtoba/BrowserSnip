@@ -845,17 +845,32 @@ describe('the exported comparison', () => {
     // “Page N — comparison”, so the file carried none of the coordinates the
     // user had just read beside the pages. Both halves run the same pixels
     // through `diffAreasOf` at the same density, so the sentences match to the
-    // point — which is what this pins.
+    // point — which is what this pins. A second pair plants a second block on
+    // page 2 as well, to show the naming is per page, not only for page 1.
     const out = await runCompare('compare', [bytesA, bytesB]);
     const first = sheetText(out.pages[0]);
     expect(first).toMatch(/Page 1 — comparison/);
     expect(first).toMatch(/1 changed area/);
     expect(first).toContain('x 20–100 · y 40–80 pt');
-    expect(sheetText(out.pages[1])).toContain('x 15–60 · y 20–45 pt');
-    // A sheet with no marked pixel keeps its plain header: no invented areas.
-    const third = sheetText(out.pages[2]);
-    expect(third).toMatch(/Page 3 — comparison/);
-    expect(third).not.toMatch(/x \d+–\d+/);
+    // Sheet 2 is identical between the files and sheet 3 is blank: the plain
+    // header stands, with no invented areas.
+    for (const index of [1, 2] as const) {
+      const text = sheetText(out.pages[index]);
+      expect(text).toMatch(new RegExp(`Page ${index + 1} — comparison`));
+      expect(text).not.toMatch(/x \d+–\d+/);
+    }
+
+    const extra: InkRect = { x0: 70, y0: 90, x1: 100, y1: 120, colour: [0, 0, 255] };
+    const bytesTwo = await register([SHEETS_A[0], SHEETS_A[1], SHEETS_A[2]]);
+    const bytesThree = await register([
+      SHEETS_B[0],
+      { box: SHEET, ink: [...SECOND, extra] },
+      SHEETS_B[2],
+    ]);
+    const pair = await runCompare('compare', [bytesTwo, bytesThree]);
+    const second = sheetText(pair.pages[1]);
+    expect(second).toMatch(/1 changed area/);
+    expect(second).toContain('x 70–100 · y 90–120 pt');
   });
 });
 
