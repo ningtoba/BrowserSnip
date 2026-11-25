@@ -28,6 +28,7 @@ import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { pdfFromImages } from '@/lib/pdf/core/pack';
 import { pageContentOps } from '@/lib/pdf/core/content';
 import { decodeImage } from '@/lib/pdf/core/images';
+import { contextFor } from './convert-to-harness';
 
 /* ------------------------------------------------------------------ *
  * Fixtures                                                              *
@@ -562,6 +563,19 @@ describe('an animated WebP gives one page and says which file it was', () => {
     expect((await drawnOnPage(bytes)).width, 'the frame was resized').toBe(24);
   });
 
+  it('hands the runner the animation note once, not twice', async () => {
+    // The loop pushes the note inline *and* calls `collectNotice`, which is that
+    // inline block's own extraction (its comment says so) — the raw tool result
+    // carried the sentence twice, and only the runner's `new Set` hid it from
+    // the card. Asked at the tool, where the duplication lives.
+    const result = await getPdfTool('webp-to-pdf')?.run?.(
+      contextFor({ pageSize: 'fit', margin: 0 }, [fileFrom(animated(3), 'walk.webp')]),
+    );
+    expect(result, 'webp-to-pdf did not run').toBeTruthy();
+    const notes = (result?.warnings ?? []).filter((line) => /animated WebP with 3 frames/.test(line));
+    expect(notes.length, 'the animation note is pushed by the loop and again by collectNotice').toBe(1);
+  });
+
   it('control: a still WebP gets no animation warning', async () => {
     const outcome = await once(still(64, 48), 'still.webp');
     expect(outcome.warnings.join(' ')).not.toMatch(/animated WebP/);
@@ -615,6 +629,17 @@ describe('a transparent WebP keeps its mask over the page’s own paper', () => 
     const notes = getPdfTool('webp-to-pdf')?.notes?.join(' ') ?? '';
     expect(notes).toMatch(/soft mask/);
     expect(notes).toMatch(/white paper/);
+  });
+
+  it('says it about a WebP, not about somebody else’s format', () => {
+    // Measured on the rail (:5296): the WEBP card's standing note opened
+    // "A transparent PNG keeps its transparency…" — the PNG sentence borrowed
+    // wholesale, in front of a user holding a .webp.
+    const webp = getPdfTool('webp-to-pdf')?.notes?.join(' ') ?? '';
+    expect(webp).toMatch(/A transparent WebP/);
+    expect(webp, 'the WEBP card speaks of PNG').not.toMatch(/A transparent PNG/);
+    // The PNG tool keeps its own sentence.
+    expect(getPdfTool('png-to-pdf')?.notes?.join(' ') ?? '').toMatch(/A transparent PNG/);
   });
 
   it('reads the file through the same reader when called directly', async () => {

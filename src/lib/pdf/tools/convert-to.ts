@@ -191,6 +191,15 @@ const PNG_ALPHA =
   'A transparent PNG keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
 
 /**
+ * WebP carries alpha the same way; the sentence travels under its own format's
+ * name. Measured on the rail (:5296): the WEBP card opened "A transparent PNG
+ * keeps its transparency…" — the PNG line borrowed wholesale, in front of a
+ * user holding a `.webp` whose mask and paper behaved exactly as described.
+ */
+const WEBP_ALPHA =
+  'A transparent WebP keeps its transparency in the file as a soft mask, but the page paints its white paper under it, so see-through parts come out white on the page and when printed — not transparent.';
+
+/**
  * A BMP header carries its own byte count, and Chrome ignores it.
  *
  * Handed a short file the decoder paints the rows that are there and fills the
@@ -719,7 +728,7 @@ export const convertToTools: PdfToolDefinition[] = [
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
           : `The ${label} pixels are embedded as they decode; no resampling, no sharpening.`,
-        isPng || isWebp ? PNG_ALPHA : '',
+        isPng ? PNG_ALPHA : isWebp ? WEBP_ALPHA : '',
         // Measured on the dev build: a 24-bit 243 x 160 BMP cut after 10 rows
         // embedded as a complete page with 150 white rows Chrome invented, and
         // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
@@ -767,7 +776,7 @@ export const convertToTools: PdfToolDefinition[] = [
             message: `${images.length} ${label} image(s) → ${packed.pages} page(s).`
               + (refused.length ? ` ${refused.length} file(s) left out.` : ''),
           })),
-          warnings: [RASTER_LOSS, ...(isPng || isWebp ? [PNG_ALPHA] : []), RASTER_DENSITY, ...notices, ...refused],
+          warnings: [RASTER_LOSS, ...(isPng ? [PNG_ALPHA] : isWebp ? [WEBP_ALPHA] : []), RASTER_DENSITY, ...notices, ...refused],
         };
       },
     };
@@ -1952,12 +1961,10 @@ async function decodeImageBatch(
       context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
       continue;
     }
-    if (expected.notices && mime === 'image/webp') {
-      const frames = webpFrameCount(batch.bytes);
-      if (frames > 1) {
-        expected.notices.push(`"${batch.name}" is an animated WebP with ${frames} frames — only the first one is on its page, and the PDF will not play the rest.`);
-      }
-    }
+    // One push only: `collectNotice` is this call's own extraction out of the
+    // loop, but the block it was pulled out of stayed behind, and the animated
+    // note reached the tool result twice (hidden from the card only by the
+    // runner's `new Set`).
     collectNotice(expected.notices, mime, batch.bytes, batch.name);
     let pages;
     try {
