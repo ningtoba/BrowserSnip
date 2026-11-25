@@ -1,0 +1,25 @@
+rasterize-pdf — fresh live re-drive, dev build :5295, 2026-11-25 (colour-rail.mjs spec batch,
+/tmp/lane-optimize/batch3.jsonl; judged by docs/research/rasterize-ink.py --compare and by
+page-by-page PyMuPDF renders at 100 dpi).
+
+defaults (JPEG 200 dpi, keep page size), ink.pdf  ->  rasterize-ink.py "OK":
+  src  p1 15.56 % (10 738/68 996)  p2 53.09 %  p3 0.10 %  p4 0.00 %  (blank control)
+  out  p1 18.61 % (12 840)         p2 53.45 %  p3 0.20 %  p4 0.00 %  (blank in both)
+  one image XObject per sheet at 1166x1652 = the 420x595 pt box x 200/72; text 0 chars.
+PNG branch (File format = "PNG (lossless)"), ink.pdf:
+  out per-page non-white px 87 935 / 257 524 / 969 / 0 against src 75 166 / 256 384 / 484 / 0
+  (the hairline sheet doubles under the resample, the blank sheet stays 0 = control),
+  4 sheets, 4 image XObjects, 0 extractable characters.
+Keep the original page size OFF, colour.pdf: pages become 1166x1652 pt (one point per pixel)
+  and the /Rotate 90 sheet arrives as 1652x1166; per-page ink 769 388 / 735 602 / 0 / 2 127 163
+  / 3 717 900 / 0 / 359 822 / 356 400 against src 105 129 / 94 842 / 0 / 274 962 / 482 968 / 0
+  / 46 700 / 46 700 — the same sheets, scaled.
+Rotated sheet, rot90.pdf: src visible rect 595x420 with /Rotate 90 -> out 595x420 with
+  /Rotate 0 and ink 73 080 -> 78 647: the geometry the reader saw is the geometry it keeps.
+Form sheet, form.pdf: 8/8 pages, ink 116 264 / 96 028 / 0 / 276 391 / 482 968 / 0 / 47 268 /
+  46 700 against src 105 918 / 94 842 / 0 / 274 962 / 482 968 / 0 / 46 700 / 46 700; the card
+  counted "2 of 8 page(s) carried text", which is what the source's operator scan says.
+Dark mode read: shots/optimize-lane-rasterize-pdf__after-raster-dark_shot.png — inked preview,
+  8 inked thumbnails, +7 236 % size line and the text-loss note, tokens only, nothing clipped.
+No src/ change this round: the unawaited-paint fix (4ba14b6) and the carried /Info were both
+re-measured here, not assumed.
