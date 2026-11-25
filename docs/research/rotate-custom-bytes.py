@@ -14,6 +14,7 @@ paper (`blank.pdf`) and requires 0 ink and no line direction on it, and re-measu
 the source twice to prove the numbers are stable.
 """
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -24,10 +25,23 @@ DPI = 100
 
 
 def displayed(page):
-    box = page.rect
-    if page.rotation % 180 == 90:
-        return box.height, box.width
-    return box.width, box.height
+    """The box a reader is shown.
+
+    `page.rect` is already the rotated rectangle in MuPDF — a sheet stored 420×595
+    with `/Rotate 90` reports 595×420 — so this does NOT swap on rotation. (It used
+    to, which double-counted the turn and made every rotated source sheet look a
+    quarter-turn away from the page the tool actually produced.)
+    """
+    return page.rect.width, page.rect.height
+
+
+def streams(doc, page):
+    """Hashes of the page's own decompressed content streams, in order."""
+    out = []
+    for xref in page.get_contents():
+        raw = doc.xref_stream(xref)
+        out.append(hashlib.sha256(raw or b"").hexdigest()[:16] if raw else f"empty:{xref}")
+    return out
 
 
 def ink(pix):
@@ -91,8 +105,10 @@ def measure(path, sheets=None):
             "line": line_direction(page),
             "chars": len(page.get_text()),
             "annots": len(list(page.annots() or [])),
+            "annots_raw": annots_raw(doc, page),
             "links": len(page.get_links()),
             "images": len(page.get_images()),
+            "streams": streams(doc, page),
             "first_line": str(page.get_text("text")).strip().split("\n")[0][:60],
             "ink_x": round(pix.width * (centroid[0] if centroid else 0), 1),
         })
@@ -105,7 +121,12 @@ def main():
     ap.add_argument("--source", default="/tmp/triage/colour.pdf")  # noqa: S108
     ap.add_argument("--cases", default="")
     ap.add_argument("--selfcheck", action="store_true")
+    ap.add_argument("--judge", default="", help="judge a round directory against its expectations")
+    ap.add_argument("--control", action="store_true", help="prove the judge can see a turn")
     args = ap.parse_args()
+
+    if args.judge:
+        sys.exit(judge_round(args.judge, args.control))
 
     source = measure(args.source)
     if args.selfcheck:

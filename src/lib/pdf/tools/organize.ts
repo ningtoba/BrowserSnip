@@ -1661,6 +1661,12 @@ export const organizeTools: PdfToolDefinition[] = [
       // keywords, creator and XMP would leave the file even when one sheet of
       // four is turned and the other three are copied verbatim.
       carryDocInfo(target, [input], notes);
+      // `PAGE_COPY_INFO_NOTE`, which this tool's own card prints, says the producer
+      // becomes this app's, and twelve sibling tools write that line. Measured on dev
+      // server 5292, every `rotate-custom` download instead reported
+      // `pdf-lib (https://github.com/Hopding/pdf-lib)` — the empty target document's
+      // own default, which nothing here replaced.
+      target.setProducer('BrowserSnip');
       const left = input.pageCount - chosen.size;
       return pdfOut(
         target,

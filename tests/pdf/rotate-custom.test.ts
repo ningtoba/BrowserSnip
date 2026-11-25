@@ -100,6 +100,25 @@ describe('what a turn leaves of the document', () => {
     expect(doc.getAuthor()).toBe('the author');
   });
 
+  it('names this app the producer, which its own card note promises', async () => {
+    const source = await sheetWithAnnots({ title: 'a titled document' });
+    const before = await PDFDocument.load(source, { updateMetadata: false });
+    expect(before.getProducer() ?? '', 'the source carries some other producer').not.toBe('BrowserSnip');
+
+    const doc = await PDFDocument.load(await out(await run({ angle: 30, fit: 'grow', pages: 'all' }, source)), {
+      updateMetadata: false,
+    });
+    // The card says "The producer becomes this app's, because this app wrote the
+    // new file", and twelve sibling tools write exactly that. Measured on dev
+    // server 5292, all sixteen `rotate-custom` downloads instead reported
+    // `pdf-lib (https://github.com/Hopding/pdf-lib)` — the empty document's own
+    // default, which `carryDocInfo` never touches and this run never replaced.
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    // The identity fields still come from the file, not from this stamp.
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getCreator() ?? '').not.toBe('BrowserSnip');
+  });
+
   it('invents no title for a document that has none', async () => {
     const source = await sheetWithAnnots();
     const doc = await PDFDocument.load(await out(await run({ angle: 30, fit: 'grow', pages: 'all' }, source)), {

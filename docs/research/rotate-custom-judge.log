@@ -1,0 +1,185 @@
+# rotate-custom round — dev server 5292, after the producer stamp. Judge:
+#   python3 docs/research/rotate-custom-bytes.py --judge /tmp/rb
+
+== A-all-30-grow: A-all-30-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=30 fit=grow (5361 -> 8404 bytes)
+   sheet 1 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 112149 ratio 1.0192 (want 0.95-1.06) line 30.0 (want 30.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['821c9a6d424f8686'] OK
+   sheet 2 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 95561 ratio 1.0072 (want 0.95-1.06) line 30.0 (want 30.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['690b2d9cac136e18'] OK
+   sheet 3 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['bc62c631a22e3ab8'] OK
+   sheet 4 (turned): box [725.3, 661.2] (want 725.3x661.2) rot 0 (want 0) ink 275277 ratio 1.0011 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['7218d105cbabdd4c'] OK
+   sheet 5 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 483894 ratio 1.0019 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['271e3e882d1ea876'] OK
+   sheet 6 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['a3a9daa5b87dcd2c'] OK
+   sheet 7 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 47001 ratio 1.0064 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['c47caf536159d196'] OK
+   sheet 8 (turned): box [326.7, 229.8] (want 326.7x229.8) rot 0 (want 0) ink 47002 ratio 1.0065 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['9ada8550e4f4788f'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== B-all-neg30-grow: B-all-neg30-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=-30 fit=grow (5361 -> 8409 bytes)
+   sheet 1 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 112201 ratio 1.0197 (want 0.95-1.06) line -30.0 (want -30.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['be5f9544fd4ba1b1'] OK
+   sheet 2 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 95555 ratio 1.0071 (want 0.95-1.06) line -30.0 (want -30.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['2e5ccf1800f785c9'] OK
+   sheet 3 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['2639f45af3b3365b'] OK
+   sheet 4 (turned): box [725.3, 661.2] (want 725.3x661.2) rot 0 (want 0) ink 275257 ratio 1.0011 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['d5f964aa4c5eb356'] OK
+   sheet 5 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 483894 ratio 1.0019 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['d03074f7849e4b9f'] OK
+   sheet 6 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['679663a006a2cbde'] OK
+   sheet 7 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 46997 ratio 1.0064 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['8afe56f92db2c1e9'] OK
+   sheet 8 (turned): box [326.7, 229.8] (want 326.7x229.8) rot 0 (want 0) ink 47020 ratio 1.0069 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['f888113aacc36141'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== C-all-0-grow: C-all-0-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=0 fit=grow (5361 -> 8052 bytes)
+   sheet 1 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 110031 ratio 1.0 (want 0.95-1.06) line 0.0 (want 0.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['0cf30592c82bc2a9'] OK
+   sheet 2 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 94882 ratio 1.0 (want 0.95-1.06) line 0.0 (want 0.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['becd61df02711fa3'] OK
+   sheet 3 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['151e2d30fd7fdb75'] OK
+   sheet 4 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 274962 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['0936d2a175de22f1'] OK
+   sheet 5 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 482968 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['191c7d6ad1c76d1a'] OK
+   sheet 6 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['38f5846d7f87f848'] OK
+   sheet 7 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['401a5da5f5942aba'] OK
+   sheet 8 (turned): box [336.0, 71.4] (want 336.0x71.4) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['1230b674ca1be234'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== D-all-360-grow: D-all-360-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=180 fit=grow (5361 -> 8357 bytes)
+   sheet 1 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 109013 ratio 0.9907 (want 0.95-1.06) line 180.0 (want -180.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['51e73ee4641e1c04'] OK
+   sheet 2 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 94605 ratio 0.9971 (want 0.95-1.06) line 180.0 (want -180.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['a23df8ddcbc189d9'] OK
+   sheet 3 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['442db63918dc8b8e'] OK
+   sheet 4 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 274300 ratio 0.9976 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['e5b68ed1ba041e44'] OK
+   sheet 5 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 482968 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['4508aed99989c8bc'] OK
+   sheet 6 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['a1cfcb952baa4d77'] OK
+   sheet 7 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['27ba2f00c64ad30f'] OK
+   sheet 8 (turned): box [336.0, 71.4] (want 336.0x71.4) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['73e4c77ae9b84daf'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== E-all-45-keep: E-all-45-keep.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=45 fit=keep (5361 -> 8456 bytes)
+   sheet 1 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 99946 ratio 0.9083 (want 0.0-1.02) line 45.0 (want 45.0) chars 1730 (body 1779) ann 0 (was 0) link 0 img 0 streams ['e7cadd77344353dd'] OK
+   sheet 2 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 83828 ratio 0.8835 (want 0.0-1.02) line None (want None) chars 0 (body 13) ann 0 (was 0) link 0 img 0 streams ['6a7fad133487acb7'] OK
+   sheet 3 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['89b087d556e292c4'] OK
+   sheet 4 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 256757 ratio 0.9338 (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['4f1064ce3c21a082'] OK
+   sheet 5 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 383184 ratio 0.7934 (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['d0a6327e6de2a698'] OK
+   sheet 6 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 0 ratio None (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['3e98635ece734bbb'] OK
+   sheet 7 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 36848 ratio 0.789 (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['e314556eedb586e2'] OK
+   sheet 8 (turned): box [336.0, 71.4] (want 336.0x71.4) rot 0 (want 0) ink 14200 ratio 0.3041 (want 0.0-1.02) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['ef4be2d3770dde00'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== F-all-90-grow: F-all-90-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=90 fit=grow (5361 -> 8284 bytes)
+   sheet 1 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 108970 ratio 0.9904 (want 0.95-1.06) line 90.0 (want 90.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['03c0adca4b3733f5'] OK
+   sheet 2 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 94613 ratio 0.9972 (want 0.95-1.06) line 90.0 (want 90.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['2c4fc2b856329bf3'] OK
+   sheet 3 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['5be9c0173f1e6bd1'] OK
+   sheet 4 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 274300 ratio 0.9976 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['36ebe07c97044cc9'] OK
+   sheet 5 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 482968 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['316fbbda4c77cd68'] OK
+   sheet 6 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['4ac04fbb4eae4f84'] OK
+   sheet 7 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['a65582353eb332da'] OK
+   sheet 8 (turned): box [71.4, 336.0] (want 71.4x336.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['8abba9f4f9190e96'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== G-all-neg90-grow: G-all-neg90-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=-90 fit=grow (5361 -> 8387 bytes)
+   sheet 1 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 109438 ratio 0.9946 (want 0.95-1.06) line -90.0 (want -90.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['6aadd5e29870d2df'] OK
+   sheet 2 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 94878 ratio 1.0 (want 0.95-1.06) line -90.0 (want -90.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['9126285c726009cb'] OK
+   sheet 3 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['0c3ba44652c0aee9'] OK
+   sheet 4 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 274962 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['1622fac9d30b4dce'] OK
+   sheet 5 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 482968 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['c49eec73f4ae7edf'] OK
+   sheet 6 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['e6f0b1d4a8e34504'] OK
+   sheet 7 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['3e887a7beb1b0cb8'] OK
+   sheet 8 (turned): box [71.4, 336.0] (want 71.4x336.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['e0f65d4a5739294e'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== H-p4-0-grow: H-p4-0-grow.pdf picked=[4] angle=0 fit=grow (5361 -> 3702 bytes)
+   sheet 1 (as it was): box [420.0, 595.0] rot 0 ink 110031 chars 1779 ann 0 link 0 img 0 streams ['6f7bd64760018a95'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 274962 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['03c0adca4b3733f5'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== I-p4-30-grow: I-p4-30-grow.pdf picked=[4] angle=30 fit=grow (5361 -> 3749 bytes)
+   sheet 1 (as it was): box [420.0, 595.0] rot 0 ink 110031 chars 1779 ann 0 link 0 img 0 streams ['6f7bd64760018a95'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (turned): box [725.3, 661.2] (want 725.3x661.2) rot 0 (want 0) ink 275277 ratio 1.0011 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['09d36c7388cd4f2b'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== J-p4-90-grow: J-p4-90-grow.pdf picked=[4] angle=90 fit=grow (5361 -> 3714 bytes)
+   sheet 1 (as it was): box [420.0, 595.0] rot 0 ink 110031 chars 1779 ann 0 link 0 img 0 streams ['6f7bd64760018a95'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 274300 ratio 0.9976 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['51e73ee4641e1c04'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== K-p3-empty-30-grow: K-p3-empty-30-grow.pdf picked=[3] angle=30 fit=grow (5361 -> 3613 bytes)
+   sheet 1 (as it was): box [420.0, 595.0] rot 0 ink 110031 chars 1779 ann 0 link 0 img 0 streams ['6f7bd64760018a95'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['821c9a6d424f8686'] OK
+   sheet 4 (as it was): box [595.0, 420.0] rot 90 ink 274962 chars 0 ann 0 link 0 img 0 streams ['74860df8dda6e2a2'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== L-p1-30-grow: L-p1-30-grow.pdf picked=[1] angle=-30 fit=grow (5361 -> 4797 bytes)
+   sheet 1 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 112201 ratio 1.0197 (want 0.95-1.06) line -30.0 (want -30.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['be5f9544fd4ba1b1'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (as it was): box [595.0, 420.0] rot 90 ink 274962 chars 0 ann 0 link 0 img 0 streams ['74860df8dda6e2a2'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== AN-p1-30-grow: AN-p1-30-grow.pdf picked=[1] angle=30 fit=grow (7110 -> 6352 bytes)
+   sheet 1 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 112149 ratio 1.0195 (want 0.95-1.06) line 30.0 (want 30.0) chars 1779 (body 1779) ann 0 (was 5) link 0 img 0 streams ['821c9a6d424f8686'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (as it was): box [595.0, 420.0] rot 90 ink 274962 chars 0 ann 0 link 0 img 0 streams ['74860df8dda6e2a2'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== AN-all-90-grow: AN-all-90-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=90 fit=grow (7110 -> 9820 bytes)
+   sheet 1 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 108970 ratio 0.9906 (want 0.95-1.06) line 90.0 (want 90.0) chars 1779 (body 1779) ann 0 (was 5) link 0 img 0 streams ['03c0adca4b3733f5'] OK
+   sheet 2 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 94613 ratio 0.9972 (want 0.95-1.06) line 90.0 (want 90.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['2c4fc2b856329bf3'] OK
+   sheet 3 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['5be9c0173f1e6bd1'] OK
+   sheet 4 (turned): box [420.0, 595.0] (want 420.0x595.0) rot 0 (want 0) ink 274300 ratio 0.9976 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['36ebe07c97044cc9'] OK
+   sheet 5 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 482968 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['316fbbda4c77cd68'] OK
+   sheet 6 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['4ac04fbb4eae4f84'] OK
+   sheet 7 (turned): box [595.0, 420.0] (want 595.0x420.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['a65582353eb332da'] OK
+   sheet 8 (turned): box [71.4, 336.0] (want 71.4x336.0) rot 0 (want 0) ink 46700 ratio 1.0 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['8abba9f4f9190e96'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== AB-p1-30-grow: AB-p1-30-grow.pdf picked=[1] angle=30 fit=grow (5659 -> 4798 bytes)
+   sheet 1 (turned): box [661.2, 725.3] (want 661.2x725.3) rot 0 (want 0) ink 112149 ratio 1.0192 (want 0.95-1.06) line 30.0 (want 30.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['821c9a6d424f8686'] OK
+   sheet 2 (as it was): box [420.0, 595.0] rot 0 ink 94882 chars 13 ann 0 link 0 img 0 streams ['9f9d7482163d5d44'] OK
+   sheet 3 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams [] OK
+   sheet 4 (as it was): box [595.0, 420.0] rot 90 ink 274962 chars 0 ann 0 link 0 img 0 streams ['74860df8dda6e2a2'] OK
+   sheet 5 (as it was): box [420.0, 595.0] rot 0 ink 482968 chars 0 ann 0 link 0 img 0 streams ['aeed2d34939a19a1'] OK
+   sheet 6 (as it was): box [420.0, 595.0] rot 0 ink 0 chars 0 ann 0 link 0 img 0 streams ['7435e476c99d626a'] OK
+   sheet 7 (as it was): box [420.0, 595.0] rot 90 ink 46700 chars 0 ann 0 link 0 img 0 streams ['e6b8f1b980cb7189'] OK
+   sheet 8 (as it was): box [336.0, 71.4] rot 0 ink 46700 chars 0 ann 0 link 0 img 0 streams ['db9bd889ff4c766c'] OK
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+== AM-all-15-grow: AM-all-15-grow.pdf picked=[1, 2, 3, 4, 5, 6, 7, 8] angle=15 fit=grow (5061 -> 8831 bytes)
+   sheet 1 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 110744 ratio 1.0065 (want 0.95-1.06) line 15.0 (want 15.0) chars 1779 (body 1779) ann 0 (was 0) link 0 img 0 streams ['812ebc387f43c2c9'] OK
+   sheet 2 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 95367 ratio 1.0051 (want 0.95-1.06) line 15.0 (want 15.0) chars 13 (body 13) ann 0 (was 0) link 0 img 0 streams ['1bf84a37c4b1b5ba'] OK
+   sheet 3 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['886aa3787f81afb4'] OK
+   sheet 4 (turned): box [683.4, 559.7] (want 683.4x559.7) rot 0 (want 0) ink 275041 ratio 1.0003 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['79d8b34b49da616b'] OK
+   sheet 5 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 483642 ratio 1.0014 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['a874a29c42f3287c'] OK
+   sheet 6 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 0 ratio None (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['2d96ea69abc7e874'] OK
+   sheet 7 (turned): box [559.7, 683.4] (want 559.7x683.4) rot 0 (want 0) ink 46937 ratio 1.0051 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['bfa6980f25ffd406'] OK
+   sheet 8 (turned): box [343.0, 155.9] (want 343.0x155.9) rot 0 (want 0) ink 46917 ratio 1.0046 (want 0.95-1.06) line None (want None) chars 0 (body 0) ann 0 (was 0) link 0 img 0 streams ['dcda6028fdb9bed8'] OK
+   /Info carried; XMP 233 -> 233; producer 'BrowserSnip'
+
+AS PROMISED — 0 problem lines
+
+# instrument control (A-all-30-grow judged as a 60 turn must FAIL):
+   /Info carried; XMP 0 -> 0; producer 'BrowserSnip'
+
+control: A-all-30-grow judged as a 60° turn -> 10 problem lines (must be > 0)
