@@ -418,8 +418,15 @@ export async function addAttachments(
     // `/F`, so an accented or CJK name arrives as UTF-8 read through
     // PDFDocEncoding: MuPDF listed `notes-éè.txt` as `notes-Ã©Ã¨.txt`. `/UF` is the
     // Unicode entry, and a UTF-16BE string with a BOM is what tells a reader to
-    // decode it instead of guessing. `/F` keeps the plain bytes for the old ones.
+    // decode it instead of guessing. `/F` keeps the one-byte spelling old readers
+    // expect where it can — through `nameString`, hex like `renameAttachments`
+    // has always written it, because the fork serialises a literal string's
+    // characters UNESCAPED: a `(`, `)` or `\` in the name, or the low byte of a
+    // character like `ة` (U+0629 ends with `)`), cut the `/F` literal short and
+    // took the rest of the file with it — MuPDF refused such a download with
+    // `bad xref`, qpdf saw an unnamed Filespec, pypdf lost the `/EF`.
     site.spec.set(PDFName.of('UF'), unicodeFileName(file.name));
+    site.spec.set(PDFName.of('F'), nameString(file.name));
     const streamRef = embeddedFileStream(doc, site.spec)?.ref;
     if (streamRef) writeParams(doc, streamRef, file.bytes, { creationDate: new Date() });
   }

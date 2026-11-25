@@ -15,7 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { PDFDocument } from '@maxwbh/pdf-lib';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
-import { listAttachments } from '@/lib/pdf/core/attachments';
+import { addAttachments, listAttachments } from '@/lib/pdf/core/attachments';
 import type { ToolValues } from '@/lib/pdf/tools/types';
 
 beforeAll(() => {
@@ -104,4 +104,58 @@ describe('add-attachments speaks about the keys the file really holds', () => {
     expect(outcome.message).toMatch(/up from 1/);
     expect(outcome.warnings).toEqual([]);
   }, 120_000);
+});
+
+/**
+ * The c4 name battery (instrument `tests/pdf/c4-add-names-battery.test.ts`,
+ * judged by MuPDF, libqpdf, pypdf and poppler in `docs/research/attach-names-check.py`)
+ * caught the writer's own escape in the bytes: `doc.attach` serialises the `/F`
+ * name as a literal string, and the fork copies a literal's characters out
+ * UNESCAPED ("we will not bother escaping them"). So `report (draft.txt` let its
+ * `(` swallow the rest of the dictionary, and Arabic `ة` — U+0629, low byte `)` —
+ * closed the string early. Six of 45 shapes produced a PDF MuPDF refused with
+ * `bad xref`, qpdf read an unnamed Filespec or lost the entry whole, while the
+ * app's own reader — it prefers `/UF` — kept listing the name and the card kept
+ * promising "Readers with an attachments panel will list them". The cure is the
+ * module's own `nameString` hex encoder, the call `renameAttachments` has always
+ * used: a hex string cannot end early whatever the name holds.
+ */
+describe('add-attachments writes /F as hex so a bracket in a name cannot end it', () => {
+  const payload = (seed: number): Uint8Array =>
+    Uint8Array.from({ length: 48 }, (_, i) => (seed * 31 + i) & 0xff);
+
+  const hexUtf16 = (name: string): string => {
+    let hex = 'FEFF';
+    for (let index = 0; index < name.length; index++) {
+      hex += name.charCodeAt(index).toString(16).padStart(4, '0').toUpperCase();
+    }
+    return hex;
+  };
+
+  it('ships filespecs whose /F cannot break the file, with a healthy neighbour', async () => {
+    const names = ['plain.txt', 'report (draft.txt', 'report draft).txt', 'back\\slash.txt', 'تقرير سنة.txt'];
+    const doc = await PDFDocument.create();
+    doc.addPage([595, 842]);
+    await addAttachments(doc, names.map((name, index) => ({
+      name, bytes: payload(index + 1), mimeType: 'text/plain',
+    })));
+    // Without object streams: the question here is what the serialised `/F`
+    // literal actually looks like in the file, so it must stand in plaintext.
+    const saved = new Uint8Array(await doc.save({ useObjectStreams: false }));
+    const raw = latin1.decode(saved);
+    expect(raw.match(/\/F \(/g) ?? []).toEqual([]);
+    expect(raw.match(/\/F <[0-9A-Fa-f]+>/g)).toHaveLength(names.length);
+    // The Arabic name's `/F` carries its code units whole — not truncated to
+    // low bytes, where the `ة` became the `)` that ate the file. The plain
+    // neighbour is one-byte hex, the spelling old readers expect.
+    expect(raw).toContain(`/F <${hexUtf16('تقرير سنة.txt')}>`);
+    expect(raw).toContain('/F <706C61696E2E747874>');
+    // The re-parse gate: every name comes back as typed, payload intact.
+    const back = await PDFDocument.load(saved, { ignoreEncryption: true, updateMetadata: false });
+    const carried = new Map(listAttachments(back).map((entry) => [entry.name, latin1.decode(entry.bytes)]));
+    expect([...carried.keys()].sort()).toEqual([...names].sort());
+    names.forEach((name, index) => {
+      expect(carried.get(name)).toBe(latin1.decode(payload(index + 1)));
+    });
+  }, 180_000);
 });
