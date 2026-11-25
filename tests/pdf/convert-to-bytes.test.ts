@@ -742,6 +742,38 @@ describe('txt-to-pdf typesets the words in the order they were written', () => {
     expect(words).toContain('한국어');
     expect(words).not.toContain('\uFFFD');
   });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    // The file control promises "one after another in a single PDF"; before this
+    // pin the gate answered the pair with "This tool works on one file at a time".
+    const outcome = await run('txt-to-pdf', {}, [
+      fileFrom('ONEFILE body of the first typeset document MKENDONE\n', 'one.txt', 'text/plain'),
+      fileFrom('TWOSITE body of the second typeset document MKENDTWO\n', 'two.txt', 'text/plain'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    expect(find(runsOn(runs, 0), 'ONEFILE').length).toBe(1);
+    expect(runsOn(runs, 0).some((run) => run.text.includes('TWOSITE')), 'the second file does not join the first sheet').toBe(false);
+    expect(find(runsOn(runs, 1), 'TWOSITE').length).toBe(1);
+    // The footer counts sheets of the job, not of the file: the second document is
+    // page 2 of one PDF, which is what the single download is.
+    expect(find(runsOn(runs, 1), '2').length).toBeGreaterThanOrEqual(1);
+    expect(outcome.message).toMatch(/Typeset 2 text source\(s\) into 2 page\(s\)/);
+    expect(outcome.outputs[0]!.name).toBe('one_from_text.pdf');
+  });
+
+  it('keeps a form feed’s page break inside each file of a batch', async () => {
+    const outcome = await run('txt-to-pdf', {}, [
+      fileFrom('FIRST-A MKENDONE\n\fSECOND-A MKENDTWO\n', 'one.txt', 'text/plain'),
+      fileFrom('THIRD-A MKENDTHREE\n', 'two.txt', 'text/plain'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(find(runsOn(runs, 0), 'FIRST-A').length).toBe(1);
+    expect(find(runsOn(runs, 1), 'SECOND-A').length, 'the form feed still breaks the first file').toBe(1);
+    expect(find(runsOn(runs, 2), 'THIRD-A').length).toBe(1);
+    expect(outcome.message).toMatch(/Typeset 2 text source\(s\) into 3 page\(s\)/);
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -1280,6 +1312,30 @@ describe('markdown-to-pdf keeps the structure it read', () => {
     expect(heading!.size).toBeGreaterThan(body!.size);
     expect(heading!.y).toBeGreaterThan(body!.y);
   });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    // The file control promises "one after another in a single PDF"; before this
+    // pin the gate answered the pair with "This tool works on one file at a time".
+    const outcome = await run('markdown-to-pdf', {}, [
+      fileFrom('# ONEFILE HEAD\n\nBody of the first document, MKENDONE\n', 'one.md', 'text/markdown'),
+      fileFrom('# TWOSITE HEAD\n\nBody of the second document, MKENDTWO\n', 'two.md', 'text/markdown'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    const first = find(runsOn(runs, 0), 'ONEFILE')[0];
+    const second = find(runsOn(runs, 1), 'TWOSITE')[0];
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    // Each sheet carries its own heading, and no word of one file crosses over.
+    expect(first!.size, 'a heading stays bigger than its body on its own sheet').toBeGreaterThan(
+      find(runsOn(runs, 0), 'Body')[0]!.size,
+    );
+    expect(runsOn(runs, 0).some((run) => run.text.includes('second')), 'the first sheet holds only the first document').toBe(false);
+    expect(runsOn(runs, 1).some((run) => run.text.includes('first'))).toBe(false);
+    expect(outcome.message).toMatch(/Rendered 2 Markdown source\(s\) into 2 page\(s\)/);
+    expect(outcome.outputs[0]!.name).toBe('one_from_markdown.pdf');
+  });
 });
 
 describe('html-to-pdf lays out markup as structure', () => {
@@ -1391,6 +1447,24 @@ describe('html-to-pdf lays out markup as structure', () => {
     const bytes = await firstPdf(outcome);
     expect((await placedOn(bytes)).length).toBe(0);
     expect(squash(await extractText(bytes))).toContain('[image: chart]');
+  });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    // The file control promises "one after another in a single PDF"; before this
+    // pin the gate answered the pair with "This tool works on one file at a time".
+    const outcome = await run('html-to-pdf', {}, [
+      fileFrom('<h1>ONEFILE HEAD</h1><p>Body of the first page, MKENDONE</p>', 'one.html', 'text/html'),
+      fileFrom('<h1>TWOSITE HEAD</h1><p>Body of the second page, MKENDTWO</p>', 'two.html', 'text/html'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    expect(find(runsOn(runs, 0), 'ONEFILE').length).toBe(1);
+    expect(runsOn(runs, 0).some((run) => run.text.includes('second')), 'the first sheet holds only the first document').toBe(false);
+    expect(find(runsOn(runs, 1), 'TWOSITE').length).toBe(1);
+    expect(runsOn(runs, 1).some((run) => run.text.includes('first'))).toBe(false);
+    expect(outcome.message).toMatch(/Laid out 2 HTML source\(s\) into 2 page\(s\)/);
+    expect(outcome.outputs[0]!.name).toBe('one_from_html.pdf');
   });
 });
 

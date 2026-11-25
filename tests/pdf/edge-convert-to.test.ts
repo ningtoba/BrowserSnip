@@ -864,4 +864,20 @@ describe('every convert-to tool states what it keeps and what it loses', () => {
       .map((tool) => tool.id);
     expect(contradictory).toEqual([]);
   });
+
+  it('means its file control: a promised batch is an accepted batch', () => {
+    // The `files` help on the text routes promises "Several files are laid out in
+    // the order you added them, one after another in a single PDF", and the intake
+    // footnote repeats the count (`any number of files` / `one file at a time`) off
+    // `multiFile`. A route that prints the promise without the flag is refused by
+    // the gate — `This tool works on one file at a time. It will use "one.txt"` —
+    // which is the contradiction the csv round closed for its own route.
+    const lying = mine
+      .filter((tool) => {
+        const files = (tool.fields ?? []).find((field) => field.key === 'files');
+        return /one after another in a single PDF/.test(String(files?.help ?? '')) && !tool.multiFile;
+      })
+      .map((tool) => tool.id);
+    expect(lying).toEqual([]);
+  });
 });

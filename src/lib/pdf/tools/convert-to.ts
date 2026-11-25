@@ -1603,6 +1603,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['plain text', 'txt', 'monospace', 'manuscript'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.txt,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_text.pdf',
     actionLabel: 'Typeset',
@@ -1633,15 +1634,20 @@ export const convertToTools: PdfToolDefinition[] = [
       // A form feed is a page break to a line printer, to `enscript` and to
       // `txt2pdf`, and the layout engine has a page-break block for exactly that;
       // the manuscripts that mark their pages (Gutenberg, RFCs) mean it.
-      const blocks: Block[] = sources.flatMap((source) =>
-        source.text
+      const blocks: Block[] = [];
+      for (const [fileIndex, source] of sources.entries()) {
+        // The file control promises "one after another in a single PDF", so each
+        // later file starts on a sheet of its own: two typeset documents ending
+        // mid-page would otherwise read as one document whose prose changed topic.
+        if (fileIndex > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        blocks.push(...source.text
           .split('\f')
           .filter((page) => page.trim() !== '')
           .flatMap((page, index) => {
             const blocksOnPage = textToBlocks(expandTabs(page), options);
             return index === 0 ? blocksOnPage : [{ kind: 'pagebreak' as const }, ...blocksOnPage];
-          }),
-      );
+          }));
+      }
       return blocksResult(blocks, layoutOptions(context), `Typeset ${sources.length} text source(s) into`, warnings);
     },
   },
@@ -1655,6 +1661,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['md', 'readme', 'notes', 'gfm'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.markdown,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_markdown.pdf',
     actionLabel: 'Render',
@@ -1689,12 +1696,16 @@ export const convertToTools: PdfToolDefinition[] = [
       const { markdownToBlocks } = await import('../core/layout');
       const blocks: Block[] = [];
       let remote = 0;
-      for (const source of sources) {
+      for (const [fileIndex, source] of sources.entries()) {
         remote += countMatches(source.text, /!\[[^\]]*\]\(\s*(?!data:)[^)]+\)/g);
         const text = normalizeMarkdown(source.text);
         const built = await markdownToBlocks(text, {
           images: async (src) => readDataUrl(src),
         });
+        // The file control promises "one after another in a single PDF": each later
+        // document starts on its own sheet instead of continuing the first one's
+        // last paragraph, which reads as a heading that appeared mid-sentence.
+        if (fileIndex > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
         blocks.push(...decodeBlockEntities(markStructuredLists(built, text)));
       }
       if (remote > 0) {
@@ -1713,6 +1724,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['web page', 'markup', 'email', 'convert html'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.html,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_html.pdf',
     actionLabel: 'Lay out',
@@ -1745,7 +1757,11 @@ export const convertToTools: PdfToolDefinition[] = [
       let skippedImages = 0;
       let scriptBlocks = 0;
       let imageTags = 0;
-      for (const source of sources) {
+      for (const [fileIndex, source] of sources.entries()) {
+        // The file control promises "one after another in a single PDF", so each
+        // later document starts on a sheet of its own instead of continuing the
+        // first one's last paragraph on the same page.
+        if (fileIndex > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
         skippedImages += countMatches(source.text, /<img[^>]+src="\s*(?!data:)[^"]+"/gi);
         imageTags += countMatches(source.text, /<img[\s>/]/gi);
         scriptBlocks += countMatches(source.text, /<script[\s>]/gi);
