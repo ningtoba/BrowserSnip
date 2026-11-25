@@ -126,7 +126,7 @@ describe('a store the file does not have is named as absent', () => {
  * `pdfinfo` prints `Fri Jan 2 11:04:05 2026 +08` for the first and MuPDF and
  * pikepdf hand back the stored string, which the row also shows.
  */
-describe.skip('BLOCKED on the date seam: a zone-less date keeps the wall clock its own text holds', () => {
+describe('a zone-less date keeps the wall clock its own text holds — seam ba06644 on master', () => {
   it('prints the stored fields, not their UTC translation, and labels them honestly', () => {
     const parts = parsePdfDateParts('D:20260102030405');
     expect(parts, 'the date must still be recognised').toBeTruthy();

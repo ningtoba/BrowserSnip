@@ -173,7 +173,7 @@ describe('one keyword rule for both stores', () => {
  * seam fix has a flip-target. Both are read out of the same `humanDate` /
  * `parsePdfDateParts` pair the properties pane renders.
  */
-describe.skip('BLOCKED on the date seam: a date keeps the zone its own text stated', () => {
+describe('a date keeps the zone its own text stated — seam 32b784f on master', () => {
   it('prints a zone-less PDF date as the wall clock the file holds', () => {
     // Measured live on `vm-dates.pdf`: the pane printed
     // `1 January 2026 at 19:04:05 local time, no offset recorded` for a file whose
