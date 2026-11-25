@@ -368,10 +368,14 @@ export default function FormCreatorMain(): JSX.Element {
         session = opened;
         sessionRef.current = opened;
         const doc = await openPDF(bytes, { password: passwordRef.current || undefined });
+        // Before `listFormFields`: pdf-lib's `getForm()` deletes `/XFA` on first
+        // touch, so a later check can never see the packet (measured: the
+        // ", plus an XFA packet" banner was dead on mirror forms).
+        const withXfa = hasXfa(doc);
         const fields = listFormFields(doc);
         if (!token.alive) return;
         setExisting(fields);
-        setXfa(hasXfa(doc));
+        setXfa(withXfa);
         setPage({ page: 1, numPages: opened.numPages, widthPt: 0, heightPt: 0, rotation: 0 });
         setPhase('ready');
         setStatus(
@@ -861,6 +865,9 @@ export default function FormCreatorMain(): JSX.Element {
           <span>
             This document already has an AcroForm ({existing.length} field{existing.length === 1 ? '' : 's'}
             {xfa ? ', plus an XFA packet' : ''}).
+            {xfa
+              ? ' The XFA packet does not survive a save from this page — the result carries the AcroForm alone, and XFA layout, calculations and validation need Acrobat.'
+              : ''}
           </span>
           <label className="flex items-center gap-1">
             <input
@@ -882,9 +889,6 @@ export default function FormCreatorMain(): JSX.Element {
             />
             Replace the whole form
           </label>
-          {xfa && conflict === 'replace' && (
-            <span>Replacing clears the AcroForm widgets; an XFA layout still needs Acrobat to follow.</span>
-          )}
         </div>
       )}
 

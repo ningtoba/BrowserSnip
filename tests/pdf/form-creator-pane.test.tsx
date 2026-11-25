@@ -273,3 +273,29 @@ describe('what the card says afterwards', () => {
     expect(warnings).toHaveLength(1);
   });
 });
+
+describe('a document whose AcroForm carries an XFA packet', () => {
+  it('names the packet on the banner and says the save will drop it', async () => {
+    // pdf-lib's `getForm()` — and any save after it — deletes `/XFA`, so the
+    // packet is sealed into a document whose form has not been touched, and the
+    // pane must read it before `listFormFields` runs. Measured live (chunk 8):
+    // checked afterwards, the banner sentence never appeared for a mirror form.
+    const { PDFDocument, PDFDict, PDFName, PDFString } = await import('@maxwbh/pdf-lib');
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(SHEET);
+    const form = doc.getForm();
+    form.createTextField('already.here').addToPage(page, { x: 40, y: 500, width: 160, height: 20 });
+    const sealed = await doc.save();
+    const re = await PDFDocument.load(sealed);
+    re.catalog.lookup(PDFName.of('AcroForm'), PDFDict).set(PDFName.of('XFA'), PDFString.of(''));
+    const bytes = await re.save();
+
+    const file = new File([bytes as unknown as BlobPart], 'mirror.pdf', { type: 'application/pdf' });
+    act(() => useFileStore.setState({ file, files: [file], metadata: null }));
+    await ready();
+
+    const banner = await screen.findByText(/already has an AcroForm/);
+    expect(banner.textContent).toContain('plus an XFA packet');
+    expect(banner.textContent).toContain('does not survive a save');
+  });
+});

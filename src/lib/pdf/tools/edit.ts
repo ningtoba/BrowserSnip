@@ -2097,7 +2097,7 @@ export const editTools: PdfToolDefinition[] = [
   {
     id: 'form-creator',
     name: 'Create PDF Form',
-    description: 'Add fillable text, checkbox, choice and signature fields by dragging',
+    description: 'Add fillable text, checkbox, dropdown, list and radio-group fields by dragging',
     icon: '🧾',
     category: 'edit',
     keywords: ['make form', 'fillable', 'design form', 'widgets'],
