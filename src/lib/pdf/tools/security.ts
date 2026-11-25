@@ -1173,12 +1173,15 @@ export const securityTools: PdfToolDefinition[] = [
       }
       sections.push({ title: 'Protection', rows: protection });
       const attachments = listAttachments(input.doc);
-      if (attachments.length > 0) {
-        sections.push({
-          title: 'Embedded files',
-          rows: attachments.map((a) => ({ label: a.name, value: `${formatBytes(a.size)} · ${a.mimeType ?? 'unknown type'}` })),
-        });
-      }
+      // Absence is named, not hidden: Fonts and Images both answer with a `none`
+      // row, and the card promises attachments too, so a file with nothing
+      // attached has to say so instead of dropping the section.
+      sections.push({
+        title: 'Embedded files',
+        rows: attachments.length > 0
+          ? attachments.map((a) => ({ label: a.name, value: `${formatBytes(a.size)} · ${a.mimeType ?? 'unknown type'}` }))
+          : [{ label: 'None', value: 'no embedded files — the catalogue declares no /EmbeddedFiles and no page carries a /Filespec' }],
+      });
       return {
         kind: 'report',
         sections,
