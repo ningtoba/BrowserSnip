@@ -1209,6 +1209,56 @@ describe('the colour cards say what the bytes do', () => {
     expect(outcome.message).toMatch(/looks unchanged where only those ran/u);
   });
 
+  it('promises the fill behind the page\u2019s own paint, and says which paper it cannot reach', () => {
+    // Measured on the shipped build: `at 1 the fill repaints every white pixel it covers`
+    // was false for the two shapes producers emit most. A sheet that paints its own white
+    // background rectangle stayed 91.5 % white (fill 0.0 %, 0 of 625 cells the colour), and
+    // a scanned sheet (one full-page image XObject) measured white 91.2 % before and 91.2 %
+    // after — the wash is under that paint, which is what "behind the content" means, so
+    // the note has to name it instead of promising a repaint.
+    const note = getPdfTool('background-color')!.notes!.find((entry) => /Below 1 the fill/.test(entry));
+    expect(note, 'the opacity note vanished from the card').toBeTruthy();
+    expect(note).toMatch(/behind the page\u2019s own content/u);
+    expect(note).toMatch(/white background rectangle|scanned sheet/u);
+    expect(note).not.toMatch(/repaints every white pixel/u);
+
+    // The bytes behind both shapes: the artifact leads, the page\u2019s own paint follows,
+    // so the paint covers the wash rather than being repainted by it.
+    const ownPaint = async (body: string, image = false) => {
+      const doc = await PDFDocument.create();
+      const page = doc.addPage([420, 595]);
+      if (image) {
+        const xref = doc.context.register(doc.context.obj({
+          Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1,
+          BitsPerComponent: 8, ColorSpace: PDFName.of('DeviceRGB'),
+        }));
+        // One white pixel, stretched over the sheet by the `cm` below.
+        (doc.context.lookup(xref) as unknown as { contents: Uint8Array }).contents =
+          new Uint8Array([255, 255, 255]);
+        page.node.set(PDFName.of('Resources'), doc.context.obj({
+          XObject: doc.context.obj({ Im0: xref }),
+        }));
+      }
+      page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.stream(body)));
+      const edited = await run('background-color', { color: '#ff0000', pages: '1' }, [
+        pdfFile(await doc.save({ useObjectStreams: false }), 'shape.pdf'),
+      ]);
+      const streams = pageContentStreams((await openPDF(await outBytes(edited))).getPages()[0])
+        .map((entry) => Buffer.from(entry.bytes).toString('latin1'));
+      const artifact = streams.findIndex((text) => text.includes('/Type /Background'));
+      expect(artifact, 'no background artifact was written').toBe(0);
+      expect(streams.length, 'the page\u2019s own paint does not follow the fill').toBeGreaterThan(1);
+      expect(streams[streams.length - 1]).not.toContain('/Type /Background');
+      return streams;
+    };
+    return Promise.all([
+      ownPaint('1 1 1 rg 0 0 420 595 re f').then((streams) =>
+        expect(streams[1]).toMatch(/rg[\s\S]*re\s+f/u)),
+      ownPaint('q 420 0 0 595 0 0 cm /Im0 Do Q', true).then((streams) =>
+        expect(streams[1]).toContain('/Im0 Do')),
+    ]);
+  });
+
   it('refuses a colour the box cannot parse before the run, in the printed label', async () => {
     await expect(runPdf('text-color', { to: 'notacolor', pages: '1' })).rejects.toThrow(/New colour/u);
     await expect(runPdf('text-color', { to: 'notacolor', pages: '1' })).rejects.not.toThrow(/ for to\./u);

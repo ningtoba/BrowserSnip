@@ -1573,7 +1573,7 @@ export const editTools: PdfToolDefinition[] = [
     ],
     notes: [
       'Flat colour only. For an image behind the page use Add Watermark with Placement: Behind content.',
-      'Opacity below 1 lets the page\u2019s own paper show through, which is what a reading tint wants; at 1 the fill repaints every white pixel it covers.',
+      'Below 1 the fill is a wash the paper shows through; at 1 it repaints the bare paper it covers. It lands behind the page\u2019s own content, so a page that paints its own paper \u2014 a white background rectangle, a scanned sheet \u2014 keeps showing that paint.',
       'The rectangle covers each page\u2019s own crop box, so mixed sizes stay covered edge to edge.',
       'A page that declares an empty /CropBox is left unpainted and named: painting its media box would cover an area the file says is not there.',
     ],
