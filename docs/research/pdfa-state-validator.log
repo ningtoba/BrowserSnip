@@ -1,0 +1,97 @@
+===== engine path · colour.pdf claimed 2b  (veraPDF -f 2b)
+isCompliant="true"
+passedRules="144"
+failedRules="0"
+passedChecks="1105"
+failedChecks="0"
+===== local path · colour.pdf claimed 2b  (veraPDF -f 2b)
+isCompliant="false"
+passedRules="143"
+failedRules="1"
+passedChecks="1671"
+failedChecks="1"
+failedChecks="1"
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+===== engine path · meta.pdf claimed 1b  (veraPDF -f 1b)
+isCompliant="true"
+passedRules="129"
+failedRules="0"
+passedChecks="1056"
+failedChecks="0"
+===== local path · meta.pdf claimed 1b  (veraPDF -f 1b)
+isCompliant="false"
+passedRules="123"
+failedRules="6"
+passedChecks="1655"
+failedChecks="6"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+clause="6.1.4" testNumber="3" status="failed" failedCh
+clause="6.7.3" testNumber="5" status="failed" failedCh
+clause="6.7.3" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="8" status="failed" failedCh
+clause="6.7.3" testNumber="4" status="failed" failedCh
+clause="6.3.4" testNumber="1" status="failed" failedCh
+===== local path · attach.pdf claimed 1b (carries an embedded file)  (veraPDF -f 1b)
+isCompliant="false"
+passedRules="123"
+failedRules="6"
+passedChecks="1688"
+failedChecks="7"
+failedChecks="1"
+failedChecks="2"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+clause="6.1.4" testNumber="3" status="failed" failedCh
+clause="6.1.11" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="8" status="failed" failedCh
+clause="6.1.11" testNumber="2" status="failed" failedCh
+clause="6.3.4" testNumber="1" status="failed" failedCh
+===== engine path · attach.pdf claimed 3b  (veraPDF -f 3b)
+isCompliant="false"
+passedRules="144"
+failedRules="2"
+passedChecks="1188"
+failedChecks="4"
+failedChecks="2"
+failedChecks="2"
+clause="6.8" testNumber="1" status="failed" failedCh
+clause="6.8" testNumber="3" status="failed" failedCh
+===== local path · annot.pdf claimed 3b  (veraPDF -f 3b)
+isCompliant="false"
+passedRules="144"
+failedRules="2"
+passedChecks="2112"
+failedChecks="3"
+failedChecks="1"
+failedChecks="2"
+clause="6.3.2" testNumber="1" status="failed" failedCh
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+===== engine path · annot.pdf claimed 2b (has marks and a link)  (veraPDF -f 2b)
+isCompliant="true"
+passedRules="144"
+failedRules="0"
+passedChecks="1486"
+failedChecks="0"
+===== CONTROL · the untouched source, claimed nothing  (veraPDF -f 2b)
+isCompliant="false"
+passedRules="140"
+failedRules="4"
+passedChecks="1445"
+failedChecks="83"
+failedChecks="1"
+failedChecks="1"
+failedChecks="80"
+failedChecks="1"
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+clause="6.6.2.1" testNumber="1" status="failed" failedCh
+clause="6.2.4.3" testNumber="2" status="failed" failedCh
+clause="6.1.3" testNumber="1" status="failed" failedCh
+DONE

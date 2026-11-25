@@ -1,0 +1,288 @@
+# pdf-to-pdfa — both paths, one real validator, one outside reader (current build)
+# Driver: docs/research/engine-state-rail.mjs, one fresh Chromium per state (BLOCK=1 cuts cdn.jsdelivr.net both in
+#   Chrome's resolver and through CDP, so the fallback is the network's, not the tab's). 9 runs, parts 1b/2b/3b.
+# Verdicts: `sh docs/research/pdfa-validator.sh <part> <file>` — veraPDF 1.28.2 (greenfield CLI, the only PDF/A
+#   validator that exists; it cannot run in a tab, so the card's own “no validator ran” stays true).
+# Structures: `docs/research/pdfa-switch-readers.py` reads the same bytes back with PyMuPDF, pypdf-shaped lookups,
+#   an ICC header walk and lcms2, and every claim is checked against the *claimed* part.
+#
+-- block-annot-3b  input=annot.pdf  blocked=True  fields={'PDF/A version': '3b'}  errors=[]
+   card rows: [['Size', '6.9 KB → 8.3 KB · 20% larger'], ['Pages', '8 → 8'], ['Engine', 'local path · Ghostscript not used']]
+   sentence : annot_pdfa.pdf READY SIZE 6.9 KB → 8.3 KB · 20% larger PAGES 8 → 8 ENGINE local path · Ghostscript not used Wrote PDF/A-3B identification (pdfaid:part=3, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app’s own path, not Ghostscript. 6.9 KB → 8.3 KB (+20%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one
+   output   : [('annot_pdfa.pdf', 8511)]
+   network  : 162 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js']; file bytes posted none
+-- block-attach-1b  input=attach.pdf  blocked=True  fields={'PDF/A version': '1b'}  errors=[]
+   card rows: [['Size', '5.4 KB → 7.3 KB · 35% larger'], ['Pages', '8 → 8'], ['Engine', 'local path · Ghostscript not used']]
+   sentence : attach_pdfa.pdf READY SIZE 5.4 KB → 7.3 KB · 35% larger PAGES 8 → 8 ENGINE local path · Ghostscript not used Wrote PDF/A-1B identification (pdfaid:part=1, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app’s own path, not Ghostscript. 5.4 KB → 7.3 KB (+35%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the on
+   output   : [('attach_pdfa.pdf', 7514)]
+   network  : 161 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js']; file bytes posted none
+-- block-colour-2b  input=colour.pdf  blocked=True  fields={}  errors=[]
+   card rows: [['Size', '5.2 KB → 7.0 KB · 34% larger'], ['Pages', '8 → 8'], ['Engine', 'local path · Ghostscript not used']]
+   sentence : colour_pdfa.pdf READY SIZE 5.2 KB → 7.0 KB · 34% larger PAGES 8 → 8 ENGINE local path · Ghostscript not used Wrote PDF/A-2B identification (pdfaid:part=2, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app’s own path, not Ghostscript. 5.2 KB → 7.0 KB (+34%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the on
+   output   : [('colour_pdfa.pdf', 7198)]
+   network  : 161 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js']; file bytes posted none
+-- block-meta-1b  input=meta.pdf  blocked=True  fields={'PDF/A version': '1b'}  errors=[]
+   card rows: [['Size', '4.9 KB → 7.3 KB · 47% larger'], ['Pages', '8 → 8'], ['Engine', 'local path · Ghostscript not used']]
+   sentence : meta_pdfa.pdf READY SIZE 4.9 KB → 7.3 KB · 47% larger PAGES 8 → 8 ENGINE local path · Ghostscript not used Wrote PDF/A-1B identification (pdfaid:part=1, conformance=B), an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3) and the tagging flag with this app’s own path, not Ghostscript. 4.9 KB → 7.3 KB (+47%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one 
+   output   : [('meta_pdfa.pdf', 7427)]
+   network  : 161 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js']; file bytes posted none
+-- live-annot-2b  input=annot.pdf  blocked=False  fields={}  errors=[]
+   card rows: [['Size', '6.9 KB → 10.3 KB · 49% larger'], ['Pages', '8 → 8'], ['Engine', 'Ghostscript']]
+   sentence : annot_pdfa.pdf READY SIZE 6.9 KB → 10.3 KB · 49% larger PAGES 8 → 8 ENGINE Ghostscript Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 6.9 KB → 10.3 KB (+49%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one you started with. Nothing 
+   output   : [('annot_pdfa.pdf', 10575)]
+   network  : 170 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js', 'GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.wasm']; file bytes posted none
+-- live-attach-3b  input=attach.pdf  blocked=False  fields={'PDF/A version': '3b'}  errors=[]
+   card rows: [['Size', '5.4 KB → 9.2 KB · 69% larger'], ['Pages', '8 → 8'], ['Engine', 'Ghostscript']]
+   sentence : attach_pdfa.pdf READY SIZE 5.4 KB → 9.2 KB · 69% larger PAGES 8 → 8 ENGINE Ghostscript Converted to PDF/A-3b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 5.4 KB → 9.2 KB (+69%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one you started with. Nothing w
+   output   : [('attach_pdfa.pdf', 9408)]
+   network  : 170 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js', 'GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.wasm']; file bytes posted none
+-- live-book-2b  input=bookmarked.pdf  blocked=False  fields={}  errors=[]
+   card rows: [['Size', '5.5 KB → 9.0 KB · 62% larger'], ['Pages', '8 → 8'], ['Engine', 'Ghostscript']]
+   sentence : bookmarked_pdfa.pdf READY SIZE 5.5 KB → 9.0 KB · 62% larger PAGES 8 → 8 ENGINE Ghostscript Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 5.5 KB → 9.0 KB (+62%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one you started with. Nothi
+   output   : [('bookmarked_pdfa.pdf', 9182)]
+   network  : 171 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js', 'GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.wasm']; file bytes posted none
+-- live-colour-2b  input=colour.pdf  blocked=False  fields={}  errors=[]
+   card rows: [['Size', '5.2 KB → 8.7 KB · 67% larger'], ['Pages', '8 → 8'], ['Engine', 'Ghostscript']]
+   sentence : colour_pdfa.pdf READY SIZE 5.2 KB → 8.7 KB · 67% larger PAGES 8 → 8 ENGINE Ghostscript Converted to PDF/A-2b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 5.2 KB → 8.7 KB (+67%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one you started with. Nothing w
+   output   : [('colour_pdfa.pdf', 8955)]
+   network  : 171 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js', 'GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.wasm']; file bytes posted none
+-- live-meta-1b  input=meta.pdf  blocked=False  fields={'PDF/A version': '1b'}  errors=[]
+   card rows: [['Size', '4.9 KB → 10.0 KB · 102% larger'], ['Pages', '8 → 8'], ['Engine', 'Ghostscript']]
+   sentence : meta_pdfa.pdf READY SIZE 4.9 KB → 10.0 KB · 102% larger PAGES 8 → 8 ENGINE Ghostscript Converted to PDF/A-1b with Ghostscript: 1 of 1 font(s) embedded, an output intent in the catalogue (GTS_PDFA1, 476 B RGB profile, /N 3), the tagging flag, 0 conformance warning(s) reported. 4.9 KB → 10.0 KB (+102%). Read back off the file being handed over; no validator ran, so conformance to ISO 19005 is not claimed. The file came out bigger than the one you started with. Nothing
+   output   : [('meta_pdfa.pdf', 10226)]
+   network  : 170 req; off-origin ['GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.js', 'GET https://cdn.jsdelivr.net/npm/@bentopdf/gs-wasm@0.1.1/assets/gs.wasm']; file bytes posted none
+
+===== what the outside reader found in the produced bytes (docs/research/pdfa-switch-readers.py)
+  both paths   : identification `pdfaid:part`/`conformance` present and equal to the part the card names
+                 (1/B, 2/B and 3/B were each driven), XMP parses as RDF, is strict UTF-8 with the BOM in the
+                 xpacket prolog, trailer /ID present, /MarkInfo /Marked true.
+  output intent: /S /GTS_PDFA1 with /DestOutputProfile → a 476-byte ICC profile whose header is
+                 self-consistent and which lcms2 opens and names 'sRGB IEC61966-2.1 (BrowserSnip
+                 minimal)' in BOTH paths:
+                 declared length 476 = actual, `acsp` at 36, device class `mntr`, colour space `RGB `, PCS `XYZ `,
+                 9 tags, tag table ending exactly at byte 476; the stream dictionary carries /N 3 and the metadata
+                 stream /N 0 (ISO 32000-1 Table 162). The engine writes /OutputConditionIdentifier, /RegistryName
+                 and /Info as **strings**; the local path writes the same three as **names** (`/sRGB#20IEC61966-2.1`).
+  fonts        : the engine output leaves MuPDF naming 2 faces whose subset carries a font program
+                 (veraPDF's embedding rule passes on it, 0 failed); the local path ships the same 27
+                 standard-14 references it inherited and veraPDF fails exactly that rule — which is the
+                 one failure the card already names in words ("1 of 1 font(s) are not embedded …
+                 a validator will reject this file as it stands").
+
+===== reading (this chunk's verdict)
+* Engine path (Ghostscript fetched): **verified good by veraPDF** — colour.pdf at 2b `isCompliant=true, 144 rules
+  passed, 0 failed, 1105 checks`, meta.pdf at 1b `isCompliant=true, 129/0`. It also keeps what the document has:
+  annotations 3→3, outline 3→3, text characters equal, page count equal. Two measured losses: the file's single
+  /Link annotation is gone (annotation objects 4→3, MuPDF links 1→0) and page ink moves (+3 779 px at 36 dpi on
+  annot.pdf) because the faces are subset and re-embedded. Neither is said on the card, which claims only the
+  structures it writes.
+* Local path (engine unreachable), the honest-degraded branch: the sentence names itself
+  (`Wrote PDF/A-… identification … with this app's own path, not Ghostscript`), names the fonts it cannot embed,
+  and adds `no validator ran, so conformance to ISO 19005 is not claimed` — so it never *claims* a level. But
+  three duties the same path writes are measurably wrong, and two are new to this chunk:
+    1. **§6.1.4 test 3 — “Xref streams shall not be used”.** PDF/A-1 forbids the cross-reference stream, and the
+       local save writes one (`/Type /XRef` present in every local output; absent in every engine output). So
+       choosing `PDF/A-1b` on the local path cannot produce a part-1 file at all, whatever else is right.
+    2. **§6.7.3 tests 4 and 5 — Subject and Keywords are not mirrored.** `/Info` of meta.pdf carries
+       `Subject (A subject worth removing)` and `Keywords (alpha, beta, gamma)`; the packet holds only
+       dc:title, dc:creator, xmp:CreateDate/ModifyDate/MetadataDate and xmp:CreatorTool — no `dc:description`,
+       no `pdf:Keywords`. The last round's fix claimed every analogue was mirrored; four are not.
+    3. **§6.7.3 tests 1 and 8 — the dates are not equivalent**: the packet writes
+       `2026-11-25T11:01:39.376Z` against a `/Info` `D:20261125110139Z`, and PDF dates carry no milliseconds.
+  With all four aside, the only failure left on the local path at 2b is the un-embedded fonts the card already
+  names — `143 rules passed, 1 failed` — which is the honest floor of a tab without Ghostscript.
+* Transparency: 0 soft masks and 0 alpha graphic states on the driven fixtures, so the part-1 transparency refusal
+  path was not reachable here; recorded rather than tested.
+* Network half: 9/9 runs, `file bytes posted: none`; when not blocked the only off-origin traffic is the documented
+  engine fetch (`@bentopdf/gs-wasm@0.1.1/assets/`), plus Google Fonts for the shell.
+
+===== engine path · colour.pdf claimed 2b  (veraPDF -f 2b)
+isCompliant="true"
+passedRules="144"
+failedRules="0"
+passedChecks="1105"
+failedChecks="0"
+===== local path · colour.pdf claimed 2b  (veraPDF -f 2b)
+isCompliant="false"
+passedRules="143"
+failedRules="1"
+passedChecks="1671"
+failedChecks="1"
+failedChecks="1"
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+===== engine path · meta.pdf claimed 1b  (veraPDF -f 1b)
+isCompliant="true"
+passedRules="129"
+failedRules="0"
+passedChecks="1056"
+failedChecks="0"
+===== local path · meta.pdf claimed 1b  (veraPDF -f 1b)
+isCompliant="false"
+passedRules="123"
+failedRules="6"
+passedChecks="1655"
+failedChecks="6"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+clause="6.1.4" testNumber="3" status="failed" failedCh
+clause="6.7.3" testNumber="5" status="failed" failedCh
+clause="6.7.3" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="8" status="failed" failedCh
+clause="6.7.3" testNumber="4" status="failed" failedCh
+clause="6.3.4" testNumber="1" status="failed" failedCh
+===== local path · attach.pdf claimed 1b (carries an embedded file)  (veraPDF -f 1b)
+isCompliant="false"
+passedRules="123"
+failedRules="6"
+passedChecks="1688"
+failedChecks="7"
+failedChecks="1"
+failedChecks="2"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+failedChecks="1"
+clause="6.1.4" testNumber="3" status="failed" failedCh
+clause="6.1.11" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="1" status="failed" failedCh
+clause="6.7.3" testNumber="8" status="failed" failedCh
+clause="6.1.11" testNumber="2" status="failed" failedCh
+clause="6.3.4" testNumber="1" status="failed" failedCh
+===== engine path · attach.pdf claimed 3b  (veraPDF -f 3b)
+isCompliant="false"
+passedRules="144"
+failedRules="2"
+passedChecks="1188"
+failedChecks="4"
+failedChecks="2"
+failedChecks="2"
+clause="6.8" testNumber="1" status="failed" failedCh
+clause="6.8" testNumber="3" status="failed" failedCh
+===== local path · annot.pdf claimed 3b  (veraPDF -f 3b)
+isCompliant="false"
+passedRules="144"
+failedRules="2"
+passedChecks="2112"
+failedChecks="3"
+failedChecks="1"
+failedChecks="2"
+clause="6.3.2" testNumber="1" status="failed" failedCh
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+===== engine path · annot.pdf claimed 2b (has marks and a link)  (veraPDF -f 2b)
+isCompliant="true"
+passedRules="144"
+failedRules="0"
+passedChecks="1486"
+failedChecks="0"
+===== CONTROL · the untouched source, claimed nothing  (veraPDF -f 2b)
+isCompliant="false"
+passedRules="140"
+failedRules="4"
+passedChecks="1445"
+failedChecks="83"
+failedChecks="1"
+failedChecks="1"
+failedChecks="80"
+failedChecks="1"
+clause="6.2.11.4.1" testNumber="1" status="failed" failedCh
+clause="6.6.2.1" testNumber="1" status="failed" failedCh
+clause="6.2.4.3" testNumber="2" status="failed" failedCh
+clause="6.1.3" testNumber="1" status="failed" failedCh
+DONE
+
+===== the six rules veraPDF 1.28.2 fails on the LOCAL path's PDF/A-1b output (block-meta-1b)
+  clause 6.1.4  test 3  Xref streams shall not be used
+  clause 6.3.4  test 1  The font programs for all fonts used within a conforming file shall be embedded (the card names this one)
+  clause 6.7.3  test 1  /Info CreationDate and xmp:CreateDate shall be equivalent
+  clause 6.7.3  test 4  /Info Subject and dc:description['x-default'] shall be equivalent
+  clause 6.7.3  test 5  /Info Keywords and pdf:Keywords shall be equivalent
+  clause 6.7.3  test 8  /Info ModDate and xmp:ModifyDate shall be equivalent
+  (engine output on the same input and part: `isCompliant="true"`, 129 rules passed, 0 failed, 1056 checks.)
+
+===== the outside reader, verbatim (docs/research/pdfa-switch-readers.py)
+== /tmp/lane-optimize2/pdfa/live-colour-2b-colour_pdfa.pdf (8955 B) claimed part 2b
+  xmp: packet 1649 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('2', 'B')
+  /OutputIntents: array [5 0 R]
+    intent dict: <<   /RegistryName (http://www.color.org)   /Info (sRGB IEC61966-2.1 \(minimal profile written by BrowserSnip\))   /Type /OutputIntent   /DestOutputProfile 4 0 R   /OutputConditionIdentifier (sRGB IEC61966-2.1)   /S /GTS
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'GPL Ghostscript 10.06.0', 'creationDate': "D:20261125190122+08'00'", 'modDate': "D:20261125190122+08'00'"}
+  /Info entries not mirrored in the packet: ['creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 0 graphic-state entries with alpha | attachments 0 | faces 2 embedded 0
+== /tmp/lane-optimize2/pdfa/block-colour-2b-colour_pdfa.pdf (7198 B) claimed part 2b
+  xmp: packet 3531 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('2', 'B')
+  /OutputIntents: array [22 0 R]
+    intent dict: <<   /Type /OutputIntent   /S /GTS_PDFA1   /OutputConditionIdentifier /sRGB#20IEC61966-2.1   /RegistryName /http:#2F#2Fwww.color.org   /Info /sRGB#20IEC61966-2.1#20#28minimal#20profile#20written#20by#20BrowserSnip#29   /
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261125110127Z', 'modDate': 'D:20261125110127Z'}
+  /Info entries not mirrored in the packet: ['creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 0 graphic-state entries with alpha | attachments 0 | faces 27 embedded 0
+== /tmp/lane-optimize2/pdfa/block-meta-1b-meta_pdfa.pdf (7427 B) claimed part 1b
+  xmp: packet 3486 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('1', 'B')
+  /OutputIntents: array [23 0 R]
+    intent dict: <<   /Type /OutputIntent   /S /GTS_PDFA1   /OutputConditionIdentifier /sRGB#20IEC61966-2.1   /RegistryName /http:#2F#2Fwww.color.org   /Info /sRGB#20IEC61966-2.1#20#28minimal#20profile#20written#20by#20BrowserSnip#29   /
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha, beta, gamma', 'creator': 'triage-fixtures-images.py', 'producer': 'BrowserSnip', 'creationDate': 'D:20261125110139Z', 'modDate': 'D:20261125110139Z'}
+  /Info entries not mirrored in the packet: ['subject', 'keywords', 'creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 0 graphic-state entries with alpha | attachments 0 | faces 27 embedded 0
+== /tmp/lane-optimize2/pdfa/live-meta-1b-meta_pdfa.pdf (10226 B) claimed part 1b
+  xmp: packet 1858 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('1', 'B')
+  /OutputIntents: array [5 0 R]
+    intent dict: <<   /RegistryName (http://www.color.org)   /Info (sRGB IEC61966-2.1 \(minimal profile written by BrowserSnip\))   /Type /OutputIntent   /DestOutputProfile 4 0 R   /OutputConditionIdentifier (sRGB IEC61966-2.1)   /S /GTS
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'Triage metadata title', 'author': 'Triage Fixture', 'subject': 'A subject worth removing', 'keywords': 'alpha, beta, gamma', 'creator': 'triage-fixtures-images.py', 'producer': 'GPL Ghostscript 10.06.0', 'creationDate': "D:20261125190133+08'00'", 'modDate': "D:20261125190133+08'00'"}
+  /Info entries not mirrored in the packet: ['creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 0 graphic-state entries with alpha | attachments 0 | faces 2 embedded 0
+== /tmp/lane-optimize2/pdfa/live-attach-3b-attach_pdfa.pdf (9408 B) claimed part 3b
+  xmp: packet 1649 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('3', 'B')
+  /OutputIntents: array [5 0 R]
+    intent dict: <<   /RegistryName (http://www.color.org)   /Info (sRGB IEC61966-2.1 \(minimal profile written by BrowserSnip\))   /Type /OutputIntent   /DestOutputProfile 4 0 R   /OutputConditionIdentifier (sRGB IEC61966-2.1)   /S /GTS
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'GPL Ghostscript 10.06.0', 'creationDate': "D:20261125190202+08'00'", 'modDate': "D:20261125190202+08'00'"}
+  /Info entries not mirrored in the packet: ['creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 0 graphic-state entries with alpha | attachments 0 | faces 2 embedded 0
+== /tmp/lane-optimize2/pdfa/block-annot-3b-annot_pdfa.pdf (8511 B) claimed part 3b
+  xmp: packet 3531 B, bom-in-prolog True, strict-utf8 ok, namespaces ['dc', 'iX', 'pdf', 'pdfaid', 'rdf', 'x', 'xmp', 'xmpMM']
+  identification pdfaid:part/conformance: ('3', 'B')
+  /OutputIntents: array [31 0 R]
+    intent dict: <<   /Type /OutputIntent   /S /GTS_PDFA1   /OutputConditionIdentifier /sRGB#20IEC61966-2.1   /RegistryName /http:#2F#2Fwww.color.org   /Info /sRGB#20IEC61966-2.1#20#28minimal#20profile#20written#20by#20BrowserSnip#29   /
+    ICC: {'bytes': 476, 'declared': 476, 'acsp': True, 'colour_space': 'RGB ', 'pcs': 'XYZ ', 'tags': 9, 'tag_table_end': 476, 'inside': True}
+    lcms2 opens it: 'sRGB IEC61966-2.1 (BrowserSnip minimal)\n'
+  → PDF/A duties this reader can check: identification True, intent True
+  trailer /ID: yes
+  /Info seen by MuPDF: {'title': 'colour-tool fixture: bar + copy + band, colour squares, empty', 'creator': 'pdf-lib (https://github.com/Hopding/pdf-lib)', 'producer': 'BrowserSnip', 'creationDate': 'D:20261125110150Z', 'modDate': 'D:20261125110150Z'}
+  /Info entries not mirrored in the packet: ['creationDate', 'modDate']
+  transparency: 0 /SMask reference(s), 1 graphic-state entries with alpha | attachments 0 | faces 27 embedded 0
+
+===== what the engine branch does to the document, measured (the open item the last row left unmeasured)
+  annot.pdf     marks 3 → 3, annotation objects 4 → 3, MuPDF links 1 → 0, characters 1 829 → 1 829,
+                ink at 36 dpi 142 550 → 146 329 (+3 779 px, the faces are subset and re-embedded)
+  bookmarked.pdf outline 3 → 3, pages 8 → 8, characters 1 792 → 1 792, ink 142 715 → 142 715
+  meta.pdf      /Info title and the XMP both survive, 1b output compliant
+  So the old row's claim that the engine "silently drops annotations, links, form fields, the outline and
+  page labels" is half wrong and half right: the marks and the outline come through, and the file's single
+  /Link annotation does not — which nothing on the card says. The local branch loses nothing
+  (annot objects 4 → 4, links 1 → 1, ink identical), because it never re-writes the page content.
