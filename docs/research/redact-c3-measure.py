@@ -8,10 +8,11 @@ place, so every word is looked for four ways per page: MuPDF's `get_text()`, the
 ASCII spelling in the inflated content streams, the per-glyph `<42>` cells
 pdf-lib/MuPDF write inside a `TJ` array, and the contiguous hex of the whole word.
 The run's own fill rectangles are read back out of the page content and compared
-with the **user-space box MuPDF derives for each word** (its derotation matrix),
-which is how a turned sheet is judged: a bar at the mirrored y deletes nothing and
-the card cannot notice. Annotation kinds per page show whether a comment under the
-bar went with the text.
+with the **user-space box MuPDF reports for each word** — MuPDF's `get_text`
+already answers unrotated, so the boxes are only flipped to the content stream's
+bottom-left origin, never derotated again — which is how a turned sheet is judged:
+a bar at the mirrored y deletes nothing and the card cannot notice. Annotation
+kinds per page show whether a comment under the bar went with the text.
 """
 
 from __future__ import annotations
@@ -75,10 +76,21 @@ def main() -> None:
     report = {"source": src, "produced": out, "dpi": dpi, "reopens": od.page_count > 0, "pages": []}
     for i in range(max(len(s_streams), len(o_streams))):
         spage, opage = sd[i], od[i]
-        src_words = [(w[4], fitz.Rect(w[:4]) * spage.derotation_matrix) for w in spage.get_text("words")]
+        # MuPDF's word boxes are already **unrotated** (its `get_text` answers in the
+        # cropbox's own space, y from the top), so the only step left to compare them
+        # with a content-stream `x y w h re` is the origin flip. Derotating them again
+        # — which this probe used to do — turned a correct `/Rotate 90` band into a
+        # 490 pt "error" and a correct redaction into a phantom one.
+        unrotated = spage.cropbox
+        height = unrotated.height
+        src_words = [(w[4], fitz.Rect(w[0], height - w[3], w[2], height - w[1]))
+                     for w in spage.get_text("words")]
         out_text = opage.get_text()
         lost = [w for w, _ in src_words if w not in out_text]
-        # Which letters of a lost word are still in the content, in either spelling.
+        # Which letters of a lost word still have a hex cell anywhere in the
+        # content. Weak on purpose: a cell shared with a surviving word shows up
+        # here (`<45>` E stays because MIKE and eleven spell it), so this column
+        # only says a letter *could* be left — `words_out` is what decides.
         residue: dict[str, list[str]] = {}
         for word, _ in src_words:
             if word not in lost:
@@ -86,16 +98,18 @@ def main() -> None:
             left = [ch for ch in set(word) if f"<{ord(ch):02X}>" in o_streams[i]]
             if left:
                 residue[word] = sorted(left)
+        # `x y w h re` → the corner form the word boxes are reported in.
         fills = [[round(float(v), 2) for v in m] for m in FILL.findall(o_streams[i])]
+        bars = [[x, y, x + w, y + h] for x, y, w, h in fills]
         report["pages"].append({
             "page": i + 1,
             "rotation": [spage.rotation, opage.rotation],
             "words_src": [w for w, _ in src_words],
             "words_out": out_text.split(),
             "lost_words": lost,
-            "letters_still_in_content_of_lost_words": residue,
+            "cells_of_lost_words_present_anywhere_in_content": residue,
             "user_boxes_src": {w: [round(v, 1) for v in r] for w, r in src_words},
-            "fill_rects_user_space": fills,
+            "fill_rects_user_space": bars,
             "annots_src_to_out": [s_annots[i], o_annots[i]],
             "tj_ops_src_to_out": [len(re.findall(r"\bTj\b|\bTJ\b", s_streams[i])),
                                   len(re.findall(r"\bTj\b|\bTJ\b", o_streams[i]))],

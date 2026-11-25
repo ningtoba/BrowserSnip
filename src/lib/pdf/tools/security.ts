@@ -35,7 +35,7 @@ import type { PDFPermissions } from '../core/doc';
 import type { PDFPage } from '../core/doc';
 import { cropBox, formatPages, normaliseRotation } from '../core/pages';
 import type { PageFrame } from '../core/tables';
-import { viewerRectToUserSpace } from '../core/tables';
+import { advancesAlongYAxis, viewerRectToUserSpace } from '../core/tables';
 import { describeEncryption } from '../core/guard';
 import { formatBytes, formatPdfDate, readInfo, readXmp, scrubMetadataText } from '../core/metadata';
 import { listAttachments, removeAttachments } from '../core/attachments';
@@ -2026,29 +2026,48 @@ interface MarkWord {
  * The words of one extracted run, with a box each.
  *
  * pdf.js hands back a run per styling change, which is often a whole line. A
- * run is split on whitespace and its box shared out by character position: the
- * mark/word overlap only decides which words are *candidates* for verification,
- * so an approximate box widens the sample without ever letting a redaction pass
- * a word it did not delete.
+ * run is split on whitespace and its box shared out by character position — along
+ * **the axis the run advances on**. `ux`/`uy` is the em axis the text layer
+ * measures, so the advance axis is the one perpendicular to it; a `/Rotate 90`
+ * sheet paints its sentences as vertical strips (`w` is the face's height, `h` the
+ * length of the line), and sharing such a box along x gave every word on the line
+ * the line's own centre. A mark over one word then reported the other three as
+ * still extractable *under it*, which is the card lying about a redaction that
+ * worked. Where no direction is reported at all, the box's long edge is the
+ * advance axis.
  */
 function wordsOfRun(item: ExtractedTextItem): MarkWord[] {
   const text = item.str ?? '';
   if (text.trim() === '') return [];
   const boxWidth = Math.abs(item.w) || 1;
-  const height = Math.abs(item.h) || 1;
+  const boxHeight = Math.abs(item.h) || 1;
+  const alongY = advancesAlongYAxis({
+    width: boxWidth,
+    height: boxHeight,
+    ux: item.ux,
+    uy: item.uy,
+  });
   const out: MarkWord[] = [];
   const pattern = /\S+/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const start = match.index / text.length;
     const end = (match.index + match[0].length) / text.length;
-    out.push({
-      word: match[0],
-      x: item.x + start * boxWidth,
-      y: item.y,
-      width: (end - start) * boxWidth,
-      height,
-    });
+    out.push(alongY
+      ? {
+        word: match[0],
+        x: item.x,
+        y: item.y + start * boxHeight,
+        width: boxWidth,
+        height: (end - start) * boxHeight,
+      }
+      : {
+        word: match[0],
+        x: item.x + start * boxWidth,
+        y: item.y,
+        width: (end - start) * boxWidth,
+        height: boxHeight,
+      });
   }
   return out;
 }

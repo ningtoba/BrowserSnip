@@ -14,6 +14,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useFileStore } from '@/stores/file-store';
 import { toExtractedItems, type ExtractedTextItem } from '@/lib/pdf/core/render';
+import { advancesAlongYAxis } from '@/lib/pdf/core/tables';
 import { snapTextLines, type SnappedLine } from '@/components/tools/pdf/editor/quads';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -120,14 +121,22 @@ const MIN_SIZE_FRAC = 0.01;
  * the cross-axis band is the snapped box's own business (that is what makes a
  * mark cover the words and not the leading); the extent along the line is the
  * drag's. A line the drag leaves nothing of is dropped.
+ *
+ * “Along the line” is not “along x”: on a `/Rotate 90` sheet a sentence is a
+ * vertical strip, and trimming its width — already inside the drag — left the
+ * whole line in the mark, so one dragged word deleted the sentence around it
+ * (measured: a band over `NOVEMBER` took `MIKE`, `ten` and `eleven` with it).
+ * `advancesAlongYAxis` is the same axis truth the mark’s word report uses.
  */
 export function clipLinesToDrag(
   lines: SnappedLine[],
-  drag: { x0: number; x1: number },
+  drag: { x0: number; x1: number; y0: number; y1: number },
 ): SnappedLine[] {
   return lines
-    .map((line) => ({ ...line, x0: Math.max(line.x0, drag.x0), x1: Math.min(line.x1, drag.x1) }))
-    .filter((line) => line.x1 > line.x0);
+    .map((line) => (advancesAlongYAxis({ width: line.x1 - line.x0, height: line.y1 - line.y0 })
+      ? { ...line, y0: Math.max(line.y0, drag.y0), y1: Math.min(line.y1, drag.y1) }
+      : { ...line, x0: Math.max(line.x0, drag.x0), x1: Math.min(line.x1, drag.x1) }))
+    .filter((line) => line.x1 > line.x0 && line.y1 > line.y0);
 }
 
 export function redactionFromLines(
@@ -221,26 +230,19 @@ export function RedactMain() {
         const doc = await pdfjsLib.getDocument({ data: buf }).promise;
         setPdfDoc(doc);
         setRedactPage({ totalPages: doc.numPages });
-        const pageIdx = Math.min(_state.page - 1, doc.numPages - 1);
-        const page = await doc.getPage(pageIdx + 1);
-        const natVp = page.getViewport({ scale: 1 });
-        _pageW = natVp.width; _pageH = natVp.height;
-        itemsRef.current = toExtractedItems(await page.getTextContent(), pageIdx + 1, natVp);
-        const vp = page.getViewport({ scale: DISPLAY_SCALE });
-        canvasRef.current!.width = vp.width;
-        canvasRef.current!.height = vp.height;
-        setCanvasDims({ w: vp.width, h: vp.height });
-        await page.render({ canvasContext: canvasRef.current!.getContext('2d')!, viewport: vp }).promise;
-        setLoading(false);
-      } catch { setLoading(false); }
+        // The sheet itself is painted by the page effect below: while this effect
+        // runs, `loading` is still true, so the canvas is not in the tree yet and
+        // a `canvasRef.current.width` written here lands on nothing.
+      } catch { /* the page effect reports an unpaintable sheet */ }
+      setLoading(false);
     };
     load();
   }, [file]);
 
-  // ── Re-render on page change ────────────────────────────────
+  // ── Paint the sheet (first frame and every page change) ───────
 
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return;
+    if (!pdfDoc || loading || !canvasRef.current) return;
     (async () => {
       try {
         const pageIdx = Math.min(st.page - 1, pdfDoc.numPages - 1);
@@ -260,7 +262,7 @@ export function RedactMain() {
         await page.render({ canvasContext: canvasRef.current!.getContext('2d')!, viewport: vp }).promise;
       } catch { /* render error */ }
     })();
-  }, [pdfDoc, st.page]);
+  }, [pdfDoc, st.page, loading]);
 
   // ── Keyboard ────────────────────────────────────────────────
 

@@ -109,13 +109,53 @@ await ev(`(()=>{window.__blobs=[];const o=URL.createObjectURL.bind(URL);URL.crea
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
   await send('DOM.setFileInputFiles', { nodeId, files: [PDF] });
 }
+/**
+ * `<canvas width>`/`<canvas height>` plus a cheap hash of the whole painted
+ * bitmap. A freshly mounted canvas carries the HTML default 300×150
+ * and passed the old `> 50` gate, so the first drag of every run was aimed at a
+ * sheet pdf.js had not sized yet: it drew no mark, printed no notice, and the
+ * `no words under that box` sentence the run then reported belonged to a 300×150
+ * canvas, not to the page. The size says the sheet is laid out, the pixels say it
+ * is the sheet the click is about to land on.
+ */
+const STAMP_EXPR = `(()=>{const c=[...document.querySelectorAll('canvas')].sort((a,b)=>b.width*b.height-a.width*a.height)[0];if(!c)return '';
+  const g=c.getContext('2d');if(!g)return c.width+'x'+c.height+':nogc';
+  const d=g.getImageData(0,0,c.width,c.height).data;
+  let h=0;for(let i=0;i<d.length;i+=148)h=(h*31+d[i]+d[i+1]*3)>>>0;
+  return c.width+'x'+c.height+':'+h})()`;
+const canvasStamp = () => ev(STAMP_EXPR);
 // The pane renders the first sheet with pdf.js; nothing may be drawn before the
 // canvas has its viewport size.
-if (!await wait(`(()=>{const c=document.querySelector('canvas');return !!c && c.width>50 && c.height>50})()`, 90000)) {
-  console.log('screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
-  await shot(SHOT);
-  throw new Error('the pane never rendered a page');
+const sheetSized = () => ev(`(()=>{const cs=[...document.querySelectorAll('canvas')];
+  return cs.some(c=>!(c.width===300&&c.height===150)&&c.width>=100&&c.height>=100)})()`);
+/**
+ * The pane paints its first sheet from a `[pdfDoc, page]` effect, and the effect
+ * that read the file only reaches `canvas.width` if React has already swapped the
+ * loading branch out for the canvas. When the worker answers fast the two state
+ * updates land in one commit and the canvas is still the browser's default
+ * 300×150 — nothing repaints it until the sheet changes, so a turn (and back) is
+ * both the recovery and the proof that the sheet is paintable at all.
+ */
+const nudgeForPaint = async () => {
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/Next/.test(x.innerText));b&&!b.disabled&&b.click();return 1})()`);
+  await sleep(1500);
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/Prev/.test(x.innerText));b&&!b.disabled&&b.click();return 1})()`);
+  await sleep(1500);
+};
+if (!await wait(`(()=>{const cs=[...document.querySelectorAll('canvas')];
+  return cs.some(c=>!(c.width===300&&c.height===150)&&c.width>=100&&c.height>=100)})()`, 90000)) {
+  await nudgeForPaint();
+  if (!await wait(sheetSized, 30000)) {
+    console.log('screen says:', JSON.stringify(await ev(`(document.body.innerText||'').slice(0,1200)`)));
+    await shot(SHOT);
+    throw new Error('the pane never rendered a page');
+  }
+  console.log('recovered: the first sheet only painted after a page turn');
 }
+console.log('canvas ready:', JSON.stringify(await canvasStamp()));
+// The size lands before pdf.js finishes painting; a drag in that gap measures an
+// empty text layer.
+await sleep(1200);
 
 if (FILL) {
   const written = await ev(`(()=>{const c=document.querySelector('input[type=color]');if(!c)return 'NO CONTROL';
@@ -135,7 +175,7 @@ for (const key of FLIP) {
     const box=body&&body.querySelector('input[type=checkbox]');return box?(box.checked?'on':'off'):'NO CONTROL'})()`));
 }
 
-const canvasBox = async () => JSON.parse(await ev(`(()=>{const c=document.querySelector('canvas');const r=c.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`));
+const canvasBox = async () => JSON.parse(await ev(`(()=>{const c=[...document.querySelectorAll('canvas')].sort((a,b)=>b.width*b.height-a.width*a.height)[0];const r=c.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`));
 // The pane remembers the sheet it is on, so the walk has to as well: a step that
 // drew nothing used to leave the counter behind and every later step skipped a
 // sheet.
@@ -145,10 +185,17 @@ const goPage = async (n) => {
   while ((await label()) !== n) {
     const current = (await label()) || atPage;
     const forward = current < n;
+    const painted = await canvasStamp();
     const ok = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/${forward ? 'Next' : 'Prev'}/.test(x.innerText));if(!b||b.disabled)return 0;b.click();return 1})()`);
     if (!ok) throw new Error(`no ${forward ? 'Next' : 'Prev'} button to page ${n} from ${current}`);
-    await sleep(1200);
-    await wait(`(()=>{const c=document.querySelector('canvas');return !!c&&c.width>50})()`, 20000);
+    // A sheet with the same point size as the last one leaves `canvas.width`
+    // untouched, so the pixels are the only signal that the new page is on the
+    // canvas: dragging in the gap between the click and the paint measures the
+    // previous sheet's text layer.
+    if (!await wait(`${STAMP_EXPR} !== ${JSON.stringify(painted)}`, 20000)) {
+      throw new Error(`the canvas still paints sheet ${current} after turning to ${n} (${JSON.stringify(painted)})`);
+    }
+    await sleep(400);
   }
   atPage = n;
   await sleep(500);

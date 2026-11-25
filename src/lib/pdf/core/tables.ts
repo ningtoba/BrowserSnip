@@ -629,6 +629,32 @@ export function viewerRectToUserSpace(rect: TopLeftBox, frame: PageFrame): QuadR
 }
 
 /**
+ * The axis along which a run of text advances on the *displayed* sheet.
+ *
+ * A run's box is only a bounding box: on a `/Rotate 90` sheet a whole sentence is
+ * 22 pt wide and 213 pt tall, and its words follow the height, not the width. Any
+ * code that shares a run's box out by character position — the words
+ * `redact-pdf` counts as covered by a mark, the band a drag clips a snapped line
+ * down to — has to work along that axis or it trims the wrong edge: sharing the
+ * tall box along x gave every word on the line the line's own centre, and
+ * clipping along x took the whole sentence with the one word that was dragged
+ * across. `ux`/`uy` is the em axis the text layer measures (the run advances
+ * perpendicular to it); where a caller holds only a box, the long edge is the
+ * same fact.
+ */
+export function advancesAlongYAxis(
+  run: { width: number; height: number; ux?: number | undefined; uy?: number | undefined },
+): boolean {
+  const ux = Number.isFinite(run.ux) ? (run.ux as number) : 0;
+  const uy = Number.isFinite(run.uy) ? (run.uy as number) : 0;
+  if (ux === 0 && uy === 0) return run.height > run.width;
+  // The up vector points from the baseline to the ascenders; the pen travels
+  // ninety degrees from it, so the run stands up (x-advance) when `uy` is the
+  // dominant component and lies on its side (y-advance) when `ux` is.
+  return Math.abs(ux) > Math.abs(uy);
+}
+
+/**
  * The root `<g transform="matrix(...)">` that turns unrotated PDF user space
  * into SVG output space (origin top-left, y down) for a page's `/Rotate`.
  * This is the forward direction of {@link viewerRectToUserSpace}.

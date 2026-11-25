@@ -82,19 +82,32 @@ def build(path: str) -> None:
 
 
 def drags(path: str) -> dict[int, list[dict[str, float]]]:
-    """Drag rectangles as fractions of each sheet's *displayed* canvas."""
+    """Drag rectangles as fractions of each sheet's *displayed* canvas.
+
+    MuPDF's `search_for` answers in **unrotated** page space (its word boxes carry
+    the mediabox's own height), while the pane drags in the space the sheet is
+    *painted* in. For a `/Rotate 90` sheet the two differ by a quarter turn: the
+    line MuPDF boxes at `x 130.3..221.8, y 102.8..124.8` is painted as a vertical
+    strip at `x 717.2..739.2, y 130.3..221.8` (measured on the rendered sheet: the
+    ink of those lines spans x 687..733). Dividing the unrotated numbers by the
+    displayed size — what this function used to do — aimed every turned-sheet drag
+    at blank paper, and the pane's "no words under that box" was its own instrument
+    being wrong, not the tool's. `page.rotation_matrix` is the reader's own
+    unrotated → displayed mapping, so the fractions now land on the glyphs.
+    """
     out: dict[int, list[dict[str, float]]] = {}
     doc = fitz.open(path)
     for sheet, words in TARGETS.items():
         page = doc[sheet - 1]
         canvas = page.rect  # displayed space (rotation folded in)
+        turn = page.rotation_matrix
         steps = []
         for word in words:
             found = page.search_for(word)
             if not found:
                 # the scanned sheet keeps its word inside the bitmap
                 continue
-            r = found[0]
+            r = found[0] * turn
             steps.append({"x0": round((r.x0 - canvas.x0) / canvas.width, 4),
                           "y0": round((r.y0 - canvas.y0) / canvas.height - 0.004, 4),
                           "x1": round((r.x1 - canvas.x0) / canvas.width, 4),
@@ -132,6 +145,29 @@ def main() -> None:
     plan = drags(path)
     steps = [{"page": sheet, "drags": steps_} for sheet, steps_ in sorted(plan.items())]
     print("DRAGS=" + json.dumps(steps))
+    # The same rectangles in the two spaces the tool and the judge speak, so a pin
+    # can quote the reader instead of a hand-worked flip: `displayed` is what the
+    # pane paints and drags in (MuPDF's box under `rotation_matrix`), `user` is the
+    # bottom-left-origin box the content stream has to be cut in.
+    aimed = fitz.open(path)
+    for sheet, steps_ in sorted(plan.items()):
+        page = aimed[sheet - 1]
+        height = page.cropbox.height
+        for step in steps_:
+            dx = round(step["x0"] * page.rect.width, 1)
+            dy = round(step["y0"] * page.rect.height, 1)
+            dw = round((step["x1"] - step["x0"]) * page.rect.width, 1)
+            dh = round((step["y1"] - step["y0"]) * page.rect.height, 1)
+            # The band in the content stream’s own space: the reader’s derotation
+            # back to the unrotated sheet, then the origin flip. This is the pair a
+            # pin compares against `viewerRectToUserSpace`.
+            back = fitz.Rect(dx, dy, dx + dw, dy + dh) * page.derotation_matrix
+            print("AIM sheet %d rot=%d displayed=%s user=%s" % (
+                sheet, page.rotation,
+                [dx, dy, round(dx + dw, 1), round(dy + dh, 1)],
+                [round(back.x0, 1), round(height - back.y1, 1),
+                 round(back.x1, 1), round(height - back.y0, 1)]))
+    aimed.close()
 
 
 if __name__ == "__main__":
