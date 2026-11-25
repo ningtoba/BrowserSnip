@@ -25,6 +25,7 @@ import {
   PDFRef,
   StandardFonts,
   decodePDFRawStream,
+  degrees,
   rgb,
 } from '@maxwbh/pdf-lib';
 import { drawSignatureMarks, type SignatureMark } from '@/lib/pdf-engine/commands';
@@ -194,5 +195,61 @@ describe('a placed signature lands where the pane put it', () => {
     const paint = imagePaint(contentText(doc, 1));
     expect(paint.move).toBe('1 0 0 1 20 30 cm');
     expect(paint.size).toMatch(/^380(\.0+)? 0 0 40(\.0+)? 0 0 cm$/);
+  });
+
+  it('lands a mark dragged on a /Rotate 90 sheet where it was dragged, upright as displayed', async () => {
+    // The pane measures the DISPLAYED sheet — `SignMain.tsx` paints its overlay on
+    // the pdf.js viewport, which carries `/Rotate` — so the fractions and point
+    // sizes arrive in the rotated frame, while `/Rotate 90` stores a 595 x 842
+    // sheet shown as 842 x 595. A mark dropped at display fractions (0.05, 0.72)
+    // with a 120 x 40 pt box therefore occupies displayed x 42.1..162.1 and rows
+    // 126.6..166.6 from the top (its bottom edge sits 428.4 pt up). The viewer
+    // table for `/Rotate 90` maps a displayed point to stored `(py, px)`, so that
+    // box is stored as x 126.6..166.6, y 42.1..162.1, and a run that reads
+    // left-to-right ON SCREEN must advance along stored +y: pdf-lib turns content
+    // counter-clockwise with `rotate`, anchored at its local lower-left, so the
+    // anchor is the stored corner the DISPLAYED lower-left lands on — (166.6,
+    // 42.1) — behind the matrix `0 1 -1 0 … cm`. A build that converts against
+    // the stored box instead lands the mark a quarter-turn away at (29.75, 606.24)
+    // lying on its side, which is what `legacy-pane-cards.mjs sign-turned` shows.
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const turned = doc.addPage([595, 842]);
+    turned.setRotation(degrees(90));
+    turned.drawText('alice1bravo', { x: 30, y: 421, size: 12, font, color: rgb(0, 0, 0) });
+    const flat = doc.addPage([595, 842]);
+    flat.drawText('alice2bravo', { x: 30, y: 421, size: 12, font, color: rgb(0, 0, 0) });
+
+    const outcome = await drawSignatureMarks(doc, [
+      imageMark({ page: 1, x: 0.05, y: 0.72 }),
+      { type: 'text', text: 'Ada Lovelace', page: 1, x: 0.05, y: 0.72, width: 120, height: 40, fontFamily: 'Helvetica' },
+      imageMark({ page: 2, x: 0.05, y: 0.72 }),
+    ]);
+    expect(outcome.placed).toBe(3);
+    expect(outcome.notes).toEqual([]);
+
+    const turnedPaint = contentText(doc, 0);
+    const moves = placedBoxes(turnedPaint).filter((m) => !/^120(\.0+)? 0 0 40(\.0+)? 0 0 cm$/.test(m));
+    const image = moves.find((m) => /^0(\.0+)? 1(\.0+)? -1(\.0+)? 0(\.0+)? /.test(m));
+    expect(image, `the picture was not turned to read left-to-right as displayed: ${moves.join(' | ')}`).toBeTruthy();
+    const [ia, ib, ic, id, ie, ief] = image!.split(' ').map(Number.parseFloat);
+    expect([ia, ib, ic, id]).toEqual([0, 1, -1, 0]);
+    expect(ie).toBeCloseTo(166.6, 1);
+    expect(ief).toBeCloseTo(42.1, 1);
+    // The typed name shares the mapping: its text matrix turns with the page,
+    // and its baseline keeps the box-centring rule lifted along the DISPLAYED
+    // up-axis (a stored -x here): 166.6 - (40 - 26) / 2 = 159.6.
+    expect(pageWords(turnedPaint)).toContain('Ada Lovelace');
+    const tm = turnedPaint.match(/0(\.0+)? 1(\.0+)? -1(\.0+)? 0(\.0+)? [-\d.]+ [-\d.]+ Tm/);
+    expect(tm, 'the typed name did not get a turned text matrix').toBeTruthy();
+    const [te, tf] = tm![0].split(' ').slice(4, 6).map(Number.parseFloat);
+    expect(te).toBeCloseTo(159.6, 1);
+    expect(tf).toBeCloseTo(42.1, 1);
+
+    // The unrotated control page keeps the old rule to the byte: fractions against
+    // the stored box, content on its side — this fix must not disturb it.
+    const flatPaint = contentText(doc, 1);
+    expect(imagePaint(flatPaint).move).toMatch(/^1 0 0 1 29\.7\d* 606\.2\d* cm$/);
+    expect(flatPaint).toMatch(/1 0 0 1 [-\d.]+ [-\d.]+ Tm/);
   });
 });
