@@ -1,0 +1,109 @@
+# round c5 (master 807eaa5 + seam2b, dev :5294, CDP 9844), validate-signature-pdf.
+# Question: do the states stay separate, and is each one named as what it is?
+# Every state was driven live through the pane (validate-signature-probe.mjs, which
+# now also records the network half) and judged against readers sharing no code with
+# the app: `pdfsig` 26.10.0 and `openssl cms -verify` 3.6.5. Fixtures are rebuilt by
+# `docs/research/validate-signature-craft.py /tmp/r/dig-a.pdf /tmp/states` — each one
+# edits bytes IN PLACE (same file length) so only the claim under test moves.
+
+STATE SEPARATION — BEFORE (all ten driven, screenshots in docs/research/shots/)
+  valid        "All 1 signature(s) verify: the signature values match the certificates
+                and every signed byte is unchanged." + self-signed note            OK
+  tampered     "0 of 1 …; 1 were broken by an edit after signing."; row names the
+                changed ranges "the change is inside 0–5160 and 21545–23274"       OK
+  forged value "0 of 1 …; 1 had a signature value that does not match the
+                certificate."; rows split correctly: intact YES / value NO          OK
+                pdfsig agrees on the same bytes: "Signature is Invalid."
+  unsigned     "This document has no digital signature field — nobody has signed it" OK
+  appended     "…verify against the bytes they cover, but 1 does not cover the whole
+                file — bytes after the signed end are outside the signature."       OK
+  expired cert verifies, and the note says the expiry does not undo the signature    OK
+  future cert  verifies, named with "a verifier with a correct clock would reject"   OK
+  ---- four answers were wrong ----
+  prepared and never signed (/FT /Sig, no /V)
+        BEFORE: message "0 of 1 signature(s) verify; … 1 could not be read at all",
+                row "Byte range intact: Not checked — The signature value object is
+                missing." — damage, for a box nobody signed. The card's own fourth
+                note promises "a box somebody prepared and never signed".
+        AFTER : heading "The signature field is empty."; Result "There is 1 signature
+                field(s) with no signature value in them — the document was set up for
+                signing but never signed."; warning "…restricts nothing and proves
+                nothing; the document is unsigned." (shots/val-c5-fixed-empty.png)
+        AND   : a signature that lives only in a page annotation (a merged field+widget,
+                value present, nothing in /AcroForm /Fields) used to get that same
+                "never signed" sentence. It now says "…carry a signature value but are
+                not registered in /AcroForm /Fields" — a third state, kept separate.
+  ranges that do not fit the file (/ByteRange length widened 1730 → 9999 in place)
+        BEFORE: "Signed range: bytes 0–5160 and 21545–31543 of 23275 —  are not covered"
+                — a dangling clause naming nothing, quoting an end past EOF as if it
+                were coverage. (openssl/pdfsig both refuse the file.)
+        AFTER : "…the declared ranges reach to 31544, past the end of this 23275-byte
+                file, so these ranges belong to a different revision of it"
+                (shots/val-c5-fixed-outside.png). The empty-field shape loses the
+                fragment too: "not recorded — this signature declares no byte ranges".
+  SHA-1 signature (the /Contents placeholder refilled with a SHA-1 CMS over the exact
+                same covered bytes: digest intact, value intact, algorithm weak)
+        BEFORE: read identically to a SHA-256 seal — "All 1 signature(s) verify" with
+                no mention of the algorithm. pdfsig calls the hash "SHA1" too.
+        AFTER : same verdict (the byte claims are still true) plus
+                "1 signature(s) were digested with SHA-1, whose chosen-prefix
+                collisions are practical: two different documents can share one
+                digest… Digital Signature writes SHA-256 — re-sign with that if the
+                distinction matters here." Control kept: the SHA-256 file gains no
+                such note (shots/val-c5-fixed-sha1.png).
+  what the signature SAYS (/Reason, /Location, /ContactInfo)
+        BEFORE: never reported at all, although digital-sign's own field help promises
+                the reason "is part of what a validator reports and cannot be quietly
+                reworded later".
+        AFTER : rows Reason / Location / Contact, read from the field the entry belongs
+                to, only when the box was filled (an empty one adds no row), and marked
+                "— text inside the ranges that no longer match, so it may itself have
+                been edited" when the digest broke (shots/val-c5-fixed-valid.png).
+  revocation   BEFORE: "not checked offline — a browser has no OCSP responder access
+                for this chain", note "revocation cannot be checked offline", warning
+                "cannot be checked in the browser" — three phrasings implying a
+                connection would enable a check. Nothing in src/lib/pdf makes an OCSP
+                or CRL request at any time, so all three now say the truth:
+                "not checked — this app makes no OCSP or CRL request, online or
+                offline". `grep -rn "cannot be checked offline" src/` is empty.
+  /Name claim  A signature dictionary can name anyone. The report shows the certificate
+                as the authority ("Signer: BrowserSnip Triage") and, only where the
+                dictionary disagrees, a row "Name in the dictionary: Someone Else — the
+                certificate itself says …; the certificate is what a signature proves,
+                not this line". An honest file gets no such row.
+
+COUNTS STILL SUM (the mixed fixture, one real signature + one empty field, live):
+  "0 of 2 signature(s) verify; 1 were broken by an edit after signing; 1 field holds
+  no signature value at all — prepared and never signed." — the two causes are named
+  separately, and the per-signature rows keep their own verdicts. Before the fix the
+  empty field was folded into "could not be read at all".
+
+INDEPENDENT AGREEMENT on the same bytes (pdfsig, untouched readers):
+  state-tampered   "Digest Mismatch."              | state-forged  "Signature is Invalid."
+  state-sha1       "Signing Hash Algorithm: SHA1", valid | state-appended valid, "Not total document signed"
+  state-outside    "Illegal values in ByteRange array", not verified | state-subfilter "has not yet been verified"
+  dig-expired      "Certificate has Expired"       | dig-weak1024  "issuer isn't Trusted"
+  ts-on-diga       "Signature is Valid." — the timestamp left the seal intact, and
+                   validate reports it as intact (no timestamp row: gap, see below).
+
+NETWORK HALF: "NETWORK: 2 request(s); non-same-origin-or-any-upload: none" — a report
+tool that asks nothing of the world, matching its card ("nothing was uploaded").
+
+DARK MODE: shots/val-c5-dark.png (read) — full row table on tokens, muted labels,
+light mono values, amber warnings legible. No hex literal added (copy and rows only).
+
+LEFT OPEN (measured, not fixed):
+  * 1024-bit RSA key reads exactly like a 4096-bit one ("All 1 verify"), because
+    SignatureInfo in core/signature.ts carries the digest algorithm but no key length
+    — reporting it needs a seam edit (blocker-only file for this lane).
+  * No row reports whether the signature carries a trusted timestamp token, even
+    though timestamp-pdf writes one into the same blob (measured: 891 → 6917 B of CMS,
+    digest intact). Feature gap, not a false promise: the card does not claim it.
+  * The receipt header says "Your file is ready" with a green check for a report-only
+    run that produced no file — the next line says "nothing to download", and the
+    verdict banner is neutral, so it is honest; the phrasing lives in shared/**.
+
+TESTS: tests/pdf/edge-security.test.ts — 17 green in the signature describe;
+  7 red with src/lib/pdf/tools/security.ts stashed (never-signed + orphan split, the
+  intact-report revocation row, Reason/Location/Contact rows, the /Name claim row, the
+  half-signed counts, the SHA-1 note, the past-EOF coverage sentence).

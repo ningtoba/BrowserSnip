@@ -60,6 +60,22 @@ const wait = async (expr, ms = 180000) => {
 
 await send('Page.enable');
 await send('Runtime.enable');
+// The network half: a report tool should ask nothing of the world. Every request
+// from here on is recorded with its method and upload size.
+const net = [];
+const originalOnMessage = ws.onmessage;
+ws.onmessage = (raw) => {
+  try {
+    const m = JSON.parse(raw.data);
+    if (m.method === 'Fetch.requestPaused') {
+      const req = m.params.request;
+      net.push(`${req.method} ${req.url}${req.postData ? ` (${new TextEncoder().encode(req.postData).length} B up)` : ''}`);
+      send('Fetch.continueRequest', { requestId: m.params.requestId }).catch(() => {});
+    }
+  } catch { /* not ours */ }
+  originalOnMessage?.(raw);
+};
+await send('Fetch.enable', { patterns: [{ requestStage: 'Request' }] });
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url: `${BASE}/#/tool/validate-signature-pdf` });
 if (!(await wait(`!!document.querySelector('input[type=file]')`, 60000))) throw new Error('no file input');
@@ -76,7 +92,7 @@ if (!(await wait(`(()=>{const b=[...document.querySelectorAll('button')].find(x=
 }
 await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>/^validate signatures$/i.test((x.innerText||'').trim())&&!x.disabled);b.click();return 1})()`);
 // The report replaces the rail; wait for a verdict row or the "no signature" line.
-if (!(await wait(`/Byte range intact|no digital signature field|signature field exists but|this file is encrypted|Encrypted —/i.test(document.body.innerText||'')`, 120000))) {
+if (!(await wait(`/Byte range intact|no digital signature field|signature field exists but|this file is encrypted|Encrypted —|signature field is empty|not registered in the document form/i.test(document.body.innerText||'')`, 120000))) {
   console.log('NO REPORT — screen:', JSON.stringify((await ev('document.body.innerText') || '').slice(0, 2000)));
   throw new Error('no report rendered');
 }
@@ -89,6 +105,9 @@ if (SHOT) {
 }
 const start = text.indexOf('Digital signatures');
 console.log('REPORT:', JSON.stringify(text.slice(start >= 0 ? start : 0, (start >= 0 ? start : 0) + 2200)));
+const origin = new URL(BASE).origin;
+const notable = net.filter((line) => !line.startsWith('GET ' + origin) && !line.startsWith('GET data:') && !line.startsWith('GET blob:'));
+console.log(`NETWORK: ${net.length} request(s); non-same-origin-or-any-upload: ${notable.length === 0 ? 'none' : JSON.stringify(notable)}`);
 ws.close();
 chrome.kill('SIGKILL');
 process.exit(0);

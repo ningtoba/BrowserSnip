@@ -21,6 +21,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import {
+  PDFArray,
   PDFDict,
   PDFDocument,
   PDFName,
@@ -34,7 +35,7 @@ import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { inspectPdf, validateFields } from '@/lib/pdf/core/guard';
 import { openPDF, saveEncrypted } from '@/lib/pdf/core/doc';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
-import { createSelfSignedCertificate, readSignatures } from '@/lib/pdf/core/signature';
+import { createSelfSignedCertificate, readSignatures, signBytes } from '@/lib/pdf/core/signature';
 import { annotationCount } from '@/lib/pdf/core/annotations';
 import { listAttachments } from '@/lib/pdf/core/attachments';
 import { readOutline } from '@/lib/pdf/core/bookmarks';
@@ -768,7 +769,7 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     expect(outcome.report?.sections[0].rows?.[0].value).toMatch(/nobody has signed it/i);
   }, 120_000);
 
-  it('reports a signature field with no value as unreadable, never as signed', async () => {
+  it('calls a field that was prepared and never signed unsigned, not damage', async () => {
     // The fork has no `createSignatureField`, so the field is written the way a
     // form designer leaves it: a `/Sig` widget in `AcroForm /Fields`, no `/V`.
     const doc = await PDFDocument.load(await plainFixture(1));
@@ -779,11 +780,33 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const bytes = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
 
     const outcome = await run('validate-signature-pdf', {}, [pdfFile(bytes, 'draft.pdf')]);
-    expect(outcome.report?.message).toMatch(/1 could not be read at all/i);
-    expect(outcome.report?.message).not.toMatch(/All 1 signature\(s\) verify/i);
+    // "1 could not be read at all" told the user the file was damaged. Nobody signed
+    // it, which is the card's own fourth note, and the report has to say that.
+    expect(outcome.report?.message).toMatch(/The signature field is empty\./i);
+    expect(outcome.report?.message).not.toMatch(/could not be read at all/i);
     const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
-    expect(rows.get('Byte range intact')).toMatch(/^Not checked/);
-  }, 120_000);
+    expect(rows.get('Result')).toMatch(/no signature value in them[\s\S]*set up for signing but never signed/i);
+    expect(outcome.warnings.join(' ')).toMatch(/proves nothing; the document is unsigned/i);
+    // The state that shares this branch has the opposite story: a signature that
+    // lives only in a page annotation (a merged field+widget, as some producers
+    // write it). It holds a real value and must not be called unsigned.
+    const orphaned = await PDFDocument.load(await bytesOf(
+      await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]),
+    ));
+    const form = orphaned.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
+    const registered = form.lookup(PDFName.of('Fields'), PDFArray);
+    const fieldDict = orphaned.context.lookup(registered.get(0), PDFDict);
+    const widget = orphaned.context.lookup(fieldDict.lookup(PDFName.of('Kids'), PDFArray).get(0), PDFDict);
+    widget.set(PDFName.of('FT'), PDFName.of('Sig'));
+    widget.set(PDFName.of('V'), fieldDict.get(PDFName.of('V')));
+    form.set(PDFName.of('Fields'), orphaned.context.obj([]));
+    const orphanBytes = await orphaned.save({ useObjectStreams: false, updateFieldAppearances: false });
+    const orphanOutcome = await run('validate-signature-pdf', {}, [pdfFile(orphanBytes, 'orphan.pdf')]);
+    expect(orphanOutcome.report?.message).toMatch(/not registered in the document form/i);
+    expect(orphanOutcome.report?.message).not.toMatch(/field is empty/i);
+    expect(orphanOutcome.report?.sections[0].rows?.[0].value).toMatch(/carry a signature value but are not registered/i);
+    expect(orphanOutcome.warnings.join(' ')).toMatch(/page annotation/i);
+  }, 240_000);
 
   it('signs, reads the signature back, and calls it intact', async () => {
     const signed = await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]);
@@ -807,7 +830,12 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
     expect(rows.get('Byte range intact')).toMatch(/^Yes/);
     expect(rows.get('Signer')).toBe('BrowserSnip Edge Tester');
-    expect(rows.get('Revocation')).toMatch(/not checked offline/i);
+    expect(rows.get('Revocation')).toMatch(/not checked — this app makes no OCSP or CRL request, online or offline/i);
+    // The card must not imply a connection would enable a check nothing performs.
+    const validateTool = getPdfTool('validate-signature-pdf') as PdfToolDefinition;
+    expect(`${validateTool.notes?.join(' ') ?? ''} ${outcome.warnings.join(' ')}`)
+      .not.toMatch(/revocation cannot be checked/i);
+    expect(validateTool.notes?.join(' ')).toMatch(/revocation is never checked/i);
     // Integrity is not identity: the caveat has to be on the record.
     expect(outcome.warnings.join(' ')).toMatch(/not confirm the signer is trusted|does not confirm/i);
   }, 180_000);
@@ -944,6 +972,128 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const verified = await run('validate-signature-pdf', {}, [pdfFile(bytes, 'signed.pdf')]);
     expect(verified.report?.message).toMatch(/verify/i);
   }, 180_000);
+
+  it('reports the words the signature carries, and marks them when their bytes no longer match', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', {
+      ...signValues(), reason: 'Approved by hand', location: 'Cambridge', contact: 'ada@example.com',
+    }, [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(signed, 'signed.pdf')]);
+    const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    // Digital Signature's own field help promises the reason "is part of what a
+    // validator reports" — this is the validator, so it has to report it.
+    expect(rows.get('Reason')).toBe('Approved by hand');
+    expect(rows.get('Location')).toBe('Cambridge');
+    expect(rows.get('Contact')).toBe('ada@example.com');
+
+    // Signed again: the earlier revision's ranges no longer match, and the words that
+    // live inside them are quoted with that said, not silently trusted or dropped.
+    const twice = await bytesOf(await run('digital-sign-pdf', {
+      ...signValues(), reason: 'Approved by hand', location: 'Cambridge',
+    }, [pdfFile(signed, 'contract.pdf')]));
+    const second = await run('validate-signature-pdf', {}, [pdfFile(twice, 'twice.pdf')]);
+    const broken = new Map(second.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(broken.get('Byte range intact')).toMatch(/^No/);
+    expect(broken.get('Reason')).toMatch(/^Approved by hand — text inside the ranges that no longer match/);
+
+    // Control: a signature with nothing in those boxes gets no empty rows.
+    const bare = await bytesOf(await run('digital-sign-pdf', {
+      ...signValues(), reason: '', location: '', contact: '',
+    }, [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const bareRows = new Map((await run('validate-signature-pdf', {}, [pdfFile(bare, 'bare.pdf')]))
+      .report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(bareRows.has('Reason'), 'an empty reason still took a row').toBe(false);
+    expect(bareRows.has('Location'), 'an empty location still took a row').toBe(false);
+  }, 300_000);
+
+  it('shows the name the dictionary claims beside the name the certificate proves', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    // `/Name` is a claim the producer writes; the certificate is what can be checked.
+    // Rewritten **in place** — same byte count — so the only thing that changes is the
+    // digest, and the certificate is still readable on the other side of it.
+    const text = latin1.decode(signed);
+    const at = text.lastIndexOf('/Name <');
+    const open = at + '/Name <'.length;
+    const width = text.indexOf('>', open) - open;
+    const wanted = `FEFF${[...'Someone Else'].map((ch) => ch.charCodeAt(0).toString(16).padStart(4, '0')).join('')}`;
+    const hex = `${wanted}${'0'.repeat(Math.max(0, width - wanted.length))}`.slice(0, width);
+    const renamed = new Uint8Array(signed);
+    renamed.set(encoder.encode(hex), open);
+
+    const rows = new Map((await run('validate-signature-pdf', {}, [pdfFile(renamed, 'renamed.pdf')]))
+      .report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(rows.get('Signer'), 'the certificate stopped being the authority').toBe('BrowserSnip Edge Tester');
+    expect(rows.get('Name in the dictionary'))
+      .toMatch(/Someone Else[\s\S]*the certificate itself says BrowserSnip Edge Tester/i);
+    // Editing /Name is editing covered bytes, and that state is reported on its own row.
+    expect(rows.get('Byte range intact')).toMatch(/^No/);
+    // Control: where the two agree, nothing extra is claimed.
+    const control = new Map((await run('validate-signature-pdf', {}, [pdfFile(signed, 'ok.pdf')]))
+      .report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(control.has('Name in the dictionary'), 'an honest file was called a claim').toBe(false);
+  }, 300_000);
+
+  it('counts a field left unsigned separately from a signature that cannot be read', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const doc = await PDFDocument.load(signed);
+    const form = doc.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
+    // A second field the designer prepared and never signed, next to a real signature.
+    const empty = doc.context.register(doc.context.obj({
+      Type: 'Annot', Subtype: 'Widget', FT: 'Sig', T: 'Signature2', Rect: [0, 0, 100, 50],
+    }));
+    form.lookup(PDFName.of('Fields'), PDFArray).push(empty);
+    const bytes = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
+
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(bytes, 'half-signed.pdf')]);
+    expect(outcome.report?.sections).toHaveLength(2);
+    const message = outcome.report?.message ?? '';
+    expect(message).toMatch(/prepared and never signed/i);
+    expect(message, 'an empty field was counted as unreadable damage').not.toMatch(/could not be read at all/i);
+    const rowsOf = (index: number) => new Map(outcome.report!.sections[index].rows?.map((row) => [row.label, row.value]));
+    expect(rowsOf(0).get('Byte range intact')).toMatch(/^(No|Not checked)/);
+    expect(rowsOf(1).get('Byte range intact')).toMatch(/holds no signature value[\s\S]*prepared and never signed/i);
+    expect(rowsOf(1).get('Signature value')).toMatch(/^None — an empty field has no value to check/i);
+    expect(rowsOf(1).get('Signed range')).toMatch(/^not recorded/i);
+    expect(outcome.warnings.join(' ')).toMatch(/no signature value at all/i);
+  }, 300_000);
+
+  it('names a SHA-1 digest as the weak claim it is, and leaves SHA-256 alone', async () => {
+    const weak = await signBytes(await plainFixture(), {
+      certificate: encoder.encode(certificate.certificatePem),
+      privateKey: encoder.encode(certificate.privateKeyPem),
+      digestAlgorithm: 'sha1',
+      visible: false,
+    });
+    const [entry] = await readSignatures(weak.bytes);
+    expect(entry.digestMatches, 'the SHA-1 fixture is not intact to begin with').toBe(true);
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(weak.bytes, 'sha1.pdf')]);
+    const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(rows.get('Digest')).toBe('SHA-1');
+    // The verdict is still true, so it is still said — with the weakness next to it.
+    expect(outcome.report?.message).toMatch(/All 1 signature\(s\) verify/i);
+    expect(outcome.warnings.join(' ')).toMatch(/SHA-1[\s\S]*collision/i);
+
+    // Control: the same document signed the way the tool signs today.
+    const strong = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const clean = await run('validate-signature-pdf', {}, [pdfFile(strong, 'sha256.pdf')]);
+    expect(clean.warnings.join(' ')).not.toMatch(/SHA-1/i);
+  }, 300_000);
+
+  it('says when the declared ranges do not fit this file, without a sentence fragment', async () => {
+    const signed = await bytesOf(await run('digital-sign-pdf', signValues(), [pdfFile(await plainFixture(), 'contract.pdf')]));
+    const text = latin1.decode(signed);
+    const padded = /\/ByteRange \[(\s*)(\d{10})(\s+)(\d{10})(\s+)(\d{10})(\s+)(\d{10})(\s*)\]/.exec(text);
+    expect(padded, 'no fixed-width /ByteRange to rewrite').toBeTruthy();
+    const at = text.lastIndexOf(padded![8]);
+    const bytes = new Uint8Array(signed);
+    // Same character count, a length that walks off the end of the file.
+    bytes.set(encoder.encode('0000009999'), at);
+    const outcome = await run('validate-signature-pdf', {}, [pdfFile(bytes, 'short.pdf')]);
+    const rows = new Map(outcome.report?.sections[0].rows?.map((row) => [row.label, row.value]));
+    expect(rows.get('Byte range intact')).toMatch(/fall outside this file/i);
+    expect(rows.get('Signed range')).toMatch(/the declared ranges reach to \d+, past the end of this \d+-byte file/i);
+    // `bytes 0–… of 1234 —  are not covered` named nothing: no dangling clause.
+    expect(rows.get('Signed range')).not.toMatch(/—\s+are not covered/);
+  }, 300_000);
 });
 
 describe('the rest of the category keeps its promises', () => {

@@ -24,6 +24,7 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  PDFObject,
   PDFRef,
   openPDF,
   savePDF,
@@ -1774,7 +1775,7 @@ export const securityTools: PdfToolDefinition[] = [
     notes: [
       'Intact means two things: the bytes in the signed ranges are unchanged, and the signature value matches the signer\'s certificate. Both are checked, because a blob with its signature value altered still carries a correct digest of the file.',
       'The report names the byte ranges. Bytes outside them — usually a revision appended after signing — are not covered by the signature, so a file can show an intact signature over an old revision.',
-      'The certificate chain is not validated and revocation cannot be checked offline, so this does not tell you the signer is trusted. A self-signed or expired certificate is named but not judged.',
+      'The certificate chain is not validated and revocation is never checked — this app makes no OCSP or CRL request, online or offline — so this does not tell you the signer is trusted. A self-signed or expired certificate is named but not judged.',
       'An empty signature field proves nothing: it is a box somebody prepared and never signed.',
     ],
     async run(context) {
@@ -1811,7 +1812,26 @@ export const securityTools: PdfToolDefinition[] = [
       } catch (error) {
         readFailure = error instanceof Error ? error.message : String(error);
       }
-      if (signatures.length === 0) {
+      /**
+       * A `/Sig` field with no `/V` is a box somebody prepared, not a signature that
+       * failed to read. `readSignatures` answers with an error entry for it, which
+       * reached the user as "1 could not be read at all" — damage, and the report's
+       * only answer — where the card's own fourth note promises "a box somebody
+       * prepared and never signed". The field dictionaries decide, not the error text.
+       */
+      const emptyFieldCount = fields.filter((field) => dictAt(input.doc, field.get(PDFName.of('V'))) === undefined).length;
+      const fieldHasValue = (fieldName: string | undefined): boolean | undefined => {
+        const matches = fields.filter(
+          (field) => (stringAt(input.doc, field.get(PDFName.of('T'))) ?? '') === (fieldName ?? ''),
+        );
+        if (matches.length === 0) return undefined;
+        return matches.some((field) => dictAt(input.doc, field.get(PDFName.of('V'))) !== undefined);
+      };
+      if (signatures.length === 0 || (readFailure === null && fields.length > 0 && emptyFieldCount === fields.length)) {
+        // Two different reasons for an empty reader result, and they used to share one
+        // sentence: a field nobody signed, and a signature that lives only in a page
+        // annotation and so never reaches the form walk.
+        const neverSigned = readFailure === null && emptyFieldCount === fields.length;
         return {
           kind: 'report',
           sections: [{
@@ -1820,13 +1840,21 @@ export const securityTools: PdfToolDefinition[] = [
               label: 'Result',
               value: readFailure
                 ? `The signature field exists but could not be read: ${readFailure}`
-                : `There ${fields.length === 1 ? 'is' : 'are'} ${fields.length} signature field(s) with no signature value in them — the document was set up for signing but never signed.`,
+                : neverSigned
+                  ? `There ${fields.length === 1 ? 'is' : 'are'} ${fields.length} signature field(s) with no signature value in them — the document was set up for signing but never signed.`
+                  : `${fields.length} signature field(s) in this document carry a signature value but are not registered in /AcroForm /Fields, so this reader cannot pair them with a form field. They may still verify in a validator that reads page annotations.`,
             }],
           }],
-          message: 'The signature field is empty.',
-          warnings: fields.length > 0 && readFailure === null
-            ? ['A signature field with no value restricts nothing and proves nothing; the document is unsigned.']
-            : [],
+          message: readFailure
+            ? 'The signature could not be read.'
+            : neverSigned
+              ? 'The signature field is empty.'
+              : 'The signature is not registered in the document form.',
+          warnings: readFailure !== null
+            ? []
+            : neverSigned
+              ? ['A signature field with no value restricts nothing and proves nothing; the document is unsigned.']
+              : ['A signature stored only as a page annotation is invisible to readers that walk the form, including this one. Digital Signature registers its fields in /AcroForm /Fields, so a file signed here does not end up in this state.'],
         };
       }
       const now = Date.now();
@@ -1836,6 +1864,14 @@ export const securityTools: PdfToolDefinition[] = [
       const coverage = (signature: (typeof signatures)[number]): string => {
         const spans = spanText(signature);
         const fileLength = signature.fileLength ?? input.bytes.length;
+        if (spans === '') return 'not recorded — this signature declares no byte ranges';
+        const ranges = signature.signedRanges ?? [];
+        // A declared range that reaches past the last byte is not a coverage claim
+        // about this file: the lengths were written for another revision.
+        const overreach = ranges.reduce((furthest, range) => Math.max(furthest, range.start + range.length), 0);
+        if (overreach > fileLength) {
+          return `bytes ${spans} of ${fileLength} — the declared ranges reach to ${overreach}, past the end of this ${fileLength}-byte file, so these ranges belong to a different revision of it`;
+        }
         if (signature.coversWholeFile) return `bytes ${spans} of ${fileLength} — the whole document`;
         const before = signature.bytesBeforeFirstRange ?? 0;
         const after = signature.bytesAfterLastRange ?? 0;
@@ -1844,19 +1880,29 @@ export const securityTools: PdfToolDefinition[] = [
           after > 0 ? `${after} byte(s) after the last signed byte` : '',
           signature.gapMismatch ? 'bytes beside the signature value itself' : '',
         ].filter(Boolean).join(' and ');
-        return `bytes ${spans} of ${fileLength} — ${outside} are not covered`;
+        // `—  are not covered` with nothing in front of it was read as damage on a
+        // file whose ranges simply stop short because the signature is not whole-file.
+        return outside === ''
+          ? `bytes ${spans} of ${fileLength} — every byte this signature claims, and nothing outside them is claimed`
+          : `bytes ${spans} of ${fileLength} — ${outside} are not covered`;
       };
       const contentChanged = signatures.filter((signature) => !signature.error && !signature.digestMatches).length;
       const signatureBad = signatures.filter((signature) => !signature.error && signature.digestMatches && signature.signatureVerifies === false).length;
-      const unreadable = signatures.filter((signature) => signature.error).length;
-      const intact = signatures.length - contentChanged - signatureBad - unreadable;
+      // An error entry is damage only when the field held something to read. A field
+      // that was prepared and never signed is a separate state, and the counts must
+      // not fold it into "could not be read at all".
+      const unsigned = signatures.filter(
+        (signature) => Boolean(signature.error) && fieldHasValue(signature.fieldName) === false,
+      );
+      const unreadable = signatures.filter((signature) => signature.error && !unsigned.includes(signature)).length;
+      const intact = signatures.length - contentChanged - signatureBad - unreadable - unsigned.length;
       const partial = signatures.filter((signature) => !signature.error && !signature.coversWholeFile && !signature.gapMismatch).length;
       const warnings: string[] = [];
       if (fields.length > signatures.length) {
         warnings.push(`${fields.length - signatures.length} signature field(s) sit in page annotations and are not registered in the document form, so they could not be verified.`);
       }
       if (intact > 0) {
-        warnings.push('Intact means the signed byte ranges are unchanged and the signature value matches the certificate. The certificate chain is not validated and revocation cannot be checked in the browser, so this does not confirm the signer is trusted.');
+        warnings.push('Intact means the signed byte ranges are unchanged and the signature value matches the certificate. The certificate chain is not validated and no revocation check is made here (no OCSP or CRL request, online or offline), so this does not confirm the signer is trusted.');
       }
       if (partial > 0) {
         warnings.push(`${partial} signature(s) do not cover the whole file: bytes after the last signed offset were appended after signing and are outside the signature. A reader that shows the new revision is showing bytes nobody signed.`);
@@ -1873,47 +1919,98 @@ export const securityTools: PdfToolDefinition[] = [
       if (notYet > 0) {
         warnings.push(`${notYet} signature(s) used a certificate whose validity start is still in the future; a verifier with a correct clock would reject it.`);
       }
+      if (unsigned.length > 0) {
+        warnings.push(`${unsigned.length} signature field(s) ${unsigned.length === 1 ? 'holds' : 'hold'} no signature value at all: ${unsigned.length === 1 ? 'it was' : 'they were'} prepared for a signature that never arrived, so ${unsigned.length === 1 ? 'it restricts' : 'they restrict'} nothing and prove${unsigned.length === 1 ? 's' : ''} nothing about these bytes.`);
+      }
+      // The report names the digest in its rows; a SHA-1 signature otherwise reads
+      // exactly like a SHA-256 one — "All 1 signature(s) verify" — for an algorithm
+      // with practical chosen-prefix collisions.
+      const weakDigest = signatures.filter((signature) => !signature.error && /^sha-?1$/i.test(signature.digestAlgorithm ?? '')).length;
+      if (weakDigest > 0) {
+        warnings.push(`${weakDigest} signature(s) were digested with SHA-1, whose chosen-prefix collisions are practical: two different documents can share one digest. The key and the byte ranges check out, but the digest no longer separates this document from every other one an attacker can build to it. Digital Signature writes SHA-256 — re-sign with that if the distinction matters here.`);
+      }
       return {
         kind: 'report',
-        sections: signatures.map((signature, index) => ({
-          title: `Signature ${index + 1}${signature.fieldName ? ` — ${signature.fieldName}` : ''}`,
-          rows: [
-            {
-              label: 'Byte range intact',
-              value: signature.error
-                ? `Not checked — ${signature.error}`
-                : signature.digestMatches
-                  ? 'Yes — the signed bytes are unchanged'
-                  : `No — the digest of the signed bytes no longer matches: the change is inside ${spanText(signature)}`
-                    + `${signature.gapMismatch ? ' (the declared range also does not line up with the signature value)' : ''}`
-                    + `${(signature.bytesAfterLastRange ?? 0) > 0 ? `, and ${signature.bytesAfterLastRange} byte(s) after the signed end are not covered` : ''}`,
-            },
-            {
-              label: 'Signature value',
-              value: signature.error
-                ? 'Not checked'
-                : signature.signatureVerifies === true
-                  ? 'Yes — matches the signer certificate'
-                  : signature.signatureVerifies === false
-                    ? 'No — does not match the signer certificate; the signature blob itself was altered or forged'
-                    : 'Not checked — no certificate or an unsupported key type',
-            },
-            { label: 'Signed range', value: coverage(signature) },
-            { label: 'SubFilter', value: signature.subFilter ? `/${signature.subFilter}${signature.subFilterUnsupported ? ' — not a type this reader has a rule for; the digest and value were still checked where possible' : ''}` : 'not recorded' },
-            { label: 'Signer', value: signature.signer ?? 'unknown' },
-            { label: 'Issued by', value: signature.issuer ?? 'unknown' },
-            { label: 'Signed at', value: signature.signedAt?.toISOString() ?? 'not recorded' },
-            { label: 'Digest', value: signature.digestAlgorithm ?? 'unknown' },
-            { label: 'Certificate valid from', value: signature.notBefore?.toISOString() ?? 'unknown' },
-            { label: 'Certificate valid until', value: signature.notAfter?.toISOString() ?? 'unknown' },
-            { label: 'Revocation', value: 'not checked offline — a browser has no OCSP responder access for this chain' },
-          ],
-        })),
-        message: intact === signatures.length && partial === 0
+        sections: signatures.map((signature, index) => {
+          /**
+           * The reason, location and contact live in the signature dictionary, inside
+           * the signed ranges — which is exactly why Digital Signature's own field help
+           * promises they are "part of what a validator reports". Reading them here,
+           * from the field the entry belongs to, is what keeps that promise; when the
+           * ranges no longer match, the words may have been edited too, and the row
+           * says so instead of quoting them as truth.
+           */
+          const field = fields.find(
+            (candidate) => (stringAt(input.doc, candidate.get(PDFName.of('T'))) ?? '') === (signature.fieldName ?? ''),
+          ) ?? fields[index];
+          const valueDict = field ? dictAt(input.doc, field.get(PDFName.of('V'))) : undefined;
+          const unsignedEntry = unsigned.includes(signature);
+          const declared = (key: string): string | undefined => {
+            const words = valueDict ? stringAt(input.doc, valueDict.get(PDFName.of(key)))?.trim() : undefined;
+            if (!words) return undefined;
+            return signature.error || signature.digestMatches
+              ? words
+              : `${words} — text inside the ranges that no longer match, so it may itself have been edited`;
+          };
+          const statedReason = declared('Reason');
+          const statedLocation = declared('Location');
+          const statedContact = declared('ContactInfo');
+          // `/Name` is what a producer CLAIMS about who signed; the certificate is what
+          // can be checked. They used to be shown interchangeably, so a document whose
+          // dictionary said "Alice" read as signed by Alice.
+          const dictionaryName = valueDict ? stringAt(input.doc, valueDict.get(PDFName.of('Name')))?.trim() : undefined;
+          const nameRows = dictionaryName && dictionaryName !== signature.signer
+            ? [{
+              label: 'Name in the dictionary',
+              value: `${dictionaryName} — the certificate itself says ${signature.signer ?? 'nothing'}; the certificate is what a signature proves, not this line`,
+            }]
+            : [];
+          return {
+            title: `Signature ${index + 1}${signature.fieldName ? ` — ${signature.fieldName}` : ''}`,
+            rows: [
+              {
+                label: 'Byte range intact',
+                value: signature.error
+                  ? unsignedEntry
+                    ? 'Not checked — the field holds no signature value: it was prepared and never signed'
+                    : `Not checked — ${signature.error}`
+                  : signature.digestMatches
+                    ? 'Yes — the signed bytes are unchanged'
+                    : `No — the digest of the signed bytes no longer matches: the change is inside ${spanText(signature)}`
+                      + `${signature.gapMismatch ? ' (the declared range also does not line up with the signature value)' : ''}`
+                      + `${(signature.bytesAfterLastRange ?? 0) > 0 ? `, and ${signature.bytesAfterLastRange} byte(s) after the signed end are not covered` : ''}`,
+              },
+              {
+                label: 'Signature value',
+                value: signature.error
+                  ? unsignedEntry ? 'None — an empty field has no value to check' : 'Not checked'
+                  : signature.signatureVerifies === true
+                    ? 'Yes — matches the signer certificate'
+                    : signature.signatureVerifies === false
+                      ? 'No — does not match the signer certificate; the signature blob itself was altered or forged'
+                      : 'Not checked — no certificate or an unsupported key type',
+              },
+              { label: 'Signed range', value: coverage(signature) },
+              { label: 'SubFilter', value: signature.subFilter ? `/${signature.subFilter}${signature.subFilterUnsupported ? ' — not a type this reader has a rule for; the digest and value were still checked where possible' : ''}` : 'not recorded' },
+              { label: 'Signer', value: signature.signer ?? 'unknown' },
+              ...nameRows,
+              ...(statedReason ? [{ label: 'Reason', value: statedReason }] : []),
+              ...(statedLocation ? [{ label: 'Location', value: statedLocation }] : []),
+              ...(statedContact ? [{ label: 'Contact', value: statedContact }] : []),
+              { label: 'Issued by', value: signature.issuer ?? 'unknown' },
+              { label: 'Signed at', value: signature.signedAt?.toISOString() ?? 'not recorded' },
+              { label: 'Digest', value: signature.digestAlgorithm ?? 'unknown' },
+              { label: 'Certificate valid from', value: signature.notBefore?.toISOString() ?? 'unknown' },
+              { label: 'Certificate valid until', value: signature.notAfter?.toISOString() ?? 'unknown' },
+              { label: 'Revocation', value: 'not checked — this app makes no OCSP or CRL request, online or offline' },
+            ],
+          };
+        }),
+        message: intact === signatures.length && partial === 0 && unsigned.length === 0
           ? `All ${signatures.length} signature(s) verify: the signature values match the certificates and every signed byte is unchanged.`
-          : intact === signatures.length
+          : intact === signatures.length && unsigned.length === 0
             ? `All ${signatures.length} signature(s) verify against the bytes they cover, but ${partial === 1 ? '1 does' : `${partial} do`} not cover the whole file — bytes after the signed end are outside the signature.`
-            : `${intact} of ${signatures.length} signature(s) verify; ${contentChanged} were broken by an edit after signing${signatureBad > 0 ? `; ${signatureBad} had a signature value that does not match the certificate` : ''}${unreadable > 0 ? `; ${unreadable} could not be read at all` : ''}.`,
+            : `${intact} of ${signatures.length} signature(s) verify; ${contentChanged} were broken by an edit after signing${signatureBad > 0 ? `; ${signatureBad} had a signature value that does not match the certificate` : ''}${unreadable > 0 ? `; ${unreadable} could not be read at all` : ''}${unsigned.length > 0 ? `; ${unsigned.length} ${unsigned.length === 1 ? 'field holds' : 'fields hold'} no signature value at all — prepared and never signed` : ''}.`,
         warnings,
       };
     },
@@ -2238,6 +2335,23 @@ function contentFingerprint(doc: PDFDocument): string {
 function dictAt(doc: PDFDocument, value: unknown): PDFDict | undefined {
   if (value instanceof PDFRef) return doc.context.lookupMaybe(value, PDFDict);
   return value instanceof PDFDict ? value : undefined;
+}
+
+/**
+ * A text entry: a hex or literal string — either may sit behind a reference — or a
+ * bare name with its `/` removed. `PDFString` is **not** the base class of
+ * `PDFHexString` in the bundled pdf-lib fork, so the shape is recognised by what it
+ * can do: every string object here answers `decodeText()`.
+ */
+function stringAt(doc: PDFDocument, value: unknown): string | undefined {
+  const resolved = value instanceof PDFRef ? doc.context.lookupMaybe(value) : value;
+  if (resolved instanceof PDFName) return resolved.asString().replace(/^\//, '') || undefined;
+  if (!(resolved instanceof PDFObject)) return undefined;
+  try {
+    return resolved.decodeText().trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /* ------------------------------------------------------------------ *
