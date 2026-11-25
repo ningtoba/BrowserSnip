@@ -1719,6 +1719,178 @@ describe('json-to-pdf and xml-to-pdf print nesting as geometry', () => {
   });
 });
 
+/**
+ * The JSON a JSON file is allowed to hold.
+ *
+ * RFC 8259 escapes a tab, a form feed and any C0 control into a string value; a file
+ * with one bad comma is one document, not three hundred lines of it; and the file
+ * control says several files are laid out in the order they were added. Measured
+ * before this round, each of those three facts ended the run with the writer's own
+ * sentence, blamed the wrong line, or refused the pair outright.
+ */
+describe('json-to-pdf prints what JSON files are actually made of', () => {
+  const json = (text: string, name = 'data.json') => fileFrom(text, name, 'application/json');
+
+  it('keeps a tab inside a value at its column, in one cell', async () => {
+    const outcome = await run('json-to-pdf', {}, [json('{"a":"id\\tname\\tqty","b":"333\\tcherry\\t5"}')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // Eight-column stops, the `expand` default the text and CSV rounds settled on:
+    // `id` is two columns deep so its tab is six spaces, `name` ends at 12 so its tab
+    // is four; the second row starts three columns deep, so its fields land on the
+    // same stops. Pre-fix the run died with `WinAnsi cannot encode "\t" (0x0009)`.
+    const header = find(runs, 'id      name    qty')[0]!;
+    const row = find(runs, '333     cherry  5')[0]!;
+    expect(header, 'the tabbed header row').toBeTruthy();
+    expect(row, 'the tabbed data row').toBeTruthy();
+    expect(row.x, 'both values are one column').toBeCloseTo(header.x, 1);
+    expect(row.y).toBeLessThan(header.y);
+    // The escape never reaches the page as a tab character the writer cannot encode.
+    expect(runs.some((run) => run.text.includes('\t'))).toBe(false);
+  });
+
+  it('breaks the value at a form feed instead of losing the file', async () => {
+    const outcome = await run('json-to-pdf', {}, [json('{"note":"first part\\fsecond part"}')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const one = find(runs, 'first part')[0]!;
+    const two = find(runs, 'second part')[0]!;
+    expect(one, 'the line before the form feed').toBeTruthy();
+    expect(two, 'the line after it').toBeTruthy();
+    expect(two.x, 'the break stays inside the value column').toBeCloseTo(one.x, 1);
+    expect(baselines([one, two]).length).toBe(2);
+    expect(outcome.warnings.join(' ')).not.toMatch(/control character/);
+  });
+
+  it('leaves out the characters no face can draw, and counts them out loud', async () => {
+    const outcome = await run('json-to-pdf', {}, [json('{"a":"x\\u0001y\\u0000z","b":"keep \\u001f me"}')]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('xyz');
+    expect(text).toContain('keep me');
+    // Three of them, in one named file, with the repair already done rather than a
+    // library sentence the user cannot act on.
+    expect(outcome.warnings.join(' ')).toMatch(/"data\.json" held 3 control characters that no face can draw; they were left out\./);
+    expect(outcome.warnings.join(' ')).not.toMatch(/WinAnsi/);
+  });
+
+  it('names where in the file the parser stopped', async () => {
+    const brace = await run('json-to-pdf', {}, [json('{"a": }', 'brace.json')]).catch((thrown: Error) => thrown);
+    // V8 gives this shape no position at all ("Unexpected token '}', "{"a": }" is not
+    // valid JSON"), so the column is found from the text it quoted.
+    expect((brace as Error).message).toMatch(/^"brace\.json" is not valid JSON: Unexpected token '\}' at line 1, column 7 of the file\.$/);
+    expect((brace as Error).message).not.toMatch(/is not valid JSON.*is not valid JSON/);
+    expect((brace as ToolInputError).hint).toMatch(/Text to PDF/);
+
+    const pretty = await run('json-to-pdf', {}, [json('{\n  "a": 1,\n  "b": [1, 2, 3,]\n}', 'pretty.json')]).catch((thrown: Error) => thrown);
+    // One document with a trailing comma: the line-by-line NDJSON reading blamed
+    // "document 1" and pointed at line 1, column 2, where nothing is wrong.
+    expect((pretty as Error).message).not.toMatch(/document/);
+    expect((pretty as Error).message).toMatch(/at line 3, column 17 of the file\./);
+
+    const ndjson = await run('json-to-pdf', {}, [json('{"a":1}\n{"b":2,}\n{"c":3}', 'events.ndjson')]).catch((thrown: Error) => thrown);
+    // A real NDJSON file keeps the document number, and the position is rebased from
+    // the line V8 was handed onto the file the user holds.
+    expect((ndjson as Error).message).toMatch(/^"events\.ndjson" \(document 2\) is not valid JSON: .* at line 2, column 8 of the file\.$/);
+  });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    const outcome = await run('json-to-pdf', {}, [
+      json('{"file":"one","v":1}', 'one.json'),
+      json('{"file":"two","v":2}', 'two.json'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    // Each file keeps its own grid: sheet 1 has never heard of the second file.
+    expect(runsOn(runs, 0).some((run) => run.text === 'one')).toBe(true);
+    expect(runsOn(runs, 0).some((run) => run.text === 'two')).toBe(false);
+    expect(runsOn(runs, 1).some((run) => run.text === 'two')).toBe(true);
+    expect(runsOn(runs, 1).some((run) => run.text === 'one')).toBe(false);
+    expect(outcome.message).toMatch(/Reported 2 JSON file\(s\) into 2 page\(s\)/);
+    expect(outcome.outputs[0]!.name).toBe('one_from_json.pdf');
+  });
+
+  it('paints the branch the depth control cut as a real code band', async () => {
+    const outcome = await run('json-to-pdf', {
+      source: 'paste',
+      paste: '{"a":{"b":{"c":{"d":"deepestValue"}}}}',
+      maxDepth: 2,
+    });
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    // `jsonToBlocks` marks the cut branch with a `kind:'code'` block, and the code
+    // branch is exactly where c3 blocker 1 buried its text: the grey band must sit
+    // behind the glyphs, on the rectangle it has always drawn.
+    expectPaintedCode(doc.getPage(0), 1);
+  });
+
+  it('prints an array twice, and says so on the card', async () => {
+    const outcome = await run('json-to-pdf', { source: 'paste', paste: '{"items":["one","two","three"]}' });
+    const runs = await textRuns(await firstPdf(outcome));
+    const indexed = runs.filter((run) => run.text === 'one');
+    // Measured state, filed to the seam: the shared walker emits the bulleted list of
+    // the items and then walks each item under its own `[index]` key, so the same word
+    // reaches the page twice — once beside a bullet at the list's text edge, once after
+    // its index in the paragraph column. The card states it instead of hiding it.
+    expect(indexed.length, 'every scalar array item is printed twice').toBe(2);
+    expect(Math.min(...indexed.map((run) => run.x))).toBeCloseTo(70, 1);
+    expect(runs.some((run) => run.text === '[0]: '), 'the index the item is repeated under').toBe(true);
+    expect(String(getPdfTool('json-to-pdf')?.notes)).toMatch(/An array is printed twice/);
+  });
+
+  it('spills a long array across sheets and keeps its last item', async () => {
+    const list = Array.from({ length: 300 }, (_, i) => `entry ${i + 1} of the long array`);
+    const outcome = await run('json-to-pdf', { source: 'paste', paste: JSON.stringify({ list }) });
+    const bytes = await firstPdf(outcome);
+    const sheets = (await pageSizes(bytes)).length;
+    expect(sheets).toBeGreaterThan(1);
+    // The number the receipt prints is the number of sheets in the file.
+    expect(outcome.pagesOut).toBe(sheets);
+    // Items wrap onto more than one baseline, so the phrase is judged out of the text
+    // layer, where the wrapped halves join back together.
+    const text = squash(await extractText(bytes));
+    for (const needle of ['entry 1 of the long array', 'entry 150 of the long array', 'entry 300 of the long array']) {
+      expect(text, needle).toContain(needle);
+    }
+    // Each of them twice — the list and the `[index]` restatement — and nothing outside
+    // the sheet it was painted on.
+    expect(text.split('entry 300 of the long array').length - 1).toBe(2);
+    const runs = await textRuns(bytes);
+    const sizes = await pageSizes(bytes);
+    for (const run of runs) {
+      const [width, height] = sizes[run.page]!;
+      expect(run.x, `sheet ${run.page + 1} run ${run.text} left the left edge`).toBeGreaterThanOrEqual(-0.01);
+      expect(run.x, `sheet ${run.page + 1} run ${run.text} sits past the sheet`).toBeLessThan(width);
+      expect(run.y, `sheet ${run.page + 1} run ${run.text} fell below the sheet`).toBeGreaterThan(-0.01);
+      expect(run.y).toBeLessThan(height);
+    }
+  });
+
+  it('fetches the script faces a Japanese key needs, once each, from the host the card names', async () => {
+    const asked: string[] = [];
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      asked.push(url);
+      return inner(input as never);
+    }) as typeof fetch;
+    try {
+      clearFontCache();
+      const outcome = await run('json-to-pdf', { source: 'paste', paste: '{"状態":"値です"}' });
+      const text = squash(await extractText(await firstPdf(outcome)));
+      expect(text).toContain('状態');
+      expect(text).toContain('値です');
+      // 状 and 値 are Han and です is kana, so the document needs two faces. Both come
+      // once, from the host the card names, and no bytes of the document go anywhere.
+      const remote = asked.filter((url) => /^https:/.test(url));
+      expect(new Set(remote).size, JSON.stringify(remote)).toBe(remote.length);
+      expect(remote.every((url) => url.startsWith('https://cdn.jsdelivr.net/npm/@expo-google-fonts/'))).toBe(true);
+      expect(remote).toContain('https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-jp/NotoSansJP_400Regular.ttf');
+      expect(String(getPdfTool('json-to-pdf')?.notes)).toMatch(/faces are fetched from the CDN/);
+    } finally {
+      globalThis.fetch = inner;
+      clearFontCache();
+    }
+  });
+});
+
 describe('rtf-to-pdf recovers text, size and order', () => {
   const rtf = String.raw`{\rtf1\ansi\ansicpg1252\deff0
 {\colortbl ;\red255\green0\blue0;}

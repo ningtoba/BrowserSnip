@@ -822,29 +822,119 @@ function orderedListStartsHtml(source: string, ordered: number): number[] {
 }
 
 /**
- * The characters a legal CSV cell can hold that the table branch cannot draw.
+ * The characters a parsed document can hold that the writer cannot draw.
  *
  * `renderTable` hands a cell's text to the writer untouched — unlike the paragraph
- * and code branches, which expand tabs — so a tab inside a quoted field, which
- * RFC 4180 allows and which `Tab` files carry between quoted fields, ended the whole
- * run with `WinAnsi cannot encode "\t" (0x0009)` and no file; a form feed did the
- * same at `(0x000c)`. The card says quoted fields are handled and that the delimiter
- * is the only thing rows split on, so both belong to the cell: the tab stops at the
- * next eighth column, the form feed breaks the line inside the cell.
+ * and code branches, which expand tabs — so a tab inside a quoted CSV field (legal
+ * in RFC 4180, and what `Tab` files carry between fields), a `\t`/`\f` escaped into a
+ * JSON string value, or a literal tab in an XML text node ended the whole run with
+ * the library's own sentence — `WinAnsi cannot encode "\t" (0x0009)` — and no file.
+ * Every one of them belongs on the page: a tab stops at the next eighth column, a
+ * form feed breaks the line where it sits, and any other character no face can draw
+ * is left out and counted so the card can say so.
  */
-function cellsToDrawable(blocks: Block[]): Block[] {
-  const clean = (run: Inline): Inline => ({
-    ...run,
-    text: expandTabs(run.text.replace(/\f/g, '\n')),
+function blocksToDrawable(blocks: Block[]): { blocks: Block[]; dropped: number } {
+  let dropped = 0;
+  const clean = (text: string): string => expandTabs(text.replace(LINE_ENDINGS, '\n').replace(/\f/g, '\n')).replace(UNPRINTABLE, () => {
+    dropped += 1;
+    return '';
   });
-  return blocks.map((block) => (block.kind !== 'table' ? block : {
-    ...block,
-    header: block.header?.map((cell) => cell.map(clean)),
-    rows: block.rows.map((row) => row.map((cell) => cell.map(clean))),
-  }));
+  const inlines = (runs: Inline[]): Inline[] => runs.map((run) => ({ ...run, text: clean(run.text) }));
+  const done = blocks.map((block) => {
+    switch (block.kind) {
+      case 'heading':
+      case 'paragraph': return { ...block, inlines: inlines(block.inlines) };
+      case 'quote': return { ...block, inlines: inlines(block.inlines), attribution: block.attribution === undefined ? undefined : clean(block.attribution) };
+      case 'list': return {
+        ...block,
+        items: block.items.map((item) => ({
+          ...item,
+          inlines: inlines(item.inlines),
+          ...(item.marker === undefined ? {} : { marker: clean(item.marker) }),
+        })),
+      };
+      case 'table': return {
+        ...block,
+        header: block.header?.map(inlines),
+        rows: block.rows.map((row) => row.map(inlines)),
+        ...(block.caption === undefined ? {} : { caption: clean(block.caption) }),
+      };
+      case 'code': return { ...block, text: clean(block.text) };
+      default: return block;
+    }
+  });
+  return { blocks: done, dropped };
 }
 
-/** The number each ordered list in the source began with, in document order. */
+/** `"a.json" (document 2) held 3 control characters that no face can draw; they were left out.` */
+function undrawableWarning(name: string, where: string, dropped: number): string {
+  return `"${name}"${where} held ${counted(dropped, 'control character')} that no face can draw; ${dropped === 1 ? 'it was' : 'they were'} left out.`;
+}
+
+/**
+ * The documents a JSON source holds: one, or one per line when it is NDJSON.
+ *
+ * `splitNdjson` falls back to one chunk per line whenever the whole text does not
+ * parse, which is also what a pretty-printed single document looks like. Blaming
+ * "document 1" for a trailing comma three hundred lines down sends the user nowhere,
+ * so the line reading survives only when at least one of those lines really is a
+ * document on its own — the signature of one-document-per-line files.
+ */
+function jsonDocuments(text: string): string[] {
+  const documents = splitNdjson(text);
+  if (documents.length < 2) return documents;
+  const parsable = documents.filter((line) => {
+    try {
+      JSON.parse(line);
+      return true;
+    } catch {
+      return false;
+    }
+  }).length;
+  return parsable >= 1 ? documents : [text.trim()];
+}
+
+/** Where an offset sits in the file the user holds: 1-based line and column. */
+function lineColumnOf(text: string, offset: number): { line: number; column: number } {
+  const before = text.slice(0, Math.max(0, Math.min(offset, text.length)));
+  const newline = before.lastIndexOf('\n');
+  return { line: before.split('\n').length, column: before.length - newline };
+}
+
+/**
+ * Why a JSON parse stopped, and where, in the file the user holds.
+ *
+ * V8 names `position N (line L column C)` for most syntax errors and nothing for the
+ * `Unexpected token '}'` shape, and it counts inside the string it was handed — for a
+ * file read as NDJSON documents, a different frame from the file. The reason comes
+ * from V8 with its own location stripped out; the location is recomputed against the
+ * text that was parsed, falling back to the end of the context V8 quoted when it
+ * quoted any, and saying nothing when it gave no place to stand.
+ */
+function jsonParseProblem(source: string, error: unknown, base = 0): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const reason = raw
+    .replace(/ in JSON at position \d+( \(line \d+ column \d+\))?/g, '')
+    .replace(/,\s*(?:\.\.\.)?".* is not valid JSON$/s, '')
+    .replace(/\s+is not valid JSON$/i, '')
+    .trim() || 'the parser stopped here';
+  const position = /at position (\d+)/.exec(raw)?.[1];
+  const quoted = /,\s*(?:\.\.\.)?"(.*)" is not valid JSON$/s.exec(raw)?.[1];
+  const token = /Unexpected token '(.*?)'/.exec(raw)?.[1];
+  const context = quoted === undefined ? -1 : source.indexOf(quoted, base);
+  const offset = position !== undefined
+    ? base + Number(position)
+    : context >= 0 && token !== undefined && token !== ''
+      ? Math.max(context, source.indexOf(token, context))
+      : context >= 0
+        ? context + quoted!.length - 1
+        : -1;
+  if (offset < 0) return `${reason}.`;
+  const at = lineColumnOf(source, offset);
+  return `${reason} at line ${at.line}, column ${at.column} of the file.`;
+}
+
+/** The number each ordered list in the source began with, in document order, */
 function orderedListStarts(source: string): number[] {
   const starts: number[] = [];
   let inList = false;
@@ -1579,11 +1669,13 @@ export const convertToTools: PdfToolDefinition[] = [
       const blocks: Block[] = [];
       let widest = 0;
       const delimiter = stringValue(context.values, 'delimiter', ',');
-      for (const [index, source] of sources.entries()) {
-        const tableBlocks = cellsToDrawable(await csvToBlocks(source.text, {
+      for (const [fileIndex, source] of sources.entries()) {
+        const drawable = blocksToDrawable(await csvToBlocks(source.text, {
           delimiter: delimiter === 'auto' ? undefined : delimiter,
           header: booleanValue(context.values, 'headerRow', true),
         }));
+        if (drawable.dropped > 0) warnings.push(undrawableWarning(source.name, '', drawable.dropped));
+        const tableBlocks = drawable.blocks;
         // Counted from the grid that is about to be drawn, so the warning below
         // cannot disagree with the table the user sees.
         for (const block of tableBlocks) {
@@ -1593,7 +1685,7 @@ export const convertToTools: PdfToolDefinition[] = [
         // The file field promises "one after another in a single PDF", so a second
         // file starts on a sheet of its own instead of continuing the first table —
         // which would otherwise read as one grid whose header changed mid-column.
-        if (index > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        if (fileIndex > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
         blocks.push(...tableBlocks);
       }
       if (blocks.length === 0) {
@@ -1637,6 +1729,7 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['data', 'api response', 'config', 'structured'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.json,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_json.pdf',
     actionLabel: 'Report',
@@ -1644,7 +1737,9 @@ export const convertToTools: PdfToolDefinition[] = [
     notes: [
       ...TEXT_NOTES,
       'Structure is preserved as headings, key/value tables and bulleted lists — not as a JSON literal, so copying text out will not paste back as valid JSON.',
-      'Anything deeper than the Maximum depth control is replaced by a `(truncated)` marker and reported in the warnings.',
+      'An array is printed twice: once as the bulleted list of its items under the key it sits at, and once again item by item under its own `[0]`, `[1]` heading — so a 4 000-item array runs to hundreds of sheets (measured 901 at the default size).',
+      'Numbers print as the parser read them, not as the file wrote them: an integer past 9007199254740991 loses its last digits (`…993` reports `…992`), `-0` prints `0`, and 1e21 prints `1e+21`.',
+      'Anything deeper than the Maximum depth control is replaced by a `(truncated)` marker and reported in the warnings, and a tab or form feed inside a value keeps its column or its line break; any other control character is left out and counted in the warnings.',
       'NDJSON (one document per line) is read as one report per line.',
     ],
     fields: [
@@ -1657,22 +1752,34 @@ export const convertToTools: PdfToolDefinition[] = [
       const maxDepth = Math.round(clampNumber(numberValue(context.values, 'maxDepth', 8), 1, 20));
       const blocks: Block[] = [];
       const truncated: string[] = [];
-      for (const source of sources) {
-        const documents = splitNdjson(source.text);
+      for (const [fileIndex, source] of sources.entries()) {
+        // The file control promises "one after another in a single PDF", so each file
+        // after the first starts on a sheet of its own: two documents' key/value
+        // tables would otherwise read as one table whose keys changed mid-column.
+        if (fileIndex > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        const documents = jsonDocuments(source.text);
+        // V8 counts inside the string it was handed; a file read as NDJSON documents
+        // needs those numbers pushed back onto the file for the refusal to be worth
+        // anything, so each chunk is located in the source from where the last ended.
+        let cursor = 0;
         for (const [index, chunk] of documents.entries()) {
           let parsed: unknown;
           const where = documents.length > 1 ? ` (document ${index + 1})` : '';
+          const base = Math.max(cursor, source.text.indexOf(chunk, cursor));
+          cursor = base + chunk.length;
           try {
             parsed = JSON.parse(chunk);
           } catch (error) {
             throw new ToolInputError(
               'UNSUPPORTED',
-              `"${source.name}"${where} is not valid JSON: ${error instanceof Error ? error.message : 'parse failed'}.`,
+              `"${source.name}"${where} is not valid JSON: ${jsonParseProblem(source.text, error, base)}`,
               { fileName: source.name, hint: 'Fix the syntax, or typeset it as text with Text to PDF.' },
             );
           }
           if (depthOf(parsed) > maxDepth) truncated.push(`"${source.name}"${where}`);
-          blocks.push(...jsonToBlocks(parsed, { maxDepth }));
+          const drawable = blocksToDrawable(jsonToBlocks(parsed, { maxDepth }));
+          if (drawable.dropped > 0) warnings.push(undrawableWarning(source.name, where, drawable.dropped));
+          blocks.push(...drawable.blocks);
         }
       }
       if (truncated.length > 0) {
