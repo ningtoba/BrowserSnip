@@ -594,7 +594,17 @@ describe('the structures PDF/A names, in the file each path writes', () => {
     expect(packet!.dict.get(PDFName.of('Filter'))).toBeUndefined();
 
     const info = dictOf(doc, doc.context.trailerInfo.Info);
+    // `dc:title` and `dc:creator` are what this path has always written, with an empty
+    // value when `/Info` holds none, and §6.7.3 does not object. The two additions are
+    // written **only when the entry exists**: `/Subject` mirrors to
+    // `dc:description['x-default']` and `/Keywords` to `pdf:Keywords`, and this fixture
+    // has neither — an invented empty property is a disagreement with an absent entry,
+    // which is the same rule pointing the other way.
     expect(text).toContain('<dc:title>');
+    expect(text).toContain('<dc:creator>');
+    expect(info?.get(PDFName.of('Subject'))).toBeUndefined();
+    expect(text).not.toContain('<dc:description');
+    expect(text).not.toContain('<pdf:Keywords>');
     const mirrors: Array<[string, string, string]> = [
       ['Creator', 'xmp:CreatorTool', 'pdf-lib'],
       ['Producer', 'pdf:Producer', 'BrowserSnip'],
@@ -687,8 +697,6 @@ describe('the structures PDF/A names, in the file each path writes', () => {
     expect(outcome.warnings.join(' ')).toMatch(/no pdfaid:part in its XMP/);
   });
 });
-
-/* ── 4. the published engine, when it is on disk ──────────────────────────── */
 
 beforeAll(async () => {
   const wanted = process.env.BROWSERSNIP_GS === 'live'
@@ -798,4 +806,235 @@ describe('pdf-to-pdfa over the published Ghostscript build', () => {
     expect(readMarked(doc)).toBe(true);
     gs.unreachable = null;
   }, 240_000);
+});
+
+/* ── 5. the duties the local path is written to perform (campaign re-audit c2) ── */
+
+/**
+ * A document carrying every `/Info` entry PDF/A-1 §6.7.3 wants mirrored, with the
+ * values the triage fixture uses — measured with veraPDF 1.28.2 on this path's own
+ * output, which answered `dc:description['x-default'] = null` and
+ * `pdf:Keywords = null` against a `/Subject` and a `/Keywords` that were right there.
+ */
+async function mirroredInfoPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.addPage([300, 200]).drawText('PDAMIRROR probe line', { x: 20, y: 100, font });
+  doc.setTitle('A title worth archiving');
+  doc.setAuthor('Triage Fixture');
+  doc.setSubject('A subject worth removing');
+  // One string, the way the triage fixture writes it: `/Keywords` is one text string.
+  doc.setKeywords(['alpha, beta, gamma']);
+  doc.setCreator('triage-fixtures-images.py');
+  return doc.save({ useObjectStreams: false });
+}
+
+/** A `/Info` entry of the produced file, as the text a validator compares. */
+function infoText(doc: PDFDocument, key: string): string {
+  const info = dictOf(doc, doc.context.trailerInfo.Info);
+  const raw = info?.get(PDFName.of(key));
+  if (raw === undefined) return '';
+  const decode = (raw as { decodeText?: () => string }).decodeText;
+  return decode ? decode.call(raw) : `${raw}`;
+}
+
+/**
+ * The RDF namespace, built rather than written: the two separators are slashes, and a
+ * packet that spells that URI with dashes still parses for anything matching on the
+ * `rdf:` *prefix*, so only a namespace-aware read — a validator's read — notices.
+ * Measured: with the typo the file failed §6.6.2.1 test 5 ("The XMP package uses
+ * encoding null different from UTF-8") and §6.6.4 (no identification) on a packet whose
+ * text was all there.
+ */
+const RDFNS = ['http://www.w3.org/1999', '02', '22-rdf-syntax-ns#'].join('/');
+
+/** The packet's RDF, read by property — a substring search cannot fail a rule. */
+function xmpProperties(doc: PDFDocument): Record<string, string> {
+  const stream = streamOf(doc, doc.catalog.get(PDFName.of('Metadata')));
+  expect(stream, 'the local path wrote no XMP packet').toBeDefined();
+  const text = new TextDecoder('utf-8').decode(decodePDFRawStream(stream!).decode());
+  const node = new DOMParser().parseFromString(text.replace(/^[\s\S]*?\?>/, ''), 'text/xml');
+  expect(node.getElementsByTagName('parsererror').length, `packet does not parse: ${text.slice(0, 120)}`).toBe(0);
+  expect(node.getElementsByTagNameNS(RDFNS, 'RDF').length, 'the packet declares the RDF namespace by a URI a namespace-aware reader recognises').toBe(1);
+  const out: Record<string, string> = {};
+  for (const description of Array.from(node.getElementsByTagName('rdf:Description'))) {
+    for (const attribute of Array.from(description.attributes ?? [])) {
+      if (attribute.name.startsWith('rdf:')) continue;
+      out[attribute.name] ??= attribute.value;
+    }
+    for (const child of Array.from(description.children)) {
+      if (['dc:title', 'dc:creator', 'dc:description'].includes(child.tagName)) {
+        const item = child.getElementsByTagNameNS(RDFNS, 'li')[0];
+        out[child.tagName] ??= (item?.textContent ?? '').trim();
+        continue;
+      }
+      if (child.tagName === 'pdf:Keywords' || child.tagName.startsWith('xmp:')) {
+        out[child.tagName] ??= (child.textContent ?? '').trim();
+      }
+    }
+  }
+  return out;
+}
+
+describe('the local path writes the part-1 structure part 1 asks for', () => {
+  beforeEach(() => {
+    gs.calls.length = 0;
+    gs.reply = null;
+    gs.unreachable = 'Failed to load Ghostscript: no address answered';
+    gs.stub = true;
+    resetEngines();
+  });
+  afterEach(() => {
+    gs.unreachable = null;
+  });
+
+  it('saves PDF/A-1b with a classic cross-reference table, not an xref stream', async () => {
+    const { bytes, doc, outcome } = await pdfaRun(await textPdf(), 'type.pdf', { part: '1b' });
+    const file = latin1(bytes);
+    expect(file).not.toContain('/Type /XRef');
+    expect(file).not.toContain('/Type /ObjStm');
+    expect(file).toMatch(/\nxref\n/);
+    expect(file.startsWith('%PDF-1.4'), 'the header still declares 1.7').toBe(true);
+    // …and the file is still the document that came in: two pages, the intent, the flag.
+    expect(doc.getPages()).toHaveLength(2);
+    expect(readIntent(doc).present).toBe(true);
+    expect(readMarked(doc)).toBe(true);
+    expect(readXmp(doc)?.pdfaPart).toBe(1);
+    expect(outcome.message).toMatch(/Wrote PDF\/A-1B identification/);
+  });
+
+  it('keeps object streams where the part allows them, so this is a rule and not a preference', async () => {
+    for (const part of ['2b', '3b']) {
+      const { bytes } = await pdfaRun(await textPdf(), 'type.pdf', { part });
+      const file = latin1(bytes);
+      expect(file, `${part} lost its xref stream`).toContain('/Type /XRef');
+      expect(file.startsWith('%PDF-1.7')).toBe(true);
+    }
+  });
+
+  it('mirrors /Subject, /Keywords and /Creator as the properties §6.7.3 names', async () => {
+    const source = await mirroredInfoPdf();
+    const { doc } = await pdfaRun(source, 'mirror.pdf', { part: '2b' });
+    const info = {
+      Title: infoText(doc, 'Title'),
+      Subject: infoText(doc, 'Subject'),
+      Keywords: infoText(doc, 'Keywords'),
+      Creator: infoText(doc, 'Creator'),
+      Producer: infoText(doc, 'Producer'),
+    };
+    expect(info.Subject, 'the fixture must carry a /Subject to mirror').toBe('A subject worth removing');
+    expect(info.Keywords).toBe('alpha, beta, gamma');
+    const packet = xmpProperties(doc);
+    expect(packet['dc:description']).toBe(info.Subject);
+    expect(packet['pdf:Keywords']).toBe(info.Keywords);
+    expect(packet['xmp:CreatorTool']).toBe(info.Creator);
+    expect(packet['dc:title']).toBe(info.Title);
+    expect(packet['pdf:Producer']).toBe(info.Producer);
+  });
+
+  it('invents nothing for an /Info entry that is not there', async () => {
+    const { doc } = await pdfaRun(await textPdf(), 'type.pdf', { part: '2b' });
+    expect(infoText(doc, 'Subject'), 'the fixture must have no /Subject').toBe('');
+    expect(infoText(doc, 'Keywords')).toBe('');
+    const packet = xmpProperties(doc);
+    expect(packet['dc:description']).toBeUndefined();
+    expect(packet['pdf:Keywords']).toBeUndefined();
+    // The two entries the path always writes stay mirrored, though.
+    expect(packet['pdf:Producer']).toBe(infoText(doc, 'Producer'));
+    expect(packet['xmp:CreateDate'], 'a date with no /Info counterpart').toBeTruthy();
+  });
+
+  it('writes the same instant on both sides, at the only resolution /Info can hold', async () => {
+    const { doc } = await pdfaRun(await mirroredInfoPdf(), 'mirror.pdf', { part: '1b' });
+    const packet = xmpProperties(doc);
+    for (const [entry, property] of [
+      ['CreationDate', 'xmp:CreateDate'],
+      ['ModDate', 'xmp:ModifyDate'],
+    ] as const) {
+      const info = infoText(doc, entry);
+      const written = packet[property] ?? '';
+      expect(info, `/Info has no ${entry}`).toMatch(/^D:\d{14}Z$/);
+      // `…T11:30:55.950Z` over `D:20261125113055Z` is the same wall-clock second and
+      // still fails §6.7.3 test 1/8: a PDF date has no fractional field.
+      expect(written, `${property} is not a whole-second ISO date`).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+      const infoSeconds = Date.UTC(
+        Number(info.slice(2, 6)), Number(info.slice(6, 8)) - 1, Number(info.slice(8, 10)),
+        Number(info.slice(10, 12)), Number(info.slice(12, 14)), Number(info.slice(14, 16)),
+      ) / 1000;
+      expect(Math.floor(Date.parse(written) / 1000), `${property} and /Info ${entry} are different instants`)
+        .toBe(infoSeconds);
+    }
+    expect(packet['xmp:MetadataDate']).toBe(packet['xmp:ModifyDate']);
+  });
+
+  it('replaces the packet a source already carried instead of leaving it unreferenced', async () => {
+    const carrier = await openPDF(await textPdf(), { ignoreEncryption: true, updateMetadata: false });
+    writeXmp(carrier, [
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://purl.org/1999/02/22-rdf-syntax-ns#">',
+      '<rdf:Description><dc:title><rdf:Alt><rdf:li xml:lang="x-default">SUPERSEDEDPACKET</rdf:li></rdf:Alt></dc:title>',
+      '</rdf:RDF></x:xmpmeta>',
+    ].join(''));
+    const source = await carrier.save({ useObjectStreams: false });
+    const { bytes, doc } = await pdfaRun(source, 'had-xmp.pdf', { part: '1b' });
+    const file = latin1(bytes);
+    expect(file).toContain('pdfaid:part="1"');
+    expect(file, 'the source packet stayed in the file behind the new one').not.toContain('SUPERSEDEDPACKET');
+    let streams = 0;
+    for (const [, object] of doc.context.enumerateIndirectObjects()) {
+      const dict = object instanceof PDFRawStream ? object.dict : undefined;
+      if (dict?.get(PDFName.of('Type'))?.toString() === '/Metadata') streams += 1;
+    }
+    // §6.7.11 test 1: every metadata stream needs the catalogue key naming it — the
+    // 1b run that left the source's 233-byte packet behind failed it (and the §6.7.3
+    // mirror rules with it, the validator reading the wrong package).
+    expect(streams, 'more than one /Metadata stream is in the file').toBe(1);
+  });
+});
+
+describe('the engine branch counts what its rewrite left behind', () => {
+  beforeEach(() => {
+    gs.calls.length = 0;
+    gs.reply = null;
+    gs.unreachable = null;
+    gs.stub = true;
+    resetEngines();
+  });
+  afterEach(() => {
+    gs.unreachable = 'Failed to load Ghostscript: no address answered';
+  });
+
+  /** A sheet with one `/Link`, the shape `/tmp/triage/in/annot.pdf` carries. */
+  async function linkPdf(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([300, 200]);
+    page.drawText('see example.org', { x: 20, y: 100, font });
+    page.node.set(PDFName.of('Annots'), doc.context.obj([
+      { Type: 'Annot', Subtype: 'Link', Rect: [20, 90, 140, 106], A: { S: 'URI', URI: 'https://example.org/' } },
+    ]));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  /** An engine reply that kept the pages and lost the link, as Ghostscript measured. */
+  async function linklessReply(bytes: Uint8Array): Promise<Uint8Array> {
+    const doc = await openPDF(bytes, { ignoreEncryption: true, updateMetadata: false });
+    for (const page of doc.getPages()) page.node.delete(PDFName.of('Annots'));
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('names the links it lost, with the numbers, when the reply has fewer', async () => {
+    const source = await linkPdf();
+    gs.reply = await linklessReply(source);
+    const { outcome } = await pdfaRun(source, 'annot.pdf', { part: '2b' });
+    expect(outcome.outputs[0].producedBy).toEqual({ via: 'engine', engine: 'ghostscript' });
+    expect(outcome.warnings.join(' '))
+      .toMatch(/1 of 1 link annotation\(s\) did not survive Ghostscript's rewrite: the file you are downloading has 0/);
+  });
+
+  it('says nothing about links when the reply kept them', async () => {
+    const source = await linkPdf();
+    // The stand-in's default reply is the input file itself: 1 link in, 1 link out.
+    const { outcome } = await pdfaRun(source, 'annot.pdf', { part: '2b' });
+    expect(outcome.warnings.join(' ')).not.toMatch(/link annotation\(s\) did not survive/);
+  });
 });

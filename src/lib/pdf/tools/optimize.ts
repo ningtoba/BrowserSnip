@@ -294,6 +294,25 @@ function auditFonts(doc: PDFDocument, pages: PDFPage[] = doc.getPages()): FontAu
 }
 
 /**
+ * The clickable links a document still answers with: every `/Subtype /Link` in a
+ * page's own `/Annots`. Counted on both sides of an engine rewrite, because "the
+ * marks survived" is not the same claim as "the links survived" and Ghostscript has
+ * been measured losing the latter while keeping the former.
+ */
+function countLinks(doc: PDFDocument): number {
+  let links = 0;
+  for (const page of doc.getPages()) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (const entry of annots.asArray()) {
+      const dict = entry instanceof PDFRef ? doc.context.lookupMaybe(entry, PDFDict) : entry;
+      if (`${(dict instanceof PDFDict ? dict : undefined)?.get(PDFName.of('Subtype')) ?? ''}` === '/Link') links += 1;
+    }
+  }
+  return links;
+}
+
+/**
  * What the catalogue of a produced PDF/A file really carries.
  *
  * `pdf-to-pdfa` used to describe the switches it had run. This describes the
@@ -607,18 +626,28 @@ export function applySkew(page: PDFPage, turn: number): SkewCorrection {
 function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; conformance: string } {
   const number = Number.parseInt(part, 10) || 2;
   const conformance = (part.replace(/\d/g, '').toUpperCase() || 'B').charAt(0);
+  // **One instant, at the resolution `/Info` can hold.** Three `new Date()` calls
+  // used to write the two date entries and the packet, and the packet got
+  // `2026-11-25T11:30:55.950Z` over a trailer `D:20261125113055Z`: ISO 19005 §6.7.3
+  // tests 1 and 8 want the pairs *equivalent*, and a PDF date string has no
+  // fractional field for a validator to match, so the sub-second digits were enough
+  // to fail both rules on every part-1 run. `toISOString().slice(0, 19) + 'Z'` is the
+  // same UTC second pdf-lib's own formatter writes.
+  const when = new Date();
   doc.setProducer('BrowserSnip');
-  doc.setCreationDate(new Date());
-  doc.setModificationDate(new Date());
+  doc.setCreationDate(when);
+  doc.setModificationDate(when);
 
-  const xmp = buildPdfAExtension(
-    number,
+  const xmp = buildPdfAExtension({
+    part: number,
     conformance,
-    doc.getTitle() ?? '',
-    doc.getAuthor() ?? '',
-    doc.getCreator() ?? '',
-    new Date().toISOString(),
-  );
+    title: doc.getTitle() ?? '',
+    author: doc.getAuthor() ?? '',
+    subject: doc.getSubject() ?? '',
+    keywords: doc.getKeywords() ?? '',
+    creator: doc.getCreator() ?? '',
+    when: `${when.toISOString().slice(0, 19)}Z`,
+  });
   // `/N` on a metadata stream is the component count of the data, and
   // ISO 32000-1 Table 162 says it is 0 there — an integer, not the `[0 0]` this
   // used to write. A validator reads the type, not the intention, and the whole
@@ -644,7 +673,18 @@ function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; confo
     Subtype: 'XML',
     N: 0,
   });
-  doc.catalog.set(PDFName.of('Metadata'), doc.context.register(metadata));
+  const previous = doc.catalog.get(PDFName.of('Metadata'));
+  const replacement = doc.context.register(metadata);
+  doc.catalog.set(PDFName.of('Metadata'), replacement);
+  // The packet the source carried is named by nothing once the new one is in the
+  // catalogue, and an unreferenced XML stream with no `<?xpacket` prolog left in the
+  // file is what veraPDF reports as §6.7.11 test 1 ("for each metadata stream there
+  // shall be a Metadata key in the catalogue referring to it") over a 1b run whose
+  // mirror rules then all read the wrong package: measured here, the source's 233-byte
+  // packet stayed at object 20 while this app's went in at 21.
+  if (previous instanceof PDFRef && previous.toString() !== replacement.toString()) {
+    deletePayloads(doc, [previous]);
+  }
 
   // ISO 19005-2 §6.1.3: the trailer shall carry a file identifier, which the
   // engine's own writer supplies and pdf-lib's does not — 4 of 4 fallback runs
@@ -673,14 +713,17 @@ function bestEffortPdfA(doc: PDFDocument, part: string): { number: number; confo
   return { number, conformance };
 }
 
-function buildPdfAExtension(
-  part: number,
-  conformance: string,
-  title: string,
-  author: string,
-  creator: string,
-  when: string,
-): string {
+function buildPdfAExtension(mirror: {
+  part: number;
+  conformance: string;
+  title: string;
+  author: string;
+  subject: string;
+  keywords: string;
+  creator: string;
+  when: string;
+}): string {
+  const { part, conformance, title, author, subject, keywords, creator, when } = mirror;
   const escape = (value: string) =>
     value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   // The packet is laid out the way the toolkit lays it out, because veraPDF's own
@@ -695,20 +738,37 @@ function buildPdfAExtension(
     : [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
   // xmpMM ids and the two date properties are what the toolkit writes; a
   // description left out of the mirror is a §6.6.2.2 mismatch.
+  //
+  // **`/Subject` and `/Keywords` are written only when the document carries them**:
+  // ISO 19005 §6.7.3 wants the two sides equivalent, and a property invented for an
+  // absent entry is a disagreement in the other direction. `dc:title` and `dc:creator`
+  // stay unconditional because that is the packet shape this path has always written
+  // and the shape a validator accepted: dropping the empty `dc:creator` element
+  // changed nothing a reader can see and did change what veraPDF's sniff of the
+  // package reported (`6.6.2.1/5 “uses encoding null different from UTF-8”` plus
+  // `6.6.4`, i.e. the identification unreadable) — measured here, 141/3 rules after
+  // that edit against 143/1 before it.
+  const description = subject.trim() === ''
+    ? ''
+    : `<dc:description><rdf:Alt><rdf:li xml:lang="x-default">${escape(subject)}</rdf:li></rdf:Alt></dc:description>`;
+  const keywordsBlock = keywords.trim() === '' ? '' : `<pdf:Keywords>${escape(keywords)}</pdf:Keywords>`;
+  const creatorTool = creator.trim() === '' ? '' : `\n<xmp:CreatorTool>${escape(creator)}</xmp:CreatorTool>`;
+  const producer = keywordsBlock === ''
+    ? '<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="BrowserSnip"/>'
+    : `<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="BrowserSnip">${keywordsBlock}</rdf:Description>`;
   return `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <?adobe-xap-filters esc="CRLF"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP toolkit 2.9.1-13, framework 1.6">
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:iX="http://ns.adobe.com/iX/1.0/">
-<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="BrowserSnip"/>
+${producer}
 <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:ModifyDate>${when}</xmp:ModifyDate>
 <xmp:CreateDate>${when}</xmp:CreateDate>
-<xmp:MetadataDate>${when}</xmp:MetadataDate>
-<xmp:CreatorTool>${escape(creator)}</xmp:CreatorTool></rdf:Description>
+<xmp:MetadataDate>${when}</xmp:MetadataDate>${creatorTool}</rdf:Description>
 <rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:DocumentID="uuid:${id}"/>
 <rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:RenditionClass="default"/>
 <rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:VersionID="1"/>
 <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:format="application/pdf"><dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escape(title)}</rdf:li></rdf:Alt></dc:title>
-<dc:creator><rdf:Seq><rdf:li>${escape(author)}</rdf:li></rdf:Seq></dc:creator></rdf:Description>
+${description}<dc:creator><rdf:Seq><rdf:li>${escape(author)}</rdf:li></rdf:Seq></dc:creator></rdf:Description>
 <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="${part}" pdfaid:conformance="${conformance}"/></rdf:RDF>
 </x:xmpmeta>
 ${' '.repeat(1980)}
@@ -2044,7 +2104,9 @@ export const optimizeTools: PdfToolDefinition[] = [
     notes: [
       'What the tool promises is the structures, not a verdict. Both paths write an /OutputIntents entry (/S /GTS_PDFA1, with a 476-byte sRGB profile carrying /N 3), the /MarkInfo tagging flag and the pdfaid XMP identification, and the result card reports those three from the catalogue of the file it hands over — never from the switches that were run.',
       'Ghostscript (AGPL-3.0, fetched from a CDN the first time this tool runs and cached by your browser) rewrites the file and additionally subsets and embeds its fonts; on a 2-page text document that is the only path that can produce an embedded face. Without it BrowserSnip writes the same three catalogue entries itself and cannot embed a font, so the file is identified and structured but not self-contained. The engine needs a prefix prolog to do this: -dPDFA=2 alone identifies a file and writes no output intent, which is what this build measured before the invocation was fixed (docs/research/pdfa-attribution-recheck.md §2).',
-      'Neither path is a validator, and none can run in a browser tab: Ghostscript is asked to report violations (-dPDFACompatibilityPolicy=1) and on the measured fixtures its log was empty, which is “nothing reported”, not “passed”. No veraPDF, qpdf or mutool was available here either. Expect a validator to check more than these three entries — transparency, colour, fonts and metadata are the usual places a file that looks right still fails.',
+      'A rewrite is not a copy, and this one has measured losses. On a file carrying three marks, one link and three bookmarks, the marks came through (3 → 3) and the outline came through (3 → 3) while the link did not (1 → 0), and the ink on a page whose face got subset moved by 3 779 px at 36 dpi. A run that loses a link of yours says so on the card with the numbers; the local path keeps links (1 → 1 on the same file) and pays for it in un-embedded faces.',
+      'Chosen PDF/A-1b on the local path is written as a part-1 file: no cross-reference stream and no object streams (§6.1.4 test 3 forbids them) under a %PDF-1.4 header, which is the shape Ghostscript’s own 1b output has. Parts 2b and 3b keep both structures, because those parts allow them.',
+      'Neither path is a validator, and none can run in a browser tab: Ghostscript is asked to report violations (-dPDFACompatibilityPolicy=1) and on the measured fixtures its log was empty, which is “nothing reported”, not “passed”. The campaign does check these outputs with veraPDF 1.28.2 outside the tab (docs/research/pdfa-validator.sh), and that is where the xref-stream, the un-mirrored /Subject and /Keywords and the sub-second date rules this file pins were found — a validator still sees more than the entries reported here, of which transparency, colour, fonts and metadata are the usual places a file that looks right still fails.',
       'Nothing here is uploaded: only the engine binary is fetched.',
     ],
     async run(context) {
@@ -2082,6 +2144,19 @@ export const optimizeTools: PdfToolDefinition[] = [
           if (!structures.tagged) {
             warnings.push('No /MarkInfo << /Marked true >> is in the catalogue, which PDF/A §6.2.11 requires.');
           }
+          // Counted on both sides of the rewrite rather than asserted: on
+          // `/tmp/triage/in/annot.pdf` the three marks came through (3 → 3) and the
+          // outline did too (3 → 3), while the file's single `/Link` did not — 1 link
+          // object before, 0 after, and MuPDF answers no link for the output. A user
+          // who converts an index page to PDF/A learns that from this card, not from
+          // a broken link in ten years.
+          const links = countLinks(input.doc);
+          const keptLinks = countLinks(declared);
+          if (keptLinks < links) {
+            warnings.push(
+              `${links - keptLinks} of ${links} link annotation(s) did not survive Ghostscript's rewrite: the file you are downloading has ${keptLinks}. Marks and bookmarks come through; links have been measured going. The local path keeps them (1 → 1 on the same file), at the cost of the embedded faces only the engine can subset.`,
+            );
+          }
           transparencyWarning(part, structures, warnings);
           const change = sizeChange(input.bytes.byteLength, bytes.byteLength);
           context.progress(1, 'Converted with Ghostscript');
@@ -2103,7 +2178,18 @@ export const optimizeTools: PdfToolDefinition[] = [
       }
 
       const written = bestEffortPdfA(input.doc, part);
-      const bytes = await savePDF(input.doc, { useObjectStreams: true });
+      // **Part 1 has no cross-reference stream to write.** ISO 19005-1 §6.1.4 test 3
+      // forbids xref streams, and every local run measured here carried one —
+      // `/Type /XRef` at byte 7233 of the 1b file, `/Type /ObjStm` at 6095 — so
+      // choosing `PDF/A-1b` offline could not produce a part-1 file whatever else was
+      // right about it. Ghostscript's own 1b output has neither, and declares
+      // `%PDF-1.4` where this app's writer always says 1.7 (§6.1.2 wants the
+      // declaration to match the part; the stamp is nine bytes in place, so no offset
+      // an xref entry points at can move). Parts 2 and 3 allow both structures and keep
+      // the smaller file they buy.
+      const classic = written.number <= 1;
+      const bytes = await savePDF(input.doc, { useObjectStreams: !classic });
+      if (classic) stampDeclaredVersion(bytes, '1.4');
       const check = await verifyOutput(bytes, input.name, input.pageCount);
       if (check.problem) {
         throw new ToolInputError('CORRUPT', `The PDF/A candidate did not reopen cleanly: ${check.problem}.`, {
