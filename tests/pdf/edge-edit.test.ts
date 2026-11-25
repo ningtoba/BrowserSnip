@@ -1229,6 +1229,45 @@ describe('page labels, bookmarks and contents (E6, E13, E15)', () => {
     expect(readOutline(afterReplace).map((node) => node.title)).toEqual(['Only this']);
   });
 
+  it('counts the outline it only read, in the tree’s own shape, and pastes back intact', async () => {
+    // The card promises "the outline as text you can read, edit and paste back",
+    // so this asks the two things that sentence owns: the counts beside the tree,
+    // and the round trip through its own printer and parser.
+    //
+    // Measured live on the current build: the count sentence read
+    // "11 bookmarks (2 at the top levels, 5 without a pages)" — `countLabel`
+    // pluralises the noun it is handed, and both of those are positions.
+    const five = await fixture(Array.from({ length: 5 }, () => ({ size: A4 })), 'outline view');
+    const typed = 'Front matter\n  Chapter One :: 1\n  Chapter Two :: 3\nBack matter\n  Index :: 5';
+    const seededBytes = await outputBytes(await run('bookmarks', { outline: typed }, [five]));
+
+    const view = await run('bookmarks', { outline: '' }, [seededBytes]);
+    expect(view.message)
+      .toBe('5 bookmarks (2 at the top level, 2 without a page). Copy the text, edit it, and run again to replace them.');
+    expect(view.message).not.toMatch(/top levels|without a pages/);
+    expect(view.outputs ?? []).toHaveLength(0);
+
+    // Control: an outline with nothing missing says so in one clause, not two.
+    const plainBytes = await outputBytes(await run('bookmarks', { outline: 'One :: 1\nTwo :: 2' }, [five]));
+    const plain = await run('bookmarks', { outline: '' }, [plainBytes]);
+    expect(plain.message).toMatch(/^2 bookmarks \(2 at the top level\)\./);
+
+    // And the printed text is the tree: same lines, same indents, same targets.
+    const printed = view.report?.sections?.[0]?.text ?? '';
+    expect(printed).toBe(`${typed}\n`);
+    const flat = (nodes: OutlineNode[], depth = 0): string[] => nodes.flatMap((node) => [
+      `${'  '.repeat(depth)}${node.title}${node.page === null ? '' : ` :: ${node.page + 1}`}`,
+      ...flat(node.children ?? [], depth + 1),
+    ]);
+    const repasted = await run('bookmarks', { outline: printed }, [five]);
+    const repastedDoc = await openPDF(await outputBytes(repasted));
+    const seededDoc = await openPDF(seededBytes);
+    expect(flat(readOutline(repastedDoc))).toEqual(flat(readOutline(seededDoc)));
+    expect(flat(readOutline(seededDoc))).toEqual([
+      'Front matter', '  Chapter One :: 1', '  Chapter Two :: 3', 'Back matter', '  Index :: 5',
+    ]);
+  });
+
   it('keeps a title that contains the page separator, and links the page after it', async () => {
     const bytes = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'colons');
     const outcome = await run('bookmarks', { outline: 'A :: B :: 3\nNotes :: Revised :: 4' }, [bytes]);

@@ -25,7 +25,7 @@ import { drawTextU, measureText, wrapText } from '../core/fonts';
 import { mergeFaceStyle, standardFamilyFace, standardFacesSpell, type FaceStyle } from '../core/text-style';
 import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './textStyleFields';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
-import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, type OutlineNode } from '../core/bookmarks';
+import { addPageLabels, readPageLabels, readPageLabelRanges, writeOutline, readOutline, toRoman, toLetters, type OutlineNode } from '../core/bookmarks';
 import { hasXfa, listFormFields, type CreateFieldSpec } from '../core/forms';
 import { ocrSilentPageOf } from '../core/ocr';
 import type { OcrPageResult, OcrSilentKind, OcrSilentPage } from '../core/ocr';
@@ -1289,7 +1289,11 @@ export const editTools: PdfToolDefinition[] = [
         }
         const size = countOutline(existing);
         return reportResult([{ title: 'Current outline', text: outlineToText(existing) }], {
-          message: `${countLabel(size.total, 'bookmark')} (${countLabel(existing.length, 'at the top level')}${size.targetless > 0 ? `, ${countLabel(size.targetless, 'without a page')}` : ''}). Copy the text, edit it, and run again to replace them.`,
+          // The two figures beside the total are counts of a *position*, not of a
+          // noun: `countLabel` pluralises what it is given, so this used to print
+          // "3 bookmarks (2 at the top levels)" and "5 without a pages" — measured
+          // live on a nested outline with headings that carry no target.
+          message: `${countLabel(size.total, 'bookmark')} (${existing.length} at the top level${size.targetless > 0 ? `, ${size.targetless} without a page` : ''}). Copy the text, edit it, and run again to replace them.`,
         });
       }
       const nodes = textToOutline(raw, input.pageCount, notes);
@@ -2578,6 +2582,11 @@ function expand(template: string, values: Record<string, string | number>): stri
 }
 
 function formatNumber(value: number, style: string, width = 1): string {
+  // `toRoman`/`toLetters` are core's — the same functions that render a page
+  // label's preview, so a stamped folio and `/PageLabels` cannot drift into two
+  // spellings of one number. Both are reached here only with a positive integer:
+  // decimal and padded never call them, and the roman/letter clamp above floors
+  // the first number at 1.
   if (style === 'roman-upper') return toRoman(value);
   if (style === 'roman-lower') return toRoman(value).toLowerCase();
   if (style === 'letters') return toLetters(value);
@@ -2586,33 +2595,6 @@ function formatNumber(value: number, style: string, width = 1): string {
   // four-sheet file.
   if (style === 'padded') return String(value).padStart(width, '0');
   return String(value);
-}
-
-function toRoman(value: number): string {
-  const table: [number, string][] = [
-    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
-    [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
-  ];
-  let remaining = Math.max(0, Math.floor(value));
-  let out = '';
-  for (const [amount, symbol] of table) {
-    while (remaining >= amount) {
-      out += symbol;
-      remaining -= amount;
-    }
-  }
-  return out || '0';
-}
-
-function toLetters(value: number): string {
-  let remaining = Math.max(1, Math.floor(value));
-  let out = '';
-  while (remaining > 0) {
-    remaining -= 1;
-    out = String.fromCharCode(65 + (remaining % 26)) + out;
-    remaining = Math.floor(remaining / 26);
-  }
-  return out;
 }
 
 /** The tokens `format` expands; anything else is printed standing and admitted. */

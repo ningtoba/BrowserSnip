@@ -496,6 +496,35 @@ describe('page-numbers writes real folios', () => {
     expect(FONT_URLS.some((url) => /NotoSans/.test(url))).toBe(true);
     expect(outcome.warnings.join(' ')).toMatch(/Latin-only/u);
   });
+
+  it('stamps roman past 3999 in the one spelling its page labels use', async () => {
+    // The folio and `/PageLabels` used to carry private copies of the romaniser, so
+    // the same number could be spelled two ways in one document — the label preview
+    // stopped at decimal over 3999 while the sheet kept stamping additive M. Both
+    // now call core's `toRoman`, and this pins the strings against each other.
+    const four = [
+      { text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd' },
+    ];
+    const folios = await runPdf('page-numbers', {
+      pages: 'all', style: 'roman-upper', prefix: '', suffix: '', startAt: 3998,
+    }, four);
+    const doc = await reopen(folios);
+    const stamped = (await Promise.all(doc.getPages().map(pageText)))
+      .map((text, index) => text.replace('abcd'[index], '').trim());
+    expect(stamped).toEqual(['MMMCMXCVIII', 'MMMCMXCIX', 'MMMM', 'MMMMI']);
+    expect(folios.message).toMatch(/MMMCMXCVIII to MMMMI/u);
+
+    const labels = await runPdf('add-page-labels', { ranges: '1-4 Roman 3998' }, four);
+    expect(labels.message).toMatch(/now read: MMMCMXCVIII, MMMCMXCIX, MMMM, MMMMI/u);
+    // Control: the lower-case folio is the same tree's other spelling, not a third.
+    const lower = await runPdf('page-numbers', {
+      pages: 'all', style: 'roman-lower', prefix: '', suffix: '', startAt: 3998,
+    }, four);
+    const lowerDoc = await reopen(lower);
+    expect((await Promise.all(lowerDoc.getPages().map(pageText)))
+      .map((text, index) => text.replace('abcd'[index], '').trim()))
+      .toEqual(stamped.map((text) => text.toLowerCase()));
+  });
 });
 
 describe('watermark paints into the page', () => {
