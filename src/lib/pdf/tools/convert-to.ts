@@ -73,6 +73,9 @@ const CBZ_PAGE_FIELD = pageSizeField({
   options: [{ value: 'fit', label: 'Match each image' }, ...SHEET_OPTIONS],
 });
 
+/** What a CBZ page is, by the extension the entry names. Same list the hint quotes. */
+const CBZ_PAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif'];
+
 /** The word the result card uses for a chosen sheet, taken from the field itself. */
 function sheetLabel(value: string): string {
   return SHEET_OPTIONS.find((option) => option.value === value)?.label ?? value;
@@ -989,7 +992,7 @@ export const convertToTools: PdfToolDefinition[] = [
     promise: 'Every page image inside the ZIP, in reading order, on a page that matches its own size — or on the sheet you choose.',
     notes: [
       'Only ZIP containers are read. CBR is a RAR archive renamed, and BrowserSnip does not bundle a RAR decompressor.',
-      'A chosen sheet is turned sideways for artwork wider than it is tall, and the picture is scaled down to fit inside it rather than cropped.',
+      'A chosen sheet is turned sideways for artwork wider than it is tall, and the picture is scaled to fit inside it whole — oversized art is reduced, small art is enlarged (measured: 200 × 400 on A4 covers 422 × 842 pt) — never cropped.',
       'Pages are the pictures themselves: lettering is not extracted as text, so the result is not searchable.',
       'Entry names are sorted naturally, so page 2 sorts after page 1 rather than after page 10.',
     ],
@@ -1001,17 +1004,25 @@ export const convertToTools: PdfToolDefinition[] = [
         hint: sniffArchiveHint,
       });
       const { readZip } = await import('../core/archive');
-      let files;
+      let all;
       try {
-        files = await readZip(input.bytes, {
-          filterExtensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif'],
-        });
+        all = await readZip(input.bytes);
       } catch (error) {
         throw new ToolInputError('CORRUPT', `"${input.name}" is not a readable ZIP archive: ${error instanceof Error ? error.message : 'it could not be opened'}.`, {
           fileName: input.name,
           hint: sniffArchiveHint,
         });
       }
+      // The seam hides folders and Mac resource-forks; this split is the part
+      // the route owns: what counts as a page, and what the card must then say
+      // it left out. Reading the whole archive is also how the ignored entries
+      // get counted and named — the standing sentence used to claim "Non-image
+      // entries ... were ignored" over an archive that held none at all
+      // (measured: `c2-allimg`), with no count whenever it was true.
+      const isPage = (entry: { name: string }) =>
+        CBZ_PAGE_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(`.${ext}`));
+      const files = all.filter(isPage);
+      const extras = all.filter((entry) => !isPage(entry));
       if (files.length === 0) {
         throw new ToolInputError('UNSUPPORTED', `"${input.name}" is a valid archive but holds no page images.`, {
           fileName: input.name,
@@ -1035,7 +1046,11 @@ export const convertToTools: PdfToolDefinition[] = [
         })),
         warnings: [
           RASTER_LOSS,
-          'Non-image entries inside the archive (CBA-style extras, metadata, cover text) were ignored.',
+          ...(extras.length > 0
+            ? [`Non-image entries (${extras.length} of ${all.length} files in the archive) were ignored: `
+              + `${extras.slice(0, 5).map((entry) => entry.name).join(', ')}`
+              + `${extras.length > 5 ? `, +${extras.length - 5} more` : ''}.`]
+            : []),
         ],
       };
     },
