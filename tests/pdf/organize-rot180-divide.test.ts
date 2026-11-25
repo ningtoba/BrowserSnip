@@ -72,8 +72,15 @@ print(sum(1 for i in range(0, len(samples)) if samples[i] < 100))
   ], { encoding: 'utf8' }).trim());
 }
 
+/** The CI runner ships python3 without pymupdf (same conditional-skip family as
+ * the Ghostscript-WASM pins); the table-equality tests need no renderer and stay. */
+const hasPymupdf = (() => {
+  try { execFileSync('python3', ['-c', 'import pymupdf'], { stdio: 'ignore' }); return true; }
+  catch { return false; }
+})();
+
 describe('divide-pages cuts a /Rotate 180 sheet along the line the user sees (#15)', () => {
-  it('MuPDF-judged: the piece from the DISPLAYED top half carries the band', async () => {
+  it.skipIf(!hasPymupdf)('MuPDF-judged: the piece from the DISPLAYED top half carries the band', async () => {
     const tool = getPdfTool('divide-pages');
     expect(tool).toBeTruthy();
     const source = new File([await halfTurnSheet() as BlobPart], 'turned.pdf', { type: 'application/pdf' });
