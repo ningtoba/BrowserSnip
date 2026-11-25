@@ -3245,10 +3245,16 @@ export const organizeTools: PdfToolDefinition[] = [
       if (protectedFiles.length > 0) {
         const names = protectedFiles.map((input) => `"${input.name}"`).join(', ');
         notes.add(
-          `Every file is stored byte-for-byte, so ${names} ${protectedFiles.length === 1 ? 'is' : 'are'} still password protected inside the archive. Unlock them first if the archive is for someone without the password.`,
+          `Every file is stored byte-for-byte, so ${names} ${protectedFiles.length === 1 ? 'is' : 'are'} still password protected inside the archive. Unlock ${protectedFiles.length === 1 ? 'it' : 'them'} first if the archive is for someone without the password.`,
         );
       }
       const used = new Set<string>();
+      // F-Z3: every entry's case- and normalisation-folded form. Names that
+      // differ only there are distinct ZIP entries and ONE file on a default
+      // Windows/macOS filesystem — the archive promised every byte, so the
+      // loss has to be said out loud. (The NFC half of the fold is settled by
+      // storing composed names; the case half stays and gets this note.)
+      const seenFold = new Map<string, string>();
       const entries: { name: string; data: Uint8Array | string }[] = [];
       const stem = safeStem(inputs[0].name);
       for (const input of inputs) {
@@ -3263,13 +3269,30 @@ export const organizeTools: PdfToolDefinition[] = [
         // Only a name this helper had to change is a clash: an extensionless file
         // is stored as `scan.pdf`, and that is a repair, not two files fighting
         // over one entry (E16, E17).
-        const wanted = entryNameFor(leaf);
+        // F-Z4: store the composed form. The entry-name pin in this suite
+        // asserts `name.normalize('NFC') === name` while the writer happily
+        // kept a decomposed leaf — the invariant only held because every
+        // fixture was pre-composed. Composing first also turns an NFC/NFD
+        // twin pair into the exact clash whose note already names both files.
+        const composed = leaf.normalize('NFC');
+        const wanted = entryNameFor(composed);
         const name = uniqueNameIn(used, wanted);
         if (name !== wanted) {
           notes.add(`Two files share the name "${wanted}"; the second was stored as "${name}".`);
-        } else if (wanted !== leaf) {
-          notes.add(`"${leaf}" is not a name an unzip tool can keep, so it was stored as "${wanted}".`);
+        } else if (wanted !== input.name) {
+          // Compared to the tray name, not the basename: `../evil.pdf` →
+          // `evil.pdf` is a rename too — the leaf step eats the path before
+          // this line, so against the leaf it looked like nothing happened.
+          notes.add(entryRenameNote(input.name, wanted));
         }
+        const fold = name.toLowerCase();
+        const twin = seenFold.get(fold);
+        if (twin !== undefined && twin !== name) {
+          notes.add(
+            `"${twin}" and "${name}" are the same name once case and Unicode form are ignored — unzipped on Windows or macOS (both case-insensitive by default), one file lands on top of the other. Rename one source before packing if both must survive there.`,
+          );
+        }
+        seenFold.set(fold, name);
         entries.push({ name, data: input.bytes.slice() });
       }
       const total = inputs.reduce((sum, input) => sum + input.bytes.length, 0);
@@ -3285,7 +3308,7 @@ export const organizeTools: PdfToolDefinition[] = [
               `${i + 1}. ${entries[i].name} — ${pageCountLabel(input.pageCount)} — ${describeSize(input.bytes)}`,
           ),
           '',
-          `${pageCountLabel(inputs.reduce((sum, input) => sum + input.pageCount, 0))} in ${inputs.length} files, ${describeSize(total)} before compression.`,
+          `${pageCountLabel(inputs.reduce((sum, input) => sum + input.pageCount, 0))} in ${inputs.length} ${inputs.length === 1 ? 'file' : 'files'}, ${describeSize(total)} before compression.`,
         ].join('\n');
         entries.push({ name: 'manifest.txt', data: manifest });
       }
@@ -3478,6 +3501,25 @@ function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes, 
  * clipped name came out truncated with no suffix room left, so the stem is
  * shortened to leave space for the `-2` the clash path appends.
  */
+/**
+ * Why an entry is not spelled like the file it came from, in words that are
+ * true of that rename (F-Z7): a path in the name, a decomposed spelling, a
+ * missing extension and a genuinely unkeepable name are four different facts,
+ * and the one sentence used to claim the first two were the fourth.
+ */
+function entryRenameNote(leaf: string, wanted: string): string {
+  if (/[\\/]/.test(leaf)) {
+    return `"${leaf}" carries a path — ZIP entries here sit on one level, so it was stored as "${wanted}".`;
+  }
+  if (leaf.normalize('NFC') !== leaf && wanted === leaf.normalize('NFC')) {
+    return `"${leaf}" is spelled in decomposed Unicode; it was stored composed as "${wanted}" — the same letters, one name on a normalising filesystem.`;
+  }
+  if (!/\.[^.]+$/.test(leaf)) {
+    return `"${leaf}" has no extension, so it was stored as "${wanted}" — without the .pdf no double-click opens it.`;
+  }
+  return `"${leaf}" is not a name an unzip tool can keep, so it was stored as "${wanted}".`;
+}
+
 function entryNameFor(leaf: string): string {
   const cleaned = sanitiseEntryName(leaf);
   // 180 is the writer's cap; 8 goes to `-N` and `.pdf`.

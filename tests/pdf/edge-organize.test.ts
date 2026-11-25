@@ -3863,6 +3863,91 @@ describe('each tool is checked against its own output file', () => {
     expect(warn(both)).toMatch(/Two files share the name "scan\.pdf"; the second was stored as "scan-2\.pdf"/i);
   });
 
+  /**
+   * F-Z3/F-Z4: names the archive keeps and the filesystem merges. Measured on
+   * r4: `colour.pdf` + `COLOUR.pdf` stored both, said nothing, and a default
+   * Windows/macOS unzip loses one; the NFC/NFD twins of `café.pdf` printed as
+   * ONE name in the manifest and the entry list — and the decomposed spelling
+   * went into the file, breaking the very NFC invariant this suite asserts at
+   * the entry names, which only passed because every fixture was composed.
+   */
+  it('pdfs-to-zip warns about collisions a case- or normalising filesystem merges (F-Z3, F-Z4)', async () => {
+    const bytes = await sheets(grid(1));
+    const lower = new File([new Uint8Array(bytes)], 'colour.pdf', { type: 'application/pdf' });
+    const upper = new File([new Uint8Array(bytes)], 'COLOUR.pdf', { type: 'application/pdf' });
+    const caseRun = await run('pdfs-to-zip', { includeReport: false }, [lower, upper]);
+    expect(await zipEntries(caseRun.outputs[0].blob)).toEqual(['colour.pdf', 'COLOUR.pdf']);
+    expect(warn(caseRun), 'silent today: one of the two is lost on unzip').toMatch(
+      /"colour.pdf" and "COLOUR.pdf" are the same name once case and Unicode form are ignored/i,
+    );
+
+    // Explicit forms, not whatever the source file's own normalisation says:
+    const composed = new File([new Uint8Array(bytes)], 'caf\u00E9.pdf', { type: 'application/pdf' });
+    const decomposed = new File([new Uint8Array(bytes)], 'cafe\u0301.pdf', { type: 'application/pdf' });
+    const nfdRun = await run('pdfs-to-zip', { includeReport: false }, [decomposed]);
+    const nfdNames = await zipEntries(nfdRun.outputs[0].blob);
+    expect(nfdNames[0], 'the entry is stored composed — the tool honours its own assertion').toBe(
+      'caf\u00E9.pdf',
+    );
+    expect(warn(nfdRun)).toMatch(/stored composed as "caf\u00E9\.pdf"/i);
+
+    // Now the collision IS exact (both composed) and the existing share-name
+    // machinery names both files instead of merging them on disk.
+    const pair = await run('pdfs-to-zip', { includeReport: false }, [composed, decomposed]);
+    const pairNames = await zipEntries(pair.outputs[0].blob);
+    expect(pairNames).toEqual(['caf\u00E9.pdf', 'caf\u00E9-2.pdf']);
+    expect(warn(pair)).toMatch(/share the name "caf\u00E9\.pdf"/);
+    expect(pairNames.map((n) => n.normalize('NFC'))).toEqual(pairNames);
+  });
+
+  it('pdfs-to-zip counts one file as one file and unlocks it, not them (F-Z5, F-Z6)', async () => {
+    const bytes = await sheets(grid(1));
+    const single = await run('pdfs-to-zip', { includeReport: true }, [
+      new File([new Uint8Array(bytes)], 'one.pdf', { type: 'application/pdf' }),
+    ]);
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(new Uint8Array(await single.outputs[0].blob.arrayBuffer()));
+    const manifest = await zip.file('manifest.txt')!.async('string');
+    expect(manifest, 'measured: "8 pages in 1 files"').toMatch(/in 1 file, /);
+    expect(manifest).not.toMatch(/1 files/);
+
+    // F-Z6: the protected-file note covers the count in `is/are` but not in
+    // the repair sentence — one locked file was told to `Unlock them first`.
+    // An owner-password file opens without a secret and packs unasked.
+    const locked = fileOf(encryptedFixture('aes-256-owner.pdf'), 'ownerlocked.pdf');
+    const oneLocked = await run('pdfs-to-zip', { includeReport: false }, [locked]);
+    const said = warn(oneLocked);
+    expect(said, 'singular file, singular pronoun').toMatch(/is still password protected/i);
+    expect(said).toMatch(/Unlock it first/i);
+    expect(said).not.toMatch(/Unlock them first/i);
+    const twoLocked = await run('pdfs-to-zip', { includeReport: false }, [
+      locked,
+      fileOf(encryptedFixture('rc4-128-owner.pdf'), 'second-locked.pdf'),
+    ]);
+    expect(warn(twoLocked)).toMatch(/are still password protected/i);
+    expect(warn(twoLocked)).toMatch(/Unlock them first/i);
+  });
+
+  it('pdfs-to-zip discloses every rename it makes, and lies about none (F-Z7)', async () => {
+    const bytes = await sheets(grid(1));
+    const climbed = fileOf(bytes, '../evil.pdf');
+    const nested = fileOf(bytes, 'a/b/c.pdf');
+    const outcome = await run('pdfs-to-zip', { includeReport: false }, [climbed, nested]);
+    expect(await zipEntries(outcome.outputs[0].blob)).toEqual(['evil.pdf', 'c.pdf']);
+    const said = warn(outcome);
+    expect(said, 'a path-in-name rename is a rename too — silent today').toMatch(
+      /"\.\.\/evil\.pdf" carries a path/i,
+    );
+    expect(said).toMatch(/"a\/b\/c\.pdf" carries a path/i);
+
+    const scan = new File([new Uint8Array(bytes)], 'scan', { type: 'application/pdf' });
+    const repair = await run('pdfs-to-zip', { includeReport: false }, [scan]);
+    expect(warn(repair), 'an unzip tool keeps "scan" perfectly well').toMatch(
+      /"scan" has no extension, so it was stored as "scan\.pdf"/i,
+    );
+    expect(warn(repair)).not.toMatch(/not a name an unzip tool can keep/i);
+  });
+
   it('divide-pages cuts strips from the top of the sheet down, and bounds the count it declares (E15)', async () => {
     const one = fileOf(await sheets([{ width: 200, height: 100 }]), 'one.pdf');
     const outcome = await run('divide-pages', { axis: 'horizontal', parts: 3 }, [one]);
