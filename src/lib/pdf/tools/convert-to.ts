@@ -210,6 +210,20 @@ const BMP_TRUNCATED =
   'A BMP header states exactly how many pixel bytes the file must hold, and the file is checked against it: one cut short — an interrupted copy or save — is refused by name instead of converting with the missing rows painted white.';
 
 /**
+ * The two TIFF codings the bundled reader gets wrong, and the honest split.
+ *
+ * Measured at :5296 against Pillow/libjpeg decodes of the same files:
+ * JPEG-compressed TIFF came back with every pixel wrong (`c2-jpegtif`, maxdiff
+ * 255 on all 153), planar-2 TIFF with the colour planes misplaced
+ * (`c2-planar2`, same) — both as *successful* pages. None, LZW, Deflate,
+ * palette, Group 4 and 16-bit (exact high byte) all matched pixel for pixel
+ * (`c2-lzw`, `c2-deflate`, `c2-pal8`, `c2-g4`, `c2-tif16`), so those convert
+ * and the two liars are refused before the decoder is asked.
+ */
+const TIFF_VARIANTS =
+  'A TIFF stores its pixels in one of many codings. Plain, LZW, Deflate, palette, 1-bit Group 4 and 16-bit all convert — a 16-bit TIFF keeps its 8-bit high byte, pixel-exact. A TIFF that carries its picture as JPEG, or in separate colour planes (planar configuration 2), is named and refused: this app’s TIFF reader colours those two wrongly (measured against the same files opened by other decoders), and a wrong page is worse than a missing one.';
+
+/**
  * A WebP states its own length too, and its decoder is even quieter than BMP's.
  *
  * A WebP cut at 40 % of its bytes decoded into a *complete* 400 x 240 bitmap of
@@ -602,6 +616,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'Each picture is embedded as PNG, so a PDF built from JPEGs is larger than the JPEGs themselves — the pixels are stored losslessly, not copied byte for byte.',
       RASTER_LOSS,
       'HEIC, AVIF and JXL depend on the browser decoder; when this browser cannot open one, the run says which file failed instead of guessing.',
+      TIFF_VARIANTS,
       'Scanned pages are still pictures. Digitize Document runs OCR and adds a real, selectable text layer on top.',
     ],
     fields: [
@@ -739,6 +754,7 @@ export const convertToTools: PdfToolDefinition[] = [
         // embedded as a complete page with 150 white rows Chrome invented, and
         // the card said `5 BMP image(s) → 5 page(s)` with nothing about it.
         isBmp ? BMP_TRUNCATED : '',
+        isTiff ? TIFF_VARIANTS : '',
         isWebp ? WEBP_TRUNCATED : '',
         isWebp ? WEBP_FIRST_FRAME : '',
         RASTER_DENSITY,
@@ -763,7 +779,7 @@ export const convertToTools: PdfToolDefinition[] = [
         const { images } = await decodeImageBatch(context, {
           label: `one or more ${label} images`,
           hint: `Re-save the file as ${label}, or use Images to PDF, which sniffs the real format.`,
-          decodeHint: isHeic ? HEIC_DECODE_HINT : undefined,
+          decodeHint: isHeic ? HEIC_DECODE_HINT : isTiff ? TIFF_VARIANT_HINT : undefined,
           expectLabel: `${label} image(s)`,
           mimes: FORMAT_MIMES[format],
           refused,
@@ -1906,6 +1922,59 @@ function advertisedFormats(mimes: string[]): string {
 }
 
 /**
+ * The remedy each variant gate hands the user, and the refusals it prints.
+ *
+ * The sentences end in a fact about the file, not advice: a refusal collected
+ * into `refused` gains "— left out." after them, and a single-file run adds its
+ * hint underneath, so advice inside the sentence would print twice with
+ * different punctuation.
+ */
+const TIFF_VARIANT_HINT = 'Re-save the file uncompressed or with LZW/Deflate coding, or as PNG or JPEG, then try again.';
+
+/**
+ * The two misdecoded TIFF codings in header terms: tag 259 (Compression) 6/7
+ * and tag 284 (PlanarConfiguration) 2, on any page of the file.
+ *
+ * Classic TIFF (version 42) only, walked defensively: a chain that runs off
+ * the end returns `null` so the decoder still gets its try — the file is only
+ * refused on tags it actually states. Tiled or stripped makes no difference:
+ * the two bad codings are wrong either way.
+ */
+function tiffVariantProblem(name: string, bytes: Uint8Array): string | null {
+  if (bytes.length < 8) return null;
+  const little = bytes[0] === 0x49 && bytes[1] === 0x49;
+  const big = bytes[0] === 0x4d && bytes[1] === 0x4d;
+  if (!little && !big) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u16 = (at: number) => view.getUint16(at, little);
+  const u32 = (at: number) => view.getUint32(at, little);
+  if (u16(2) !== 42) return null;
+  let at = u32(4);
+  for (let guard = 0; guard < 128 && at + 2 <= bytes.length; guard += 1) {
+    const count = u16(at);
+    const table = at + 2;
+    for (let i = 0; i < count; i += 1) {
+      const entry = table + i * 12;
+      if (entry + 12 > bytes.length) return null;
+      const tag = u16(entry);
+      if (u16(entry + 2) !== 3) continue; // the two tags are SHORT-valued
+      const value = u16(entry + 8);
+      if (tag === 259 && (value === 6 || value === 7)) {
+        return `"${name}" keeps its picture as JPEG inside the TIFF, which this app’s TIFF reader colours wrongly (measured against the same file opened by other decoders).`;
+      }
+      if (tag === 284 && value === 2) {
+        return `"${name}" keeps its colour planes in separate strips (planar configuration 2), which this app’s TIFF reader reassembles wrongly (measured against the same file opened by other decoders).`;
+      }
+    }
+    const nextAt = table + count * 12;
+    if (nextAt + 4 > bytes.length) return null;
+    at = u32(nextAt);
+    if (at === 0) return null;
+  }
+  return null;
+}
+
+/**
  * The hint a refused batch raises with.
  *
  * A batch can be refused file by file for different reasons and the raised
@@ -1972,6 +2041,22 @@ async function decodeImageBatch(
     // note reached the tool result twice (hidden from the card only by the
     // runner's `new Set`).
     collectNotice(expected.notices, mime, batch.bytes, batch.name);
+    // Codings whose decode is known-wrong here — a blank page (RLE4) or wrong
+    // colours (JPEG-in-TIFF, planar 2) — are refused on the header before the
+    // decoder is asked, so a success count can never print over bad pixels.
+    const variant = mime === 'image/tiff' ? tiffVariantProblem(batch.name, batch.bytes) : null;
+    if (variant) {
+      decodeRefused = true;
+      if (!expected.refused) {
+        throw new ToolInputError('UNSUPPORTED', variant, {
+          fileName: batch.name,
+          hint: expected.decodeHint ?? 'Re-save it as PNG or JPEG, or use a converter for its real format.',
+        });
+      }
+      refused.push(`${variant.replace(/\.$/, '')} — left out.`);
+      context.progress(((index + 1) / batches.length) * 0.4, `Left out ${batch.name}`);
+      continue;
+    }
     let pages;
     try {
       pages = await decodeImagePages(batch.bytes, { mime, background: expected.background });
