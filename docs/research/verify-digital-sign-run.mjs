@@ -112,14 +112,36 @@ const write = async (id, value) => h.ev(`(() => {
 console.log('reason  :', await write('tool-field-reason', REASON));
 console.log('location:', await write('tool-field-location', LOCATION));
 console.log('page    :', await write('tool-field-page', PAGE));
-const visibleState = await h.ev(`(() => {
-  const el = document.getElementById('tool-field-visible');
-  if (!el) return 'no visible control';
-  return el.type + ' checked=' + (el.checked ?? el.value);
-})()`);
-console.log('visible :', visibleState, VISIBLE ? '(left as it is)' : '(toggled off)');
+// The toggle is a bare checkbox in a labelled <label> — shared/FieldControls gives
+// no `tool-field-<key>` id to a toggle — so the control is found by its label text.
+const findBox = `(() => [...document.querySelectorAll('label input[type=checkbox]')]
+  .find((i) => /visible signature block/i.test(i.closest('label')?.innerText || '')))()`;
+console.log('visible :', await h.ev(`(() => { const b = ${findBox}; return b ? 'checked=' + b.checked : 'no visible control'; })()`));
 if (!VISIBLE) {
-  await h.ev(`(() => { const el = document.getElementById('tool-field-visible'); (el.closest('[role=switch],button,label') || el).click(); return 1; })()`);
+  await h.ev(`(() => { ${findBox}.click(); return 1; })()`);
+  await sleep(300);
+  const after = await h.ev(`(() => { const b = ${findBox}; return b ? 'checked=' + b.checked : 'missing'; })()`);
+  console.log('visible after the click:', after, after === 'checked=false' ? '(off)' : '(STILL ON — instrument broken)');
+}
+if (process.env.NOTES) {
+  // The honest notes sit behind a disclosure; a screenshot of a closed fold proves
+  // nothing about the sentences on the card.
+  console.log('notes:', await h.ev(`(() => {
+    const bar = [...document.querySelectorAll('button')].find((b) => /HONEST NOTES/i.test(b.innerText || ''));
+    if (!bar) return 'no notes disclosure';
+    if (bar.getAttribute('aria-expanded') === 'false') bar.click();
+    return 'opened';
+  })()`));
+  await sleep(400);
+}
+if (process.env.DARK) {
+  console.log('dark  :', await h.ev(`(() => {
+    const button = [...document.querySelectorAll('button')].find((b) => /^[\\u2600\\u263e]$/.test((b.innerText || '').trim()) || /^(light|dark) mode$/i.test(b.getAttribute('title') || ''));
+    if (!button) return 'no theme button';
+    button.click();
+    return document.documentElement.className || 'clicked, no class';
+  })()`));
+  await sleep(600);
 }
 if (SHOT) await h.shot(SHOT);
 console.log('screen  :', await h.ev(`(() => {
@@ -128,6 +150,32 @@ console.log('screen  :', await h.ev(`(() => {
     blocker: (document.body.innerText.match(/[^\\n]*(Choose|needed|required|locked)[^\\n]*/g) || []).slice(0, 3) });
 })()`));
 
+// The network half of this tool's promise ("nothing was uploaded", "the private
+// key never leaves this tab"): from here on every request the run makes is
+// recorded with its body size. Expected answer: zero requests at all — a same-origin
+// module may still load, file bytes or cert/key POSTs anywhere are a defect.
+const net = [];
+const origOnMessage = h.ws.onmessage;
+h.ws.onmessage = (e) => {
+  try {
+    const m = JSON.parse(e.data);
+    if (m.method === 'Fetch.requestPaused') {
+      const p = m.params;
+      const url = p.request?.url || '';
+      net.push({
+        method: p.request?.method,
+        url,
+        upload: p.request?.postData ? new TextEncoder().encode(p.request.postData).length : (p.request?.hasPOSTData ? -1 : 0),
+      });
+      h.send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => {});
+    }
+  } catch { /* not ours */ }
+  origOnMessage?.(e);
+};
+await h.send('Runtime.enable');
+await h.send('Network.enable');
+await h.send('Fetch.enable', { patterns: [{ requestStage: 'Request' }] });
+
 const n = await h.ev('window.__blobs.length');
 console.log('run:', await h.ev(`(() => {
   const btn = document.querySelector('#tool-process-btn') || [...document.querySelectorAll('button')].find((b) => /^Sign$/.test(b.innerText.trim()));
@@ -135,6 +183,17 @@ console.log('run:', await h.ev(`(() => {
   if (btn.disabled) return 'disabled: ' + (btn.title || '');
   btn.click(); return btn.innerText.trim();
 })()`));
+if (process.env.REFUSE) {
+  // A refusal is an answer: wait a short bounded time for the named error, screenshot it.
+  await sleep(Number(process.env.REFUSE) * 1000 || 12000);
+  if (SHOT) await h.shot(SHOT);
+  console.log('refusal screen:', await h.ev(`(document.body.innerText.split('\\n').filter((l) => /must be|between|refus|encrypt|Unlock|Choose|does not|no /.test(l)).slice(0, 8).join(' ;; '))`));
+  console.log('blob after refusal:', await h.ev('window.__blobs.length - ' + n));
+  const originOfBase = new URL(BASE).origin;
+  console.log('network during the run (non-same-origin):', JSON.stringify(net.filter((r) => !r.url.startsWith(originOfBase))));
+  h.chrome.kill('SIGKILL');
+  process.exit(0);
+}
 if (!(await h.wait(`window.__blobs.length > ${n}`, 180000))) {
   console.log('body:', await h.ev('document.body.innerText.slice(0,2500)'));
   throw new Error('no output blob');
@@ -150,6 +209,11 @@ const info = JSON.parse(file);
 writeFileSync(OUT, Buffer.from(info.b64, 'base64'));
 console.log('wrote', OUT, info.size, 'bytes');
 console.log('result screen:', await h.ev(`(document.body.innerText.split('\\n').filter((l) => /sign|Sign|verif|warn|check|invalid|certif/i.test(l)).slice(0, 12).join(' ;; '))`));
+if (process.env.SHOT2) await h.shot(process.env.SHOT2);
 console.log('console errors', JSON.stringify([...new Set(h.errors)].slice(0, 5)));
+const origin = new URL(BASE).origin;
+const offsite = net.filter((r) => !r.url.startsWith(origin) && !r.url.startsWith('data:') && !r.url.startsWith('blob:'));
+const posted = net.filter((r) => r.method !== 'GET' && r.method !== 'HEAD');
+console.log(`network during the run: ${net.length} request(s); non-GET: ${posted.length ? JSON.stringify(posted) : 'none'}; off-origin: ${offsite.length ? JSON.stringify(offsite) : 'none'}`);
 h.chrome.kill('SIGKILL');
 process.exit(0);

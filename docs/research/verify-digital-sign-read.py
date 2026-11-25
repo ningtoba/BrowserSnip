@@ -12,6 +12,7 @@ Asks, in order:
   * is the visible appearance on the page the tool was told to mark, and does it
     paint something there?
 """
+import re
 import subprocess
 import sys
 import tempfile
@@ -121,6 +122,36 @@ if want_tamper and byte_range:
             opens = f" · MuPDF still opens it ({doc.page_count} pages)"
             doc.close()
         print(f"tamper {label} (offset {spot}): exit={code} · {noise.replace(chr(10), ' / ')[:120]}{opens}")
+
+    # The placeholder row above keeps the ORIGINAL blob, so it only proves the gap is
+    # outside the digest. A forged *value* is the other half of the matrix: flip one
+    # hex digit of the DER itself. The covered bytes do not move — the message-digest
+    # attribute still matches — so only the RSA check over the signed attributes can
+    # catch it, which is exactly the case a digest-only reader calls "valid".
+    cut = max(0, len(cms) * 2 - 6)  # deep inside the DER, past the length prefix
+    forged_pdf = bytearray(raw)
+    digit = forged_pdf[byte_range[1] + cut]
+    forged_pdf[byte_range[1] + cut] = ord("e") if digit != ord("e") else ord("f")
+    forged_blob = bytearray(cms)
+    forged_blob[cut // 2] ^= 0x01
+    (work / "forged.p7s").write_bytes(bytes(forged_blob))
+    code, noise = run(["openssl", "cms", "-verify", "-inform", "DER", "-in", str(work / "forged.p7s"),
+                       "-content", str(work / "signed.bin"), "-binary", "-noverify", "-out", "/dev/null"])
+    print(f"forge one hex digit of the DER at file offset {byte_range[1] + cut} (blob byte {cut // 2}): "
+          f"exit={code} · {noise.replace(chr(10), ' / ')[:120]}"
+          f"{'' if code != 0 else '  <- NOT CAUGHT'}")
+    (work / "forged.pdf").write_bytes(bytes(forged_pdf))
+    code, noise = run(["pdfsig", str(work / "forged.pdf")])
+    lines = [line.strip() for line in noise.splitlines() if "Signature Validation" in line or "Digest" in line]
+    print(f"pdfsig over the forged copy: exit={code} · {lines or 'no validation line'}")
+
+if want_tamper and byte_range:
+    code, noise = run(["pdfsig", str(path)])
+    keeps = [line.strip().lstrip("- ").strip() for line in noise.splitlines()
+             if re.search(r"Signature #|Signature Validation|Certificate Validation|Signed Ranges|Total document", line)]
+    print(f"\npdfsig over {path.name}: exit={code}")
+    for line in keeps[:14]:
+        print(f"  {line}")
 
 mupdf = fitz.open(path)
 print(f"\nMuPDF {fitz.version[0]}: {mupdf.page_count} pages, needs_pass={mupdf.needs_pass}, form={mupdf.is_form_pdf}")

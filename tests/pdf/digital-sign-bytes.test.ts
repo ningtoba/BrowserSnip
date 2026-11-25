@@ -30,7 +30,7 @@
  * so on its own card.
  */
 import { describe, expect, it } from 'vitest';
-import { PDFArray, PDFDocument, PDFDict, PDFName } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDocument, PDFDict, PDFName, degrees } from '@maxwbh/pdf-lib';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { getPdfTool, type PdfToolDefinition } from '@/lib/pdf/tools/registry';
 import type { ToolValues } from '@/lib/pdf/tools/types';
@@ -357,9 +357,12 @@ describe('signing an already signed file', () => {
     const both = await readSignatures(twice);
     expect(both.length, 'the second run lost a signature').toBe(2);
     expect(both[1].digestMatches, 'the new signature does not verify').toBe(true);
-    // Rewriting the file is what breaks the first one; the sentence has to say so.
+    // Rewriting the file is what breaks the first one; the sentence has to say so,
+    // in the singular, with a verb that agrees: `The signature … no longer match`.
     expect(both[0].digestMatches).toBe(false);
-    expect((outcome.warnings ?? []).join(' ')).toMatch(/already in this document no longer match/);
+    expect((outcome.warnings ?? []).join(' '))
+      .toMatch(/The signature that was already in this document no longer matches these bytes/);
+    expect((outcome.warnings ?? []).join(' ')).toMatch(/so it now reads as invalid/);
     expect(outcome.message ?? '').toMatch(/verifies against those bytes/);
 
     // Two fields, two distinct names, or a reader addressing `/Signature1` hits both.
@@ -440,5 +443,110 @@ describe('a sheet with no room, and a file that is locked', () => {
     const signed = await attempt(clear);
     const [read] = await readSignatures(new Uint8Array(await signed.outputs[0].blob.arrayBuffer()));
     expect(read.digestMatches, 'the unlocked control does not verify').toBe(true);
+  });
+});
+
+describe('what the card says a seal survives', () => {
+  /**
+   * Two sentences on this card described behaviour the app does not have, and both
+   * were measured against the bytes:
+   *
+   * * The note listed `timestamping` beside `flattening` as an edit that invalidates
+   *   a signature, while this app's own Timestamp PDF writes the token into the
+   *   signature's own `/Contents` placeholder — outside the digest, so the seal
+   *   holds (pinned in `timestamp-chain.test.ts`; measured live in
+   *   `verify-digital-sign-read.py`, the same `/ByteRange` verifying after the run).
+   * * The note said revocation checking "needs a network connection", which promises
+   *   a connected check. Nothing in the app asks an OCSP responder or reads a CRL —
+   *   a live run with the capture on made zero requests beyond same-origin modules —
+   *   so the sentence has to say it is never checked, and why.
+   */
+  it('does not promise a revocation check, and does not name this app’s timestamp as a breaker', () => {
+    const tool = getPdfTool('digital-sign-pdf') as PdfToolDefinition;
+    const notes = tool.notes ?? [];
+    const seal = notes.find((note) => /seals the document/.test(note)) ?? '';
+    expect(seal, 'the note about what breaks a seal is gone').not.toBe('');
+    // The invalidating list may name rewrites, but not the stamp this app adds.
+    const listed = /Any later rewrite of its bytes —([^—]*(—[^—]*—)*)—/.exec(seal)?.[1] ?? seal;
+    expect(listed, `the timestamp is still sold as a breaker: ${listed}`).not.toMatch(/timestamp/i);
+    expect(seal).toMatch(/timestamp is the exception/i);
+
+    const joined = `${tool.promise ?? ''} ${notes.join(' ')}`;
+    expect(joined, 'revocation is offered as something a connection would enable')
+      .not.toMatch(/revocation checking needs a network/i);
+    expect(joined).toMatch(/[Rr]evocation is never checked/i);
+    // The local half of the promise still has to be stated, or the honest note above
+    // loses the thing it was reassuring about.
+    expect(joined).toMatch(/never leave this tab|never leaves this tab/i);
+  });
+
+  it('refuses a page past the end before the key is used, and signs the last page that exists', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const values = (page: number) => ({
+      certificate: [{ name: 'ada.pem', mimeType: 'application/x-x509-ca-cert', size: 1, bytes: bytes(cert.certificatePem) }],
+      privateKey: [{ name: 'ada.key.pem', mimeType: 'application/x-pem-file', size: 1, bytes: bytes(cert.privateKeyPem) }],
+      visible: true,
+      page,
+      reason: '',
+    }) satisfies ToolValues;
+    const attempt = async (page: number) => runPdfTool({
+      toolId: 'digital-sign-pdf',
+      files: [asFile(await mixedFixture(), 'ruled.pdf', 'application/pdf')],
+      values: values(page),
+      onProgress: () => {},
+      onLog: () => {},
+    }) as unknown as Promise<{ outputs: { blob: Blob }[] }>;
+
+    // Three sheets: 99 is inside the control's own 1–5000 range, so the tool refuses
+    // it by page count; 0 is out of the control's range and the value layer clamps it
+    // to 1, naming what it became — either way a number that is not a page never
+    // silently signs some other sheet.
+    await expect(attempt(99)).rejects.toThrow(/signature page must be between 1 and 3/);
+    const clamped = await attempt(0) as unknown as { warnings?: string[] };
+    expect((clamped.warnings ?? []).join(' ')).toMatch(/Signature page must be between 1 and 5000: 0 became 1/);
+    // The control the help text promises: the last sheet that exists signs, and the
+    // block lands on it.
+    const onThree = await attempt(3);
+    const produced = new Uint8Array(await onThree.outputs[0].blob.arrayBuffer());
+    const signed = await PDFDocument.load(produced);
+    const [read] = await readSignatures(produced);
+    expect(read.digestMatches, 'the last-page control does not verify').toBe(true);
+    expect(signed.getPage(2).node.get(PDFName.of('Annots')), 'the block skipped the page it was asked for')
+      .not.toBeUndefined();
+  });
+
+  it('paints the block on a sheet the document itself turns, and keeps the turn', async () => {
+    const cert = await createSelfSignedCertificate('Ada Lovelace');
+    const base = await PDFDocument.create();
+    const turned = base.addPage([420, 595]);
+    turned.setRotation(degrees(90));
+    const source = await base.save({ useObjectStreams: false });
+
+    const doc = await PDFDocument.load(source);
+    const result = await signDocument(doc, {
+      certificate: bytes(cert.certificatePem),
+      privateKey: bytes(cert.privateKeyPem),
+      visible: true,
+      page: 0,
+    });
+    const signed = await PDFDocument.load(result.bytes);
+    // A save that dropped /Rotate would show the sheet — and the block on it — the
+    // wrong way round in every reader.
+    expect(signed.getPage(0).getRotation().angle, 'signing undid the page’s turn').toBe(90);
+    const widget = widgetOf(signed);
+    const rect = (signed.context.lookup(widget.get(PDFName.of('Rect'))) as PDFArray)
+      .asArray().map((n) => Number(String(n)));
+    const [x0, y0, x1, y1] = rect;
+    // The rect is written in the sheet's own (unrotated) space: inside the media box
+    // is what makes it visible after the reader turns the page.
+    expect([x0 >= 0, y0 >= 0, x1 <= 420, y1 <= 595], `the block leaves the turned sheet: ${rect}`)
+      .toEqual([true, true, true, true]);
+    // The historical class this guards: a widget with a rect and no appearance adds
+    // zero pixels, and a turned sheet is where it used to hide.
+    const painted = appearanceInk(signed, widget);
+    expect(painted.ops, 'the turned sheet carries no appearance stream').not.toBe('');
+    expect(painted.inkPt2, `the turned sheet paints nothing: ${painted.ops}`).toBeGreaterThan(500);
+    const [read] = await readSignatures(result.bytes);
+    expect(read.digestMatches, 'the signature on the turned sheet does not verify').toBe(true);
   });
 });

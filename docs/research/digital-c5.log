@@ -1,0 +1,101 @@
+# round c5 (master a524400 + seam2b, dev :5294, CDP 9844), digital-sign-pdf.
+# Fresh re-settle of the signatures chunk on the merged tree: the attachments round
+# had changed XMP/name handling nearby, so every number below was taken again with
+# the committed rigs (verify-digital-sign-run.mjs driven, verify-digital-sign-read.py
+# judged, openssl 3.6.5 + pdfsig 26.10.0 + MuPDF 1.28.2 as the outside readers).
+# Fixture: /tmp/triage/colour.pdf, now 8 pages (pages 4 and 7 carry /Rotate 90,
+# page 8 is a 336x71 sheet) — richer than the 4-page sheet round 064 used.
+# Certificate: /tmp/triage/in/signer-cert.pem (CN=BrowserSnip Triage, self-signed).
+
+SIGN, one run, page 2 (visible block on):
+  /tmp/r/dig-a.pdf 23 275 B · /SubFilter /adbe.pkcs7.detached
+  /ByteRange [0 5161 21545 1730] — 5161 + 16384 + 1730 = 23 275 = file length, tiles exactly
+  receipt: "covers 6.73 KiB of the 22.7 KiB file - every byte except the 16.0 KiB
+  placeholder the signature itself sits in, and verifies against those bytes" — 6891 B
+  covered is the same number /ByteRange says (not the 891 B CMS length)
+  /Name=BrowserSnip Triage (the certificate's CN; the pane has no name box to type)
+  openssl cms -verify over the byte range: exit=0 "CMS Verification successful"
+  pdfsig: "Signature is Valid." + "Total document signed"; cert: "issuer is unknown"
+
+THE MATRIX (verify-digital-sign-read.py --tamper; each row flips ONE byte):
+  middle of the first span                openssl exit=4  verification failure
+  LAST signed byte of the first span      openssl exit=4  verification failure
+  inside the second span                  openssl exit=4  verification failure
+  the placeholder (unsigned gap)          openssl exit=0  (instrument control: a byte
+                                            outside the ranges must NOT trip the digest)
+  FORGE one hex digit of the DER itself   openssl exit=4  RSA_padding_check: invalid padding
+    (covered bytes unmoved, so only the value check can catch it) — and pdfsig on that
+    very file: "Signature Validation: Signature is Invalid."
+  The last two rows are new to the rig: its old placeholder case reused the ORIGINAL
+  blob, so the matrix stopped short of the forged-value half the digest cannot see.
+
+APPEARANCE — the historical invisible-block class:
+  page 2 dark px @72 dpi: source 29 460 → signed 23 874 (a white block over sheet ink),
+  every other page delta EXACTLY 0 — signing painted on the one page it was aimed at.
+  /AP /N is a Form XObject, /BBox equal to the rect, fonts embedded; the crop render
+  (shots/dig-c5-block-crop.png, looked at): bordered box, "Digitally signed by", bold
+  "BrowserSnip Triage", date, "Reason: I approve this document", "Location: Cambridge".
+  ROTATED SHEET — page 4 is 420x595 turned /Rotate 90: the widget lands at
+  [36,294,256,384] in the sheet's own space, /Rotate survives the save, page-4 ink
+  moves 141 065 → 126 804 and the block is legible in the rendered page
+  (shots/dig-c5-rotated-page4.png, read: box and text on-page at the right edge, turned
+  with the sheet). Page 7 (the other rotated sheet) kept 24 192 → 24 192: control, the
+  block went where it was told, nowhere else.
+  INVISIBLE — visible off (the rig could not reach this toggle before: shared
+  FieldControls gives a toggle no `tool-field-<key>` id; it is found by its label now,
+  and the click is read back "checked=false"): page 6, an empty sheet, stays at 0 dark
+  px, widget /Rect [0 0 0 0], no /AP at all — and the signature still verifies
+  (openssl exit=0 over [0 5161 21545 976] of 22 525 B), which is what the field's help
+  promises ("Off signs the document invisibly: it still validates").
+
+TWO SIGNATURES on the same file (/tmp/r/dig-b2.pdf 41 011 B, second aimed at page 5):
+  fields /Signature1 + /Signature2, names distinct, each its own /M
+  (17:58:10Z / 18:15:03Z) and its own /ByteRange;
+  sig 1 [0 5161 21545 1730] → its offsets belong to the previous revision: openssl
+    exit=4; sig 2 [0 22898 39282 1729] tiles the new file → openssl exit=0.
+  pdfsig says it per signature, not as one verdict: #1 "Digest Mismatch",
+  #2 "Signature is Valid".
+  receipt warning (AFTER the fix): "The signature that was already in this document no
+  longer matches these bytes: signing rewrites the file, so it now reads as invalid.
+  Keep this copy only if the earlier signature did not matter." — before the fix it
+  read "The signature … no longer match these bytes" on a security receipt.
+
+REFUSAL, the page field's help ("a page past the end is refused before the key is
+used"), driven live (shots/dig-c5-refusal.png, read): red card "COLOUR.PDF  The
+signature page must be between 1 and 8 — this document has 8 pages." + "Check the
+file, adjust the options, then try once more." + Retry, file chip STOPPED, and
+0 blobs produced. 0 is a different layer: the control clamps it inside its own 1–5000
+range and says "Signature page must be between 1 and 5000: 0 became 1."
+
+COPY THAT WAS FALSE ON THIS CARD (both now pinned in digital-sign-bytes.test.ts):
+  1. "Any later edit — flattening, timestamping, signing again here, … invalidates it"
+     named this app's OWN Timestamp PDF as a breaker while timestamp-pdf refuses an
+     unsigned file and exists to be run after signing. Measured: sign colour.pdf, run
+     Timestamp PDF on the output (/tmp/r/ts-on-diga.pdf) — file stays 23 275 B, same
+     /ByteRange [0 5161 21545 1730], the CMS blob grows 891 → 6917 B inside the
+     placeholder, and openssl still answers "CMS Verification successful". The note
+     now lists the rewrites and names the stamp as the exception. (Byte half already
+     pinned in timestamp-chain.test.ts: "timestamping broke the signature it was added
+     to".)
+  2. "Certificate revocation checking needs a network connection" — nothing in this
+     app checks revocation at any time: no OCSP/CRL call exists in src/lib/pdf, and
+     the capture below shows a run that touches no server. The note now says it is
+     never checked and what a verified signature therefore does and does not prove.
+
+NETWORK HALF (the rig records every request from the click on, with body sizes):
+  three runs (visible, invisible, second signature): "2 request(s); non-GET: none;
+  off-origin: none" — two same-origin module GETs from the vite dev server, zero POSTs,
+  nothing off localhost. "The private key never leaves this tab" holds: no file byte,
+  no certificate and no key crosses the wire. (Compare the timestamp tool, whose card
+  says it needs the network: that same drive reached rfc3161.ai.moda and nothing else.)
+
+DARK MODE (shots/dig-c5-notes-dark.png, read): whole pane on tokens — dark canvas,
+  light text, notes panel and every help line legible, Sign button in the accent; no
+  hex literal was added by this round's edit (copy only).
+
+TESTS: tests/pdf/digital-sign-bytes.test.ts — 11 green with the fix; 2 red with
+  security.ts stashed (the singular warning sentence, the seal/revocation note), and
+  three new pins for behaviour that was measured here but unpinned: the page-range
+  refusal + the 1–5000 clamp control + the last-page control, and the turned-sheet
+  appearance (rotation survives, rect inside the media box, ink > 500 pt², digest
+  still matches).

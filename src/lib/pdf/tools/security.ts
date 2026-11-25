@@ -1657,8 +1657,8 @@ export const securityTools: PdfToolDefinition[] = [
     actionLabel: 'Sign',
     notes: [
       'Signing proves the document has not changed since. It does not prove the signer is who they claim: that needs a certificate issued by an authority the other side already trusts.',
-      'A signature seals the document. Any later edit — flattening, timestamping, signing again here, even opening and re-saving in some tools — invalidates it, so sign last.',
-      'The signature is created in your browser from your own certificate. Certificate revocation checking needs a network connection; everything else is local.',
+      'A signature seals the document. Any later rewrite of its bytes — flattening, signing again here, even opening and re-saving in some tools — invalidates it, so sign last. Adding a trusted timestamp is the exception: the stamp is written inside the signature\'s own reserved space, so the seal holds.',
+      'The signature is created in your browser from your own certificate: the document, the certificate and the key never leave this tab. Revocation is never checked — no OCSP or CRL request is made, online or offline — so a signature that verifies proves the private key made it, not that the issuing authority still vouches for that key.',
       'A password-protected file is refused: the copy is re-encrypted after signing, which ciphers the signature too. Unlock it first, then sign.',
     ],
     fields: [
@@ -1730,7 +1730,11 @@ export const securityTools: PdfToolDefinition[] = [
       // in poppler's `pdfsig` after a second run, and nothing used to say so.
       const brokenEarlier = readBack.slice(0, -1).filter((entry) => !entry.error && !entry.digestMatches);
       if (brokenEarlier.length > 0) {
-        warnings.push(`${brokenEarlier.length === 1 ? 'The signature that was' : `The ${brokenEarlier.length} signatures that were`} already in this document no longer match these bytes: signing rewrites the file, so ${brokenEarlier.length === 1 ? 'it now reads' : 'they now read'} as invalid. Keep this copy only if the earlier signature did not matter.`);
+        // One earlier signature and a verb that agrees with it: `The signature … no
+        // longer match these bytes` read as a typo on a security receipt.
+        const many = brokenEarlier.length > 1;
+        warnings.push(`The ${many ? `${brokenEarlier.length} signatures that were` : 'signature that was'}`
+          + ` already in this document no longer ${many ? 'match' : 'matches'} these bytes: signing rewrites the file, so ${many ? 'they now read' : 'it now reads'} as invalid. Keep this copy only if the earlier signature did not matter.`);
       }
       const [, first, secondStart, secondLength] = result.byteRange;
       const covered = first + secondLength;
