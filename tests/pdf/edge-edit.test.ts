@@ -41,7 +41,7 @@ import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import type { RunOutcome } from '@/lib/pdf/tools/runner';
 import { openPDF } from '@/lib/pdf/core/doc';
-import { readOutline, type OutlineNode } from '@/lib/pdf/core/bookmarks';
+import { readOutline, readPageLabels, type OutlineNode } from '@/lib/pdf/core/bookmarks';
 import { pageContentStreams, streamBytes } from '@/lib/pdf/core/content';
 import { listAnnotations } from '@/lib/pdf/core/annotations';
 import type { OcrPageResult } from '@/lib/pdf/core/ocr';
@@ -1196,6 +1196,20 @@ describe('page labels, bookmarks and contents (E6, E13, E15)', () => {
     const outcome = await run('add-page-labels', { ranges: '1-1 roman 1' });
     expect(outcome.message).toMatch(/now read: i\b/i);
     expect(outcome.warnings).toEqual([]);
+  });
+
+  it('romanises past 4000 the way the readers of its own store do', async () => {
+    // core/bookmarks.ts once fell back to decimal at 4000, so the card
+    // previewed "4000, 4001" over a /St 3998 /S /r store that MuPDF and pypdf
+    // both read as mmmm, mmmmi. The preview must say what the file says.
+    const four = await fixture([{}, {}, {}, {}], 'roman4000');
+    const outcome = await run('add-page-labels', { ranges: '1-4 roman 3998' }, [four]);
+    expect(outcome.message).toMatch(/now read: mmmcmxcviii, mmmcmxcix, mmmm, mmmmi/i);
+    expect(outcome.message).not.toMatch(/\b4000\b/);
+    const doc = await openPDF(await outputBytes(outcome));
+    expect(readPageLabels(doc).map((entry) => entry.label)).toEqual([
+      'mmmcmxcviii', 'mmmcmxcix', 'mmmm', 'mmmmi',
+    ]);
   });
 
   it('appends instead of replacing when asked, and admits dead links (E15)', async () => {

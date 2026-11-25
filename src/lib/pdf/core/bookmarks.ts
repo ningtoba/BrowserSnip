@@ -955,7 +955,12 @@ const ROMAN: [number, string][] = [
 ];
 
 function toRoman(value: number): string {
-  if (value <= 0 || value >= 4000) return String(value);
+  // Past 3999 the classic table stops, but a page label is what the readers
+  // say it is: MuPDF and pypdf both keep counting additively (mmmm, mmmmi)
+  // off the same correct /St, and page-numbers/bates already stamp that way.
+  // The preview used to bail to decimal at 4000 and disagreed with every
+  // viewer of its own store.
+  if (value <= 0) return String(value);
   let rest = value;
   let out = '';
   for (const [amount, symbol] of ROMAN) {
