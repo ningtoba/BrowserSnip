@@ -494,14 +494,32 @@ async function renderList(
 ): Promise<number> {
   const size = settings.baseFontSize;
   const lineHeight = size * settings.lineHeight;
+  // Lay the markers out first and size the text gutter from the widest one.
+  // Each marker is painted at `columnX + 2` while the text used to start at a
+  // fixed 14 pt indent, so a two-digit “10.” (≈ 15.5 pt wide) crossed into its
+  // own item: measured on the live Markdown README, marker bbox 58.0→94.5 with
+  // the text starting at x 70.0, and MuPDF extracted the pair as one word
+  // `10.tenth`. A one-digit marker stays inside the old 14 pt gutter.
+  const markers: string[] = [];
   let orderedCounter = 0;
   let previousLevel = -1;
   for (const item of block.items) {
     if (item.level !== previousLevel) orderedCounter = 0;
     previousLevel = item.level;
-    const marker = item.marker
-      ?? (block.ordered ? `${++orderedCounter}.` : ['•', '◦', '▪'][item.level % 3]);
-    const indent = 14 + item.level * 14;
+    markers.push(
+      item.marker ?? (block.ordered ? `${++orderedCounter}.` : ['•', '◦', '▪'][item.level % 3]),
+    );
+  }
+  let widestMarker = 0;
+  for (const marker of markers) {
+    const { width } = await measureText(doc, { text: marker, x: 0, y: 0, size });
+    if (width > widestMarker) widestMarker = width;
+  }
+  const gutter = Math.max(14, 2 + widestMarker + 2);
+  let markerIndex = -1;
+  for (const item of block.items) {
+    const marker = markers[++markerIndex];
+    const indent = gutter + item.level * 14;
     const lines = await wrapInlines(doc, item.inlines, {
       size,
       maxWidth: Math.max(40, columnWidth - indent),
