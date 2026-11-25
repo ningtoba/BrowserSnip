@@ -268,6 +268,32 @@ function permissionFields(whenSet?: (v: Record<string, unknown>) => boolean) {
  */
 const DEFAULT_TSA_URL = 'https://rfc3161.ai.moda';
 
+/**
+ * Mirror of the private `uniqueName` in `core/archive.ts`: the ZIP writer
+ * files a repeated entry as `stem-2.ext`. `extract-attachments` runs its
+ * entries through this first so its sentence names what the archive really
+ * holds — and `createZip`'s own pass over the already-unique names stays a
+ * no-op. The battery check (docs/research/attach-extract-check.py) compares
+ * sentence to entries on every shape, so a drift here is a red judge, not a
+ * silent one.
+ */
+function dedupeEntryName(used: Set<string>, name: string): string {
+  if (!used.has(name)) {
+    used.add(name);
+    return name;
+  }
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const extension = dot > 0 ? name.slice(dot) : '';
+  for (let counter = 2; ; counter++) {
+    const candidate = `${stem}-${counter}${extension}`;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+}
+
 export const securityTools: PdfToolDefinition[] = [
   {
     id: 'protect',
@@ -1497,17 +1523,24 @@ export const securityTools: PdfToolDefinition[] = [
       // One name for both halves: the archive flattens an entry name, and a single
       // file's download name is an entry name the browser cannot take a `/` in.
       const outName = (a: (typeof found)[number]) => sanitiseEntryName(a.filename ?? a.name);
+      // The archive dedupes a repeated entry to `stem-2.ext` inside `createZip`;
+      // the sentence and the ZIP must not answer with different names, so the
+      // dedup runs once, here, over the same order `createZip` will walk — a
+      // mirror of its `uniqueName`, which the battery's sentence-vs-entries
+      // check (docs/research/attach-extract-check.py) keeps honest.
+      const used = new Set<string>();
+      const entryNames = found.map((a) => dedupeEntryName(used, outName(a)));
       const single = found.length === 1
         ? new Blob([found[0].bytes as BlobPart], { type: found[0].mimeType ?? 'application/octet-stream' })
         : await createZip(
-          found.map((a) => ({ name: outName(a), data: a.bytes })),
+          found.map((a, index) => ({ name: entryNames[index], data: a.bytes })),
           { comment: `Extracted from ${input.name}` },
         );
       return filesResult(
         // The sentence names the file the way `/UF`/`/F` names it, not by the
         // name-tree key, so it cannot disagree with the name on the download.
-        [{ blob: single, name: found.length === 1 ? outName(found[0]) : `${downloadStem(input.name)}-attachments.zip` }],
-        `Found ${found.length} embedded file(s): ${found.map((a) => `${outName(a)} (${formatBytes(a.size)})`).join(', ')}.`,
+        [{ blob: single, name: found.length === 1 ? entryNames[0] : `${downloadStem(input.name)}-attachments.zip` }],
+        `Found ${found.length} embedded file(s): ${found.map((a, index) => `${entryNames[index]} (${formatBytes(a.size)})`).join(', ')}.`,
       );
     },
   },
@@ -1580,7 +1613,24 @@ export const securityTools: PdfToolDefinition[] = [
         warnings.push('None of the names you listed matched an attachment, so the document is unchanged.');
       }
       const changed: string[] = [];
-      if (wanted.length > 0) changed.push(`Removed ${removed} of ${wanted.length} requested attachment(s)`);
+      if (wanted.length > 0) {
+        // Removal matches names case-insensitively and takes EVERY copy of a
+        // name filed more than once, so one requested name can bury two files —
+        // "Removed 2 of 1 requested attachment(s)" alone reads like a broken
+        // counter while the bytes are honest. Name the doubling instead.
+        const fold = (name: string) => name.trim().toLowerCase();
+        const folded: string[] = [];
+        for (const name of wanted) {
+          const matches = existing.filter((a) => fold(a.name) === fold(name));
+          if (matches.length < 2) continue;
+          const distinct = [...new Set(matches.map((a) => a.name))];
+          const others = distinct.filter((other) => other.trim() !== name.trim());
+          folded.push(others.length > 0
+            ? `"${name}" also matches ${others.map((other) => `"${other}"`).join(' and ')} — names are matched case-insensitively`
+            : `"${name}" is filed ${matches.length} times in this PDF`);
+        }
+        changed.push(`Removed ${removed} of ${wanted.length} requested attachment(s)${folded.length > 0 ? ` (${folded.join('; ')}; every copy went)` : ''}`);
+      }
       if (requests.length > 0) changed.push(`renamed ${rename.renamed.length} of ${requests.length} requested attachment(s)`);
       if (changed.length === 0) changed.push('Changed nothing');
       const sentence = changed.join(' and ');

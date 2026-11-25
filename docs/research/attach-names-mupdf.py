@@ -28,19 +28,28 @@ try:
     out["ink"] = [sum(1 for b in page.get_pixmap(dpi=72).samples if b < 250) for page in doc]
     out["text"] = [len(page.get_text()) for page in doc]
     files = []
-    for i in range(doc.embfile_count()):
-        info = doc.embfile_info(i)
-        files.append({
-            "index": i,
-            "name": deutf(info.get("name")),
-            "filename": deutf(info.get("filename")),
-            "ufilename": deutf(info.get("ufilename")),
-            "description": deutf(info.get("description")),
-            "size": info.get("size"),
-            "creationDate": info.get("creationDate"),
-            "modDate": info.get("modDate"),
-            "sha256": hashlib.sha256(doc.embfile_get(i)).hexdigest(),
-        })
+    try:
+        for i in range(doc.embfile_count()):
+            info = doc.embfile_info(i)
+            files.append({
+                "index": i,
+                "name": deutf(info.get("name")),
+                "filename": deutf(info.get("filename")),
+                "ufilename": deutf(info.get("ufilename")),
+                "description": deutf(info.get("description")),
+                "size": info.get("size"),
+                "creationDate": info.get("creationDate"),
+                "modDate": info.get("modDate"),
+                "sha256": hashlib.sha256(doc.embfile_get(i)).hexdigest(),
+            })
+        out["enumerable"] = True
+    except Exception as exc:
+        # The document OPENED and renders — MuPDF's attachment resolver just
+        # cannot walk this shape (`/EF` naming only `/DOS`/`/UNIX`, which
+        # MuPDF's embedded-file code ignores; measured on the untouched
+        # libqpdf fixture, not only on this app's output). Not a failed open.
+        out["enumerable"] = False
+        out["enum_error"] = f"{type(exc).__name__}: {exc}"
     out["files"] = files
     doc.close()
 except Exception as exc:

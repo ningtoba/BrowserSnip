@@ -17,7 +17,7 @@
  * is not in the file, a line with no arrow, and a run that only looks.
  */
 import { describe, expect, it } from 'vitest';
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFStream, PDFString } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFRef, PDFStream, PDFString } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { addAttachments, listAttachments } from '@/lib/pdf/core/attachments';
@@ -231,3 +231,77 @@ async function streamHolds(bytes: Uint8Array, phrase: string): Promise<boolean> 
   }
   return false;
 }
+
+/**
+ * The c4 edit battery (`tests/pdf/c4-edit-battery.test.ts`, judged by libqpdf,
+ * MuPDF, pypdf and poppler in `docs/research/attach-edit-check.py`) measured
+ * what removal left behind when the file was not filed in the name tree:
+ *
+ *   1. an attachment hosted by a `/FileAttachment` annotation kept the
+ *      annotation itself — `/FS` stripped, `/Subtype /FileAttachment` still
+ *      standing — and poppler refused the copy ("Bad Annot File Attachment"),
+ *      a viewer painting an icon that opens nothing;
+ *   2. deleting a document's last attachment left the emptied store
+ *      `/Names << /EmbeddedFiles << /Names [] >> >>` standing — the ghost
+ *      pane `tidyEmbeddedFileTrees` exists to drop, proven still there in
+ *      bytes the card had declared clean;
+ *   3. a name removal that case-folds onto two files, or buries a name filed
+ *      twice, recited "Removed 2 of 1 requested attachment(s)" — true of the
+ *      bytes, nonsense on the card, with no word about why 2 came out of 1.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const fixture = (name: string): File =>
+  pdfFile(new Uint8Array(readFileSync(resolve(process.cwd(), 'tests/fixtures/attachments', name))), name);
+
+async function savedOf(outcome: RunOutcome): Promise<PDFDocument> {
+  return PDFDocument.load(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+}
+
+describe('edit-attachments leaves no pointer behind the payload', () => {
+  it('takes the FileAttachment annotation itself when its file is removed', async () => {
+    const outcome = await run({ remove: 'annot-only.bin' }, [fixture('annot-only.pdf')]);
+    const saved = await savedOf(outcome);
+    expect(listAttachments(saved)).toHaveLength(0);
+    let fileAnnots = 0;
+    for (const page of saved.getPages()) {
+      const annots: PDFArray | undefined = page.node.Annots();
+      for (let i = 0; annots && i < annots.size(); i++) {
+        const raw = annots.get(i);
+        const dict = raw instanceof PDFRef ? saved.context.lookup(raw) : raw;
+        if (dict instanceof PDFDict && String(dict.lookup(PDFName.of('Subtype'))) === '/FileAttachment') fileAnnots += 1;
+      }
+    }
+    expect(fileAnnots, 'a /FileAttachment shell without its file is a broken pointer').toBe(0);
+    // and the emptied store went with it, not just the entry
+    const names = saved.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
+    expect(names === undefined || names.lookup(PDFName.of('EmbeddedFiles')) === undefined).toBe(true);
+  }, 120_000);
+
+  it('says why two files came out of one requested name — case-folded pair', async () => {
+    const bytes = await withAttachments([['Case.txt', 'upper'], ['case.txt', 'lower']]);
+    const outcome = await run({ remove: 'Case.txt' }, [pdfFile(bytes)]);
+    expect(outcome.message).toMatch(
+      /Removed 2 of 1 requested attachment\(s\) \("Case\.txt" also matches "case\.txt" — names are matched case-insensitively; every copy went\)\. Remaining: 0\./,
+    );
+    expect(listAttachments(await savedOf(outcome))).toHaveLength(0);
+  }, 120_000);
+
+  it('says why two files came out of one requested name — same name filed twice', async () => {
+    const outcome = await run({ remove: 'dup.bin' }, [fixture('same-name-two-nodes.pdf')]);
+    expect(outcome.message).toMatch(
+      /Removed 2 of 1 requested attachment\(s\) \("dup\.bin" is filed 2 times in this PDF; every copy went\)\. Remaining: 0\./,
+    );
+    const saved = await savedOf(outcome);
+    expect(listAttachments(saved)).toHaveLength(0);
+    const names = saved.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
+    expect(names === undefined || names.lookup(PDFName.of('EmbeddedFiles')) === undefined).toBe(true);
+  }, 120_000);
+
+  it('still counts the ordinary case plainly: one name, one file, no clause', async () => {
+    const bytes = await withAttachments([['a.bin', 'one'], ['b.bin', 'two']]);
+    const outcome = await run({ remove: 'a.bin' }, [pdfFile(bytes)]);
+    expect(outcome.message).toBe('Removed 1 of 1 requested attachment(s). Remaining: 1.');
+  }, 120_000);
+});

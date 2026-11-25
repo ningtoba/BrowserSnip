@@ -529,6 +529,9 @@ describe('the output name of an attachment that is unnamed or named oddly', () =
     expect(outcome.outputs[0].name).toBe('same-name-two-nodes-attachments.zip');
     const entries = await readZip(outcome.outputs[0].blob);
     expect(entries.map((entry) => entry.name).sort()).toEqual(['dup-2.bin', 'dup.bin']);
+    // The receipt must name what the archive holds — it used to recite
+    // `dup.bin, dup.bin` while the second entry was filed `dup-2.bin`.
+    expect(outcome.message).toBe('Found 2 embedded file(s): dup.bin (275 B), dup-2.bin (275 B).');
     expect(entries.map((entry) => sha256(entry.bytes)).sort()).toEqual([
       '4c8b48a4c6a839769852dade06113f32c261f8d8982b5ef2bd6a24ae5f6a4b58',
       '9477eb9b0aae10b96bde90320fc43c8dd55f98510ad597fa102410697ce8e35c',

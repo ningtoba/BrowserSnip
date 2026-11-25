@@ -85,6 +85,12 @@ interface FilespecSite {
   tree?: PDFArray;
   /** `/AF` array or `/FileAttachment` annotation dictionary, if that is the host. */
   host?: PDFDict | PDFArray;
+  /**
+   * When an annotation hosts the file, the page's `/Annots` array holding it:
+   * a `/FileAttachment` shell whose `/FS`/`/A` has gone is a broken pointer,
+   * so removal takes the annotation with it.
+   */
+  annots?: PDFArray;
 }
 
 /** The keys `/EF` may name, in the order a viewer should prefer them. */
@@ -244,7 +250,7 @@ function filespecSites(doc: PDFDocument): FilespecSite[] {
       const name = specName(doc, spec)
         ?? (contents !== undefined && contents.trim() !== '' ? contents : undefined)
         ?? unnamedName(i + 1);
-      sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: annot });
+      sites.push({ name, spec, ...(value instanceof PDFRef ? { ref: value } : {}), host: annot, annots });
     }
   }
 
@@ -637,7 +643,14 @@ export function removeAttachments(doc: PDFDocument, names: string[]): number {
     return stored !== undefined && wanted.has(stored);
   });
   if (sites.length === 0) return 0;
-  return removeSites(doc, sites);
+  const removed = removeSites(doc, sites, true);
+  // Measured on the bytes after deleting a document's only attachment:
+  // `/Names << /EmbeddedFiles << /Names [] >> >>` stood on — the empty pane
+  // that `tidyEmbeddedFileTrees` exists to drop. Viewers list that as an
+  // attachments panel with nothing in it. (addAttachments removes-then-attaches;
+  // the fork's insert recreates the tree, so tidying here is safe for it too.)
+  tidyEmbeddedFileTrees(doc);
+  return removed;
 }
 
 /** One `from -> to` rename request, as the card's field spells it. */
@@ -741,7 +754,7 @@ export function embeddedFileCount(doc: PDFDocument): number {
 export function stripAllAttachments(doc: PDFDocument): number {
   const sites = filespecSites(doc);
   if (sites.length === 0) return 0;
-  const removed = removeSites(doc, sites);
+  const removed = removeSites(doc, sites, false);
   tidyEmbeddedFileTrees(doc);
   // `/UseAttachments` opens the attachments pane; with none left it opens empty.
   if (doc.catalog.lookupMaybe(PDFName.of('PageMode'), PDFName)?.asString() === '/UseAttachments') {
@@ -750,8 +763,43 @@ export function stripAllAttachments(doc: PDFDocument): number {
   return removed;
 }
 
-/** Unlink every site from wherever it hangs and collect the objects it alone held. */
-function removeSites(doc: PDFDocument, sites: FilespecSite[]): number {
+/**
+ * Drop a `/FileAttachment` annotation whose file just went.
+ *
+ * The annotation IS the pointer: one left with `/FS`/`/A` stripped is a shell
+ * poppler refuses to read ("Bad Annot File Attachment" is measured on such a
+ * produced copy) and a viewer paints as an icon that opens nothing. The
+ * annotation leaves the page's `/Annots` with its payload, and its `/Popup`
+ * goes too — a popup whose `/Parent` points into the void is the same ghost
+ * one level down.
+ */
+function dropBareAttachmentAnnot(doc: PDFDocument, annots: PDFArray, annot: PDFDict): void {
+  const ctx = context(doc);
+  const popupRef = annot.get(PDFName.of('Popup'));
+  const popup = popupRef instanceof PDFRef ? resolve(doc, popupRef) : undefined;
+  const gone = new Set<PDFDict>(popup instanceof PDFDict ? [annot, popup] : [annot]);
+  for (let i = annots.size() - 1; i >= 0; i--) {
+    const value = annots.get(i);
+    const target = value instanceof PDFRef ? ctx.lookup(value) : value;
+    if (target instanceof PDFDict && gone.has(target)) {
+      if (value instanceof PDFRef) ctx.delete(value);
+      annots.remove(i);
+    }
+  }
+  if (popupRef instanceof PDFRef) ctx.delete(popupRef);
+}
+
+/**
+ * Unlink every site from wherever it hangs and collect the objects it alone held.
+ *
+ * `dropHostAnnots` separates the two callers' intents. A named removal
+ * (edit-attachments) buries the attachment — the annotation that WAS the
+ * pointer goes with it, since a `/FileAttachment` shell over a stripped
+ * `/FS` is an icon that opens nothing and a syntax error poppler puts on
+ * the record. `stripAllAttachments` (sanitize-pdf) deliberately keeps the
+ * page marks and takes only the file, as its pinned behaviour says.
+ */
+function removeSites(doc: PDFDocument, sites: FilespecSite[], dropHostAnnots: boolean): number {
   for (const site of sites) {
     if (site.tree) {
       splicePair(doc, site.tree, site);
@@ -765,6 +813,7 @@ function removeSites(doc: PDFDocument, sites: FilespecSite[]): number {
     } else if (host instanceof PDFDict) {
       host.delete(PDFName.of('FS'));
       host.delete(PDFName.of('A'));
+      if (dropHostAnnots && site.annots) dropBareAttachmentAnnot(doc, site.annots, host);
     }
   }
 
