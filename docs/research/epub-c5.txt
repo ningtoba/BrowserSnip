@@ -1,0 +1,27 @@
+epub-to-pdf real-producer re-settle — measurement log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+Verdict verified-good on the CURRENT build (fresh live re-drive, not a re-run of pins): no behaviour
+change shipped by this audit.
+
+fixture: dorian-gray.epub — Standard Ebooks (hand-typeset publisher toolchain), sha a34234967983cde8,
+45 entries: EPUB3 package, cover + titlepage + imprint + preface + halftitle + 11 chapters +
+colophon; the spine includes the nav item and images by relative href; the manifest is NOT in
+reading order for front matter.
+LIVE (rail): “Reflowed 1 ebook(s) into 606 page(s)”, 3 362 599 B, console errors [].
+FILE half (PyMuPDF on the download): 606 pages; page 1 = “The Picture of Dorian / Gray, by Oscar
+Wilde” — the spine’s first item, not the manifest’s; the last sheet carries the colophon’s closing
+words and the printed number “606”: receipt count == file count (bar 6). Embedded images across all
+606 sheets: 0 — “Embedded images … are not applied” measured true; image slots print the shared
+HTML route’s `[image: The Standard Ebooks logo.]` placeholder words. Reading order verified by
+offsets on the extracted text: title (0) < preface “The artist is the creator…” (1288) < chapter I
+“The studio was filled…” (3387). No ncx navLabel text leaks into the body.
+Spine-not-manifest class (the reader reading `itemref` idrefs from the third attribute slot) holds
+on a real producer book; suite pins: convert-to-bytes ‘follows the spine, not the manifest’ and
+‘reflows a book without losing its order’.
+Battery answers: images = text placeholders only, never embedded (card true); cover = spine item,
+not a special sheet; metadata = printed words only, no PDF /Title graft claimed by the card;
+“chapter-per-page”: chapters begin on fresh sheets (pagebreak between parts) but each re-flows over
+many pages — the card says the page count is yours, measured true; multi-file batches keep one
+book after another (sourceBatches), refusal for all-empty ebooks names the cause (DRM hint).
+LEFT (recorded): a real DRM’d EPUB could not be sourced offline for the refusal-path witness; the
+sentence and hint are pinned by the manifest-absent path only.
