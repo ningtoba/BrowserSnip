@@ -201,7 +201,7 @@ export const legacyTools: PdfToolDefinition[] = [
     actionLabel: 'Crop',
     promise: 'The page shows only the rectangle you keep, on every page you select.',
     notes: [
-      'Cropping sets the page’s visible box. Ink outside it is hidden, not deleted: the file barely shrinks, and text you cropped away can still be extracted. Use redaction to remove content for good.',
+      'Cropping sets the page’s visible box. Ink outside it is hidden, not deleted: text you cropped away can still be extracted, and the size the receipt prints moves with the file being rewritten, not with the crop — a 1 pt margin on an uncompressed input measured 45% smaller here. Use redaction to remove content for good.',
       'Margins are applied per page in the page’s own units, so mixed page sizes each keep their own geometry.',
     ],
     fields: CROP_FIELDS,
@@ -243,7 +243,11 @@ export const legacyTools: PdfToolDefinition[] = [
         );
       }
       if (tooSmall.length > 0) {
-        warnings.push(`${count(tooSmall.length, 'page')} (${formatPageList(tooSmall)}) was smaller than the crop leaves room for and kept its own size.`);
+        // "3 pages (2, 3, 4) was smaller" reaches the card in exactly this
+        // sentence's live run; the verbs have to follow the count the
+        // `count()` helper just printed.
+        const many = tooSmall.length > 1;
+        warnings.push(`${count(tooSmall.length, 'page')} (${formatPageList(tooSmall)}) ${many ? 'were' : 'was'} smaller than the crop leaves room for and kept ${many ? 'their' : 'its'} own size.`);
       }
       const result = await pdfResult(input.doc, {
         message: `Cropped ${count(cropped, 'page')} to the kept rectangle; ${describeMargins(margins, asked, unit)}`,

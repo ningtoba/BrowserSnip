@@ -132,7 +132,7 @@ async function boxesOf(bytes: Uint8Array): Promise<number[][][]> {
 async function crop(
   source: Uint8Array,
   values: Record<string, unknown>,
-): Promise<{ bytes: Uint8Array; message: string }> {
+): Promise<{ bytes: Uint8Array; message: string; warnings: string[] }> {
   const outcome = await runPdfTool({
     toolId: 'pdf-crop',
     files: [file(source)],
@@ -143,7 +143,11 @@ async function crop(
   expect(outcome, 'the crop produced no outcome').toBeTruthy();
   const blob = outcome!.outputs[0]?.blob;
   expect(blob, outcome!.message ?? 'the crop produced no file').toBeTruthy();
-  return { bytes: new Uint8Array(await blob!.arrayBuffer()), message: outcome!.message ?? '' };
+  return {
+    bytes: new Uint8Array(await blob!.arrayBuffer()),
+    message: outcome!.message ?? '',
+    warnings: outcome!.warnings ?? [],
+  };
 }
 
 function resetStores(): void {
@@ -248,6 +252,42 @@ describe('pdf-crop writes the same box whatever unit the margins were declared i
     for (const option of field?.options ?? []) {
       expect(PT_PER, `${option.value} is not a convertible unit`).toHaveProperty(String(option.value));
     }
+  });
+});
+
+describe('the too-small sentence follows the number of pages it names', () => {
+  // Measured live on :5296 (`docs/research/legacy-pane-cards.mjs`, SCENARIO=crop-clamp):
+  // 1000 pt margins on the four mixed sheets leave exactly one page croppable,
+  // and the card printed "3 pages (2, 3, 4) was smaller … kept its own size" —
+  // a plural count wearing singular verbs.
+  const tooBig = { allPages: true, unit: 'pt', top: 900, right: 20, bottom: 40, left: 450 };
+
+  it('says of the crop note what the bytes do — hidden, extractable, size from the rewrite', () => {
+    // Live measurement behind each clause: a 40 mm crop leaves all 260 words of
+    // `colour.pdf` extractable while only 172 answer inside the visible box,
+    // and a 1 pt crop of the same uncompressed file came back 45% smaller —
+    // the old sentence blamed the crop and promised "the file barely shrinks".
+    const clipping = getPdfTool('pdf-crop')!.notes!.join(' ');
+    expect(clipping).toMatch(/hidden, not deleted/);
+    expect(clipping).toMatch(/can still be extracted/);
+    expect(clipping).toMatch(/rewritten/i);
+    expect(clipping).not.toMatch(/barely shrinks/);
+  });
+
+  it('names too-small pages with verbs that follow the count', async () => {
+    const run = await crop(await sheets(), tooBig);
+    expect(run.message).toMatch(/Cropped 1 page/);
+    const said = run.warnings.join(' ');
+    expect(said).toMatch(/3 pages \(2, 3, 4\) were smaller than the crop leaves room for and kept their own size/);
+    expect(said).not.toMatch(/\bwas smaller\b|kept its own size/);
+  });
+
+  it('singular when the only too-small page is one', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([500, 970]);
+    doc.addPage([595.28, 841.89]);
+    const run = await crop(await doc.save({ useObjectStreams: false }), tooBig);
+    expect(run.warnings.join(' ')).toMatch(/1 page \(2\) was smaller than the crop leaves room for and kept its own size/);
   });
 });
 
