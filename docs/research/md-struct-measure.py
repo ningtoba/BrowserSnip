@@ -16,6 +16,9 @@ derived structural numbers the markdown claims turn on:
   * `link_annots` + `urls_in_text`: where the URLs went;
   * `code_ink_px`: dark pixels inside a code block's own band — the code branch paints
     its background after its text, which shows up here as a box with nothing in it;
+  * `bands`: every `#f1f1ec` fill of sheet 1 with the dark pixels measured INSIDE that
+    rectangle alone, so the prose line above a fenced block cannot lend it ink — the
+    unambiguous reading of "the band buried its text" (a band of 0 dark px did);
   * `fffd` and `boxes`: characters the embedded face could not draw.
 
   npx vitest run --config docs/research/md-struct.vitest.config.ts
@@ -59,6 +62,17 @@ def ink_in(page, rect):
     return sum(1 for p in img.getdata() if p < 128)
 
 
+def grey_bands(page):
+    """Every `#f1f1ec` fill of a sheet — the code band's colour, shared with a table header."""
+    want = (0xF1 / 255, 0xF1 / 255, 0xEC / 255)
+    out = []
+    for drawn in page.get_drawings():
+        fill = drawn.get("fill")
+        if fill and len(fill) == 3 and all(abs(c - t) < 0.01 for c, t in zip(fill, want)):
+            out.append(pymupdf.Rect(drawn["rect"]))
+    return out
+
+
 def main() -> int:
     print(f"## {TAG} — {DIR}, judged by MuPDF outside this app")
     for path in sorted(glob.glob(os.path.join(DIR, "*.pdf"))):
@@ -97,12 +111,17 @@ def main() -> int:
         print(f"    imgs    : {image_boxes[:4]}")
         print(f"    links   : uris={uris[:4]} | spec in text={'example.com' in all_text} | autolink={'autolink.example' in all_text}")
         print(f"    missing : {missing}  |  FFFD={all_text.count(chr(0xfffd))}  chars={len(all_text)}")
-        if (label in {"code-blocks", "fence-script", "mermaid"}):
+        if (label in {"code-blocks", "fence-script", "mermaid", "pre"}):
             code_words = [w for w in ws if re.match(r"(const|function|return|indented|script|div|graph)", w[3])]
             if code_words:
                 top = min(w[1] for w in code_words) - 8
                 bottom = max(w[2] for w in code_words) + 8
                 print(f"    code_ink: {ink_in(first, pymupdf.Rect(50, top, 545, bottom))} dark px in the code band y{round(top)}-{round(bottom)} (0 = painted over)")
+        bands = grey_bands(first)
+        if bands:
+            # The band's OWN rectangle, so a neighbouring prose line cannot lend it ink.
+            inside = [(round(r.x0, 1), round(r.y0, 1), round(r.width, 1), round(r.height, 1), ink_in(first, r)) for r in bands[:6]]
+            print(f"    bands   : (x, y, w, h, dark px) {inside} — a band of 0 dark px buried its text")
         print(f"    x-edges : min={min([w[0] for w in ws], default=0)} max={max([w[2] for w in ws], default=0)} (page {round(first.rect.width, 1)})")
         for x0, y0, y1, text in ws[:10]:
             print(f"      p0 x{x0:6} y{y1:6} {text[:60]!r}")

@@ -1,0 +1,901 @@
+# Seam re-anchor evidence — `html-to-pdf` structure rig
+
+Two sections, one per build, produced by:
+
+    npx vitest run --config docs/research/html-struct.vitest.config.ts
+    python3 docs/research/md-struct-measure.py /tmp/htmlstruct <tag>
+
+`## before` ran `src/lib/pdf/core/layout.ts` at `72d8faa^` — seam wave 1 (the code band
+painted behind its glyphs, the list gutter sized from the widest marker) NOT applied —
+against the route as it stands today, i.e. with `markStructuredLists`' temporary
+`level + 1` gutter bump already removed, so the difference these two sections show is
+the seam's own and nothing else. Read:
+
+  * `bands` — a `#f1f1ec` fill of 0 dark px inside its own rectangle is the `<pre>` block
+    whose text was painted over; the after section's bands carry their glyphs;
+  * `p0 x` lines beside a `10.` marker — 70.0 means the number printed into the word
+    (the seam's `max(14, 2 + marker + 2)` had not been measured yet), 75.3 is clear;
+  * a one-digit marker (`1.`, `•`) must read 70.0 in BOTH sections: the gutter grows
+    for wide markers only.
+
+`## after-fix` is the branch tip: seam wave 1 merged, route bump dropped.
+
+## before — pre-seam layout.ts (72d8faa^), html rig — /tmp/htmlstruct, judged by MuPDF outside this app
+
+=== br-hr  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=58
+    x-edges : min=56.0 max=144.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'line'
+      p0 x 131.8 y  75.2 'one'
+      p0 x  56.0 y  91.2 'line'
+      p0 x  76.2 y  91.2 'two'
+      p0 x  56.0 y 107.1 'line'
+      p0 x  76.2 y 107.1 'three'
+      p0 x 104.3 y 107.1 'MKEND'
+      p0 x  56.0 y 144.1 'after'
+      p0 x  81.1 y 144.1 'the'
+
+=== comment-multi  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=40
+    x-edges : min=56.0 max=96.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x  56.0 y  96.2 'after'
+      p0 x  81.1 y  96.2 'the'
+      p0 x  99.4 y  96.2 'comment'
+      p0 x 147.7 y  96.2 'MKEND'
+
+=== comment  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=27
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x 145.2 y  75.2 'text'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== controls-large  sheets=1  runs=14/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(15.3, 'Helvetica'), (18.0, 'Helvetica'), (37.8, 'Helvetica')]
+    markers : [(58.0, 603.4, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=145
+    x-edges : min=56.0 max=815.7 (page 595.3)
+      p0 x  56.0 y 169.4 'Heading'
+      p0 x  56.0 y 252.5 'MKSTART'
+      p0 x  56.0 y 303.2 'Body'
+      p0 x 102.0 y 303.2 'paragraph,'
+      p0 x  56.0 y 342.8 'long'
+      p0 x  95.0 y 342.8 'enough'
+      p0 x 160.1 y 342.8 'to'
+      p0 x  56.0 y 382.4 'wrap'
+      p0 x 100.0 y 382.4 'onto'
+      p0 x 140.0 y 382.4 'a'
+
+=== controls-small  sheets=1  runs=9/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(8.0, 'Helvetica'), (16.8, 'Helvetica')]
+    markers : [(58.0, 149.8, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=143
+    x-edges : min=56.0 max=161.4 (page 595.3)
+      p0 x  56.0 y  87.9 'Heading'
+      p0 x 123.2 y  87.9 'MKSTART'
+      p0 x  56.0 y 101.6 'Body'
+      p0 x  76.5 y 101.6 'paragraph,'
+      p0 x 117.4 y 101.6 'long'
+      p0 x 134.7 y 101.6 'enough'
+      p0 x  56.0 y 110.4 'to'
+      p0 x  64.9 y 110.4 'wrap'
+      p0 x  84.5 y 110.4 'onto'
+      p0 x 102.2 y 110.4 'a'
+
+=== css-class  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=28
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'classed'
+      p0 x 152.0 y  75.2 'words'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== entities  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=49
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'A&B'
+      p0 x 136.7 y  75.2 '©'
+      p0 x  56.0 y  91.2 '—'
+      p0 x  70.1 y  91.2 'A'
+      p0 x  80.5 y  91.2 'A'
+      p0 x  90.8 y  91.2 '&#;'
+      p0 x 110.4 y  91.2 '&bareword;'
+      p0 x  56.0 y 107.1 '<tag>'
+      p0 x  87.2 y 107.1 'x'
+
+=== headings  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 6 distinct (size, family): [(11.0, 'Helvetica'), (12.1, 'Helvetica'), (13.2, 'Helvetica'), (15.4, 'Helvetica'), (18.7, 'Helvetica'), (23.1, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=47
+    x-edges : min=56.0 max=299.6 (page 595.3)
+      p0 x  56.0 y 108.0 'H1'
+      p0 x  91.9 y 108.0 'MKSTART'
+      p0 x  56.0 y 153.5 'H2'
+      p0 x  56.0 y 191.0 'H3'
+      p0 x  56.0 y 223.0 'H4'
+      p0 x  56.0 y 252.2 'H5'
+      p0 x  56.0 y 278.7 'H6'
+      p0 x  73.1 y 278.7 'MKEND'
+      p0 x  56.0 y 299.6 'body'
+      p0 x  82.9 y 299.6 'paragraph'
+
+=== img-mixed  sheets=1  runs=6/outside=0  images=1  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : 3 <img> reference(s) are not data: URLs and were skipped — no network requests are made.
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.9, 'Helvetica-Oblique'), (11.0, 'Helvetica'), (11.0, 'Helvetica-Oblique')]
+    markers : []
+    imgs    : [(297.1, 77.0, 298.1, 78.0)]
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=79
+    x-edges : min=56.0 max=140.4 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 275.0 y  95.1 'a'
+      p0 x 283.2 y  95.1 'red'
+      p0 x 300.3 y  95.1 'pixel'
+      p0 x  56.0 y 119.3 '[image:'
+      p0 x  95.1 y 119.3 'first'
+      p0 x 115.9 y 119.3 'remote]'
+      p0 x  56.0 y 140.4 'text'
+      p0 x  76.8 y 140.4 'with'
+      p0 x  99.4 y 140.4 'an'
+
+=== img-off  sheets=1  runs=3/outside=0  images=1  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : Image embedding is off, so the one <img> was skipped.
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.9, 'Helvetica-Oblique'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : [(297.1, 77.0, 298.1, 78.0)]
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=26
+    x-edges : min=56.0 max=119.5 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 275.0 y  95.1 'a'
+      p0 x 283.2 y  95.1 'red'
+      p0 x 300.3 y  95.1 'pixel'
+      p0 x  56.0 y 119.5 'MKEND'
+
+=== links  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=49
+    x-edges : min=56.0 max=75.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 110.0 y  75.2 'the'
+      p0 x 128.3 y  75.2 'spec'
+      p0 x 154.6 y  75.2 'and'
+      p0 x 176.0 y  75.2 'mail'
+      p0 x 199.2 y  75.2 'and'
+      p0 x 220.6 y  75.2 'named'
+      p0 x 257.3 y  75.2 'target'
+      p0 x 288.5 y  75.2 'MKEND'
+
+=== longword  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=139
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  56.0 y  91.2 'supercalifragilisticsupercalifragilisticsupercalifragilistic'
+      p0 x  56.0 y 107.1 'MKEND'
+
+=== malformed-implicit  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '•'), (58.0, 106.2, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=54
+    x-edges : min=58.0 max=111.1 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 'MKSTART'
+      p0 x 125.6 y  75.2 'first'
+      p0 x 146.4 y  75.2 'item'
+      p0 x  58.0 y  88.2 '•'
+      p0 x  70.0 y  93.2 'second'
+      p0 x 108.5 y  93.2 'item'
+      p0 x  58.0 y 106.2 '•'
+      p0 x  70.0 y 111.1 'third'
+      p0 x  94.5 y 111.1 'item'
+
+=== malformed-stray  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=28
+    x-edges : min=56.0 max=96.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'words'
+      p0 x  56.0 y  96.2 '>weird>'
+      p0 x  98.2 y  96.2 'MKEND'
+
+=== malformed-unclosed  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=68
+    x-edges : min=56.0 max=128.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'an'
+      p0 x 126.9 y  75.2 'unclosed'
+      p0 x  56.0 y  91.2 'paragraph'
+      p0 x  56.0 y 112.1 'nested'
+      p0 x  92.1 y 112.1 'div'
+      p0 x 109.2 y 112.1 'with'
+      p0 x 131.8 y 112.1 'no'
+      p0 x  56.0 y 128.1 'closing'
+      p0 x  93.3 y 128.1 'tags'
+
+=== nest-list  sheets=1  runs=8/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(11.0, 'Helvetica'), (11.0, 'NotoSans-Regular-1848')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '◦'), (58.0, 124.1, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=81
+    x-edges : min=58.0 max=129.1 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 'level'
+      p0 x  95.7 y  75.2 'one'
+      p0 x 117.1 y  75.2 'alpha'
+      p0 x  58.0 y  88.2 '◦'
+      p0 x  84.0 y  93.2 'level'
+      p0 x 109.7 y  93.2 'two'
+      p0 x 129.8 y  93.2 'bravo'
+      p0 x  58.0 y 106.1 '▪'
+      p0 x  98.0 y 111.1 'level'
+
+=== ol-start  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=38
+    x-edges : min=56.0 max=132.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '5.'
+      p0 x  70.0 y  96.2 'five'
+      p0 x  58.0 y 109.2 '6.'
+      p0 x  70.0 y 114.1 'six'
+      p0 x  58.0 y 127.1 '7.'
+      p0 x  70.0 y 132.1 'seven'
+      p0 x 102.4 y 132.1 'MKEND'
+
+=== ol-twelve  sheets=1  runs=26/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '1.'), (58.0, 109.2, '2.'), (58.0, 127.1, '3.')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=293
+    x-edges : min=56.0 max=311.6 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '1.'
+      p0 x  70.0 y  96.2 'step'
+      p0 x  93.8 y  96.2 '1'
+      p0 x 103.0 y  96.2 'of'
+      p0 x 115.3 y  96.2 'the'
+      p0 x 133.6 y  96.2 'guide'
+      p0 x  58.0 y 109.2 '2.'
+      p0 x  70.0 y 114.1 'step'
+      p0 x  93.8 y 114.1 '2'
+
+=== plain-words  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=65
+    x-edges : min=56.0 max=128.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'just'
+      p0 x 131.8 y  75.2 'plain'
+      p0 x  56.0 y  91.2 'words'
+      p0 x  88.4 y  91.2 'with'
+      p0 x 111.0 y  91.2 'no'
+      p0 x 126.3 y  91.2 'markup'
+      p0 x  56.0 y 107.1 'at'
+      p0 x  68.2 y 107.1 'all'
+      p0 x  82.3 y 107.1 'MKEND'
+
+=== pre  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.68, 'NotoSans-Regular-7572'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=60
+    code_ink: 0 dark px in the code band y83-112 (0 = painted over)
+    bands   : (x, y, w, h, dark px) [(56.0, 76.9, 483.3, 39.2, 0)] — a band of 0 dark px buried its text
+    x-edges : min=56.0 max=117.3 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  66.0 y  91.2 'first'
+      p0 x  86.5 y  91.2 'line'
+      p0 x  71.0 y 104.2 'indented'
+      p0 x 114.3 y 104.2 'two'
+      p0 x 141.4 y 104.2 'delimited'
+      p0 x 194.3 y 104.2 'fields'
+      p0 x  66.0 y 117.3 'last'
+      p0 x  84.6 y 117.3 'MKEND'
+
+=== scripts  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : 2 <script> block(s) were ignored: author JavaScript does not run, so content created by scripts is not in the output.
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=27
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x 145.2 y  75.2 'text'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== style-attr  sheets=1  runs=12/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(11.0, 'Helvetica'), (11.0, 'Helvetica-Bold'), (11.0, 'Helvetica-Oblique'), (18.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=62
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 110.0 y  80.8 'styled'
+      p0 x 162.0 y  80.8 'words'
+      p0 x 212.9 y  75.3 'bold'
+      p0 x 239.1 y  75.1 'italic'
+      p0 x 264.2 y  75.2 'under'
+      p0 x 295.4 y  75.2 'struck'
+      p0 x 327.7 y  75.2 'big'
+      p0 x  56.0 y  91.2 'small'
+      p0 x  84.7 y  91.2 'MKEND'
+
+=== table-span  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.46, 'Helvetica'), (9.46, 'Helvetica-Bold')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=44
+    bands   : (x, y, w, h, dark px) [(56.0, 60.0, 483.3, 12.1, 553)] — a band of 0 dark px buried its text
+    x-edges : min=60.0 max=127.3 (page 595.3)
+      p0 x  60.0 y  75.0 'Name'
+      p0 x 324.4 y  75.0 'Qty'
+      p0 x  60.0 y  95.0 'MKSTART'
+      p0 x 107.8 y  95.0 'merged'
+      p0 x  60.0 y 107.2 'cell'
+      p0 x  60.0 y 127.3 'Widget'
+      p0 x 324.4 y 127.3 '3'
+      p0 x 332.3 y 127.3 'MKEND'
+
+=== unicode  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=['https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-jp/NotoSansJP_400Regular.ttf']
+    faces   : 2 distinct (size, family): [(11.0, 'NotoSans-Regular-7572'), (11.0, 'NotoSans-Regular-9750')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=54
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 107.8 y  75.2 '日本語のテキスト한국어'
+      p0 x  56.0 y  91.1 'café'
+      p0 x  80.3 y  91.1 'naïve'
+      p0 x 110.8 y  91.1 '😀'
+      p0 x 120.2 y  91.1 '𠀀'
+      p0 x  56.0 y 107.1 '\u200fright-left\u200e'
+      p0 x 104.1 y 107.1 'MKEND'
+
+## after-fix — c4 re-anchor (html rig, same build) — /tmp/htmlstruct, judged by MuPDF outside this app
+
+=== br-hr  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=58
+    x-edges : min=56.0 max=144.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'line'
+      p0 x 131.8 y  75.2 'one'
+      p0 x  56.0 y  91.2 'line'
+      p0 x  76.2 y  91.2 'two'
+      p0 x  56.0 y 107.1 'line'
+      p0 x  76.2 y 107.1 'three'
+      p0 x 104.3 y 107.1 'MKEND'
+      p0 x  56.0 y 144.1 'after'
+      p0 x  81.1 y 144.1 'the'
+
+=== comment-multi  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=40
+    x-edges : min=56.0 max=96.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x  56.0 y  96.2 'after'
+      p0 x  81.1 y  96.2 'the'
+      p0 x  99.4 y  96.2 'comment'
+      p0 x 147.7 y  96.2 'MKEND'
+
+=== comment  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=27
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x 145.2 y  75.2 'text'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== controls-large  sheets=1  runs=14/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(15.3, 'Helvetica'), (18.0, 'Helvetica'), (37.8, 'Helvetica')]
+    markers : [(58.0, 603.4, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=145
+    x-edges : min=56.0 max=815.7 (page 595.3)
+      p0 x  56.0 y 169.4 'Heading'
+      p0 x  56.0 y 252.5 'MKSTART'
+      p0 x  56.0 y 303.2 'Body'
+      p0 x 102.0 y 303.2 'paragraph,'
+      p0 x  56.0 y 342.8 'long'
+      p0 x  95.0 y 342.8 'enough'
+      p0 x 160.1 y 342.8 'to'
+      p0 x  56.0 y 382.4 'wrap'
+      p0 x 100.0 y 382.4 'onto'
+      p0 x 140.0 y 382.4 'a'
+
+=== controls-small  sheets=1  runs=9/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(8.0, 'Helvetica'), (16.8, 'Helvetica')]
+    markers : [(58.0, 149.8, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=143
+    x-edges : min=56.0 max=161.4 (page 595.3)
+      p0 x  56.0 y  87.9 'Heading'
+      p0 x 123.2 y  87.9 'MKSTART'
+      p0 x  56.0 y 101.6 'Body'
+      p0 x  76.5 y 101.6 'paragraph,'
+      p0 x 117.4 y 101.6 'long'
+      p0 x 134.7 y 101.6 'enough'
+      p0 x  56.0 y 110.4 'to'
+      p0 x  64.9 y 110.4 'wrap'
+      p0 x  84.5 y 110.4 'onto'
+      p0 x 102.2 y 110.4 'a'
+
+=== css-class  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=28
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'classed'
+      p0 x 152.0 y  75.2 'words'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== entities  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=49
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'A&B'
+      p0 x 136.7 y  75.2 '©'
+      p0 x  56.0 y  91.2 '—'
+      p0 x  70.1 y  91.2 'A'
+      p0 x  80.5 y  91.2 'A'
+      p0 x  90.8 y  91.2 '&#;'
+      p0 x 110.4 y  91.2 '&bareword;'
+      p0 x  56.0 y 107.1 '<tag>'
+      p0 x  87.2 y 107.1 'x'
+
+=== headings  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 6 distinct (size, family): [(11.0, 'Helvetica'), (12.1, 'Helvetica'), (13.2, 'Helvetica'), (15.4, 'Helvetica'), (18.7, 'Helvetica'), (23.1, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=47
+    x-edges : min=56.0 max=299.6 (page 595.3)
+      p0 x  56.0 y 108.0 'H1'
+      p0 x  91.9 y 108.0 'MKSTART'
+      p0 x  56.0 y 153.5 'H2'
+      p0 x  56.0 y 191.0 'H3'
+      p0 x  56.0 y 223.0 'H4'
+      p0 x  56.0 y 252.2 'H5'
+      p0 x  56.0 y 278.7 'H6'
+      p0 x  73.1 y 278.7 'MKEND'
+      p0 x  56.0 y 299.6 'body'
+      p0 x  82.9 y 299.6 'paragraph'
+
+=== img-mixed  sheets=1  runs=6/outside=0  images=1  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : 3 <img> reference(s) are not data: URLs and were skipped — no network requests are made.
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.9, 'Helvetica-Oblique'), (11.0, 'Helvetica'), (11.0, 'Helvetica-Oblique')]
+    markers : []
+    imgs    : [(297.1, 77.0, 298.1, 78.0)]
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=79
+    x-edges : min=56.0 max=140.4 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 275.0 y  95.1 'a'
+      p0 x 283.2 y  95.1 'red'
+      p0 x 300.3 y  95.1 'pixel'
+      p0 x  56.0 y 119.3 '[image:'
+      p0 x  95.1 y 119.3 'first'
+      p0 x 115.9 y 119.3 'remote]'
+      p0 x  56.0 y 140.4 'text'
+      p0 x  76.8 y 140.4 'with'
+      p0 x  99.4 y 140.4 'an'
+
+=== img-off  sheets=1  runs=3/outside=0  images=1  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : Image embedding is off, so the one <img> was skipped.
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.9, 'Helvetica-Oblique'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : [(297.1, 77.0, 298.1, 78.0)]
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=26
+    x-edges : min=56.0 max=119.5 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 275.0 y  95.1 'a'
+      p0 x 283.2 y  95.1 'red'
+      p0 x 300.3 y  95.1 'pixel'
+      p0 x  56.0 y 119.5 'MKEND'
+
+=== links  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=49
+    x-edges : min=56.0 max=75.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 110.0 y  75.2 'the'
+      p0 x 128.3 y  75.2 'spec'
+      p0 x 154.6 y  75.2 'and'
+      p0 x 176.0 y  75.2 'mail'
+      p0 x 199.2 y  75.2 'and'
+      p0 x 220.6 y  75.2 'named'
+      p0 x 257.3 y  75.2 'target'
+      p0 x 288.5 y  75.2 'MKEND'
+
+=== longword  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=139
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  56.0 y  91.2 'supercalifragilisticsupercalifragilisticsupercalifragilistic'
+      p0 x  56.0 y 107.1 'MKEND'
+
+=== malformed-implicit  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '•'), (58.0, 106.2, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=54
+    x-edges : min=58.0 max=111.1 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 'MKSTART'
+      p0 x 125.6 y  75.2 'first'
+      p0 x 146.4 y  75.2 'item'
+      p0 x  58.0 y  88.2 '•'
+      p0 x  70.0 y  93.2 'second'
+      p0 x 108.5 y  93.2 'item'
+      p0 x  58.0 y 106.2 '•'
+      p0 x  70.0 y 111.1 'third'
+      p0 x  94.5 y 111.1 'item'
+
+=== malformed-stray  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=28
+    x-edges : min=56.0 max=96.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'words'
+      p0 x  56.0 y  96.2 '>weird>'
+      p0 x  98.2 y  96.2 'MKEND'
+
+=== malformed-unclosed  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=68
+    x-edges : min=56.0 max=128.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'an'
+      p0 x 126.9 y  75.2 'unclosed'
+      p0 x  56.0 y  91.2 'paragraph'
+      p0 x  56.0 y 112.1 'nested'
+      p0 x  92.1 y 112.1 'div'
+      p0 x 109.2 y 112.1 'with'
+      p0 x 131.8 y 112.1 'no'
+      p0 x  56.0 y 128.1 'closing'
+      p0 x  93.3 y 128.1 'tags'
+
+=== nest-list  sheets=1  runs=8/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(11.0, 'Helvetica'), (11.0, 'NotoSans-Regular-1848')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '◦'), (58.0, 124.1, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=81
+    x-edges : min=58.0 max=129.1 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 'level'
+      p0 x  95.7 y  75.2 'one'
+      p0 x 117.1 y  75.2 'alpha'
+      p0 x  58.0 y  88.2 '◦'
+      p0 x  84.0 y  93.2 'level'
+      p0 x 109.7 y  93.2 'two'
+      p0 x 129.8 y  93.2 'bravo'
+      p0 x  58.0 y 106.1 '▪'
+      p0 x  98.0 y 111.1 'level'
+
+=== ol-start  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=38
+    x-edges : min=56.0 max=132.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '5.'
+      p0 x  70.0 y  96.2 'five'
+      p0 x  58.0 y 109.2 '6.'
+      p0 x  70.0 y 114.1 'six'
+      p0 x  58.0 y 127.1 '7.'
+      p0 x  70.0 y 132.1 'seven'
+      p0 x 102.4 y 132.1 'MKEND'
+
+=== ol-twelve  sheets=1  runs=26/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '1.'), (58.0, 109.2, '2.'), (58.0, 127.1, '3.')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=296
+    x-edges : min=56.0 max=311.6 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '1.'
+      p0 x  75.3 y  96.2 'step'
+      p0 x  99.1 y  96.2 '1'
+      p0 x 108.3 y  96.2 'of'
+      p0 x 120.5 y  96.2 'the'
+      p0 x 138.9 y  96.2 'guide'
+      p0 x  58.0 y 109.2 '2.'
+      p0 x  75.3 y 114.1 'step'
+      p0 x  99.1 y 114.1 '2'
+
+=== plain-words  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=65
+    x-edges : min=56.0 max=128.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'just'
+      p0 x 131.8 y  75.2 'plain'
+      p0 x  56.0 y  91.2 'words'
+      p0 x  88.4 y  91.2 'with'
+      p0 x 111.0 y  91.2 'no'
+      p0 x 126.3 y  91.2 'markup'
+      p0 x  56.0 y 107.1 'at'
+      p0 x  68.2 y 107.1 'all'
+      p0 x  82.3 y 107.1 'MKEND'
+
+=== pre  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.68, 'NotoSans-Regular-7572'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=60
+    code_ink: 1663 dark px in the code band y83-112 (0 = painted over)
+    bands   : (x, y, w, h, dark px) [(56.0, 76.9, 483.3, 39.2, 1834)] — a band of 0 dark px buried its text
+    x-edges : min=56.0 max=117.3 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  66.0 y  91.2 'first'
+      p0 x  86.5 y  91.2 'line'
+      p0 x  71.0 y 104.2 'indented'
+      p0 x 114.3 y 104.2 'two'
+      p0 x 141.4 y 104.2 'delimited'
+      p0 x 194.3 y 104.2 'fields'
+      p0 x  66.0 y 117.3 'last'
+      p0 x  84.6 y 117.3 'MKEND'
+
+=== scripts  sheets=1  runs=2/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    warning : 2 <script> block(s) were ignored: author JavaScript does not run, so content created by scripts is not in the output.
+    net     : 0 fetched, remote=[]
+    faces   : 1 distinct (size, family): [(11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=27
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'visible'
+      p0 x 145.2 y  75.2 'text'
+      p0 x  56.0 y  91.2 'MKEND'
+
+=== style-attr  sheets=1  runs=12/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(11.0, 'Helvetica'), (11.0, 'Helvetica-Bold'), (11.0, 'Helvetica-Oblique'), (18.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=62
+    x-edges : min=56.0 max=91.2 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 110.0 y  80.8 'styled'
+      p0 x 162.0 y  80.8 'words'
+      p0 x 212.9 y  75.3 'bold'
+      p0 x 239.1 y  75.1 'italic'
+      p0 x 264.2 y  75.2 'under'
+      p0 x 295.4 y  75.2 'struck'
+      p0 x 327.7 y  75.2 'big'
+      p0 x  56.0 y  91.2 'small'
+      p0 x  84.7 y  91.2 'MKEND'
+
+=== table-span  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.46, 'Helvetica'), (9.46, 'Helvetica-Bold')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=44
+    bands   : (x, y, w, h, dark px) [(56.0, 60.0, 483.3, 12.1, 553)] — a band of 0 dark px buried its text
+    x-edges : min=60.0 max=127.3 (page 595.3)
+      p0 x  60.0 y  75.0 'Name'
+      p0 x 324.4 y  75.0 'Qty'
+      p0 x  60.0 y  95.0 'MKSTART'
+      p0 x 107.8 y  95.0 'merged'
+      p0 x  60.0 y 107.2 'cell'
+      p0 x  60.0 y 127.3 'Widget'
+      p0 x 324.4 y 127.3 '3'
+      p0 x 332.3 y 127.3 'MKEND'
+
+=== unicode  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Laid out 1 HTML source(s) into 1 page(s).
+    net     : 1 fetched, remote=['https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-jp/NotoSansJP_400Regular.ttf']
+    faces   : 2 distinct (size, family): [(11.0, 'NotoSans-Regular-7572'), (11.0, 'NotoSans-Regular-9750')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=54
+    x-edges : min=56.0 max=107.1 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 107.8 y  75.2 '日本語のテキスト한국어'
+      p0 x  56.0 y  91.1 'café'
+      p0 x  80.3 y  91.1 'naïve'
+      p0 x 110.8 y  91.1 '😀'
+      p0 x 120.2 y  91.1 '𠀀'
+      p0 x  56.0 y 107.1 '\u200fright-left\u200e'
+      p0 x 104.1 y 107.1 'MKEND'

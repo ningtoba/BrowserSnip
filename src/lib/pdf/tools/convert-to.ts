@@ -766,9 +766,6 @@ function decodeBlockEntities(blocks: Block[]): Block[] {
   });
 }
 
-/** The gutter `renderList` reserves between a marker and its text, in points. */
-const MARKER_GUTTER = 14;
-
 /**
  * Give a task item its box and an explicit ordered list its number.
  *
@@ -776,10 +773,10 @@ const MARKER_GUTTER = 14;
  * `checkbox` token a second time as text, so a task arrived as `• [x] done` — the
  * bullet of an ordinary item with the brackets inside the sentence — and it drops
  * the list's `start`, so `5. five / 6. six` printed `1. five / 2. six`. The blocks
- * handed back carry both fixes: `renderList` prefers an explicit `marker`, and an
- * extra `level` buys a wider text indent (the renderer hard-codes one marker
- * gutter, so a three-character `[x]` or a two-digit `10.` would otherwise sit on
- * top of the words — measured on the live README, `10.tenth`).
+ * handed back carry both fixes: `renderList` prefers an explicit `marker`, and it
+ * sizes the text gutter from the widest marker the list holds, so a three-character
+ * `[x]` or a two-digit `10.` clears its words on the renderer's own measurement
+ * (`core/layout.ts`, pinned by `tests/pdf/list-marker-gutter.test.ts`).
  */
 function markStructuredLists(blocks: Block[], source: string): Block[] {
   const ordered = blocks.filter((block) => block.kind === 'list' && block.ordered).length;
@@ -797,24 +794,19 @@ function markStructuredLists(blocks: Block[], source: string): Block[] {
           ? undefined
           : item.checked ? '[x]' : '[ ]');
       const inlines = marker === undefined ? item.inlines : stripCheckboxText(item.inlines);
-      // An ordered item's number is set here too, so the gutter below is decided
-      // from the real marker: the renderer's own `10.` is wider than the 14 pt it
-      // reserves, and `10.tenth` printed overlapped on the live README. An ordinary
-      // bullet is pinned for the same reason — the renderer picks its glyph from the
-      // level, and the gutter below moves the level.
+      // The marker is decided here, from the author's number or checkbox, because
+      // `renderList` measures the gutter on exactly the string it is handed — an
+      // inferred `10.` or `[x]` would otherwise have had to fit the renderer's
+      // minimum gutter. An ordinary bullet is pinned to the glyph the renderer
+      // would pick for this level, so pinning one changes nothing about the page.
       const own = block.ordered && marker === undefined
         ? `${counter++}.`
         : marker ?? (block.ordered ? undefined : ['•', '◦', '▪'][item.level % 3]);
       return { item, marker: own, inlines };
     });
-    // One gutter per list, so the items of a list keep one left edge: the widest
-    // marker of the block decides it (`[x]` is ~12 pt, `10.` ~15 pt, against the
-    // renderer's single 14 pt gutter).
-    const widest = Math.max(0, ...marked.map((one) => (one.marker?.length ?? 0) * 6));
-    const bump = widest > MARKER_GUTTER ? 1 : 0;
     return {
       ...block,
-      items: marked.map((one) => ({ ...one.item, ...(one.marker === undefined ? {} : { marker: one.marker }), inlines: one.inlines, level: one.item.level + bump })),
+      items: marked.map((one) => ({ ...one.item, ...(one.marker === undefined ? {} : { marker: one.marker }), inlines: one.inlines })),
     };
   });
 }

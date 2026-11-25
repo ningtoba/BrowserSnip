@@ -19,11 +19,11 @@
  * decoded by the same rules a viewer uses.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, type PDFPage, PDFRef, PDFStream, StandardFonts, type PDFObject } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { clearFontCache } from '@/lib/pdf/core/fonts';
 import { ToolInputError } from '@/lib/pdf/core/guard';
-import { pageContentOps } from '@/lib/pdf/core/content';
+import { pageContentOps, type ContentOp, type NumberOperand } from '@/lib/pdf/core/content';
 import {
   OLE_BYTES,
   PNG_1PX,
@@ -38,6 +38,7 @@ import {
   imagesPerPage,
   installConvertToEnv,
   jpegBytes,
+  numberedDocxBytes,
   odpBytes,
   odtBytes,
   pageSizes,
@@ -150,6 +151,119 @@ function runsOn(runs: TextRun[], page: number): TextRun[] {
 
 function find(runs: TextRun[], text: string): TextRun[] {
   return runs.filter((run) => run.text.includes(text));
+}
+
+/**
+ * The gutter `core/layout.ts` `renderList` reserves for a list whose widest marker
+ * is `marker`: the renderer measures that marker in the face it draws it in and
+ * starts every item at `margin + max(14, 2 + marker + 2)`. The route buys no indent
+ * of its own any more, so a pin about where item text starts says it in these units.
+ */
+async function seamGutter(marker: string, size: number): Promise<number> {
+  const face = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+  return Math.max(14, 2 + face.widthOfTextAtSize(marker, size) + 2);
+}
+
+/** The band fill `#f1f1ec` and the code ink `rgb(0.15, 0.15, 0.13)` of `renderBlocks`. */
+const CODE_BAND = [0xf1 / 255, 0xf1 / 255, 0xec / 255];
+const CODE_INK = [0.15, 0.15, 0.13];
+const sameColour = (colour: number[], want: number[]) => colour.length === want.length
+  && colour.every((value, index) => Math.abs(value - want[index]) <= 0.005);
+const numbersOf = (op: ContentOp): number[] => op.operands
+  .filter((operand) => operand.kind === 'number')
+  .map((operand) => (operand as NumberOperand).value);
+
+interface CodePaint {
+  /** Every `#f1f1ec` fill of the page, in stream order — paint order is exactly stream order. */
+  bands: { index: number; rect: [number, number, number, number] }[];
+  /** Every code-coloured text show, with its stream position and origin. */
+  ink: { index: number; x: number; y: number }[];
+}
+
+/**
+ * The grey code band of a page and the code-coloured runs that sit on it.
+ *
+ * A band painted *after* its glyphs buries them: the shape `renderBlocks` had when
+ * the convert battery filed it (c3 blocker 1), where the page carried the rectangle
+ * and 0 dark pixels of code ink while every word still extracted. Returning both
+ * stream positions is what lets a pin say the words are actually on the page.
+ */
+function codePaintOf(page: PDFPage): CodePaint {
+  let colour: number[] = [];
+  let origin: [number, number] | null = null;
+  let spanX = 0;
+  let spanY = 0;
+  let x = 0;
+  let y = 0;
+  const bands: CodePaint['bands'] = [];
+  const ink: CodePaint['ink'] = [];
+  pageContentOps(page).forEach((op, index) => {
+    const n = numbersOf(op);
+    if (op.name === 'rg' && n.length === 3) colour = n;
+    else if (op.name === 'cm' && n.length === 6 && (n[4] !== 0 || n[5] !== 0)) {
+      origin = [n[4], n[5]];
+      spanX = 0;
+      spanY = 0;
+    } else if ((op.name === 'm' || op.name === 'l') && n.length >= 2) {
+      spanX = Math.max(spanX, n[0]);
+      spanY = Math.max(spanY, n[1]);
+    } else if (op.name === 'f' && origin) {
+      if (sameColour(colour, CODE_BAND)) bands.push({ index, rect: [origin[0], origin[1], spanX, spanY] });
+      origin = null;
+    } else if ((op.name === 'Td' || op.name === 'TD') && n.length >= 2) {
+      x += n[0];
+      y += n[1];
+    } else if (op.name === 'Tm' && n.length >= 6) {
+      x = n[4];
+      y = n[5];
+    } else if ((op.name === 'Tj' || op.name === 'TJ') && sameColour(colour, CODE_INK)) {
+      ink.push({ index, x, y });
+    }
+  });
+  return { bands, ink };
+}
+
+/**
+ * The fill the code glyphs sit on. A table header is painted in the same grey
+ * (`rgb(0.945, 0.945, 0.925)`), so the band of a code block is the one whose
+ * rectangle holds a code baseline — not merely the first grey fill on the sheet.
+ */
+function bandUnder(painted: CodePaint): CodePaint['bands'][number] | null {
+  return painted.bands.find((band) => painted.ink.some((run) => run.y >= band.rect[1] - 0.01
+    && run.y <= band.rect[1] + band.rect[3] + 0.01)) ?? null;
+}
+
+/** The code leading `renderBlocks` draws one line of code at, for 11 pt body text. */
+const CODE_LINE_HEIGHT = Math.max(7, 11 * 0.88) * 1.35;
+
+/**
+ * A page whose code is really on it: the grey band exists, every glyph of the block
+ * was shown *after* that opaque fill, and the rectangle is the one `paintCodeBox`
+ * has always computed — column-wide from the 56 pt margin, one code leading per line,
+ * each baseline inside it.
+ *
+ * This is the re-anchored half of c3 blocker 1: the same cases used to be pinned (and
+ * measured live, in MuPDF and in ghostscript) as a band with **0** dark pixels in it —
+ * the words extracted, nothing painted. `core/layout.ts` now fills first, so an empty
+ * band is a regression again, for every route that hands the renderer a `kind:'code'`
+ * block: Monospaced text, fenced Markdown, HTML `<pre>`, JSON and XML.
+ */
+function expectPaintedCode(page: PDFPage, lines: number): void {
+  const painted = codePaintOf(page);
+  const band = bandUnder(painted);
+  expect(band, 'the grey code band').toBeTruthy();
+  expect(painted.ink.length, 'the code glyphs painted on it').toBe(lines);
+  expect(band!.index, 'the band was painted after its glyphs, which buries them').toBeLessThan(
+    Math.min(...painted.ink.map((run) => run.index)),
+  );
+  const [x, y, width, height] = band!.rect;
+  expect(x, 'the band starts at the margin').toBeCloseTo(56, 1);
+  expect(width, 'the band spans the text column').toBeCloseTo(595.28 - 112, 1);
+  expect(height, 'the band is one code leading per line').toBeCloseTo(lines * CODE_LINE_HEIGHT, 1);
+  for (const run of painted.ink) {
+    expect(run.y, `the baseline ${run.y} left the band`).toBeGreaterThanOrEqual(y - 0.01);
+    expect(run.y, `the baseline ${run.y} left the band`).toBeLessThanOrEqual(y + height + 0.01);
+  }
 }
 
 /**
@@ -582,7 +696,7 @@ describe('txt-to-pdf typesets the words in the order they were written', () => {
     expect(runs.filter((run) => run.text === 'beta line').length).toBe(1);
   });
 
-  it('draws monospaced text in a different face than proportional text', async () => {
+  it('draws monospaced text in a different face than proportional text, and paints it', async () => {
     const text = 'iiii MMMM 1111';
     const proportional = await run('txt-to-pdf', { source: 'paste', paste: text, monospace: false });
     const mono = await run('txt-to-pdf', { source: 'paste', paste: text, monospace: true });
@@ -591,6 +705,15 @@ describe('txt-to-pdf typesets the words in the order they were written', () => {
     expect(monoRuns.length).toBeGreaterThan(0);
     expect(monoRuns[0]?.font).toBeTruthy();
     expect(monoRuns[0]?.font).not.toBe(bodyFont);
+    // The Monospaced sheet used to be the one this family could not vouch for: the
+    // bytes were right, 17 words extracted, and the grey band buried every glyph of
+    // them (c3 blocker 1, live at :5296 — 163 978 px of band, 0 px of ink, the app's
+    // own preview showing an empty box). It is now a painted page, same rectangle.
+    const doc = await PDFDocument.load(await firstPdf(mono), { updateMetadata: false });
+    expectPaintedCode(doc.getPage(0), 1);
+    // Control: the proportional setting paints no band for the same words.
+    const prose = await PDFDocument.load(await firstPdf(proportional), { updateMetadata: false });
+    expect(bandUnder(codePaintOf(prose.getPage(0))), 'prose painted a code band').toBeNull();
   });
 
   it('spills onto a second sheet without dropping or duplicating a line', async () => {
@@ -835,7 +958,11 @@ describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
     // The characters arrive exactly as written — that half of the old note was true.
     expect(squash(runs.map((run) => run.text).join(' '))).toContain('$x^2 + y_1 = \\alpha$');
     // …but neither the code span nor the `$…$` maths is set in a code face, which is
-    // the half the old note got wrong; `Inline.code` never reaches the writer.
+    // the half the old note got wrong; `Inline.code` never reaches the writer. Re-measured
+    // after seam wave 1 (`72d8faa` painted the code band behind its glyphs, `c5bcf50`
+    // sized the list gutter): `spaced code` still draws in 11 pt Helvetica, the body
+    // face, so the card sentence stands and this pin still describes the page. It goes
+    // red when a seam wave hands `drawLine` the flag it already carries (blocker 9).
     const family = (name: string) => name.replace(/-\d+$/, '');
     expect(family(find(runs, '$x^2')[0]!.font)).toBe(family(body.font));
     expect(family(find(runs, '$x^2')[0]!.font)).not.toBe('JetBrainsMono-Regular');
@@ -843,8 +970,12 @@ describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
 
   it('lays a nested list at its parent’s depth', async () => {
     // Measured behaviour the shared renderer owes a fix for (blocker 5 in
-    // `/tmp/lane-convert/report.md`): the pin goes red when the seam lands, and the
-    // card note moves with it.
+    // `/tmp/lane-convert/report.md`). Seam wave 1 (`c5bcf50`) sized the gutter from
+    // the widest marker but left `markdownToBlocks` flattening every nesting level to
+    // `level: 0`, so this pin still describes today's page — measured again after the
+    // rebase: `level one`, `level two` and `level three` all start at x 70. It goes red
+    // when a later wave gives the Markdown walk its depths, and the card note moves
+    // with it. (The HTML route, which walks a real DOM, is already pinned at depth.)
     const outcome = await run('markdown-to-pdf', {}, [
       md('MKSTART\n\n- level one\n  - level two\n    - level three MKEND\n'),
     ]);
@@ -871,10 +1002,20 @@ describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
     // The bullet is WinAnsi 0x95 in a standard face, which is what a viewer decodes back.
     expect(runs.some((run) => [0x95, 0x2022].includes(run.text.charCodeAt(0)))).toBe(true);
     const boxes = runs.filter((run) => /^\[[x ]\]$/.test(run.text));
+    // The renderer sizes the text gutter from the widest marker the list holds, so
+    // the box keeps the marker column (`margin + 2`) and its text starts one measured
+    // `[x]` clear of it. The route used to buy the same clearance with a whole extra
+    // level of indent, which pushed every item of such a list out to x 84; the
+    // measured gutter is 15.6 pt, so the text belongs at 71.6.
+    const edge = 56 + (await seamGutter('[x]', boxes[0]!.size));
+    expect(edge, 'a three-character box is wider than the old fixed 14 pt gutter').toBeGreaterThan(70);
     for (const box of boxes) {
+      expect(box.x, `the box ${box.text}`).toBeCloseTo(58, 1);
       const text = runs.find((run) => run.page === box.page && Math.abs(run.y - (box.y - 5)) < 2 && run.x > box.x);
-      expect(text!.x - box.x, `box at ${box.x} vs text at ${text!.x}`).toBeGreaterThanOrEqual(14);
+      expect(text!.x, `box at ${box.x} vs text at ${text!.x}`).toBeCloseTo(edge, 1);
     }
+    // One gutter per list, so the ordinary bullet of the same list shares the edge.
+    expect(find(runs, 'plain item')[0]!.x).toBeCloseTo(edge, 1);
   });
 
   it('numbers an ordered list from the number the author wrote', async () => {
@@ -887,14 +1028,36 @@ describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
     const twelve = Array.from({ length: 12 }, (_, i) => `${i + 1}. step ${i + 1} of the guide`).join('\n');
     const outcome = await run('markdown-to-pdf', {}, [md(`MKSTART\n\n${twelve}\n\nMKEND\n`)]);
     const runs = await textRuns(await firstPdf(outcome));
+    const markers = runs.filter((run) => /^\d+\.$/.test(run.text));
     const ten = runs.find((run) => run.text === '10.')!;
     expect(ten, 'the two-digit marker').toBeTruthy();
-    // The renderer reserves one 14 pt gutter for every marker; `10.` is wider than
-    // it, so the route moves the text a full indent instead of printing over it
-    // (measured pre-fix on the live README: marker box 58→94.5 pt, text at 70).
-    const step = runs.find((run) => run.page === ten.page && run.x > ten.x && Math.abs(run.y - (ten.y - 5)) < 2)!;
-    expect(step.x - ten.x).toBeGreaterThanOrEqual(14);
+    // `renderList` measures the widest marker of the list (`12.`) and starts every
+    // item at `margin + that gutter`, so the number clears its words without the
+    // route reserving an indent of its own. Pre-fix the 14 pt gutter was all a `10.`
+    // got: measured on the live README, marker box 58→94.5 pt with the text at 70,
+    // which MuPDF extracted as the single word `10.tenth`.
+    const edge = 56 + (await seamGutter('12.', ten.size));
+    for (const marker of markers) {
+      expect(marker.x, `marker ${marker.text}`).toBeCloseTo(58, 1);
+      const step = runs.find((run) => run.page === marker.page && run.x > marker.x && Math.abs(run.y - (marker.y - 5)) < 2)!;
+      expect(step.x, `${marker.text} and its text`).toBeCloseTo(edge, 1);
+    }
     expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
+  });
+
+  it('holds a list of one-digit numbers at the 70 pt text edge', async () => {
+    const nine = Array.from({ length: 9 }, (_, i) => `${i + 1}. step ${i + 1} of the guide`).join('\n');
+    const outcome = await run('markdown-to-pdf', {}, [md(`MKSTART\n\n${nine}\n\nMKEND\n`)]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const markers = runs.filter((run) => /^\d+\.$/.test(run.text));
+    expect(markers.length).toBe(9);
+    // The control the gutter is sized against: a marker that fits the old 14 pt
+    // gutter must not move, or the measurement would be a re-indent in disguise.
+    for (const marker of markers) {
+      expect(marker.x, `marker ${marker.text}`).toBeCloseTo(58, 1);
+      const step = runs.find((run) => run.page === marker.page && run.x > marker.x && Math.abs(run.y - (marker.y - 5)) < 2)!;
+      expect(step.x, `the text of ${marker.text}`).toBeCloseTo(70, 6);
+    }
   });
 
   it('keeps an HTML comment off the page', async () => {
@@ -944,13 +1107,21 @@ describe('html-to-pdf keeps the markup it parsed', () => {
     const items = Array.from({ length: 12 }, (_, i) => `<li>step ${i + 1} of the guide</li>`).join('');
     const outcome = await run('html-to-pdf', {}, [html(`<p>MKSTART</p><ol>${items}</ol><p>MKEND</p>`)]);
     const runs = await textRuns(await firstPdf(outcome));
+    const markers = runs.filter((run) => /^\d+\.$/.test(run.text));
     const ten = runs.find((run) => run.text === '10.')!;
     expect(ten, 'the two-digit marker').toBeTruthy();
-    // Pre-fix the renderer's single 14 pt gutter could not hold `10.`, and the
-    // marker printed over the words: the reader saw one word `10.step`.
+    // Same seam gutter as the Markdown route, measured from the widest marker the
+    // list holds rather than bought with a route-level indent (which parked these
+    // items at x 84). Pre-fix the renderer's single 14 pt gutter could not hold
+    // `10.` at all, and the reader saw one word `10.step`.
+    const edge = 56 + (await seamGutter('12.', ten.size));
+    expect(edge, 'a two-digit marker is wider than the fixed 14 pt gutter').toBeGreaterThan(70);
+    for (const marker of markers) {
+      expect(marker.x, `marker ${marker.text}`).toBeCloseTo(58, 1);
+      const step = runs.find((run) => run.page === marker.page && run.x > marker.x && Math.abs(run.y - (marker.y - 5)) < 2)!;
+      expect(step.x, `${marker.text} and its text`).toBeCloseTo(edge, 1);
+    }
     expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
-    const step = runs.find((run) => run.page === ten.page && run.x > ten.x && Math.abs(run.y - (ten.y - 5)) < 2)!;
-    expect(step.x - ten.x).toBeGreaterThanOrEqual(14);
   });
 
   it('lays out a .html file that holds no markup at all', async () => {
@@ -1040,14 +1211,30 @@ describe('markdown-to-pdf keeps the structure it read', () => {
     expect([0x95, 0x2022].includes(marker!.text.charCodeAt(0))).toBe(true);
   });
 
-  it('sets fenced code in the code face, below the prose', async () => {
+  it('sets fenced code in the code face, below the prose it follows', async () => {
     const outcome = await run('markdown-to-pdf', { source: 'paste', paste: source });
-    const runs = await textRuns(await firstPdf(outcome));
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
     const code = find(runs, 'const answer = 42;')[0];
     const body = find(runs, 'Body paragraph with')[0];
     expect(code).toBeTruthy();
     expect(code!.font).not.toBe(body!.font);
     expect(code!.y).toBeLessThan(body!.y);
+    // A code face that paints nothing is not a code block: the re-anchored half of
+    // c3 blocker 1. This page used to carry the grey band with 0 dark px of ink in it
+    // (`docs/research/md-struct-after.txt` recorded `code_ink: 147` for the band, the
+    // 147 being the `MKSTART` line that pokes into the probe, not a glyph), because
+    // `renderBlocks` filled the rectangle after drawing the text. The glyphs are now
+    // shown after the fill, on the same rectangle.
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    expectPaintedCode(doc.getPage(0), 1);
+    // The fence really is literal code, not body copy in a mono face: the same source
+    // without the fence puts those words in the body face.
+    const prose = await run('markdown-to-pdf', { source: 'paste', paste: 'Body paragraph with **bold words** and `code`.\n\nconst answer = 42;' });
+    const proseDoc = await PDFDocument.load(await firstPdf(prose), { updateMetadata: false });
+    const prosePainted = codePaintOf(proseDoc.getPage(0));
+    expect(prosePainted.ink, 'a paragraph is not a code page').toEqual([]);
+    expect(bandUnder(prosePainted), 'a paragraph painted a code band').toBeNull();
   });
 
   it('does not print raw HTML tags, and keeps an unterminated fence\'s words', async () => {
@@ -1162,17 +1349,22 @@ describe('html-to-pdf lays out markup as structure', () => {
     expect(colours.some((c) => c[0] === 1 && c[1] === 0 && c[2] === 0)).toBe(true);
   });
 
-  it('prints an anchor’s text, not its href, and keeps a <pre> block’s spacing', async () => {
+  it('prints an anchor’s text, not its href, and paints a <pre> block on its band', async () => {
     const outcome = await run('html-to-pdf', {
       source: 'paste',
       paste: '<p>See <a href="https://example.org/very/long/path">the docs</a>.</p><pre>col1  col2</pre>',
     });
-    const runs = await textRuns(await firstPdf(outcome));
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
     const text = runs.map((run) => run.text).join(' ');
     expect(text).toContain('the docs');
     expect(text).not.toContain('example.org');
     const pre = find(runs, 'col1')[0]!;
     expect(pre.text).toMatch(/col1\s{2}col2/);
+    // `pre` is the HTML route's `kind:'code'` page, the same branch that used to
+    // download as an empty grey box with the words only in the text layer.
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    expectPaintedCode(doc.getPage(0), 1);
   });
 
   it('places a data-URL image block and never the script-written content', async () => {
@@ -1462,6 +1654,26 @@ describe('json-to-pdf and xml-to-pdf print nesting as geometry', () => {
     expect(squash(await extractText(await firstPdf(scalar)))).toContain('42');
   });
 
+  it('hangs an array as bullets whose text keeps the 70 pt edge', async () => {
+    const outcome = await run('json-to-pdf', {
+      source: 'paste',
+      paste: JSON.stringify({ items: Array.from({ length: 12 }, (_, i) => `entry number ${i + 1}`) }),
+    });
+    const runs = await textRuns(await firstPdf(outcome));
+    // `jsonToBlocks` hands the renderer a plain bullet list for a scalar array, so
+    // every marker is the narrow `•` and the seam keeps it inside its 14 pt floor:
+    // the bullet is painted at `margin + 2` and the item text at exactly `margin + 14`.
+    // A route that still bought the gutter with an indent of its own moves this number.
+    const bullets = runs.filter((run) => Math.abs(run.x - 58) < 0.5 && run.text.length === 1);
+    expect(bullets.length).toBe(12);
+    for (const bullet of bullets) {
+      const item = runs.find((run) => run.page === bullet.page && run.x > bullet.x
+        && Math.abs(run.y - (bullet.y - 5)) < 2);
+      expect(item, `the item beside the bullet at y ${bullet.y}`).toBeTruthy();
+      expect(item!.x, `the text beside ${JSON.stringify(bullet.text)}`).toBeCloseTo(70, 6);
+    }
+  });
+
   it('refuses JSON that does not parse, in words', async () => {
     await expect(run('json-to-pdf', { source: 'paste', paste: '{"a": }' }))
       .rejects.toThrow(/JSON|parse/i);
@@ -1651,6 +1863,27 @@ describe('word-to-pdf keeps headings, tables and non-Latin text', () => {
     const bytes = await firstPdf(outcome);
     expect((await pageSizes(bytes)).length).toBe(1);
     expect(runsOn(await textRuns(bytes), 0).length).toBeGreaterThan(0);
+  });
+
+  it('numbers a DOCX list of twelve without printing on the words', async () => {
+    const docx = numberedDocxBytes(Array.from({ length: 12 }, (_, i) => `step ${i + 1} of the guide`));
+    const outcome = await run('word-to-pdf', {}, [fileFrom(await docx, 'plan.docx')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const markers = runs.filter((run) => /^\d+\.$/.test(run.text));
+    expect(markers.map((run) => run.text)).toEqual(
+      ['1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '10.', '11.', '12.'],
+    );
+    // This route hands the renderer Mammoth's `<ol>` with no marker of its own, so
+    // the seam numbers the items and measures its own gutter: every item of the list
+    // shares `margin + gutter(widest marker)`, and the two-digit ones clear `10.` the
+    // same way the Markdown and HTML routes do.
+    const edge = 56 + (await seamGutter('12.', markers[0]!.size));
+    for (const marker of markers) {
+      expect(marker.x, `marker ${marker.text}`).toBeCloseTo(58, 1);
+      const step = runs.find((run) => run.page === marker.page && run.x > marker.x && Math.abs(run.y - (marker.y - 5)) < 2)!;
+      expect(step.x, `${marker.text} and its text`).toBeCloseTo(edge, 1);
+    }
+    expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
   });
 });
 

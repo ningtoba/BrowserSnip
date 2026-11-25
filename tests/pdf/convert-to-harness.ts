@@ -816,6 +816,41 @@ export function docxBytes(body = '<w:p><w:r><w:t>Quarterly numbers in the body t
   ]);
 }
 
+/**
+ * A DOCX whose paragraphs carry a real decimal list definition.
+ *
+ * Mammoth only writes `<ol>` when the numbering part says the `numId` is decimal:
+ * a `w:numPr` with no `word/numbering.xml` behind it comes out as ordinary
+ * paragraphs, which is why this exists next to `docxBytes` rather than as a body
+ * of it. One item per string, all at `ilvl` 0, numbered 1 … n.
+ */
+export function numberedDocxBytes(items: string[]): Promise<Uint8Array> {
+  const body = items.map((item) =>
+    `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>${item}</w:t></w:r></w:p>`).join('');
+  return zipBytes([
+    {
+      name: '[Content_Types].xml',
+      data: `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      data: `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+    },
+    {
+      name: 'word/_rels/document.xml.rels',
+      data: `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`,
+    },
+    {
+      name: 'word/numbering.xml',
+      data: `${XML}<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`,
+    },
+    {
+      name: 'word/document.xml',
+      data: `${XML}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`,
+    },
+  ]);
+}
+
 export const ODF_NS = [
   'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
   'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"',
