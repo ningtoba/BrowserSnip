@@ -21,6 +21,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
+import { clearFontCache } from '@/lib/pdf/core/fonts';
+import { ToolInputError } from '@/lib/pdf/core/guard';
 import { pageContentOps } from '@/lib/pdf/core/content';
 import {
   OLE_BYTES,
@@ -616,6 +618,165 @@ describe('txt-to-pdf typesets the words in the order they were written', () => {
     expect(words).toContain('日本語のテキスト');
     expect(words).toContain('한국어');
     expect(words).not.toContain('\uFFFD');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * txt-to-pdf: the bytes a text file is made of                        *
+ *                                                                     *
+ * `docs/research/text-tail-rig.test.ts` asks whether long content     *
+ * arrives; `txt-enc-rig.test.ts` asks what *is* there once it does,   *
+ * with the encodings, line endings, tabs and refusals a real `.txt`   *
+ * carries. These are the pins for what that rig measured: a file is   *
+ * not always UTF-8, an editor is not always LF, and every one of      *
+ * those shapes used to end the run with a library sentence or silently *
+ * lose the accented letters.                                          *
+ * ------------------------------------------------------------------ */
+
+describe('txt-to-pdf reads the encoding the file is actually in', () => {
+  /** Windows-1252: what Notepad and Excel called ANSI. Only the mapped holes differ from Latin-1. */
+  const cp1252 = (text: string) => {
+    const holes: Record<string, number> = { '\u201c': 0x93, '\u201d': 0x94, '\u2014': 0x97 };
+    return Uint8Array.from([...text].map((char) => holes[char] ?? char.codePointAt(0)!));
+  };
+  const utf16le = (text: string) => Uint8Array.from(Buffer.from(text, 'utf16le'));
+  const bytesOf = (prefix: number[], body: Uint8Array) => Uint8Array.from([...prefix, ...body]);
+  const file = (bytes: Uint8Array, name = 'doc.txt') => fileFrom(bytes, name, 'text/plain');
+
+  it('keeps the accents of a Windows-1252 file, and names the encoding it used', async () => {
+    const outcome = await run('txt-to-pdf', {}, [file(cp1252('Café résumé naïve façade Zürich 1743 ±12° “MKSTART” — MKEND'))]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    // Pre-fix, the UTF-8 attempt left a replacement character wherever a high byte
+    // sat, and no face draws it as the letter: the sheets read
+    // "Caf r sum na ve" for "Café résumé naïve" (38 of 48 characters a reader
+    // could extract), under a success count and no warning at all. The curly
+    // quotes and the em dash are asserted in `docs/research/txt-enc-after.txt`,
+    // where MuPDF reads the WinAnsi bytes back as the characters they mean.
+    expect(words).toContain('Café résumé naïve façade Zürich');
+    expect(words).not.toContain('\uFFFD');
+    expect(outcome.warnings.join(' ')).toMatch(/Windows-1252/);
+    expect(outcome.warnings.join(' ')).toMatch(/not valid UTF-8/);
+  });
+
+  it('typesets UTF-16 with a mark, little- and big-endian alike', async () => {
+    for (const [prefix, body] of [[0xff, 0xfe], [0xfe, 0xff]] as const) {
+      const little = utf16le('Café report MKEND');
+      const bytes = prefix === 0xff ? little : Uint8Array.from(Buffer.from(little).swap16());
+      const outcome = await run('txt-to-pdf', {}, [file(bytesOf([prefix, body], bytes))]);
+      const words = squash(await extractText(await firstPdf(outcome)));
+      expect(words, prefix === 0xff ? 'UTF-16LE' : 'UTF-16BE').toContain('Café report MKEND');
+      expect(outcome.warnings.join(' ')).toMatch(prefix === 0xff ? /decoded from UTF-16LE/ : /decoded from UTF-16BE/);
+    }
+  });
+
+  it('leaves a UTF-8 file that carries its own replacement character alone', async () => {
+    // The control for the fallback above: a file that *is* valid UTF-8, and whose
+    // author already wrote the box, must not be re-read as Windows-1252.
+    const outcome = await run('txt-to-pdf', {}, [file(new TextEncoder().encode('Café \uFFFD already broken MKEND'))]);
+    expect(outcome.warnings.join(' ')).not.toMatch(/Windows-1252/);
+    expect(squash(await extractText(await firstPdf(outcome)))).toContain('already broken MKEND');
+  });
+
+  it('starts a new line at every line-ending convention the file uses', async () => {
+    const outcome = await run('txt-to-pdf', {}, [
+      file(new TextEncoder().encode('MKSTART one\r\ntwo\nthree\rMKEND four\n')),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const lines = ['MKSTART one', 'two', 'three', 'MKEND four'].map((text) => find(runs, text));
+    for (const [index, found] of lines.entries()) {
+      expect(found.length, lines[index]![0]!.text).toBe(1);
+    }
+    // One baseline per source line: the C++ pair, the Unix one and the old-Mac one.
+    expect(new Set(lines.map(([found]) => round(found!.y))).size).toBe(4);
+  });
+
+  it('breaks the sheet where the manuscript puts a form feed', async () => {
+    const outcome = await run('txt-to-pdf', {}, [
+      file(new TextEncoder().encode('MKSTART first sheet\nmore of it\n\u000CSecond sheet MKEND\n')),
+    ]);
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
+    expect(await pageSizes(bytes)).toHaveLength(2);
+    expect(outcome.pagesOut).toBe(2);
+    expect(find(runs, 'first sheet')[0]!.page).toBe(0);
+    expect(find(runs, 'Second sheet MKEND')[0]!.page).toBe(1);
+    expect(runsOn(runs, 1).some((run) => run.text === '2')).toBe(true);
+  });
+
+  it('drops the characters no face can draw, and counts them out loud', async () => {
+    const outcome = await run('txt-to-pdf', {}, [
+      file(new TextEncoder().encode('MKSTART bell\u0007 escape\u001b delete\u007f MKEND')),
+    ]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    expect(words).toContain('bell escape delete MKEND');
+    expect(outcome.warnings.join(' ')).toMatch(/3 control characters .* left out/);
+  });
+
+  it('sends a tab to the next column stop, so tab-indented tables keep their columns', async () => {
+    const outcome = await run('txt-to-pdf', { monospace: true, paragraphs: false }, [
+      file(new TextEncoder().encode('ID\tNAME\tQTY\n333\tcherry\t5')),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // Eight-column stops, the `expand` default: `ID` is two columns deep, so its
+    // tab is six spaces, and `NAME` ends at column 12, so its tab is four. Pre-fix
+    // both were four, which lands the same field at a different x on every row —
+    // measured in the real monospace face at 95.0, 100.8 and 106.6 pt.
+    expect(find(runs, 'NAME')[0]!.text).toBe('ID      NAME    QTY');
+    expect(find(runs, 'cherry')[0]!.text).toBe('333     cherry  5');
+  });
+
+  it('refuses the files that hold nothing to typeset, and says which one', async () => {
+    const refusals: [string, Uint8Array, RegExp][] = [
+      ['no bytes at all', new Uint8Array(0), /"doc\.txt" is empty \(0 bytes\)/],
+      ['only whitespace', new TextEncoder().encode('   \n\t\n \n'), /"doc\.txt" contains no characters to typeset/],
+      ['only a mark', bytesOf([0xef, 0xbb, 0xbf], new Uint8Array(0)), /"doc\.txt" contains no characters to typeset/],
+      ['only control characters', new TextEncoder().encode('\u0001\u0002\u0003'), /control characters/],
+    ];
+    for (const [what, bytes, sentence] of refusals) {
+      const error = await run('txt-to-pdf', {}, [file(bytes)]).catch((thrown: Error) => thrown);
+      expect((error as Error).message, what).toMatch(sentence);
+      expect((error as Error).message, what).not.toMatch(/WinAnsi|undefined|at .*\.ts:/);
+    }
+  });
+
+  it('fetches the one script face a Japanese source needs, from the host the card names', async () => {
+    // The network half of the encoding story: a Latin file must ask for nothing
+    // off the device, and a Japanese one must ask for exactly the face the card
+    // says it will (`cdn.jsdelivr.net`, once, then the browser caches it).
+    const asked: string[] = [];
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      return inner(input as never);
+    }) as typeof fetch;
+    try {
+      clearFontCache();
+      const latin = await run('txt-to-pdf', {}, [file(new TextEncoder().encode('Café report MKEND'))]);
+      expect(squash(await extractText(await firstPdf(latin)))).toContain('Café report MKEND');
+      expect(asked.filter((url) => /^https?:/.test(url) && !/localhost|127\./.test(url))).toEqual([]);
+      asked.length = 0;
+      clearFontCache();
+      const kana = await run('txt-to-pdf', {}, [file(new TextEncoder().encode('日本語のテキスト café MKEND'))]);
+      expect(squash(await extractText(await firstPdf(kana)))).toContain('日本語のテキスト');
+      expect(asked.filter((url) => /^https:/.test(url))).toEqual([
+        'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-jp/NotoSansJP_400Regular.ttf',
+      ]);
+      expect(String(getPdfTool('txt-to-pdf')?.notes)).toMatch(/faces are fetched from the CDN/);
+    } finally {
+      globalThis.fetch = inner;
+      clearFontCache();
+    }
+  });
+
+  it('calls a PNG named .txt a PNG, and UTF-16 without a mark a re-saveable file', async () => {
+    const png = await run('txt-to-pdf', {}, [file(PNG_1PX)]).catch((thrown: Error) => thrown);
+    expect((png as Error).message).toMatch(/"doc\.txt" is a PNG image, not a plain text file/);
+    const noMark = await run('txt-to-pdf', {}, [file(utf16le('café report'))]).catch((thrown: Error) => thrown);
+    expect((noMark as Error).message).toMatch(/binary data/);
+    // The refusal is right — the bytes are ambiguous — but only useful if it says
+    // what to do about it, because UTF-16 without its mark is a text file.
+    expect((noMark as ToolInputError).hint).toMatch(/UTF-16 without its byte-order mark/);
+    expect((noMark as ToolInputError).hint).toMatch(/re-save it as UTF-8/i);
   });
 });
 

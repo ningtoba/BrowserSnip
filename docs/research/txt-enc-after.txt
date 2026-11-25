@@ -1,0 +1,162 @@
+## after-fix — /tmp/txtenc, judged by MuPDF outside this app
+
+binary-nonul  src=3000  sheets=1  runs_stream=26/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  warning   : "doc.txt" was read as Windows-1252, the legacy ANSI encoding, because 3000 bytes of it are not valid UTF-8. Re-save the file as UTF-8 if that is not what it holds.
+  warning   : "doc.txt" held 120 control characters that no face can draw; they were left out.
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 2124 extracted, 0 of them U+FFFD
+  expect    : -
+  baselines : 26 distinct lines on 1 sheets (max x1=601.5 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ | p0:91.2:¡¢£¤¥¦§¨©ª«¬-®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈ | p0:107.1:¡¢£¤¥¦§¨©ª«¬-®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈ | p0:123.1:¡¢£¤¥¦§¨©ª«¬-®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈ | p0:139.0:¡¢£¤¥¦§¨©ª«¬-®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈ | p0:155.0:¡¢£¤¥¦§¨©ª«¬-®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈ
+
+cjk-mixed  src=61  sheets=1  runs_stream=3/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=['cdn.jsdelivr.net']  urls=2  announced=['Downloading the Noto Sans JP face from cdn.jsdelivr.net — once, then your browser caches it. Your PDF stays on this device.', 'Downloading the Noto Sans KR face from cdn.jsdelivr.net — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 37 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 3 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART 日本語のテキスト 你好 | p0:91.1:한국어 café MKEND | p0:813.9:1
+
+cjk  src=44  sheets=1  runs_stream=3/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=['cdn.jsdelivr.net']  urls=1  announced=['Downloading the Noto Sans JP face from cdn.jsdelivr.net — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 30 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 3 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART 日本語のテキスト café | p0:91.2:MKEND | p0:813.9:1
+
+cr-only  src=31  sheets=1  runs_stream=5/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 33 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 5 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART one | p0:91.2:second | p0:107.1:third | p0:123.1:MKEND | p0:813.9:1
+
+form-feed  src=41  sheets=2  runs_stream=7/outside_box=0
+  message   : Typeset 1 text source(s) into 2 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 42 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 7 distinct lines on 2 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART one | p0:813.9:1 | p1:75.2:two | p1:91.2:three | p1:107.1:four | p1:123.1:five MKEND
+
+latin-only  src=58  sheets=1  runs_stream=4/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=1  announced=['Downloading the NotoSans-Regular.ttf face from localhost:3000 — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 56 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 4 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART café naïve | p0:91.1:row µ Ω MKEND | p0:107.1:no script faces here | p0:813.9:1
+
+latin1-rows  src=41  sheets=1  runs_stream=4/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  warning   : "doc.txt" was read as Windows-1252, the legacy ANSI encoding, because 5 bytes of it are not valid UTF-8. Re-save the file as UTF-8 if that is not what it holds.
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 40 extracted, 0 of them U+FFFD
+  expect    : True  ('Café au lait')
+  baselines : 4 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:Café au lait | p0:91.2:Résumé naïve | p0:107.1:MKEND — fin | p0:813.9:1
+
+latin1  src=35  sheets=1  runs_stream=3/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  warning   : "doc.txt" was read as Windows-1252, the legacy ANSI encoding, because 7 bytes of it are not valid UTF-8. Re-save the file as UTF-8 if that is not what it holds.
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 38 extracted, 0 of them U+FFFD
+  expect    : True  ('Café résumé naïve “MKSTART” — MKEND')
+  baselines : 3 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:Café résumé naïve | p0:91.2:“MKSTART” — MKEND | p0:813.9:1
+
+literal-replacement  src=39  sheets=1  runs_stream=3/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=1  announced=['Downloading the NotoSans-Regular.ttf face from localhost:3000 — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 38 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 3 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART café | p0:91.2:already broken MKEND | p0:813.9:1
+
+long-word-mono  src=3007  sheets=1  runs_stream=40/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=1  announced=[]
+  chars     : 3046 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 39 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:70.3:supercalifragilisticsupercalifragilistic | p0:83.3:supercalifragilisticsupercalifragilistic | p0:96.4:supercalifragilisticsupercalifragilistic | p0:109.5:supercalifragilisticsupercalifragilistic | p0:122.5:supercalifragilisticsupercalifragilistic | p0:135.6:supercalifragilisticsupercalifragilistic
+
+long-word  src=3007  sheets=1  runs_stream=3/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 133 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 3 distinct lines on 1 sheets (max x1=600.6 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:supercalifragilisticsupercalifragilistic | p0:91.2:MKEND | p0:813.9:1
+
+long-wrapped  src=4855  sheets=7  runs_stream=256/outside_box=0
+  message   : Typeset 1 text source(s) into 7 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 4868 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 256 distinct lines on 7 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:813.9:1 | p1:75.2:MKSTART the quick | p1:91.2:brown fox jumps over | p1:107.1:the lazy dog the | p1:123.1:quick brown fox jumps | p1:139.0:over the lazy dog
+
+mixed-endings  src=34  sheets=1  runs_stream=5/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 35 extracted, 0 of them U+FFFD
+  expect    : True  ('MKEND')
+  baselines : 5 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART one | p0:91.2:two | p0:107.1:three | p0:123.1:MKEND four | p0:813.9:1
+
+spaces-mono  src=65  sheets=1  runs_stream=5/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=4  announced=[]
+  chars     : 68 extracted, 0 of them U+FFFD
+  expect    : True  ('cherry')
+  baselines : 5 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  col2_x    : [100.8]  spread=0.0
+  head      : p0:70.3:ID NAME QTY | p0:91.3:1 apple 3 | p0:112.4:22 banana 4 | p0:133.5:333 cherry 5 | p0:813.9:1
+
+tabs-mono  src=46  sheets=1  runs_stream=5/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=4  announced=[]
+  chars     : 76 extracted, 0 of them U+FFFD
+  expect    : True  ('cherry')
+  baselines : 5 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  col2_x    : [112.5]  spread=0.0
+  head      : p0:70.3:ID NAME QTY | p0:91.3:1 apple 3 | p0:112.4:22 banana 4 | p0:133.5:333 cherry 5 | p0:813.9:1
+
+tabs-prop  src=46  sheets=1  runs_stream=5/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=0  announced=[]
+  chars     : 76 extracted, 0 of them U+FFFD
+  expect    : True  ('cherry')
+  baselines : 5 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  col2_x    : [83.5, 85.3, 86.6, 89.6]  spread=6.1
+  head      : p0:75.2:ID NAME QTY | p0:96.2:1 apple 3 | p0:117.1:22 banana 4 | p0:138.1:333 cherry 5 | p0:813.9:1
+
+utf16be-bom  src=92  sheets=1  runs_stream=4/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  warning   : "doc.txt" was decoded from UTF-16BE.
+  net       : remote=[]  urls=1  announced=['Downloading the NotoSans-Regular.ttf face from localhost:3000 — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 47 extracted, 0 of them U+FFFD
+  expect    : True  ('MKSTART café naïve row µ Ω MKEND')
+  baselines : 4 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART café naïve | p0:91.1:row µ Ω MKEND | p0:107.1:second line | p0:813.9:1
+
+utf16le-bom  src=92  sheets=1  runs_stream=4/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  warning   : "doc.txt" was decoded from UTF-16LE.
+  net       : remote=[]  urls=1  announced=['Downloading the NotoSans-Regular.ttf face from localhost:3000 — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 47 extracted, 0 of them U+FFFD
+  expect    : True  ('MKSTART café naïve row µ Ω MKEND')
+  baselines : 4 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART café naïve | p0:91.1:row µ Ω MKEND | p0:107.1:second line | p0:813.9:1
+
+utf8-bom  src=52  sheets=1  runs_stream=4/outside_box=0
+  message   : Typeset 1 text source(s) into 1 page(s).
+  net       : remote=[]  urls=1  announced=['Downloading the NotoSans-Regular.ttf face from localhost:3000 — once, then your browser caches it. Your PDF stays on this device.']
+  chars     : 47 extracted, 0 of them U+FFFD
+  expect    : True  ('MKSTART café naïve row µ Ω MKEND')
+  baselines : 4 distinct lines on 1 sheets (max x1=539.3 vs sheet width 595.3, max y=813.9 vs height 841.9)
+  head      : p0:75.2:MKSTART café naïve | p0:91.1:row µ Ω MKEND | p0:107.1:second line | p0:813.9:1

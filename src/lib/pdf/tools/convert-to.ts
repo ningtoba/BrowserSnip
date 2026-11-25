@@ -414,7 +414,7 @@ function alternativeFor(sniffed: SniffedSource): string {
     case 'svg':
       return 'Use SVG to PDF for a drawing, or Images to PDF to place it on a page.';
     case 'binary':
-      return 'The bytes do not match any format this tool reads.';
+      return 'The bytes do not match any format this tool reads. A text file saved as UTF-16 without its byte-order mark looks exactly like this from the outside: re-save it as UTF-8, or save it with the mark.';
     default:
       return 'Remove it from the list, or choose the tool that matches its real format.';
   }
@@ -512,29 +512,94 @@ export async function readPrimarySource(
 
 /* ----------------------------------------------------------------- sources */
 
-/** Decode bytes as text, honouring a UTF-8/UTF-16 BOM instead of garbling it. */
-export function decodeText(bytes: Uint8Array): { text: string; warning?: string } {
+/**
+ * Every line terminator a text editor can hold, folded to `\n`.
+ *
+ * `core/layout.ts` folds CRLF and nothing else, so a file written with old-Mac
+ * CRs — or with the Unicode separators — reached the writer holding a character
+ * the standard-14 faces have no code for. Measured on the pre-fix build, a file
+ * whose only crime was `\r` ended the run with `WinAnsi cannot encode "\r"
+ * (0x000d)`: no file, no file name, and a stack word in its place.
+ */
+const LINE_ENDINGS = /\r\n|[\r\u000B\u001C-\u001E\u0085\u2028\u2029]/g; // eslint-disable-line no-control-regex
+
+/**
+ * Control characters with no glyph in any face the app can write with, and no
+ * line or tab meaning: left out, and counted in a warning. A form feed is not
+ * here — it is a page break, and the plain-text route hands it to the layout
+ * engine's page-break block.
+ */
+const UNPRINTABLE = /[\u0000-\u0008\u000E-\u001B\u001F\u007F\u0080-\u0084\u0086-\u009F]/g; // eslint-disable-line no-control-regex
+
+/**
+ * Fold line endings, drop the byte-order mark and the characters that have no
+ * glyph, and report how many of the latter went missing.
+ */
+export function normalizeText(text: string): { text: string; dropped: number } {
+  const ended = text.replace(LINE_ENDINGS, '\n').replace(/^\uFEFF/, '');
+  let dropped = 0;
+  const clean = ended.replace(UNPRINTABLE, () => {
+    dropped += 1;
+    return '';
+  });
+  return { text: clean, dropped };
+}
+
+/** `3 control characters`, `1 control character`. */
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Decode bytes as text, and say which encoding the words came out of.
+ *
+ * A byte-order mark decides for UTF-8 and UTF-16. Without one, a file that is not
+ * valid UTF-8 is read as Windows-1252 — the encoding Notepad and Excel called
+ * ANSI in every Western locale — rather than kept as the UTF-8 attempt's
+ * replacement characters: measured on the pre-fix build, a CP1252 file whose
+ * source said `Café résumé naïve “x” — MKEND` reached the sheets as
+ * `Caf r sum na ve  MKSTART  MKEND`, under "Typeset 1 text source(s) into
+ * 1 page(s)." with no warning at all.
+ */
+export function decodeText(bytes: Uint8Array, name = 'the source'): { text: string; warnings: string[] } {
   const utf16 = startsWith(bytes, [0xff, 0xfe])
     ? 'UTF-16LE'
     : startsWith(bytes, [0xfe, 0xff])
       ? 'UTF-16BE'
       : null;
+  const warnings: string[] = [];
+  let raw: string;
   if (utf16) {
-    return {
-      text: new TextDecoder(utf16).decode(bytes.subarray(2)).replace(/^\uFEFF/, ''),
-      warning: `decoded from ${utf16}`,
-    };
+    raw = new TextDecoder(utf16).decode(bytes.subarray(2));
+    warnings.push(`"${name}" was decoded from ${utf16}.`);
+  } else {
+    try {
+      raw = new TextDecoder('UTF-8', { fatal: true }).decode(bytes);
+    } catch {
+      const lenient = new TextDecoder('UTF-8').decode(bytes);
+      const rejected = lenient.split('\uFFFD').length - 1;
+      raw = new TextDecoder('windows-1252').decode(bytes);
+      warnings.push(
+        `"${name}" was read as Windows-1252, the legacy ANSI encoding, because ${counted(rejected, 'byte')} ` +
+          'of it are not valid UTF-8. Re-save the file as UTF-8 if that is not what it holds.',
+      );
+    }
   }
-  const text = new TextDecoder('UTF-8').decode(bytes);
-  return { text: text.replace(/^\uFEFF/, '') };
+  const text = normalizeText(raw);
+  if (text.dropped > 0) {
+    warnings.push(
+      `"${name}" held ${counted(text.dropped, 'control character')} that no face can draw; they were left out.`,
+    );
+  }
+  return { text: text.text, warnings };
 }
 
 /**
  * The text-ish tools share one panel: paste or upload, then lay out.
  *
  * Content that turns out to be another format is refused with that format named
- * (E2), and a whitespace-only source is refused rather than typeset as a blank
- * sheet (E13).
+ * (E2), and a source with nothing left to typeset is refused rather than typeset
+ * as a blank sheet (E13).
  */
 async function readSources(
   context: ToolRunContext,
@@ -551,23 +616,58 @@ async function readSources(
         hint: 'The content box is empty and no file was added.',
       });
     }
-    return { sources: [{ name: 'pasted text', text: pasted }], warnings };
+    const clean = normalizeText(pasted);
+    if (clean.dropped > 0) {
+      warnings.push(`The pasted text held ${counted(clean.dropped, 'control character')} that no face can draw; they were left out.`);
+    }
+    return { sources: [{ name: 'pasted text', text: clean.text }], warnings };
   }
   const batches = await sourceBatches(context, expected);
   const sources: { name: string; text: string }[] = [];
   for (const batch of batches) {
-    const decoded = decodeText(batch.bytes);
-    if (decoded.warning) warnings.push(`"${batch.name}" was ${decoded.warning}.`);
+    const decoded = decodeText(batch.bytes, batch.name);
+    warnings.push(...decoded.warnings);
     if (decoded.text.trim() === '') {
       throw new ToolInputError(
         'UNSUPPORTED',
-        `"${batch.name}" contains no characters to typeset (${describeSize(batch.bytes)} of whitespace or padding).`,
+        `"${batch.name}" contains no characters to typeset (${describeSize(batch.bytes)} of whitespace, padding or control characters).`,
         { fileName: batch.name, hint: 'Open it in its real editor and re-save, or check the encoding.' },
       );
     }
     sources.push({ name: batch.name, text: decoded.text });
   }
   return { sources, warnings };
+}
+
+/** Terminal tab stops — the `expand` default that ASCII tables and code indent by. */
+const TAB_STOP = 8;
+
+/**
+ * Tabs to the next stop, counted in columns along each line.
+ *
+ * `core/layout.ts` replaces a tab with four spaces wherever it happens to sit,
+ * which keeps a space-aligned table in columns and scatters a tab-aligned one:
+ * measured with the real monospace face, three columns of the same table landed
+ * at 95.0, 100.8 and 106.6 pt on the sheet. Stopping at a multiple of the tab
+ * width is what an editor means by a tab, and it is the only expansion under
+ * which both kinds of source stay lined up.
+ */
+function expandTabs(text: string): string {
+  return text.split('\n').map((line) => {
+    let column = 0;
+    let out = '';
+    for (const char of [...line]) {
+      if (char !== '\t') {
+        out += char;
+        column += 1;
+        continue;
+      }
+      const to = TAB_STOP - (column % TAB_STOP);
+      out += ' '.repeat(to);
+      column += to;
+    }
+    return out;
+  }).join('\n');
 }
 
 /* ------------------------------------------------------------------ output */
@@ -1072,7 +1172,8 @@ export const convertToTools: PdfToolDefinition[] = [
     notes: [
       ...TEXT_NOTES,
       'Plain text carries no structure, so nothing is inferred: paragraphs come from blank lines, line breaks are kept, and no line is promoted to a title.',
-      'Long lines are wrapped to the column; hard line breaks in the source are respected.',
+      'Long lines are wrapped to the column; hard line breaks in the source are respected, whichever convention wrote them — CRLF, old-Mac CR, or a Unicode line separator all start a line, a tab stops at the next eighth column, and a form feed starts a new page.',
+      'Bytes are read as UTF-8; a file that is not valid UTF-8 is read as Windows-1252 (the encoding Notepad called ANSI) and the run names the encoding it used. A byte-order mark wins over both. Control characters that no face can draw are left out and counted.',
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.txt, 'Paste your text here…', 'Source'),
@@ -1087,10 +1188,22 @@ export const convertToTools: PdfToolDefinition[] = [
         warnings.push('The source contains HTML tags; they are printed as text here. HTML to PDF typesets them.');
       }
       const { textToBlocks } = await import('../core/layout');
-      const blocks: Block[] = sources.flatMap((source) => textToBlocks(source.text, {
+      const options = {
         monospace: booleanValue(context.values, 'monospace'),
-        paragraphs: booleanValue(context.values, 'paragraphs', true) ? '\n\n' : '\n',
-      }));
+        paragraphs: booleanValue(context.values, 'paragraphs', true) ? '\n\n' as const : '\n' as const,
+      };
+      // A form feed is a page break to a line printer, to `enscript` and to
+      // `txt2pdf`, and the layout engine has a page-break block for exactly that;
+      // the manuscripts that mark their pages (Gutenberg, RFCs) mean it.
+      const blocks: Block[] = sources.flatMap((source) =>
+        source.text
+          .split('\f')
+          .filter((page) => page.trim() !== '')
+          .flatMap((page, index) => {
+            const blocksOnPage = textToBlocks(expandTabs(page), options);
+            return index === 0 ? blocksOnPage : [{ kind: 'pagebreak' as const }, ...blocksOnPage];
+          }),
+      );
       return blocksResult(blocks, layoutOptions(context), `Typeset ${sources.length} text source(s) into`, warnings);
     },
   },
