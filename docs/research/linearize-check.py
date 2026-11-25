@@ -23,10 +23,16 @@ Preservation is measured against the source with the same instrument: per page
 ink pixel count at 72 dpi, characters, `MediaBox`/`CropBox`/`/Rotate`, `/Annots`
 and links; document `/Title`, `/Author`, `/Producer` and the outline.
 
-    python3 docs/research/linearize-check.py --src IN.pdf --out OUT.pdf [--before]
+    python3 docs/research/linearize-check.py --src IN.pdf --out OUT.pdf [--before|--fallback]
 
-`--before` records a run that is *expected* not to be linearized (the local
-rebuild path): the structure must then fail 1–6 while preservation still holds.
+`--before` records a run whose dictionary was *written and is wrong* (the shape
+this tool shipped before the engine was fixed): checks 1–6 must not all hold,
+preservation must.
+
+`--fallback` records the degraded path — the engine could not be reached, so what
+came back is a plain rebuild: no `/Linearized` dictionary at all, one cross-reference
+section, libqpdf refusing to read hints, and the document intact. The card's own
+disclaimer is judged by the run record, not here.
 """
 from __future__ import annotations
 
@@ -111,7 +117,18 @@ def structure(path: str) -> dict:
                 and facts["T"] is not None
                 and 0 <= page_at < facts["E"] <= facts["T"] <= len(raw)
             )
-    facts["xref_sections"] = len(re.findall(rb"(?m)^xref\s*$", raw))
+    # Two cross-reference *sections* is the Annex F requirement, and a file can
+    # present them as classic tables or as xref streams; counting only the `xref`
+    # keyword read a rebuild written with one xref stream as having none.
+    facts["xref_sections"] = len(re.findall(rb"(?m)^xref\s*$", raw)) + len(
+        re.findall(rb"/Type\s*/XRef\b", raw)
+    )
+    forms = set()
+    if re.search(rb"(?m)^xref\s*$", raw):
+        forms.add("classic table")
+    if re.search(rb"/Type\s*/XRef\b", raw):
+        forms.add("xref stream")
+    facts["xref_form"] = sorted(forms) or ["none"]
     try:
         with pikepdf.open(path) as pdf:
             facts["pikepdf_is_linearized"] = bool(pdf.is_linearized)
@@ -138,14 +155,27 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--src", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--before", action="store_true", help="a rebuild that must NOT be linearized")
+    parser.add_argument("--before", action="store_true", help="a written-but-broken linearization: the dictionary is there and lies")
+    parser.add_argument("--fallback", action="store_true", help="the honest degraded path: no engine ran, so no dictionary at all")
     args = parser.parse_args()
 
     failures: list[str] = []
     facts = structure(args.out)
     print("structure:", facts)
 
-    if args.before:
+    if args.fallback:
+        # The honest degraded path: the engine never ran, so the file must simply be
+        # a rebuild — no dictionary, no second xref section, nothing lost — and the
+        # card's own sentence is judged elsewhere (it must say the file is not
+        # linearized). `--before` is the other case: a dictionary that was written
+        # and lies.
+        if facts["dict_at"] >= 0:
+            failures.append(f"--fallback: a /Linearized dictionary was written at byte {facts['dict_at']} by a run with no engine")
+        if facts.get("pikepdf_is_linearized"):
+            failures.append("--fallback: libqpdf reads this rebuild as linearized")
+        if facts["xref_sections"] != 1:
+            failures.append(f"--fallback: expected one cross-reference section ({facts.get('xref_form')}), found {facts['xref_sections']}")
+    elif args.before:
         if facts["dict_at"] < 0:
             failures.append("--before: no /Linearized dictionary at all")
         if facts["dict_within_1024"] and facts["L_matches_length"]:

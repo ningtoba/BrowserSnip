@@ -1,0 +1,177 @@
+# linearize-pdf — engine state, both halves, on the current build (rebased on a71b967, dev :5295, CDP 9845)
+# driver: docs/research/engine-state-rail.mjs (one fresh Chromium per state: the engine loader is a module singleton,
+#   so 'blocked' must be a browser that never saw the CDN, not the same tab with the cable pulled);
+#   BLOCK=1 = --host-resolver-rules MAP cdn.jsdelivr.net 127.0.0.1:1 AND Network.setBlockedURLs '*jsdelivr*'.
+# Judged here by libqpdf (pikepdf 10.9.1 = qpdf 12.3.2's own library — no qpdf CLI in this box, recorded substitution)
+# and by Ghostscript re-opening the result. The 'qpdf --check-linearization' the seam runs in the tab is qpdf's code too.
+===== colour live -> /tmp/lane-optimize2/lin/live-colour-colour_linearized.pdf
+structure: {'bytes': 5978, 'dict_at': 27, 'dict_within_1024': True, 'L': 5978, 'L_matches_length': True, 'H': (567, 142), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 19, 'O_offset': 709, 'E': 2466, 'T': 5539, 'O_before_second_group': True, 'xref_sections': 2, 'xref_form': ['classic'], 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 8 -> 8
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+===== colour block -> /tmp/lane-optimize2/lin/block-colour-colour_linearized.pdf
+structure: {'bytes': 2938, 'dict_at': -1, 'dict_within_1024': False, 'xref_sections': 1, 'xref_form': ['', 'stream'], 'pikepdf_is_linearized': False, 'pikepdf_check': 'FAILED: called readLinearizationData for file that is not linearized'}
+preservation: pages 8 -> 8
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+===== unc live -> /tmp/lane-optimize2/lin/live-unc-uncompressed_linearized.pdf
+structure: {'bytes': 5978, 'dict_at': 27, 'dict_within_1024': True, 'L': 5978, 'L_matches_length': True, 'H': (567, 142), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 19, 'O_offset': 709, 'E': 2466, 'T': 5539, 'O_before_second_group': True, 'xref_sections': 2, 'xref_form': ['classic'], 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 8 -> 8
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+===== unc block -> /tmp/lane-optimize2/lin/block-unc-uncompressed_linearized.pdf
+structure: {'bytes': 3016, 'dict_at': -1, 'dict_within_1024': False, 'xref_sections': 1, 'xref_form': ['', 'stream'], 'pikepdf_is_linearized': False, 'pikepdf_check': 'FAILED: called readLinearizationData for file that is not linearized'}
+preservation: pages 8 -> 8
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+===== heavy live -> /tmp/lane-optimize2/lin/live-heavy-heavy_linearized.pdf
+structure: {'bytes': 82274, 'dict_at': 27, 'dict_within_1024': True, 'L': 82274, 'L_matches_length': True, 'H': (587, 156), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 20, 'O_offset': 743, 'E': 2696, 'T': 81815, 'O_before_second_group': True, 'xref_sections': 2, 'xref_form': ['classic'], 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 6 -> 6
+  page 1 ink 61727 -> 61727  text 1812 -> 1812
+  page 2 ink 125860 -> 125860  text 0 -> 0
+VERDICT PASS
+  gs: {exit=0}
+===== heavy block -> /tmp/lane-optimize2/lin/block-heavy-heavy_linearized.pdf
+structure: {'bytes': 79747, 'dict_at': -1, 'dict_within_1024': False, 'xref_sections': 1, 'xref_form': ['', 'stream'], 'pikepdf_is_linearized': False, 'pikepdf_check': 'FAILED: called readLinearizationData for file that is not linearized'}
+preservation: pages 6 -> 6
+  page 1 ink 61727 -> 61727  text 1812 -> 1812
+  page 2 ink 125860 -> 125860  text 0 -> 0
+VERDICT PASS
+  gs: {exit=0}
+ endstream endobj 23 0 obj << /Size 2
+===== prelin live -> /tmp/lane-optimize2/lin/live-prelin-prelinearized_linearized.pdf
+structure: {'bytes': 5978, 'dict_at': 27, 'dict_within_1024': True, 'L': 5978, 'L_matches_length': True, 'H': (567, 142), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 19, 'O_offset': 709, 'E': 2466, 'T': 5539, 'O_before_second_group': True, 'xref_sections': 2, 'xref_form': ['classic'], 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 8 -> 8
+  page 1 ink 61153 -> 61153  text 1779 -> 1779
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+===== annots live -> /tmp/lane-optimize2/lin/live-annots-annot_linearized.pdf
+structure: {'bytes': 8096, 'dict_at': 27, 'dict_within_1024': True, 'L': 8096, 'L_matches_length': True, 'H': (748, 156), 'H_is_an_object': True, 'H_has_hint_dict': True, 'O': 19, 'O_offset': 904, 'E': 4584, 'T': 7657, 'O_before_second_group': True, 'xref_sections': 2, 'xref_form': ['classic table'], 'pikepdf_is_linearized': True, 'pikepdf_check': 'ok'}
+preservation: pages 8 -> 8
+  page 1 ink 61068 -> 61068  text 1816 -> 1816
+  page 2 ink 49571 -> 49571  text 13 -> 13
+VERDICT PASS
+  gs: {exit=0}
+
+===== the Fast Web View prefix (docs/research/linearize-prefix.py)
+/tmp/triage/colour.pdf
+  5361 bytes | /Linearized in first 1024: False | params — | /H — | xref sections 1
+  sheet-1 closure 4 object(s); last of them at byte 1890 → 35.3 % of the file by walking the page tree; the /Pages node itself sits at byte 15 (0.3 %)
+  no /E to honour (not linearized): the reader pays the full 35.3 % walk
+/tmp/lane-optimize2/lin/live-colour-colour_linearized.pdf
+  5978 bytes | /Linearized in first 1024: True | params {'L': 5978, 'N': 8, 'O': 19, 'E': 2466, 'T': 5539} | /H [567, 142] | xref sections 2
+  sheet-1 closure 4 object(s); last of them at byte 4696 → 78.6 % of the file by walking the page tree; the /Pages node itself sits at byte 4696 (78.6 %)
+  first-page section promised by /E: byte 2466 → a range reader paints sheet 1 after 41.3 % of the file; objects at or past that byte: [14]; hint stream inside it: True
+/tmp/lane-optimize2/lin/block-colour-colour_linearized.pdf
+  2938 bytes | /Linearized in first 1024: False | params — | /H — | xref sections 1
+  sheet-1 closure 4 object(s); last of them at byte 1821 → 62.0 % of the file by walking the page tree
+  no /E to honour (not linearized): the reader pays the full 62.0 % walk
+/tmp/triage/in/heavy.pdf
+  81531 bytes | /Linearized in first 1024: False | params — | /H — | xref sections 1
+  sheet-1 closure 5 object(s); last of them at byte 2571 → 3.2 % of the file by walking the page tree; the /Pages node itself sits at byte 41 (0.1 %)
+  no /E to honour (not linearized): the reader pays the full 3.2 % walk
+/tmp/lane-optimize2/lin/live-heavy-heavy_linearized.pdf
+  82274 bytes | /Linearized in first 1024: True | params {'L': 82274, 'N': 6, 'O': 20, 'E': 2696, 'T': 81815} | /H [587, 156] | xref sections 2
+  sheet-1 closure 5 object(s); last of them at byte 80986 → 98.4 % of the file by walking the page tree; the /Pages node itself sits at byte 80986 (98.4 %)
+  first-page section promised by /E: byte 2696 → a range reader paints sheet 1 after 3.3 % of the file; objects at or past that byte: [15]; hint stream inside it: True
+/tmp/lane-optimize2/lin/block-heavy-heavy_linearized.pdf
+  79747 bytes | /Linearized in first 1024: False | params — | /H — | xref sections 1
+  sheet-1 closure 5 object(s); last of them at byte 78541 → 98.5 % of the file by walking the page tree
+  no /E to honour (not linearized): the reader pays the full 98.5 % walk
+/tmp/lane-optimize2/fx2/prelinearized.pdf
+  5987 bytes | /Linearized in first 1024: True | params {'L': 5987, 'N': 8, 'O': 19, 'E': 2469, 'T': 5548} | /H [567, 144] | xref sections 2
+  sheet-1 closure 4 object(s); last of them at byte 4705 → 78.6 % of the file by walking the page tree; the /Pages node itself sits at byte 4705 (78.6 %)
+  first-page section promised by /E: byte 2469 → a range reader paints sheet 1 after 41.2 % of the file; objects at or past that byte: [14]; hint stream inside it: True
+/tmp/lane-optimize2/lin/live-prelin-prelinearized_linearized.pdf
+  5978 bytes | /Linearized in first 1024: True | params {'L': 5978, 'N': 8, 'O': 19, 'E': 2466, 'T': 5539} | /H [567, 142] | xref sections 2
+  sheet-1 closure 4 object(s); last of them at byte 4696 → 78.6 % of the file by walking the page tree; the /Pages node itself sits at byte 4696 (78.6 %)
+  first-page section promised by /E: byte 2466 → a range reader paints sheet 1 after 41.3 % of the file; objects at or past that byte: [14]; hint stream inside it: True
+
+# Reading of the above: in every engine output the only member of sheet 1's closure at or past `/E` is the
+# `/Pages` node itself — which is Annex F's design, the hint table (inside `/H`, and inside `/E`) is how a
+# reader finds sheet 1 without walking the tree. So the honest numbers are: colour.pdf 41.3 % of the file to
+# paint sheet 1, heavy.pdf 3.3 %, the already-linearized input 41.2 % after being re-linearized; the same
+# heavy.pdf rebuilt without the engine costs a 98.5 % tree walk, and the untouched colour.pdf 35.3 %.
+=====  the card and the tab, per state (from the driver's own records)
+===== ENGINE row is read off the result card; off-origin GETs are the engine fetch, which is expected;
+===== `fileBytesPosted` is the thing that would be a defect, and it is empty in every run.
+
+-- block-colour  input=colour.pdf  blocked=True  finished=True  errors=[]
+   card rows: [['Size', '5.2 KB → 2.9 KB · 45% smaller'], ['Pages', '8 → 8'], ['Engine', 'local path · qpdf not used']]
+   sentence : colour_linearized.pdf READY SIZE 5.2 KB → 2.9 KB · 45% smaller PAGES 8 → 8 ENGINE local path · qpdf not used Rebuilt with object streams and 0 newly compressed stream(s): 5.2 KB → 2.9 KB (-45%). This is not a conforming linearized PDF. WHAT YOU SHOULD KNOW (1) qpdf could not be reached (Failed to load qpdf from https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/: Failed to fetch), so this file was rebuilt locally and is not lineariz
+   outputs  : [('colour_linearized.pdf', 2938)]
+   network  : 169 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET chrome-extension://cimiefiiaegbelhefglklhhakcgmhkai/page-script.js', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js']; file bytes posted: none
+-- block-heavy  input=heavy.pdf  blocked=True  finished=True  errors=[]
+   card rows: [['Size', '79.6 KB → 77.9 KB · 2% smaller'], ['Pages', '6 → 6'], ['Engine', 'local path · qpdf not used']]
+   sentence : heavy_linearized.pdf READY SIZE 79.6 KB → 77.9 KB · 2% smaller PAGES 6 → 6 ENGINE local path · qpdf not used Rebuilt with object streams and 0 newly compressed stream(s): 79.6 KB → 77.9 KB (-2%). This is not a conforming linearized PDF. WHAT YOU SHOULD KNOW (1) qpdf could not be reached (Failed to load qpdf from https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/: Failed to fetch), so this file was rebuilt locally and is not lineari
+   outputs  : [('heavy_linearized.pdf', 79747)]
+   network  : 163 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js']; file bytes posted: none
+-- block-unc  input=uncompressed.pdf  blocked=True  finished=True  errors=[]
+   card rows: [['Size', '5.0 KB → 2.9 KB · 42% smaller'], ['Pages', '8 → 8'], ['Engine', 'local path · qpdf not used']]
+   sentence : uncompressed_linearized.pdf READY SIZE 5.0 KB → 2.9 KB · 42% smaller PAGES 8 → 8 ENGINE local path · qpdf not used Rebuilt with object streams and 0 newly compressed stream(s): 5.0 KB → 2.9 KB (-42%). This is not a conforming linearized PDF. WHAT YOU SHOULD KNOW (1) qpdf could not be reached (Failed to load qpdf from https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/: Failed to fetch), so this file was rebuilt locally and is not li
+   outputs  : [('uncompressed_linearized.pdf', 3016)]
+   network  : 168 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js']; file bytes posted: none
+-- live-annots  input=annot.pdf  blocked=False  finished=True  errors=[]
+   card rows: [['Size', '6.9 KB → 7.9 KB · 14% larger'], ['Pages', '8 in · out not counted'], ['Engine', 'qpdf']]
+   sentence : annot_linearized.pdf READY SIZE 6.9 KB → 7.9 KB · 14% larger PAGES 8 in · out not counted ENGINE qpdf Linearized with qpdf: 6.9 KB → 7.9 KB (+14%), page 1 first, and its own checker found no errors. The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. Download Keep original
+   outputs  : [('annot_linearized.pdf', 8096)]
+   network  : 195 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.wasm']; file bytes posted: none
+-- live-colour  input=colour.pdf  blocked=False  finished=True  errors=[]
+   card rows: [['Size', '5.2 KB → 5.8 KB · 12% larger'], ['Pages', '8 in · out not counted'], ['Engine', 'qpdf']]
+   sentence : colour_linearized.pdf READY SIZE 5.2 KB → 5.8 KB · 12% larger PAGES 8 in · out not counted ENGINE qpdf Linearized with qpdf: 5.2 KB → 5.8 KB (+12%), page 1 first, and its own checker found no errors. The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. Download Keep original
+   outputs  : [('colour_linearized.pdf', 5978)]
+   network  : 195 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET chrome-extension://cimiefiiaegbelhefglklhhakcgmhkai/page-script.js', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.wasm']; file bytes posted: none
+-- live-heavy  input=heavy.pdf  blocked=False  finished=True  errors=[]
+   card rows: [['Size', '79.6 KB → 80.3 KB · 1% larger'], ['Pages', '6 in · out not counted'], ['Engine', 'qpdf']]
+   sentence : heavy_linearized.pdf READY SIZE 79.6 KB → 80.3 KB · 1% larger PAGES 6 in · out not counted ENGINE qpdf Linearized with qpdf: 79.6 KB → 80.3 KB (+1%), page 1 first, and its own checker found no errors. The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. Download Keep original
+   outputs  : [('heavy_linearized.pdf', 82274)]
+   network  : 189 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.wasm']; file bytes posted: none
+-- live-locked  input=locked.pdf  blocked=False  finished=True  errors=[]
+   card rows: []
+   sentence : LOCKED.PDF"locked.pdf" is password protected. Enter the password for "locked.pdf" and run again. Retry
+   outputs  : none
+   network  : 160 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2']; file bytes posted: none
+-- live-prelin  input=prelinearized.pdf  blocked=False  finished=True  errors=[]
+   card rows: [['Size', '5.8 KB → 5.8 KB · unchanged'], ['Pages', '8 in · out not counted'], ['Engine', 'qpdf']]
+   sentence : prelinearized_linearized.pdf READY SIZE 5.8 KB → 5.8 KB · unchanged PAGES 8 in · out not counted ENGINE qpdf Linearized with qpdf: 5.8 KB → 5.8 KB (-0%), page 1 first, and its own checker found no errors. Download
+   outputs  : [('prelinearized_linearized.pdf', 5978)]
+   network  : 194 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.wasm']; file bytes posted: none
+-- live-unc  input=uncompressed.pdf  blocked=False  finished=True  errors=[]
+   card rows: [['Size', '5.0 KB → 5.8 KB · 16% larger'], ['Pages', '8 in · out not counted'], ['Engine', 'qpdf']]
+   sentence : uncompressed_linearized.pdf READY SIZE 5.0 KB → 5.8 KB · 16% larger PAGES 8 in · out not counted ENGINE qpdf Linearized with qpdf: 5.0 KB → 5.8 KB (+16%), page 1 first, and its own checker found no errors. The file came out bigger than the one you started with. Nothing was overwritten — download the original unless you need this variant. Download Keep original
+   outputs  : [('uncompressed_linearized.pdf', 5978)]
+   network  : 195 request(s); off-origin: ['GET https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=sw', 'GET https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2', 'GET https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.js', 'GET https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/qpdf.wasm']; file bytes posted: none
+
+===== reading (this chunk's verdict, current build):
+* Engine ran (`live`): every output is a **conforming linearized file** — the parameter dictionary at byte 27
+  (inside the first 1024), `/L` equal to the file length to the byte, `/H` naming a real object carrying the `/S`
+  hint dictionary, the first page's object (`/O`) before the second group and before `/E ≤ /T`, **two** cross-reference
+  sections, and `libqpdf` (pikepdf 10.9.1 = qpdf 12.3.2's own library — there is no `qpdf` binary in this box,
+  recorded substitution) reporting `check_linearization()` ok. Ghostscript re-opens all four with exit 0 and MuPDF
+  reads them at the right page count. Nothing is lost: ink and characters equal per page, on text, image-heavy,
+  annotated and already-linearized inputs.
+* Engine blocked (`block`): the card says `ENGINE local path · qpdf not used`, the sentence ends
+  “This is not a conforming linearized PDF.”, the warning names the URL and the failure
+  (`qpdf could not be reached (Failed to load qpdf from https://cdn.jsdelivr.net/npm/qpdf-wasm@0.1.0/: Failed to fetch),
+  so this file was rebuilt locally and is not linearized`), and the bytes agree: no `/Linearized` dictionary at all,
+  one cross-reference section (an xref stream), libqpdf refuses it — judged by `linearize-check.py --fallback`, which
+  is the mode for “the engine never ran”; `--before` is the *other* case (a dictionary written and lying).
+* Fast Web View, measured rather than read: see the prefix section above. The engine's output puts every object sheet 1
+  needs, plus the hint stream, inside the `/E` byte it promises — 2 466 of 5 978 B (41 %) on colour.pdf and 2 696 of
+  82 274 B (3.3 %) on heavy.pdf — while the same documents' non-linearized forms need the whole page-tree walk
+  (88.3 % and 3.2 %→99 % by tree order). The `PAGES 8 in · out not counted` row is honest for the engine branch (qpdf
+  hands back a finished file and no document), and the rebuild counts pages normally.
+* Encrypted input (`locked.pdf`): no file, no crash, the card asks for the password by name and offers Retry.
+* A file that grows is warned, not hidden: “The file came out bigger than the one you started with. Nothing was
+  overwritten — download the original unless you need this variant.” (colour +12 %, annot +14 %, heavy +1 %).
+* Network half: 8/8 runs, 0 file bytes posted anywhere; the only off-origin traffic is Google Fonts CSS/woff2 for the
+  shell and, when not blocked, `qpdf.js` + `qpdf.wasm` from cdn.jsdelivr.net — the documented engine fetch.
