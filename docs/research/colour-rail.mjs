@@ -680,7 +680,11 @@ async function runTool(run) {
   // screen *before* the run, so a probe that wants to read them asks for this.
   if (run.shotBefore) {
     const shot = await send('Page.captureScreenshot', { format: 'png' });
-    const path = join(OUTDIR, `${run_prefix}_${sanitize(run.shotBefore)}.png`);
+    // `shotBefore: true` asks for the default name; only `sanitize`ing a string
+    // works — a boolean threw `n.replace is not a function` mid-batch and ate
+    // the whole run (measured: the r4 posterize `all-2x2-b6` drive died here).
+    const name = run.shotBefore === true ? 'before' : run.shotBefore;
+    const path = join(OUTDIR, `${run_prefix}_${sanitize(name)}.png`);
     writeFileSync(path, Buffer.from(shot.data, 'base64'));
     record.shotBefore = path;
   }

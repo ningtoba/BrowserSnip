@@ -159,6 +159,14 @@ if (mismatch) throw new Error(`read-back disagreed for ${mismatch.label}: wanted
 
 if (!(await wait(`(()=>{const re=/Make poster/i;return [...document.querySelectorAll('button')].some(b=>re.test(b.innerText||'')&&!b.disabled)})()`, 60000))) {
   console.log('buttons:', JSON.stringify(await ev(`JSON.stringify([...document.querySelectorAll('button')].map(b=>[b.innerText.trim().slice(0,30),!b.disabled]))`)));
+  // Screenshot FIRST, throw second: the disabled button is the finding, and a
+  // rig that dies before the capture leaves no proof of what it saw (r4: the
+  // run aborted with no pane image).
+  try {
+    const shot = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(SHOT, Buffer.from(shot.data, 'base64'));
+    console.log('shot (disabled button):', SHOT);
+  } catch { /* the tab is gone; the throw below carries the reason */ }
   throw new Error('no enabled "Make poster" button');
 }
 console.log('clicked', JSON.stringify(await ev(`(()=>{const re=/Make poster/i;const b=[...document.querySelectorAll('button')].find(x=>re.test(x.innerText||'')&&!x.disabled);b.click();return b.innerText.trim()})()`)));
