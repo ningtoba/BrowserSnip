@@ -39,6 +39,7 @@ import { describeSize, isToolInputError } from '@/lib/pdf/core/guard';
 import { resetEngines } from '@/lib/pdf/engines/auto';
 import { ENGINE_DEFAULTS } from '@/lib/pdf/engines/provider';
 import { convertToPdfA, rebuildWithGhostscript, textToOutlines } from '@/lib/pdf/core/engine-ops';
+import { embedUnicodeFace } from '@/lib/pdf/core/fonts';
 import { addPageLabels, writeOutline } from '@/lib/pdf/core/bookmarks';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
@@ -603,7 +604,7 @@ describe('font-to-outline over the published Ghostscript build', () => {
     expect(said).toMatch(/A partial selection rebuilds the page tree, so 2 bookmark\(s\) and the page labels did not come along/);
   }, 240_000);
 
-  it('names a bare base-14 reference as the unsafe case and an embedded subset as safe', async (ctx) => {
+  it('names a bare base-14 reference as the unsafe case and a face whose program travels in the file as safe', async (ctx) => {
     if (!gs.live) ctx.skip(gs.skipped || 'the real Ghostscript build was not loaded');
     const source = await mixedPdf();
     const plainRun = await runPdfTool({
@@ -613,7 +614,7 @@ describe('font-to-outline over the published Ghostscript build', () => {
     });
     const plainSaid = plainRun.warnings.join(' ');
     expect(plainSaid).toMatch(/1 of the 1 selected page\(s\) name a font with no program/);
-    expect(plainSaid).not.toMatch(/already carry an embedded subset/);
+    expect(plainSaid).not.toMatch(/carry the font program itself/);
 
     const embeddedRun = await runPdfTool({
       toolId: 'font-to-outline',
@@ -621,9 +622,45 @@ describe('font-to-outline over the published Ghostscript build', () => {
       values: { pages: '1' },
     });
     const embeddedSaid = embeddedRun.warnings.join(' ');
-    expect(embeddedSaid).toMatch(/1 of the 1 selected page\(s\) already carry an embedded subset/);
+    expect(embeddedSaid).toMatch(/1 of the 1 selected page\(s\) already carry the font program itself in the file — a subset or the whole face/);
     expect(embeddedSaid).toMatch(/already safe|only needed if the shapes themselves must not move/);
     expect(embeddedSaid).not.toMatch(/name a font with no program/);
+  }, 240_000);
+
+  it('names a whole embedded face by what the file carries, not as a subset', async (ctx) => {
+    if (!gs.live) ctx.skip(gs.skipped || 'the real Ghostscript build was not loaded');
+    // The standing case since the whole-CFF landing (`30f0513`): text this app
+    // adds re-imports with the *whole* CID-keyed CFF program embedded — no
+    // `ABCDEF+` tag, many megabytes of face — and the card used to call every
+    // page in that bucket "an embedded subset".
+    const doc = await PDFDocument.create();
+    const face = await embedUnicodeFace(doc, new Uint8Array(fs.readFileSync(`${process.cwd()}/tests/fixtures/cjk-cid-cff.otf`)));
+    doc.addPage([595.28, 841.89]).drawText('日本', { x: 54, y: 700, size: 18, font: face });
+    const plain = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([595.28, 841.89]).drawText('WHOLEFACEPROBE base line', { x: 54, y: 700, size: 14, font: plain });
+    const source = await doc.save({ useObjectStreams: false });
+    // The input really is the misnamed case: a whole, untagged face program.
+    const faces = Buffer.from(source).toString('latin1').match(/\/BaseFont \/([A-Za-z0-9+\-.]+)/g) ?? [];
+    expect(faces.some((name) => !name.includes('+') && !name.includes('Helvetica')), `faces: ${faces.join(', ')}`).toBe(true);
+
+    const outcome = await runPdfTool({
+      toolId: 'font-to-outline',
+      files: [pdfFileOf(source, 'wholeface.pdf')],
+      values: {},
+    });
+    const said = `${outcome.message ?? ''} ${outcome.warnings.join(' ')}`;
+    expect(said).toMatch(/1 of the 2 selected page\(s\) already carry the font program itself in the file — a subset or the whole face/);
+    expect(said).not.toMatch(/embedded subset/);
+
+    // And Ghostscript outlines the whole program too: the CJK glyphs come back
+    // as paths with no font resource left anywhere.
+    const bytes = await bytesOf(outcome.outputs[0].blob);
+    const after = await extractableText(bytes);
+    expect(after.join('')).not.toContain('日');
+    const painted = await paintOps(bytes);
+    expect(painted[0].text).toBe(0);
+    expect(painted[0].paths).toBeGreaterThan(0);
+    expect((await resources(bytes)).fonts).toBe(0);
   }, 240_000);
 
   it('hands back a file that reopens, and counts it from the producer', async (ctx) => {

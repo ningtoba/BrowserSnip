@@ -2245,7 +2245,7 @@ export const optimizeTools: PdfToolDefinition[] = [
       'Glyphs become vector paths: the text can no longer be selected, searched or edited.',
       'This tool has no degraded path — a rebuild without Ghostscript would leave the fonts in place and only look outlined.',
       'A page that draws no text has nothing to outline: it comes back as Ghostscript rewrote it, and the result says so rather than claiming converted glyphs.',
-      'A page naming a font that is already embedded as a subset is safe for a printer to receive — its face travels in the file. A page naming one of the standard 14 faces carries no font program at all, so a printer or a viewer may draw it with a different face; that is the case this tool exists for, and the result names how many pages of each you have.',
+      'A page naming a font whose program the file carries — a subset or the whole face — is safe for a printer to receive: its face travels in the file. A page naming one of the standard 14 faces carries no font program at all, so a printer or a viewer may draw it with a different face; that is the case this tool exists for, and the result names how many pages of each you have.',
       'A page you leave out is copied through untouched — its text, its annotations and its links stay. A partial run rebuilds the page tree, so the outline and the page labels do not come along — the result counts the bookmarks it had to drop.',
     ],
     async run(context) {
@@ -2391,12 +2391,12 @@ export const optimizeTools: PdfToolDefinition[] = [
       const faces = faceAudit(input.doc, opened.filter((_, index) => chosen.has(index)));
       if (faces.plain > 0) {
         warnings.push(
-          `${faces.plain} of the ${faces.text} selected page(s) name a font with no program in the file (a standard 14 reference), so any printer may draw it with a different face — those are the pages this tool is for.`,
+          `${faces.plain} of the ${faces.text} selected page(s) name a font with no program in the file (a standard 14 reference, or any face whose program the producer left out), so any printer may draw it with a different face — those are the pages this tool is for.`,
         );
       }
       if (faces.embedded > 0) {
         warnings.push(
-          `${faces.embedded} of the ${faces.text} selected page(s) already carry an embedded subset, which a printer may draw as it is: outlining those is only needed if the shapes themselves must not move.`,
+          `${faces.embedded} of the ${faces.text} selected page(s) already carry the font program itself in the file — a subset or the whole face — which a printer may draw as it is: outlining those is only needed if the shapes themselves must not move.`,
         );
       }
       if (carriedPages > 0) {
