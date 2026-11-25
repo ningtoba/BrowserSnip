@@ -90,6 +90,26 @@ export async function initOcr(): Promise<void> {
 
   initPromise = (async () => {
     try {
+      // ONNX Runtime binaries must be same-origin: ppu-paddle-ocr/web sets
+      // ort.env.wasm.wasmPaths to its jsDelivr CDN at module-eval time when
+      // the flag is still unset. Import onnxruntime-web FIRST (the vendor
+      // gets the very same module instance), pin wasmPaths to our own built
+      // ?url assets, then load the vendor so its guard sees a truthy value
+      // and leaves it alone. Object form {mjs, wasm} is required — ORT
+      // appends fixed filenames to a string prefix, which would miss
+      // Vite's content-hashed asset names. The jsep variant is the only
+      // one the bundle ever requests (hardcoded filename in ORT 1.26).
+      // Dynamic imports on purpose (matches the vendor import below): a
+      // static import would hoist the whole onnxruntime stack into every
+      // chunk that touches this module; it must load only at initOcr().
+      const [{ env }, { default: ortWasmUrl }, { default: ortMjsUrl }] =
+        await Promise.all([
+          import('onnxruntime-web'),
+          import('onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url'),
+          import('onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url'),
+        ]);
+      env.wasm.wasmPaths = { wasm: ortWasmUrl, mjs: ortMjsUrl };
+
       const { PaddleOcrService } = await import('ppu-paddle-ocr/web');
 
       // Try opencv engine first for better detection, fall back to canvas-native
