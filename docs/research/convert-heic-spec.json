@@ -1,0 +1,75 @@
+[
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-single",
+    "files": ["/tmp/lane-convert/fx/real.heic"],
+    "shot": true,
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-batch2",
+    "files": ["/tmp/lane-convert/fx/real.heic", "/tmp/lane-convert/fx/real2.heic"],
+    "shot": true,
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-mixed",
+    "files": ["/tmp/lane-convert/fx/real.heic", "/tmp/lane-convert/fx/jpeg-as.heic"],
+    "shot": true,
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-allwrong",
+    "files": ["/tmp/lane-convert/fx/jpeg-as.heic", "/tmp/lane-convert/fx/png-as.heic"],
+    "shot": true,
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-mp4",
+    "files": ["/tmp/lane-convert/fx/mp4-as.heic"],
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-mif1",
+    "files": ["/tmp/lane-convert/fx/mif1.heic"],
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-stub",
+    "files": ["/tmp/lane-convert/fx/stub.heic"],
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-tiny",
+    "files": ["/tmp/lane-convert/fx/tiny.heic"],
+    "timeout": 60000
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-a4",
+    "files": ["/tmp/lane-convert/fx/real.heic"],
+    "fields": { "Page size": "a4", "Margin": "24" },
+    "timeout": 60000
+  },
+  {
+    "tool": "image-to-pdf",
+    "tag": "c2-ctl-jpg",
+    "files": ["/tmp/triage/in/photo.jpg"],
+    "shot": true
+  },
+  {
+    "tool": "heic-to-pdf",
+    "tag": "c2-dark",
+    "files": ["/tmp/lane-convert/fx/real.heic"],
+    "shot": true,
+    "dark": true,
+    "timeout": 60000
+  }
+]

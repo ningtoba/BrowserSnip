@@ -721,9 +721,15 @@ export const convertToTools: PdfToolDefinition[] = [
         // (`tools/runner.ts:inputKindProblem`) — only files that *are* pictures
         // of the wrong format are left out while the rest converts (measured on
         // the rail: [photo.png, photo.jpg] → `1 JPG image(s) → 1 page(s).
-        // 1 file(s) left out.`).
+        // 1 file(s) left out.`). The HEIC card was missing that second sentence
+        // until chunk c2 measured the same gate stop on its own route: an 8-byte
+        // `ftyp` stub named `tiny.heic` is refused as "binary data this converter
+        // cannot read" and the run stops with no PDF (`docs/research/
+        // convert-heic-spec.json`, run `c2-tiny`). A video keeps its own path:
+        // `sniffImageMime` calls every `ftyp` file HEIC, so `mp4-as.heic` passes
+        // the gate and is refused by the decoder sentence below, not this one.
         isHeic
-          ? 'A file that is not really a HEIC is named and left out; where a decoder exists, the HEIC files beside it are still converted, never silently re-encoded.'
+          ? 'A file that is not really a HEIC is named and left out; where a decoder exists, the HEIC files beside it are still converted, never silently re-encoded. A file that is not a picture at all — text, a PDF, a ZIP, an MP3 — is named, and the run stops before any page is made.'
           : `A picture that is not really a ${label} is named and left out; the ${label} files beside it are still converted, never silently re-encoded. A file that is not a picture at all — text, a PDF, a ZIP, an MP3 — is named, and the run stops before any page is made.`,
         isTiff
           ? 'Multi-page TIFFs contribute one PDF page per frame, in page order.'
