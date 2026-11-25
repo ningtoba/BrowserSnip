@@ -233,7 +233,9 @@ async function inputKindProblem(
         fileName: file.name,
         hint: pane
           ? 'Capture a page with the camera, or add photos that are already on this device.'
-          : 'Add the image you meant, or use a tool that reads PDFs.',
+          : label === 'a PDF'
+            ? 'Add the image you meant, or give this PDF to a tool that reads PDFs.'
+            : 'Add the image you meant — this tool makes a PDF from pictures, not from this.',
       },
     );
   }

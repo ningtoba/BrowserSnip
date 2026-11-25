@@ -117,7 +117,7 @@ export interface CompareReport {
   if (input.diffPercent <= 0) {
     tone = tone === 'info' ? 'warn' : tone;
     notes.push(
-      'No pixels differ at the current sensitivity, so the output would look exactly like the first document. Lower the threshold if you expect a small change.',
+      'No pixels differ at the current sensitivity, so the exported overlay would mark nothing. A difference that never reaches the rendered pixels — invisible or changed text — is exactly what this pixel sweep cannot see; check the text verdict for the compared pages.',
     );
   } else {
     notes.push(`${input.diffPercent.toFixed(1)}% of the compared pixels differ.`);
