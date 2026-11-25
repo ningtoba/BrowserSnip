@@ -110,6 +110,111 @@ export interface TextRow {
   items: ExtractedTextItem[];
 }
 
+/**
+ * The run-join measurement (the numbers behind the three constants below).
+ *
+ * pdf.js starts a new text run at every font change, every positioned (kerned)
+ * pair and around every ligature glyph, so a run boundary is **not** a word
+ * boundary. Every intra-row junction in 61 text-bearing PDFs (Chromium
+ * print-to-PDF, Excel/LibreOffice exports, pdfLaTeX manuals, MuPDF- and
+ * pdf-lib-written files, plus the ligature/kern/CJK bar fixtures) — 762 of them —
+ * was labelled by finding the two glyphs that face the junction in PyMuPDF's
+ * char-level layout (cross-checked line by line against `pdftotext -raw`):
+ *
+ * | class                     |  n | run gap / glyph size              |
+ * | ------------------------- | -- | --------------------------------- |
+ * | inside a word             | 89 | −0.000 … 0.012 em                 |
+ * | word boundary, a gap      | 670 | 0.214 … 56.2 em                  |
+ * | word boundary, overlapping runs | 3 | −0.72 em (×2) and −24.7 em     |
+ *
+ * The tightest gap boundary is a page whose word space is drawn as a run of its
+ * own, which `clusterRows` drops because it is whitespace-only. The rule below
+ * gets 760 of 762 right; the two misses are a `©` glyph whose advance box already
+ * swallows the space after it, so no box gap can see them. Sweeping the
+ * threshold, anything from 0.02 to 0.20 em scores identically — 0.1 is the centre
+ * of a plateau, not a number tuned to one fixture.
+ *
+ * Blank space, as a fraction of the glyph size, that separates two words.
+ */
+export const WORD_GAP_EM = 0.1;
+
+/**
+ * A step this far past the baseline (in em) is **another line**, not a raised
+ * span: a superscript or an optically aligned span sits well under it, a wrapped
+ * cell far over it. All 978 junctions inside a visual row in the table above step
+ * by less than 0.02 em, so this clause only ever fires where a caller hands
+ * {@link joinRuns} runs from more than one row — which is what a wrapped or
+ * `<br>`-broken table cell does.
+ */
+export const LINE_STEP_EM = 0.4;
+
+/**
+ * How far two runs may reach back into each other before they stop being one
+ * word. A kerned pair overlaps only by the side bearings of the facing glyphs —
+ * never near half an em, because the glyphs would collide — while a run drawn on
+ * top of another (a hidden optional-content layer over body text, LaTeX's
+ * `c\copyright` trick) starts before the previous run's advance has ended: 24.7
+ * em and two cases of 0.72 em in the measurement above, against in-word junctions
+ * that never reach past 0.012 em in either direction.
+ */
+export const OBJECT_OVERLAP_EM = 0.5;
+
+/**
+ * Read a visual row the way the page wrote it: runs that touch keep their
+ * junction silent (a ligature or kern split, a CJK pair), runs with a word-sized
+ * gap between them are separated by one space.
+ *
+ * Three clauses decide a junction, in order:
+ *
+ * 1. a vertical step past {@link LINE_STEP_EM} is another line — the caller has
+ *    handed over runs from more than one row of the same table cell;
+ * 2. a horizontal overlap past {@link OBJECT_OVERLAP_EM} is another object drawn
+ *    on the same line, not the tail of this word;
+ * 3. otherwise a space appears exactly when the blank between the two boxes
+ *    exceeds {@link WORD_GAP_EM} of the glyph size.
+ *
+ * The gap is taken along the run's own baseline, which is the x axis on an
+ * upright page and the y axis on a quarter-turned one (`ux`/`uy` is the em's up
+ * direction in viewer space, so the baseline is perpendicular to it).
+ */
+export function joinRuns(items: readonly ExtractedTextItem[]): string {
+  let text = '';
+  let previous: ExtractedTextItem | null = null;
+  for (const item of items) {
+    if (previous) text += separator(previous, item);
+    text += item.str;
+    previous = item;
+  }
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** `''` when the two runs are one word, `' '` when a gap separates them. */
+function separator(previous: ExtractedTextItem, next: ExtractedTextItem): string {
+  const ux = previous.ux ?? 0;
+  const uy = previous.uy ?? -1;
+  const alongX = Math.abs(uy) >= Math.abs(ux);
+  // A run with no usable metric — a hand-built item, an odd text matrix — gets
+  // the old unconditional space rather than a silent join.
+  const size =
+    Math.max(previous.fontSize || 0, next.fontSize || 0) ||
+    Math.max(previous.h || 0, next.h || 0);
+  if (!(size > 0)) return ' ';
+  // Runs from two different lines of the same cell are never one word.
+  const step = alongX
+    ? Math.abs(next.y + next.h - (previous.y + previous.h))
+    : Math.abs(next.x + next.w - (previous.x + previous.w));
+  if (step > size * LINE_STEP_EM) return ' ';
+  const gap = alongX
+    ? next.x - (previous.x + previous.w)
+    : next.y - (previous.y + previous.h);
+  // No usable box: keep the space an unknown junction used to get.
+  if (!Number.isFinite(gap)) return ' ';
+  // Reached back into the previous run by more than a kern can: a second object
+  // drawn on this line (hidden layer, watermark, `c\copyright`), not one word.
+  if (gap < -size * OBJECT_OVERLAP_EM) return ' ';
+  return gap > size * WORD_GAP_EM ? ' ' : '';
+}
+
 interface ColumnRange {
   start: number;
   end: number;
@@ -277,13 +382,15 @@ export function gridRows(rows: TextRow[], columns: ColumnRange[]): string[][] {
 
 /** One row as a rectangular cell array (see {@link gridRows}). */
 export function gridRow(row: TextRow, columns: ColumnRange[]): string[] {
-  const cells: string[][] = columns.map(() => []);
+  const cells: ExtractedTextItem[][] = columns.map(() => []);
   for (const item of row.items) {
     const center = item.x + item.w / 2;
     const index = columnIndexFor(columns, center, item);
-    if (index >= 0) cells[index].push(item.str);
+    if (index >= 0) cells[index].push(item);
   }
-  return cells.map((parts) => parts.join(' ').replace(/\s+/g, ' ').trim());
+  // Cells hold runs, not strings: two runs that touch inside one cell are one
+  // word (a ligature or a CJK pair), exactly as on a plain line of text.
+  return cells.map((runs) => joinRuns(runs));
 }
 
 function columnIndexFor(columns: ColumnRange[], center: number, item: ExtractedTextItem): number {
@@ -405,8 +512,8 @@ export function gridFromRules(
   const columns = Math.max(0, xs.length - 1);
   const rowCount = Math.max(0, ys.length - 1);
   if (columns < 1 || rowCount < 1) return [];
-  const cells: string[][][] = Array.from({ length: rowCount }, () =>
-    Array.from({ length: columns }, () => [] as string[]),
+  const cells: ExtractedTextItem[][][] = Array.from({ length: rowCount }, () =>
+    Array.from({ length: columns }, () => [] as ExtractedTextItem[]),
   );
   const rangeColumns = xs.slice(0, -1).map((start, i) => ({ start, end: xs[i + 1] }));
   for (const row of rows) {
@@ -418,10 +525,10 @@ export function gridFromRules(
       const columnIndex = indexOfRange(xs, center);
       if (columnIndex < 0) continue;
       const assigned = columnIndexFor(rangeColumns, center, item);
-      if (assigned >= 0) cells[rowIndex][assigned].push(item.str);
+      if (assigned >= 0) cells[rowIndex][assigned].push(item);
     }
   }
-  return cells.map((row) => row.map((parts) => parts.join(' ').replace(/\s+/g, ' ').trim()));
+  return cells.map((row) => row.map((runs) => joinRuns(runs)));
 }
 
 function indexOfRange(edges: number[], value: number): number {

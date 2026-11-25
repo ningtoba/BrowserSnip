@@ -14,7 +14,9 @@ import {
   detectTables,
   fmtNumber,
   gridFromRules,
+  gridRow,
   isVisibleText,
+  joinRuns,
   looksLikeHeader,
   pageFrameOfView,
   rowToCsv,
@@ -249,6 +251,55 @@ describe('detectTables — ruled mode', () => {
     ]);
     expect(gridFromRules(rows, [50, 200, 320], [100, 120])).toEqual([['A', 'B']]);
     expect(gridFromRules(rows, [50], [100, 120])).toEqual([]);
+  });
+});
+
+/**
+ * Cells are joined by the same rule as a line of prose (`joinRuns`, documented
+ * with the measurement behind it): a browser-generated page writes "世界" as two
+ * runs and the cell that holds it must still read "世界".
+ */
+describe('the run join inside cells', () => {
+  it('keeps a split word inside one cell whole', () => {
+    const [row] = clusterRows([
+      item({ str: 'Ünïcødé', x: 200, y: 100, w: 30 }),
+      // the word space was its own (dropped) run, so 0.32 em of blank is left
+      item({ str: '世', x: 232.78, y: 100, w: 9.75 }),
+      item({ str: '界', x: 242.53, y: 100, w: 9.75 }),
+      item({ str: 'naïve', x: 255.06, y: 100, w: 20 }),
+    ]);
+    expect(gridRow(row, [{ start: 195, end: 290 }])).toEqual(['Ünïcødé 世界 naïve']);
+  });
+
+  it('still puts one space between the words of a cell that has them', () => {
+    const [row] = clusterRows([
+      item({ str: 'Line', x: 200, y: 100, w: 18 }),
+      item({ str: 'one', x: 220, y: 100, w: 14 }),
+    ]);
+    expect(gridRow(row, [{ start: 195, end: 290 }])).toEqual(['Line one']);
+    expect(joinRuns(row.items)).toBe('Line one');
+  });
+
+  it('separates the two lines a wrapped cell stacks in one grid cell', () => {
+    // `gridFromRules` buckets every physical row of a ruled band into the same
+    // cell: a line break inside a cell is a word boundary, never a glue.
+    const rows = clusterRows([
+      item({ str: 'Line', x: 200, y: 100, w: 18 }),
+      item({ str: 'one', x: 220, y: 100, w: 14 }),
+      item({ str: 'Line', x: 200, y: 112, w: 18 }),
+      item({ str: 'two', x: 220, y: 112, w: 14 }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(gridFromRules(rows, [195, 290], [95, 130])).toEqual([['Line one Line two']]);
+  });
+
+  it('reads a step of a whole line as a break and a step inside the band as flow', () => {
+    const first = item({ str: 'one', x: 220, y: 100, w: 14 });
+    // A second line of the same cell starts back at the left rule: its box begins
+    // left of where this one ends, and it sits a full line below.
+    expect(joinRuns([first, item({ str: 'two', x: 200, y: 112, w: 14 })])).toBe('one two');
+    // The same junction 0.8 pt off the baseline is one word, not two.
+    expect(joinRuns([first, item({ str: 'two', x: 234, y: 99.2, w: 14 })])).toBe('onetwo');
   });
 });
 

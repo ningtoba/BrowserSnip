@@ -657,6 +657,84 @@ describe('blocksFromItems', () => {
     ]);
     expect(blocks[0].text).toBe('The quick fox');
   });
+
+  /**
+   * The junction table behind the gap rule (`WORD_GAP_EM` / `OBJECT_OVERLAP_EM`
+   * / `LINE_STEP_EM` in `core/tables`). Every case below is the geometry a real
+   * page was measured to produce; `item()` builds an 8.7 pt em (a 10 pt box), so
+   * 1 em of the row's font is 8.696 pt here.
+   */
+  const EM = 10 / 1.15;
+
+  it('keeps a word whole when the extractor split it at a ligature', () => {
+    // Chromium's printToPDF writes "efficient" as `e` + `ff` + `icient`, each run
+    // starting exactly where the previous run's advance ended.
+    const [row] = clusterRows([
+      item('The e', 50, 100, 24),
+      item('ff', 74, 100, 9),
+      item('icient officer', 83, 100, 55),
+    ]);
+    expect(rowText(row)).toBe('The efficient officer');
+  });
+
+  it('keeps a kerned pair whole, however deep the kern reaches back', () => {
+    for (const overlap of [0.01, 0.1, 0.4]) {
+      const [row] = clusterRows([
+        item('A', 50, 100, 7),
+        item('V', 57 - overlap * EM, 100, 7),
+      ]);
+      expect(rowText(row), `a ${overlap} em kern`).toBe('AV');
+    }
+  });
+
+  it('puts the space back where the page drew it as a run of its own', () => {
+    // A whitespace-only run is dropped by `clusterRows`, which leaves the two
+    // words it separated 0.32 em apart — the narrowest real space measured.
+    const [row] = clusterRows([
+      item('First', 50, 100, 20),
+      item(' ', 70, 100, 2.78),
+      item('finding', 72.78, 100, 30),
+    ]);
+    expect(rowText(row)).toBe('First finding');
+  });
+
+  it('never invents a space inside the word-spacing threshold', () => {
+    for (const gap of [0, 0.02, 0.05, 0.099]) {
+      const [row] = clusterRows([
+        item('ff', 50, 100, 9),
+        item('icient', 59 + gap * EM, 100, 26),
+      ]);
+      expect(rowText(row), `a ${gap} em gap`).toBe('fficient');
+    }
+  });
+
+  it('separates two objects drawn on top of each other', () => {
+    // An optional-content layer whose text starts back at the margin, over a body
+    // line: 24.7 em of overlap, which no kern can reach.
+    const [row] = clusterRows([
+      item('…retained Quarterly', 34, 100, 303),
+      item('Text on the hidden layer', 40, 98, 129),
+    ]);
+    expect(rowText(row)).toBe('…retained Quarterly Text on the hidden layer');
+  });
+
+  it('reads a raised span as flow and keeps whatever spacing its own gap says', () => {
+    // A superscript sits ~0.1 em above the baseline, inside the same row.
+    const [row] = clusterRows([
+      item('x', 50, 100, 5),
+      item('2', 55, 99.2, 4, 8),
+    ]);
+    expect(rowText(row)).toBe('x2');
+  });
+
+  it('keeps the unconditional space for a run it cannot measure', () => {
+    const blind = item('ff', 74, 100, 9);
+    const [row] = clusterRows([
+      { ...item('e', 50, 100, 24), fontSize: 0, h: 0 },
+      { ...blind, fontSize: 0, h: 0 },
+    ]);
+    expect(rowText(row)).toBe('e ff');
+  });
 });
 
 describe('blocksWithTables', () => {

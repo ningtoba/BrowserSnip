@@ -1,0 +1,43 @@
+# run-join witness run — seam 2C, defect 1 (core/convert.ts::rowText + core/tables.ts cells)
+# captured 2026-11-26, branch fix/seam-wave2c at be2e383 + the join fix in the tree.
+# One probe dump per fixture set is judged (the run geometry is a property of the page,
+# not of the fix), plus the post-fix dump for the shipped text. The rule's own decisions
+# are scored against the labels, so the numbers below are the tuning evidence:
+#   node /tmp/rowjoin/probe.mjs <dump>.jsonl <pdf...>   (docs/research/rowjoin-spine-probe.mts)
+#   python3 docs/research/rowjoin-gaps.py <dump>.jsonl <dir-of-the-pdfs>
+
+## docs/research/rowjoin-gaps.py over the four bar fixtures + cells.pdf
+pages judged: 14   labelled junctions: 188   unlabelled: 0
+
+1) junction gap in em of the glyph size, by witness class
+   nospace     n=  56 min=  -0.000 p05= -0.000 p50=  0.000 p95=  0.000 max=   0.001
+   space       n= 132 min=   0.214 p05=  0.318 p50=  2.324 p95=  7.318 max=  12.668
+
+2) the shipped rule (WORD_GAP_EM=0.1 LINE_STEP_EM=0.4 OBJECT_OVERLAP_EM=0.5): 188/188 = 100.00%
+
+3) threshold sweep (same labels, only WORD_GAP_EM moves)
+   WORD_GAP_EM=0.02  188/188 = 100.00%
+   WORD_GAP_EM=0.05  188/188 = 100.00%
+   WORD_GAP_EM=0.1   188/188 = 100.00%
+   WORD_GAP_EM=0.15  188/188 = 100.00%
+   WORD_GAP_EM=0.2   188/188 = 100.00%
+   WORD_GAP_EM=0.3   185/188 = 98.40%
+
+## same rig over the wider corpus (49 text-bearing PDFs: triage fixtures, browser/Office exports, pdfLaTeX manuals)
+pages judged: 101   labelled junctions: 574   unlabelled: 0
+
+1) junction gap in em of the glyph size, by witness class
+   nospace     n=  33 min=  -0.000 p05= -0.000 p50=  0.000 p95=  0.001 max=   0.012
+   space       n= 541 min= -24.743 p05=  0.262 p50=  7.036 p95= 20.943 max=  56.233
+
+2) the shipped rule (WORD_GAP_EM=0.1 LINE_STEP_EM=0.4 OBJECT_OVERLAP_EM=0.5): 572/574 = 99.65%
+   miss: ('real-glm-manual.pdf', 2, '©', '2002-2007 Je', -0.0, 0.0, 'space', 'nospace')
+   miss: ('real-speex-manual.pdf', 2, '©', '2002-2007 Je', -0.0, 0.0, 'space', 'nospace')
+
+3) threshold sweep (same labels, only WORD_GAP_EM moves)
+   WORD_GAP_EM=0.02  572/574 = 99.65%
+   WORD_GAP_EM=0.05  572/574 = 99.65%
+   WORD_GAP_EM=0.1   572/574 = 99.65%
+   WORD_GAP_EM=0.15  572/574 = 99.65%
+   WORD_GAP_EM=0.2   572/574 = 99.65%
+   WORD_GAP_EM=0.3   538/574 = 93.73%

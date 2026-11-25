@@ -25,7 +25,9 @@
  * all still fail here.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
 import { PDFDocument, PDFName, StandardFonts, degrees, rgb } from '@maxwbh/pdf-lib';
@@ -2605,7 +2607,80 @@ describe('pdf-to-greyscale: the claim in the message, checked (E10, E11)', () =>
 });
 
 
-/* ── coverage gate (must stay last: it reads what the run helpers recorded) ── */
+/* ── the run join on browser-generated PDFs (seam 2C) ────────────────────── */
+
+/**
+ * Every fixture above is written by pdf-lib or MuPDF, which put a whole line of
+ * text in **one** run — so nothing in this suite could ever see `rowText` insert
+ * a space between the two halves of a ligature. Chromium's own `printToPDF`
+ * output (the shape a "save as PDF" from the browser produces), Word/LibreOffice
+ * exports and a LaTeX manual are vendored here instead: they split a word across
+ * runs at every ligature, kern and CJK pair, and the witnesses (PyMuPDF
+ * `get_text` and `pdftotext -raw`, both agreeing with the assertions below) are
+ * what the expected strings were read off, never invented.
+ */
+describe('browser-generated PDFs: a run boundary is not a word boundary', () => {
+  function browserFile(name: string): File {
+    return fileOf(
+      new Uint8Array(readFileSync(resolve(process.cwd(), 'tests/fixtures/rowjoin', name))),
+      name,
+    );
+  }
+
+  it('extracts the all-ligature sentence whole, and counts the words it has', async () => {
+    const outcome = await run('pdf-to-text', {}, [browserFile('lig.pdf')]);
+    const text = await textOf(outcome);
+    expect(text).toContain(
+      'The efficient officer finally affirmed a sufficient profile offline.',
+    );
+    expect(text).toContain('Influence flowed through the official office configuration.');
+    expect(text).not.toMatch(/e ff icient|o ff icer|fi nally|a ff irmed|pro fi le/);
+    // The card's own count: the page holds 16 words, and used to report 38.
+    expect(outcome.message).toBe('Extracted 16 words from 1 page(s).');
+  });
+
+  it('keeps a kerned or repositioned suffix glued in the Markdown view too', async () => {
+    const outcome = await run('pdf-to-markdown', {}, [browserFile('head.pdf')]);
+    const md = await textOf(outcome);
+    expect(md).toContain('reflow');
+    expect(md).toContain('First finding item');
+    expect(md).not.toMatch(/re fl ow|fi nding/);
+    // Punctuation the extractor split off its word is punctuation again.
+    expect(md).toContain('Widget 3 29.97');
+  });
+
+  it('leaves CJK and emoji clusters unsplit in the JSON a RAG pipeline reads', async () => {
+    const outcome = await run('pdf-to-json', {}, [browserFile('uni-html.pdf')]);
+    const json = JSON.parse(await textOf(outcome)) as {
+      pages: { text: string; blocks: { text?: string }[] }[];
+    };
+    const text = json.pages.map((page) => page.text).join('\n');
+    expect(text).toContain('世界');
+    expect(text).not.toContain('世 界');
+    expect(text).toContain('😀🎉🚀');
+    // Both witnesses print these three clusters with no spaces inside them.
+    expect(text).toContain('café naïve Zürich');
+    expect(outcome.message).toMatch(/134 words|1 page/);
+  });
+
+  it('is inert on a page that already holds one run per line (parity control)', async () => {
+    const outcome = await run('pdf-to-text', { pages: 'all' }, [browserFile('colour.pdf')]);
+    const text = await textOf(outcome);
+    expect(text).toContain('01 Quarterly reconciliation of the scanned ledger sheets');
+    // 262 words before the join rule and 262 after: nothing moved on a page that
+    // already hands each line over as a single run.
+    expect(outcome.message).toBe('Extracted 262 words from 8 page(s).');
+  });
+
+  it('rebuilds a table cell the page split into runs as the cell the author wrote', async () => {
+    const outcome = await run('pdf-to-csv', {}, [browserFile('cells.pdf')]);
+    const csv = await textOf(outcome);
+    expect(csv).toContain('Ünïcødé 世界 naïve');
+    expect(csv).not.toContain('世 界');
+    expect(csv).toContain('"Gizmo, large",plain,1');
+  });
+});
+
 
 describe('suite coverage', () => {
   it('actually ran every convert-from tool', () => {

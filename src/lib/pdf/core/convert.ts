@@ -42,6 +42,7 @@ import {
   clusterRows,
   detectTables,
   fmtNumber,
+  joinRuns,
   pageFrameOfView,
   quarterTurn,
   svgMatrix,
@@ -100,13 +101,13 @@ export interface BlockOptions {
   minColGap?: number;
 }
 
-/** Visible text of one clustered row: runs left to right, single-spaced. */
+/**
+ * Visible text of one clustered row: runs left to right, joined by the gap rule
+ * in {@link joinRuns} — a space only where the page actually left a word-sized
+ * gap, never inside a ligature, a kerned pair or a CJK cluster.
+ */
 export function rowText(row: TextRow): string {
-  return row.items
-    .map((item) => item.str)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return joinRuns(row.items);
 }
 
 /** Bounding box of a row (or any run list) in the item space. */
