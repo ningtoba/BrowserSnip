@@ -173,40 +173,49 @@ Your PDF file
               → Download, copy to clipboard, or preview in-browser
 ```
 
-Text is never drawn with a WinAnsi standard font: `core/fonts.ts` embeds
-Noto Sans and lazily fetches a matching script face (CJK, Arabic, Hebrew, Thai,
-Indic) from the range table, which is what makes non-Latin watermarks, page
-numbers, Bates stamps and OCR output work instead of throwing.
+WinAnsi-safe text with no family chosen is drawn with the standard-14 fonts —
+zero added bytes, zero network. Anything else embeds Noto: `core/fonts.ts`
+ships a bundled Latin face, and a detected non-Latin script (CJK, Arabic,
+Hebrew, Thai, Indic …) fetches its matching Noto script face from jsDelivr
+once (a few MB, then browser-cached). That fetch is what makes non-Latin
+watermarks, page numbers, Bates stamps and OCR output work — and the one
+thing a laptop-unplugged run of those tools will honestly refuse over.
 
-### Two tiers: MIT core, optional AGPL engines
+### Two tiers: MIT core, optional runtime engines
 
 Almost every PDF tool runs on the bundled MIT/Apache dependencies alone — no
 network, no download, works with the laptop unplugged.
 
 A handful of capabilities cannot be had without a heavyweight engine. For those,
 BrowserSnip borrows BentoPDF's architecture: the engine is **fetched lazily from a
-CDN on first use**, is user-overridable under **Engines** in the nav bar, and is
-never bundled into the app.
+CDN on first use**, is overridable by writing `browsersnip:wasm-engines` in
+`localStorage` (accepted only for the app's own host or the default CDN hosts),
+and is never bundled into the app.
 
 | Engine | Default source | Unlocks | Licence |
 | --- | --- | --- | --- |
-| PyMuPDF WASM | `@bentopdf/pymupdf-wasm@0.11.16` | high-fidelity extraction, deskew, layers | AGPL-3.0 |
-| Ghostscript WASM | `@bentopdf/gs-wasm@0.1.1` | conforming PDF/A, font-to-outline | AGPL-3.0 |
-| CoherentPDF | `coherentpdf@2.5.5` | conforming linearization, bookmark tooling | AGPL-3.0 |
+| PyMuPDF WASM | `@bentopdf/pymupdf-wasm@0.11.16` | the text editor's repair path (deleting and rewriting blocks) | AGPL-3.0 |
+| Ghostscript WASM | `@bentopdf/gs-wasm@0.1.1` | conforming PDF/A, font-to-outline, repair escalation | AGPL-3.0 |
+| qpdf WASM | `qpdf-wasm@0.1.0` | `linearize-pdf` (web-adaptive layout) | Apache-2.0 |
+| OCR models | `media.githubusercontent.com` / `raw.githubusercontent.com` (`ppu-paddle-ocr` defaults) | the text layer of `ocr-pdf` and `digitize-document` (~10 MB, once) | Apache-2.0 |
+
+(The CoherentPDF loader is also provisioned but no shipped tool calls it yet;
+bookmarks and linearization run on the paths above.)
 
 Every engine-backed tool still works without its engine: it degrades to the
 `pdf-lib` path and says so in the result message rather than failing silently.
 Configuring a custom URL is allow-listed by host, so a stored URL cannot be
 pointed at an attacker-controlled origin without a deliberate edit.
 
-> **Privacy note, precisely:** files are never uploaded. The engines are
-> *downloaded* (once, then cached), and RFC 3161 timestamping sends a 32-byte
-> message digest to the timestamp authority you choose. Nothing else leaves the
-> tab — open the Network panel and check.
+> **Privacy note, precisely:** files are never uploaded. The engines and the OCR
+> models are *downloaded* (once, then cached), a non-Latin text run downloads
+> its Noto script face (once, then cached), and RFC 3161 timestamping sends a
+> 32-byte message digest to the timestamp authority you choose. Nothing else
+> leaves the tab — open the Network panel and check.
 >
-> **Licence note:** BrowserSnip is MIT. The three optional modules above are
-> AGPL-3.0 and are loaded from their own CDN at runtime rather than linked into
-> the distributed bundle.
+> **Licence note:** BrowserSnip is MIT. PyMuPDF WASM and Ghostscript WASM above
+> are AGPL-3.0; qpdf and the OCR models are Apache-2.0. All are loaded from
+> their own hosts at runtime rather than linked into the distributed bundle.
 
 ### Why WebAssembly?
 
@@ -216,7 +225,7 @@ pointed at an attacker-controlled origin without a deliberate edit.
 | **Processing speed** | Native (fast) | 5–10× slower than native (acceptable for one-off tasks) |
 | **Privacy model** | Trust the provider | Verify nothing leaves — open DevTools Network tab |
 | **File size limits** | Provider-defined | ~500 MB soft limit (WebAssembly memory ceiling) |
-| **Availability** | Requires internet | Works offline after first load |
+| **Availability** | Requires internet | Offline once each capability's engine, model or face has been fetched once |
 
 <br>
 
@@ -236,7 +245,7 @@ pointed at an attacker-controlled origin without a deliberate edit.
 | **PDF Rendering** | `pdfjs-dist` v4.0 | Canvas-based page preview, thumbnails, text extraction |
 | **PDF Encryption** | `@pdfsmaller/*-lite` | RC4 128-bit encrypt/decrypt |
 | **OCR** | `ppu-paddle-ocr` v5.8 + `onnxruntime-web` v1.26 | Text detection and recognition from document images |
-| **Document Export** | `docx` v9.7, `xlsx` v0.18, `html2canvas` v1.4 | Word/Excel generation, HTML→Image conversion |
+| **Document Export** | `docx` v9.7, `xlsx` v0.18 | Word/Excel generation — HTML→PDF parses markup in a detached document and never fetches remote images |
 
 <br>
 

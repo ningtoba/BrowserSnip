@@ -39,7 +39,7 @@ export const ENGINE_STORAGE_KEY = 'browsersnip:wasm-engines';
 export const ENGINE_DOWNLOAD_SIZE: Record<EngineId, string> = {
   pymupdf: 'about 54 MB',
   ghostscript: 'about 15 MB',
-  cpdf: 'about 0.5 MB',
+  cpdf: 'about 1.3 MB',
   qpdf: 'about 2.2 MB',
 };
 
