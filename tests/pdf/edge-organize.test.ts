@@ -2413,6 +2413,59 @@ describe('each tool is checked against its own output file', () => {
     expect(warn(outcome)).toMatch(/stamp page 2 was never used/i);
   });
 
+  /**
+   * Measured on `:5292` over 13 live runs (`docs/research/overlay-rail.mjs`, judged by
+   * `docs/research/overlay-ink.py --diff`/`--identical`): every overlay output carried
+   * `pdf-lib (https://github.com/Hopding/pdf-lib)` as its producer while `duplex-collate`,
+   * `n-up`, `booklet` and `combine-single-page` all credit `BrowserSnip`; and a stamp with
+   * nothing to draw produced eight sheets pixel-identical to the base (`pixels_off: 0`)
+   * under a card that said only "Overlaid 8 pages" — its `skipped` counter could not see
+   * a blank page, because `stamp` reports the empty-content path as drawn.
+   */
+  it('overlay credits this app as the producer and keeps the base’s identity', async () => {
+    const base = fileOf(await identified(), 'base.pdf');
+    const stamp = fileOf(await sheets(grid(1)), 'stamp.pdf');
+    const outcome = await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp]);
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(doc.getProducer()).toBe('BrowserSnip');
+    expect(doc.getTitle()).toBe('a titled document');
+    expect(doc.getAuthor()).toBe('an author');
+    expect(doc.getSubject()).toBe('a subject');
+    // Whole, separators and all: the clone must not lose or reshape the string.
+    expect(doc.getKeywords()).toBe('alpha beta');
+    expect(doc.getCreator()).toBe('a creator');
+    expect(doc.catalog.get(PDFName.of('Metadata'))).toBeDefined();
+    expect((getPdfTool('overlay-pdf')?.notes ?? []).join(' ')).toMatch(/title, author, subject.*stays with the file/i);
+  });
+
+  it('overlay says when the stamp had nothing to draw, and stays quiet when it did', async () => {
+    const base = fileOf(await sheets(grid(2)), 'base.pdf');
+    const blank = fileOf(await sheets([{ width: 200, height: 100, empty: true }]), 'blank.pdf');
+    const quiet = await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, blank]);
+    expect(quiet.outputs.length).toBe(1);
+    expect(warn(quiet)).toMatch(/None of the stamp pages had anything to draw, so every sheet came through as the base document/i);
+    // Control: an inked stamp must not claim it drew nothing, and the partial case
+    // counts the sheets that were blank rather than asserting the whole run was.
+    const inked = fileOf(await sheets(grid(1)), 'inked.pdf');
+    expect(warn(await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, inked])))
+      .not.toMatch(/nothing to draw/i);
+    const mixed = fileOf(await sheets([{ width: 200, height: 100 }, { width: 200, height: 100, empty: true }]), 'half.pdf');
+    expect(warn(await run('overlay-pdf', { mode: 'overlay', mapping: 'same', opacity: 1, scale: 1 }, [base, mixed])))
+      .toMatch(/nothing to draw on 1 page/i);
+  });
+
+  it('a mixed-size base is described as the stamp being fitted, not the pages rescaled', async () => {
+    const base = fileOf(await sheets([
+      { width: 200, height: 100 }, { width: 100, height: 100 }, { width: 300, height: 300 },
+    ]), 'mixed.pdf');
+    const stamp = fileOf(await sheets(grid(1)), 'stamp.pdf');
+    const outcome = await run('overlay-pdf', { mode: 'overlay', mapping: 'first', opacity: 1, scale: 1 }, [base, stamp]);
+    expect(warn(outcome)).toMatch(/"stamp.pdf" is fitted to each sheet separately/i);
+    // The imposition sentence this tool inherited talked about cells; an overlay has
+    // none, and its base pages are not rescaled at all.
+    expect(warn(outcome)).not.toMatch(/own cell/i);
+  });
+
   it('n-up lays the pages on one sheet and keeps them as text', async () => {
     const outcome = await run('n-up', { perSheet: 4, sheetSize: 'a4', landscape: false, gutter: 0, margin: 0, pages: 'all' });
     const bytes = await bytesOf(outcome);

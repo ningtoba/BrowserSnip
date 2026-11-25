@@ -2030,6 +2030,7 @@ export const organizeTools: PdfToolDefinition[] = [
     notes: [
       'The first file in the queue is the base; the second is the stamp.',
       FLATTEN_NOTE,
+      PAGE_COPY_INFO_NOTE,
     ],
     fields: [
       {
@@ -2084,12 +2085,25 @@ export const organizeTools: PdfToolDefinition[] = [
       const stampTotal = stampDoc.pageCount;
       let shortBy = 0;
       let skipped = 0;
+      // `stamp` returns `true` for a blank source page on purpose — the empty-content
+      // path keeps a blank sheet on the same geometry as an inked one — so `skipped`
+      // can never see a stamp with nothing to draw. `pageContentsState` is the same
+      // test `remove-blank-pages` uses, read before `ensurePageContents` fills the gap.
+      let nothingToDraw = 0;
+      // Read before any drawing: `ensurePageContents` inside `stamp` fills a blank
+      // page's missing `/Contents` on its first use, so a per-iteration read would see
+      // the second copy of the same stamp page as a page that draws.
+      const blankStampPages = new Set<number>();
+      for (let index = 0; index < stampTotal; index += 1) {
+        if (pageContentsState(stampDoc.doc.getPage(index)) === 'absent') blankStampPages.add(index);
+      }
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
         const page = pages[i];
         const stampIndex = stampPageIndex(mapping, i, stampTotal);
         if (mapping === 'same' && i >= stampTotal) shortBy += 1;
         const source = stampDoc.doc.getPage(stampIndex);
+        if (blankStampPages.has(stampIndex)) nothingToDraw += 1;
         // The frame is the base page's own crop box — the sheet as the format
         // stores it — and the stamp is pre-turned by the sheet's `/Rotate` so that
         // the fit is measured on what the reader sees and the stamp's words stay
@@ -2132,13 +2146,36 @@ export const organizeTools: PdfToolDefinition[] = [
           `The stamp has ${pageCountLabel(stampTotal)} but the base has ${pageCountLabel(pages.length)}, so stamp page${stampTotal - pages.length === 1 ? '' : 's'} ${formatPages(resolvePages('all', stampTotal).slice(pages.length))} ${stampTotal - pages.length === 1 ? 'was' : 'were'} never used. Choose "Always the last stamp page" to stamp with the final one.`,
         );
       }
+      if (nothingToDraw === pages.length && pages.length > 0) {
+        notes.add('None of the stamp pages had anything to draw, so every sheet came through as the base document.');
+      } else if (nothingToDraw > 0) {
+        notes.add(`The stamp had nothing to draw on ${pageCountLabel(nothingToDraw)}, so those sheets came through as the base document.`);
+      }
       if (skipped === pages.length && pages.length > 0) {
-        notes.add('None of the stamp pages had drawable content, so the output is the base document unchanged.');
+        notes.add('None of the stamp pages fitted the base — every sheet came through unchanged.');
       }
       if (opacity < 1) {
         notes.add(`The stamp was drawn at ${Math.round(opacity * 100)}% opacity — a viewer prints it lighter, it is not baked in.`);
       }
-      noteMixedSizes('Overlay', base.doc, resolvePages('all', base.pageCount), notes);
+      // The standing mixed-size sentence is written for the imposition tools, where a
+      // page really is scaled into a cell. An overlay has no cells — the sheet is the
+      // base page and the thing being fitted is the stamp — so measured on `colour.pdf`
+      // (3 sizes) the shared sentence told the user their pages had been rescaled when
+      // what the bytes show is a stamp fitted three different ways (new ink
+      // `49 578 → 58 657` on the portrait sheets, `141 590 → 146 759` on the
+      // `/Rotate 90` one, 0 added on a sheet that was already solid).
+      const variants = distinctSizes(base.doc, resolvePages('all', base.pageCount));
+      if (variants > 1) {
+        notes.add(
+          `Overlay: the base holds ${variants} different page sizes, so "${stampDoc.name}" is fitted to each sheet separately — the stamp's printed size differs from page to page.`,
+        );
+      }
+      // `cloneForOutput` keeps the base's own `/Info` and packet, so the identity
+      // travels without a carry — but the producer line was the base's, which meant the
+      // file this app wrote credited pdf-lib: every one of the 13 outputs measured here
+      // said `pdf-lib (https://github.com/Hopding/pdf-lib)` while `duplex-collate`,
+      // `n-up`, `booklet` and `combine-single-page` all say `BrowserSnip`.
+      target.setProducer('BrowserSnip');
       return pdfOut(target, notes, `${mode === 'underlay' ? 'Underlaid' : 'Overlaid'} ${pageCountLabel(pages.length)} with "${stampDoc.name}".`);
     },
   },

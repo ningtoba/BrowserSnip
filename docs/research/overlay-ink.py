@@ -75,6 +75,11 @@ def main():
     ap.add_argument("--page", type=int, default=0)
     ap.add_argument("--identical", action="store_true")
     ap.add_argument("--bbox", action="store_true")
+    ap.add_argument("--diff", action="store_true",
+                    help="what the stamp added and what the base lost: new ink (dark in the "
+                         "output, paper in the base) with its box and mean level, and lost ink "
+                         "(dark in the base, paper in the output). The underlay-dropped-base and "
+                         "fit-to-stored-box defects both show up here as numbers.")
     ap.add_argument("--region", help="x0,y0,x1,y1: report ink and mean level inside it")
     args = ap.parse_args()
 
@@ -110,6 +115,41 @@ def main():
 
     if args.bbox:
         print(json.dumps({"case": "bbox", "base": bbox(base_m), "out": bbox(out_m)}))
+        return 0
+
+    if args.diff:
+        # Both documents on one sheet, measured: what the stamp put down that the base
+        # did not have, and what the base had that the output lost. A stamp drawn on a
+        # page of a different shape (a `/Rotate 90` base) still lands inside the base's
+        # own raster, so the two masks are the same size here by construction.
+        new_ink = [(x, y) for y, row in enumerate(out_m) for x, v in enumerate(row)
+                   if v and not (y < len(base_m) and x < len(base_m[y]) and base_m[y][x])]
+        lost_ink = [(x, y) for y, row in enumerate(base_m) for x, v in enumerate(row)
+                    if v and not (y < len(out_m) and x < len(out_m[y]) and out_m[y][x])]
+        new_m = [[False] * base_pix.width for _ in range(base_pix.height)]
+        for x, y in new_ink:
+            new_m[y][x] = True
+        nb = bbox(new_m)
+        report = {
+            "case": "diff",
+            "page": args.page + 1,
+            "base_ink": ink(base_m),
+            "out_ink": ink(out_m),
+            "new_ink": len(new_ink),
+            "new_ink_bbox": nb,
+            "lost_ink": len(lost_ink),
+        }
+        if nb:
+            report["mean_level_in_new_ink"] = grey_mean(out_pix, nb)
+            report["new_ink_aspect"] = round((nb[2] - nb[0] + 1) / max(1, nb[3] - nb[1] + 1), 3)
+        if args.stamp:
+            stamp_m = mask(render(args.stamp, min(args.page, pymupdf.open(args.stamp).page_count - 1)))
+            report["stamp_ink"] = ink(stamp_m)
+            sb = bbox(stamp_m)
+            report["stamp_bbox"] = sb
+            if sb:
+                report["stamp_aspect"] = round((sb[2] - sb[0] + 1) / max(1, sb[3] - sb[1] + 1), 3)
+        print(json.dumps(report))
         return 0
 
     stamp_pix = render(args.stamp, args.page)
