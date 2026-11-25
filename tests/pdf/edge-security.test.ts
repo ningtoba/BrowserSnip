@@ -798,7 +798,7 @@ describe('signature tools distinguish valid, tampered and unsigned', () => {
     const fieldDict = orphaned.context.lookup(registered.get(0), PDFDict);
     const widget = orphaned.context.lookup(fieldDict.lookup(PDFName.of('Kids'), PDFArray).get(0), PDFDict);
     widget.set(PDFName.of('FT'), PDFName.of('Sig'));
-    widget.set(PDFName.of('V'), fieldDict.get(PDFName.of('V')));
+    widget.set(PDFName.of('V'), fieldDict.lookup(PDFName.of('V'), PDFDict));
     form.set(PDFName.of('Fields'), orphaned.context.obj([]));
     const orphanBytes = await orphaned.save({ useObjectStreams: false, updateFieldAppearances: false });
     const orphanOutcome = await run('validate-signature-pdf', {}, [pdfFile(orphanBytes, 'orphan.pdf')]);

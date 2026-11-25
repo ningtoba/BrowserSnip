@@ -24,7 +24,6 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
-  PDFObject,
   PDFRef,
   openPDF,
   savePDF,
@@ -38,7 +37,7 @@ import { cropBox, formatPages, normaliseRotation } from '../core/pages';
 import type { PageFrame } from '../core/tables';
 import { advancesAlongYAxis, viewerRectToUserSpace } from '../core/tables';
 import { describeEncryption } from '../core/guard';
-import { formatBytes, formatPdfDate, readInfo, readXmp, scrubMetadataText } from '../core/metadata';
+import { decodeTextString, formatBytes, formatPdfDate, readInfo, readXmp, scrubMetadataText } from '../core/metadata';
 import { listAttachments, removeAttachments } from '../core/attachments';
 import { openRender } from '../core/render';
 import type { ExtractedTextItem } from '../core/render';
@@ -2367,21 +2366,19 @@ function dictAt(doc: PDFDocument, value: unknown): PDFDict | undefined {
   return value instanceof PDFDict ? value : undefined;
 }
 
-/**
- * A text entry: a hex or literal string — either may sit behind a reference — or a
- * bare name with its `/` removed. `PDFString` is **not** the base class of
- * `PDFHexString` in the bundled pdf-lib fork, so the shape is recognised by what it
- * can do: every string object here answers `decodeText()`.
- */
+/** A text entry that may sit behind a reference, or be written as a bare name. */
 function stringAt(doc: PDFDocument, value: unknown): string | undefined {
-  const resolved = value instanceof PDFRef ? doc.context.lookupMaybe(value) : value;
-  if (resolved instanceof PDFName) return resolved.asString().replace(/^\//, '') || undefined;
-  if (!(resolved instanceof PDFObject)) return undefined;
-  try {
-    return resolved.decodeText().trim() || undefined;
-  } catch {
-    return undefined;
+  let resolved = value;
+  if (value instanceof PDFRef) {
+    try {
+      resolved = doc.context.lookup(value);
+    } catch {
+      // A dangling reference is a name we cannot read, not a run to lose.
+      return undefined;
+    }
   }
+  if (resolved instanceof PDFName) return resolved.decodeText() || undefined;
+  return decodeTextString(resolved);
 }
 
 /* ------------------------------------------------------------------ *
