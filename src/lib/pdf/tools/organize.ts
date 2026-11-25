@@ -2563,7 +2563,19 @@ export const organizeTools: PdfToolDefinition[] = [
       if (source.length === 1) {
         notes.add('One page cannot be stitched to anything, so the output is that page scaled to the chosen width.');
       }
-      noteMixedSizes('Stitching', input.doc, source, notes);
+      // The scroll has no cells either, and its promise is the opposite of per-page
+      // fitting: every band is exactly one shared width. What differs, when the source
+      // holds several sizes, is the *factor* each page was scaled by — measured on
+      // `colour.pdf` stitched to a 595 pt sheet: displayed widths `[420 ×6, 595, 336]`
+      // (3 distinct sizes) came back scaled `[1.417 ×6, 1.000, 1.771]`, so three different
+      // factors reach one width, while the inherited sentence told the user each page got
+      // "its own cell".
+      const stitchedSizes = distinctSizes(input.doc, source);
+      if (stitchedSizes > 1) {
+        notes.add(
+          `Stitching: the ${stitchedSizes} different page sizes in this selection are each scaled by a different factor to reach one ${Math.round(width)} pt width, so the type prints at several sizes down the scroll.`,
+        );
+      }
       noteRebuildLoss('Stitching', input.doc, source, notes);
       // The `/Info` dictionary and the XMP packet hang off the catalog and this
       // tool builds a new one around a new page, so without this the title,

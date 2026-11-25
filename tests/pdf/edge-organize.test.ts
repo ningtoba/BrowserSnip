@@ -2454,6 +2454,30 @@ describe('each tool is checked against its own output file', () => {
       .toMatch(/nothing to draw on 1 page/i);
   });
 
+  /**
+   * The scroll promises one shared width and has no cells, so the imposition sentence it
+   * inherited was false twice over — measured on the live pane (`colour.pdf`, 3 displayed
+   * sizes onto a 595 pt sheet): "Stitching: this selection holds 3 different page sizes,
+   * so each page is scaled to fit its own cell". The factors actually applied are
+   * `1.417 / 1.000 / 1.771`, all reaching the same width (`docs/research/combine-round.py`
+   * measures every band's ink box against its source page on the source's own device grid
+   * and gets 0.00 % drift, which is only possible because the width is shared).
+   */
+  it('a mixed-size scroll says one width was reached by several factors, not by cells', async () => {
+    const base = fileOf(await sheets([
+      { width: 420, height: 300 }, { width: 420, height: 300 }, { width: 595, height: 300 },
+    ]), 'mixed.pdf');
+    const outcome = await run('combine-single-page', {}, [base]);
+    const doc = await open(await bytesOf(outcome));
+    // One width for every band, whichever factor it took to get there.
+    expect(doc.getPageCount()).toBe(1);
+    expect(Math.round(doc.getPage(0).getSize().width)).toBe(595);
+    const words = warn(outcome);
+    expect(words).toMatch(/2 different page sizes/i);
+    expect(words).toMatch(/scaled by a different factor to reach one 595 pt width/i);
+    expect(words).not.toMatch(/own cell/i);
+  });
+
   it('a mixed-size base is described as the stamp being fitted, not the pages rescaled', async () => {
     const base = fileOf(await sheets([
       { width: 200, height: 100 }, { width: 100, height: 100 }, { width: 300, height: 300 },
