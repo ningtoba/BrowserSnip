@@ -1,0 +1,723 @@
+# sanitize-pdf scope-switch audit — every switch driven ON and OFF, the produced bytes diffed
+# Build: `sweep/optimize` rebased onto master (`1376101`), dev server http://localhost:5295,
+#   Chromium over CDP 9845, `docs/research/colour-rail.mjs` with `docs/research/sanitize-switch-spec.json` (60 runs).
+# Fixtures: `python3 docs/research/sanitize-switch-fixtures.py --dir /tmp/lane-optimize2/fx` (6 files) plus the committed
+#   foreign banks `tests/fixtures/{foreign,attachments}/` and `/tmp/triage/in/{annot,meta}.pdf`.
+# Judged by: `python3 docs/research/sanitize-switch-measure.py --spec … --runs … --outdir …` (this file); every needle is
+#   derived from the untouched fixture, and "removed" is a search of every object source and decoded stream MuPDF can name,
+#   in both PDF escape spellings, plus the raw file bytes.
+# Reading (the six switches, current build):
+#   * Remove JavaScript and automatic actions — MOVES BYTES on every shape driven: 5/5 payloads
+#     gone on the six-scope file (an `/OpenAction` array with one referenced and one inline action,
+#     a page `/AA`, a JS link, a `/Kids` script tree with an inline leaf), poppler flips
+#     `JavaScript: yes → no`, 4/4 on `script-hosts-aa`, 2/2 on `script-names-kids`.
+#   * Remove embedded files — MOVES BYTES: 2/2 payloads gone on the six-scope file and on
+#     `attach-foreign`, 1/1 on `mupdf-native`, 2/2 through a `/Kids` tree, and on every other shape
+#     driven (9 files). Reader answers change (`pdfdetach` lists nothing, no `/EmbeddedFile` left).
+#   * Remove hidden layer content — MOVES BYTES: the `/OFF` layer's operators leave the page's own
+#     content stream (2 payload copies on two files) with the visible layer untouched and the
+#     drawing unmoved (0 px outside any mark).
+#   * Remove the document info dictionary — MOVES BYTES when the trailer names it by reference
+#     (2/2 and 4/4 payloads gone, poppler's `Title:` line goes blank); **the ON and OFF outputs are
+#     byte-identical on `info-inline.pdf`, whose trailer holds `/Info << … >>` directly**, and the
+#     card then says "there was no info dictionary" over a file poppler still titles.
+#   * Remove XMP metadata — **takes the pointer and ships the payload.** The catalogue's `/Metadata`
+#     is gone (poppler: `Metadata Stream: no`), the packet's own stream is still in the file at its
+#     old object number, referenced by nothing: 2/2 needles on `all.pdf` (2260 → 2250 B), 1/1 on the
+#     MuPDF-written `metadata.pdf` (2765 → 2756 B) and on `/tmp/triage/in/meta.pdf` (3303 → 3296 B).
+#     The card says "XMP metadata removed".
+#   * Remove annotations and form fields — **same defect, bigger cargo.** `/Annots` empties, the
+#     marks come off the page (1825 px on the six-scope file, 573 px on `annot.pdf`, 11 854 px on the
+#     foreign `annotations.pdf`), MuPDF lists no annotation — and every annotation dictionary, its
+#     appearance stream and the whole field subtree stay in the download: 5/5 payloads on `all.pdf`,
+#     9/9 on `annotations.pdf` ("A note from an outside writer" is in the output either way), the
+#     filled-in answer on `form.pdf`. The card says "5 annotation(s) removed".
+#   * Control that no switch is a re-renderer: 0 px moved outside an annotation rectangle in all 60
+#     runs (poppler renders, 110 dpi, >16/255), page counts unchanged, content streams byte-identical
+#     unless the layer switch was on. `annot-inherited.pdf` (/Annots on the `/Pages` node) is the one
+#     shape where ON and OFF are identical *and* no reader reaches the payload in the source —
+#     recorded, not counted as a defect.
+#   * Network half: 60/60 runs report "1 request(s), 0 off-origin" — no file byte left the tab; the
+#     single request is the tool page itself. No console errors in any run.
+#
+
+# sanitize-pdf switch audit — 60 run(s)
+
+
+## off-all — all.pdf → 2260 B (cc17fffe3093ec23)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 1, "ocgs": 2, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "yes", "title": "SANJINFOTITLE6"}, "sc
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.2 KB · 39% smaller | PAGES | 1 → 1 |  | Nothing was removed: 4 script reference(s) left in place, 2 embedded file(s) left in place. 3.6 KB → 2.2 KB (-39%). |  | WHAT YOU SHOULD KNOW (3) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tree run in the output too: "Remove JavaScript and automatic actions" is off. | 2 embedded fi
+   unreferenced objects shipped: 1 (216 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## on-all — all.pdf → 1667 B (6188dc2404f80031)
+   annotations=on attachments=on hiddenLayers=on info=on javascript=on metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.6 KB · 55% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted). 3.6 KB → 1.6 KB (-55%). |  | WHAT YOU SHOULD KNOW (1) |
+   unreferenced objects shipped: 2 (541 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## js-on — all.pdf → 2166 B (5aa50c143f65433e)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    on    5 payload(s)  removed
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 1, "ocgs": 2, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "no", "title": "SANJINFOTITLE6"}, "scr
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.1 KB · 41% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) left in place. 3.6 KB → 2.1 KB (-41%). |  | WHAT YOU SHOULD KNOW (2) |  | 2 embedded file(s) stay in the output and are still extractable: "Remove embedded files" is off. | 2 optional content group(s) (layers) were left in place, 1 of them hidden in the default view; th
+   unreferenced objects shipped: 1 (214 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## js-off — all.pdf → 1759 B (866dbf29cf0f17aa)
+   annotations=on attachments=on hiddenLayers=on info=on javascript=off metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "yes", "title": ""}, "script_objects":
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.7 KB · 52% smaller | PAGES | 1 → 1 |  | Sanitized: 2 embedded file(s) removed, XMP metadata removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted), 4 script reference(s) left in place. 3.6 KB → 1.7 KB (-52%). |  | WHAT YOU SHOULD KNOW
+   unreferenced objects shipped: 2 (547 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## att-on — all.pdf → 1941 B (1df44869b6c68af5)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 0, "ocgs": 2, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "yes", "title": "SANJINFOTITLE6"}, "sc
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.9 KB · 47% smaller | PAGES | 1 → 1 |  | Sanitized: 2 embedded file(s) removed, 4 script reference(s) left in place. 3.6 KB → 1.9 KB (-47%). |  | WHAT YOU SHOULD KNOW (2) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tree run in the output too: "Remove JavaScript and automatic actions" is off. | 2 optional content group(s) (
+   unreferenced objects shipped: 1 (210 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## att-off — all.pdf → 1985 B (6d41d37862c3c463)
+   annotations=on attachments=off hiddenLayers=on info=on javascript=on metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 1, "ocgs": 1, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.9 KB · 46% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, XMP metadata removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted), 2 embedded file(s) left in place. 3.6 KB → 1.9 KB (-46%). |  | WHAT YOU SHOULD KNOW
+   unreferenced objects shipped: 2 (553 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## xmp-on — all.pdf → 2250 B (adeef0eb96834f09)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=on
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 1, "ocgs": 2, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "yes", "title": "SANJINFOTITLE6"}, "sc
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.2 KB · 39% smaller | PAGES | 1 → 1 |  | Sanitized: XMP metadata removed, 4 script reference(s) left in place, 2 embedded file(s) left in place. 3.6 KB → 2.2 KB (-39%). |  | WHAT YOU SHOULD KNOW (3) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tree run in the output too: "Remove JavaScript and automatic actions" is off. | 2
+   unreferenced objects shipped: 2 (550 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+
+## xmp-off — all.pdf → 1672 B (b299e60c13430264)
+   annotations=on attachments=on hiddenLayers=on info=on javascript=on metadata=off
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.6 KB · 55% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted). 3.6 KB → 1.6 KB (-55%). |  | WHAT YOU SHOULD KNOW (1) |  | 1 form field value
+   unreferenced objects shipped: 1 (207 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## info-on — all.pdf → 2196 B (f4983082e34fbb8d)
+   annotations=off attachments=off hiddenLayers=off info=on javascript=off metadata=off
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          on    2 payload(s)  removed
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 1, "ocgs": 2, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "yes", "title": ""}, "script_objects":
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.1 KB · 40% smaller | PAGES | 1 → 1 |  | Sanitized: the info dictionary was removed, 4 script reference(s) left in place, 2 embedded file(s) left in place. 3.6 KB → 2.1 KB (-40%). |  | WHAT YOU SHOULD KNOW (3) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tree run in the output too: "Remove JavaScript and automatic actions" 
+   unreferenced objects shipped: 1 (216 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## info-off — all.pdf → 1727 B (7fa7e9fae4d83308)
+   annotations=on attachments=on hiddenLayers=on info=off javascript=on metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": "SANJINFOTITLE6"}, "scr
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.7 KB · 53% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted). 3.6 KB → 1.7 KB (-53%). |  | WHAT YOU SHOULD KNOW (1) |  | 1 form field value(s) were re
+   unreferenced objects shipped: 2 (543 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## ann-on — all.pdf → 2237 B (482d5e22f5777ff3)
+   annotations=on attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 1, "ocgs": 2, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "yes", "title": "SANJINFOTITLE6"}, "sc
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.2 KB · 39% smaller | PAGES | 1 → 1 |  | Sanitized: 4 annotation(s) including 1 form field(s) removed, 4 script reference(s) left in place, 2 embedded file(s) left in place. 3.6 KB → 2.2 KB (-39%). |  | WHAT YOU SHOULD KNOW (4) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tree run in the output too: "Remove JavaScript and a
+   unreferenced objects shipped: 1 (216 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## ann-off — all.pdf → 1682 B (8cb01e0382c6d528)
+   annotations=off attachments=on hiddenLayers=on info=on javascript=on metadata=on
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.6 KB · 54% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed, the info dictionary was removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted). 3.6 KB → 1.6 KB (-54%). |  | Download
+   unreferenced objects shipped: 2 (541 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+
+## lay-on — all.pdf → 2169 B (6f9f171b1f99cbe7)
+   annotations=off attachments=off hiddenLayers=on info=off javascript=off metadata=off
+   annotations   off   5 payload(s)  5/5 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   hiddenLayers  on    2 payload(s)  removed
+   info          off   2 payload(s)  2/2 still in the file
+   javascript    off   5 payload(s)  5/5 still in the file
+   metadata      off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 1, "ocgs": 1, "pages": 1, "poppler": {"attached": 1, "errors": [], "javascript": "yes", "title": "SANJINFOTITLE6"}, "sc
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 2.1 KB · 41% smaller | PAGES | 1 → 1 |  | Sanitized: 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted), 4 script reference(s) left in place, 2 embedded file(s) left in place. 3.6 KB → 2.1 KB (-41%). |  | WHAT YOU SHOULD KNOW (2) |  | catalogue /OpenAction, page 1 /AA /O, the annotation on page 1 /A, the JavaScript name tre
+   unreferenced objects shipped: 1 (221 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## lay-off — all.pdf → 1754 B (56042061d8af6c0f)
+   annotations=on attachments=on hiddenLayers=off info=on javascript=on metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 2, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.7 KB · 52% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed. 3.6 KB → 1.7 KB (-52%). |  | WHAT YOU SHOULD KNOW (2) |  | 1 form field value(s) were removed with their widgets; filled-in answers typed into a form can l
+   unreferenced objects shipped: 2 (537 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## af-on — attach-foreign.pdf → 706 B (e40b338287a3bf7a)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   2 payload(s)  1/2 still in the file
+   attachments   on    2 payload(s)  removed
+   reader: {"annot_objects": 1, "annots": [1], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [1099], "ink_with_annots": [1551], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: attach-foreign_sanitized.pdf |  | READY | SIZE | 1.2 KB → 706 B · 44% smaller | PAGES | 1 → 1 |  | Sanitized: 2 embedded file(s) removed. 1.2 KB → 706 B (-44%). |  | Download
+   unreferenced objects shipped: 1 (164 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 241 px inside one
+   MISMATCH annotations: OFF and 1/2 payload(s) left anyway — missing ['ann.bin']
+   MISMATCH 241 px stopped being drawn with the annotation switch off — the mark the attachment was hung on lost its file and poppler refuses it (“Bad Annot File Attachment”)
+
+## af-off — attach-foreign.pdf → 972 B (f4402b3ceb1cb660)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   2 payload(s)  2/2 still in the file
+   attachments   off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 1, "annots": [1], "embedded_file_objects": 2, "info_inline": false, "info_ref": false, "ink": [1099], "ink_with_annots": [1551], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 2, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: attach-foreign_sanitized.pdf |  | READY | SIZE | 1.2 KB → 972 B · 23% smaller | PAGES | 1 → 1 |  | Nothing was removed: 2 embedded file(s) left in place. 1.2 KB → 972 B (-23%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 embedded file(s) stay in the output and are still extractable: "Remove embedded files" is off. | Download
+   unreferenced objects shipped: 1 (162 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## iinline-on — info-inline.pdf → 676 B (83f45bcf9df5c4df)
+   annotations=off attachments=off hiddenLayers=off info=on javascript=off metadata=off
+   info          on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": true, "info_ref": true, "ink": [827], "ink_with_annots": [827], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": "SANJINFOTITLEINLINE5"}, "
+   card: info-inline_sanitized.pdf |  | READY | SIZE | 705 B → 676 B · 4% smaller | PAGES | 1 → 1 |  | Nothing to remove: there was no info dictionary. 705 B → 676 B (-4%). |  | Download
+   unreferenced objects shipped: 1 (234 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH info: ON and 2/2 payload(s) still in the bytes (yes) — 'SANJINFOAUTHINLINE5' in the info dictionary written direct into the trailer, referenced by nothing
+   MISMATCH info: the card says there was nothing of this kind and the file carries 2
+
+## iinline-off — info-inline.pdf → 676 B (83f45bcf9df5c4df)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   info          off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": true, "info_ref": true, "ink": [827], "ink_with_annots": [827], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": "SANJINFOTITLEINLINE5"}, "
+   card: info-inline_sanitized.pdf |  | READY | SIZE | 705 B → 676 B · 4% smaller | PAGES | 1 → 1 |  | Nothing to remove: no switch was on. 705 B → 676 B (-4%). |  | Download
+   unreferenced objects shipped: 1 (234 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## inherit-on — annot-inherited.pdf → 670 B (b4219aa8a8b524cb)
+   annotations=on attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   on    1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 1, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [1122], "ink_with_annots": [1122], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: annot-inherited_sanitized.pdf |  | READY | SIZE | 782 B → 670 B · 14% smaller | PAGES | 1 → 1 |  | Nothing to remove: no annotations were present. 782 B → 670 B (-14%). |  | Download
+   unreferenced objects shipped: 1 (152 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH annotations: ON and 1/1 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJINHERITEDNOTE5' in an annotation or field dictionary
+   MISMATCH annotations: the card says there was nothing of this kind and the file carries 1
+
+## inherit-off — annot-inherited.pdf → 670 B (b4219aa8a8b524cb)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 1, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [1122], "ink_with_annots": [1122], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: annot-inherited_sanitized.pdf |  | READY | SIZE | 782 B → 670 B · 14% smaller | PAGES | 1 → 1 |  | Nothing to remove: no switch was on. 782 B → 670 B (-14%). |  | Download
+   unreferenced objects shipped: 1 (152 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## lay2-on — layers-off.pdf → 819 B (ed4863575975aa4a)
+   annotations=off attachments=off hiddenLayers=on info=off javascript=off metadata=off
+   hiddenLayers  on    2 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [2060], "ink_with_annots": [2060], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: layers-off_sanitized.pdf |  | READY | SIZE | 1.5 KB → 819 B · 47% smaller | PAGES | 1 → 1 |  | Sanitized: 9 hidden layer operator(s) of "RevisionB" removed (67 B of content, 1 layer definition(s) deleted). 1.5 KB → 819 B (-47%). |  | Download
+   unreferenced objects shipped: 1 (168 B), source had 15 (60 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## lay2-off — layers-off.pdf → 906 B (0ca6ea72d93018e5)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   hiddenLayers  off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [2060], "ink_with_annots": [2060], "links": [0], "mupdf_attachments": 0, "ocgs": 2, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: layers-off_sanitized.pdf |  | READY | SIZE | 1.5 KB → 906 B · 41% smaller | PAGES | 1 → 1 |  | Nothing to remove: no switch was on. 1.5 KB → 906 B (-41%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 optional content group(s) (layers) were left in place, 1 of them hidden in the default view; their content is still in the file. | Download
+   unreferenced objects shipped: 1 (165 B), source had 15 (60 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## plain-on — plain.pdf → 620 B (0f0952df8c2f93f2)
+   annotations=on attachments=on hiddenLayers=on info=on javascript=on metadata=on
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [2111], "ink_with_annots": [2111], "links": [0], "mupdf_attachments": 0, "ocgs": 0, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects":
+   card: plain_sanitized.pdf |  | READY | SIZE | 649 B → 620 B · 4% smaller | PAGES | 1 → 1 |  | Nothing to remove: no script references were present, no embedded files were present, there was no XMP packet to remove, there was no info dictionary, no annotations were present, no layer is switched off in the default view. 649 B → 620 B (-4%). |  | Download
+   unreferenced objects shipped: 1 (150 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-kids-on — script-names-kids.pdf → 2174 B (8bce2c6b24b90557)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    2 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-names-kids_sanitized.pdf |  | READY | SIZE | 3.0 KB → 2.1 KB · 30% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 3.0 KB → 2.1 KB (-30%). |  | Download
+   unreferenced objects shipped: 1 (280 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-nested-on — script-names-kids-nested.pdf → 2204 B (501590fc353d1dad)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    2 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-names-kids-nested_sanitized.pdf |  | READY | SIZE | 3.1 KB → 2.2 KB · 31% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 3.1 KB → 2.2 KB (-31%). |  | Download
+   unreferenced objects shipped: 1 (283 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-array-on — script-openaction-array.pdf → 2116 B (9ecb05ae5c07906b)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    2 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-openaction-array_sanitized.pdf |  | READY | SIZE | 2.8 KB → 2.1 KB · 26% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 2.8 KB → 2.1 KB (-26%). |  | Download
+   unreferenced objects shipped: 1 (275 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-inline-on — script-openaction-inline.pdf → 2110 B (9ae97c4f3addb1ed)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-openaction-inline_sanitized.pdf |  | READY | SIZE | 2.7 KB → 2.1 KB · 24% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 2.7 KB → 2.1 KB (-24%). |  | Download
+   unreferenced objects shipped: 1 (270 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-ref-on — script-openaction-ref.pdf → 2116 B (14fa572d1fb84fa8)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-openaction-ref_sanitized.pdf |  | READY | SIZE | 2.7 KB → 2.1 KB · 25% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 2.7 KB → 2.1 KB (-25%). |  | Download
+   unreferenced objects shipped: 1 (275 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-hosts-on — script-hosts-aa.pdf → 2586 B (d871c67d25539da2)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   annotations   off   2 payload(s)  2/2 still in the file
+   javascript    on    4 payload(s)  removed
+   reader: {"annot_objects": 3, "annots": [1, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16885, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-hosts-aa_sanitized.pdf |  | READY | SIZE | 3.9 KB → 2.5 KB · 36% smaller | PAGES | 3 → 3 |  | Sanitized: 4 script reference(s) removed. 3.9 KB → 2.5 KB (-36%). |  | Download
+   unreferenced objects shipped: 1 (294 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-jskey-on — script-js-key-only.pdf → 2110 B (06ce50387923c3f3)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   javascript    on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-js-key-only_sanitized.pdf |  | READY | SIZE | 2.7 KB → 2.1 KB · 23% smaller | PAGES | 3 → 3 |  | Sanitized: 1 script reference(s) removed. 2.7 KB → 2.1 KB (-23%). |  | Download
+   unreferenced objects shipped: 1 (270 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-xfa-on — script-xfa.pdf → 2393 B (d4dc3c7ed572ffcc)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=on metadata=off
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-xfa_sanitized.pdf |  | READY | SIZE | 3.0 KB → 2.3 KB · 23% smaller | PAGES | 3 → 3 |  | Nothing to remove: no script references were present. 3.0 KB → 2.3 KB (-23%). |  | WHAT YOU SHOULD KNOW (1) |  | This tool did not read the script inside its XFA form packet, which lives in that packet’s own XML, so it is still in the file. | Download
+   unreferenced objects shipped: 1 (277 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-kids-off — script-names-kids.pdf → 2265 B (7eba54f83d916b4f)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   javascript    off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-names-kids_sanitized.pdf |  | READY | SIZE | 3.0 KB → 2.2 KB · 27% smaller | PAGES | 3 → 3 |  | Nothing was removed: 1 script reference(s) left in place. 3.0 KB → 2.2 KB (-27%). |  | WHAT YOU SHOULD KNOW (1) |  | the JavaScript name tree runs in the output too: "Remove JavaScript and automatic actions" is off. | Download
+   unreferenced objects shipped: 1 (278 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fjs-all-off — script-hosts-aa.pdf → 2719 B (dec5a805fd91edfb)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   2 payload(s)  2/2 still in the file
+   javascript    off   4 payload(s)  4/4 still in the file
+   reader: {"annot_objects": 3, "annots": [1, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16885, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: script-hosts-aa_sanitized.pdf |  | READY | SIZE | 3.9 KB → 2.7 KB · 32% smaller | PAGES | 3 → 3 |  | Nothing was removed: 4 script reference(s) left in place. 3.9 KB → 2.7 KB (-32%). |  | WHAT YOU SHOULD KNOW (1) |  | page 1 /AA /O, form field “totals” /AA /K, form field “heading” /A, the annotation on page 1 /AA /E run in the output too: "Remove JavaScript and automatic actions" is off. | Download
+   unreferenced objects shipped: 1 (287 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-kids-on — kids-tree.pdf → 1928 B (6e01cfaea335aef2)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    2 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: kids-tree_sanitized.pdf |  | READY | SIZE | 3.9 KB → 1.9 KB · 51% smaller | PAGES | 3 → 3 |  | Sanitized: 2 embedded file(s) removed. 3.9 KB → 1.9 KB (-51%). |  | Download
+   unreferenced objects shipped: 1 (274 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-annot-on — annot-only.pdf → 1921 B (0fcd10dfedb673ba)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 1, "annots": [0, 1, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4770, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: annot-only_sanitized.pdf |  | READY | SIZE | 3.1 KB → 1.9 KB · 40% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.1 KB → 1.9 KB (-40%). |  | Download
+   unreferenced objects shipped: 1 (267 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 241 px inside one
+   MISMATCH 241 px stopped being drawn with the annotation switch off — the mark the attachment was hung on lost its file and poppler refuses it (“Bad Annot File Attachment”)
+
+## fatt-mupdf-on — mupdf-native.pdf → 1873 B (bd110de9e96e2a0e)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: mupdf-native_sanitized.pdf |  | READY | SIZE | 3.0 KB → 1.8 KB · 39% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.0 KB → 1.8 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (264 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-estream-on — ef-points-at-stream.pdf → 1876 B (c5e3856e6679c93a)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: ef-points-at-stream_sanitized.pdf |  | READY | SIZE | 3.0 KB → 1.8 KB · 40% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.0 KB → 1.8 KB (-40%). |  | Download
+   unreferenced objects shipped: 1 (268 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-af-on — af-only.pdf → 1876 B (52d75993a7d0a24c)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: af-only_sanitized.pdf |  | READY | SIZE | 3.0 KB → 1.8 KB · 39% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.0 KB → 1.8 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (268 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-direct-on — direct-namespec.pdf → 1873 B (6cfedd9953504121)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: direct-namespec_sanitized.pdf |  | READY | SIZE | 3.0 KB → 1.8 KB · 39% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.0 KB → 1.8 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (264 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-catannot-on — catalog-and-annot.pdf → 1945 B (1a61205ebaf58f3d)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   1 payload(s)  1/1 still in the file
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 1, "annots": [1, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4729, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: catalog-and-annot_sanitized.pdf |  | READY | SIZE | 3.2 KB → 1.9 KB · 41% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.2 KB → 1.9 KB (-41%). |  | Download
+   unreferenced objects shipped: 1 (271 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 241 px inside one
+   MISMATCH 241 px stopped being drawn with the annotation switch off — the mark the attachment was hung on lost its file and poppler refuses it (“Bad Annot File Attachment”)
+
+## fatt-uni-on — unicode-name.pdf → 1876 B (ce5e4d12997ed242)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "
+   card: unicode-name_sanitized.pdf |  | READY | SIZE | 3.1 KB → 1.8 KB · 42% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.1 KB → 1.8 KB (-42%). |  | Download
+   unreferenced objects shipped: 1 (268 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-pypdf-on — pypdf-native.pdf → 1923 B (8af4bf0cec092974)
+   annotations=off attachments=on hiddenLayers=off info=off javascript=off metadata=off
+   attachments   on    1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascript": "n
+   card: pypdf-native_sanitized.pdf |  | READY | SIZE | 3.1 KB → 1.9 KB · 39% smaller | PAGES | 3 → 3 |  | Sanitized: 1 embedded file(s) removed. 3.1 KB → 1.9 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (293 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-kids-off — kids-tree.pdf → 3073 B (17377cd69f413eb4)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   attachments   off   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 2, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 2, "errors": [], "javascript": "
+   card: kids-tree_sanitized.pdf |  | READY | SIZE | 3.9 KB → 3.0 KB · 23% smaller | PAGES | 3 → 3 |  | Nothing was removed: 2 embedded file(s) left in place. 3.9 KB → 3.0 KB (-23%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 embedded file(s) stay in the output and are still extractable: "Remove embedded files" is off. | Download
+   unreferenced objects shipped: 1 (275 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fatt-mupdf-off — mupdf-native.pdf → 2445 B (f1ef7f202a1ab6e6)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   attachments   off   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 1, "info_inline": false, "info_ref": false, "ink": [4340, 4381, 4392], "ink_with_annots": [4340, 4381, 4392], "links": [0, 0, 0], "mupdf_attachments": 1, "ocgs": 0, "pages": 3, "poppler": {"attached": 1, "errors": [], "javascript": "
+   card: mupdf-native_sanitized.pdf |  | READY | SIZE | 3.0 KB → 2.4 KB · 21% smaller | PAGES | 3 → 3 |  | Nothing was removed: 1 embedded file(s) left in place. 3.0 KB → 2.4 KB (-21%). |  | WHAT YOU SHOULD KNOW (1) |  | 1 embedded file(s) stay in the output and are still extractable: "Remove embedded files" is off. | Download
+   unreferenced objects shipped: 1 (265 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fxmp-on — metadata.pdf → 2756 B (0f7056156515ee5a)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=on
+   info          off   4 payload(s)  4/4 still in the file
+   metadata      on    1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascrip
+   card: metadata_sanitized.pdf |  | READY | SIZE | 3.4 KB → 2.7 KB · 21% smaller | PAGES | 3 → 3 |  | Sanitized: XMP metadata removed. 3.4 KB → 2.7 KB (-21%). |  | Download
+   unreferenced objects shipped: 2 (793 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH metadata: ON and 1/1 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH metadata: the card says it was removed and 1/1 of its payload is still in the file
+
+## fxmp-off — metadata.pdf → 2765 B (ede7d4872d0147ed)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   info          off   4 payload(s)  4/4 still in the file
+   metadata      off   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascrip
+   card: metadata_sanitized.pdf |  | READY | SIZE | 3.4 KB → 2.7 KB · 21% smaller | PAGES | 3 → 3 |  | Nothing to remove: no switch was on. 3.4 KB → 2.7 KB (-21%). |  | Download
+   unreferenced objects shipped: 1 (293 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## finfo-on — metadata.pdf → 2671 B (2fee7a350a87423e)
+   annotations=off attachments=off hiddenLayers=off info=on javascript=off metadata=off
+   info          on    4 payload(s)  1/4 still in the file
+   metadata      off   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascrip
+   card: metadata_sanitized.pdf |  | READY | SIZE | 3.4 KB → 2.6 KB · 23% smaller | PAGES | 3 → 3 |  | Sanitized: the info dictionary was removed. 3.4 KB → 2.6 KB (-23%). |  | Download
+   unreferenced objects shipped: 1 (295 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   note: info: every payload of this kind left; 1 string(s) survive only inside another kind of object (['the XMP packet'])
+
+## fann-on — annotations.pdf → 3377 B (5a645f859068cd65)
+   annotations=on attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   on    9 payload(s)  9/9 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: annotations_sanitized.pdf |  | READY | SIZE | 4.6 KB → 3.3 KB · 28% smaller | PAGES | 3 → 3 |  | Sanitized: 5 annotation(s) removed. 4.6 KB → 3.3 KB (-28%). |  | Download
+   unreferenced objects shipped: 1 (291 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 11854 px inside one
+   MISMATCH annotations: ON and 9/9 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — '0 g /Helv 10.0 Tf' in an annotation or field dictionary, referenced by nothing
+   MISMATCH annotations: the card says it was removed and 9/9 of its payload is still in the file
+
+## fann-off — annotations.pdf → 3386 B (9f0fc9a8432bc499)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   off   9 payload(s)  9/9 still in the file
+   reader: {"annot_objects": 8, "annots": [3, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16189, 16381, 16444], "ink_with_annots": [26723, 16381, 16444], "links": [1, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: annotations_sanitized.pdf |  | READY | SIZE | 4.6 KB → 3.3 KB · 28% smaller | PAGES | 3 → 3 |  | Nothing to remove: no switch was on. 4.6 KB → 3.3 KB (-28%). |  | Download
+   unreferenced objects shipped: 1 (293 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fform-on — form.pdf → 2983 B (e8932bb27380b6fa)
+   annotations=on attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   annotations   on    5 payload(s)  5/5 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: form_sanitized.pdf |  | READY | SIZE | 4.0 KB → 2.9 KB · 27% smaller | PAGES | 3 → 3 |  | Sanitized: 2 annotation(s) including 2 form field(s) removed. 4.0 KB → 2.9 KB (-27%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 form field value(s) were removed with their widgets; filled-in answers typed into a form can live in the page content and stay visible. | Download
+   unreferenced objects shipped: 1 (285 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — '0 0 0 rg /Helv 0 Tf' in an annotation or field dictionary, referenced by nothing
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## flay-on — layers.pdf → 2433 B (87d5d9ebcda554e5)
+   annotations=off attachments=off hiddenLayers=on info=off javascript=off metadata=off
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [17601, 16381, 16444], "ink_with_annots": [17601, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 1, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: layers_sanitized.pdf |  | READY | SIZE | 3.3 KB → 2.4 KB · 28% smaller | PAGES | 3 → 3 |  | Sanitized: 0 hidden layer operator(s) of "HiddenLayer" removed (0 B of content, 1 layer definition(s) deleted). 3.3 KB → 2.4 KB (-28%). |  | Download
+   unreferenced objects shipped: 1 (280 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## flay-off — layers.pdf → 2450 B (70ff96f33ed9d2ff)
+   annotations=off attachments=off hiddenLayers=off info=off javascript=off metadata=off
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [17601, 16381, 16444], "ink_with_annots": [17601, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 2, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: layers_sanitized.pdf |  | READY | SIZE | 3.3 KB → 2.4 KB · 28% smaller | PAGES | 3 → 3 |  | Nothing to remove: no switch was on. 3.3 KB → 2.4 KB (-28%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 optional content group(s) (layers) were left in place, 1 of them hidden in the default view; their content is still in the file. | Download
+   unreferenced objects shipped: 1 (278 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## dark — all.pdf → 1667 B (6188dc2404f80031)
+   annotations=on attachments=on hiddenLayers=on info=on javascript=on metadata=on
+   annotations   on    5 payload(s)  5/5 still in the file
+   attachments   on    2 payload(s)  removed
+   hiddenLayers  on    2 payload(s)  removed
+   info          on    2 payload(s)  removed
+   javascript    on    5 payload(s)  removed
+   metadata      on    2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 0, "annots": [0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [2591], "links": [0], "mupdf_attachments": 0, "ocgs": 1, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": ""}, "script_objects": 
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.6 KB · 55% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed, the info dictionary was removed, 4 annotation(s) including 1 form field(s) removed, 9 hidden layer operator(s) of "RevisionB" removed (70 B of content, 1 layer definition(s) deleted). 3.6 KB → 1.6 KB (-55%). |  | WHAT YOU SHOULD KNOW (1) |
+   unreferenced objects shipped: 2 (541 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 1825 px inside one
+   MISMATCH metadata: ON and 2/2 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH annotations: ON and 5/5 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — 'SANJANNOTAP19' in an annotation appearance stream
+   MISMATCH metadata: the card says it was removed and 2/2 of its payload is still in the file
+   MISMATCH annotations: the card says it was removed and 5/5 of its payload is still in the file
+
+## defaults — all.pdf → 1837 B (a800d8bdae837287)
+   
+   annotations   n/a   5 payload(s)  5/5 still in the file
+   attachments   n/a   2 payload(s)  removed
+   hiddenLayers  n/a   2 payload(s)  2/2 still in the file
+   info          n/a   2 payload(s)  2/2 still in the file
+   javascript    n/a   5 payload(s)  removed
+   metadata      n/a   2 payload(s)  2/2 still in the file
+   reader: {"annot_objects": 6, "annots": [1], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [2591], "ink_with_annots": [4476], "links": [1], "mupdf_attachments": 0, "ocgs": 2, "pages": 1, "poppler": {"attached": 0, "errors": [], "javascript": "no", "title": "SANJINFOTITLE6"}, "scr
+   card: all_sanitized.pdf |  | READY | SIZE | 3.6 KB → 1.8 KB · 50% smaller | PAGES | 1 → 1 |  | Sanitized: 4 script reference(s) removed, 2 embedded file(s) removed, XMP metadata removed. 3.6 KB → 1.8 KB (-50%). |  | WHAT YOU SHOULD KNOW (1) |  | 2 optional content group(s) (layers) were left in place, 1 of them hidden in the default view; their content is still in the file. | Download
+   unreferenced objects shipped: 2 (538 B), source had 2 (8 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fmeta-defaults — metadata.pdf → 2756 B (0f7056156515ee5a)
+   
+   info          n/a   4 payload(s)  4/4 still in the file
+   metadata      n/a   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [16235, 16381, 16444], "ink_with_annots": [16235, 16381, 16444], "links": [0, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascrip
+   card: metadata_sanitized.pdf |  | READY | SIZE | 3.4 KB → 2.7 KB · 21% smaller | PAGES | 3 → 3 |  | Sanitized: no script references were present, no embedded files were present, XMP metadata removed. 3.4 KB → 2.7 KB (-21%). |  | Download
+   unreferenced objects shipped: 2 (793 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## fannot-defaults — annotations.pdf → 3386 B (9f0fc9a8432bc499)
+   
+   annotations   n/a   9 payload(s)  9/9 still in the file
+   reader: {"annot_objects": 8, "annots": [3, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": false, "ink": [16189, 16381, 16444], "ink_with_annots": [26723, 16381, 16444], "links": [1, 0, 0], "mupdf_attachments": 0, "ocgs": 0, "pages": 3, "poppler": {"attached": 0, "errors": [], "javascri
+   card: annotations_sanitized.pdf |  | READY | SIZE | 4.6 KB → 3.3 KB · 28% smaller | PAGES | 3 → 3 |  | Nothing to remove: no script references were present, no embedded files were present, there was no XMP packet to remove. 4.6 KB → 3.3 KB (-28%). |  | Download
+   unreferenced objects shipped: 1 (293 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## triage-annot-on — annot.pdf → 4325 B (f1c73ef9252711e4)
+   annotations=on attachments=off javascript=off metadata=off
+   annotations   on    9 payload(s)  9/9 still in the file
+   info          n/a   1 payload(s)  removed
+   reader: {"annot_objects": 0, "annots": [0, 0, 0, 0, 0, 0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "ink_with_annots": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "links": [0, 0, 0, 0, 0, 0, 0, 0], "mupdf
+   card: annot_sanitized.pdf |  | READY | SIZE | 6.9 KB → 4.2 KB · 39% smaller | PAGES | 8 → 8 |  | Sanitized: 5 annotation(s) removed. 6.9 KB → 4.2 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (300 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 573 px inside one
+   MISMATCH annotations: ON and 9/9 payload(s) still in the bytes (no — the dictionaries are unreferenced residue) — '0 g /Helv 10.0 Tf' in an annotation or field dictionary, referenced by nothing
+   MISMATCH annotations: the card says it was removed and 9/9 of its payload is still in the file
+
+## triage-annot-off — annot.pdf → 4333 B (b02ebd09b58d25a0)
+   annotations=off attachments=off javascript=off metadata=off
+   annotations   off   9 payload(s)  9/9 still in the file
+   info          n/a   1 payload(s)  removed
+   reader: {"annot_objects": 8, "annots": [3, 0, 0, 0, 0, 0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [128446, 114812, 0, 333027, 583578, 0, 56540, 56540], "ink_with_annots": [128945, 114812, 0, 333027, 583578, 0, 56540, 56540], "links": [1, 0, 0, 0, 0, 0, 0, 0], "mupdf
+   card: annot_sanitized.pdf |  | READY | SIZE | 6.9 KB → 4.2 KB · 39% smaller | PAGES | 8 → 8 |  | Nothing to remove: no switch was on. 6.9 KB → 4.2 KB (-39%). |  | Download
+   unreferenced objects shipped: 1 (300 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## triage-meta-on — meta.pdf → 3296 B (c31c05124c723c6a)
+   attachments=off javascript=off metadata=on
+   info          n/a   4 payload(s)  4/4 still in the file
+   metadata      on    1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0, 0, 0, 0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "ink_with_annots": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "links": [0, 0, 0, 0, 0, 0, 0, 0], "mupdf
+   card: meta_sanitized.pdf |  | READY | SIZE | 4.9 KB → 3.2 KB · 35% smaller | PAGES | 8 → 8 |  | Sanitized: XMP metadata removed. 4.9 KB → 3.2 KB (-35%). |  | Download
+   unreferenced objects shipped: 2 (574 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+   MISMATCH metadata: ON and 1/1 payload(s) still in the bytes (no — the packet is unreferenced residue) — '<x:xmpmeta' in the XMP packet, referenced by nothing
+   MISMATCH metadata: the card says it was removed and 1/1 of its payload is still in the file
+
+## triage-meta-off — meta.pdf → 3303 B (89b55dab3971d5d3)
+   attachments=off javascript=off metadata=off
+   info          n/a   4 payload(s)  4/4 still in the file
+   metadata      off   1 payload(s)  1/1 still in the file
+   reader: {"annot_objects": 0, "annots": [0, 0, 0, 0, 0, 0, 0, 0], "embedded_file_objects": 0, "info_inline": false, "info_ref": true, "ink": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "ink_with_annots": [129225, 114812, 0, 333027, 583578, 0, 56540, 56540], "links": [0, 0, 0, 0, 0, 0, 0, 0], "mupdf
+   card: meta_sanitized.pdf |  | READY | SIZE | 4.9 KB → 3.2 KB · 35% smaller | PAGES | 8 → 8 |  | Nothing to remove: no switch was on. 4.9 KB → 3.2 KB (-35%). |  | Download
+   unreferenced objects shipped: 1 (288 B), source had 0 (0 B)
+   controls: poppler render: 0 px moved outside any mark, 0 px inside one
+
+## one-switch pairs — do the produced bytes move?
+
+   all.pdf                metadata      xmp-on vs off-all: 2260 B → 2250 B, 0 payload(s) removed, reader answers that changed: ['xmp_ref'] — PROBLEM — payload stayed: 2/2 object(s) of this scope's own kind still hold it — '<x:xmpmeta' (no — the packet is unreferenced residue)
+   all.pdf                metadata      on-all vs xmp-off: 1672 B → 1667 B, 0 payload(s) removed, reader answers that changed: ['xmp_ref'] — PROBLEM — payload stayed: 2/2 object(s) of this scope's own kind still hold it — '<x:xmpmeta' (no — the packet is unreferenced residue)
+   all.pdf                javascript    js-on vs off-all: 2260 B → 2166 B, 5 payload(s) removed, reader answers that changed: ['script_objects', 'poppler'] — MOVES BYTES
+   all.pdf                javascript    on-all vs js-off: 1759 B → 1667 B, 5 payload(s) removed, reader answers that changed: ['script_objects', 'poppler'] — MOVES BYTES
+   all.pdf                attachments   att-on vs off-all: 2260 B → 1941 B, 2 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'mupdf_attachments', 'poppler'] — MOVES BYTES
+   all.pdf                attachments   on-all vs att-off: 1985 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'mupdf_attachments', 'poppler'] — MOVES BYTES
+   all.pdf                attachments   dark vs att-off: 1985 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'mupdf_attachments', 'poppler'] — MOVES BYTES
+   all.pdf                info          info-on vs off-all: 2260 B → 2196 B, 2 payload(s) removed, reader answers that changed: ['title', 'poppler'] — MOVES BYTES
+   all.pdf                info          on-all vs info-off: 1727 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['title', 'poppler'] — MOVES BYTES
+   all.pdf                annotations   ann-on vs off-all: 2260 B → 2237 B, 0 payload(s) removed, reader answers that changed: ['annots', 'links', 'annot_objects', 'ink_with_annots'] — PROBLEM — payload stayed: 5/5 object(s) of this scope's own kind still hold it — 'SANJANNOTAP19' (no — the dictionaries are unreferenced residue)
+   all.pdf                annotations   on-all vs ann-off: 1682 B → 1667 B, 0 payload(s) removed, reader answers that changed: ['annots', 'links', 'annot_objects', 'ink_with_annots'] — PROBLEM — payload stayed: 5/5 object(s) of this scope's own kind still hold it — 'SANJANNOTAP19' (no — the dictionaries are unreferenced residue)
+   all.pdf                annotations   dark vs ann-off: 1682 B → 1667 B, 0 payload(s) removed, reader answers that changed: ['annots', 'links', 'annot_objects', 'ink_with_annots'] — PROBLEM — payload stayed: 5/5 object(s) of this scope's own kind still hold it — 'SANJANNOTAP19' (no — the dictionaries are unreferenced residue)
+   all.pdf                hiddenLayers  lay-on vs off-all: 2260 B → 2169 B, 2 payload(s) removed, reader answers that changed: ['ocgs'] — MOVES BYTES
+   all.pdf                hiddenLayers  on-all vs lay-off: 1754 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['ocgs'] — MOVES BYTES
+   all.pdf                javascript    dark vs js-off: 1759 B → 1667 B, 5 payload(s) removed, reader answers that changed: ['script_objects', 'poppler'] — MOVES BYTES
+   all.pdf                metadata      dark vs xmp-off: 1672 B → 1667 B, 0 payload(s) removed, reader answers that changed: ['xmp_ref'] — PROBLEM — payload stayed: 2/2 object(s) of this scope's own kind still hold it — '<x:xmpmeta' (no — the packet is unreferenced residue)
+   all.pdf                info          dark vs info-off: 1727 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['title', 'poppler'] — MOVES BYTES
+   all.pdf                hiddenLayers  dark vs lay-off: 1754 B → 1667 B, 2 payload(s) removed, reader answers that changed: ['ocgs'] — MOVES BYTES
+   annot-inherited.pdf    annotations   inherit-on vs inherit-off: 670 B → 670 B, 0 payload(s) removed, reader answers that changed: none — PROBLEM — the two outputs are the SAME BYTES — the switch changed nothing; payload stayed: 1/1 object(s) of this scope's own kind still hold it — 'SANJINHERITEDNOTE5' (no — the dictionaries are unreferenced residue)
+   annot.pdf              annotations   triage-annot-on vs triage-annot-off: 4333 B → 4325 B, 0 payload(s) removed, reader answers that changed: ['annots', 'links', 'annot_objects', 'ink', 'ink_with_annots'] — PROBLEM — payload stayed: 9/9 object(s) of this scope's own kind still hold it — '0 g /Helv 10.0 Tf' (no — the dictionaries are unreferenced residue)
+   annotations.pdf        annotations   fann-on vs fann-off: 3386 B → 3377 B, 0 payload(s) removed, reader answers that changed: ['annots', 'links', 'annot_objects', 'ink', 'ink_with_annots'] — PROBLEM — payload stayed: 9/9 object(s) of this scope's own kind still hold it — '0 g /Helv 10.0 Tf' (no — the dictionaries are unreferenced residue)
+   attach-foreign.pdf     attachments   af-on vs af-off: 972 B → 706 B, 2 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'poppler'] — MOVES BYTES
+   info-inline.pdf        info          iinline-on vs iinline-off: 676 B → 676 B, 0 payload(s) removed, reader answers that changed: none — PROBLEM — the two outputs are the SAME BYTES — the switch changed nothing; payload stayed: 2/2 object(s) of this scope's own kind still hold it — 'SANJINFOAUTHINLINE5' (yes)
+   kids-tree.pdf          attachments   fatt-kids-on vs fatt-kids-off: 3073 B → 1928 B, 2 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'poppler'] — MOVES BYTES
+   layers-off.pdf         hiddenLayers  lay2-on vs lay2-off: 906 B → 819 B, 2 payload(s) removed, reader answers that changed: ['ocgs'] — MOVES BYTES
+   layers.pdf             hiddenLayers  flay-on vs flay-off: 2450 B → 2433 B, 0 payload(s) removed, reader answers that changed: ['ocgs'] — MOVES BYTES
+   meta.pdf               metadata      triage-meta-on vs triage-meta-off: 3303 B → 3296 B, 0 payload(s) removed, reader answers that changed: ['xmp_ref'] — PROBLEM — payload stayed: 1/1 object(s) of this scope's own kind still hold it — '<x:xmpmeta' (no — the packet is unreferenced residue)
+   metadata.pdf           metadata      fxmp-on vs fxmp-off: 2765 B → 2756 B, 0 payload(s) removed, reader answers that changed: ['xmp_ref'] — PROBLEM — payload stayed: 1/1 object(s) of this scope's own kind still hold it — '<x:xmpmeta' (no — the packet is unreferenced residue)
+   metadata.pdf           info          finfo-on vs fxmp-off: 2765 B → 2671 B, 4 payload(s) removed, reader answers that changed: ['title', 'poppler'] — MOVES BYTES
+   mupdf-native.pdf       attachments   fatt-mupdf-on vs fatt-mupdf-off: 2445 B → 1873 B, 1 payload(s) removed, reader answers that changed: ['embedded_file_objects', 'mupdf_attachments', 'poppler'] — MOVES BYTES
+   script-hosts-aa.pdf    javascript    fjs-hosts-on vs fjs-all-off: 2719 B → 2586 B, 4 payload(s) removed, reader answers that changed: ['script_objects', 'poppler'] — MOVES BYTES
+   script-names-kids.pdf  javascript    fjs-kids-on vs fjs-kids-off: 2265 B → 2174 B, 2 payload(s) removed, reader answers that changed: ['script_objects', 'poppler'] — MOVES BYTES
+
+## pairs that move bytes, per switch
+
+   javascript    5
+   attachments   6
+   metadata      0
+   info          4
+   annotations   0
+   hiddenLayers  5
+
+## per-switch summary
+
+   javascript    driven on 17 run(s) over 10 file(s); payload gone on 8 file(s)
+   attachments   driven on 19 run(s) over 12 file(s); payload gone on 11 file(s)
+   metadata      driven on 11 run(s) over 4 file(s); payload gone on 0 file(s); payload LEFT on all.pdf, meta.pdf, metadata.pdf
+   info          driven on 11 run(s) over 4 file(s); payload gone on 1 file(s); payload LEFT on info-inline.pdf; the ON and OFF outputs are identical on info-inline.pdf
+   annotations   driven on 13 run(s) over 6 file(s); payload gone on 0 file(s); payload LEFT on all.pdf, annot-inherited.pdf, annot.pdf, annotations.pdf, form.pdf; the ON and OFF outputs are identical on annot-inherited.pdf
+   hiddenLayers  driven on 11 run(s) over 4 file(s); payload gone on 2 file(s)
+
+## verdict
+
+60 run(s), 32 with a mismatch (runs + pairs)
+

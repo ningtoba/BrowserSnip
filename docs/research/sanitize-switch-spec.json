@@ -1,0 +1,879 @@
+[
+ {
+  "tool": "sanitize-pdf",
+  "tag": "off-all",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  },
+  "shot": true,
+  "shotName": "card-off",
+  "shotBefore": "promise"
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "on-all",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  },
+  "shot": true,
+  "shotName": "card-on"
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "js-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "js-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "att-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "att-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "xmp-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "xmp-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "info-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "info-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "ann-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "ann-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "lay-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "lay-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "af-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/attach-foreign.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "af-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/attach-foreign.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "iinline-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/info-inline.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "iinline-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/info-inline.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "inherit-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/annot-inherited.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "inherit-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/annot-inherited.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "lay2-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/layers-off.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "lay2-off",
+  "files": [
+   "/tmp/lane-optimize2/fx/layers-off.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "plain-on",
+  "files": [
+   "/tmp/lane-optimize2/fx/plain.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-kids-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-names-kids.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-nested-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-names-kids-nested.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-array-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-openaction-array.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-inline-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-openaction-inline.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-ref-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-openaction-ref.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-hosts-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-hosts-aa.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-jskey-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-js-key-only.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-xfa-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-xfa.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-kids-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-names-kids.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fjs-all-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/script-hosts-aa.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-kids-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/kids-tree.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-annot-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/annot-only.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-mupdf-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/mupdf-native.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-estream-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/ef-points-at-stream.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-af-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/af-only.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-direct-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/direct-namespec.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-catannot-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/catalog-and-annot.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-uni-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/unicode-name.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-pypdf-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/pypdf-native.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-kids-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/kids-tree.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fatt-mupdf-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/attachments/mupdf-native.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fxmp-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/metadata.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fxmp-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/metadata.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "finfo-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/metadata.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fann-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/annotations.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fann-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/annotations.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fform-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/form.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "flay-on",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/layers.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "1"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "flay-off",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/layers.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0",
+   "Remove the document info dictionary": "0",
+   "Remove annotations and form fields": "0",
+   "Remove hidden layer content": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "dark",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {
+   "Remove JavaScript and automatic actions": "1",
+   "Remove embedded files": "1",
+   "Remove XMP metadata": "1",
+   "Remove the document info dictionary": "1",
+   "Remove annotations and form fields": "1",
+   "Remove hidden layer content": "1"
+  },
+  "shot": true,
+  "shotName": "dark",
+  "dark": true
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "defaults",
+  "files": [
+   "/tmp/lane-optimize2/fx/all.pdf"
+  ],
+  "fields": {}
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fmeta-defaults",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/metadata.pdf"
+  ],
+  "fields": {}
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "fannot-defaults",
+  "files": [
+   "/home/nekophobia/Projects/BrowserSnipRepo/.lanes/optimize/tests/fixtures/foreign/annotations.pdf"
+  ],
+  "fields": {}
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "triage-annot-on",
+  "files": [
+   "/tmp/triage/in/annot.pdf"
+  ],
+  "fields": {
+   "Remove annotations and form fields": "1",
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "triage-annot-off",
+  "files": [
+   "/tmp/triage/in/annot.pdf"
+  ],
+  "fields": {
+   "Remove annotations and form fields": "0",
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0",
+   "Remove XMP metadata": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "triage-meta-on",
+  "files": [
+   "/tmp/triage/in/meta.pdf"
+  ],
+  "fields": {
+   "Remove XMP metadata": "1",
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0"
+  }
+ },
+ {
+  "tool": "sanitize-pdf",
+  "tag": "triage-meta-off",
+  "files": [
+   "/tmp/triage/in/meta.pdf"
+  ],
+  "fields": {
+   "Remove XMP metadata": "0",
+   "Remove JavaScript and automatic actions": "0",
+   "Remove embedded files": "0"
+  }
+ }
+]
