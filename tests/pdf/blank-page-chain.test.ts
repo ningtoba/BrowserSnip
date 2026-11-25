@@ -30,13 +30,56 @@
  * The tests here therefore assert the opposite of that table: the blank page is
  * carried through, at the right size, in the right place, drawing nothing.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFStream, StandardFonts, rgb } from '@maxwbh/pdf-lib';
 import type { PDFPage } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, parseContentStream, streamBytes } from '@/lib/pdf/core/content';
 import { cropBox, displayedSize, ensurePageContents, mediaBox, pageContentsState } from '@/lib/pdf/core/pages';
+
+/**
+ * `posterize`, `divide-pages` and `fix-page-size` name blank sheets through
+ * the exported display-list judge, which wants a render session — jsdom
+ * cannot boot the pdf.js worker. This file's blanks are genuine no-`/Contents`
+ * sheets (the chain is what it tests), so the same structural double used by
+ * `grid-placement.test.ts` answers exactly what the real judge answers for
+ * these fixtures: absent or paint-less streams are blank, text is ink.
+ */
+vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
+  // A hoisted `vi.mock` factory must load its doubles dynamically — the
+  // vitest idiom of every render double in this suite.
+  const real = await importOriginal<typeof import('@/lib/pdf/core/render')>();
+  const { PDFDocument: Loader } = await import('@maxwbh/pdf-lib');
+  return {
+    ...real,
+    openRender: async (bytes: Uint8Array) => {
+      const doc = await Loader.load(bytes, { updateMetadata: false });
+      const numPages = doc.getPageCount();
+      return {
+        numPages,
+        page: async (index: number) => ({ page: doc.getPages()[index - 1] }),
+        metadata: async () => ({ numPages, fingerprint: 'blank-chain-double', formFields: 0 }),
+        destroy: async () => {},
+      };
+    },
+  };
+});
+
+vi.mock('@/lib/pdf/core/blank', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/core/blank')>();
+  const { pageContentStreams: streams } = await import('@/lib/pdf/core/content');
+  return {
+    ...real,
+    pageBlankness: async (_session: unknown, doc: PDFDocument, page: number) => {
+      const content = streams(doc.getPages()[page - 1])
+        .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
+        .join('');
+      const paints = /\bTj\b|\bTJ\b|\bDo\b|\bre\b|\bf\b|\bS\b|\bBI\b/.test(content);
+      return { page, blank: !paints, reason: paints ? 'inked' : 'nothing-drawn' };
+    },
+  };
+});
 
 /* ── the chain input: the product's own output ───────────────────────────── */
 
@@ -292,7 +335,7 @@ describe('a blank sheet is named as a blank piece, not counted as ink', () => {
     expect(reachableInk(doc, BLANK_AT * 2)).toBe(0);
     expect(reachableInk(doc, BLANK_AT * 2 + 1)).toBe(0);
     expect(reachableInk(doc, 0)).toBeGreaterThan(0);
-    expect(outcome.warnings.join(' ')).toMatch(/had no drawable content, so 2 of the 10 pieces are blank sheets/i);
+    expect(outcome.warnings.join(' ')).toMatch(/2 of the 10 pieces are blank sheets: they come from a page that paints nothing/i);
   });
 
   it('divide-pages refuses a selection that is nothing but blanks', async () => {

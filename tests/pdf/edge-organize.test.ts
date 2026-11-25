@@ -2360,6 +2360,130 @@ describe('each tool is checked against its own output file', () => {
     }
   });
 
+  /**
+   * F-P3 + D-2 on the real judge: the blank tiles posterize names and the
+   * blank pieces divide names, for the same bytes and the same grid, must be
+   * the same set. Measured on r4: posterize kept silent (4 paper sheets, no
+   * word), divide counted structurally (4 of 20 by `/Contents`, where the
+   * display list said 8 of 20 on blanks.pdf and 12 of 48 on another drive).
+   */
+  it('posterize and divide-pages name the same blank sheets from the same bytes (F-P3)', async () => {
+    const source = fileOf(
+      await sheets([
+        { width: 200, height: 100 },
+        { width: 200, height: 100, empty: true },
+        { width: 200, height: 100 },
+      ]),
+      'mixed.pdf',
+    );
+    const post = await run('posterize', { columns: 2, rows: 2, bleed: 0, pages: 'all' }, [source]);
+    const div = await run('divide-pages', { axis: 'grid', columns: 2, rows: 2, pages: 'all' }, [source]);
+    const pat =
+      /(\d+) of the (\d+) (?:tiles?|pieces?) (?:is|are) blank sheets: (?:it|they) come from a page that paints nothing a viewer shows\./i;
+    const pm = pat.exec(warn(post));
+    const dm = pat.exec(warn(div));
+    expect(pm, `posterize said: ${warn(post)}`).not.toBeNull();
+    expect(dm, `divide said: ${warn(div)}`).not.toBeNull();
+    expect([Number(pm![1]), Number(pm![2])], 'the blank page gives 4 of the 12 tiles').toEqual([4, 12]);
+    expect([Number(dm![1]), Number(dm![2])], 'divide names the same set as pieces').toEqual([4, 12]);
+  });
+
+  it('divide-pages names a paintless-but-present sheet without refusing it (D-2)', async () => {
+    // A stream that runs and paints only white: structurally it has content,
+    // so the all-blank refusal (which stays structural, per the ruling) must
+    // not fire — but the naming must, because the pieces are paper.
+    const source = fileOf(await streamed([readable, whiteWash]), 'wash.pdf');
+    const outcome = await run('divide-pages', { axis: 'vertical', parts: 2, pages: 'all' }, [source]);
+    expect(outcome.message).toMatch(/Divided 2 pages into 4 pages\./i);
+    expect(warn(outcome)).toMatch(
+      /2 of the 4 pieces are blank sheets: they come from a page that paints nothing a viewer shows/i,
+    );
+  });
+
+  it('posterize tells the mixed-size truth: nothing is rescaled (F-P2)', async () => {
+    const source = fileOf(
+      await sheets([{ width: 200, height: 100 }, { width: 300, height: 150 }]),
+      'two-sizes.pdf',
+    );
+    const outcome = await run('posterize', { columns: 2, rows: 2, bleed: 0, pages: 'all' }, [source]);
+    const said = warn(outcome);
+    expect(said).toMatch(/2 different page sizes/i);
+    expect(said, 'the shared n-up sentence promised a scale that never happened').not.toMatch(
+      /scaled to fit/i,
+    );
+    expect(said).toMatch(/nothing is rescaled/i);
+  });
+
+  it('posterize points the crowded-overlap repair the right way (F-P4)', async () => {
+    const big = fileOf(await sheets([{ width: 200, height: 90 }]), 'wide.pdf');
+    const crowded = await run('posterize', { columns: 12, rows: 12, bleed: 100, pages: 'all' }, [big]);
+    const said = warn(crowded);
+    expect(said).toMatch(/use fewer, larger tiles/i);
+    expect(said, 'more tiles shrinks the strips and deepens the repeat').not.toMatch(/use more tiles/i);
+    expect(said, 'a 100 pt overlap on a 90 pt page is paper as much as repeat').toMatch(
+      /blank paper past the page edge/i,
+    );
+    const tamer = await run('posterize', { columns: 3, rows: 2, bleed: 10, pages: 'all' }, [big]);
+    expect(warn(tamer), 'an ordinary grid earns no lecture').not.toMatch(/fewer, larger/i);
+    expect(warn(tamer)).not.toMatch(/blank paper past/i);
+  });
+
+  it('fix-page-size reports blank sheets through the judge, not a dead branch (F-PS-2)', async () => {
+    // Page 2 has no `/Contents` at all, page 3 runs a white wash: the old
+    // sentence could not fire for either (stamp() returns true after
+    // ensurePageContents), and the structural helper cannot see page 3.
+    const source = fileOf(await streamed([readable, '', whiteWash]), 'wash-absent.pdf');
+    const outcome = await run(
+      'fix-page-size', { size: 'letter', orientation: 'keep', fit: 'contain', pages: 'all' }, [source],
+    );
+    expect(warn(outcome)).toMatch(
+      /2 pages \(2-3\) paint nothing a viewer shows, so their new sheets are blank paper\./i,
+    );
+    const inked = await run(
+      'fix-page-size', { size: 'letter', orientation: 'keep', fit: 'contain', pages: '1' }, [source],
+    );
+    expect(warn(inked), 'the inked sheet earns no blank sentence').not.toMatch(/blank paper/i);
+  });
+
+  it('fix-page-size calls out magnification as plainly as shrinking (F-PS-3)', async () => {
+    const tiny = fileOf(await sheets([{ width: 300, height: 200 }]), 'tiny.pdf');
+    const up = await run(
+      'fix-page-size', { size: 'tabloid', orientation: 'portrait', fit: 'contain', pages: 'all' }, [tiny],
+    );
+    expect(warn(up), '300×200 → 792×1224 contains at 2.64×').toMatch(
+      /enlarged 1 page to up to 264% of its own size/i,
+    );
+    expect(warn(up)).not.toMatch(/scaled 1 page down/i);
+
+    const down = fileOf(await sheets([{ width: 700, height: 1100 }]), 'big.pdf');
+    const shrunkRun = await run(
+      'fix-page-size', { size: 'letter', orientation: 'portrait', fit: 'contain', pages: 'all' }, [down],
+    );
+    expect(warn(shrunkRun), 'the 0.72 axis is the one quoted, as before').toMatch(
+      /scaled 1 page down to 72% of its own size/i,
+    );
+    expect(warn(shrunkRun)).not.toMatch(/enlarged/i);
+
+    const near = fileOf(await sheets([{ width: 612, height: 790 }]), 'near-letter.pdf');
+    const quiet = await run(
+      'fix-page-size', { size: 'letter', orientation: 'portrait', fit: 'contain', pages: 'all' }, [near],
+    );
+    expect(warn(quiet), 'inside the named 2% tolerance nothing is called out').not.toMatch(
+      /(scaled|enlarged) 1 page/i,
+    );
+  });
+
+  it('the largest target says what it computes: a folded box, not a page (F-PS-1)', () => {
+    const tool = organizeTools.find((t) => t.id === 'fix-page-size')!;
+    const sizeField = tool.fields!.find((f) => f.key === 'size')!;
+    const option = sizeField.options!.find((o) => o.value === 'largest')!;
+    expect(option.label, 'measured: colour.pdf builds a 595 × 595 sheet no page has').not.toMatch(
+      /largest page/i,
+    );
+    expect(option.label.toLowerCase()).toContain('largest width');
+    expect(sizeField.help).toMatch(/widest and tallest/i);
+  });
+
   it('divide-pages writes the count of pieces the sentence reports', async () => {
     const outcome = await run('divide-pages', { axis: 'grid', columns: 2, rows: 2, pages: 'all' });
     const doc = await open(await bytesOf(outcome));

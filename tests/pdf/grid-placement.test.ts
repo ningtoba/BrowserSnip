@@ -48,7 +48,7 @@
  * cell aimed at its own bottom-left corner and drew it 36 pt off the page —
  * measured before the fix as `q 1 0 0 1 0 1.8 cm … Do` on that very sheet.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   PDFArray,
   PDFDict,
@@ -65,6 +65,52 @@ import { runPdfTool, type RunOutcome } from '@/lib/pdf/tools/runner';
 import { pageContentStreams, parseContentStream, streamBytes } from '@/lib/pdf/core/content';
 import { cropBox, mediaBox } from '@/lib/pdf/core/pages';
 import { drawPageInto, newPDF, openPDF, savePDF } from '@/lib/pdf/core/doc';
+
+/**
+ * `posterize`, `divide-pages` and `fix-page-size` name blank sheets through the
+ * exported display-list judge (`core/blank.pageBlankness`), which needs a
+ * render session — and jsdom cannot boot the pdf.js worker. The geometry
+ * fixtures here are all inked, so a structural double of the judge (the same
+ * one `page-copy-fidelity.test.ts` runs) answers every page in this file as
+ * inked or empty from its real content stream, and the geometry assertions
+ * proceed against the real tool bodies. The judge's own truth is pinned in
+ * `edge-organize.test.ts` against the full display-list double.
+ */
+vi.mock('@/lib/pdf/core/render', async (importOriginal) => {
+  // A hoisted `vi.mock` factory runs before the file's static imports bind, so
+  // the modules it doubles are loaded with dynamic imports — the vitest idiom
+  // this repo's render doubles all use (see `edge-organize.test.ts`).
+  const real = await importOriginal<typeof import('@/lib/pdf/core/render')>();
+  const { PDFDocument: Loader } = await import('@maxwbh/pdf-lib');
+  return {
+    ...real,
+    openRender: async (bytes: Uint8Array) => {
+      const doc = await Loader.load(bytes, { updateMetadata: false });
+      const numPages = doc.getPageCount();
+      return {
+        numPages,
+        page: async (index: number) => ({ page: doc.getPages()[index - 1] }),
+        metadata: async () => ({ numPages, fingerprint: 'grid-placement-double', formFields: 0 }),
+        destroy: async () => {},
+      };
+    },
+  };
+});
+
+vi.mock('@/lib/pdf/core/blank', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/pdf/core/blank')>();
+  const { pageContentStreams } = await import('@/lib/pdf/core/content');
+  return {
+    ...real,
+    pageBlankness: async (_session: unknown, doc: PDFDocument, page: number) => {
+      const content = pageContentStreams(doc.getPages()[page - 1])
+        .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
+        .join('');
+      const paints = /\bTj\b|\bTJ\b|\bDo\b|\bre\b|\bf\b|\bS\b|\bBI\b/.test(content);
+      return { page, blank: !paints, reason: paints ? 'inked' : 'nothing-drawn' };
+    },
+  };
+});
 
 /* ── the input: sheets that can be told apart by their own bytes ──────────── */
 

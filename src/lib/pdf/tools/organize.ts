@@ -52,7 +52,7 @@ import { listAttachments } from '../core/attachments';
 import { listFormFields } from '../core/forms';
 import { readXmpText, writeXmp } from '../core/metadata';
 import { PAGE_SIZES, cropBox, ensurePageContents, formatPages, normaliseRotation, pageContentsState, pageSize as resolvePageSize, resolvePages } from '../core/pages';
-import { findBlankPages } from '../core/blank';
+import { findBlankPages, pageBlankness } from '../core/blank';
 import { createZip, sanitiseEntryName } from '../core/archive';
 import {
   ToolInputError,
@@ -2619,15 +2619,18 @@ export const organizeTools: PdfToolDefinition[] = [
         notes.add('One tile across and one down copies each page rather than splitting it — raise one of them to make a poster.');
       }
       const target = await newPDF();
+      // F-P3: tiles that come out paper are named through the one judge —
+      // the same display-list answer `remove-blank-pages` deletes on. Tiles
+      // stamp the page's own content stream (interactive marks are flattened
+      // away), so the sheet truth is the judge with `keepAnnotated` off.
+      const { session } = await withRender(input, context);
+      let blankTiles = 0;
+      try {
       for (let p = 0; p < source.length; p++) {
         throwIfAborted(context.signal);
         const page = input.doc.getPage(source[p]);
         const size = visibleBox(page);
-        if (bleed >= Math.min(size.width / columns, size.height / rows)) {
-          notes.add(
-            `A ${bleed} pt overlap is as wide as the tiles themselves at ${columns} × ${rows} on this page, so tiles repeat the same strip. Lower the overlap or use more tiles.`,
-          );
-        }
+        const judged = await pageBlankness(session, input.doc, source[p] + 1, { keepAnnotated: false });
         // Every tile sheet is one PITCH plus the overlap on both axes and its
         // content is drawn into it 1:1. The pitch carries the overlap inside
         // the division — `(size − bleed) / columns`, not `size / columns` —
@@ -2642,8 +2645,21 @@ export const organizeTools: PdfToolDefinition[] = [
         // up (E8).
         const pitchWidth = Math.max(size.width - bleed, 0) / columns;
         const pitchHeight = Math.max(size.height - bleed, 0) / rows;
+        // F-P4: the threshold reads the real pitch (zero once the overlap is
+        // wider than the page on some axis), and the repair names the fix that
+        // actually enlarges tiles — fewer of them. `use more tiles` was
+        // backwards: it shrinks the strips and deepens the repeat.
+        if (bleed >= Math.min(pitchWidth, pitchHeight)) {
+          const paper = bleed > Math.min(size.width, size.height);
+          notes.add(
+            `A ${bleed} pt overlap is at least as wide as the tiles themselves at ${columns} × ${rows} on this page, so tiles repeat most of each other${
+              paper ? ' and the sheets carry blank paper past the page edge' : ''
+            }. Lower the overlap or use fewer, larger tiles.`,
+          );
+        }
         const sheetWidth = pitchWidth + bleed;
         const sheetHeight = pitchHeight + bleed;
+        let skipped = 0;
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < columns; col++) {
             const newPage = target.addPage([sheetWidth, sheetHeight]);
@@ -2661,7 +2677,12 @@ export const organizeTools: PdfToolDefinition[] = [
               width: Math.min(sheetWidth - (left - windowX), size.width - left),
               height: Math.min(sheetHeight - (top - windowY), size.height - top),
             };
-            if (content.width <= 0 || content.height <= 0) continue;
+            // A sheet added and then skipped is paper whatever the page held,
+            // and the blank count has to say so (F-P5 guard).
+            if (content.width <= 0 || content.height <= 0) {
+              skipped += 1;
+              continue;
+            }
             await stamp(
               target,
               newPage,
@@ -2677,12 +2698,34 @@ export const organizeTools: PdfToolDefinition[] = [
             );
           }
         }
+        if (judged.blank) blankTiles += columns * rows;
+        else blankTiles += skipped;
         context.progress((p + 1) / source.length, `Tiled page ${source[p] + 1}`);
+      }
+      } finally {
+        await session.destroy();
+      }
+      if (blankTiles > 0) {
+        const one = blankTiles === 1;
+        notes.add(
+          `${blankTiles} of the ${target.getPageCount()} ${one ? 'tile is' : 'tiles are'} blank sheet${
+            one ? '' : 's'
+          }: ${one ? 'it comes' : 'they come'} from a page that paints nothing a viewer shows.`,
+        );
       }
       if (target.getPageCount() > 500) {
         notes.add(`${target.getPageCount()} tiles is a lot of sheets — check the grid before printing.`);
       }
-      noteMixedSizes('Posterizing', input.doc, source, notes);
+      // F-P2: posterize scales nothing — the shared mixed-size sentence
+      // promised "each page is scaled to fit its own cell", measured false
+      // against every sheet (scale exactly 1.000000, r4 audit). n-up and
+      // booklet keep the shared sentence because they do fit pages to cells.
+      const variants = distinctSizes(input.doc, source);
+      if (variants > 1) {
+        notes.add(
+          `Posterizing: this selection holds ${variants} different page sizes — every page is cut at its own size and drawn 1:1, nothing is rescaled, so tiles from different pages print at different sizes.`,
+        );
+      }
       noteRebuildLoss('Posterizing', input.doc, source, notes);
       // `/Info` and the XMP packet sit above the page tree and this tool rebuilds
       // the page tree, so the identity left silently: measured on `colour.pdf` the
@@ -2745,7 +2788,16 @@ export const organizeTools: PdfToolDefinition[] = [
       const source = selection(context.values, input.pageCount, { fallback: 'all', verb: 'divide' });
       const target = await newPDF();
       const planned = source.length * columns * rows;
+      // D-2: the named count answers from the display-list judge — the same
+      // one `remove-blank-pages` deletes on and posterize names with — so a
+      // page whose stream runs but paints nothing (white on white, an OCR
+      // layer) counts like the absent stream it looks like on paper. The
+      // refusal stays structural, as ruled: pieces from an all-`absent`
+      // selection refuse, and only those.
+      const { session } = await withRender(input, context);
       let blank = 0;
+      let structural = 0;
+      try {
       for (const index of source) {
         throwIfAborted(context.signal);
         const page = input.doc.getPage(index);
@@ -2758,9 +2810,11 @@ export const organizeTools: PdfToolDefinition[] = [
         // Read once per sheet, before the first copy: `stamp()` gives a sheet
         // with no `/Contents` the empty one the embedder needs, so from the
         // second tile on every page looks like it has content. `stamp()`'s own
-        // `false` only means the region had no area. A page that draws nothing
-        // at all is the blank sheet.
+        // `false` only means the region had no area.
         const empty = pageContentsState(page) === 'absent';
+        const judged = await pageBlankness(session, input.doc, index + 1, { keepAnnotated: false });
+        let okPieces = 0;
+        let deadPieces = 0;
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < columns; col++) {
             const newPage = target.addPage([tileWidth, tileHeight]);
@@ -2768,15 +2822,26 @@ export const organizeTools: PdfToolDefinition[] = [
             const ok = await stamp(target, newPage, page, { x: 0, y: 0, width: tileWidth, height: tileHeight }, { region });
             // The sheet is in the file whether or not it had ink to draw, so the
             // count the message reports is the page count of the bytes (E13).
-            if (!ok || empty) blank += 1;
+            if (ok) okPieces += 1;
+            else deadPieces += 1;
           }
         }
+        blank += judged.blank ? okPieces + deadPieces : deadPieces;
+        structural += empty ? okPieces + deadPieces : deadPieces;
         context.progress((index + 1) / source.length, `Page ${index + 1}`);
       }
-      if (blank > 0) {
-        notes.add(`A page had no drawable content, so ${blank} of the ${planned} pieces ${blank === 1 ? 'is a blank sheet' : 'are blank sheets'} in the output.`);
+      } finally {
+        await session.destroy();
       }
-      if (blank === planned) {
+      if (blank > 0) {
+        const one = blank === 1;
+        notes.add(
+          `${blank} of the ${planned} ${one ? 'piece is' : 'pieces are'} blank sheet${one ? '' : 's'}: ${
+            one ? 'it comes' : 'they come'
+          } from a page that paints nothing a viewer shows.`,
+        );
+      }
+      if (structural === planned) {
         throw new ToolInputError('NO_PAGES', 'Dividing these pages produced nothing but blank sheets.', {
           hint: 'The pages have no visible content; try "Extract Pages" instead.',
         });
@@ -2812,10 +2877,10 @@ export const organizeTools: PdfToolDefinition[] = [
         group: 'Target',
         options: [
           { value: 'most-common', label: 'Most common size in this file' },
-          { value: 'largest', label: 'Largest page in this file' },
+          { value: 'largest', label: 'Largest width × largest height in this file' },
           ...PAGE_SIZE_OPTIONS.slice(1),
         ],
-      help: 'Most common keeps the file as it already is and fixes the odd pages out; largest avoids shrinking anything.',
+      help: 'Most common keeps the file as it already is and fixes the odd pages out; largest builds one sheet as wide and as tall as the widest and tallest selected pages — a shape no page need have — so nothing shrinks.',
     },
       {
         key: 'orientation',
@@ -2865,12 +2930,25 @@ export const organizeTools: PdfToolDefinition[] = [
       if (orientation === 'portrait' && sheetWidth > sheetHeight) [sheetWidth, sheetHeight] = [sheetHeight, sheetWidth];
       if (orientation === 'landscape' && sheetHeight > sheetWidth) [sheetWidth, sheetHeight] = [sheetHeight, sheetWidth];
       const target = await newPDF();
+      // F-PS-2: "did this sheet come out paper" is answered by the one
+      // display-list judge, before `stamp()` fills any content gap. The stamp
+      // draws the page's own content stream only — marks are flattened away
+      // by the rebuild — so the judge runs with `keepAnnotated` off, the
+      // content-stream truth of the sheet.
+      const { session } = await withRender(input, context);
+      const blanked = new Set<number>();
+      // F-PS-3: one named tolerance, used symmetrically — anything further
+      // from 1:1 than this is called out in the result, down or up.
+      const SCALE_TOLERANCE = 0.02;
       let cropped = 0;
       let stretched = 0;
       let shrunk = 0;
+      let enlarged = 0;
       let worstLoss = 0;
       let worstShrink = 1;
+      let worstEnlarge = 1;
       let carried = 0;
+      try {
       for (let index = 0; index < input.pageCount; index++) {
         throwIfAborted(context.signal);
         if (!chosen.has(index)) {
@@ -2884,6 +2962,9 @@ export const organizeTools: PdfToolDefinition[] = [
         }
         const pageBox = boxOf.get(index) ?? boxes[0];
         const page = target.addPage([sheetWidth, sheetHeight]);
+        if ((await pageBlankness(session, input.doc, index + 1, { keepAnnotated: false })).blank) {
+          blanked.add(index);
+        }
         const uniform =
           fit === 'cover'
             ? Math.max(sheetWidth / pageBox.width, sheetHeight / pageBox.height)
@@ -2915,7 +2996,9 @@ export const organizeTools: PdfToolDefinition[] = [
           dest,
           fit === 'stretch' ? { fit: 'stretch' } : {},
         );
-        if (!ok) notes.add('A page had no content to draw, so its new sheet is blank.');
+        // `stamp` reports false only for a zero-area region or destination —
+        // that sheet is paper by construction too, and joins the judge's list.
+        if (!ok) blanked.add(index);
         if (fit === 'cover') {
           // The share of the *page* that falls outside the sheet. Dividing the
           // page's own area by the sheet's ignored the scale and so answered 83%
@@ -2927,17 +3010,26 @@ export const organizeTools: PdfToolDefinition[] = [
             worstLoss = Math.max(worstLoss, loss);
           }
         }
-        if (fit !== 'cover') {
+        if (fit !== 'cover' && !blanked.has(index)) {
           // A page larger than the target paper is scaled down to fit, and no
           // other sentence says so: the type on it prints smaller than it looked.
-          const shrink = Math.min(xScale, yScale);
-          if (shrink < 0.98) {
+          // F-PS-3: magnification is the same story in the other direction —
+          // measured silent at 1.19–1.77 — and now warns under the same named
+          // tolerance. A page prints at its own size only between the two.
+          const change = Math.min(xScale, yScale);
+          if (change < 1 - SCALE_TOLERANCE) {
             shrunk += 1;
-            worstShrink = Math.min(worstShrink, shrink);
+            worstShrink = Math.min(worstShrink, change);
+          } else if (change > 1 + SCALE_TOLERANCE) {
+            enlarged += 1;
+            worstEnlarge = Math.max(worstEnlarge, change);
           }
         }
         if (fit === 'stretch' && Math.abs(xScale - yScale) > 0.01) stretched += 1;
         context.progress((index + 1) / input.pageCount, `Page ${index + 1}`);
+      }
+      } finally {
+        await session.destroy();
       }
       const already = boxes.filter(
         (b) => Math.abs(b.width - sheetWidth) <= 1 && Math.abs(b.height - sheetHeight) <= 1,
@@ -2958,6 +3050,18 @@ export const organizeTools: PdfToolDefinition[] = [
       }
       if (shrunk > 0) {
         notes.add(`Fit inside scaled ${pageCountLabel(shrunk)} down to ${Math.round(worstShrink * 100)}% of its own size, so the type on it prints smaller.`);
+      }
+      if (enlarged > 0) {
+        notes.add(`Fit inside enlarged ${pageCountLabel(enlarged)} to up to ${Math.round(worstEnlarge * 100)}% of its own size, so the type on it prints bigger than it did in the source.`);
+      }
+      if (blanked.size > 0) {
+        const paper = [...blanked].sort((a, b) => a - b);
+        const one = paper.length === 1;
+        notes.add(
+          `${pageCountLabel(paper.length)} (${formatPages(paper)}) ${one ? 'paints' : 'paint'} nothing a viewer shows, so ${
+            one ? 'its new sheet is' : 'their new sheets are'
+          } blank paper.`,
+        );
       }
       noteRebuildLoss('Resizing', input.doc, source, notes);
       // The rebuild replaces the page tree, so the `/Info` fields and the XMP
