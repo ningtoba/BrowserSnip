@@ -33,7 +33,7 @@ import {
 } from '@maxwbh/pdf-lib';
 import { PDFArray, PDFDict, PDFName, PDFNumber, PDFObject, PDFRef, PDFStream } from './doc';
 import type { PDFDocument, PDFPage } from './doc';
-import { inlineFormXObject } from './content';
+import { appearanceTurn, inlineFormXObject } from './content';
 import type { AnnotationKind } from './annotations';
 
 export interface FlattenOptions {
@@ -234,8 +234,8 @@ function shouldFlatten(
 /**
  * Draw one annotation's appearance into the page, in the same space a viewer
  * would use: the appearance's `/BBox` is fitted to the annotation `/Rect`, `/Matrix`
- * is applied between them, and a turn the annotation declares in `/Rotate` is
- * re-applied to the copied content.
+ * is applied between them, and the turn the mark declares (`appearanceTurn`, the
+ * same rule the form bake follows) is re-applied to the copied content.
  *
  * @returns false when there is nothing this can draw — no `/AP`, an appearance
  * that is not a form, a box with no area — so the caller leaves the mark live and
@@ -246,7 +246,7 @@ function drawAppearance(doc: PDFDocument, page: PDFPage, annotation: PDFDict): b
   if (!appearanceRef) return false;
   const rect = readRect(annotation.get(PDFName.of('Rect')));
   if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-  const rotation = quarterTurn(annotation.get(PDFName.of('Rotate')));
+  const rotation = appearanceTurn(annotation);
   // The mark's `/CA` and `/BM` are handed to the drawing call, not pushed around
   // it: `pushOperators` writes into one stream the page holds *before* the
   // appearance's own stream, so a `q … gs` / `Q` pair around it puts the state in
@@ -341,13 +341,6 @@ function paintState(doc: PDFDocument, page: PDFPage, annotation: PDFDict): PDFNa
   }
   if (blended) state.set(PDFName.of('BM'), blend);
   return page.node.newExtGState('Flat', state);
-}
-
-/** `/Rotate` as a quarter turn; anything else is not a turn PDF allows here. */
-function quarterTurn(value: unknown): 0 | 90 | 180 | 270 {
-  const angle = readNumber(value);
-  if (angle === undefined) return 0;
-  return (((Math.round(angle / 90) * 90) % 360 + 360) % 360) as 0 | 90 | 180 | 270;
 }
 
 function readRect(value: unknown): { x: number; y: number; width: number; height: number } | null {

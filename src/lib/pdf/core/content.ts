@@ -3849,6 +3849,31 @@ function rotateInPlaceMatrix(width: number, height: number, rotation: number): M
 }
 
 /**
+ * The turn an annotation's appearance carries into a bake — one rule for both arms
+ * of it, the comment bake (`core/flatten`) and the form bake (`core/forms`).
+ *
+ * An annotation may declare a turn twice over: `/Rot` (PDF 1.3–1.7) and `/Rotate`
+ * (PDF 2.0). Measured with the readers this app is judged against, only the second
+ * one moves anything. MuPDF turns neither: it fits `/BBox` to `/Rect` and stops —
+ * a `/Rot 90` square in a 30×100 box bakes to `0.3 0 0 3.33333 60 700 cm`, the same
+ * words squeezed rather than stood up, and a `/Rot 90` widget on a `/Rotate 90` sheet
+ * bakes to `1 0 0 1 300 600 cm`, unturned; `docs/research/flatten-rot-rule.py` writes
+ * the six marks that say so — both keys, both kinds of sheet, a `Square` and a
+ * `Widget` — and reads the answer off MuPDF's own bake and its own render. pdf.js — the viewer this app paints its pane with — likewise never reads
+ * `/Rot` (`setRotation` asks `mk.get("R") || dict.get("Rotate")`), so the answer
+ * baked here sits the way the field sat on the screen it was flattened from.
+ *
+ * The page's own `/Rotate` comes in nowhere: the copied operators land in the page's
+ * unrotated content, which every viewer turns afterwards, and a turn applied both
+ * here and there is a turn applied twice.
+ */
+export function appearanceTurn(annotation: PDFDict): 0 | 90 | 180 | 270 {
+  const angle = annotation.lookupMaybe(PDFName.of('Rotate'), PDFNumber)?.asNumber();
+  if (angle === undefined || !Number.isFinite(angle)) return 0;
+  return (((Math.round(angle / 90) * 90) % 360 + 360) % 360) as 0 | 90 | 180 | 270;
+}
+
+/**
  * Copy a form XObject's operators into `page`, drawing what the form drew.
  *
  * A form's operators live in the form's own coordinate system: a viewer moves its
@@ -3897,6 +3922,21 @@ export function inlineFormXObject(
     // instead would see it popped before the operators run.
     ...(state ? [makeOp('gs', [operand.name(bare(state.asString()))])] : []),
     makeOp('cm', placed.map((value) => operand.number(Number(value.toFixed(5))))),
+    // A form XObject is clipped to its own `/BBox`, here in form space because the
+    // `cm` above has already put that space in force. Copying the operators without
+    // the clip paints whatever the appearance draws *beyond* its box: measured on
+    // the lane's turn.pdf sheet 1, the bake added 1826 px of ink that neither the
+    // annotated source nor the plain paper paints (1690 px changed, against a MuPDF
+    // bake of 0) — glyph tops from letters the `/BBox` cuts. The fallback arm that
+    // draws the XObject instead gets this clip for free from the viewer; the inline
+    // arm has to write it.
+    ...(box
+      ? [
+        makeOp('re', [x0, y0, x1 - x0, y1 - y0].map((value) => operand.number(Number(value.toFixed(5))))),
+        makeOp('W'),
+        makeOp('n'),
+      ]
+      : []),
     ...renameResourceOperands(ops, renamed),
     makeOp('Q'),
   ]);

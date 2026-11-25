@@ -23,10 +23,10 @@ import {
   PDFDict,
   PDFDropdown,
   PDFName,
-  PDFNumber,
   PDFOptionList,
   PDFRadioGroup,
   PDFRef,
+  PDFStream,
   PDFString,
   PDFHexString,
   PDFTextField,
@@ -40,7 +40,7 @@ import {
 } from '@maxwbh/pdf-lib';
 import type { PDFField, PDFWidgetAnnotation } from '@maxwbh/pdf-lib';
 import { context } from './doc';
-import { inlineFormXObject } from './content';
+import { appearanceTurn, inlineFormXObject } from './content';
 import { isWinAnsiSafe } from './fonts';
 import type { PdfSession } from './render';
 
@@ -393,8 +393,44 @@ export function fillForm(
 // Flattening
 // ---------------------------------------------------------------------------
 
-/** Resolve the appearance stream a widget should show right now. */
+/**
+ * The appearance state this widget should show right now.
+ *
+ * `/AS` is the entry a viewer paints (PDF 32000-1 §12.5.5: it names the key of the
+ * `/AP /N` state table), so it is asked first. `/V` says what the *field* means, and
+ * producers do not agree on its type: MuPDF writes a radio's `/V` as the **string**
+ * `(Yes)` while its state table is keyed by the **name** `/Yes` — matching the raw
+ * value against the table then misses, falls through to `/Off`, and bakes the empty
+ * circle over a ticked field (measured on the lane's mix.pdf sheet 2: 181 px of
+ * vanished tick, 16 pt box, against a MuPDF bake that changes 0 px). A string value
+ * is therefore coerced to a name before the table is asked, and `/Off` is reached
+ * only when neither `/AS` nor the value names a state.
+ */
+function appearanceStates(field: PDFField, widget: PDFWidgetAnnotation): PDFName[] {
+  const name = (value: unknown): PDFName | undefined => {
+    if (value instanceof PDFName) return value;
+    if (value instanceof PDFString || value instanceof PDFHexString) {
+      const text = value.decodeText();
+      return text ? PDFName.of(text) : undefined;
+    }
+    return undefined;
+  };
+  return [
+    name(widget.dict.get(PDFName.of('AS'))),
+    name(field.acroField.dict.get(PDFName.of('V'))),
+  ].filter((entry): entry is PDFName => entry !== undefined);
+}
+
+/**
+ * Resolve the appearance stream a widget should show right now.
+ *
+ * A checkbox or radio keeps one `/AP /N` **table** of states, so the state has to be
+ * picked before the stream can be drawn — see `appearanceStates`. A direct (inline)
+ * stream in that table is registered first: everything downstream asks for the
+ * appearance by reference, which is also how `core/flatten` resolves a mark's table.
+ */
 function appearanceRefFor(
+  doc: PDFDocument,
   field: PDFField,
   widget: PDFWidgetAnnotation,
 ): PDFRef | undefined {
@@ -403,9 +439,15 @@ function appearanceRefFor(
     refOrDict instanceof PDFDict &&
     (field instanceof PDFCheckBox || field instanceof PDFRadioGroup)
   ) {
-    const value = field.acroField.getValue();
-    const candidate = refOrDict.get(value) ?? refOrDict.get(PDFName.of('Off'));
+    const table = refOrDict;
+    const entries = table.entries();
+    const candidate = appearanceStates(field, widget)
+      .map((state) => table.get(state))
+      .find((entry) => entry !== undefined)
+      ?? (entries.length === 1 ? entries[0][1] : undefined)
+      ?? table.get(PDFName.of('Off'));
     if (candidate instanceof PDFRef) refOrDict = candidate;
+    else if (candidate instanceof PDFStream) refOrDict = doc.context.register(candidate);
   } else if (refOrDict instanceof PDFDict) {
     const nested = refOrDict.get(PDFName.of('N'));
     if (nested instanceof PDFRef) refOrDict = nested;
@@ -454,7 +496,7 @@ export async function flattenForm(
       let incomplete = false;
       for (const widget of widgets) {
         const page = widgetPage(doc, widget);
-        const appearance = appearanceRefFor(field, widget);
+        const appearance = appearanceRefFor(doc, field, widget);
         const widgetRef = context(doc).getObjectRef(widget.dict);
         if (!page || !appearance || !widgetRef) {
           incomplete = true;
@@ -465,7 +507,7 @@ export async function flattenForm(
           widgetRef,
           appearance,
           rect: widget.getRectangle(),
-          rotation: widgetRotation(widget),
+          rotation: appearanceTurn(widget.dict),
         });
       }
       if (widgets.length > 0 && incomplete) {
@@ -521,13 +563,6 @@ export async function flattenForm(
   // fields that are now ink — so the dictionary goes with the last field.
   if (form.getFields().length === 0) doc.catalog.delete(PDFName.of('AcroForm'));
   return { flattened, needsRender };
-}
-
-/** The widget's own `/Rot`, snapped to a quarter turn like `rotateInPlace` wants. */function widgetRotation(widget: PDFWidgetAnnotation): 0 | 90 | 180 | 270 {
-  const raw = widget.dict.lookupMaybe(PDFName.of('Rot'), PDFNumber);
-  const angle = raw?.asNumber() ?? 0;
-  const normalised = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
-  return normalised as 0 | 90 | 180 | 270;
 }
 
 /**

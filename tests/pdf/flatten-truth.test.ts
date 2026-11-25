@@ -352,6 +352,17 @@ function alphasAtPaint(content: string, states: Map<string, number>): { op: stri
   return out;
 }
 
+/** The page's `/Annots` array, created when the page has none yet. */
+function annotSlot(page: PDFPage): PDFArray {
+  const context = page.doc.context;
+  let annots = page.node.Annots();
+  if (!(annots instanceof PDFArray)) {
+    annots = PDFArray.withContext(context);
+    page.node.set(PDFName.of('Annots'), annots);
+  }
+  return annots;
+}
+
 // ── the four kinds this app paints ─────────────────────────────────────────
 
 describe('flatten-pdf puts each mark in the page and takes it out of the comment list', () => {
@@ -814,7 +825,7 @@ describe('the bake is judged against the readers that painted the input', () => 
     const mark = context.register(context.obj({
       Type: 'Annot', Subtype: 'Square', Rect: [60, 600, 160, 640], Border: [0, 0, 1], AP: { N: outer },
     } as never));
-    (page.node.Annots() as PDFArray).push(mark);
+    annotSlot(page).push(mark);
 
     const bytes = await bytesOf(await runFlatten(await doc.save({ useObjectStreams: false })));
     const after = await load(bytes);
@@ -842,5 +853,188 @@ describe('the bake is judged against the readers that painted the input', () => 
     expect(adopted.map(drawnBy).join(''), 'the appearance’s own inner form did not travel with it')
       .toContain('INNER-FORM-TEXT');
     expect(drawnBy(ownName), 'the page’s box now draws the appearance’s words').not.toContain('INNER-FORM-TEXT');
+  });
+});
+
+describe('the bake clips, paints the state /AS names, and turns only what readers turn', () => {
+  /**
+   * A mark whose appearance paints past its own box.
+   *
+   * `turn.pdf` sheet 1 (two squares over a 100×30 appearance whose 14 pt ascenders
+   * stand above the box) measured **1690 px changed** and 1826 px of ink that neither
+   * the annotated source nor the plain paper paints, against MuPDF's own bake of the
+   * same file: **0 px**. The inline arm copied the operators with no clip, while the
+   * arm that draws the XObject gets the clip for free from the viewer — the two arms
+   * of one bake disagreed about the same appearance.
+   */
+  async function escapingMark(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    const context = doc.context;
+    // 0–40 is the box; the red band runs 30→60, so 20 pt of it lies outside.
+    const appearance = context.register(context.flateStream(
+      '0 0 1 rg 0 0 100 40 re f\n1 0 0 rg 0 30 100 30 re f\n',
+      { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 40] } as never,
+    ));
+    const mark = context.register(context.obj({
+      Type: 'Annot', Subtype: 'Square', Rect: [60, 600, 160, 640], Border: [0, 0, 1], AP: { N: appearance },
+    } as never));
+    annotSlot(page).push(mark);
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('clips the inlined operators to the appearance’s /BBox', async () => {
+    const bytes = await bytesOf(await runFlatten(await escapingMark()));
+    const content = await pageContent(bytes, 0);
+    // The clip is written in form space — the only space in which `/BBox` means
+    // anything — after the `cm` that fits the box and before the copied operators.
+    expect(content, 'the copied appearance carried no clip to its /BBox')
+      .toMatch(/1 0 0 1 60 600 cm\s+0 0 100 40 re\s+W\s+n/);
+    // Control: the clip cuts the escape, never the mark. The band inside the box is
+    // still painted, and the escaping one is still copied for the viewer to clip.
+    expect(content).toMatch(/0 0 1 rg\s+0 0 100 40 re\s+f/);
+    expect(content).toMatch(/1 0 0 rg\s+0 30 100 30 re\s+f/);
+    expect(await liveKinds(bytes), 'the mark stayed live as well as baked').toEqual([]);
+  });
+
+  /**
+   * A radio the way MuPDF writes one: the field's `/V` is the **string** `(Yes)`
+   * while the widget's state table is keyed by **names**.
+   */
+  async function radioFixture(as: 'Yes' | 'Off'): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    const context = doc.context;
+    const on = context.register(context.flateStream('0 0 1 rg 2 2 12 12 re f\n',
+      { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 16, 16] } as never));
+    const off = context.register(context.flateStream('0 0 1 rg 2 2 12 4 re f\n',
+      { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 16, 16] } as never));
+    const form = doc.getForm();
+    const kids = PDFArray.withContext(context);
+    const field = context.register(context.obj({
+      FT: 'Btn', T: `pick.${as}`, Ff: 32768, V: PDFString.of('Yes'), Kids: kids,
+    } as never));
+    kids.push(context.register(context.obj({
+      Type: 'Annot', Subtype: 'Widget', FT: 'Btn', Parent: field, Ff: 32768,
+      Rect: [60, 600, 76, 616], AS: PDFName.of(as), P: page.ref,
+      AP: context.obj({ N: context.obj({ Yes: on, Off: off }) } as never) as never,
+    } as never)));
+    for (const kid of kids.asArray()) annotSlot(page).push(kid);
+    (context.lookup(form.acroForm.dict.get(PDFName.of('Fields')), PDFArray) as PDFArray).push(field);
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('paints the state /AS names, not the one /V spells', async () => {
+    // Measured on `mix.pdf` sheet 2: the ticked radio came back as an empty circle —
+    // 181 px gone across the whole 16 pt box, against a MuPDF bake that changes 0 px.
+    // The old match ran the raw `/V` (a string) against a table of names, missed, and
+    // fell through to `/Off`.
+    const ticked = await bytesOf(await runFlatten(await radioFixture('Yes')));
+    const content = await pageContent(ticked, 0);
+    expect(content, 'the ticked radio baked its empty circle').toMatch(/0 0 1 rg\s+2 2 12 12 re\s+f/);
+    expect(content, 'both states were painted').not.toMatch(/0 0 1 rg\s+2 2 12 4 re\s+f/);
+    // Control: the same field with `/AS /Off` bakes the off state, so the fix follows
+    // the declared state instead of always taking the entry the value spells.
+    const cleared = await pageContent(await bytesOf(await runFlatten(await radioFixture('Off'))), 0);
+    expect(cleared).toMatch(/0 0 1 rg\s+2 2 12 4 re\s+f/);
+    expect(cleared, 'the off state baked the tick').not.toMatch(/0 0 1 rg\s+2 2 12 12 re\s+f/);
+    expect(await liveKinds(ticked), 'the widget survived its own bake').toEqual([]);
+  });
+
+  /**
+   * A 120×24 widget declaring a quarter turn, on a flat sheet or a `/Rotate 90` one.
+   * `key` picks which of the two spellings declares it — `Rot` (PDF 1.3–1.7) or
+   * `Rotate` (PDF 2.0) — because the two do not mean the same thing to a reader.
+   */
+  function declaringWidget(
+    pageRotation: 0 | 90,
+    key: 'Rot' | 'Rotate',
+  ): Promise<Uint8Array> {
+    return declaringMark(pageRotation, key, {
+      rect: [300, 600, 420, 624], bbox: [0, 0, 120, 24], word: 'WIDGET-ROT-90', widget: true,
+    });
+  }
+
+  /** The same declaration on a `Square`: the mark bake, asked the same question. */
+  async function declaringMark(
+    pageRotation: 0 | 90,
+    key: 'Rot' | 'Rotate',
+    shape: { rect: [number, number, number, number]; bbox: [number, number, number, number]; word: string; widget?: boolean },
+  ): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage(PAGE);
+    if (pageRotation) page.setRotation(degrees(pageRotation));
+    const context = doc.context;
+    const appearance = context.register(context.flateStream(
+      `BT /F1 12 Tf 2 6 Td (${shape.word}) Tj ET\n`,
+      { Type: 'XObject', Subtype: 'Form', BBox: shape.bbox } as never));
+    const mark = context.register(context.obj({
+      Type: 'Annot',
+      ...(shape.widget
+        ? { Subtype: 'Widget', FT: 'Tx', T: `turn.${key}${pageRotation}`, V: shape.word }
+        : { Subtype: 'Square', Border: [0, 0, 1] }),
+      Rect: shape.rect, [key]: 90, F: 4, P: page.ref, AP: { N: appearance },
+    } as never));
+    annotSlot(page).push(mark);
+    if (shape.widget) {
+      const fields = context.lookup(doc.getForm().acroForm.dict.get(PDFName.of('Fields')), PDFArray) as PDFArray;
+      fields.push(mark);
+    }
+    return doc.save({ useObjectStreams: false });
+  }
+
+  it('takes no turn for /Rot, the spelling no reader reads', async () => {
+    // The raw `/Rot` was applied to the bake's own copy, and `turn.pdf` sheet 2
+    // (`/Rotate 90`, widget `/Rot 90`) came out as `0 1 -1 0 420 600 cm` where MuPDF's
+    // bake of the same file writes `1 0 0 1 300 600 cm` — 3045 px of that run's
+    // 3845 px, the answer facing the other way. The fix is not the page's turn: MuPDF
+    // turns an appearance by `/Rot` on a **flat** sheet exactly as little — see
+    // `docs/research/flatten-rot-rule.py`, whose bake of a `/Rot 90` mark in a 30×100
+    // box is `0.3 0 0 3.33333 60 700 cm`, the words squeezed into the box rather than
+    // stood up — and pdf.js never reads the key at all (`setRotation` asks
+    // `mk.get("R") || dict.get("Rotate")`). So `/Rot` carries no turn for this bake on
+    // either sheet.
+    for (const pageRotation of [0, 90] as const) {
+      const content = await pageContent(
+        await bytesOf(await runFlatten(await declaringWidget(pageRotation, 'Rot'))), 0);
+      expect(placements(content), `the /Rot turned the widget on a /Rotate ${pageRotation} sheet`)
+        .toContainEqual([1, 0, 0, 1, 300, 600]);
+      expect(content).toMatch(/1 0 0 1 300 600 cm\s+0 0 120 24 re\s+W\s+n/);
+      expect(content, 'the answer never reached the page').toContain('(WIDGET-ROT-90) Tj');
+      expect(await liveKinds(await bytesOf(await runFlatten(await declaringWidget(pageRotation, 'Rot')))),
+        'the widget survived its own bake').toEqual([]);
+    }
+  });
+
+  it('turns by /Rotate, the spelling the pane turns by', async () => {
+    // Control for the case above: the entry PDF 2.0 and pdf.js do use still turns, and
+    // it turns inside the box — never together with the page's own `/Rotate`, which
+    // every viewer applies to the copied content as well.
+    const content = await pageContent(
+      await bytesOf(await runFlatten(await declaringWidget(0, 'Rotate'))), 0);
+    expect(placements(content), 'the /Rotate turn was dropped with /Rot')
+      .toContainEqual([0, 1, -1, 0, 420, 600]);
+  });
+
+  it('bakes a mark by the same rule it bakes a widget by', async () => {
+    // `turn.pdf` sheet 2 also carries a `Square` declaring `/Rot 90` on the `/Rotate 90`
+    // sheet, and sheet 1 the same declaration on an unturned sheet in a 30×100 box.
+    // MuPDF's bake places both without any turn; the two arms of this bake have to
+    // agree with it, and with each other, because they copy one appearance.
+    const turned = await declaringMark(90, 'Rot', {
+      rect: [60, 700, 160, 730], bbox: [0, 0, 100, 30], word: 'MARK-ROT-90',
+    });
+    const turnedBytes = await bytesOf(await runFlatten(turned));
+    const turnedContent = await pageContent(turnedBytes, 0);
+    expect(placements(turnedContent), 'the turned sheet stood the mark up')
+      .toContainEqual([1, 0, 0, 1, 60, 700]);
+    expect(await liveKinds(turnedBytes), 'the mark stayed live as well as baked').toEqual([]);
+    // A tall box and a wide appearance: the fit alone squeezes the words into it, to
+    // the same numbers MuPDF writes — `/Rot` adds no turn to that either.
+    const flat = await pageContent(await bytesOf(await runFlatten(await declaringMark(0, 'Rot', {
+      rect: [200, 700, 230, 800], bbox: [0, 0, 100, 30], word: 'MARK-ROT-90',
+    }))), 0);
+    expect(placements(flat), 'the mark was turned instead of squeezed')
+      .toContainEqual([0.3, 0, 0, 3.33333, 200, 700]);
   });
 });
