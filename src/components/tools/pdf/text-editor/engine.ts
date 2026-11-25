@@ -134,9 +134,15 @@ export async function repairWithPyMuPDF(
       const page = opened.doc.getPage(page1 - 1);
       if (!page) continue;
       for (const entry of entries) {
+        // The wrapper's default fill is black — `(0, 0, 0)` is baked into it —
+        // so an omitted colour paints a black slab over every repaired block.
+        // Redact in the colour sampled from behind the words, the same answer
+        // the built-in cover patch gives, so the cleared spot reads as paper.
+        const [fr, fg, fb] = hexToRgb(entry.object.paperColor || '#ffffff');
+        const fill = { r: fr / 255, g: fg / 255, b: fb / 255 };
         for (const box of entry.object.deletion) {
           const rect = rectOf(box);
-          page.addRedaction(rect);
+          page.addRedaction(rect, '', fill);
         }
         repaired.push(entry.object.id);
       }
