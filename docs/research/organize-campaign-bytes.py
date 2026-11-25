@@ -5,9 +5,17 @@
 
 Order is compared by each page's first text line — a distinctive string per
 sheet in the fixtures — not by page count, because the failure this campaign
-exists to find is a reorder that keeps the count and loses the order. Rotation
-is compared against *source /Rotate + the plan's turn*, which is what the
-card's preview paints; a blank sheet is asserted to carry no text and no ink.
+exists to find is a reorder that keeps the count and loses the order. Rotation is
+compared against what the plan *token* is defined to mean — see
+`PageOrganizer`'s serialiser and the tool's own note: a bare `4` keeps the
+rotation the source page already carries, and `4r180` is the `/Rotate` the output
+must hold, absolute, because that is how the pane publishes a turn made on a page
+that arrived turned (`r0` straightens it). Reading `r180` as "turn another 180 on
+top of the source" — the model inside the pane, before it is written out — fails
+a correct export: it wanted 270 where the card said 180 and the file held 180. A
+blank sheet is asserted to carry no text and no ink.
+
+  python3 docs/research/organize-campaign-bytes.py <source.pdf> <export.pdf> "1r90, blank, 2, 3"
 """
 import re
 import sys
@@ -21,12 +29,14 @@ def plan_tokens(spec: str):
         if not token:
             continue
         if token.lower() == "blank":
-            out.append(("blank", None, 0))
+            out.append(("blank", None, None))
             continue
         m = re.match(r"^(\d+)(?:r(\d+))?$", token)
         if not m:
             raise SystemExit(f"not a plan token: {token}")
-        out.append(("page", int(m.group(1)), int(m.group(2) or 0)))
+        # `None` is a bare token: keep the source page's own /Rotate. A number is
+        # the absolute /Rotate the output must carry.
+        out.append(("page", int(m.group(1)), None if m.group(2) is None else int(m.group(2))))
     return out
 
 
@@ -56,6 +66,8 @@ def main() -> int:
         bad.append(f"count: expected {len(plan)}, got {len(pages)}")
     for i, (page, item) in enumerate(zip(pages, plan, strict=False), start=1):
         kind, number, turn = item
+        if turn is not None and turn % 90:
+            bad.append(f"page {i}: r{turn} is not a quarter turn")
         if kind == "blank":
             ink = nonwhite(page)
             if first_line(page) or ink:
@@ -65,9 +77,10 @@ def main() -> int:
         got = first_line(page)
         if got != want:
             bad.append(f"page {i}: order — file {got!r}, plan wanted {want!r} (source page {number})")
-        want_rot = (rots[number - 1] + turn) % 360
+        want_rot = rots[number - 1] if turn is None else turn % 360
         if page.rotation != want_rot:
-            bad.append(f"page {i}: rotation — file {page.rotation}, source {rots[number - 1]} + plan {turn} = {want_rot}")
+            why = f"bare token, the source carries {rots[number - 1]}" if turn is None else f"the token says r{turn}"
+            bad.append(f"page {i}: rotation — file {page.rotation}, plan wanted {want_rot} ({why})")
     for line in bad:
         print("FAIL", line)
     print("OK: the exported file is the plan the grid held" if not bad else f"{len(bad)} mismatch(es)")
