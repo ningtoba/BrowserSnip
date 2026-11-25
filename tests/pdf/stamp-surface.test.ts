@@ -43,7 +43,7 @@ async function blankSheet(width = 420, height = 595): Promise<Uint8Array> {
 function railStampField() {
   const tool = editTools.find((candidate) => candidate.id === 'add-stamps');
   expect(tool, 'add-stamps is not in the registry').toBeTruthy();
-  const field = tool!.fields.find((candidate) => candidate.key === 'stamp');
+  const field = (tool?.fields ?? []).find((candidate) => candidate.key === 'stamp');
   expect(field, 'the card offers no Stamp field').toBeTruthy();
   return field!;
 }

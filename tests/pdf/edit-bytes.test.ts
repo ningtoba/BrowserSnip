@@ -904,6 +904,67 @@ describe('table-of-contents inserts a contents page that still points correctly'
     await expect(runPdf('table-of-contents', {})).rejects.toThrow(/no bookmarks/iu);
   });
 
+  it('takes the page numbers out of the bytes when the toggle is off', async () => {
+    // Measured on the shipped build the toggle was wired to `rightAlignPageNumbers`, so
+    // "Show page numbers: off" still printed every folio (a 3,900-byte file whose rows read
+    // `Chapter One 2`) and only moved the alignment and the leader length. The seam added
+    // `showPageNumbers` (9d09566); this is the tool-level half of that fix.
+    const marked = await run('bookmarks', { outline: 'Alpha :: 2\nBeta :: 2', replace: true }, [
+      pdfFile(await pdfFixture([{ text: 'a' }, { text: 'b' }]), 'fixture.pdf'),
+    ]);
+    const bytes = await outBytes(marked);
+    const withNumbers = await run('table-of-contents', { insertAt: 1, title: 'Contents', showPageNumbers: true }, [pdfFile(bytes, 'f.pdf')]);
+    const without = await run('table-of-contents', { insertAt: 1, title: 'Contents', showPageNumbers: false }, [pdfFile(bytes, 'f.pdf')]);
+    const onText = await pageText((await reopen(withNumbers)).getPages()[0]);
+    const offText = await pageText((await reopen(without)).getPages()[0]);
+    // Alpha pointed at page 2 before the insert; with a sheet ahead of it the folio is 3.
+    expect(onText).toMatch(/Alpha[\s\S]*3/u);
+    expect(offText).toContain('Alpha');
+    expect(offText).not.toMatch(/\d/u);
+    // The links are not part of the folio decision: both files still carry two.
+    for (const outcome of [withNumbers, without]) {
+      const doc = await reopen(outcome);
+      const annots = arrayOf(doc, doc.getPages()[0].node.get(PDFName.of('Annots')));
+      expect(annots?.size()).toBe(2);
+    }
+    // The leader dashes go with the folios they were reaching for: the seam draws them
+    // only when a number is printed, so a page that shows none draws no dash pattern.
+    const dashesIn = async (outcome: RunOutcome): Promise<number> => {
+      const page = (await reopen(outcome)).getPages()[0];
+      const stream = pageContentStreams(page).map((entry) => Buffer.from(entry.bytes).toString('latin1')).join('\n');
+      return (stream.match(/\[[\d. ]+\]\s*\d+\s*d/gu) ?? []).length;
+    };
+    expect(await dashesIn(withNumbers)).toBeGreaterThan(0);
+    expect(await dashesIn(without)).toBe(0);
+  });
+
+  it('a sheet too short for a heading and a row promotes every entry, and says so', async () => {
+    // The 336 × 71.4 pt strip the campaign reaches by inserting at page 8 of a mixed-size
+    // file: with a 48 pt band it cannot hold heading + row at all, and the unclamped layout
+    // drew each entry at y = −36.55 — off the paper — while the card counted them. The seam
+    // clamps the band and promotes the rows (9d09566); the card names the shape it produced.
+    const { writeOutline } = await import('@/lib/pdf/core/bookmarks');
+    const src = await PDFDocument.create();
+    src.addPage([336, 71.4]);
+    writeOutline(src, [{ title: 'One', page: 0 }, { title: 'Two', page: 0 }]);
+    // 11 pt is the size the band clamp rescues (heading 50.23 → row 10.63, on the paper);
+    // 13 pt is where a row no longer fits under the heading, which is the promoted shape.
+    const outcome = await run('table-of-contents', { insertAt: 1, title: 'Contents', fontSize: 13 }, [
+      pdfFile(await src.save({ useObjectStreams: false }), 'strip.pdf'),
+    ]);
+    expect(outcome.warnings.join(' ')).toMatch(/holds a heading and no entry at 13 pt/u);
+    expect(outcome.warnings.join(' ')).toMatch(/each of the 2 entries is drawn on the sheet after it/u);
+    const doc = await reopen(outcome);
+    // Heading sheet + one sheet per promoted entry + the original page.
+    expect(doc.getPageCount()).toBe(4);
+    const words = [];
+    for (const page of doc.getPages().slice(0, 3)) words.push(await pageText(page));
+    expect(words[0]).toContain('Contents');
+    expect(words[0]).not.toMatch(/\bOne\b/u);
+    expect(words[1]).toContain('One');
+    expect(words[2]).toContain('Two');
+  });
+
   it('lays the contents inside the visible box of the sheet it copies', async () => {
     // A page whose visible box is inset — the shape a scan with a black margin
     // has. The sheet written for a contents page carries no `/CropBox` of its
@@ -1268,9 +1329,10 @@ describe('the colour cards say what the bytes do', () => {
   });
 
   it('promises the square for the picture and the measured growth for the file', () => {
-    const field = getPdfTool('invert-colors')!.fields.find((entry) => entry.key === 'dpi')!;
-    expect(field.help).toMatch(/picture grows with the square/u);
-    expect(field.help).not.toMatch(/file grows with the square/u);
+    const field = (getPdfTool('invert-colors')?.fields ?? []).find((entry) => entry.key === 'dpi');
+    expect(field, 'the card offers no Resolution field').toBeTruthy();
+    expect(field?.help).toMatch(/picture grows with the square/u);
+    expect(field?.help).not.toMatch(/file grows with the square/u);
   });
 
   it('does not claim a text loss for a page that has none to lose', async () => {

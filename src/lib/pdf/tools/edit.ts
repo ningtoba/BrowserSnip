@@ -1416,13 +1416,30 @@ export const editTools: PdfToolDefinition[] = [
       }
       const insertAt = bounded(notes, 'Insert at page', numberValue(context.values, 'insertAt', 1), { min: 1, max: input.pageCount, integer: true });
       const fontSize = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 7, max: 24, unit: 'pt' });
-      const { generateTocPage } = await import('../core/bookmarks');
+      const { generateTocPage, tocRowsPerSheet } = await import('../core/bookmarks');
+      const title = stringValue(context.values, 'title', 'Contents');
+      // The seam lays the sheet out on the *template* page's own crop box, and a sheet
+      // too short to hold a heading and one row even under the proportional band clamp
+      // (measured: the 336 × 71.4 pt strip reached by inserting at page 8 of a mixed-size
+      // file) used to draw every entry below the paper — 4 sheets, 0 rows on paper, ink
+      // 190 px each — while the card counted them. The seam now keeps the heading on a
+      // sheet of its own and draws each entry on a following sheet, never dropping one;
+      // the card says which shape it produced, naming the dimensions and the remedy.
+      const sheet = cropBox(input.doc.getPage(Math.min(insertAt - 1, Math.max(0, input.pageCount - 1))));
+      const rowsPerSheet = tocRowsPerSheet(sheet.width, sheet.height, fontSize, title !== '');
+      if (rowsPerSheet < 1) {
+        note(notes, `The contents sheet comes out ${Math.round(sheet.width)} × ${Math.round(sheet.height)} pt from the page you insert at, which holds a heading and no entry at ${fontSize} pt, so the heading keeps a sheet to itself and each of the ${countLabel(size.total, 'entry', 'entries')} is drawn on the sheet after it. Insert at a taller page, or lower Font size, to get rows back onto one sheet.`);
+      }
       const pages = await generateTocPage(input.doc, {
         nodes: outline,
-        title: stringValue(context.values, 'title', 'Contents'),
+        title,
         fontSize,
         leader: stringValue(context.values, 'leader', 'dots') === 'dots' ? 'dots' : 'none',
-        rightAlignPageNumbers: booleanValue(context.values, 'showPageNumbers', true),
+        // The toggle was wired to `rightAlignPageNumbers`, so switching page numbers
+        // *off* still printed every folio and only moved the alignment (seam 9d09566
+        // added the real `showPageNumbers`, which suppresses the folio and its leader
+        // dots while leaving the /Link). Alignment stays the seam's own default.
+        showPageNumbers: booleanValue(context.values, 'showPageNumbers', true),
         startPage: insertAt - 1,
       });
       return pdfOutput(
@@ -1455,7 +1472,7 @@ export const editTools: PdfToolDefinition[] = [
         // Accepted, not chosen: a value saved before the lists were joined must still run.
         ...LEGACY_STAMP_SPELLINGS,
         { value: 'custom', label: 'Custom image…' },
-      ], help: 'The standard names are PDF\u2019s own stamp table, so other readers can show their own picture of the mark and let people move or delete it. The two marked \u201cno standard name\u201d are not in that table: they travel as the words this app draws, and another reader shows exactly that. Custom image stamps your own picture.' },
+      ], help: 'The standard names come from PDF\u2019s own stamp table, so other readers can draw their own picture of the mark. Rows marked \u201cno standard name\u201d are not in that table: they travel as the words drawn here.' },
       { key: 'image', label: 'Stamp image', type: 'file', accept: 'image/*', when: (v) => v.stamp === 'custom', group: 'Stamp', help: 'Used when the stamp above is set to Custom image. Kept as an annotation, so it can still be moved later.' },
       { key: 'position', label: 'Position', type: 'select', default: 'top-right', options: ANCHOR_OPTIONS, group: 'Mark', help: 'The corner of each page as it is displayed, so a rotated page stamps where you can see it.' },
       { key: 'width', label: 'Width', type: 'number', default: 140, min: 20, max: 600, step: 1, unit: 'pt', half: true, group: 'Mark', help: 'The stamp is scaled to this width and keeps its own proportion. On a rotated page it is measured against the page as displayed.' },
