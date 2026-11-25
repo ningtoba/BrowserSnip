@@ -1185,6 +1185,51 @@ describe('a second background run wins over the first', () => {
   });
 });
 
+describe('the colour cards say what the bytes do', () => {
+  // Measured on the shipped build: an invisible OCR run was counted as a recoloured run
+  // with nothing on the page changing (`blanks.pdf` sheet 4 read "Recoloured 1 text run
+  // to #aa00aa." with ink empty before and after); a bad typed colour answered only after
+  // the click, in a thrown sentence naming the field key (`… for to.`); the growth help
+  // promised a square for the file that the JPEG does not pay; and the raster summary
+  // claimed a text loss for sheets that carry none.
+  it('admits the runs that paint nothing, beside the total', async () => {
+    const source = await PDFDocument.create();
+    const page = source.addPage([420, 595]);
+    // A producer's OCR layer shape, written as the bytes it ships: `3 Tr` shows the
+    // words with neither fill nor stroke, and the second run paints normally.
+    page.node.set(PDFName.of('Contents'), source.context.register(source.context.stream(
+      'BT /Helvetica 11 Tf 3 Tr 40 400 Td (invisible OCR layer) Tj ET '
+      + 'BT 0 0 0 rg 0 Tr 40 300 Td (visible words) Tj ET',
+    )));
+    const outcome = await run('text-color', { to: '#ff0000', from: 'any', pages: 'all' }, [
+      pdfFile(await source.save({ useObjectStreams: false }), 'ocr-layer.pdf'),
+    ]);
+    expect(outcome.message).toMatch(/Recoloured 2 text runs to #ff0000/u);
+    expect(outcome.message).toMatch(/1 of them in an invisible render mode/u);
+    expect(outcome.message).toMatch(/looks unchanged where only those ran/u);
+  });
+
+  it('refuses a colour the box cannot parse before the run, in the printed label', async () => {
+    await expect(runPdf('text-color', { to: 'notacolor', pages: '1' })).rejects.toThrow(/New colour/u);
+    await expect(runPdf('text-color', { to: 'notacolor', pages: '1' })).rejects.not.toThrow(/ for to\./u);
+    await expect(runPdf('background-color', { color: 'red', pages: '1' })).rejects.toThrow(/Colour/u);
+    // Three digits are a colour, not an error: that path must still run.
+    await expect(runPdf('background-color', { color: '#f80', pages: '1' })).resolves.toBeTruthy();
+  });
+
+  it('promises the square for the picture and the measured growth for the file', () => {
+    const field = getPdfTool('invert-colors')!.fields.find((entry) => entry.key === 'dpi')!;
+    expect(field.help).toMatch(/picture grows with the square/u);
+    expect(field.help).not.toMatch(/file grows with the square/u);
+  });
+
+  it('does not claim a text loss for a page that has none to lose', async () => {
+    const outcome = await runPdf('invert-colors', { pages: '1' });
+    expect(outcome.message).toMatch(/Any text is now part of the image/u);
+    expect(outcome.message).not.toMatch(/\. Text is now part of the image/u);
+  });
+});
+
 describe('background-color paints an artifact under the page', () => {
   it('prepends a tagged background without rewriting the page text', async () => {
     const outcome = await runPdf('background-color', { color: '#f7f7f4', pages: '1' });

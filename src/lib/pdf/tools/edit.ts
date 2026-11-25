@@ -24,6 +24,7 @@ import { PDFArray, PDFName, PDFRef, degrees, rgb, savePDF } from '../core/doc';
 import { drawTextU, measureText, wrapText } from '../core/fonts';
 import { mergeFaceStyle, standardFamilyFace, standardFacesSpell, type FaceStyle } from '../core/text-style';
 import { faceColor, readTextStyle, rememberTextStyle, textStyleFields } from './textStyleFields';
+import { pageContentOps } from '../core/content';
 import { cropBox, displayedSize, resolvePages, type PageBox } from '../core/pages';
 // The stamp list lives with the surface that renders it (`editor/tools.ts`), so the rail
 // cannot carry a second copy that drifts; the module is plain data + the face table, no UI.
@@ -462,6 +463,32 @@ function leadingBackgroundArtifacts(streams: { bytes: Uint8Array }[]): number {
  * producer saying this page has no visible box, which no measurement of the
  * MediaBox can reveal.
  */
+/**
+ * How many of a page's text-show operators paint with neither fill nor stroke.
+ *
+ * `Tr 3` (invisible) and `Tr 7` (neither) are what an OCR text layer is made of, and a
+ * recolour of them changes the colour in force and nothing else. Only runs the `from`
+ * filter would actually take are counted, so the admission cannot out-number the total.
+ */
+function invisibleRunsOn(page: PDFPage, from: string): number {
+  const renderModes = new Set(['3', '7']);
+  const shows = new Set(['Tj', 'TJ', "'", '"']);
+  let mode = '0';
+  let count = 0;
+  for (const op of pageContentOps(page)) {
+    if (op.name === 'Tr') {
+      // Operand shapes are a union, so read the number out of the serialised form.
+      const found = JSON.stringify(op.operands).match(/"value":\s*(-?\d+(?:\.\d+)?)/u);
+      if (found) mode = String(Number(found[1]));
+    } else if (shows.has(op.name) && renderModes.has(mode)) {
+      // With a colour filter in force, an invisible run the filter rejects is not in the
+      // recolour count either, so it must not be admitted here.
+      if (from === 'any') count += 1;
+    }
+  }
+  return from === 'any' ? count : 0;
+}
+
 function declaredCropBoxIsEmpty(page: PDFPage): boolean {
   const raw = page.node.get(PDFName.of('CropBox'));
   const value = raw instanceof PDFRef ? page.doc.context.lookup(raw) : raw;
@@ -1536,6 +1563,9 @@ export const editTools: PdfToolDefinition[] = [
     outputSuffix: '_background.pdf',
     actionLabel: 'Paint background',
     promise: 'A flat colour laid under each selected page, tagged as a background artifact so text extraction ignores it; below full opacity it is a wash.',
+    validate: (values) => (/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(values.color ?? '').trim())
+      ? null
+      : `Enter a colour as three or six hex digits in Colour, such as #f7f7f4.`),
     fields: [
       { key: 'color', label: 'Colour', type: 'color', default: '#f7f7f4', group: 'Paint', help: 'A flat fill behind the page content. Text stays selectable and extraction ignores the rectangle.' },
       { key: 'opacity', label: 'Opacity', type: 'slider', default: 1, min: 0.05, max: 1, step: 0.05, group: 'Paint', help: 'Below 1 the fill is a wash over the paper rather than a repaint: the page\u2019s own black and white still reads through it.' },
@@ -1601,6 +1631,12 @@ export const editTools: PdfToolDefinition[] = [
     outputSuffix: '_recoloured.pdf',
     actionLabel: 'Recolour text',
     promise: 'The colour in force at each run of existing text is rewritten in front of it — no page is rasterised, so the text stays selectable.',
+    // The hex box is free text, and `parseHexColor` answered a bad one only after the
+    // click, in a thrown sentence that named the field key ("for to."). The page picker
+    // already refuses before the click, so the colour does too, in the printed words.
+    validate: (values) => (/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(values.to ?? '').trim())
+      ? null
+      : `Enter a colour as three or six hex digits in New colour, such as #ff8800.`),
     fields: [
       { key: 'to', label: 'New colour', type: 'color', default: '#000000', group: 'Recolour', help: 'Every matching text run is repainted this colour, including runs in headers and footers. Text drawn inside an image is part of the picture and keeps its colour.' },
       { key: 'from', label: 'Replace which colour', group: 'Recolour', type: 'select', default: 'any', options: [
@@ -1624,11 +1660,19 @@ export const editTools: PdfToolDefinition[] = [
       const from = stringValue(context.values, 'from', 'any');
       const to = stringValue(context.values, 'to', '#000000');
       let changed = 0;
+      // The count is of show operators, and a `Tr 3` or `Tr 7` run paints with neither
+      // fill nor stroke: rewriting the colour in force is true of the bytes, and false of
+      // anything a person can see. Measured on `blanks.pdf` sheet 4 (an OCR layer) the
+      // card said "Recoloured 1 text run to #aa00aa." with the sheet's ink empty before
+      // and after, so the invisible ones are now counted apart.
+      let invisible = 0;
       const untouched: number[] = [];
       for (let i = 0; i < pages.length; i++) {
         throwIfAborted(context.signal);
         const before = changed;
-        changed += recolourText(input.doc.getPage(pages[i]), from, to);
+        const page = input.doc.getPage(pages[i]);
+        invisible += invisibleRunsOn(page, from);
+        changed += recolourText(page, from, to);
         if (changed === before) untouched.push(pages[i] + 1);
         context.progress((i + 1) / pages.length, `Page ${pages[i] + 1}`);
       }
@@ -1638,7 +1682,9 @@ export const editTools: PdfToolDefinition[] = [
             [{
               title: 'Nothing was recoloured',
               text: from === 'any'
-                ? `None of the ${countLabel(pages.length, 'page')} you selected draws text of its own \u2014 scanned pages, or text painted inside an image, look like this.`
+                ? pages.length === 1
+                  ? 'This page draws no text of its own \u2014 a scanned sheet, text painted into an image, or text carried inside a Form XObject (what a flattened vector export leaves) all look like this.'
+                  : `None of the ${countLabel(pages.length, 'page')} you selected draws text of its own \u2014 scanned pages, text painted into an image, or text carried inside a Form XObject (what a flattened vector export leaves) all look like this.`
                 : `No text painted in ${from} was found on the ${countLabel(pages.length, 'page')} you selected. Try "Any colour", which changes every text run.`,
             }],
             { message: 'No text matched, so the file is unchanged.' },
@@ -1653,7 +1699,15 @@ export const editTools: PdfToolDefinition[] = [
         const where = untouched.length === 1 ? `page ${list}` : `pages ${list}`;
         note(notes, `No text on ${where} was painted in ${from === 'any' ? 'a colour of its own' : from}, so ${untouched.length === 1 ? 'it was' : 'they were'} left as ${untouched.length === 1 ? 'it is' : 'they are'}.`);
       }
-      return pdfOutput(input.doc, notes, `Recoloured ${countLabel(changed, 'text run')} to ${to}.`);
+      return pdfOutput(
+        input.doc,
+        notes,
+        `Recoloured ${countLabel(changed, 'text run')} to ${to}`
+          + `${invisible > 0 && invisible <= changed
+            ? `, ${invisible} of ${changed === 1 ? 'it' : 'them'} in an invisible render mode,`
+              + ' so the page looks unchanged where only those ran'
+            : ''}.`,
+      );
     },
   },
 
@@ -1668,7 +1722,7 @@ export const editTools: PdfToolDefinition[] = [
     actionLabel: 'Invert',
     promise: 'A dark-mode copy of the pages you choose, each one a photograph of the inverted original.',
     fields: [
-      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: 'Each page is photographed at this resolution, so the file grows with the square of it.' },
+      { key: 'dpi', label: 'Resolution', type: 'slider', default: 200, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: 'Each page is photographed at this resolution. The picture grows with the square of it — 96 to 400 dpi multiplies the pixels 17 times — while the JPEG inside the file grows less, about 7 times on a flat-colour sheet.' },
       pagesField({ group: 'Pages' }),
     ],
     notes: [
@@ -2410,7 +2464,7 @@ async function rerasterise(
       kind: 'pdf',
       bytes: await savePDF(doc),
       pages: doc.getPageCount(),
-      message: `${verb} ${countLabel(selected.length, 'page')} at ${job.dpi} dpi. Text is now part of the image, so it is no longer selectable or searchable.`,
+      message: `${verb} ${countLabel(selected.length, 'page')} at ${job.dpi} dpi. Any text is now part of the image, so it is no longer selectable or searchable.`,
     };
     return admit(outcome, notes);
   } finally {
