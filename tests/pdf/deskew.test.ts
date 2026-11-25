@@ -396,3 +396,45 @@ describe('a page the estimator cannot judge', () => {
     expect(result.warnings?.join(' ') ?? '').toMatch(/page 1 could not be judged/);
   });
 });
+
+/* ── a limit shorter than the tilt (Q3, live :5296) ──────────────────────────
+ *
+ * The estimator's window is ±`maxAngle`, so with the slider at 1° every ±3/±6°
+ * page of the angle battery answered `0.00° at 0.002–0.008 confidence` and was
+ * named "could not be judged", while the headline claimed "no page was tilted
+ * past 1°" — false on its face. The field's own help promises a page tilted
+ * further is "left alone rather than turned by the wrong amount", and the
+ * "past the … limit" branch that says exactly that was unreachable: an estimate
+ * cannot exceed the window it was measured in. The tool now re-measures a page
+ * the short ruler could not judge with the widest one the control offers before
+ * blaming the page.
+ */
+
+describe('deskew-pdf with a maxAngle shorter than the tilt', () => {
+  it('names the limit and the measured angle instead of blaming the page', async () => {
+    fake.tilts = [-6]; // a +6° user-space page paints -6° of bitmap tilt
+    const { result, doc } = await runDeskew(await tiltedPdf(6), {
+      maxAngle: 1,
+      threshold: 0.35,
+      pages: 'all',
+    });
+    const said = `${result.message} ${result.warnings?.join(' ') ?? ''}`;
+    expect(said).toMatch(/page 1 \(-?6\.0{2}° is past the 1° limit\)/);
+    expect(said).not.toMatch(/could not be judged/);
+    expect(result.message).toMatch(/Nothing straightened/);
+    // Left alone is the promise: the tilt is still in the bytes, whole.
+    expect(contentRotation(doc.getPage(0))).toBeGreaterThan(5);
+  });
+
+  it('calls a straight page quiet, even under a 1° ruler', async () => {
+    fake.tilts = [0];
+    const { result, doc } = await runDeskew(await tiltedPdf(0), {
+      maxAngle: 1,
+      threshold: 0.35,
+      pages: 'all',
+    });
+    expect(result.message).toMatch(/Nothing to do/);
+    expect(result.warnings?.join(' ') ?? '').not.toMatch(/could not be judged/);
+    expect(contentRotation(doc.getPage(0))).toBeCloseTo(0, 6);
+  });
+});

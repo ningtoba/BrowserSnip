@@ -2461,6 +2461,12 @@ export const optimizeTools: PdfToolDefinition[] = [
       const { deskewAngleFor, detectSkew } = await import('../core/measure');
       const maxAngle = readBound(values, { key: 'maxAngle', label: 'Largest angle to correct', min: 1, max: 30, integer: true, unit: '°', fallback: 10 }, warnings);
       const confidence = readBound(values, { key: 'threshold', label: 'Confidence needed before turning a page', min: 0.05, max: 0.9, fallback: 0.35 }, warnings);
+      // The widest ruler the `maxAngle` slider offers. A page measured with it is
+      // still only *corrected* within the user's limit — this is the reach of the
+      // measuring pass, not of the turning pass.
+      const MEASURE_CEILING = 30;
+      let pastLimit = 0;
+      let unjudged = 0;
       const declared = stringValue(values, 'pages', 'all');
       // E6/E15: a page number outside the document is refused with the reason,
       // not quietly dropped, and a repeat is straightened once and said aloud.
@@ -2491,6 +2497,23 @@ export const optimizeTools: PdfToolDefinition[] = [
             // The quarter turn is taken back out of the answer, so what the rest
             // of this loop sees is still the tilt against the page's own axes.
             estimate = await detectSkew(session, pageNumber, { maxAngle, searchQuarterTurns: true });
+            // The estimator's window is ±`maxAngle`, so a page tilted further than
+            // the user's limit cannot be *measured* by this pass either: live with
+            // `maxAngle=1`, every ±3/±6° page answered `0.00° at 0.002–0.008
+            // confidence` and the report called them "could not be judged" — the
+            // field's help promises "left alone rather than turned", and the
+            // "past the … limit" sentence this loop writes for exactly that page
+            // was unreachable, because an estimate cannot exceed its own window.
+            // Before blaming the page, measure once more with the widest ruler the
+            // control offers and keep that answer when it is confident; a page
+            // still unreadable under a 30° sweep really could not be judged.
+            if (estimate.confidence < confidence && maxAngle < MEASURE_CEILING) {
+              const wide = await detectSkew(session, pageNumber, {
+                maxAngle: MEASURE_CEILING,
+                searchQuarterTurns: true,
+              });
+              if (wide.confidence >= confidence) estimate = wide;
+            }
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             skipped.push(`page ${pageNumber} could not be measured (${reason})`);
@@ -2498,6 +2521,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           }
           const angle = estimate.angle;
           if (estimate.confidence < confidence) {
+            unjudged += 1;
             // Not "nothing to do" — nothing could be *judged*. The old test was
             // `|angle| <= 0.15 || confidence < threshold` and only spoke when the
             // angle was over 0.15, so a page the estimator had zeroed came back as
@@ -2507,6 +2531,7 @@ export const optimizeTools: PdfToolDefinition[] = [
           } else if (Math.abs(angle) <= 0.15) {
             // Measured straight. Quiet, and no correction is invented.
           } else if (Math.abs(angle) > maxAngle) {
+            pastLimit += 1;
             skipped.push(`page ${pageNumber} (${angle.toFixed(2)}° is past the ${maxAngle}° limit)`);
           } else {
             // The estimate is a **bitmap** angle (y runs down, so positive text
@@ -2571,7 +2596,11 @@ export const optimizeTools: PdfToolDefinition[] = [
                 + `${Math.round(c.box.after[0])}×${Math.round(c.box.after[1])} pt)`,
               )
               .join(', ')}. ${sizeSentence(change)}.`
-          : `Nothing to do: no page was tilted past ${maxAngle}° at a confidence of ${confidence}. ${sizeSentence(change)}.`,
+          : pastLimit > 0
+            // "No page was tilted past N°" is false here: every named page was, and
+            // the short ruler is what hid it. Say the limit is why nothing turned.
+            ? `Nothing straightened: ${pastLimit} page(s) tilt past the ${maxAngle}° limit you set${unjudged > 0 ? ` and ${unjudged} could not be judged` : ''} — each is named below with the angle measured on the widest ruler. ${sizeSentence(change)}.`
+            : `Nothing to do: no page was tilted past ${maxAngle}° at a confidence of ${confidence}. ${sizeSentence(change)}.`,
         warnings,
       };
     },
