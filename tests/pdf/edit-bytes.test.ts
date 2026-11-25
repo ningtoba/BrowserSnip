@@ -2377,7 +2377,11 @@ describe('office converters put the source text into selectable PDF text', () =>
     ).rejects.toThrow(/no text runs this reader can recover/iu);
   });
 
-  it('odp-to-pdf refuses a deck whose frames it cannot see', async () => {
+  it('odp-to-pdf reads a deck whose text sits in frames, as Impress writes it', async () => {
+    // This used to pin the refusal — the reader only walked `draw:shape`, so a
+    // real deck came back empty and was refused. The frame walk is the fix;
+    // a deck that truly has no text (pictures only) keeps the refusal
+    // (`edge-convert-to.test.ts`).
     const impress = await zipBytes([
       { name: 'mimetype', data: 'application/vnd.oasis.opendocument.presentation' },
       {
@@ -2385,13 +2389,15 @@ describe('office converters put the source text into selectable PDF text', () =>
         data: `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
- xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-<office:body><office:presentation><draw:page><draw:frame><draw:text-box><text:p>Impress title</text:p></draw:text-box></draw:frame></draw:page></office:presentation></office:body></office:document-content>`,
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+ xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0">
+<office:body><office:presentation><draw:page><draw:frame presentation:class="title"><draw:text-box><text:p>Impress title</text:p></draw:text-box></draw:frame></draw:page></office:presentation></office:body></office:document-content>`,
       },
     ]);
-    await expect(
-      run('odp-to-pdf', {}, [anyFile(impress, 'impress.odp', 'application/vnd.oasis.opendocument.presentation')]),
-    ).rejects.toThrow(/no text frames this reader can see/iu);
+    const outcome = await run('odp-to-pdf', {}, [anyFile(impress, 'impress.odp', 'application/vnd.oasis.opendocument.presentation')]);
+    const doc = await reopen(outcome);
+    const text = (await Promise.all(doc.getPages().map(pageText))).join('\n');
+    expect(text).toContain('Impress title');
   });
 
   it('fb2-to-pdf re-typesets the book title, sections and paragraphs', async () => {

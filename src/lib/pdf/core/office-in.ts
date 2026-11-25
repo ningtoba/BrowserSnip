@@ -205,18 +205,46 @@ export async function odsToBlocks(bytes: Uint8Array): Promise<{ blocks: Block[];
   return { blocks, emptySheets };
 }
 
-/** OpenDocument Presentation — one page per draw page. */
-export async function odpToBlocks(bytes: Uint8Array): Promise<Block[]> {
+/**
+ * OpenDocument Presentation — one page per draw page, blanks included.
+ *
+ * LibreOffice writes slide text inside `draw:frame > draw:text-box`, marking
+ * the title frame with `presentation:class`; the reader used to walk only
+ * `draw:shape`, an element real suites put inside frames or not at all, so a
+ * deck saved by Impress converted to zero text and was refused — the harness
+ * fixture with its `draw:shape` nesting was the only deck that ever worked.
+ * Both spellings are read now. Frames under `presentation:notes` are the
+ * speaker's notes, not slide content: never printed unless asked, exactly like
+ * the PPTX route's notes.
+ *
+ * A slide with no text still owns a page: "one page per slide" counts blank
+ * cards too. An empty slide therefore places an invisible paragraph, which
+ * survives the callers' stray-break trim; a deck with no text anywhere returns
+ * no blocks at all, so the calling tools keep their refusal naming the format
+ * and the alternative.
+ */
+export async function odpToBlocks(bytes: Uint8Array, options: OfficeReadOptions = {}): Promise<Block[]> {
   const document = await openDocumentXml(bytes, 'content.xml');
-  const blocks: Block[] = [];
+  const slides: Block[][] = [];
   for (const page of byLocalName(document, 'page')) {
-    // A break before the FIRST draw page would buy a blank leader: `renderBlocks`
-    // already opens on a fresh page. Tools that trim it themselves are fine, the
-    // ones that do not shipped an empty sheet in front of every deck.
-    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
-    for (const shape of byLocalName(page, 'shape')) {
-      const isTitle = (shape.getAttribute('draw:presentationclass') ?? '') === 'title';
-      for (const text of textsIn(shape)) {
+    const blocks: Block[] = [];
+    const carriers = [...byLocalName(page, 'frame'), ...byLocalName(page, 'shape')];
+    for (const carrier of carriers) {
+      // A frame that wraps a shape carrier is the old fixture's container — the
+      // shape pass reads it; reading both would print the words twice.
+      if (localName(carrier) === 'frame' && carriers.some((other) => other !== carrier && carrier.contains(other))) continue;
+      const inNotes = byLocalName(page, 'notes').some((note) => note.contains(carrier));
+      const isTitle = ['presentation:class', 'presentation:presentationclass', 'draw:presentationclass']
+        .some((attribute) => carrier.getAttribute(attribute) === 'title');
+      const texts = textsIn(carrier);
+      if (texts.length === 0) continue;
+      if (inNotes) {
+        // One quote for the note frame, as the PPTX route shapes its notes —
+        // and only when the reader was asked for notes at all.
+        if (options.notes) blocks.push({ kind: 'quote', inlines: [{ text: `Notes: ${texts.join(' ')}`, italic: true }] });
+        continue;
+      }
+      for (const text of texts) {
         blocks.push(
           isTitle
             ? { kind: 'heading', level: 2, inlines: [{ text }] }
@@ -224,12 +252,16 @@ export async function odpToBlocks(bytes: Uint8Array): Promise<Block[]> {
         );
       }
     }
+    slides.push(blocks);
+  }
+  if (!slides.some((blocks) => blocks.length > 0)) return [];
+  const blocks: Block[] = [];
+  const blankSlide: Block = { kind: 'paragraph', inlines: [{ text: '' }] };
+  for (const slide of slides) {
+    if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+    blocks.push(...(slide.length > 0 ? slide : [blankSlide]));
     if (blocks.length > BLOCK_LIMIT) break;
   }
-  // A deck whose draw pages hold no text the reader can see comes back empty
-  // rather than throwing: the calling tool owns that refusal, because it can
-  // name the format and the alternative (“export it to PDF from PowerPoint”)
-  // where a reader-only message can only say the file had nothing.
   return blocks;
 }
 

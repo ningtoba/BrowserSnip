@@ -42,6 +42,7 @@ import {
   jpegBytes,
   numberedDocxBytes,
   odpBytes,
+  odpFramesBytes,
   odtBytes,
   pageSizes,
   pdfBytes,
@@ -2661,6 +2662,18 @@ describe('powerpoint-to-pdf gives each slide its own page', () => {
     expect(runsOn(runs, 0).some((run) => run.text === 'Alpha slide')).toBe(true);
     expect(runsOn(runs, 0).some((run) => run.text === 'Beta slide')).toBe(false);
     expect(runsOn(runs, 1).some((run) => run.text === 'Beta body')).toBe(true);
+  });
+
+  it('carries ODP speaker notes when the deck is asked for them', async () => {
+    // The toggle's words — “a page of speaker notes under each slide that has
+    // them” — used to be PPTX-only: the ODP branch dropped the option and the
+    // reader never looked at `presentation:notes`, so an ODP silently ignored
+    // the switch.
+    const deck = await odpFramesBytes([{ title: 'One', body: 'Body one', notes: 'Mention the roadmap' }]);
+    const withNotes = await run('powerpoint-to-pdf', { notes: true }, [fileFrom(deck, 'talk.odp')]);
+    const without = await run('powerpoint-to-pdf', { notes: false }, [fileFrom(deck, 'talk.odp')]);
+    expect(squash(await extractText(await firstPdf(withNotes)))).toContain('Notes: Mention the roadmap');
+    expect(squash(await extractText(await firstPdf(without)))).not.toContain('Mention the roadmap');
   });
 
   it('does not offer a file it cannot read', async () => {

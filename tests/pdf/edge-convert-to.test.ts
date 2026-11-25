@@ -45,6 +45,7 @@ import {
   installConvertToEnv,
   makeCanvas,
   odpBytes,
+  odpFramesBytes,
   odsBytes,
   odsGridBytes,
   odtBytes,
@@ -684,17 +685,45 @@ describe('OpenDocument and XPS routes', () => {
     expect(squash(await extractText(bytes))).toContain('Open slide');
   });
 
-  it('refuses an ODP whose text frames the reader cannot see, instead of blank pages', async () => {
-    const frameOnly = await zipBytes([
+  it('converts a LibreOffice-shaped deck, one sheet per draw page, blanks included', async () => {
+    // Before, the reader walked only `draw:shape`, which Impress does not write
+    // around slide text: this deck — frames, `presentation:class`, text boxes —
+    // converted to zero text and was refused outright.
+    const deck = await odpFramesBytes([
+      'blank',
+      { title: 'Slide Two Title', body: 'Slide two body words', notes: 'Speaker note hidden words' },
+      'blank',
+      { title: 'Slide Four Title' },
+      'blank',
+    ]);
+    const outcome = await run('odp-to-pdf', {}, [fileFrom(deck, 'talk.odp')]);
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    expect(doc.getPages().length, 'five draw pages, five sheets').toBe(5);
+    const runs = textRunsOf(doc);
+    const title2 = runs.find((run) => run.text.includes('Slide Two Title'))!;
+    expect(title2, 'slide two keeps page two').toBeTruthy();
+    expect(title2.page).toBe(1);
+    const title4 = runs.find((run) => run.text.includes('Slide Four Title'))!;
+    expect(title4.page, 'slide four keeps page four').toBe(3);
+    for (const blank of [0, 2, 4]) {
+      expect(runs.some((run) => run.page === blank && run.text.trim() !== ''), `sheet ${blank} is the blank slide`).toBe(false);
+    }
+    expect(runs.some((run) => run.text.includes('Speaker note hidden words')), 'notes stay out until asked').toBe(false);
+    const body2 = runs.find((run) => run.text.includes('Slide two body words'))!;
+    expect(title2.size, 'the title frame is a heading').toBeGreaterThan(body2.size);
+  });
+
+  it('refuses an ODP whose slides hold only pictures, instead of blank pages', async () => {
+    const imageOnly = await zipBytes([
       {
         name: 'content.xml',
         data:
           `${XML}<office:document-content ${ODF_NS}><office:body><office:presentation><draw:page>` +
-          '<draw:frame><draw:text-box><text:p>Real LibreOffice text</text:p></draw:text-box></draw:frame>' +
+          '<draw:frame><draw:image xlink:href="Pictures/x.png" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>' +
           '</draw:page></office:presentation></office:body></office:document-content>',
       },
     ]);
-    const error = await run('odp-to-pdf', {}, [fileFrom(frameOnly, 'libreoffice.odp')]).catch((err) => err);
+    const error = await run('odp-to-pdf', {}, [fileFrom(imageOnly, 'posters.odp')]).catch((err) => err);
     expect((error as ToolInputError).message).toMatch(/no text frames this reader can see/);
   });
 

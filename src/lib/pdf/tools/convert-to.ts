@@ -2330,7 +2330,7 @@ export const convertToTools: PdfToolDefinition[] = [
         const lower = input.name.toLowerCase();
         if (lower.endsWith('.odp') || lower.endsWith('.otp')) {
           const { odpToBlocks } = await import('../core/office-in');
-          blocks.push(...(await odpToBlocks(input.bytes)));
+          blocks.push(...(await odpToBlocks(input.bytes, { notes: booleanValue(context.values, 'notes') })));
           route = mergeRoute(route, 'OpenDocument reader');
         } else if (lower.endsWith('.pptx') || lower.endsWith('.pptm') || sniffSource(input.bytes, input.name).kind === 'zip') {
           const { pptxToBlocks } = await import('../core/office-in');

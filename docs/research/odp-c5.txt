@@ -1,0 +1,30 @@
+odp-to-pdf + powerpoint-to-pdf ODP route (c5 audit item 3) — measurement log
+
+fixture: /tmp/lane-convert5b/fx/odp-real.odp (harness mirror: odpFramesBytes) —
+draw:page[blank], draw:page(title frame presentation:class="title" + body frame
++ presentation:notes frame), blank, title-only, blank. LibreOffice writes slide
+text in draw:frame>draw:text-box; the pre-fix harness fixture's draw:shape
+nesting was not a shape any suite emits.
+
+BEFORE (live, port 9846, server :5296 after port move):
+  odp-to-pdf on the real deck: NO OUTPUT — card "STOPPED": "posters/real deck has
+  no text frames this reader can see" (before-odp.png shows the refusal on the
+  actual deck) — every Impress-saved deck was refused. The reader walked only
+  draw:shape. Blank slides at the deck's ends were also lost even for the
+  fixture shape that did convert: break-before-page + trimStrayBreaks eats the
+  leading and trailing break, so slide 1 and slide N vanish (middle blanks
+  survived as double breaks).
+  powerpoint-to-pdf with an ODP: the "Include speaker notes" toggle was dropped
+  at the branch — odpToBlocks got no options; field help promised notes anyway.
+AFTER (same drive): "Converted the OpenDocument presentation into 5 page(s)",
+  five thumbnails: page1 blank, page2 title+body, page3 blank, page4 title,
+  page5 blank (odp-c5-after.png); notes words absent (odp-to-pdf has no notes
+  field and its card says notes do not survive); network 3 requests, 0
+  off-origin; console errors []. Unit pins assert the page mapping (runs' page
+  index 1/3, empties on 0/2/4), title-size > body-size, notes toggle through
+  the PPT route (Notes: quote in, off out).
+refusal kept for picture-only decks (draw:image frame, no text → reader [] →
+  tool refusal), pinned.
+pins: edge 2 tests (deck shape + picture-only refusal), convert-to-bytes 1 test
+  (notes toggle). RED without the fix: 2 failed (the two new fidelity tests;
+  picture-only refusal is a control — passes before and after).
