@@ -2247,6 +2247,23 @@ function commentCount(marks: LiveMarks): number {
 }
 
 /**
+ * Every entry of an outline, nested ones included.
+ *
+ * `readOutline` returns the top-level nodes with their children hanging off
+ * them, so the array's length is the number of rows in the bookmark panel's
+ * first tier, not the number of bookmarks the file carries. Measured on
+ * `tests/fixtures/encrypted/structure-aes-256-user.pdf`: two entries in the
+ * file — `Chapter Bravo` and its child `Intro` — and the card said
+ * "1 bookmark(s)". A count the reader can check against its own bookmark
+ * panel has to walk the tree, and the loss check that shares this number goes
+ * silent on exactly the entries it skips: a copy that drops every child still
+ * reports nothing missing.
+ */
+function outlineEntryCount(nodes: readonly OutlineNode[]): number {
+  return nodes.reduce((total, node) => total + 1 + outlineEntryCount(node.children ?? []), 0);
+}
+
+/**
  * What one document holds of the four kinds a rebuild is known to lose.
  *
  * The tools that drop protection used to rebuild the page tree — the only way
@@ -2259,7 +2276,7 @@ function countStructure(doc: PDFDocument): StructureCounts {
   return {
     fields: formFieldCount(doc),
     annotations: annotationCount(doc),
-    bookmarks: readOutline(doc).length,
+    bookmarks: outlineEntryCount(readOutline(doc)),
     attachments: listAttachments(doc).length,
   };
 }

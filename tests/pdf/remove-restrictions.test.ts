@@ -208,14 +208,16 @@ describe('removing restrictions from a locked file', () => {
     const outcome = await run('remove-restrictions', {}, fixture);
     const { bytes } = await produced(outcome);
     expect(outcome.pagesOut).toBe(PAGES);
-    // The bookmark figure is the app's own top-level census: the fixture's outline
-    // is one heading with one child, so the card says 1 where MuPDF's flattened
-    // `get_toc()` says 2. Under-claiming about what survived, in the same direction
-    // on the input, and pinned here so a change to either number is a decision.
+    // The bookmark figure is every entry of the outline, nested ones included:
+    // the fixture's outline is one heading with one child, and the card says 2 —
+    // what MuPDF's flattened `get_toc()` and this repo's own census record. It
+    // used to read the top tier only and say 1; the count that appears in the
+    // "nothing was left behind" sentence is now also the count the loss check
+    // compares, so a dropped child can no longer pass for kept.
     expect(outcome.message).toBe(
       `Restrictions cleared — the source refused printing, editing, comments and form filling, `
       + `filling existing forms and rotating and inserting pages; ${PAGES} page(s) verified readable with no /Encrypt `
-      + 'entry and no password needed, carrying 1 bookmark(s).',
+      + 'entry and no password needed, carrying 2 bookmark(s).',
     );
     // Nothing stronger than "the dictionary is gone": no cipher named, because the
     // copy carries none; no password promised, because none is left to promise.

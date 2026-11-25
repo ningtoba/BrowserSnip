@@ -35,6 +35,8 @@ import { join, resolve } from 'node:path';
 import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from '@maxwbh/pdf-lib';
 import { openRender } from '@/lib/pdf/core/render';
+import { readOutline, writeOutline } from '@/lib/pdf/core/bookmarks';
+import { saveEncrypted } from '@/lib/pdf/core/doc';
 import { runPdfTool } from '@/lib/pdf/tools/runner';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 
@@ -245,11 +247,61 @@ describe('unlock over a locked document that carries structure', () => {
     expect(message).toMatch(/opens without a password now/);
     expect(message).toMatch(/2 page\(s\)/);
     expect(message).toMatch(/2 form field\(s\)/);
-    expect(message).toMatch(/1 bookmark\(s\)/);
+    // The file holds two outline entries — `Intro` is `Chapter Bravo`'s child,
+    // and a bookmark panel opens showing both. A count that reads only the top
+    // tier said "1 bookmark(s)" while the fixture's own census recorded two,
+    // and the same number is what the loss check compares: children dropping
+    // went unreported. Counted off the saved copy, this sentence is the bytes.
+    expect(message).toMatch(/2 bookmark\(s\)/);
     expect(message).toMatch(/1 embedded file\(s\)/);
     // Nothing was rebuilt, so nothing may be reported as left behind.
     expect(warnings.filter((warning) => /did not carry over|missing from the copy/.test(warning))).toEqual([]);
     expect(warnings.filter((warning) => /read differently/.test(warning))).toEqual([]);
+  }, 300_000);
+
+  it('names a nested outline by its entries, not its top tier', async () => {
+    // A fresh document with four outline entries in two tiers, sealed by this
+    // app's own writer and unlocked through the shipped tool — the fixture
+    // above is one child on one parent; this says the count walks the whole
+    // tree rather than agreeing with one file's shape.
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    doc.addPage();
+    doc.setTitle('Four bookmarks, two of them children');
+    writeOutline(doc, [
+      { title: 'Sheet one', page: 0, children: [{ title: 'One.a', page: 0 }, { title: 'One.b', page: 1 }] },
+      { title: 'Sheet two', page: 1 },
+    ]);
+    const sealed = await saveEncrypted(doc, {
+      userPassword: PASSWORD,
+      ownerPassword: 'owner-of-the-test',
+      permissions: {
+        printing: true, printingHighQuality: true, modifying: true, copying: true,
+        annotating: true, fillingForms: true, contentAccessibility: true, documentAssembly: false,
+      },
+      cipher: 'AES-128',
+    });
+    // The control: the sealed file really carries four entries in two tiers —
+    // a flat writer bug would make this test match an empty copy.
+    const pre = await PDFDocument.load(sealed, { ignoreEncryption: true });
+    const sealedBytes = new Uint8Array(sealed);
+    expect(readOutline(pre).length, 'the seal flattened the tiers').toBe(2);
+    expect(readOutline(pre).reduce((n, node) => n + 1 + (node.children?.length ?? 0), 0), 'the seal dropped a child').toBe(4);
+
+    const outcome = await runPdfTool({
+      toolId: 'unlock',
+      files: [new File([sealedBytes as BlobPart], 'nested-outline.pdf', { type: 'application/pdf' })],
+      values: { password: PASSWORD },
+      onProgress: () => undefined,
+      onLog: () => undefined,
+    });
+    expect(outcome.outputs, 'the tool produced no file').toHaveLength(1);
+    expect(outcome.message, 'the card still reads only the top tier').toMatch(/4 bookmark\(s\)/);
+    const copy = await PDFDocument.load(new Uint8Array(await outcome.outputs[0].blob.arrayBuffer()));
+    const copyNodes = readOutline(copy);
+    expect(copyNodes.reduce((n, node) => n + 1 + (node.children?.length ?? 0), 0), 'the copy lost an entry').toBe(4);
+    expect(copyNodes.map((node) => node.title), 'the top tier changed').toEqual(['Sheet one', 'Sheet two']);
+    expect(copyNodes[0]?.children?.map((node) => node.title), 'the children changed').toEqual(['One.a', 'One.b']);
   }, 300_000);
 
   it('states on the card what the cases were measured doing', () => {
