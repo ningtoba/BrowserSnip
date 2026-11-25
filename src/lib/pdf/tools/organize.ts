@@ -1940,7 +1940,7 @@ export const organizeTools: PdfToolDefinition[] = [
         // last-page-first": a single-pass duplex feeder reads both sides in one trip and
         // hands over already-paired pages, and nothing here has ever straightened a
         // turned sheet (measured: the backs kept `/Rotate 180` through the collation).
-        help: 'For the two-pass scan — all fronts, then the same stack turned over — which feeds the backs last-page-first, and this turns them back. Switch it off when the backs already came in sheet order. Reordering only: no sheet is turned.',
+        help: 'For the two-pass scan — all fronts, then the stack turned over — which feeds the backs last-page-first; off if they already came in sheet order. Reordering only.',
       },
       OFFSET,
     ],
