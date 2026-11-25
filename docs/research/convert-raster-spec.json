@@ -1,0 +1,287 @@
+[
+ {
+  "tool": "image-to-pdf",
+  "tag": "base-jpg",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "alpha-png",
+  "files": [
+   "/tmp/lane-convert/fx/alpha.png"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "webp-anim",
+  "files": [
+   "/tmp/lane-convert/fx/anim.webp"
+  ]
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "gif-anim",
+  "files": [
+   "/tmp/lane-convert/fx/anim.gif"
+  ]
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "tiff-multi",
+  "files": [
+   "/tmp/triage/in/pages.tif"
+  ]
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "bmp",
+  "files": [
+   "/tmp/triage/in/photo.bmp"
+  ]
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "heic",
+  "files": [
+   "/tmp/triage/in/photo.heic"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "a4-margin",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Margin": "12"
+  }
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "letter-landscape",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "fields": {
+   "Page size": "letter",
+   "Orientation": "landscape"
+  }
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "fit-cover",
+  "files": [
+   "/tmp/triage/in/wide.png"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Fit": "cover"
+  }
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "two-up",
+  "files": [
+   "/tmp/triage/in/photo.jpg",
+   "/tmp/lane-convert/fx/second.jpg"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Two images per sheet": "toggle"
+  },
+  "shot": true
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "batch-bad",
+  "files": [
+   "/tmp/triage/in/photo.jpg",
+   "/tmp/lane-convert/fx/fake.jpg",
+   "/tmp/lane-convert/fx/second.jpg"
+  ]
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "dark",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "shot": true,
+  "dark": true
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "base",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "a4-margin",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Margin": "24"
+  }
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "letter-landscape",
+  "files": [
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "fields": {
+   "Page size": "letter",
+   "Orientation": "landscape"
+  }
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "batch-fake",
+  "files": [
+   "/tmp/triage/in/photo.jpg",
+   "/tmp/lane-convert/fx/fake.jpg",
+   "/tmp/lane-convert/fx/second.jpg"
+  ]
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "batch-png",
+  "files": [
+   "/tmp/triage/in/photo.png",
+   "/tmp/triage/in/photo.jpg"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "png-to-pdf",
+  "tag": "base",
+  "files": [
+   "/tmp/triage/in/photo.png"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "png-to-pdf",
+  "tag": "alpha",
+  "files": [
+   "/tmp/lane-convert/fx/alpha.png"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "png-to-pdf",
+  "tag": "fit-margin",
+  "files": [
+   "/tmp/lane-convert/fx/alpha.png"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Margin": "18",
+   "Orientation": "landscape"
+  }
+ },
+ {
+  "tool": "png-to-pdf",
+  "tag": "letter",
+  "files": [
+   "/tmp/triage/in/photo.png"
+  ],
+  "fields": {
+   "Page size": "letter"
+  }
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "base",
+  "files": [
+   "/tmp/lane-convert/fx/still.webp"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "anim",
+  "files": [
+   "/tmp/lane-convert/fx/anim.webp"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "cut-batch",
+  "files": [
+   "/tmp/lane-convert/fx/cut.webp",
+   "/tmp/lane-convert/fx/still.webp"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "a4-margin",
+  "files": [
+   "/tmp/lane-convert/fx/still.webp"
+  ],
+  "fields": {
+   "Page size": "a4",
+   "Margin": "24"
+  }
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "letter-landscape",
+  "files": [
+   "/tmp/lane-convert/fx/still.webp"
+  ],
+  "fields": {
+   "Page size": "letter",
+   "Orientation": "landscape"
+  }
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "real-heic",
+  "files": [
+   "/tmp/lane-convert/fx/real.heic"
+  ],
+  "shot": true,
+  "timeout": 60000
+ },
+ {
+  "tool": "image-to-pdf",
+  "tag": "batch-cutbmp",
+  "files": [
+   "/tmp/lane-convert/fx/cut.bmp",
+   "/tmp/triage/in/photo.bmp"
+  ],
+  "timeout": 60000
+ },
+ {
+  "tool": "webp-to-pdf",
+  "tag": "alpha",
+  "files": [
+   "/tmp/lane-convert/fx/alpha.webp"
+  ],
+  "shot": true
+ },
+ {
+  "tool": "jpg-to-pdf",
+  "tag": "batch-fake-alert",
+  "files": [
+   "/tmp/triage/in/photo.jpg",
+   "/tmp/lane-convert/fx/fake.jpg"
+  ],
+  "shot": true,
+  "timeout": 60000
+ }
+]
