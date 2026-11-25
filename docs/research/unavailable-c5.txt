@@ -1,0 +1,38 @@
+the six unavailable-by-design cards — confirmation log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+Cards audited (definitions: src/lib/pdf/tools/office.ts LEGACY_ONLY; no code changed):
+  mobi-to-pdf (.mobi,.azw,.azw3)   pages-to-pdf (.pages)   pub-to-pdf (.pub)
+  vsd-to-pdf (.vsd,.vsdx)          wpd-to-pdf (.wpd)       wps-to-pdf (.wps)
+(odg-to-pdf — the seventh entry, an OpenDocument shape — stays recorded; not part of this six.)
+
+LIVE drive, one Chromium, real upload per card: a genuine Amazon-format book
+(dorian-gray.azw3 — Mobipocket/Kindle PRC, 545 KB, producer Standard Ebooks) for MOBI, and the
+triage legacy stubs for the five whose bytes the reader never consults. Per card, light theme
+and dark theme (the class + key the theme switch itself sets):
+  docs/research/unavailable-c5-light.png / unavailable-c5-dark.png (montages) + per-tool files.
+What the screen shows, identically on all six:
+  * the card title and the promise line: “Listed so the capability is findable. <Label> is not
+    converted offline — the notes name a format that is.” — and the notes do: EPUB via Calibre,
+    Pages’ own File → Export To → PDF, DOCX/PDF from LibreOffice or Publisher, SVG or PDF from
+    Visio, DOCX/PDF from WordPerfect, DOCX from WPS Office. Every named target is a tool that
+    really converts (pinned: alternatives exist and have a run).
+  * the uploaded file is read locally (chip “READING”, “NO PREVIEW”, “X stays on this device”
+    footnote — 0 off-origin requests on the intake; the azw3 proves content never matters).
+  * the Run verb “Convert to PDF” is present and DISABLED — measured, never enabled by the
+    upload — and the status line under the tray reads “Still needed: <full unavailable
+    sentence>”: container named, LibreOffice named, the ~100 MB of WASM cost said plainly, the
+    repair pointer repeated. No raw JS stack, no fake preview, no silent success (bars 2/10).
+  * the HONEST NOTES accordion is open by default for exactly these cards (FieldControls keys
+    defaultOpen to tool.unavailable): “Needs a full office-suite decoder. …” + “Text and images
+    in the container are not read here, so nothing is quietly substituted: the run is refused
+    before any page is written.” — true: with no run button to press nothing is written, and
+    the direct-call path is pinned to throw the identical sentence (runner.ts:324, E20 pins in
+    edit-bytes “the container family stays honest about being unavailable”: no run(), message
+    equality, ToolInputError, pointer formats convert).
+  * dark: all six re-rendered with tokens only — surfaces, the amber “Still needed” band and
+    the disabled verb all hold contrast; no hex-literal leftovers visible.
+jsdom half: the six stay confirmed by the existing E20 pins (7/7 id list, refusal equality);
+this round adds the live both-halves record and the copy pass, no behaviour change.
+Verdict: six cards verified-good (refusal renders honestly); nothing fixed, nothing pinned new
+beyond this record. The MOBI card was driven with a real Kindle-container file (Mobipocket v8,
+codepage 65001 per `file(1)`), so the refusal was seen over genuine PRC bytes, not only stubs.

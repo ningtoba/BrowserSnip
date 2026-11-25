@@ -2686,7 +2686,7 @@ describe('xps-to-pdf and fb2-to-pdf read the files producers actually write', ()
       fileFrom(fixture('Office2007_24COLOR.xps'), 'colors.xps'),
     ]);
     const text = squash(await extractText(await firstPdf(outcome)));
-    expect(outcome.message).toMatch(/Converted the XPS document/, 'a Word package is readable XML after all');
+    expect(outcome.message, 'a Word package is readable XML after all').toMatch(/Converted the XPS document/);
     expect(text).toContain('Font color selection');
     expect(text.indexOf('Black'), 'page 1’s colors run before page 2’s shading').toBeLessThan(text.indexOf('Shading 5%'));
   });
