@@ -373,10 +373,28 @@ export async function ebookToBlocks(bytes: Uint8Array, name: string): Promise<Bl
   }
   const document = parseXml(new TextDecoder().decode(bytes), 'That FB2 file is not well-formed XML.');
   const title = document.querySelector('book-title')?.textContent?.trim() || name.replace(/\.[^.]+$/, '');
+  // The card promises the book — title, chapters, paragraphs. Two producer
+  // shapes were missing from that: every `<p>` in the file was collected, so
+  // the `<description>` block’s history notes, src-url and annotation words
+  // printed as if they were chapters (measured: “1.1 TODO review …” and a
+  // GitHub URL opened the 3-page book), and a chapter’s `<title><p>` — the
+  // heading itself in FictionBook — landed as body text the same size as its
+  // paragraphs. Body only, and a `<p>` inside a `<title>` is a heading.
+  const body = document.querySelector('body');
+  const scope = body ?? document;
+  const headingParas = new Set<Element>();
+  for (const sectionTitle of Array.from(scope.getElementsByTagName('title'))) {
+    for (const p of Array.from(sectionTitle.getElementsByTagName('p'))) headingParas.add(p);
+  }
   const blocks: Block[] = [{ kind: 'heading', level: 1, inlines: [{ text: title }] }];
-  for (const paragraph of Array.from(document.getElementsByTagName('p'))) {
+  for (const paragraph of Array.from(scope.getElementsByTagName('p'))) {
     const text = paragraph.textContent?.trim() ?? '';
-    if (text) blocks.push({ kind: 'paragraph', inlines: [{ text }] });
+    if (!text) continue;
+    blocks.push(
+      headingParas.has(paragraph)
+        ? { kind: 'heading', level: 2, inlines: [{ text }] }
+        : { kind: 'paragraph', inlines: [{ text }] },
+    );
     if (blocks.length > BLOCK_LIMIT) break;
   }
   return blocks;
@@ -393,11 +411,14 @@ export async function xpsToBlocks(bytes: Uint8Array): Promise<Block[]> {
     if (blocks.length > 0) blocks.push({ kind: 'pagebreak' });
     const document = parseXml(byName.get(page)!, 'That XPS page is not readable XML.');
     for (const glyph of Array.from(document.getElementsByTagName('*'))) {
-      // The name is compared as written: `<t:Glyphs>` under a prefix this package
-      // never binds, or `<Glyphs>` with a capital, is not the element this reader
-      // recovers, and guessing from a similar spelling is how blank pages get
-      // shipped with confident names.
-      if (localName(glyph) !== 'glyphs') continue;
+      // ECMA-388 spells the element `<Glyphs>` — capital G — and that is what
+      // Word’s print-to-XPS and WPF’s exporter both write. Matching the name
+      // case-insensitively keeps the lowercase fixture shape reading too, and
+      // recovers the producer shape the old exact-lowercase compare dropped:
+      // a WPF package with a page of real `UnicodeString` text came out of the
+      // pre-fix build as a refusal — “no text runs this reader can recover” —
+      // the text in the file and the denial on the card in the same breath.
+      if (localName(glyph).toLowerCase() !== 'glyphs') continue;
       const text = glyph.getAttribute('UnicodeString') ?? '';
       if (text.trim()) blocks.push({ kind: 'paragraph', inlines: [{ text: text.trim() }] });
     }
@@ -497,7 +518,25 @@ async function openDocumentXml(bytes: Uint8Array, entry: string): Promise<Docume
 
 async function zipTexts(bytes: Uint8Array, extensions: string[]): Promise<Map<string, string>> {
   const files = await readZip(bytes, { filterExtensions: extensions });
-  return new Map(files.map((file) => [file.name, new TextDecoder('utf-8').decode(file.bytes)]));
+  return new Map(files.map((file) => [file.name, decodeXmlBytes(file.bytes)]));
+}
+
+/**
+ * Decode an OPC/XML part by the encoding its own bytes declare.
+ *
+ * The packages disagree about it the way their producers disagree about
+ * everything: EPUB and OpenDocument parts arrive UTF-8, while Word’s print-to-XPS
+ * writes its fixed pages UTF-16 with a byte-order mark — ECMA-388 allows both.
+ * Decoding UTF-16 as UTF-8 turns every real character into replacement marks and
+ * the parse then blames the file: a Word-printed XPS came back “That XPS page is
+ * not readable XML” from a package that opens in the Windows viewer as if nothing
+ * were wrong. The BOM is the declaration; without one, UTF-8 is the only
+ * encoding any producer of these parts actually writes.
+ */
+function decodeXmlBytes(bytes: Uint8Array): string {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 function parseXml(xml: string, message: string): Document {

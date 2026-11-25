@@ -1,0 +1,30 @@
+fb2-to-pdf real-book audit — measurement log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+fixture: source_test_book_fb2.fb2 — hand-authored FictionBook 2.0 (gribuser namespace), 18 sections,
+nested section titles (h1 > h2 > h3), 60 <p>, <description><history> notes + src-url metadata,
+non-ascii/CJK/emoji test bodies. Vendored at tests/fixtures/office/source_test_book_fb2.fb2.
+(localhots sample.fb2 cross-checked: same shape class, no binary images.)
+
+BEFORE (build b14b4ec, jsdom + live): the reader collected EVERY <p> in the file — the book opened
+  with its metadata: “1.1 TODO review is this section following FB2 format correctly?”,
+  “Initial version, written by hand.” and “https://github.com/clach04/…” printed as if they were
+  chapters, inside the promise “The book’s title, chapters and paragraphs re-typeset”. And every
+  section <title> — FictionBook spells headings as <title><p> — printed the same 11 pt as its body
+  paragraphs: chapters present but invisible. (Note: an epub named .fb2 reaches the format gate
+  first and is refused by its real container name — measured, correct, untouched.)
+AFTER: scope = <body>; a <p> inside a <title> becomes a level-2 heading. Measured on the produced
+  PDF: page-1 spans — book title 23.1 pt, “This is a title” 18.7, “Test Header h1” 18.7, body 11.0;
+  history notes and the GitHub URL absent; body paragraphs and nested-section words intact.
+  LIVE (both halves): “Converted the FictionBook file with selectable text into 3 page(s)”,
+  6.1 KB → 49.0 KB card, screenshots read light + dark (fb2-c5-light.png / fb2-c5-dark.png);
+  network 5 requests, 1 off-origin = cdn.jsdelivr.net font GET (the book carries CJK+emoji samples;
+  TEXT_NOTES promises exactly this CDN fetch; no file bytes leave the tab).
+FIX: core/office-in.ts ebookToBlocks — cause-local (blocker-faithful, not the rowText spine).
+PINS: convert-to-bytes ‘typesets an FB2 book as chapters, without its metadata preamble’ — RED
+  without the fix (1); existing synthetic pins (edit-bytes FB2_SAMPLE, edge-convert-to skip-copy)
+  hold unchanged. Heading comparison uses the leading run only: the renderer splits
+  “A Test Header” / “h2” into separate runs — a probe truth, not a product fact, recorded here.
+LEFT (recorded): verse/stanza (<v>/<stanza>) indentation and epigraph styling flattened — card says
+  as much; <image href> + <binary> covers not reproduced — card says as much (measured 0 images);
+  annotation/epigraph TEXT stays in the flow (flattened, not lost) — the note’s wording (“not
+  reproduced”) refers to their roles, kept honest by the same sentence as before.
