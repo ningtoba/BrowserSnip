@@ -391,7 +391,7 @@ function normalise360(degrees: number): number {
  * page's own pre-rotation coordinates, so cutting a `/Rotate 90` page in half
  * follows the line the user sees rather than the raw MediaBox (E9).
  */
-function displayRegion(page: PDFPage, tile: { x: number; y: number; width: number; height: number }): Box {
+export function displayRegion(page: PDFPage, tile: { x: number; y: number; width: number; height: number }): Box {
   const box = sourceBox(page);
   const width = box.width;
   const height = box.height;
@@ -403,7 +403,15 @@ function displayRegion(page: PDFPage, tile: { x: number; y: number; width: numbe
   });
   const rotation = rotationOf(page);
   if (rotation === 90) return at(tile.y, tile.x, tile.height, tile.width);
-  if (rotation === 180) return at(width - tile.x - tile.width, height - tile.y - tile.height, tile.width, tile.height);
+  // The inverse of the /Rotate 180 display map (viewer `px`→stored `W-px`, viewer
+  // `py`→stored `py`) flips the tile across the sheet's **vertical** centre only;
+  // the y-term stays `ty`, not the rot-0 mirror `H-ty-th`. Reading a MuPDF render
+  // of a /Rotate 180 sheet this pass: ink stored 520-560 pt up from the bottom
+  // paints at display rows 39-79 from the top, i.e. `py = uy`, so the tile that
+  // shows the top of the sheet must take the **bottom** of the stored page. The
+  // old `height - tile.y - tile.height` mirrored it about the horizontal centre,
+  // cutting the wrong band on every non-square sheet (census #15).
+  if (rotation === 180) return at(width - tile.x - tile.width, tile.y, tile.width, tile.height);
   if (rotation === 270) return at(width - tile.y - tile.height, height - tile.x - tile.width, tile.height, tile.width);
   return at(tile.x, height - tile.y - tile.height, tile.width, tile.height);
 }
