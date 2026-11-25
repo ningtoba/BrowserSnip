@@ -202,6 +202,71 @@ function repairCffHeader(program: Uint8Array): Uint8Array {
   return program;
 }
 
+/** A CID-keyed CFF program ready to embed, and the glyph-id-to-CID map it carries. */
+interface WholeCffProgram {
+  program: Uint8Array;
+  cidOf: (glyphId: number) => number;
+  ros: [string, string, number] | null;
+}
+
+/**
+ * The whole CFF program of a CID-keyed face, with its own CID map.
+ *
+ * fontkit's CFF encoder rewrites charstrings it cannot round-trip: measured on
+ * the live jsDelivr Noto Sans JP, two of the 27 kanji a Japanese page drew came
+ * back with **zero ink** — MuPDF's own reader logs
+ * `FT_Load_Glyph(<subset>, 33/35): broken file → cannot render glyph` for their
+ * subset programs — while most of the rest drifted off the source outline at
+ * 150 dpi; every `/ToUnicode` pair stayed perfect, so the text extracted and
+ * search found what the page could not show. A CID-keyed CFF is therefore
+ * embedded as it stands — the `CFF ` table byte for byte — and the codes
+ * written are the face's own CIDs, which is exactly how a `/CIDFontType0`
+ * says to look a glyph up: through the program's `charset`. The map is taken
+ * from fontkit's own parse (`topDict.charset.glyphs`), which holds one CID
+ * per glyph id starting at GID 1 — `.notdef`'s CID 0 is implied — verified
+ * against fontTools' read of the same charset for `日`/`じ`/`続`/`、`
+ * (20220/1483/31112/1397) and pinned in `tests/pdf/cjk-cff-whole-face.test.ts`.
+ * Anything this walk does not fully understand (a non-CID-keyed program, a
+ * face whose tables lie) returns null and falls back to the subsetter.
+ */
+function wholeCffProgram(font: Face, fontData: Uint8Array): WholeCffProgram | null {
+  const entry = sfntTables(fontData)?.find((table) => table.tag === 'CFF ');
+  if (!entry || entry.length < 4 || entry.offset + entry.length > fontData.length) return null;
+  const program = fontData.subarray(entry.offset, entry.offset + entry.length);
+  if (program[0] !== 1) return null;
+  // SAFETY: fontkit hangs a face's decoded tables and glyph count off the
+  // instance under their four-character tags; pdf-lib's published types name
+  // none of them, and `string` resolves the SIDs the `ROS` names come from.
+  const tables = font as unknown as {
+    numGlyphs?: number;
+    'CFF '?: {
+      isCIDFont?: boolean;
+      string?: (sid: number) => string;
+      topDict?: { charset?: { glyphs?: number[] }; ROS?: number[] };
+    };
+  };
+  const cff = tables['CFF '];
+  const charset = cff?.isCIDFont ? cff.topDict?.charset?.glyphs : undefined;
+  const numGlyphs = tables.numGlyphs ?? 0;
+  if (!Array.isArray(charset) || charset.length + 1 !== numGlyphs) return null;
+  let ros: [string, string, number] | null = null;
+  const raw = cff?.topDict?.ROS;
+  if (Array.isArray(raw) && raw.length === 3 && cff?.string) {
+    try {
+      const registry = cff.string(raw[0]);
+      const ordering = cff.string(raw[1]);
+      if (registry && ordering) ros = [registry, ordering, raw[2]];
+    } catch {
+      ros = null;
+    }
+  }
+  return {
+    program,
+    cidOf: (glyphId: number) => (glyphId > 0 ? (charset[glyphId - 1] ?? 0) : 0),
+    ros,
+  };
+}
+
 /** A table record from an sfnt's directory. */
 interface SfntTable {
   tag: string;
@@ -397,9 +462,11 @@ function encodeSubset(subset: FaceSubset): Promise<Uint8Array> {
  * `/CIDFontType2` for TrueType glyph records, `/FontFile3` `/CIDFontType0C` under
  * a `/CIDFontType0` for CFF charstrings — and the `/ToUnicode` CMap says what
  * every code means. A TrueType code is this font's own number, pointed at the real
- * glyph in the subset or at `.notdef` when the face has none; a CFF code has to be
- * the glyph id itself, because a `/CIDFontType0` maps CIDs through its own charset
- * and offers nothing to rewrite. Extraction then returns the text that was drawn
+ * glyph in the subset or at `.notdef` when the face has none; a CFF code is a CID,
+ * because a `/CIDFontType0` reads CIDs through the program's own `charset` and
+ * offers nothing to rewrite — in the subset this module builds that charset is
+ * spelled identity, and in the whole CID-keyed program it is read from the face
+ * (see `wholeCffProgram`). Extraction then returns the text that was drawn
  * whatever the face happened to cover, and the widths come from the same table the
  * viewer paints with.
  */
@@ -411,13 +478,24 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
   /** code point → the character code this font gives it */
   private readonly codes = new Map<number, number>();
 
-  /** character code → glyph id inside the subset; index 0 is `.notdef` */
+  /** character code → the glyph id the embedded program holds for it; index 0 is `.notdef` */
   private readonly glyphs: number[] = [0];
 
   /** character code → advance width in 1/1000 em */
   private readonly advances: number[] = [0];
 
-  private readonly subset: FaceSubset;
+  /** fontkit's subsetter, used for TrueType faces and any CFF this module cannot read whole */
+  private readonly subset: FaceSubset | null;
+
+  /**
+   * A CID-keyed CFF face embeds its program whole, mapped through the program's
+   * own `charset` (see `wholeCffProgram`): fontkit's CFF encoder rewrote
+   * charstrings FreeType itself refuses — a live Japanese page lost two of its
+   * 27 kanji outright (`FT_Load_Glyph … broken file`, zero ink, text still
+   * extracting) and most of the rest drifted off the source outline. `null`
+   * leaves the face on the subsetter path.
+   */
+  private readonly whole: WholeCffProgram | null;
 
   /**
    * Whether the outlines are CFF charstrings rather than TrueType glyph records.
@@ -430,7 +508,8 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
   private constructor(font: Face, fontData: Uint8Array) {
     super(font, fontData);
     this.cff = faceIsCff(font);
-    this.subset = font.createSubset();
+    this.whole = this.cff ? wholeCffProgram(font, fontData) : null;
+    this.subset = this.whole ? null : font.createSubset();
   }
 
   /** The codes for every character of `text`, allocating the ones it needs. */
@@ -444,9 +523,15 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
         // for the character; the code is allocated either way, which is the
         // point of the class.
         const glyph = this.font.glyphForCodePoint(codePoint);
-        const glyphId = this.subset.includeGlyph(glyph);
-        code = this.cff ? glyphId : this.glyphs.length;
-        this.glyphs[code] = glyphId;
+        if (this.whole) {
+          code = this.whole.cidOf(glyph.id);
+          this.glyphs[code] = glyph.id;
+        } else {
+          // SAFETY: the constructor builds a subset exactly when there is no whole program.
+          const glyphId = (this.subset as FaceSubset).includeGlyph(glyph);
+          code = this.cff ? glyphId : this.glyphs.length;
+          this.glyphs[code] = glyphId;
+        }
         this.advances[code] = glyph.advanceWidth * this.scale;
         this.codes.set(codePoint, code);
       }
@@ -465,14 +550,47 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
     return (total / 1000) * size;
   }
 
+  /**
+   * The descendant's `/W`. For a whole CFF the codes are CIDs — sparse, up to
+   * 65535 — so only the runs actually assigned are emitted, as PDF's
+   * `[ first [ w… ] first2 [ w… ] … ]` form. TrueType and subset-CFF codes are
+   * dense from the first allocation, so one contiguous range covers them.
+   */
+  private widthsArray(): (number | number[])[] {
+    if (this.whole) {
+      const codes = [...new Set(this.codes.values())].sort((a, b) => a - b);
+      const out: (number | number[])[] = [];
+      if (codes.length === 0) return [0, []];
+      let start = codes[0];
+      let run: number[] = [];
+      let prev = start - 1;
+      for (const code of codes) {
+        if (code !== prev + 1) {
+          out.push(start, run);
+          start = code;
+          run = [];
+        }
+        run.push(Number((this.advances[code] ?? 0).toFixed(3)));
+        prev = code;
+      }
+      if (run.length) out.push(start, run);
+      return out;
+    }
+    return [this.cff ? 0 : 1, this.advances.slice(this.cff ? 0 : 1).map((width) => Number(width.toFixed(3)))];
+  }
+
   override async embedIntoContext(context: PDFContext, ref?: PDFRef): Promise<PDFRef> {
     this.baseFontName = context.addRandomSuffix(this.fontName);
     const target = ref ?? context.nextRef();
-    const encoded = await encodeSubset(this.subset);
-    const subsetBytes = this.cff ? repairCffHeader(encoded) : encoded;
+    // SAFETY: the constructor builds a subset exactly when there is no whole program.
+    const encoded = this.whole
+      ? this.whole.program
+      : this.cff
+        ? repairCffHeader(await encodeSubset(this.subset as FaceSubset))
+        : await encodeSubset(this.subset as FaceSubset);
     const { bbox, ascent, descent, capHeight, xHeight, italicAngle } = this.font;
-    const fontFileRef = context.register(context.flateStream(subsetBytes, {
-      Length1: subsetBytes.length,
+    const fontFileRef = context.register(context.flateStream(encoded, {
+      Length1: encoded.length,
       // The program's own type, which is what tells a viewer how to read it.
       ...(this.cff ? { Subtype: 'CIDFontType0C' } : {}),
     }));
@@ -506,17 +624,16 @@ class UnicodeFaceEmbedder extends CustomFontEmbedder {
       Subtype: this.cff ? 'CIDFontType0' : 'CIDFontType2',
       BaseFont: this.baseFontName,
       CIDSystemInfo: {
-        Registry: PDFString.of('Adobe'),
-        Ordering: PDFString.of('Identity'),
-        Supplement: 0,
+        // The whole program carries its own registry-ordering-supplement; a
+        // subset this module writes is Identity by construction.
+        Registry: PDFString.of(this.whole?.ros?.[0] ?? 'Adobe'),
+        Ordering: PDFString.of(this.whole?.ros?.[1] ?? 'Identity'),
+        Supplement: this.whole?.ros?.[2] ?? 0,
       },
       FontDescriptor: descriptorRef,
       // A CFF carries its own CID-to-glyph charset; only TrueType takes the map.
       ...(cidToGidRef ? { CIDToGIDMap: cidToGidRef } : {}),
-      // Codes run from the first one allocated to the last without a gap, so one
-      // range covers them all. A CFF uses its glyph ids as codes, so its
-      // `.notdef` at 0 is inside the run.
-      W: [this.cff ? 0 : 1, this.advances.slice(this.cff ? 0 : 1).map((width) => Number(width.toFixed(3)))],
+      W: this.widthsArray(),
     }));
     const toUnicodeRef = context.register(context.flateStream(toUnicodeCmap(this.codes)));
     context.assign(target, context.obj({
