@@ -1205,6 +1205,43 @@ describe('geometry is respected, not flattened', () => {
     expect(warn(outcome)).toMatch(/1 other file’s was left behind/i);
   });
 
+  it('carries a source’s keyword separators with the words (E7)', async () => {
+    // `/Keywords` is one string in the file (ISO 32000-1 §14.3.3), and Word,
+    // LibreOffice and Acrobat write the separators *inside* it. A merge that
+    // splits the value into a list and hands pdf-lib the pieces rewrites the
+    // document's own claim: `alpha, beta, gamma` came back `alpha beta gamma`.
+    const words = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setTitle('Separator round');
+      doc.setKeywords(['alpha, beta, gamma']);
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'words.pdf');
+    })();
+    const outcome = await run('merge', {}, [words, fileOf(await sheets(grid(1)), 'bare.pdf')]);
+    const doc = await openPDF(await bytesOf(outcome), { updateMetadata: false });
+    expect(doc.getKeywords()).toBe('alpha, beta, gamma');
+    // Control: a semicolon list is the other separator the spec allows, and a
+    // value with no separator at all keeps the spaces it was written with.
+    const semis = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setKeywords(['ledger; scan; 2026']);
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'semis.pdf');
+    })();
+    expect(
+      (await openPDF(await bytesOf(await run('merge', {}, [semis, fileOf(await sheets(grid(1)), 'b.pdf')])), { updateMetadata: false })).getKeywords(),
+    ).toBe('ledger; scan; 2026');
+    const plain = await (async () => {
+      const doc = await PDFDocument.create();
+      doc.setKeywords(['ledger scan']);
+      doc.addPage([200, 100]);
+      return fileOf(await doc.save({ useObjectStreams: false }), 'plain.pdf');
+    })();
+    expect(
+      (await openPDF(await bytesOf(await run('merge', {}, [plain, fileOf(await sheets(grid(1)), 'c.pdf')])), { updateMetadata: false })).getKeywords(),
+    ).toBe('ledger scan');
+  });
+
   it('invents no document info when the first file has none (E7 control)', async () => {
     const bare = fileOf(await sheets(grid(1)), 'bare.pdf');
     const titled = await (async () => {

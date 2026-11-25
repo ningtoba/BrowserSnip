@@ -85,3 +85,57 @@ The three: the spacer size (`expected {width: 200, height: 100} to deeply equal
    behaves the same way and the card does not claim otherwise.
 4. **The guard's zero-page hint says "Nothing to convert"** on a tool that copies
    rather than converts; the guard is shared.
+
+## Re-audit (sweep/organize, dev build `:5292`, 2026-11-25)
+
+Re-driven live against this build with `docs/research/merge-round.mjs` and
+`docs/research/net-check.mjs` (the network half: CDP `Network`, every request the
+tab made, with its upload size). Fixtures are the re-generated corpus:
+`colour.pdf` is 8 sheets and `sheets.pdf` 5, so every number below is this
+round's own measurement, read by `docs/research/merge-round-bytes.py`.
+
+* **Order, geometry, ink — exact.** The 13-sheet output measures
+  `33011 / 24021 / 0 / 69335 / 120888 / 0 / 11700 / 11700` then
+  `43824 / 68059 / 21908 / 108649 / 0` non-white pixels at 50 dpi — sheet for
+  sheet the source measurement at the same dpi, including the quarter-turned
+  `595×420 /Rotate 90` sheet (69335) and the `336×71.4` slip with its
+  `/CropBox [42 59.5 378 130.9]` intact. `Move sheets.pdf earlier` reverses the
+  bytes and the per-file bookmarks (`sheets.pdf → 1`, `colour.pdf → 6`) and the
+  download name with them.
+* **Bookmarks** — on: `[colour.pdf → 1, sheets.pdf → 9]`. Off: `bookmarked.pdf`
+  first carries its own tree re-pointed (`Chapter One → 1`, `Section One.A → 2`,
+  `Chapter Two → 4`) and no per-file entries are invented.
+* **Spacer** — with `blank page between files` on, the sheet inserted after
+  `colour.pdf` is `336×71 /Rotate 0`, the neighbour's displayed geometry, and it
+  holds 0 characters and 0 ink.
+* **Everything that is not a page** — 3 annotations + 1 link from `annot.pdf`
+  arrive on the sheet they were on, `attach.pdf`'s `note.txt` arrives with its
+  bytes, `labels-kids-mixed.pdf`'s numbering re-bases by the leading blank file
+  (`r` at 0 → at 1, `R` at 2 → 3, `a` at 4 → 5, `xA` at 5 → 6), and with
+  `meta.pdf` first the title, author, subject, keywords, creator and the XMP
+  packet all travel while the producer stays `BrowserSnip`.
+* **Refusals** — one file: the button is disabled and the pane prints *"Still
+  needed: Add at least two PDF files to merge."*
+
+**Fixed: the carried keyword string lost its separators.** `meta.pdf`'s
+`/Keywords (alpha, beta, gamma)` reached the merged file as
+`alpha beta gamma`: `carryDocInfo` split the string on commas and handed pdf-lib
+a list, which joins its elements with a single space — so the promise that the
+first file's "keywords travel as the merged file's own" was true for the words
+and false for the value. `/Keywords` is one string (ISO 32000-1 §14.3.3) and the
+separators belong to it, so the value now travels whole
+(`setKeywords([keywords])`). Before → after, live browser run on `meta.pdf` +
+`sheets.pdf`: `keywords 'alpha beta gamma'` → `'alpha, beta, gamma'`.
+Pinned by `tests/pdf/edge-organize.test.ts` → *"carries a source's keyword
+separators with the words (E7)"*: **1 failed without the fix** (`expected
+'alpha beta gamma' to be 'alpha, beta, gamma'`), green with it; the two controls
+in the same test (a `; ` list, and a separator-free value) pass either way.
+`carryDocInfo` is shared by every tool defined in `organize.ts`, so the same
+rewrite is gone from those too.
+* **Dark mode** — `shots` kept at `/tmp/lane-organize/r/merge-dark-pane.png`:
+  cards, thumbnails, checkboxes, honest-notes strip and CTA all legible.
+* **Network** — no request carried a byte out of the tab
+  (`biggestForeignUpload: 0`, 158 same-origin requests). The only foreign
+  requests are the app shell's own `fonts.googleapis.com/css2` stylesheet and
+  two `fonts.gstatic.com` woff2 fonts (71 KB in), plus `data:` URIs for the
+  result card's thumbnails. No file bytes left the tab.

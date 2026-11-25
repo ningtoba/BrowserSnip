@@ -3181,7 +3181,10 @@ function carryDocInfo(target: PDFDocument, inputs: OpenedInput[], notes: Notes, 
   if (title) target.setTitle(title);
   if (author) target.setAuthor(author);
   if (subject) target.setSubject(subject);
-  if (keywords) target.setKeywords(keywords.split(',').map((word) => word.trim()).filter(Boolean));
+  // `/Keywords` is one string, and a source's separators are part of its value:
+  // splitting it into pdf-lib's list rewrote `alpha, beta, gamma` as
+  // `alpha beta gamma`. One element keeps the bytes the reader was given.
+  if (keywords) target.setKeywords([keywords]);
   if (creator) target.setCreator(creator);
   // The XMP packet is the same claim in the other store; a file whose `/Info` is
   // empty but whose packet is not (most MuPDF and Word output) has only this one.
