@@ -170,7 +170,7 @@ const READ_VERDICT = `(async()=>{
 await send('Page.enable');
 await send('Runtime.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1500, height: 1150, deviceScaleFactor: 1, mobile: false });
-await send('Page.navigate', { url: `${BASE}/#/tool/compare-pdfs` });
+await send('Page.navigate', { url: `${BASE}/#/tool/${process.env.ROUTE || 'compare-pdfs'}` });
 // `DARK=1` is the dark-mode half of the screen evidence: the shell reads one
 // stored preference and writes `html.dark`, so the setting is written the way the
 // toggle writes it and the page is reloaded to pick it up.
@@ -217,6 +217,34 @@ await sleep(1500);
 const verdict = JSON.parse(await ev(READ_VERDICT));
 console.log('verdict', JSON.stringify(verdict));
 if (process.env.VERDICT) writeFileSync(process.env.VERDICT, JSON.stringify(verdict, null, 1));
+
+// `DPI` drags the panel's own resolution slider — the pane's zoom is that number
+// divided by 72, so a change of it is the user zooming both sheets at once — and
+// waits for the pair to be re-compared at the new density. `SCROLL` then scrolls the
+// single shared sheet frame, which is the other half of the state a reader judges
+// the verdict against: page turn, zoom and scroll are shared by construction, so one
+// screenshot after both is the evidence that both sheets moved together.
+if (process.env.DPI) {
+  const set = await ev(`(()=>{const el=document.querySelector('#compare-dpi'); if(!el) return 'NO CONTROL';
+    const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+    setter.call(el,${JSON.stringify(String(process.env.DPI))});
+    el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true}));
+    return el.value})()`);
+  console.log('dpi set to', JSON.stringify(set));
+  await sleep(6000);
+}
+if (process.env.SCROLL) {
+  const after = await ev(`(()=>{const b=document.querySelector('[data-compare-scroll]');if(!b)return null;
+    b.scrollTop=${Number(process.env.SCROLL)}; b.scrollLeft=${Number(process.env.SCROLLX || 0)};
+    return JSON.stringify({top:b.scrollTop,left:b.scrollLeft,can:b.scrollHeight>b.clientHeight})})()`);
+  console.log('scrolled', after);
+  await sleep(800);
+}
+const zoomed = JSON.parse(await ev(READ_VERDICT));
+console.log('state', JSON.stringify({
+  verdictLine: zoomed.verdictLine, sizes: zoomed.sizes, overlayPct: zoomed.overlayInk && zoomed.overlayInk.opaquePct,
+  areas: zoomed.areaText, read: zoomed.read,
+}));
 
 if (process.env.SHOT) {
   const shot = await send('Page.captureScreenshot', { format: 'png' });

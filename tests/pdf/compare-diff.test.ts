@@ -848,7 +848,7 @@ describe('compare-pdfs as a report (the path the route never reaches)', () => {
 
 /* ══ 3. the pane: the verdict the user reads, and where it says the change is */
 
-const { CompareMain, getCompareState, setCompareResolution, setCompareSensitivity } = await import(
+const { CompareMain, getCompareState, setCompareMode, setCompareResolution, setCompareSensitivity } = await import(
   '@/components/tools/pdf/security/CompareMain'
 );
 const { CompareTool } = await import('@/components/tools/pdf/security/CompareTool');
@@ -1203,3 +1203,66 @@ function surfaceAsRaster(canvas: HTMLCanvasElement | undefined | null): Raster {
   }
   return { width: surface.width, height: surface.height, rgb: rgbBytes, alpha };
 }
+
+/* ── 5. the card may only clear the half the mode was asked about ─────────── */
+
+// Measured live (`docs/research/compare-rail.mjs MODESHOT=1` at :5294) over a pair
+// whose one difference is text the rendering does not show: the panel printed `0%`
+// and “Page 1 matches at this sensitivity — 1 page in common are being checked”
+// directly above its own next line, “The text of page 1 differs: 0 word(s) removed,
+// 4 added.” An all-clear headline over a found difference — and `sensitivity` is a
+// pixel control the text answer never consults.
+const HIDTEXT_A = 'bay four signed in';
+const HIDTEXT_B = 'bay four signed out';
+const WORDY_A: SheetModel[] = [{ box: SHEET, ink: COPY, text: HIDTEXT_A }];
+const WORDY_B: SheetModel[] = [{ box: SHEET, ink: COPY, text: HIDTEXT_B }];
+
+/** Everything the card beside the pages says, headline included. */
+function cardCopy(view: { container: HTMLElement }): string {
+  return view.container.querySelector('[data-compare-diff]')?.parentElement?.textContent ?? '';
+}
+
+describe('the card only clears the half the mode compared', () => {
+  it('refuses to say it matches at this sensitivity over differing text', async () => {
+    setCompareMode('text');
+    try {
+      const view = await loadPair(await register(WORDY_A), await register(WORDY_B));
+      const state = getCompareState();
+      expect(state.diffPixels, 'the double paints from ink, so the pixels agree').toBe(0);
+      expect(state.textChanged, 'the fixture lost its text difference').toBe(true);
+      const headline = cardCopy(view);
+      expect(headline, 'the card prints an all-clear over a real difference').not.toMatch(/matches at this sensitivity/);
+      expect(headline).toMatch(/differs in its text/);
+      expect(headline).toMatch(/comparing the 1 page both files have/);
+      // The loudest figure answers the question this mode asked, while the pixel
+      // number it replaced stays published on the same element for the strip match.
+      const figure = view.container.querySelector('[data-compare-diff]');
+      expect(figure?.textContent?.trim()).toBe('DIFFERS');
+      expect(figure?.getAttribute('data-compare-diff')).toBe('0');
+    } finally {
+      setCompareMode('visual');
+    }
+  });
+
+  it('says word for word when text mode really finds nothing', async () => {
+    setCompareMode('text');
+    try {
+      const view = await loadPair(await register(WORDY_A), await register(WORDY_A));
+      expect(getCompareState().textChanged).toBe(false);
+      const headline = cardCopy(view);
+      expect(headline).toMatch(/matches word for word/);
+      expect(view.container.querySelector('[data-compare-diff]')?.textContent?.trim()).toBe('MATCHES');
+      expect(headline, 'a pixel control named as the reason a text answer is clean')
+        .not.toMatch(/matches at this sensitivity/);
+    } finally {
+      setCompareMode('visual');
+    }
+  });
+
+  it('agrees with itself about a single page: “the 1 page both files have”', async () => {
+    const view = await loadPair(await register(WORDY_A), await register(WORDY_A));
+    const headline = cardCopy(view);
+    expect(headline).toMatch(/comparing the 1 page both files have/);
+    expect(headline, 'a singular count carrying a plural verb').not.toMatch(/1 page in common are being checked/);
+  });
+});

@@ -1202,7 +1202,7 @@ describe('page labels, bookmarks and contents (E6, E13, E15)', () => {
     // core/bookmarks.ts once fell back to decimal at 4000, so the card
     // previewed "4000, 4001" over a /St 3998 /S /r store that MuPDF and pypdf
     // both read as mmmm, mmmmi. The preview must say what the file says.
-    const four = await fixture([{}, {}, {}, {}], 'roman4000');
+    const four = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }, { size: A4 }], 'roman4000');
     const outcome = await run('add-page-labels', { ranges: '1-4 roman 3998' }, [four]);
     expect(outcome.message).toMatch(/now read: mmmcmxcviii, mmmcmxcix, mmmm, mmmmi/i);
     expect(outcome.message).not.toMatch(/\b4000\b/);

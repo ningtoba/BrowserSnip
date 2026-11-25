@@ -187,7 +187,22 @@ export function CompareTool() {
         aria-live="polite"
       >
         <p className="text-2xl font-bold text-accent tabular-nums" data-compare-diff={st.diffPercent}>
-          {st.compared ? `${st.diffPercent}%` : '—'}
+          {/*
+            The loudest number on the surface has to answer the question the mode was
+            asked. Measured in `Text content` over a pair whose only difference is four
+            words the rendering hides: the strip said the text differs, the card's
+            headline said so too — and the big figure above both of them was `0 %`, a
+            pixel number this mode never consults.
+          */}
+          {!st.compared
+            ? '—'
+            : st.mode === 'text'
+              ? st.textSilent
+                ? 'NO TEXT'
+                : st.textChanged
+                  ? 'DIFFERS'
+                  : 'MATCHES'
+              : `${st.diffPercent}%`}
         </p>
         <p className="text-[10px] leading-relaxed text-ink-muted">
           {!st.compared
@@ -198,7 +213,21 @@ export function CompareTool() {
                   {st.diffPixels.toLocaleString()} of {st.totalPixels.toLocaleString()} pixels · compared against{' '}
                   {report.comparedPages} page{report.comparedPages === 1 ? '' : 's'} both files have
                 </>
-              : `Page ${st.page} matches at this sensitivity — ${report.comparedPages} page${report.comparedPages === 1 ? '' : 's'} in common are being checked`}
+              : // An all-clear may only be sung by the half that was actually asked
+                // about. Measured with mode=Text content over a pair whose one
+                // difference is text the rendering does not show: the panel printed
+                // 0% and "Page 1 matches at this sensitivity" above its own next line
+                // saying the text differs, and `sensitivity` is a pixel control the
+                // text answer never consults.
+                st.textChanged
+                ? <>
+                    {st.mode === 'text'
+                      ? `Page ${st.page} differs in its text`
+                      : `Page ${st.page} renders the same — its text does not`}{' '}
+                    · {st.textWords} · comparing the {report.comparedPages} page
+                    {report.comparedPages === 1 ? '' : 's'} both files have
+                  </>
+                : `Page ${st.page} ${st.mode === 'text' ? 'matches word for word' : 'matches at this sensitivity'} — comparing the ${report.comparedPages} page${report.comparedPages === 1 ? '' : 's'} both files have`}
         </p>
         {/*
           Where, not merely how much. Each line is the changed area's own bounds in
