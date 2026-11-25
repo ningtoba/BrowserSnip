@@ -201,6 +201,7 @@ const STANDS: Record<string, PdfToolDefinition> = {
     icon: '📋',
     category: 'optimize',
     actionLabel: 'Audit',
+    outputSuffix: '.txt',
     run: async () => ({
       kind: 'report' as const,
       sections: [{ title: 'Sheets', rows: [{ label: 'Pages', value: '4' }] }],

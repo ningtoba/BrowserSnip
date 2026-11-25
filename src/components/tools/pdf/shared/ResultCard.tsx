@@ -137,6 +137,20 @@ export function describeDelta(before: number | null | undefined, after: number |
 }
 
 /**
+ * The success screen's headline: what the run actually left behind.
+ *
+ * A report-only run has no file — its answer is the text on the screen — so
+ * "Your file is ready" promised a download that does not exist; the receipt
+ * names the report instead. One output keeps the singular, several count
+ * themselves.
+ */
+export function describeReceipt(outputCount: number, hasReport: boolean): string {
+  if (outputCount > 1) return `${outputCount} files are ready`;
+  if (outputCount === 0 && hasReport) return 'Your report is ready';
+  return 'Your file is ready';
+}
+
+/**
  * `12 → 4`, or the one side that was actually counted.
  *
  * A tool that hands back images has no page count, and inventing one would be

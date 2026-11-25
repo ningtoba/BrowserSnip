@@ -33,7 +33,7 @@ import { FileIntake, intakeCopy, intakeFootNote, useIntake, type IntakeControls,
 import { GroupHeading, OptionsPanel, useTouchedFields } from './FieldControls';
 import { OutputPreview, type PreviewMode } from './OutputPreview';
 import { ProgressBar } from './ProgressBar';
-import { ResultCard, ResultWarnings, type ResultItem } from './ResultCard';
+import { describeReceipt, ResultCard, ResultWarnings, type ResultItem } from './ResultCard';
 import { runStatusText } from './toolForm';
 import { FOCUS_RING } from './focusRing';
 
@@ -598,7 +598,7 @@ export function ResultPane({
           ✓
         </span>
         <h1 className="mt-4 font-display text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[28px]">
-          {outputs.length > 1 ? `${outputs.length} files are ready` : 'Your file is ready'}
+          {describeReceipt(outputs.length, !!report)}
         </h1>
         <p className="mt-1 text-[12px] text-ink-muted">
           {toolName ?? 'This run'} finished in this tab — nothing was uploaded.
