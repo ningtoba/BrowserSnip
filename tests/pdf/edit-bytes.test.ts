@@ -1029,16 +1029,14 @@ describe('table-of-contents inserts a contents page that still points correctly'
     expect(beside.map((run) => run.text)).toEqual([String(1 + inserted)]);
   });
 
-  it('leaves every entry off a sheet too short to hold them — blocker, core layout', async () => {
-    // Measured live (`toc-append-back.pdf`: insert at page 8 of a mixed-size file
-    // whose eighth sheet is 336 × 71.4 pt): the inserted sheet takes that strip for
-    // its size, its usable band is `height - 48 = 23.4` above a `bottom` of 48, so
-    // the heading prints and each entry is placed at a negative y — below the paper.
-    // Four pages were inserted, each holding a `Contents` heading and no entry, while
-    // the card read "Inserted a 4 pages table of contents at page 8, listing 3
-    // entries from the outline." The layout is `generateTocPage`
-    // (src/lib/pdf/core/bookmarks.ts), outside this lane; flip this pin to the
-    // assertion it wants to be (every entry inside its sheet) when that lands.
+  it('puts every entry on a sheet too short for the normal band — seam fix landed', async () => {
+    // Was the pinned blocker (`toc-append-back.pdf`: the 336 × 71.4 pt strip
+    // the contents page copies took a 48 pt band it cannot hold: heading at
+    // y = 5.8, every entry below the paper at a negative y, four heading-only
+    // sheets while the card read "listing 3 entries"). The seam clamp
+    // (`generateTocPage`, core/bookmarks.ts) gives the strip a
+    // `min(48, 0.05 × min(w, h))` band, its heading sits at 50.23, and its
+    // one row per sheet at 10.63 — exactly 2 lineHeights under the heading.
     const fixture = pdfFile(await pdfFixture([
       { text: 'a' }, { text: 'b' }, { text: 'c' }, { text: 'd', size: [336, 71.4] },
     ]), 'mixed.pdf');
@@ -1048,7 +1046,8 @@ describe('table-of-contents inserts a contents page that still points correctly'
     ]);
     const doc = await reopen(outcome);
     const inserted = doc.getPageCount() - 4;
-    expect(inserted).toBeGreaterThan(1);
+    // One entry per strip sheet: rows_per_sheet = 1, three sheets.
+    expect(inserted).toBe(3);
     expect(outcome.message).toMatch(/listing 3 entries from the outline\./u);
 
     const titles = ['Alpha', 'Beta', 'Gamma'];
@@ -1060,12 +1059,15 @@ describe('table-of-contents inserts a contents page that still points correctly'
       const { height } = page.getSize();
       expect(height).toBeCloseTo(71.4, 1);
       for (const run of pageRuns(page)) {
+        // On the paper, every time — the blocker's assertion, inverted.
+        expect(run.rect.y).toBeGreaterThanOrEqual(0);
+        expect(run.rect.y + run.rect.height).toBeLessThanOrEqual(height);
         if (run.text === 'Contents') headings += 1;
-        if (titles.includes(run.text) && run.rect.y >= 0 && run.rect.y + run.rect.height <= height) onPaper += 1;
+        if (titles.includes(run.text)) onPaper += 1;
       }
     }
     expect(headings).toBe(inserted);
-    expect(onPaper).toBe(0);
+    expect(onPaper).toBe(3);
   });
 });
 

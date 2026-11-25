@@ -705,6 +705,14 @@ export interface TocOptions {
   fontSize?: number;
   leader?: 'dots' | 'none';
   /**
+   * Print the page number beside each row and the leader dots that reach it
+   * (true by default). Off, the rows list without folios — the
+   * `table-of-contents` card's "Show page numbers" switch, which used to be
+   * wired to the alignment flag below and so printed every number anyway
+   * (measured: rows still 'Chapter One 2').
+   */
+  showPageNumbers?: boolean;
+  /**
    * Right-align the page numbers against the right margin, with the leader
    * filling the gap (true by default — the alternative leaves one space after
    * the title).
@@ -731,6 +739,29 @@ interface TocRow {
   title: string;
   level: number;
   page: number | null;
+}
+
+/** Rows one `generateTocPage` sheet holds below its heading, with the same
+ * conditional band clamp the layout applies: the seam spec's
+ * `rows_per_sheet = floor((height − 2·margin − 1.6·fontSize − lineHeight) /
+ * lineHeight)` under the 48 pt band whenever that fits heading and one row,
+ * under the `min(48, 0.05 × min(w, h))` clamp when it does not. A result
+ * below 1 is the promotion rule: the heading keeps its own sheet and every
+ * entry gets a sheet of its own. Callers word their admitted sentences from
+ * this and the entry count; the numbers the campaign measured reproduce
+ * exactly (336 × 71.4 pt: 1 row at 11 pt, 0 at 13 pt). */
+export function tocRowsPerSheet(
+  width: number,
+  height: number,
+  fontSize = 11,
+  heading = true,
+): number {
+  const lineHeight = Math.max(fontSize * 1.8, 16);
+  const rowsFor = (m: number): number => Math.floor(
+    (height - 2 * m - (heading ? fontSize * 1.6 + lineHeight : lineHeight * 0.5)) / lineHeight,
+  );
+  const plain = rowsFor(48);
+  return plain >= 1 ? plain : rowsFor(Math.min(48, 0.05 * Math.min(width, height)));
 }
 
 function flattenOutline(nodes: OutlineNode[], level = 0, out: TocRow[] = []): TocRow[] {
@@ -780,6 +811,7 @@ export async function generateTocPage(
   const startPage = Math.min(Math.max(0, Math.trunc(opts.startPage ?? 0)), pageCount);
   const fontSize = opts.fontSize ?? 11;
   const leader = opts.leader ?? 'dots';
+  const showNumbers = opts.showPageNumbers ?? true;
   const rightAlign = opts.rightAlignPageNumbers ?? true;
   const heading = opts.title === undefined ? 'Contents' : opts.title;
   const template = doc.getPage(Math.min(startPage, Math.max(0, pageCount - 1)));
@@ -799,22 +831,37 @@ export async function generateTocPage(
     getFont(doc, { text: heading || 'Contents', size: fontSize * 1.6, bold: true }),
   ]);
 
-  const margin = 48;
+  const lineHeight = Math.max(fontSize * 1.8, 16);
+  const headingBand = heading ? fontSize * 1.6 : 0;
+  const firstRowGap = heading ? lineHeight : lineHeight * 0.5;
+  // Rows one sheet holds under its heading — the seam spec's
+  // `floor((height − 2·margin − 1.6·fontSize − lineHeight) / lineHeight)`
+  // (with no heading the first row hangs half a line lower). A sheet whose
+  // 48 pt band cannot hold heading and one row takes the page-numbers style
+  // proportional clamp `min(48, 0.05 × min(w, h))` instead of printing entries
+  // below the paper: unclamped, the campaign's 336 × 71.4 pt strip drew every
+  // row at y = −36.55 while the card claimed them listed
+  // (/tmp/seam2a/repro-6-short-sheet.json). A normal 595 pt template keeps its
+  // 48 pt band, its heading at 529.4 and rows exactly 2 lineHeights under —
+  // the same numbers as before this clamp.
+  const rowsFor = (m: number): number => Math.floor(
+    (height - 2 * m - headingBand - firstRowGap) / lineHeight,
+  );
+  const margin = rowsFor(48) >= 1 ? 48 : Math.min(48, 0.05 * Math.min(width, height));
+  const perSheet = rowsFor(margin);
   const left = margin;
   const right = Math.max(margin * 2, width - margin);
   const top = height - margin;
-  const bottom = margin;
-  const lineHeight = Math.max(fontSize * 1.8, 16);
   const indent = fontSize * 1.4;
   const gap = fontSize * 0.6;
 
   const pages: PDFPage[] = [];
   let y = 0;
-  const openPage = (): PDFPage => {
+  const openPage = (withHeading: boolean): PDFPage => {
     const fresh = doc.insertPage(startPage + pages.length, [width, height]);
     pages.push(fresh);
     y = top;
-    if (heading) {
+    if (withHeading) {
       y -= fontSize * 1.6;
       fresh.drawText(heading, {
         x: left,
@@ -833,11 +880,31 @@ export async function generateTocPage(
   // sees, and that total is unknown until the last row is laid out — so rows
   // are positioned first and drawn once the page count is final.
   const drawn: { page: PDFPage; row: TocRow; y: number }[] = [];
-  let current = openPage();
-  for (const row of rows) {
-    if (y - lineHeight < bottom) current = openPage();
-    y -= lineHeight;
-    drawn.push({ page: current, row, y });
+  if (rows.length === 0) {
+    openPage(!!heading);
+  } else if (perSheet < 1) {
+    // Promotion (seam spec): the heading fills the sheet with no room for a
+    // row, so it keeps a sheet of its own and **every entry is drawn on its
+    // own following sheet**, one line below the top margin — never dropped,
+    // because the card counts them. This is the admitted shape the
+    // `table-of-contents` tool words from `tocRowsPerSheet`.
+    if (heading) openPage(true);
+    for (const row of rows) {
+      const sheet = openPage(false);
+      drawn.push({ page: sheet, row, y: top - lineHeight });
+    }
+  } else {
+    let current = openPage(!!heading);
+    let onSheet = 0;
+    for (const row of rows) {
+      if (onSheet >= perSheet) {
+        current = openPage(!!heading);
+        onSheet = 0;
+      }
+      y -= lineHeight;
+      onSheet += 1;
+      drawn.push({ page: current, row, y });
+    }
   }
 
   const inserted = pages.length;
@@ -852,7 +919,7 @@ export async function generateTocPage(
     const node = item.page;
     const row = item.row;
     const x = left + row.level * indent;
-    const label = row.page === null ? '' : String(displayedPage(row.page));
+    const label = showNumbers && row.page !== null ? String(displayedPage(row.page)) : '';
     const labelWidth = label ? bodyFont.widthOfTextAtSize(label, fontSize) : 0;
     const available = Math.max(fontSize, right - x - (label ? labelWidth + gap : 0));
     const title = clip(row.title, bodyFont, fontSize, available);

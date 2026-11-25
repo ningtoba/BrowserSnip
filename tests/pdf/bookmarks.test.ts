@@ -24,6 +24,7 @@ import {
   savePDF,
 } from '@/lib/pdf/core/doc';
 import { streamBytes } from '@/lib/pdf/core/metadata';
+import { textRects } from '@/lib/pdf/core/content';
 import {
   addBatesNumbers,
   addPageLabels,
@@ -32,6 +33,7 @@ import {
   outlineToJson,
   readOutline,
   readPageLabels,
+  tocRowsPerSheet,
   writeOutline,
   type OutlineNode,
 } from '@/lib/pdf/core/bookmarks';
@@ -579,6 +581,101 @@ describe('generateTocPage', () => {
     expect(pageText(loaded.getPage(0))).toContain('Notes');
     expect(linkTargets(loaded.getPage(0), loaded)).toEqual([]);
     expect(pages.length).toBe(1);
+  });
+
+  it('showPageNumbers: false prints no folios and no leader dots', async () => {
+    // The card's toggle (edit-lane c4 blocker 1): the option did not exist,
+    // `showPageNumbers: false` only reached `rightAlignPageNumbers`, and every
+    // number printed anyway (rows still 'Chapter One 2', /tmp/lane-edit/c4).
+    const doc = await blankDoc(3);
+    const numbered = [{ title: 'Alpha', page: 0 }, { title: 'Beta', page: 1 }, { title: 'Gamma', page: 2 }];
+    const tocPages = await generateTocPage(doc, { nodes: numbered, showPageNumbers: false });
+    const loaded = await reload(await savePDF(doc));
+    const toc = loaded.getPage(0);
+    const text = pageText(toc);
+    expect(text).toContain('Alpha');
+    expect(text).toContain('Gamma');
+    expect(text).not.toMatch(/\d/u);
+    // The leader dots are the folios' companions: off means off, not a dotted
+    // line to nowhere.
+    expect(pageContent(toc)).not.toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/);
+    // The row still jumps — the switch is about printing, not navigating.
+    expect(linkTargets(toc, loaded)).toHaveLength(3);
+    expect(tocPages.length).toBe(1);
+
+    // Control: the default still prints folios and leaders (also pinned by
+    // 'inserts real pages with leaders, numbers and working links').
+    const kept = await blankDoc(3);
+    await generateTocPage(kept, { nodes: numbered });
+    const keptLoaded = await reload(await savePDF(kept));
+    expect(pageText(keptLoaded.getPage(0))).toMatch(/\d/u);
+    expect(pageContent(keptLoaded.getPage(0))).toMatch(/\[\s*1\s+2\.5\]\s+0\s+d/);
+  });
+
+  it('clamps the band on a sheet too short, keeping every entry on the paper', async () => {
+    // Edit-lane c4 blocker 2, the seam spec verbatim:
+    // rows_per_sheet = floor((height − 2·margin − 1.6·fontSize − lineHeight) /
+    // lineHeight) under margin = min(48, 0.05 × min(w, h)) when the 48 pt band
+    // cannot hold heading and one row. On the campaign's 336 × 71.4 pt strip at
+    // 11 pt that is 1 row per sheet: heading at 50.23, first row at 10.63 —
+    // exactly 2 lineHeights apart, both on paper (unclamped, the rows sat at
+    // y = −36.55, /tmp/seam2a/repro-6-short-sheet.json).
+    expect(tocRowsPerSheet(336, 71.4, 11)).toBe(1);
+    expect(tocRowsPerSheet(336, 71.4, 13)).toBeLessThan(1); // 0.23 row: descenders off
+    expect(tocRowsPerSheet(336, 71.4, 24)).toBeLessThan(1); // −56.97: fully off
+    expect(tocRowsPerSheet(595.28, 841.89, 11)).toBe(35); // normal A4 band keeps 48
+    expect(tocRowsPerSheet(340, 515, 11)).toBe(19); // the cropped-sheet pin's sheet
+
+    const doc = await newPDF();
+    doc.addPage([595, 842]);
+    doc.addPage([595, 842]);
+    doc.addPage([595, 842]);
+    doc.addPage([336, 71.4]);
+    const nodes = [
+      { title: 'Alpha', page: 0 }, { title: 'Beta', page: 1 }, { title: 'Gamma', page: 3 },
+    ];
+    const pages = await generateTocPage(doc, { nodes, startPage: 3 });
+    expect(pages).toHaveLength(3);
+    const loaded = await reload(await savePDF(doc));
+    let onPaper = 0;
+    for (const sheet of loaded.getPages().slice(3, 6)) {
+      const { width, height } = sheet.getSize();
+      expect([width, height]).toEqual([336, 71.4]);
+      for (const run of textRects(sheet)) {
+        expect(run.rect.y).toBeGreaterThanOrEqual(0);
+        expect(run.rect.y + run.rect.height).toBeLessThanOrEqual(height);
+        if (/^(Alpha|Beta|Gamma)$/.test(run.text)) onPaper += 1;
+      }
+      expect(pageText(sheet)).toContain('Contents'); // every sheet keeps its heading
+    }
+    expect(onPaper).toBe(3);
+  });
+
+  it('promotes every entry onto its own sheet when the heading fills it', async () => {
+    // rows_per_sheet == 0 (336 × 71.4 pt at 13 pt): the heading keeps a sheet
+    // of its own and each entry is drawn — never silently dropped — on a
+    // following sheet, where it fits inside the paper. The tool words its
+    // admitted sentence (dims + per-entry remedy) from `tocRowsPerSheet`.
+    const doc = await newPDF();
+    doc.addPage([336, 71.4]);
+    const nodes = [
+      { title: 'Alpha', page: 0 }, { title: 'Beta', page: 0 }, { title: 'Gamma', page: 0 },
+    ];
+    const pages = await generateTocPage(doc, { nodes, fontSize: 13 });
+    expect(pages).toHaveLength(4); // heading sheet + one sheet per entry
+    const loaded = await reload(await savePDF(doc));
+    const seen: string[] = [];
+    loaded.getPages().slice(0, 4).forEach((sheet, index) => {
+      const { height } = sheet.getSize();
+      const runs = textRects(sheet);
+      for (const run of runs) {
+        expect(run.rect.y).toBeGreaterThanOrEqual(0);
+        expect(run.rect.y + run.rect.height).toBeLessThanOrEqual(height);
+        if (/^(Alpha|Beta|Gamma)$/.test(run.text)) seen.push(run.text);
+      }
+      if (index === 0) expect(runs.some((run) => run.text === 'Contents')).toBe(true);
+    });
+    expect(seen).toEqual(['Alpha', 'Beta', 'Gamma']);
   });
 });
 
