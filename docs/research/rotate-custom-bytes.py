@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 
 import pymupdf
@@ -106,6 +107,7 @@ def measure(path, sheets=None):
             "chars": len(page.get_text()),
             "annots": len(list(page.annots() or [])),
             "annots_raw": annots_raw(doc, page),
+            "annots_count": len(annots_raw(doc, page)),
             "links": len(page.get_links()),
             "images": len(page.get_images()),
             "streams": streams(doc, page),
@@ -113,6 +115,199 @@ def measure(path, sheets=None):
             "ink_x": round(pix.width * (centroid[0] if centroid else 0), 1),
         })
     return out
+
+
+def annots_raw(doc, page):
+    """The page's own `/Annots` entries as xref tokens, indirect array included."""
+    kind, value = doc.xref_get_key(page.xref, "Annots")
+    if kind == "xref":
+        value = doc.xref_object(int(value.split()[0]), compressed=False)
+        kind = "array" if value.startswith("[") else kind
+    if kind != "array" or not value:
+        return []
+    # `[]` is an empty array, not one mark: the tokens are the `N 0 R` entries.
+    return [token for token in value.replace("[", " ").replace("]", " ").split(" R ") if token.strip()]
+
+
+def body_chars(path):
+    """Every page's character count with its annotations removed.
+
+    MuPDF folds a free-text note's own words into `get_text()`, so `annot.pdf`
+    sheet 1 reads 1 816 characters: 1 779 of body copy plus the 37 of "A free-text
+    note sitting on the page". The rebuild leaves the marks behind (and says so), so
+    the body alone is what a turned sheet has to keep — measured by stripping the
+    marks off a copy of the source, not by guessing which annots draw text.
+    """
+    doc = pymupdf.open(path)
+    for page in doc:
+        for annot in list(page.annots() or []):
+            annot.remove() if hasattr(annot, "remove") else page.delete_annot(annot)
+    copy = pymupdf.open(stream=doc.tobytes(), filetype="pdf")
+    return [len(page.get_text()) for page in copy]
+
+
+def turn_box(width, height, angle):
+    """The box a `width × height` rectangle needs when turned `angle` degrees."""
+    radians = math.radians(abs(angle))
+    cosine, sine = abs(math.cos(radians)), abs(math.sin(radians))
+    return (width * cosine + height * sine, width * sine + height * cosine)
+
+
+def norm_dir(degrees_value):
+    """Fold an image-space direction into (-180, 180]."""
+    return ((float(degrees_value) + 180) % 360) - 180
+
+
+# One row per case the round rig runs: (source, picked pages, angle the field held, fit).
+# `D` is 180, not 360: the angle control is a slider with `max 180`, and writing 360
+# into a range input leaves it at 180 — measured in the rig's own read-back, and the
+# card prints the same 180 it ran with.
+ROUND_CASES = [
+    ("A-all-30-grow", "colour", "all", 30, "grow"),
+    ("B-all-neg30-grow", "colour", "all", -30, "grow"),
+    ("C-all-0-grow", "colour", "all", 0, "grow"),
+    ("D-all-360-grow", "colour", "all", 180, "grow"),
+    ("E-all-45-keep", "colour", "all", 45, "keep"),
+    ("F-all-90-grow", "colour", "all", 90, "grow"),
+    ("G-all-neg90-grow", "colour", "all", -90, "grow"),
+    ("H-p4-0-grow", "colour", [4], 0, "grow"),
+    ("I-p4-30-grow", "colour", [4], 30, "grow"),
+    ("J-p4-90-grow", "colour", [4], 90, "grow"),
+    ("K-p3-empty-30-grow", "colour", [3], 30, "grow"),
+    ("L-p1-30-grow", "colour", [1], -30, "grow"),
+    ("AN-p1-30-grow", "annot", [1], 30, "grow"),
+    ("AN-all-90-grow", "annot", "all", 90, "grow"),
+    ("AB-p1-30-grow", "bookmarked", [1], 30, "grow"),
+    ("AM-all-15-grow", "meta", "all", 15, "grow"),
+]
+
+ROUND_SOURCES = {
+    "colour": "/tmp/triage/colour.pdf",  # noqa: S108
+    "annot": "/tmp/triage/in/annot.pdf",  # noqa: S108
+    "bookmarked": "/tmp/triage/in/bookmarked.pdf",  # noqa: S108
+    "meta": "/tmp/triage/in/meta.pdf",  # noqa: S108
+}
+
+# A turned page is re-laid from the source box, so its ink moves a little: measured
+# 0.9994 to 1.019 when the page grew (antialiasing on the diagonals), and 0.304 to
+# 0.934 when the old box was kept (the low number is the 336x71 slip at 45°, whose
+# ink is mostly outside the kept frame). The bands are those measurements, not
+# invented thresholds.
+GROW_INK = (0.95, 1.06)
+KEEP_INK = (0.0, 1.02)
+BOX_TOLERANCE_PT = 0.2
+DIRECTION_TOLERANCE_DEG = 0.6
+INFO_KEYS = ("title", "author", "subject", "keywords", "creator")
+
+
+def judge_case(name, source_path, output_path, pick, angle, fit, expect_turned=True):
+    """One case: every sheet compared with the source sheet it came from."""
+    src, out = pymupdf.open(source_path), pymupdf.open(output_path)
+    total = src.page_count
+    chosen = set(range(1, total + 1)) if pick == "all" else {int(p) for p in pick}
+    problems = []
+    print(f"\n== {name}: {os.path.basename(output_path)} picked={sorted(chosen)} angle={angle} fit={fit} "
+          f"({os.path.getsize(source_path)} -> {os.path.getsize(output_path)} bytes)")
+    if out.page_count != total:
+        problems.append(f"{name}: page count {out.page_count} != {total}")
+        return problems
+    was_all = {s["page"]: s for s in measure(source_path)["sheets"]}
+    got_all = {s["page"]: s for s in measure(output_path)["sheets"]}
+    bodies = body_chars(source_path)
+    for i in range(total):
+        was, got = was_all[i], got_all[i]
+        # The body copy alone: MuPDF reads a free-text note's words as page text,
+        # and the note is left behind by the rebuild (the tool says so).
+        body = bodies[i]
+        if (i + 1) not in chosen:
+            keys = ("displayed", "rotate", "ink", "chars", "annots_count", "links", "images", "streams")
+            moved = [f"{key} {was[key]!r} -> {got[key]!r}" for key in keys if was[key] != got[key]]
+            print(f"   sheet {i + 1} (as it was): box {got['displayed']} rot {got['rotate']} ink {got['ink']} "
+                  f"chars {got['chars']} ann {len(got['annots_raw'])} link {got['links']} img {got['images']} "
+                  f"streams {got['streams']} {'OK' if not moved else 'CHANGED: ' + '; '.join(moved)}")
+            if moved:
+                problems.append(f"{name} sheet {i + 1}: not copied verbatim — {'; '.join(moved)}")
+            continue
+        want = turn_box(was["displayed"][0], was["displayed"][1], angle) if fit == "grow" else tuple(was["displayed"])
+        box_ok = abs(got["displayed"][0] - want[0]) <= BOX_TOLERANCE_PT and abs(got["displayed"][1] - want[1]) <= BOX_TOLERANCE_PT
+        lo, hi = GROW_INK if fit == "grow" else KEEP_INK
+        ratio = round(got["ink"] / was["ink"], 4) if was["ink"] else None
+        ink_ok = (lo <= ratio <= hi) if ratio is not None else got["ink"] == was["ink"]
+        if was["line"] is None or got["chars"] == 0:
+            # A sheet with no line to read, or one whose copy all fell outside the
+            # kept frame (`E-all-45-keep` sheet 2: 13 characters, none of them inside
+            # the old box), cannot testify about a direction. The ink row does.
+            line_ok, want_line = True, None
+        else:
+            want_line = round(norm_dir(was["line"] + angle), 1)
+            line_ok = got["line"] is not None and abs(norm_dir(got["line"]) - want_line) <= DIRECTION_TOLERANCE_DEG
+        rot_ok = got["rotate"] == 0
+        # A grown frame holds every character of the body copy; a kept frame clips
+        # some of it outside the page (measured: 49 of sheet 1's 1 779 characters at
+        # 45°), which is the corner-cutting the tool counts in its own warning.
+        text_ok = got["chars"] == body if fit == "grow" else got["chars"] <= body
+        # The rebuild leaves the marks behind — the tool says so — so a mark that
+        # DID come along would make its own warning false.
+        marks_false_promise = len(was["annots_raw"]) and len(got["annots_raw"])
+        ok = box_ok and ink_ok and line_ok and rot_ok and text_ok and not marks_false_promise
+        print(f"   sheet {i + 1} (turned): box {got['displayed']} (want {round(want[0], 1)}x{round(want[1], 1)}) "
+              f"rot {got['rotate']} (want 0) ink {got['ink']} ratio {ratio} (want {lo}-{hi}) "
+              f"line {got['line']} (want {want_line}) chars {got['chars']} (body {body}) "
+              f"ann {len(got['annots_raw'])} (was {len(was['annots_raw'])}) link {got['links']} img {got['images']} "
+              f"streams {got['streams']} {'OK' if ok else 'WRONG'}")
+        if not expect_turned:
+            continue
+        if not rot_ok:
+            problems.append(f"{name} sheet {i + 1}: /Rotate {got['rotate']} — the turn was stored, not baked into the content")
+        if not box_ok:
+            problems.append(f"{name} sheet {i + 1}: box {got['displayed']} != the {angle}° turn of "
+                            f"{was['displayed']} ({round(want[0], 1)}x{round(want[1], 1)})")
+        if not ink_ok:
+            problems.append(f"{name} sheet {i + 1}: ink ratio {ratio} outside {lo}-{hi} "
+                            f"({was['ink']} -> {got['ink']})")
+        if not line_ok:
+            problems.append(f"{name} sheet {i + 1}: first-line direction {got['line']} != {want_line}")
+        if not text_ok:
+            problems.append(f"{name} sheet {i + 1}: text {got['chars']} against the source body {body} "
+                            f"({fit} frame)")
+        if marks_false_promise:
+            problems.append(f"{name} sheet {i + 1}: {len(got['annots_raw'])} of the source's {len(was['annots_raw'])} "
+                            f"marks came along although the tool warns they are lost")
+    smeta, ometa = src.metadata or {}, out.metadata or {}
+    lost = [f"{key}: {smeta.get(key)!r} -> {ometa.get(key)!r}" for key in INFO_KEYS
+            if (smeta.get(key) or "") and (ometa.get(key) or "") != (smeta.get(key) or "")]
+    xmp_src, xmp_out = len(src.get_xml_metadata() or ""), len(out.get_xml_metadata() or "")
+    producer = ometa.get("producer") or ""
+    print(f"   /Info {'carried' if not lost else 'LOST ' + '; '.join(lost)}; XMP {xmp_src} -> {xmp_out}; "
+          f"producer {producer!r}")
+    problems.extend(f"{name}: /Info {line}" for line in lost)
+    if xmp_out != xmp_src:
+        problems.append(f"{name}: XMP packet {xmp_src} -> {xmp_out} bytes")
+    if producer != "BrowserSnip":
+        problems.append(f"{name}: producer {producer!r} is not this app's, as the card's own note says")
+    return problems
+
+
+def judge_round(root, control=False):
+    """Judge every case of a round directory; `--control` mislabels one angle."""
+    dirs = {"colour": "rc", "annot": "rc-annot", "bookmarked": "rc-book", "meta": "rc-meta"}
+    problems = []
+    for name, key, pick, angle, fit in ROUND_CASES:
+        path = os.path.join(root, dirs[key], f"{name}.pdf")
+        if not os.path.exists(path):
+            problems.append(f"{name}: no download at {path}")
+            continue
+        if control and name != "A-all-30-grow":
+            continue
+        problems += judge_case(name, ROUND_SOURCES[key], path,
+                               pick, 60 if control else angle, fit)
+    if control:
+        print(f"\ncontrol: A-all-30-grow judged as a 60° turn -> {len(problems)} problem lines (must be > 0)")
+        return 0 if problems else 1
+    print("\n" + ("AS PROMISED — 0 problem lines" if not problems else f"{len(problems)} PROBLEM LINES"))
+    for problem in problems:
+        print("  !", problem)
+    return 0 if not problems else 1
 
 
 def main():
