@@ -1358,6 +1358,26 @@ describe('scanner-effect card: the properties a reader assumes, measured', () =>
     ]);
   });
 
+  it('describes the sharpen pass as the fixed order it is, not a dial', async () => {
+    // Re-settled against today's chain (:5291, 2026-11-25): with the toggle off the
+    // sheet carries 16 383 anti-aliased mid tones against 6 339 with it on — the
+    // edges crisp — while the paper plateau holds 255.0 everywhere in the band and
+    // no pixel rings dark around them, because `whitenPixels` runs before
+    // `sharpenPixels` and the pass has no grey paper left to overshoot on. The help
+    // used to warn "Overdone, it leaves a halo around every letter", advertising a
+    // strength this card offers no control for, of a failure this order prevents.
+    const tool = getPdfTool('scanner-effect')!;
+    const help = (tool.fields ?? []).find((f) => f.key === 'sharpen')?.help ?? '';
+    expect(help, 'the help advertises an amount the rail cannot set').not.toMatch(/overdone/i);
+    expect(help, 'the help does not say where the pass runs, which is why it cannot ring').toMatch(/whitening/i);
+    const sharp = await runTool('scanner-effect', { dpi: 72, pages: '1' });
+    const soft = await runTool('scanner-effect', { dpi: 72, pages: '1', sharpen: false });
+    expect(populations(soft.raster).middle, 'the sharpen toggle moved no mid tones')
+      .toBeGreaterThan(populations(sharp.raster).middle);
+    const ringing = regionPixels(sharp.raster, 'band').filter(([, , b]) => b < 223).length;
+    expect(ringing, 'the sharpened sheet rings the paper with dark pixels').toBe(0);
+  });
+
   it('paints the note into the picture, drops the /Annots entry, and names both', async () => {
     const { doc, result } = await runTool('scanner-effect', COLOUR, { annots: true });
     const annots = (page: PDFPage) => {

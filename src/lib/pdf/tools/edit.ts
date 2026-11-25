@@ -1828,7 +1828,7 @@ export const editTools: PdfToolDefinition[] = [
     promise: 'The pages you choose, whitened and sharpened into a clean greyscale scan — a real pixel pass, not just a colour filter.',
     fields: [
       { key: 'whitening', label: 'Whiten the background', type: 'toggle', default: true, group: 'Look', help: 'Pushes the paper background to white, which is what makes a grey photocopy look clean.' },
-      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true, group: 'Look', help: 'Crisps the edges of the glyphs. Overdone, it leaves a halo around every letter.' },
+      { key: 'sharpen', label: 'Sharpen edges', type: 'toggle', default: true, group: 'Look', help: 'Crisps the edges of the glyphs. There is no amount to set: the pass runs after whitening, so it has no grey paper left to ring with a halo.' },
       { key: 'grayscale', label: 'Greyscale', type: 'toggle', default: true, group: 'Look', help: 'Drops the colour, which is what a real document scan looks like and prints cheaper.' },
       { key: 'contrast', label: 'Contrast', type: 'slider', default: 1.35, min: 1, max: 3, step: 0.05, group: 'Look', help: 'How hard the pass separates ink from paper.' },
       { key: 'dpi', label: 'Resolution', type: 'slider', default: 220, min: 96, max: 400, step: 1, unit: 'dpi', group: 'Output', help: '300 is the point at which a printed page reads cleanly on screen; above it the effect gets slower and the file gets much bigger.' },
