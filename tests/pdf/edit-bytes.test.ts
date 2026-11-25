@@ -707,6 +707,70 @@ describe('add-page-labels writes the /PageLabels dictionary', () => {
     const outcome = await runPdf('add-page-labels', { ranges: '1-3 roman 1' }, [{ text: 'a' }, { text: 'b' }]);
     expect(outcome.warnings.join(' ')).toMatch(/run to page 2, not page 3/u);
   });
+
+  /** Eight sheets, the length every sentence below was measured against. */
+  const eight = Array.from({ length: 8 }, (_unused, index) => ({ text: `page ${index + 1}` }));
+
+  it('names the thing that actually ended a range (E15)', async () => {
+    // Two of the four shapes used to name the other shape's cause: a last line cut
+    // short by the document was blamed on "the next range", and a line the next
+    // range stopped early was blamed on the document's length.
+    const tooLong = await runPdf('add-page-labels', { ranges: '1-3 roman 1\n4-99 decimal 1' }, eight);
+    expect(tooLong.warnings.join(' '))
+      .toMatch(/The labels from page 4 run to page 8, not page 99: this document has 8 pages\./u);
+    expect(tooLong.warnings.join(' ')).not.toMatch(/last until the next range/u);
+
+    const overshoot = await runPdf('add-page-labels', { ranges: '1-2 roman 1\n5-8 decimal 1' }, eight);
+    expect(overshoot.warnings.join(' '))
+      .toMatch(/The labels from page 1 run to page 4, not page 2: PDF labels last until the next range starts, at page 5\./u);
+    expect(overshoot.warnings.join(' ')).not.toMatch(/not page 2: this document has 8 pages/u);
+    // And the overshoot is what the file holds, not just what the note says.
+    expect(await labelRanges(overshoot)).toMatchObject([
+      { start: 0, style: '/r' },
+      { start: 4, style: '/D' },
+    ]);
+
+    const cutShort = await runPdf('add-page-labels', { ranges: '1-5 decimal 1\n3-8 roman 1' }, eight);
+    expect(cutShort.warnings.join(' '))
+      .toMatch(/The labels from page 1 run to page 2, not page 5: the next range starts at page 3\./u);
+
+    const runsToEnd = await runPdf('add-page-labels', { ranges: '1-1 decimal' }, eight);
+    expect(runsToEnd.warnings.join(' '))
+      .toMatch(/The labels from page 1 run to page 8, not page 1: nothing starts after it, so it lasts to the end of the document, page 8\./u);
+
+    // Control: lines whose typed ends land exactly say nothing about ends.
+    const exact = await runPdf('add-page-labels', { ranges: '1-2 Roman\n3-4 alpha\n5-5 Alpha\n6-8 decimal 7' }, eight);
+    expect(exact.warnings.join(' ')).not.toMatch(/run to page/u);
+    expect(exact.message).toMatch(/now read: I, II, a, b, A, 7, 8, 9/u);
+  });
+
+  it('refuses page 0 by name instead of throwing core\'s validation text', async () => {
+    await expect(runPdf('add-page-labels', { ranges: '0-3 roman 1' }, eight))
+      .rejects.toThrow(/"0-3 roman 1" starts at page 0, but the first page of this document is page 1\./u);
+    await expect(runPdf('add-page-labels', { ranges: '0-3 roman 1' }, eight))
+      .rejects.not.toThrow(/non-negative start page/u);
+
+    // The point of refusing the line here: one page-0 typo used to take the legal
+    // lines in the same box down with it, and no file came back at all.
+    const mixed = await runPdf('add-page-labels', { ranges: '0-2 roman\n4-6 decimal 1' }, eight);
+    expect(mixed.warnings.join(' ')).toMatch(/"0-2 roman" starts at page 0/u);
+    expect(await labelRanges(mixed)).toMatchObject([
+      { start: 0, style: '/D', first: undefined },
+      { start: 3, style: '/D', first: undefined },
+    ]);
+  });
+
+  it('refuses a start number no reader can hold, and keeps the largest one that survives', async () => {
+    // 1e22 written into `/St`: qpdf hands back a catalogue with no `/PageLabels`,
+    // MuPDF reads 1864712049423024128, and this app previewed every sheet as `1e+22`.
+    await expect(runPdf('add-page-labels', { ranges: '1-8 decimal 9999999999999999999999' }, eight))
+      .rejects.toThrow(/starts at 9999999999999999999999, but a page label holds at most 2147483647/u);
+
+    const held = await runPdf('add-page-labels', { ranges: '1-8 decimal 2147483647' }, eight);
+    expect(held.warnings.join(' ')).not.toMatch(/holds at most/u);
+    expect((await labelRanges(held))[0]).toMatchObject({ start: 0, style: '/D', first: 2147483647 });
+    expect(held.message).toMatch(/now read: 2147483647, 2147483648, 2147483649/u);
+  });
 });
 
 describe('bookmarks write an outline that lands on the right page', () => {

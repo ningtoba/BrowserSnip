@@ -2661,6 +2661,19 @@ interface LabelRange {
   firstPageNumber?: number;
 }
 
+/**
+ * The largest page number a `/St` entry survives being.
+ *
+ * Measured on the bytes `1-8 decimal 9999999999999999999999` produces: pikepdf/qpdf
+ * hands back a catalogue with **no `/PageLabels` at all**, MuPDF reads the range as
+ * `1864712049423024128` (the digits wrapped through 64 bits) and pypdf keeps the
+ * 23-digit number, while this app's own preview collapses every sheet onto `1e+22`
+ * because a JavaScript number cannot count past 2^53 by ones. A start beyond a
+ * signed 32-bit int is therefore not a page number any reader agrees on, and the
+ * one place it can still be refused is here.
+ */
+const MAX_LABEL_START = 2147483647;
+
 function parseLabelRanges(
   raw: string,
   total: number,
@@ -2680,8 +2693,22 @@ function parseLabelRanges(
       note(notes, `"${line.trim()}" runs backwards: page ${from} comes after page ${to}.`);
       continue;
     }
+    // Page 0 is the one number this grammar spells legally and the range writer
+    // cannot place: `start = from - 1` goes negative and core's validation throws,
+    // so a whole run used to stop on core's sentence — "Page-label ranges need a
+    // whole, non-negative start page" — which names no line, describes a 0 as
+    // negative, and took every legal line in the box down with it.
+    if (from < 1) {
+      note(notes, `"${line.trim()}" starts at page ${from}, but the first page of this document is page 1.`);
+      continue;
+    }
     if (from > total) {
       note(notes, `"${line.trim()}" starts at page ${from}, but this document has ${countLabel(total, 'page')}.`);
+      continue;
+    }
+    const first = match[4] ? Number(match[4]) : undefined;
+    if (first !== undefined && (!Number.isSafeInteger(first) || first > MAX_LABEL_START)) {
+      note(notes, `"${line.trim()}" starts at ${match[4]}, but a page label holds at most ${MAX_LABEL_START} — larger numbers are wrapped or dropped by readers — so it was not read.`);
       continue;
     }
     // The spelling the user typed decides upper-case from lower-case: the help
@@ -2703,20 +2730,28 @@ function parseLabelRanges(
       // a range typed `1-3` on a 2-page file has to say so out loud.
       askedEnd: to,
       style: style ?? 'D',
-      firstPageNumber: match[4] ? Number(match[4]) : undefined,
+      firstPageNumber: first,
       prefix: match[5],
     });
   }
   out.sort((a, b) => a.start - b.start);
   // A label is start-based in PDF, so the end page a user typed is only ever
-  // honoured by the next line. Saying so is the difference between a legal
-  // document with correct front matter and one with a mystery (E15).
+  // honoured by whatever comes after the range — the next line, or the last sheet.
+  // The reason has to name the thing that actually ended it: both sentences below
+  // used to be chosen by one arithmetic test, which printed "PDF labels last until
+  // the next range starts" for a *last* line no later range ever cut short
+  // (`1-3 roman 1` + `4-99 decimal 1` on 8 sheets) and "this document has 8 pages"
+  // for a range the next line stopped four sheets early (`1-2 roman 1` + `5-8 …`).
   for (let i = 0; i < out.length; i++) {
-    const reached = (i + 1 < out.length ? out[i + 1].start : total) - 1;
+    const next = i + 1 < out.length ? out[i + 1] : undefined;
+    const reached = (next ? next.start : total) - 1;
     if (reached === out[i].askedEnd - 1) continue;
-    const reason = reached + 1 < out[i].askedEnd
-      ? 'PDF labels last until the next range starts'
-      : `this document has ${countLabel(total, 'page')}`;
+    const short = reached + 1 < out[i].askedEnd;
+    const reason = short
+      ? (next ? `the next range starts at page ${next.start + 1}` : `this document has ${countLabel(total, 'page')}`)
+      : (next
+        ? `PDF labels last until the next range starts, at page ${next.start + 1}`
+        : `nothing starts after it, so it lasts to the end of the document, page ${total}`);
     note(notes, `The labels from page ${out[i].start + 1} run to page ${reached + 1}, not page ${out[i].askedEnd}: ${reason}.`);
   }
   return out;
