@@ -36,9 +36,11 @@ import {
   PDFRawStream,
   PDFRef,
   PDFStream,
+  degrees,
   decodePDFRawStream,
   newPDF,
   openPDF,
+  pageRotation,
   rgb,
   savePDF,
   StandardFonts,
@@ -48,6 +50,12 @@ import { pageContentOps, pageContentStreams, parseContentStream } from '../pdf/c
 import { pageSize as resolvePageSize } from '../pdf/core/pages';
 import { openRender } from '../pdf/core/render';
 import { drawTextU } from '../pdf/core/fonts';
+import {
+  quarterTurn,
+  viewerRectToUserSpace,
+  viewerSizeOf,
+  type PageFrame,
+} from '../pdf/core/tables';
 import { parseHexColor, throwIfAborted } from '../pdf/tools/helpers';
 
 /** Progress and cancellation, supplied by the runner through the tool context. */
@@ -731,10 +739,13 @@ export async function scanImagesToPdf(
 /**
  * One mark the user placed on the page.
  *
- * `x`/`y` are fractions of the *target* page's own box (`x` from the left, `y`
- * from the bottom, PDF user space) and `width`/`height` are points, so a mark
- * aimed at page 3 of a mixed-size document lands where it was aimed instead of
- * at page 1's geometry.
+ * `x`/`y` are fractions of the *displayed* sheet the mark sits on — `x` from its
+ * left edge, `y` up from its bottom — and `width`/`height` are points measured
+ * on that same sheet, because that is what the pane's overlay paints against
+ * (the pdf.js viewport carries `/Rotate`). `drawSignatureMarks` maps them into
+ * stored user space through `core/tables.viewerRectToUserSpace` and turns the
+ * content with the page, so a mark aimed at a quarter-turned sheet lands where
+ * it was aimed and reads the way it looked in the preview.
  */
 export interface SignatureMark {
   type: 'text' | 'image';
@@ -799,13 +810,49 @@ export async function drawSignatureMarks(
       continue;
     }
     const box = page.getMediaBox();
-    const width = Math.min(Math.max(1, mark.width), box.width);
-    const height = Math.min(Math.max(1, mark.height), box.height);
-    const rawX = box.x + Math.min(Math.max(mark.x, 0), 1) * box.width;
-    const rawY = box.y + Math.min(Math.max(mark.y, 0), 1) * box.height;
-    const x = Math.min(Math.max(rawX, box.x), box.x + box.width - width);
-    const y = Math.min(Math.max(rawY, box.y), box.y + box.height - height);
-    if (Math.abs(x - rawX) > 0.5 || Math.abs(y - rawY) > 0.5) moved += 1;
+    const rotation = quarterTurn(pageRotation(page));
+    // The pane measures a mark on the DISPLAYED sheet — `SignMain.tsx` paints its
+    // overlay on the pdf.js viewport, which carries `/Rotate` — so the fractions
+    // and point sizes arrive in the rotated frame. Everything below clamps in
+    // that frame and hands the box to the shared viewer table; a `/Rotate 0`
+    // page reduces to exactly the stored-box arithmetic this used to do by hand.
+    const frame: PageFrame = {
+      x0: box.x,
+      y0: box.y,
+      width: box.width,
+      height: box.height,
+      rotation,
+    };
+    const sheet = viewerSizeOf(frame);
+    const width = Math.min(Math.max(1, mark.width), sheet.width);
+    const height = Math.min(Math.max(1, mark.height), sheet.height);
+    const rawX = Math.min(Math.max(mark.x, 0), 1) * sheet.width;
+    const rawBottom = Math.min(Math.max(mark.y, 0), 1) * sheet.height;
+    const x = Math.min(Math.max(rawX, 0), sheet.width - width);
+    const bottom = Math.min(Math.max(rawBottom, 0), sheet.height - height);
+    if (Math.abs(x - rawX) > 0.5 || Math.abs(bottom - rawBottom) > 0.5) moved += 1;
+    const area = viewerRectToUserSpace(
+      { x, y: sheet.height - bottom - height, width, height },
+      frame,
+    );
+    // pdf-lib paints rotated content up-and-right of its anchor, so the anchor
+    // is the stored corner the DISPLAYED lower-left lands on, and `up` is the
+    // displayed up-axis in stored components — the typed name's baseline lift
+    // travels along it, keeping the centring rule in the frame the user saw.
+    const [ax, ay] = rotation === 90
+      ? [area.x + area.width, area.y]
+      : rotation === 180
+        ? [area.x + area.width, area.y + area.height]
+        : rotation === 270
+          ? [area.x, area.y + area.height]
+          : [area.x, area.y];
+    const [upX, upY] = rotation === 90
+      ? [-1, 0]
+      : rotation === 180
+        ? [0, -1]
+        : rotation === 270
+          ? [1, 0]
+          : [0, 1];
 
     if (mark.type === 'image') {
       if (!mark.image || mark.image.length === 0) {
@@ -814,7 +861,13 @@ export async function drawSignatureMarks(
       }
       try {
         const embedded = await embedImageBytes(doc, mark.image, { mime: mark.mime, format: 'png' });
-        page.drawImage(embedded, { x, y, width, height });
+        page.drawImage(embedded, {
+          x: ax,
+          y: ay,
+          width,
+          height,
+          ...(rotation === 0 ? {} : { rotate: degrees(rotation) }),
+        });
         placed += 1;
       } catch (error) {
         notes.push(`A signature image on page ${mark.page} could not be embedded: ${
@@ -830,16 +883,18 @@ export async function drawSignatureMarks(
       continue;
     }
     const size = clampFontSize(height);
+    const lift = (height - size) / 2;
     const { r, g, b } = parseHexColor(mark.color ?? '#000000');
     try {
       await drawTextU(page, {
         text,
-        x,
-        y: y + (height - size) / 2,
+        x: ax + upX * lift,
+        y: ay + upY * lift,
         size,
         color: rgb(r, g, b),
         fontFamily: embeddedFamily(mark.fontFamily),
-        maxWidth: box.x + box.width - x,
+        maxWidth: sheet.width - x,
+        ...(rotation === 0 ? {} : { rotation }),
       });
       placed += 1;
     } catch (error) {

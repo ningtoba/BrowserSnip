@@ -229,22 +229,41 @@ describe('a placed signature lands where the pane put it', () => {
     expect(outcome.notes).toEqual([]);
 
     const turnedPaint = contentText(doc, 0);
-    const moves = placedBoxes(turnedPaint).filter((m) => !/^120(\.0+)? 0 0 40(\.0+)? 0 0 cm$/.test(m));
-    const image = moves.find((m) => /^0(\.0+)? 1(\.0+)? -1(\.0+)? 0(\.0+)? /.test(m));
-    expect(image, `the picture was not turned to read left-to-right as displayed: ${moves.join(' | ')}`).toBeTruthy();
-    const [ia, ib, ic, id, ie, ief] = image!.split(' ').map(Number.parseFloat);
-    expect([ia, ib, ic, id]).toEqual([0, 1, -1, 0]);
-    expect(ie).toBeCloseTo(166.6, 1);
-    expect(ief).toBeCloseTo(42.1, 1);
+    // pdf-lib paints a rotated picture as a translation to the anchor, then the
+    // quarter turn itself as a second matrix (whose `cos 90°` survives as a
+    // 6e-17 residue), then the picture's own displayed size: the three `cm`
+    // lines in that order are the mark, read back.
+    const matrices = placedBoxes(turnedPaint).map((m) =>
+      m.replace(' cm', '').split(' ').map(Number.parseFloat),
+    );
+    const at = (m: number[], a: number, b: number, c: number, d: number, e: number, f: number) =>
+      Math.abs(m[0] - a) < 1e-6 && Math.abs(m[1] - b) < 1e-6 && Math.abs(m[2] - c) < 1e-6 &&
+      Math.abs(m[3] - d) < 1e-6 && Math.abs(m[4] - e) < 0.05 && Math.abs(m[5] - f) < 0.05;
+    const moveAt = matrices.findIndex((m) => at(m, 1, 0, 0, 1, 166.6, 42.1));
+    expect(moveAt, `no translation to the mapped displayed-lower-left: ${placedBoxes(turnedPaint).join(' | ')}`)
+      .toBeGreaterThanOrEqual(0);
+    const turn = matrices[moveAt + 1] ?? [];
+    expect(turn.length, 'the picture was not turned to read left-to-right as displayed').toBe(6);
+    expect(turn[0]).toBeCloseTo(0, 6);
+    expect(turn[1]).toBeCloseTo(1, 6);
+    expect(turn[2]).toBeCloseTo(-1, 6);
+    expect(turn[3]).toBeCloseTo(0, 6);
+    expect(matrices[moveAt + 2].slice(0, 4)).toEqual([120, 0, 0, 40]);
     // The typed name shares the mapping: its text matrix turns with the page,
     // and its baseline keeps the box-centring rule lifted along the DISPLAYED
     // up-axis (a stored -x here): 166.6 - (40 - 26) / 2 = 159.6.
     expect(pageWords(turnedPaint)).toContain('Ada Lovelace');
-    const tm = turnedPaint.match(/0(\.0+)? 1(\.0+)? -1(\.0+)? 0(\.0+)? [-\d.]+ [-\d.]+ Tm/);
+    const tm = turnedPaint
+      .split('\n')
+      .flatMap((line) => line.split(' '))
+      .join(' ')
+      .match(/((?:[-\d.]+ ){4})159\.6+ 42\.1+ Tm/);
     expect(tm, 'the typed name did not get a turned text matrix').toBeTruthy();
-    const [te, tf] = tm![0].split(' ').slice(4, 6).map(Number.parseFloat);
-    expect(te).toBeCloseTo(159.6, 1);
-    expect(tf).toBeCloseTo(42.1, 1);
+    const [ta, tb, tc, td] = tm![1].trim().split(' ').map(Number.parseFloat);
+    expect(ta).toBeCloseTo(0, 6);
+    expect(tb).toBeCloseTo(1, 6);
+    expect(tc).toBeCloseTo(-1, 6);
+    expect(td).toBeCloseTo(0, 6);
 
     // The unrotated control page keeps the old rule to the byte: fractions against
     // the stored box, content on its side — this fix must not disturb it.
