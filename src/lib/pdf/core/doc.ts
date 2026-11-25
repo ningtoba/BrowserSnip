@@ -227,14 +227,25 @@ export function withFontkit(doc: PDFDocument): PDFDocument {
 export interface SavePdfOptions extends SaveOptions {
   /** Force the `/ID` + ModDate refresh. Defaults to pdf-lib behaviour. */
   compress?: boolean;
+  /**
+   * Emit this `%PDF-M.m` header. The full-save writer hard-codes `1.7` into
+   * the emitted bytes whatever the document declares (`setPdfVersion` reaches
+   * the read side and `saveIncremental` only), so a tool writing a part-1
+   * shape, or one that raised the document to 2.0, says so here. The stamp is
+   * the same same-width in-place digit swap as `applyPdfVersion` — no xref
+   * offset moves. Omitted, the header comes out exactly as the writer emits
+   * it: the bytes of every existing call are unchanged.
+   */
+  version?: PdfVersion;
 }
 
 export async function savePDF(
   doc: PDFDocument,
   options: SavePdfOptions = {},
 ): Promise<Bytes> {
-  const { compress, ...rest } = options;
-  return doc.save({ useObjectStreams: compress ?? true, ...rest });
+  const { compress, version, ...rest } = options;
+  const bytes = await doc.save({ useObjectStreams: compress ?? true, ...rest });
+  return version === undefined ? bytes : stampPdfVersion(bytes, version);
 }
 
 export interface PasswordOptions {
@@ -908,6 +919,21 @@ export function setPdfVersion(doc: PDFDocument, version: PdfVersion): string {
 }
 
 /**
+ * Write the `%PDF-M.m` line to exactly `version`, up or down.
+ *
+ * Same width, in place: no byte an xref offset points at moves, which is why
+ * it is safe on finished bytes. `applyPdfVersion` refuses downgrades because
+ * it patches revisions it did not author; the save-side stamp below wants the
+ * literal call — the saver declares what it wrote.
+ */
+export function stampPdfVersion(bytes: Bytes, version: PdfVersion): Bytes {
+  if (!/^%PDF-\d\.\d/.test(new TextDecoder('latin1').decode(bytes.subarray(0, 9)))) return bytes;
+  bytes[5] = version.charCodeAt(0);
+  bytes[7] = version.charCodeAt(2);
+  return bytes;
+}
+
+/**
  * Rewrite the `%PDF-M.m` line of already-saved bytes, raising it to `version`.
  *
  * Every version string is the same width and the patch is done in place, so it
@@ -918,9 +944,5 @@ export function applyPdfVersion(bytes: Bytes, version: PdfVersion): Bytes {
   const text = new TextDecoder('latin1').decode(bytes.subarray(0, 9));
   const match = /^%PDF-(\d\.\d)/.exec(text);
   if (!match || comparePdfVersions(version, match[1]) <= 0) return bytes;
-  const major = version.charCodeAt(0);
-  const minor = version.charCodeAt(2);
-  bytes[5] = major;
-  bytes[7] = minor;
-  return bytes;
+  return stampPdfVersion(bytes, version);
 }

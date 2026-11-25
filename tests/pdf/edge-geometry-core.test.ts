@@ -34,6 +34,7 @@ import {
   savePDF,
   setPdfVersion,
   snapshot,
+  stampPdfVersion,
   type Bytes,
 } from '@/lib/pdf/core/doc';
 import { compressPDF } from '@/lib/pdf/core/compress';
@@ -461,6 +462,35 @@ describe('raising the PDF version header (B2 item 1)', () => {
     const bytes = minimalPdf('1.7');
     expect(headerOf(applyPdfVersion(bytes, '1.4'))).toBe('%PDF-1.7');
     expect(headerOf(applyPdfVersion(bytes, '1.7'))).toBe('%PDF-1.7');
+  });
+
+  it('stamps the emitted header through savePDF, and nothing else when unasked', async () => {
+    // The full-save writer hard-codes `%PDF-1.7` whatever the document
+    // declares — measured: a doc raised with `setPdfVersion(doc, '2.0')`
+    // still emitted 1.7 (/tmp/seam2a/postfix-version.json). The version
+    // option is the one-step stamp that comment promised; omitted, every
+    // existing call's bytes are untouched — the default-preserving bar.
+    const asLoaded = await savePDF(await openPDF(minimalPdf('1.4'), { updateMetadata: false }));
+    expect(headerOf(asLoaded)).toBe('%PDF-1.7');
+    const lowered = await savePDF(
+      await openPDF(minimalPdf('1.4'), { updateMetadata: false }),
+      { version: '1.4' },
+    );
+    expect(headerOf(lowered)).toBe('%PDF-1.4');
+    const raised = await savePDF(
+      await openPDF(minimalPdf('1.4'), { updateMetadata: false }),
+      { version: '2.0' },
+    );
+    expect(headerOf(raised)).toBe('%PDF-2.0');
+    // Same-width in place: the stamp moves two digits and nothing else —
+    // the same document body, offsets and all, comes back.
+    expect(lowered.length).toBe(asLoaded.length);
+    expect(Buffer.from(lowered.subarray(8))).toEqual(Buffer.from(asLoaded.subarray(8)));
+    // A stamped file still opens as the same one-page document.
+    expect((await openPDF(lowered)).getPageCount()).toBe(1);
+    // Control: stampPdfVersion alone, on bytes that did not come from savePDF.
+    expect(headerOf(stampPdfVersion(minimalPdf('1.7'), '1.4'))).toBe('%PDF-1.4');
+    expect(headerOf(stampPdfVersion(minimalPdf('1.4'), '1.4'))).toBe('%PDF-1.4');
   });
 
   it('rewrites the version digits without moving any other byte', async () => {

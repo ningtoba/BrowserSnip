@@ -1985,6 +1985,25 @@ describe('optimize-pdf keeps the facts it promises to keep', () => {
     expect((await openPDF(outcome.bytes)).getPageCount()).toBe(1);
   });
 
+  it('does the same out of pdf-compress, whose strip deletes the object outright', async () => {
+    // The compress path (`core/compress`'s local strip) deleted the `/Info`
+    // object but left the trailer naming it: measured on the campaign run,
+    // MuPDF opened the download reporting "cannot find object in xref" — the
+    // trailer said `/Info 2 0 R` while the xref `/Index` no longer listed
+    // object 2 at all (/tmp/seam2a/after-strip.pdf vs after-strip-postfix:
+    // trailer without `/Info`). `stripInfo` in core/metadata.ts always
+    // cleared both; the compress mirror now does too.
+    const source = allCompressedPdf();
+    const outcome = await runTool('pdf-compress', { stripMetadata: true }, [pdfFile(source, 'tight.pdf')]);
+    const text = latin1.decode(outcome.bytes);
+    expect(/\/Info\s+\d+\s+0\s+R/.test(text), text.slice(-260)).toBe(false);
+    expect(text).not.toMatch(/\/Title\s*\(a titled file\)/);
+    // The reader's own view of the trailer: no entry, not a dangling ref.
+    const reloaded = await openPDF(outcome.bytes, { updateMetadata: false });
+    expect(reloaded.context.trailerInfo.Info).toBeUndefined();
+    expect(reloaded.getPageCount()).toBe(1);
+  });
+
   /** Rewrite the `%PDF-M.m` line of a finished file; every version is 8 bytes. */
   function withHeader(bytes: Uint8Array, version: string): Uint8Array {
     const copy = Uint8Array.from(bytes);

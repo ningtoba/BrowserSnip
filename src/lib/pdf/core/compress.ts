@@ -1228,6 +1228,12 @@ function readColorSpaceName(dict: PDFDict): string {
 
 function stripDocumentMetadata(doc: PDFDocument): void {
   const info = doc.context.trailerInfo.Info;
+  // Clear the trailer entry, not just the object: with `/Info 12 0 R` left
+  // pointing at the deleted reference the writer emitted a trailer claiming
+  // an object the xref no longer held, and MuPDF opened the download with
+  // "cannot find object in xref". The mirror is `stripInfo` in
+  // core/metadata.ts, which clears both.
+  doc.context.trailerInfo.Info = undefined;
   if (info instanceof PDFRef) doc.context.delete(info);
   doc.catalog.delete(PDFName.of('Metadata'));
 }
