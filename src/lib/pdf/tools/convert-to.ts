@@ -51,6 +51,7 @@ import {
 } from './types';
 
 type Block = import('../core/layout').Block;
+type Inline = import('../core/layout').Inline;
 type LayoutOptions = import('../core/layout').LayoutOptions;
 
 const PAGE_FIELD = pageSizeField();
@@ -687,21 +688,166 @@ function normalizeMarkdown(text: string): string {
   // card promises HTML is kept, so `<br>` must stay two letters and a tag.
   const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
   let inside: string | null = null;
-  return text
-    .split('\n')
-    .map((line) => {
-      const marker = FENCE.exec(line)?.[1] ?? null;
-      if (marker) {
-        if (inside === null) inside = marker;
-        else if (marker[0] === inside[0]) inside = null;
-        return line;
-      }
-      if (inside) return line;
-      return line
+  let comment = false;
+  const kept: string[] = [];
+  for (const line of text.split('\n')) {
+    const marker = FENCE.exec(line)?.[1] ?? null;
+    if (marker) {
+      if (inside === null) inside = marker;
+      else if (marker[0] === inside[0]) inside = null;
+      comment = false;
+      kept.push(line);
+      continue;
+    }
+    if (inside) {
+      kept.push(line);
+      continue;
+    }
+    if (comment) {
+      // A comment opened on an earlier line runs to its closer; CommonMark keeps the
+      // whole thing as raw HTML, which for this renderer means nothing on the page.
+      comment = !line.includes('-->');
+      continue;
+    }
+    const clean = line.replace(/<!--[\s\S]*?-->/g, '');
+    comment = /<!--/.test(clean);
+    kept.push(
+      clean
         .replace(/<br\s*\/?>/gi, '  \n')
-        .replace(/<((?:https?|ftp|mailto):[^<>\s]*)>/g, '$1');
-    })
-    .join('\n');
+        .replace(/<((?:https?|ftp|mailto):[^<>\s]*)>/g, '$1'),
+    );
+  }
+  return kept.join('\n');
+}
+
+/** A character reference as CommonMark accepts one: named, decimal or hexadecimal. */
+const ENTITY = /&(?:#[xX][0-9a-fA-F]{1,6}|#\d{1,8}|[a-zA-Z][a-zA-Z]{1,30});/g;
+
+/**
+ * Decode the character references that reach the finished prose.
+ *
+ * `marked` re-escapes a bare `&` it is handed, so the `&amp;` the shared tag
+ * stripper decodes came back to the page as the six characters `&amp;` — measured:
+ * `A&amp;B` printed `A&amp;B` — and a name the five-item list does not know
+ * (`&copy;`, `&nbsp;`) printed as written. Decoding on the way out fixes both, and
+ * only in prose: a fenced or inline code span keeps its characters literally,
+ * which is what the card promises.
+ */
+function decodeBlockEntities(blocks: Block[]): Block[] {
+  let holder: HTMLTextAreaElement | null = null;
+  const decode = (text: string): string => {
+    if (!text.includes('&')) return text;
+    holder ??= document.createElement('textarea');
+    return text.replace(ENTITY, (reference) => {
+      holder!.innerHTML = reference;
+      return holder!.value === reference ? reference : holder!.value;
+    });
+  };
+  // A code span keeps its characters literally, like a fenced block does.
+  const inline = (run: Inline): Inline => (run.code ? run : { ...run, text: decode(run.text) });
+  return blocks.map((block) => {
+    if (block.kind === 'heading' || block.kind === 'paragraph' || block.kind === 'quote') {
+      return { ...block, inlines: block.inlines.map(inline) };
+    }
+    if (block.kind === 'list') {
+      return { ...block, items: block.items.map((item) => ({ ...item, inlines: item.inlines.map(inline) })) };
+    }
+    if (block.kind === 'table') {
+      return {
+        ...block,
+        header: block.header?.map((cell) => cell.map(inline)),
+        rows: block.rows.map((row) => row.map((cell) => cell.map(inline))),
+      };
+    }
+    return block;
+  });
+}
+
+/** The gutter `renderList` reserves between a marker and its text, in points. */
+const MARKER_GUTTER = 14;
+
+/**
+ * Give a task item its box and an explicit ordered list its number.
+ *
+ * `markdownToBlocks` reads GFM's `checked` onto the item and then prints the
+ * `checkbox` token a second time as text, so a task arrived as `• [x] done` — the
+ * bullet of an ordinary item with the brackets inside the sentence — and it drops
+ * the list's `start`, so `5. five / 6. six` printed `1. five / 2. six`. The blocks
+ * handed back carry both fixes: `renderList` prefers an explicit `marker`, and an
+ * extra `level` buys a wider text indent (the renderer hard-codes one marker
+ * gutter, so a three-character `[x]` or a two-digit `10.` would otherwise sit on
+ * top of the words — measured on the live README, `10.tenth`).
+ */
+function markStructuredLists(blocks: Block[], source: string): Block[] {
+  const ordered = blocks.filter((block) => block.kind === 'list' && block.ordered).length;
+  const starts = /<ol\b/i.test(source) ? orderedListStartsHtml(source, ordered) : orderedListStarts(source);
+  let renumber = starts.length === ordered && ordered > 0;
+  let listIndex = 0;
+  return blocks.map((block) => {
+    if (block.kind !== 'list') return block;
+    const start = renumber && block.ordered ? starts[listIndex] ?? 1 : 1;
+    if (renumber && block.ordered) listIndex += 1;
+    let counter = start;
+    const marked = block.items.map((item) => {
+      const marker = item.marker
+        ?? (item.checked === null || item.checked === undefined
+          ? undefined
+          : item.checked ? '[x]' : '[ ]');
+      const inlines = marker === undefined ? item.inlines : stripCheckboxText(item.inlines);
+      // An ordered item's number is set here too, so the gutter below is decided
+      // from the real marker: the renderer's own `10.` is wider than the 14 pt it
+      // reserves, and `10.tenth` printed overlapped on the live README. An ordinary
+      // bullet is pinned for the same reason — the renderer picks its glyph from the
+      // level, and the gutter below moves the level.
+      const own = block.ordered && marker === undefined
+        ? `${counter++}.`
+        : marker ?? (block.ordered ? undefined : ['•', '◦', '▪'][item.level % 3]);
+      return { item, marker: own, inlines };
+    });
+    // One gutter per list, so the items of a list keep one left edge: the widest
+    // marker of the block decides it (`[x]` is ~12 pt, `10.` ~15 pt, against the
+    // renderer's single 14 pt gutter).
+    const widest = Math.max(0, ...marked.map((one) => (one.marker?.length ?? 0) * 6));
+    const bump = widest > MARKER_GUTTER ? 1 : 0;
+    return {
+      ...block,
+      items: marked.map((one) => ({ ...one.item, ...(one.marker === undefined ? {} : { marker: one.marker }), inlines: one.inlines, level: one.item.level + bump })),
+    };
+  });
+}
+
+/**
+ * The `start` of each `<ol>` in the source, padded with the lists that carry none,
+ * so the array lines up with the ordered list blocks the DOM walk produced.
+ */
+function orderedListStartsHtml(source: string, ordered: number): number[] {
+  const tags = [...source.matchAll(/<ol\b[^>]*>/gi)];
+  if (tags.length !== ordered) return [];
+  return tags.map((tag) => Number(/\bstart\s*=\s*["']?(\d+)/i.exec(tag[0])?.[1] ?? 1));
+}
+
+/** The number each ordered list in the source began with, in document order. */
+function orderedListStarts(source: string): number[] {
+  const starts: number[] = [];
+  let inList = false;
+  for (const line of source.split('\n')) {
+    const item = /^ {0,3}(\d+)[.)][ \t]/.exec(line);
+    if (item) {
+      if (!inList) starts.push(Number(item[1]));
+      inList = true;
+      continue;
+    }
+    if (line.trim() !== '' && !/^\s+/.test(line)) inList = false;
+  }
+  return starts;
+}
+
+/** Drop the `[x] ` a task item carries twice, once as state and once as text. */
+function stripCheckboxText(inlines: Inline[]): Inline[] {
+  const [first, ...rest] = inlines;
+  if (!first) return inlines;
+  const stripped = first.text.replace(/^\s*\[[ xX]]\s?/, '');
+  return stripped === '' ? rest : [{ ...first, text: stripped }, ...rest];
 }
 
 /* ------------------------------------------------------------------ output */
@@ -1261,8 +1407,9 @@ export const convertToTools: PdfToolDefinition[] = [
       'Maths arrives as its LaTeX source: `$x^2 + y_1$` prints those exact characters in the body face, not typeset (a server engine would run KaTeX). `code` inside a sentence keeps its words but not a monospace face; a fenced block does.',
       'Footnotes, definition lists and Mermaid diagrams are not rendered: `[^1]` prints in the sentence and its definition prints as its own paragraph, and a `mermaid` fence is typeset as code, not drawn.',
       'A link is drawn blue and underlined, but the file carries no clickable target and the address is not printed; an autolink like `<https://example.com>` keeps its address, as plain text.',
-      'A task list keeps its state as text — the item prints `[x]` after its bullet rather than as a drawn box — and a nested list is laid out at the same depth as the list above it.',
-      'Raw HTML inside the Markdown is stripped rather than rendered: `<b>` arrives as its words, a `<script>` or `<style>` block goes with its body, and a `<br>` ends the line. Tags inside a fenced block are kept — except a complete `<script>…</script>` or `<style>…</style>` pair, which is removed from the code too. Named entities the tag stripper does not know (`&copy;`, `&nbsp;`) print as written.'
+      'A task list prints its box in the marker column — `[x] done`, `[ ] not yet` — and a nested list is laid out at the same depth as the list above it.',
+      'Raw HTML inside the Markdown is stripped rather than rendered: `<b>` arrives as its words, a `<script>` or `<style>` block goes with its body (an unclosed tag prints its body as text instead), a `<!-- comment -->` never reaches the page, and a `<br>` ends the line. Tags inside a fenced block are kept — except a complete `<script>…</script>` or `<style>…</style>` pair, which is removed from the code too.',
+      'Character references arrive as the characters they name — `&amp;`, `&copy;`, `&#8212;`, `&#x41;` each print their one character — in prose and in a `code span` alike. A fenced block keeps them written out, except the five the tag stripper knows (`&amp; &lt; &gt; &quot; &#39;`), which are decoded there too. A name no decoder knows (`&bareword;`) prints as written.',
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.markdown, '# Heading\n\nWrite **Markdown** here…', 'Source'),
@@ -1286,9 +1433,11 @@ export const convertToTools: PdfToolDefinition[] = [
       let remote = 0;
       for (const source of sources) {
         remote += countMatches(source.text, /!\[[^\]]*\]\(\s*(?!data:)[^)]+\)/g);
-        blocks.push(...(await markdownToBlocks(normalizeMarkdown(source.text), {
+        const text = normalizeMarkdown(source.text);
+        const built = await markdownToBlocks(text, {
           images: async (src) => readDataUrl(src),
-        })));
+        });
+        blocks.push(...decodeBlockEntities(markStructuredLists(built, text)));
       }
       if (remote > 0) {
         warnings.push(`${remote} image reference(s) point off-device and were kept as alt text — nothing is uploaded or fetched.`);
@@ -1317,6 +1466,7 @@ export const convertToTools: PdfToolDefinition[] = [
       'Print CSS is not honoured either: an `@page { size: … }` rule cannot resize the sheet, so the Page size and Orientation controls above decide.',
       'An `<img>` that stands as its own block is embedded when it is a data: URL; one written inline inside a paragraph prints its alt text, because the renderer places pictures between paragraphs, not between words.',
       'Only `data:` images are embedded. `src` values that need the network are dropped and reported.',
+      'A link is drawn blue and underlined, but the file carries no clickable target and its address is not printed; an `<a name>` anchor prints its words alone.',
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.html, '<h1>Title</h1><p>Body text…</p>', 'Source'),
@@ -1336,21 +1486,36 @@ export const convertToTools: PdfToolDefinition[] = [
       const blocks: Block[] = [];
       let skippedImages = 0;
       let scriptBlocks = 0;
+      let imageTags = 0;
       for (const source of sources) {
         skippedImages += countMatches(source.text, /<img[^>]+src="\s*(?!data:)[^"]+"/gi);
+        imageTags += countMatches(source.text, /<img[\s>/]/gi);
         scriptBlocks += countMatches(source.text, /<script[\s>]/gi);
-        blocks.push(...(await htmlToBlocks(source.text, {
+        const built = await htmlToBlocks(source.text, {
           fetchImage: embed
             ? async (src) => readDataUrl(src)
             : async () => null,
-        })));
+        });
+        blocks.push(...markStructuredLists(built, source.text));
+        // A file saved as `.html` that holds no markup is still a document with
+        // words in it, and a browser lays those out as text: the detached DOM hands
+        // them back as loose text nodes, which the block walk does not read, and the
+        // run refused with "no readable body content" over two readable lines.
+        if (built.length === 0 && !/<[a-z!/][^>]*>/i.test(source.text)) {
+          const { textToBlocks } = await import('../core/layout');
+          blocks.push(...textToBlocks(source.text, { paragraphs: '\n' }));
+        }
       }
       if (blocks.length === 0) {
         throw new ToolInputError('UNSUPPORTED', 'That HTML had no readable body content.', {
           hint: 'Tables, headings, paragraphs, lists and data-URL images are supported; a page that is only a script-written app has none of them.',
         });
       }
-      if (!embed) warnings.push('Image embedding is off, so every <img> was skipped.');
+      if (!embed && imageTags > 0) {
+        warnings.push(imageTags === 1
+          ? 'Image embedding is off, so the one <img> was skipped.'
+          : `Image embedding is off, so all ${imageTags} <img>s were skipped.`);
+      }
       else if (skippedImages > 0) {
         warnings.push(`${skippedImages} <img> reference(s) are not data: URLs and were skipped — no network requests are made.`);
       }

@@ -841,20 +841,144 @@ describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
     expect(family(find(runs, '$x^2')[0]!.font)).not.toBe('JetBrainsMono-Regular');
   });
 
-  it('lays a nested list at its parent’s depth and numbers it from one', async () => {
-    // Measured behaviour the shared renderer owes a fix for (see the c3 blockers in
-    // `/tmp/lane-convert/report.md`): the pins go red when the seam lands, and the
-    // card notes and these expectations move with it.
+  it('lays a nested list at its parent’s depth', async () => {
+    // Measured behaviour the shared renderer owes a fix for (blocker 5 in
+    // `/tmp/lane-convert/report.md`): the pin goes red when the seam lands, and the
+    // card note moves with it.
     const outcome = await run('markdown-to-pdf', {}, [
-      md('MKSTART\n\n5. five\n6. six\n\n- level one\n  - level two\n\nMKEND\n'),
+      md('MKSTART\n\n- level one\n  - level two\n    - level three MKEND\n'),
     ]);
     const runs = await textRuns(await firstPdf(outcome));
-    expect(find(runs, 'five')[0]!.text).toBeTruthy();
-    expect(runs.some((run) => run.text.startsWith('5.'))).toBe(false);
-    expect(runs.some((run) => run.text.startsWith('1.'))).toBe(true);
     const one = find(runs, 'level one')[0]!;
     const two = find(runs, 'level two')[0]!;
-    expect(two.x).toBe(one.x);
+    const three = find(runs, 'level three')[0]!;
+    expect([one.x, two.x, three.x]).toEqual([one.x, one.x, one.x]);
+  });
+
+  it('prints a task list as boxes in the marker column, not as bullet text', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART\n\n- [x] already finished\n- [ ] not yet done\n- plain item MKEND\n'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // Pre-fix each task printed `• [x] already finished`: an ordinary bullet, with
+    // the box as the first words of the item.
+    expect(runs.some((run) => run.text === '[x]'), 'a checked box').toBe(true);
+    expect(runs.some((run) => run.text === '[ ]'), 'an unchecked box').toBe(true);
+    expect(runs.some((run) => run.text.startsWith('[x] already finished'))).toBe(false);
+    expect(find(runs, 'already finished')[0]!.text).toBe('already finished');
+    // The bullet of the ordinary item survives, and every marker clears its text.
+    expect(find(runs, 'plain item').length).toBe(1);
+    // The bullet is WinAnsi 0x95 in a standard face, which is what a viewer decodes back.
+    expect(runs.some((run) => [0x95, 0x2022].includes(run.text.charCodeAt(0)))).toBe(true);
+    const boxes = runs.filter((run) => /^\[[x ]\]$/.test(run.text));
+    for (const box of boxes) {
+      const text = runs.find((run) => run.page === box.page && Math.abs(run.y - (box.y - 5)) < 2 && run.x > box.x);
+      expect(text!.x - box.x, `box at ${box.x} vs text at ${text!.x}`).toBeGreaterThanOrEqual(14);
+    }
+  });
+
+  it('numbers an ordered list from the number the author wrote', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [md('MKSTART\n\n5. five\n6. six\n7. seven MKEND\n')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(runs.filter((run) => /^\d+\.$/.test(run.text)).map((run) => run.text)).toEqual(['5.', '6.', '7.']);
+  });
+
+  it('clears the text when a number grows past one digit', async () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => `${i + 1}. step ${i + 1} of the guide`).join('\n');
+    const outcome = await run('markdown-to-pdf', {}, [md(`MKSTART\n\n${twelve}\n\nMKEND\n`)]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const ten = runs.find((run) => run.text === '10.')!;
+    expect(ten, 'the two-digit marker').toBeTruthy();
+    // The renderer reserves one 14 pt gutter for every marker; `10.` is wider than
+    // it, so the route moves the text a full indent instead of printing over it
+    // (measured pre-fix on the live README: marker box 58→94.5 pt, text at 70).
+    const step = runs.find((run) => run.page === ten.page && run.x > ten.x && Math.abs(run.y - (ten.y - 5)) < 2)!;
+    expect(step.x - ten.x).toBeGreaterThanOrEqual(14);
+    expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
+  });
+
+  it('keeps an HTML comment off the page', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [md('MKSTART visible <!-- an author note --> text MKEND\n')]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    expect(words).toContain('visible text');
+    expect(words).not.toContain('<!--');
+    expect(words).not.toContain('author note');
+  });
+
+  it('decodes character references in prose and leaves them alone in code', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART Kate &amp; Co, &copy; 1743, &#8212; &#65; &#x41; and &bareword; MKEND\n\n```text\nfence &amp;decodes &copy;keeps\n```\n\nMKEND\n'),
+    ]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    // Measured pre-fix: `Kate &amp; Co` came back re-escaped and `&copy;` printed as
+    // its name, so the source's ampersand was six characters wide on the page.
+    expect(words).toContain('Kate & Co, © 1743,');
+    // `&#8212;` is WinAnsi 0x97 and `&#65;`/`&#x41;` are both A; the decoded pair is
+    // asserted in `docs/research/md-struct-after.txt` (`entities-md` prints `— A A`).
+    expect(words).toContain(' A A');
+    expect(words).toContain('&bareword;');
+    // A fenced block is literal, except for the five the shared tag stripper decodes
+    // before `marked` ever sees the line.
+    expect(words).toContain('fence &decodes &copy;keeps');
+  });
+});
+
+/**
+ * The HTML route reads a detached DOM, so its defects are the ones a browser would
+ * never show: an `<ol start>` thrown away, a two-digit marker printed on top of its
+ * text, a page of unmarked-up words refused as "no readable body content", and a
+ * warning that reports skipped `<img>`s to a page that has none.
+ */
+describe('html-to-pdf keeps the markup it parsed', () => {
+  const html = (source: string) => fileFrom(source, 'doc.html', 'text/html');
+
+  it('numbers an ordered list from its start attribute', async () => {
+    const outcome = await run('html-to-pdf', {}, [
+      html('<p>MKSTART</p><ol start="5"><li>five</li><li>six</li><li>seven MKEND</li></ol>'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(runs.filter((run) => /^\d+\.$/.test(run.text)).map((run) => run.text)).toEqual(['5.', '6.', '7.']);
+  });
+
+  it('clears the text when a number grows past one digit', async () => {
+    const items = Array.from({ length: 12 }, (_, i) => `<li>step ${i + 1} of the guide</li>`).join('');
+    const outcome = await run('html-to-pdf', {}, [html(`<p>MKSTART</p><ol>${items}</ol><p>MKEND</p>`)]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const ten = runs.find((run) => run.text === '10.')!;
+    expect(ten, 'the two-digit marker').toBeTruthy();
+    // Pre-fix the renderer's single 14 pt gutter could not hold `10.`, and the
+    // marker printed over the words: the reader saw one word `10.step`.
+    expect(runs.some((run) => run.text.startsWith('10.step'))).toBe(false);
+    const step = runs.find((run) => run.page === ten.page && run.x > ten.x && Math.abs(run.y - (ten.y - 5)) < 2)!;
+    expect(step.x - ten.x).toBeGreaterThanOrEqual(14);
+  });
+
+  it('lays out a .html file that holds no markup at all', async () => {
+    const outcome = await run('html-to-pdf', {}, [html('MKSTART just plain words with no markup\nsecond line MKEND\n')]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    // Pre-fix: `REFUSED: That HTML had no readable body content.`
+    expect(words).toContain('just plain words with no markup');
+    expect(words).toContain('second line MKEND');
+  });
+
+  it('says nothing about skipped images when there are none', async () => {
+    const outcome = await run('html-to-pdf', { embedImages: false }, [html('<p>no images at all MKEND</p>')]);
+    expect(outcome.warnings.join(' ')).not.toMatch(/<img>/);
+    const withImages = await run('html-to-pdf', { embedImages: false }, [
+      html('<p>MKEND</p><img src="data:image/png;base64,AAA=" alt="a"><img src="data:image/png;base64,AAA=" alt="b">'),
+    ]);
+    expect(withImages.warnings.join(' ')).toMatch(/all 2 <img>s were skipped/);
+  });
+
+  it('keeps nested lists at their own depth and drops comments', async () => {
+    const outcome = await run('html-to-pdf', {}, [
+      html('<p>MKSTART visible <!-- a note --> words</p><ul><li>one<ul><li>two<ul><li>three MKEND</li></ul></li></ul></li></ul>'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const depth = ['one', 'two', 'three'].map((word) => find(runs, word)[0]!.x);
+    expect(depth[0]).toBeLessThan(depth[1]);
+    expect(depth[1]).toBeLessThan(depth[2]);
+    expect(squash(runs.map((run) => run.text).join(' '))).not.toContain('a note');
   });
 });
 
