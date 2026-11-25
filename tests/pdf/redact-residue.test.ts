@@ -16,8 +16,8 @@
  *     reference — how MuPDF, LibreOffice and this app's own writer all store
  *     Helvetica — carries no `/Widths`, and the glyph window was laid out on the
  *     0.5 em estimate, so every centre sat further from the drawn letter the deeper
- *     in the line it was (the re-written run also displaced by 7 × 0.5 em instead of
- *     the 4.557 em it deleted). The module now measures the face with the standard-14
+ *     in the line it was (the re-written run also displaced by 7 × 0.5 em = 3.5 em of advance
+ *     instead of the 4.556 em it actually removed). The module now measures the face with the standard-14
  *     AFM tables `core/content.ts` already builds, which makes the window exact: the
  *     whole of `BRAVO` goes, `CHARLIE` keeps every letter, and the displacement is
  *     `-3501` — 3.501 em, BRAVO's advance to the unit.

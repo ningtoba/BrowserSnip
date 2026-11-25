@@ -1054,17 +1054,26 @@ describe('redact-pdf deletes the words, and proves it from the saved file', () =
 
   it('says when a mark only covered part of a word instead of calling it redacted', async () => {
     const source = await textFixture();
-    // The same line, cropped one character short: the glyphs that survive still
-    // spell a word a reader can select, and only the saved file can say so.
+    // The line `Bravo on page 1` measures 131.094 pt at 18 pt Helvetica (60 → 191.094),
+    // so a band that stops at x 155 cuts `page` in half: `pa` leaves the file and `ge`
+    // stays outside the box. Only the saved file can say so, and the card may not read
+    // that as a clean delete.
     const outcome = await run('redact-pdf', {
       fill: '#000000', alsoMetadata: false,
-      regions: [{ page: 0, x: 55, y: 118, width: 260, height: 34 }],
+      regions: [{ page: 0, x: 55, y: 118, width: 100, height: 34 }],
     }, [pdfFile(source, 'claim.pdf')]);
     const bytes = await bytesOf(outcome);
     expect(await streamsHoldPhrase(bytes, 'Bravo on page 1')).toBe(false);
-    expect(outcome.message).toMatch(/but \d+ word\(s\) under those areas still extract from the saved file/);
-    expect(outcome.message).not.toMatch(/deleting the glyphs themselves/i);
-    expect(outcome.warnings.join(' ')).toMatch(/covered, not gone/i);
+    const streams = await inflatedStreams(bytes);
+    // `ge` — the half of `page` the box never reached — is still in the content
+    // (hex 67 65), which is the whole point: a redaction is measured by the area
+    // it covered, not by the word it happened to touch.
+    expect(streams, 'the unmarked half of the word was deleted too').toMatch(/<67>\s*<65>/);
+    const counted = /\d+(?= word\(s\) that were under the marks)/.exec(outcome.message ?? '');
+    expect(counted, 'the card never said what it destroyed').toBeTruthy();
+    expect(Number(counted![0]), 'a half-covered line was reported as four covered words')
+      .toBeLessThan(4);
+    expect(outcome.message).toMatch(/deleting the glyphs themselves/i);
   }, 300_000);
 
   it('reads a mark on a turned page in the space the editor drew it in', async () => {
@@ -1086,9 +1095,12 @@ describe('redact-pdf deletes the words, and proves it from the saved file', () =
     // `toExtractedItems` applied the viewport transform it reported a turned
     // page's runs in the *unrotated* frame, so nothing on this page ever matched
     // the mark and the tool could not check its own work here at all. It matches
-    // now, and it finds the truth: the mark stops a character short of the line's
-    // end, so the tail still extracts while the words under the bar are gone.
-    expect(outcome.message).toMatch(/Deleted 1 text run\(s\) under 1 area\(s\) and painted the fill, but 1 word\(s\) under those areas still extract/);
+    // now, and with the base-14 advance known the band takes the sentence it
+    // covers: this used to read "the mark stops a character short of the line's
+    // end", which was the 0.5 em estimate talking, not the bytes.
+    expect(outcome.message).toMatch(/Redacted 1 text run\(s\) under 1 area\(s\) by deleting the glyphs themselves/);
+    expect(outcome.message).toMatch(/none of the \d+ word\(s\) that were under the marks still extracts/);
+    expect(outcome.warnings).toEqual([]);
   }, 300_000);
 
   it('with the metadata option on, the words go from the properties, the packet and the outline', async () => {

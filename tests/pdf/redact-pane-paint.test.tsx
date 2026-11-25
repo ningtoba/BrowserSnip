@@ -48,11 +48,13 @@ vi.mock('pdfjs-dist', async (importOriginal) => {
             height: fake.height * scale,
             transform: [scale, 0, 0, scale, 0, 0],
           }),
-          getTextContent: () => {
-            const { promise, resolve } = Promise.withResolvers<{ items: unknown[] }>();
-            setTimeout(() => resolve({ items: [] }), 0);
-            return promise;
-          },
+          getTextContent: () =>
+            // The deferred form is deliberate: the answer has to arrive in a later
+            // task, and this project's test-side lib target has no
+            // `Promise.withResolvers` to spell it with.
+            new Promise<{ items: unknown[] }>((resolve) => {
+              setTimeout(() => resolve({ items: [] }), 0);
+            }),
           render: (params: { viewport: { width: number; height: number } }) => {
             fake.painted.push(params);
             return { promise: Promise.resolve({ cancel: () => undefined }) };
