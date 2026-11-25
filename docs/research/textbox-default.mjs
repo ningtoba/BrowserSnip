@@ -93,6 +93,22 @@ if (process.env.ARM) {
   if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-arm.png'), Buffer.from(r.data,'base64')); console.log('arm-shot'); }
   if (process.env.STOP) { process.exit(0); }
 }
+if (process.env.WATCH) {
+  await h.click(box.x + 40, box.y + 120);
+  await sleep(400);
+  console.log('build', await h.ev(`JSON.stringify(performance.getEntriesByType('resource').map((e)=>e.name).filter((n)=>/AnnotationEditor/.test(n)))`));
+  console.log('box', await h.ev(`(()=>{const g=document.querySelector('[data-mark]');if(!g)return 'no mark';const r=g.getBoundingClientRect();return JSON.stringify({w:r.width|0,h:r.height|0})})()`));
+  for (let i = 0; i < 24; i += 1) {
+    if (i === 6 || i === 14) {
+      // Force a re-render the way a hand does: change the zoom and put it back.
+      await h.ev(`(()=>{const b=[...document.querySelectorAll('button')].filter((x)=>/^[−-]$|^\+$/.test(x.innerText.trim()));if(b[0])b[0].click();if(b[1])b[1].click();return b.length})()`);
+    }
+    const snap = await h.ev(`JSON.stringify({lines:[...document.querySelectorAll('[data-text-lines]')].map((g)=>g.getAttribute('data-text-lines')), divs:document.querySelectorAll('[data-tool-gesture] div').length, svgText:document.querySelectorAll('[data-text-layout] text').length})`);
+    console.log('t+' + (i * 0.5).toFixed(1), snap);
+    await sleep(500);
+  }
+  if (SHOT) { const r = await h.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT.replace('.png','-watch.png'), Buffer.from(r.data,'base64')); console.log('watch-shot'); }
+}
 if (process.env.HOVER) {
   await h.click(box.x + 60, box.y + 120);
   await sleep(600);
