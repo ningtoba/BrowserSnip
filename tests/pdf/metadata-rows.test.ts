@@ -155,6 +155,32 @@ describe('dates are readable without losing the stored string', () => {
     const value = row(rowsOf(metadataReport(doc, bytesOf()), INFO_SECTION), 'Creation date');
     expect(value).toContain('2 January 2026 at 01:01:01 +02:00');
   });
+
+  it('prints a zone-less date as the components it stores, whatever zone the runtime runs in', async () => {
+    // A date without an offset used to print through the UTC getters of an
+    // instant built in the *runtime's* zone: measured '2 January 2026 at
+    // 19:04:05 local time' on the +08 build box and '2 January 2026 at
+    // 08:04:05' under New York emulation (/tmp/seam2a/repro-3-date-plus08.json,
+    // repro-3-date-ny.json) — the same stored string, two invented clocks,
+    // neither the 03:04:05 the file holds. The literal components now come out
+    // identically under both zones, framed as what was stored.
+    const zone = process.env.TZ;
+    try {
+      const readings: string[] = [];
+      for (const tz of ['Asia/Kuala_Lumpur', 'America/New_York']) {
+        process.env.TZ = tz;
+        const doc = await docWith((dict) => {
+          dict.set(PDFName.of('CreationDate'), PDFString.of('D:20260102030405'));
+        });
+        readings.push(row(rowsOf(metadataReport(doc, bytesOf()), INFO_SECTION), 'Creation date'));
+      }
+      expect(readings[0]).toBe('2 January 2026 at 03:04:05 as stored, no offset recorded · stored as D:20260102030405');
+      expect(readings[1]).toBe(readings[0]);
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
 });
 
 describe('the structures a reviewer asks about by name', () => {

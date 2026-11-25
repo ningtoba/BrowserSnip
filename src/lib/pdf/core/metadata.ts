@@ -79,11 +79,18 @@ const NAMED_KEYS = new Set<string>([
 /**
  * A parsed PDF date plus the offset the string carried. `offsetMinutes` is
  * `undefined` when the producer omitted the timezone (the PDF spec allows it),
- * in which case the wall-clock fields were interpreted as local time.
+ * in which case the wall-clock fields carry the stored value itself — no
+ * instant can be claimed for them without inventing a zone.
  */
 export interface PdfDateParts {
   date: Date;
   offsetMinutes?: number;
+  /**
+   * The wall-clock fields exactly as the string stored them
+   * (`[year, month 1-12, day, hours, minutes, seconds]`, defaults filled).
+   * Only set when the text matched the `D:` shape.
+   */
+  components?: [number, number, number, number, number, number];
 }
 
 const PDF_DATE_RE =
@@ -122,7 +129,11 @@ export function parsePdfDateParts(value: string): PdfDateParts | undefined {
         ? new Date(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
         : new Date(Date.UTC(...(parts as [number, number, number, number, number, number])) - offsetMinutes * 60_000);
     if (Number.isNaN(date.getTime())) return undefined;
-    return { date, offsetMinutes };
+    return {
+      date,
+      offsetMinutes,
+      components: [parts[0], parts[1] + 1, parts[2], parts[3], parts[4], parts[5]],
+    };
   }
 
   // Not a PDF date: allow ISO 8601 and locale text, but only when unambiguous
@@ -932,16 +943,28 @@ function propertyRow(rows: MetadataRow[], label: string, dict: PDFDict | undefin
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 
-/** `D:20260102010101Z00'00'` → `2 January 2026 at 01:01:01 UTC`. */
+/**
+ * `D:20260102010101Z00'00'` → `2 January 2026 at 01:01:01 UTC`.
+ *
+ * A date **without** an offset prints the components as stored: building an
+ * instant in the runtime's zone and reading it back in UTC printed a clock
+ * nobody wrote (measured on the campaign's `D:20260102030405`: '19:04:05' on
+ * the +08 box, '08:04:05' under New York emulation — the file says 03:04:05).
+ */
 function humanDate(parts: PdfDateParts): string {
   const offset = parts.offsetMinutes;
-  const wall = new Date(parts.date.getTime() + (offset ?? 0) * 60_000);
+  if (offset === undefined) {
+    const [year, month, day, hours, minutes, seconds] = parts.components
+      ?? [
+        parts.date.getFullYear(), parts.date.getMonth() + 1, parts.date.getDate(),
+        parts.date.getHours(), parts.date.getMinutes(), parts.date.getSeconds(),
+      ];
+    const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    return `${day} ${MONTH_NAMES[month - 1] ?? pad(month)} ${pad(year, 4)} at ${clock} as stored, no offset recorded`;
+  }
+  const wall = new Date(parts.date.getTime() + offset * 60_000);
   const clock = `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`;
-  const zone = offset === undefined
-    ? 'local time, no offset recorded'
-    : offset === 0
-      ? 'UTC'
-      : `${offset > 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`;
+  const zone = offset === 0 ? 'UTC' : `${offset > 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`;
   return `${wall.getUTCDate()} ${MONTH_NAMES[wall.getUTCMonth()]} ${wall.getUTCFullYear()} at ${clock} ${zone}`;
 }
 
