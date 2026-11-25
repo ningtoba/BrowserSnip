@@ -2325,18 +2325,25 @@ describe('each tool is checked against its own output file', () => {
     const doc = await open(await bytesOf(outcome));
     expect(doc.getPageCount()).toBe(4);
     for (const page of doc.getPages()) {
-      expect(page.getSize()).toEqual({ width: 110, height: 60 });
+      expect(page.getSize()).toEqual({ width: 105, height: 55 });
     }
-    // Each sheet is the tile plus 10 pt taken from the sheet before it, so the
-    // cut lines meet. `/BBox` is `[left, bottom, right, top]` in the source
-    // page's own space: x 0-110 / 90-200 and y 40-100 / 0-60.
+    // Every sheet is one PITCH (the page minus one overlap, divided across the
+    // tiles) plus the overlap, so all four seams are exactly the 10 pt asked —
+    // the old arithmetic made the leading seam 20 pt while it let the outer
+    // sheets run past the page edge. `/BBox` is `[left, bottom, right, top]` in
+    // the source page's own space: x 0-105 / 95-200 and y 45-100 / 0-55, and
+    // the far tiles finish flush on the page, not 10 pt past it.
     const boxes = doc.getPages().map((_, index) => stampsOf(doc, index)[0].bbox);
     expect(boxes).toEqual([
-      [0, 40, 110, 100],
-      [90, 40, 200, 100],
-      [0, 0, 110, 60],
-      [90, 0, 200, 60],
+      [0, 45, 105, 100],
+      [95, 45, 200, 100],
+      [0, 0, 105, 55],
+      [95, 0, 200, 55],
     ]);
+    expect(boxes[0][2] - boxes[1][0], 'horizontal seam row 1 is the asked overlap').toBe(10);
+    expect(boxes[2][2] - boxes[3][0], 'and so is row 2').toBe(10);
+    expect(boxes[2][3] - boxes[0][1], 'the vertical seam too').toBe(10);
+    expect(boxes[3][3] - boxes[1][1], 'on the far column').toBe(10);
     // …and nothing is magnified to fill the sheet, which is what used to make the
     // edge tiles print bigger than the middle ones.
     for (const [index, source] of boxes.entries()) {

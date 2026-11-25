@@ -2628,21 +2628,31 @@ export const organizeTools: PdfToolDefinition[] = [
             `A ${bleed} pt overlap is as wide as the tiles themselves at ${columns} × ${rows} on this page, so tiles repeat the same strip. Lower the overlap or use more tiles.`,
           );
         }
-        const tileWidth = size.width / columns;
-        const tileHeight = size.height / rows;
-        // Every tile sheet is `tile + overlap` on both axes and its content is
-        // drawn into it 1:1. The previous version let the default `contain` fit
-        // magnify the tiles that lose an outer overlap to the page boundary, so
-        // edge pieces printed bigger than inner ones and would not meet up (E8).
-        const sheetWidth = tileWidth + bleed;
-        const sheetHeight = tileHeight + bleed;
+        // Every tile sheet is one PITCH plus the overlap on both axes and its
+        // content is drawn into it 1:1. The pitch carries the overlap inside
+        // the division — `(size − bleed) / columns`, not `size / columns` —
+        // because a band bolted onto the sheet's outside repeats twice where
+        // the leading tile clamps to the page edge: measured 20 pt of seam on
+        // every asked 10, one doubled seam per row and per column (F-P1).
+        // Folded inside, every seam is exactly `bleed`, all sheets are one
+        // size, and coverage stays exact — the last window ends at `size`
+        // itself. The previous version also let the default `contain` fit
+        // magnify the tiles that lose an outer overlap to the page boundary,
+        // so edge pieces printed bigger than inner ones and would not meet
+        // up (E8).
+        const pitchWidth = Math.max(size.width - bleed, 0) / columns;
+        const pitchHeight = Math.max(size.height - bleed, 0) / rows;
+        const sheetWidth = pitchWidth + bleed;
+        const sheetHeight = pitchHeight + bleed;
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < columns; col++) {
             const newPage = target.addPage([sheetWidth, sheetHeight]);
             // The window this sheet shows, in the frame a viewer displays, so a
-            // rotated page splits along the line the user sees (E9).
-            const windowX = col * tileWidth - (col > 0 ? bleed : 0);
-            const windowY = row * tileHeight - (row > 0 ? bleed : 0);
+            // rotated page splits along the line the user sees (E9). With the
+            // overlap inside the pitch, no window clamps and none needs the
+            // old `col > 0` special case.
+            const windowX = col * pitchWidth;
+            const windowY = row * pitchHeight;
             const left = Math.max(0, windowX);
             const top = Math.max(0, windowY);
             const content = {

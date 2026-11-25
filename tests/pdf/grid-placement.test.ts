@@ -676,11 +676,16 @@ describe('the other grid tools keep their content on the page', () => {
       const placed = placedOn(doc, index);
       expect(placed.length, `tile ${index + 1} holds one page`).toBe(1);
       const sheet = mediaBox(doc.getPages()[index]);
-      // A tile sheet is a quarter of its own page plus the overlap: 200/2 + 6 for
-      // the first page's four tiles, 210/2 + 6 for the second's.
+      // A tile sheet is one PITCH plus the overlap: the page divided by the
+      // tiles leaves room for the band inside the division, so 200 pt at 2 × 6
+      // is (200 − 6)/2 + 6 = 103 for the first page's tiles and 108 for the
+      // second's. The old `size / n + bleed` arithmetic made every leading seam
+      // twice the asked overlap (F-P1); this sheet size is what puts each seam
+      // back at exactly `bleed`.
       const source = index < 4 ? 200 : 210;
-      expect(round(sheet.width), 'the sheet is one tile wide').toBe(source / 2 + 6);
-      expect(round(placed[0].rect.width), 'and the crop fills it edge to edge').toBe(source / 2 + 6);
+      const pitch = (source - 6) / 2;
+      expect(round(sheet.width), 'the sheet is one pitch plus the overlap').toBe(pitch + 6);
+      expect(round(placed[0].rect.width), 'and the crop fills it edge to edge').toBe(pitch + 6);
     });
   });
 
@@ -706,23 +711,42 @@ describe('the other grid tools keep their content on the page', () => {
       page.drawRectangle({ x: 420 * fx - 8, y: 595 * fy - 8, width: 16, height: 16, color: rgb(0, 0, 0) });
     }
     const out = await produce('posterize', await doc.save({ useObjectStreams: false }), { columns: 2, rows: 2, bleed: 10 }, 4);
-    const cellW = 595 / 2;
-    const cellH = 420 / 2;
+    // Pitches leave the overlap inside the page: (595 − 10)/2 and (420 − 10)/2
+    // displayed, one pitch + 10 pt per sheet. F-P1's `cell + bleed` sheet put
+    // 20 pt of repeat on the leading seam of every row and column; these boxes
+    // are uniform by construction and land flush on the page edges.
+    const pitchW = (595 - 10) / 2;
+    const pitchH = (420 - 10) / 2;
     out.getPages().forEach((sheet, index) => {
       const [r, c] = [Math.floor(index / 2), index % 2];
-      expect([round(sheet.getWidth()), round(sheet.getHeight())], `tile ${index + 1} is one displayed cell plus its overlap`)
-        .toEqual([round(cellW + 10), round(cellH + 10)]);
+      expect([round(sheet.getWidth()), round(sheet.getHeight())], `tile ${index + 1} is one displayed pitch plus its overlap`)
+        .toEqual([round(pitchW + 10), round(pitchH + 10)]);
       const placed = placedOn(out, index);
       expect(placed.length, `tile ${index + 1} draws its own quarter`).toBe(1);
       expect(rasterise(out, index).inside, `tile ${index + 1} carries ink`).toBeGreaterThan(10);
-      const at = { x: c * cellW - (c > 0 ? 10 : 0), y: r * cellH - (r > 0 ? 10 : 0) };
+      const at = { x: c * pitchW, y: r * pitchH };
       // Stored coordinates of that displayed corner: x = displayed y, y = displayed x.
-      expect(placed[0].source.width, `tile ${index + 1} takes the cell's height across`).toBeCloseTo(cellH + 10, 2);
-      expect(placed[0].source.height, `tile ${index + 1} takes the cell's width down`).toBeCloseTo(cellW + 10, 2);
+      expect(placed[0].source.width, `tile ${index + 1} takes the cell's height across`).toBeCloseTo(pitchH + 10, 2);
+      expect(placed[0].source.height, `tile ${index + 1} takes the cell's width down`).toBeCloseTo(pitchW + 10, 2);
       const bbox = bboxOf(out, index);
       expect([round(bbox.x), round(bbox.y)], `tile ${index + 1} starts at its own corner`)
         .toEqual([round(at.y), round(at.x)]);
     });
+    // The seam between every neighbouring pair of tiles is exactly the asked
+    // 10 pt — the F-P1 doubling came from the leading tiles clamping to 0 while
+    // every other tile subtracted the band; with the pitch folded in, no tile
+    // clamps and both seams of a row measure the same. The page is `/Rotate 90`,
+    // so displayed neighbours are neighbours along the *stored y* — the 90° map
+    // the box pins above already read.
+    const boxes = out.getPages().map((_, index) => bboxOf(out, index));
+    expect(round(boxes[0].y + boxes[0].height - boxes[1].y), 'the horizontal seam is one overlap').toBe(10);
+    expect(round(boxes[2].y + boxes[2].height - boxes[3].y), 'the second row too').toBe(10);
+    expect(round(boxes[0].x + boxes[0].width - boxes[2].x), 'and so is the vertical one').toBe(10);
+    expect(round(boxes[1].x + boxes[1].width - boxes[3].x), 'on the far column').toBe(10);
+    // No tile runs past the page on either side: the far column ends flush at
+    // the stored width, the far row at the stored height.
+    expect(round(boxes[2].x + boxes[2].width), 'tiles end on the page edge').toBe(420);
+    expect(round(boxes[1].y + boxes[1].height), 'in both directions').toBeCloseTo(595, 1);
   });
 
   /**
