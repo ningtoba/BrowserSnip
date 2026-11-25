@@ -670,6 +670,40 @@ function expandTabs(text: string): string {
   }).join('\n');
 }
 
+/**
+ * The two pieces of Markdown syntax `core/layout.ts` hands the tag stripper, which
+ * eats them whole.
+ *
+ * `stripRawHtml` runs before `marked`, so a `<br>` is deleted and the two halves of
+ * the line arrive as one word — measured on the pre-fix build: "the hard break<br>
+ * line three" reached the sheet as `hard breakline three` — and an autolink
+ * `<https://example.com/x>`, which IS its own address, was deleted with its angle
+ * brackets, so the URL vanished while an ordinary `[text](url)` at least kept its
+ * words. Both are fixed in the source rather than in the shared stripper, because
+ * both have an exact CommonMark spelling.
+ */
+function normalizeMarkdown(text: string): string {
+  // The same fence spelling `stripRawHtml` guards with: inside a fenced block the
+  // card promises HTML is kept, so `<br>` must stay two letters and a tag.
+  const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+  let inside: string | null = null;
+  return text
+    .split('\n')
+    .map((line) => {
+      const marker = FENCE.exec(line)?.[1] ?? null;
+      if (marker) {
+        if (inside === null) inside = marker;
+        else if (marker[0] === inside[0]) inside = null;
+        return line;
+      }
+      if (inside) return line;
+      return line
+        .replace(/<br\s*\/?>/gi, '  \n')
+        .replace(/<((?:https?|ftp|mailto):[^<>\s]*)>/g, '$1');
+    })
+    .join('\n');
+}
+
 /* ------------------------------------------------------------------ output */
 
 /**
@@ -1223,10 +1257,12 @@ export const convertToTools: PdfToolDefinition[] = [
     promise: 'CommonMark and GFM structure — headings, lists, tables, fenced code, task lists — as selectable text.',
     notes: [
       ...TEXT_NOTES,
-      'Only `data:` images can be embedded: no network requests are made, so remote image URLs stay as alt text — and a picture written inside a sentence prints its alt text too, because pictures are placed between paragraphs, not between words.',
-      'Maths is written out as its LaTeX source in a code face, not typeset — a server engine would run KaTeX.',
-      'Footnotes, definition lists and Mermaid diagrams are not rendered.',
-      'Raw HTML inside the Markdown is stripped rather than rendered: `<b>` and `<script>` arrive as their words, and a `<script>` body is not printed. HTML inside a fenced code block is kept.'
+      'Only `data:` images can be embedded: a remote `src` is never fetched, so it stays as alt text — and a picture written inside a sentence prints its alt text too, because pictures are placed between paragraphs, not between words.',
+      'Maths arrives as its LaTeX source: `$x^2 + y_1$` prints those exact characters in the body face, not typeset (a server engine would run KaTeX). `code` inside a sentence keeps its words but not a monospace face; a fenced block does.',
+      'Footnotes, definition lists and Mermaid diagrams are not rendered: `[^1]` prints in the sentence and its definition prints as its own paragraph, and a `mermaid` fence is typeset as code, not drawn.',
+      'A link is drawn blue and underlined, but the file carries no clickable target and the address is not printed; an autolink like `<https://example.com>` keeps its address, as plain text.',
+      'A task list keeps its state as text — the item prints `[x]` after its bullet rather than as a drawn box — and a nested list is laid out at the same depth as the list above it.',
+      'Raw HTML inside the Markdown is stripped rather than rendered: `<b>` arrives as its words, a `<script>` or `<style>` block goes with its body, and a `<br>` ends the line. Tags inside a fenced block are kept — except a complete `<script>…</script>` or `<style>…</style>` pair, which is removed from the code too. Named entities the tag stripper does not know (`&copy;`, `&nbsp;`) print as written.'
     ],
     fields: [
       ...sourceFields(SOURCE_ACCEPT.markdown, '# Heading\n\nWrite **Markdown** here…', 'Source'),
@@ -1250,7 +1286,7 @@ export const convertToTools: PdfToolDefinition[] = [
       let remote = 0;
       for (const source of sources) {
         remote += countMatches(source.text, /!\[[^\]]*\]\(\s*(?!data:)[^)]+\)/g);
-        blocks.push(...(await markdownToBlocks(source.text, {
+        blocks.push(...(await markdownToBlocks(normalizeMarkdown(source.text), {
           images: async (src) => readDataUrl(src),
         })));
       }

@@ -1,0 +1,603 @@
+## before-fix — /tmp/mdstruct, judged by MuPDF outside this app
+
+=== breaks  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=105
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'line'
+      p0 x 131.8 y  75.2 'one'
+      p0 x  56.0 y  91.2 'with'
+      p0 x  78.6 y  91.2 'two'
+      p0 x  98.8 y  91.2 'trailing'
+      p0 x 134.2 y  91.2 'spaces'
+      p0 x  56.0 y 107.1 'line'
+      p0 x  76.2 y 107.1 'two'
+      p0 x  96.3 y 107.1 'after'
+
+=== code-blocks  sheets=1  runs=9/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 2 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(9.35, 'Helvetica'), (9.68, 'NotoSans-Regular-7888'), (9.68, 'NotoSans-Regular-979'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=112
+/home/nekophobia/Projects/BrowserSnipRepo/.lanes/convert/docs/research/md-struct-measure.py:59: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  return sum(1 for p in img.getdata() if p < 128)
+    code_ink: 147 dark px in the code band y70-159 (0 = painted over)
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  66.0 y  91.2 'const'
+      p0 x  93.1 y  91.2 'a'
+      p0 x 101.1 y  91.2 '='
+      p0 x 109.1 y  91.2 '1;'
+      p0 x  66.0 y 104.2 'function'
+      p0 x 106.3 y 104.2 'b()'
+      p0 x 120.6 y 104.2 '{'
+      p0 x  71.0 y 117.3 'return'
+      p0 x 102.5 y 117.3 'a;'
+
+=== controls-columns  sheets=2  runs=116/outside=0  images=0  annots=0/0 links  drawings=3
+    message : Rendered 1 Markdown source(s) into 2 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (9.46, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=1301
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  56.0 y  96.2 'Paragraph'
+      p0 x 110.4 y  96.2 '1:'
+      p0 x  56.0 y 112.1 'body'
+      p0 x  82.9 y 112.1 'text'
+      p0 x 103.7 y 112.1 'long'
+      p0 x  56.0 y 128.1 'enough'
+      p0 x  95.8 y 128.1 'to'
+      p0 x  56.0 y 144.0 'need'
+      p0 x  83.5 y 144.0 'several'
+
+=== controls-large  sheets=1  runs=22/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(15.3, 'Helvetica'), (15.48, 'Helvetica'), (18.0, 'Helvetica'), (37.8, 'Helvetica')]
+    markers : [(58.0, 628.7, '•'), (58.0, 670.3, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : []  |  FFFD=0  chars=201
+    x-edges : min=56.0 max=815.7 (page 595.3)
+      p0 x  56.0 y  75.9 'HEADER'
+      p0 x 124.0 y  75.9 'TEXT'
+      p0 x 167.4 y  75.9 'MKH'
+      p0 x  56.0 y 194.7 'Heading'
+      p0 x  56.0 y 277.8 'MKSTART'
+      p0 x  56.0 y 328.5 'Body'
+      p0 x 102.0 y 328.5 'paragraph,'
+      p0 x  56.0 y 368.1 'long'
+      p0 x  95.0 y 368.1 'enough'
+      p0 x 160.1 y 368.1 'to'
+
+=== controls-small  sheets=1  runs=15/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(6.88, 'Helvetica'), (8.0, 'Helvetica'), (16.8, 'Helvetica')]
+    markers : [(58.0, 149.8, '•'), (58.0, 160.6, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=167
+    x-edges : min=56.0 max=213.8 (page 595.3)
+      p0 x  56.0 y  87.9 'Heading'
+      p0 x 123.2 y  87.9 'MKSTART'
+      p0 x  56.0 y 101.6 'Body'
+      p0 x  76.5 y 101.6 'paragraph,'
+      p0 x 117.4 y 101.6 'long'
+      p0 x 134.7 y 101.6 'enough'
+      p0 x  56.0 y 110.4 'to'
+      p0 x  64.9 y 110.4 'wrap'
+      p0 x  84.5 y 110.4 'onto'
+      p0 x 102.2 y 110.4 'a'
+
+=== deep-nest  sheets=1  runs=12/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '•'), (58.0, 109.2, '•'), (58.0, 127.1, '•'), (58.0, 145.1, '•'), (58.0, 163.0, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=110
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '•'
+      p0 x  70.0 y  96.2 'level'
+      p0 x  95.7 y  96.2 'one'
+      p0 x 117.1 y  96.2 'alpha'
+      p0 x  58.0 y 109.2 '•'
+      p0 x  70.0 y 114.1 'level'
+      p0 x  95.7 y 114.1 'one'
+      p0 x 117.1 y 114.1 'echo'
+      p0 x 144.0 y 114.1 'MKEND'
+
+=== emphasis  sheets=1  runs=15/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 5 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica'), (11.0, 'Helvetica-Bold'), (11.0, 'Helvetica-BoldOblique'), (11.0, 'Helvetica-Oblique')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=86
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 110.0 y  75.3 'bold'
+      p0 x 136.2 y  75.3 'words'
+      p0 x 171.3 y  75.1 'italic'
+      p0 x 196.3 y  75.1 'words'
+      p0 x 228.6 y  75.3 'both'
+      p0 x 255.5 y  75.2 'struck'
+      p0 x 287.8 y  75.2 'inline'
+      p0 x  56.0 y  91.2 'code'
+      p0 x  82.9 y  91.2 'and'
+
+=== entities  sheets=1  runs=5/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=79
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'amp'
+      p0 x 136.1 y  75.2 '&amp;'
+      p0 x  56.0 y  91.2 'copy'
+      p0 x  82.3 y  91.2 '&copy;'
+      p0 x 119.0 y  91.2 'dash'
+      p0 x 145.9 y  91.2 '—'
+      p0 x  56.0 y 107.1 'nbsp:&nbsp;end'
+      p0 x 138.6 y 107.1 'quote'
+      p0 x  56.0 y 123.1 '"'
+
+=== fence-script  sheets=1  runs=6/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (9.68, 'NotoSans-Regular-8659'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=53
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  66.0 y 104.2 '<br>'
+      p0 x  66.0 y 117.3 '<div>kept</div>'
+      p0 x  56.0 y 143.4 'after'
+      p0 x  81.1 y 143.4 'the'
+      p0 x  99.4 y 143.4 'fence'
+      p0 x 129.4 y 143.4 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== footnotes  sheets=1  runs=8/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=120
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'a'
+      p0 x 120.8 y  75.2 'claim'
+      p0 x  56.0 y  91.2 'with'
+      p0 x  78.6 y  91.2 'a'
+      p0 x  87.8 y  91.2 'note[^1]'
+      p0 x 129.6 y  91.2 'and'
+      p0 x  56.0 y 107.1 'another[^b].'
+      p0 x  56.0 y 128.1 '[^1]:'
+      p0 x  79.5 y 128.1 'The'
+
+=== front-matter  sheets=1  runs=5/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica'), (18.7, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=76
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y 114.1 'title:'
+      p0 x  95.5 y 114.1 'The'
+      p0 x 132.9 y 114.1 'Document'
+      p0 x  56.0 y 141.2 'author:'
+      p0 x 119.4 y 141.2 'Someone'
+      p0 x  56.0 y 163.2 'MKSTART'
+      p0 x 111.6 y 163.2 'body'
+      p0 x 138.5 y 163.2 'after'
+      p0 x  56.0 y 179.2 'front'
+      p0 x  81.1 y 179.2 'matter'
+
+=== hashtag  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica'), (23.1, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=39
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 '#NoSpaceAfterHash'
+      p0 x  56.0 y 128.9 'real'
+      p0 x 100.9 y 128.9 'heading'
+      p0 x  56.0 y 162.4 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== headings  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 7 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica'), (12.1, 'Helvetica'), (13.2, 'Helvetica'), (15.4, 'Helvetica'), (18.7, 'Helvetica'), (23.1, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=34
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y 108.0 'H1'
+      p0 x  91.9 y 108.0 'MKSTART'
+      p0 x  56.0 y 153.5 'H2'
+      p0 x  56.0 y 191.0 'H3'
+      p0 x  56.0 y 223.0 'H4'
+      p0 x  56.0 y 252.2 'H5'
+      p0 x  56.0 y 278.7 'H6'
+      p0 x  73.1 y 278.7 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== html-in-md  sheets=1  runs=3/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=45
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'Div'
+      p0 x 130.6 y  75.2 'paragraph'
+      p0 x  56.0 y  96.2 'after'
+      p0 x  81.1 y  96.2 'the'
+      p0 x  99.4 y  96.2 'html'
+      p0 x 123.3 y  96.2 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== images  sheets=1  runs=7/outside=0  images=1  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    warning : 2 image reference(s) point off-device and were kept as alt text — nothing is uploaded or fetched.
+    net     : 0 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(9.35, 'Helvetica'), (9.9, 'Helvetica-Oblique'), (11.0, 'Helvetica'), (11.0, 'Helvetica-Oblique')]
+    markers : []
+    imgs    : [(297.1, 56.0, 298.1, 57.0)]
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=84
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x 275.0 y  74.1 'a'
+      p0 x 283.2 y  74.1 'red'
+      p0 x 300.3 y  74.1 'pixel'
+      p0 x  56.0 y  98.4 '[image:'
+      p0 x  95.1 y  98.4 'remote'
+      p0 x 132.4 y  98.4 'chart]'
+      p0 x  56.0 y 119.5 'Text'
+      p0 x  80.5 y 119.5 'with'
+      p0 x 103.1 y 119.5 'an'
+      p0 x 116.7 y 119.3 '[image]'
+
+=== links  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=45
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'see'
+      p0 x 130.8 y  75.2 'the'
+      p0 x 149.1 y  75.2 'spec'
+      p0 x 175.4 y  75.2 'and'
+      p0 x 196.8 y  75.2 'mailto'
+      p0 x 229.2 y  75.2 'plus'
+      p0 x  56.0 y  91.2 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== lists  sheets=1  runs=11/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '•'), (58.0, 106.2, '•'), (58.0, 124.1, '•'), (58.0, 142.1, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=69
+    x-edges : min=58.0 max=813.9 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 'MKSTART'
+      p0 x 125.6 y  75.2 'alpha'
+      p0 x  58.0 y  88.2 '•'
+      p0 x  70.0 y  93.2 'beta'
+      p0 x  58.0 y 106.2 '•'
+      p0 x  70.0 y 111.1 'epsilon'
+      p0 x 107.9 y 111.1 'MKEND'
+      p0 x  58.0 y 124.1 '•'
+      p0 x  70.0 y 129.1 'nested'
+
+=== math  sheets=1  runs=10/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=97
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'inline'
+      p0 x 140.3 y  75.2 '$x^2'
+      p0 x  56.0 y  91.2 '+'
+      p0 x  65.5 y  91.2 'y_1'
+      p0 x  86.3 y  91.2 '='
+      p0 x  95.8 y  91.2 '\\alpha$'
+      p0 x 134.9 y  91.2 'maths'
+      p0 x  56.0 y 107.1 'and'
+      p0 x  77.4 y 107.1 'a'
+
+=== mermaid  sheets=1  runs=5/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 1 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (9.68, 'NotoSans-Regular-8450'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=37
+    code_ink: 147 dark px in the code band y70-99 (0 = painted over)
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  66.0 y  91.2 'graph'
+      p0 x  95.8 y  91.2 'TD;'
+      p0 x  66.0 y 104.2 'A-->B;'
+      p0 x  56.0 y 130.3 'end'
+      p0 x  77.4 y 130.3 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== numbering-tail  sheets=4  runs=190/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 4 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '1.'), (58.0, 141.1, '2.'), (58.0, 190.9, '3.')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=2506
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '1.'
+      p0 x  70.0 y  96.2 'numbered'
+      p0 x 122.6 y  96.2 'item'
+      p0 x 146.4 y  96.2 'that'
+      p0 x  70.0 y 112.1 'is'
+      p0 x  81.0 y 112.1 'long'
+      p0 x 104.8 y 112.1 'enough'
+      p0 x 144.6 y 112.1 'to'
+      p0 x  70.0 y 128.1 'wrap'
+
+=== ordered-start  sheets=1  runs=8/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '1.'), (58.0, 109.2, '2.'), (58.0, 127.1, '3.')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=40
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '1.'
+      p0 x  70.0 y  96.2 'five'
+      p0 x  58.0 y 109.2 '2.'
+      p0 x  70.0 y 114.1 'six'
+      p0 x  58.0 y 127.1 '3.'
+      p0 x  70.0 y 132.1 'seven'
+      p0 x 102.4 y 132.1 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== ordered  sheets=1  runs=14/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 91.2, '1.'), (58.0, 109.2, '2.'), (58.0, 127.1, '3.'), (58.0, 145.1, '1.'), (58.0, 163.0, '2.'), (58.0, 181.0, '3.')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=67
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x  58.0 y  91.2 '1.'
+      p0 x  70.0 y  96.2 'first'
+      p0 x  58.0 y 109.2 '2.'
+      p0 x  70.0 y 114.1 'second'
+      p0 x  58.0 y 127.1 '3.'
+      p0 x  70.0 y 132.1 'third'
+      p0 x  58.0 y 145.1 '1.'
+      p0 x  70.0 y 150.0 'one'
+      p0 x  58.0 y 163.0 '2.'
+
+=== quote  sheets=1  runs=5/outside=0  images=0  annots=0/0 links  drawings=1
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (10.78, 'Helvetica-Oblique')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=66
+    x-edges : min=84.0 max=813.9 (page 595.3)
+      p0 x  84.0 y  80.7 'MKSTART'
+      p0 x 138.5 y  80.7 'quoted'
+      p0 x 174.5 y  80.7 'first'
+      p0 x  84.0 y  96.3 'line'
+      p0 x  84.0 y 112.0 'quoted'
+      p0 x 120.0 y 112.0 'second'
+      p0 x 157.7 y 112.0 'line'
+      p0 x  84.0 y 127.6 'nested'
+      p0 x 119.4 y 127.6 'quote'
+      p0 x 149.3 y 127.6 'MKEND'
+
+=== rules  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=36
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 111.6 y  75.2 'above'
+      p0 x  56.0 y 112.2 'between'
+      p0 x  56.0 y 149.1 'below'
+      p0 x  87.8 y 149.1 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== setext  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=2
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 4 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica'), (18.7, 'Helvetica'), (23.1, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=58
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y 108.0 'Title'
+      p0 x 106.1 y 108.0 'Underline'
+      p0 x  56.0 y 153.5 'Subtitle'
+      p0 x 123.6 y 153.5 'Underline'
+      p0 x  56.0 y 175.6 'body'
+      p0 x  82.9 y 175.6 'paragraph'
+      p0 x 136.1 y 175.6 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== table-align  sheets=1  runs=10/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (9.46, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=61
+    x-edges : min=60.0 max=813.9 (page 595.3)
+      p0 x  60.0 y  74.9 'Left'
+      p0 x 249.4 y  74.9 'Center'
+      p0 x 386.5 y  74.9 'Right'
+      p0 x  60.0 y  95.0 'a'
+      p0 x  67.9 y  95.0 'MKSTART'
+      p0 x 249.4 y  95.0 'b'
+      p0 x 386.5 y  95.0 'c'
+      p0 x  60.0 y 115.2 'long'
+      p0 x  80.5 y 115.2 'text'
+      p0 x  98.4 y 115.2 'here'
+
+=== table-long  sheets=2  runs=129/outside=0  images=0  annots=0/0 links  drawings=44
+    message : Rendered 1 Markdown source(s) into 2 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (9.46, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=780
+    x-edges : min=60.0 max=813.9 (page 595.3)
+      p0 x  60.0 y  74.9 'Name'
+      p0 x 237.9 y  74.9 'Value'
+      p0 x 407.7 y  74.9 'N'
+      p0 x  60.0 y  95.0 'row'
+      p0 x  77.9 y  95.0 '1'
+      p0 x 237.9 y  95.0 'value'
+      p0 x 263.1 y  95.0 '1'
+      p0 x 407.7 y  95.0 '0'
+      p0 x  60.0 y 115.2 'row'
+      p0 x  77.9 y 115.2 '2'
+
+=== table-pipes  sheets=1  runs=7/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (9.46, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=42
+    x-edges : min=60.0 max=813.9 (page 595.3)
+      p0 x  60.0 y  74.9 'Cmd'
+      p0 x 236.1 y  74.9 'Note'
+      p0 x  60.0 y  95.0 '`a'
+      p0 x 236.1 y  95.0 'b`'
+      p0 x 247.1 y  95.0 'MKSTART'
+      p0 x  60.0 y 115.2 'plain'
+      p0 x 236.1 y 115.2 'last'
+      p0 x 253.5 y 115.2 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== table-ragged  sheets=1  runs=9/outside=0  images=0  annots=0/0 links  drawings=4
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 3 distinct (size, family): [(9.35, 'Helvetica'), (9.46, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKSTART', 'MKH', 'MKF']  |  FFFD=0  chars=22
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  60.0 y  74.9 'A'
+      p0 x 221.1 y  74.9 'B'
+      p0 x 382.2 y  74.9 'C'
+      p0 x  60.0 y  95.0 '1'
+      p0 x  60.0 y 115.2 '1'
+      p0 x 221.1 y 115.2 '2'
+      p0 x 382.2 y 115.2 '3'
+      p0 x  56.0 y 143.6 'MKEND'
+      p0 x 534.1 y 813.9 '1'
+
+=== tasks  sheets=1  runs=12/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 0 fetched, remote=[]
+    faces   : 2 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'Helvetica')]
+    markers : [(58.0, 70.3, '•'), (58.0, 88.2, '•'), (70.0, 93.2, '[x]'), (58.0, 106.2, '•'), (70.0, 111.1, '[X]'), (58.0, 124.1, '•')]
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=93
+    x-edges : min=58.0 max=813.9 (page 595.3)
+      p0 x  58.0 y  70.3 '•'
+      p0 x  70.0 y  75.2 '['
+      p0 x  76.1 y  75.2 ']'
+      p0 x  82.2 y  75.2 'MKSTART'
+      p0 x 137.8 y  75.2 'unchecked'
+      p0 x  58.0 y  88.2 '•'
+      p0 x  70.0 y  93.2 '[x]'
+      p0 x  84.7 y  93.2 'checked'
+      p0 x 128.7 y  93.2 'lower'
+      p0 x  58.0 y 106.2 '•'
+
+=== unicode-mix  sheets=1  runs=4/outside=0  images=0  annots=0/0 links  drawings=0
+    message : Rendered 1 Markdown source(s) into 1 page(s).
+    net     : 3 fetched, remote=['https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-jp/NotoSansJP_400Regular.ttf', 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-sc/NotoSansSC_400Regular.ttf']
+    faces   : 4 distinct (size, family): [(9.35, 'Helvetica'), (11.0, 'NotoSans-Regular-7572'), (11.0, 'NotoSans-Regular-8450'), (11.0, 'NotoSans-Regular-8659')]
+    markers : []
+    imgs    : []
+    links   : uris=[] | spec in text=False | autolink=False
+    missing : ['MKH', 'MKF']  |  FFFD=0  chars=67
+    x-edges : min=56.0 max=813.9 (page 595.3)
+      p0 x  56.0 y  75.2 'MKSTART'
+      p0 x 107.8 y  75.2 '日本語のテキスト'
+      p0 x 163.4 y  75.2 '한국말'
+      p0 x  56.0 y  91.1 '中文'
+      p0 x  72.1 y  91.1 'café'
+      p0 x  96.4 y  91.1 'naïve'
+      p0 x 126.8 y  91.1 '😀'
+      p0 x  56.0 y 107.1 '𠀀'
+      p0 x  65.5 y 107.1 '\u200fright-left\u200e'
+      p0 x 113.6 y 107.1 'flip'

@@ -19,7 +19,7 @@
  * decoded by the same rules a viewer uses.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from '@maxwbh/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from '@maxwbh/pdf-lib';
 import { getPdfTool } from '@/lib/pdf/tools/registry';
 import { clearFontCache } from '@/lib/pdf/core/fonts';
 import { ToolInputError } from '@/lib/pdf/core/guard';
@@ -777,6 +777,84 @@ describe('txt-to-pdf reads the encoding the file is actually in', () => {
     // what to do about it, because UTF-16 without its mark is a text file.
     expect((noMark as ToolInputError).hint).toMatch(/UTF-16 without its byte-order mark/);
     expect((noMark as ToolInputError).hint).toMatch(/re-save it as UTF-8/i);
+  });
+});
+
+/**
+ * The two Markdown spellings `core/layout.ts` hands to its tag stripper, which used
+ * to eat them: `<br>` (deleted, gluing the words either side into one) and the
+ * autolink `<https://…>` (deleted with its brackets, so the address vanished). Both
+ * are fixed in the route, in the source, and only outside fenced blocks — which is
+ * what the third pin holds down.
+ */
+describe('markdown-to-pdf keeps the inline HTML it was promised to', () => {
+  const md = (source: string) => fileFrom(source, 'doc.md', 'text/markdown');
+
+  it('ends the line at a <br> instead of welding the words together', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART the hard break<br>line three after a br tag MKEND\n'),
+    ]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    // Pre-fix the sheet read `hard breakline three`: one word, one space missing.
+    expect(words).toContain('the hard break');
+    expect(words).toContain('line three after a br tag');
+    expect(words).not.toContain('breakline');
+  });
+
+  it('keeps an autolink’s address in the file', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART see <https://autolink.example/x> and [the spec](https://example.com/spec.html) MKEND\n'),
+    ]);
+    const words = squash(await extractText(await firstPdf(outcome)));
+    expect(words).toContain('https://autolink.example/x');
+    // An ordinary link keeps its words; the address is not printed and the file
+    // carries no /Link annotation, which is what the card now says.
+    expect(words).toContain('the spec');
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    const annotated = doc.getPages()[0]!.node.get(PDFName.of('Annots'));
+    const marks = annotated instanceof PDFArray ? annotated.size() : 0;
+    expect(marks, 'no clickable target is written').toBe(0);
+  });
+
+  it('leaves a <br> inside a fenced block exactly as written', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART\n\n```html\n<br>\n<div>kept</div>\n```\n\nafter the fence MKEND\n'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const printed = runs.map((run) => run.text).join(' ');
+    expect(printed).toContain('<br>');
+    expect(printed).toContain('<div>kept</div>');
+    const family = (name: string) => name.replace(/-\d+$/, '');
+    expect(family(find(runs, '<br>')[0]!.font)).not.toBe(family(find(runs, 'after the fence')[0]!.font));
+  });
+
+  it('prints maths and inline code in the body face, as the card now states', async () => {
+    const outcome = await run('markdown-to-pdf', {}, [md('MKSTART `$x^2 + y_1 = \\alpha$` and $x^2$ inline MKEND\n')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const body = find(runs, 'MKEND')[0]!;
+    // The characters arrive exactly as written — that half of the old note was true.
+    expect(squash(runs.map((run) => run.text).join(' '))).toContain('$x^2 + y_1 = \\alpha$');
+    // …but neither the code span nor the `$…$` maths is set in a code face, which is
+    // the half the old note got wrong; `Inline.code` never reaches the writer.
+    const family = (name: string) => name.replace(/-\d+$/, '');
+    expect(family(find(runs, '$x^2')[0]!.font)).toBe(family(body.font));
+    expect(family(find(runs, '$x^2')[0]!.font)).not.toBe('JetBrainsMono-Regular');
+  });
+
+  it('lays a nested list at its parent’s depth and numbers it from one', async () => {
+    // Measured behaviour the shared renderer owes a fix for (see the c3 blockers in
+    // `/tmp/lane-convert/report.md`): the pins go red when the seam lands, and the
+    // card notes and these expectations move with it.
+    const outcome = await run('markdown-to-pdf', {}, [
+      md('MKSTART\n\n5. five\n6. six\n\n- level one\n  - level two\n\nMKEND\n'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    expect(find(runs, 'five')[0]!.text).toBeTruthy();
+    expect(runs.some((run) => run.text.startsWith('5.'))).toBe(false);
+    expect(runs.some((run) => run.text.startsWith('1.'))).toBe(true);
+    const one = find(runs, 'level one')[0]!;
+    const two = find(runs, 'level two')[0]!;
+    expect(two.x).toBe(one.x);
   });
 });
 
