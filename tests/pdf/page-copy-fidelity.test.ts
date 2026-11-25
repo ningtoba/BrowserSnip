@@ -149,6 +149,13 @@ vi.mock('@/lib/pdf/core/blank', async () => {
         blank: profiles.filter((profile) => profile.blankByContent).map((profile) => profile.page),
       };
     },
+    pageBlankness: async (_session: unknown, doc: PDFDocument, page: number) => {
+      const content = pageContentStreams(doc.getPages()[page - 1])
+        .map((stream) => Buffer.from(stream.bytes).toString('latin1'))
+        .join('');
+      const paints = /\bTj\b|\bTJ\b|\bDo\b|\bre\b|\bf\b|\bS\b/.test(content);
+      return { page, blank: !paints, reason: paints ? 'inked' : 'nothing-drawn' };
+    },
   };
 });
 
