@@ -2056,6 +2056,33 @@ export const securityTools: PdfToolDefinition[] = [
         throw new Error('This PDF has no digital signature to timestamp. Run Digital Signature on it first, then timestamp the signed file.');
       }
       const tsaUrl = stringValue(context.values, 'tsa', DEFAULT_TSA_URL);
+      // Which field the document actually has, so a mistyped name can be answered with
+      // the names that exist rather than sent off to sign again.
+      const fieldNames = signatureFields(input.doc)
+        .map((field) => stringAt(input.doc, field.get(PDFName.of('T'))))
+        .filter((name): name is string => Boolean(name));
+      // How many trusted timestamps the newest signature already carries: the token's
+      // own attribute OID, counted inside the `/Contents` placeholder. A second stamp
+      // is legitimate (a second authority), but it is what usually runs out of room,
+      // and the user is owed the difference between "no room" and "no network".
+      let alreadyStamped = 0;
+      try {
+        const { readSignatures } = await import('../core/signature');
+        const entries = await readSignatures(input.bytes);
+        const newest = entries[entries.length - 1];
+        const span = newest?.byteRange;
+        if (span && span.length === 4) {
+          const gap = new TextDecoder('latin1').decode(input.bytes.subarray(span[1], span[2]))
+            .replace(/\s+/g, '').toLowerCase();
+          // `1.2.840.113549.1.9.16.2.14` as DER content octets: `06 0B 2A 86 48 86
+          // F7 0D 01 09 10 02 0E` — the `02` is part of the OID (arc 2.14), so leaving
+          // it out counts nothing at all.
+          alreadyStamped = (gap.match(/2a864886f70d010910020e/g) ?? []).length;
+        }
+      } catch {
+        // The count is wording, not a verdict; a file this reader cannot walk simply
+        // gets the sentence without it.
+      }
       let result: Awaited<ReturnType<typeof timestampBytes>>;
       try {
         // The bytes as they arrived, not a re-save of the opened document:
@@ -2067,14 +2094,17 @@ export const securityTools: PdfToolDefinition[] = [
           fieldName: stringValue(context.values, 'fieldName') || undefined,
         });
       } catch (error) {
-        throw timestampFailure(error, tsaUrl, signatureCount);
+        throw timestampFailure(error, tsaUrl, fieldNames, alreadyStamped);
       }
       return {
         kind: 'pdf',
         bytes: result.bytes,
         pages: input.doc.getPageCount(),
         message: `Timestamped at ${result.attestedAt.toISOString()} by ${result.authority}.`,
-        warnings: [`The timestamp covers the signature, not the document: it proves the signature existed at ${result.attestedAt.toISOString()}, and ${tsaUrl} is the one address this app sends a digest to.`],
+        warnings: [`The timestamp covers the signature, not the document: it proves the signature existed at ${result.attestedAt.toISOString()}, and ${tsaUrl} is the one address this app sends a digest to.`
+          + (alreadyStamped > 0
+            ? ` This signature already carried ${alreadyStamped} trusted timestamp${alreadyStamped === 1 ? '' : 's'}; this run added a second, so the file now holds ${alreadyStamped + 1} — each one attests the same signature value, at its own authority's time.`
+            : '')],
       };
     },
   },
@@ -2877,14 +2907,37 @@ function signatureFields(doc: PDFDocument): PDFDict[] {
  * turning a malformed request down — "could not be reached", which sent the user
  * to check their connection for a defect in this app.
  */
-function timestampFailure(error: unknown, tsaUrl: string, signatureCount: number): Error {
+function timestampFailure(error: unknown, tsaUrl: string, fieldNames: string[], alreadyStamped = 0): Error {
   const detail = error instanceof Error ? error.message : String(error ?? 'unknown reason');
-  if (signatureCount === 0 || /has no signature/i.test(detail)) {
+  if (fieldNames.length === 0 || /has no signature to timestamp/i.test(detail)) {
     return new Error('This PDF has no digital signature to timestamp. Run Digital Signature on it first, then timestamp the signed file.');
+  }
+  // A name that matches nothing is the user's typo, not an unsigned document: the old
+  // wording tested `has no signature` against core's "no signature field named …" and
+  // sent a signed file off to be signed again.
+  const named = /no signature field named "([^"]*)"/i.exec(detail);
+  if (named) {
+    const list = fieldNames.map((name) => `"${name}"`).join(fieldNames.length === 2 ? ' and ' : ', ');
+    return new Error(
+      `No signature in this PDF is named "${named[1]}", so nothing was stamped and the file is unchanged. This document has ${fieldNames.length} signature field${fieldNames.length === 1 ? '' : 's'}: ${list}. Leave the box empty to stamp the newest one without naming it.`,
+    );
   }
   if (/not a PKCS#7|no signer information|could not be read|no signature value|could not be bound/i.test(detail)) {
     return new Error(
       `The signature in this PDF could not be read by the timestamp step (${detail}), so no timestamp was attached and nothing was changed. The signature itself is untouched — Validate Signature still reports on it.`,
+    );
+  }
+  // No room is not a dead connection. Measured re-stamping an already-timestamped
+  // file: the authority answered, the token came back, and the run was reported as
+  // "could not be reached … Try again with a connection" — a network errand for a
+  // file whose `/Contents` placeholder is already full.
+  const room = /needs (\d+) characters but the signature reserved (\d+)/.exec(detail);
+  if (room) {
+    const [, needed, reserved] = room;
+    return new Error(
+      `The authority at ${tsaUrl} answered, but its token does not fit the space this signature reserved: the signed blob would need ${needed} characters and ${reserved} were set aside when the file was signed. Nothing was added and the file is unchanged${alreadyStamped > 0
+        ? ` — this signature already carries ${alreadyStamped} trusted timestamp${alreadyStamped === 1 ? '' : 's'}, and a second has nowhere to go. Sign again (a fresh signature reserves the whole placeholder) if a second stamp is really wanted; the first one still proves the signature existed at its own time.`
+        : ` — the certificate chain and token together outgrow it, so sign again with a shorter chain, or timestamp before intermediates are added.`}`,
     );
   }
   if (/^the authority answered HTTP|^the authority refused|^the token|^the response/.test(detail)) {

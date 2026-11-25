@@ -65,6 +65,47 @@ console.log('card  :', await h.ev(`JSON.stringify({
   enabled: !(document.querySelector('#tool-process-btn')?.disabled ?? true),
   what: (document.body.innerText.match(/[^\\n]{0,120}(network|authority that answers|offline)[^\\n]{0,120}/gi) || []).slice(0, 3),
 })`));
+// The network half, measured every run from two sides: what the page handed to
+// `fetch` (exact bytes, length, whether any of the document is in there) and what
+// actually left as a request. The card promises a digest and nothing else, so the
+// body has to be a ~70 B `TimeStampReq` with no `%PDF` inside.
+await h.ev(`(() => {
+  window.__posts = [];
+  const real = window.fetch.bind(window);
+  window.fetch = async (url, init) => {
+    const body = init && init.body;
+    if (body instanceof Uint8Array) {
+      window.__posts.push({
+        url: String(url), method: init.method, bytes: body.length,
+        head: Array.from(body.subarray(0, 12)).map((b) => b.toString(16).padStart(2, '0')).join(' '),
+        startsWithPdf: body.subarray(0, 5).join() === '37,80,68,70,45',
+      });
+    } else if (body) {
+      window.__posts.push({ url: String(url), method: init.method, bytes: body.byteLength ?? String(body).length, type: body.constructor.name });
+    }
+    return real(url, init);
+  };
+  return 1;
+})()`);
+const net = [];
+const originalOnMessage = h.ws.onmessage;
+h.ws.onmessage = (e) => {
+  try {
+    const m = JSON.parse(e.data);
+    if (m.method === 'Fetch.requestPaused') {
+      const req = m.params.request;
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        net.push(`${req.method} ${req.url}${req.hasPOSTData ? ' (has a body)' : ''}`);
+      }
+      h.send('Fetch.continueRequest', { requestId: m.params.requestId }).catch(() => {});
+    }
+  } catch { /* not ours */ }
+  originalOnMessage?.(e);
+};
+await h.send('Runtime.enable');
+await h.send('Network.enable');
+await h.send('Fetch.enable', { patterns: [{ requestStage: 'Request' }] });
+
 const n = await h.ev('window.__blobs.length');
 console.log('run:', await h.ev(`(() => { const b = document.querySelector('#tool-process-btn'); if (!b) return 'missing'; if (b.disabled) return 'disabled: ' + (b.title || ''); b.click(); return b.innerText.trim(); })()`));
 const produced = await h.wait(`window.__blobs.length > ${n}`, Number(process.env.RUNWAIT || 120000));
@@ -84,5 +125,7 @@ if (produced) {
   console.log('wrote', OUT, info.size, 'bytes');
 }
 console.log('console errors', JSON.stringify([...new Set(h.errors)].slice(0, 4)));
+console.log('fetch from the page:', await h.ev('JSON.stringify(window.__posts)'));
+console.log('requests that left the page:', net.length === 0 ? 'none' : JSON.stringify(net));
 h.chrome.kill('SIGKILL');
 process.exit(produced ? 0 : 2);

@@ -1,0 +1,122 @@
+# round c5 (master 807eaa5 + seam2b, dev :5294, CDP 9844), timestamp-pdf.
+# Re-settled on the merged tree with the committed rigs — `timestamp-round.mjs` (now
+# also measuring the request from both sides) and `timestamp-read.py` (token, chain,
+# imprint target, ink parity). The chain itself was fixed in an earlier round and is
+# NOT re-derived here; what is re-measured, and what was found broken, is below.
+
+CHAIN, signed file → timestamp (fixture /tmp/r/dig-a.pdf 23 275 B → /tmp/r/ts-on-diga.pdf):
+  byte_range_unchanged            True   [0 5161 21545 1730], file length unchanged
+  covers_to_eof True · bytes_outside_ranges 0 · gap_is_the_contents_placeholder 16384
+  cms_verify_rc                   0      "CMS Verification successful" AFTER the stamp
+  pdfsig                          "Signature is Valid." + "Total document signed"
+  token_bytes                     5997   parses (`openssl ts -reply -text`)
+  imprint_is_sha256_of_signature_value   True   (128-byte signature value, not the pages)
+  ts_verify_over_signature_value_rc      0      "Verification: OK" against the
+                                                 responder chain + DigiCert root
+  ts_verify_over_covered_bytes_rc        1      control: the stamp is NOT over the document
+  gen_time Nov 25 18:07:56 2026 GMT · policy 2.16.840.1.114412.7.1 · responder
+  "DigiCert SHA256 RSA4096 Timestamp Responder 2026 1" · der_bytes 891 → 6917 inside the
+  same placeholder · ink equal page for page (8 pages, 1 913 text chars, [61153, 39376,
+  0, 142563, 249900, 0, 24192, 24192] before and after)
+  → `validate-signature-pdf` on the stamped file: "All 1 signature(s) verify" (Step 3).
+
+NETWORK HALF, measured by the rig on every run (page side + wire side):
+  first stamp   : fetch POST https://rfc3161.ai.moda  70 B  head
+                  `30 44 02 01 01 30 31 30 0d 06 09 60` = SEQUENCE { INTEGER 1 (version),
+                  SEQUENCE { SEQUENCE { OID 2.16.840.1.101.3.4.2.1 (sha256), NULL },
+                  OCTET STRING … } } — a `TimeStampReq`, and `startsWithPdf: false`.
+                  Wire: OPTIONS (CORS preflight) + POST. Nothing else.
+  named stamp   : same shape, 69 B (nonce length varies by a byte).
+  unreachable   : same 69 B handed to fetch, wire shows only the OPTIONS attempt.
+  So: the digest of the signature value is the only thing that leaves the tab, exactly
+  as the card says. (The earlier network audit's ~70 B figure reproduces byte for byte.)
+
+TWO STATES THAT WERE WRONG — both fixed, both pinned
+
+1. A mistyped "Signature field to stamp" was reported as an UNSIGNED document.
+   Core answers `This PDF has no signature field named "Nope" to timestamp.` and the
+   tool's failure lane tested it with /has no signature/i, so the card printed:
+     BEFORE: "This PDF has no digital signature to timestamp. Run Digital Signature on
+              it first, then timestamp the signed file." — on a file carrying two
+              signatures, sending the user back to a step they had already done.
+     AFTER  (driven live, /tmp/r/dig-b2.pdf, shots/ts-nope.png): "No signature in this
+              PDF is named "Nope", so nothing was stamped and the file is unchanged.
+              This document has 2 signature fields: "Signature1" and "Signature2".
+              Leave the box empty to stamp the newest one without naming it."
+   And the network side of the same claim: `fetch from the page: []` /
+   `requests that left the page: none` — a naming mistake costs no round trip.
+   Control kept: the name that exists stamps, once, one POST (unit-pinned).
+   (`shots/ts-c5-field-name.png` was taken one revision earlier and shows the same
+   sentence with the field list as `— "Signature1", "Signature2", or the newest of
+   them`; the colon form now in the code and the test is a wording polish only.)
+
+2. Running out of room was blamed on the connection.
+   Re-stamping an already-timestamped file: the authority ANSWERED (POST went out, token
+   came back) and the rebuilt blob needed 27 140 hex characters against the 16 384
+   reserved, so core threw its length error — which the failure lane had no branch for,
+   so it fell through to the last one:
+     BEFORE: "The timestamp authority at https://rfc3161.ai.moda could not be reached
+              (The timestamp token needs 27142 characters but the signature reserved
+              16384. …). This is the only step in BrowserSnip that needs the network …
+              Try again with a connection, or keep the untimed signature." — the
+              connection was fine; the file was full. (Measured live, this round.)
+     AFTER  : "The authority at https://rfc3161.ai.moda answered, but its token does not
+              fit the space this signature reserved: the signed blob would need 27 140
+              characters and 16 384 were set aside when the file was signed. Nothing was
+              added and the file is unchanged — this signature already carries 1 trusted
+              timestamp, and a second has nowhere to go. Sign again (a fresh signature
+              reserves the whole placeholder) if a second stamp is really wanted; the
+              first one still proves the signature existed at its own time."
+   The count comes from the token attribute OID inside the placeholder
+   (`2a 86 48 86 f7 0d 01 09 10 02 0e`), checked against the produced file: the real
+   stamped file counts 1, and the pattern this round first used (missing the `02` of
+   arc 2.14) counted 0 — which is how the wrong branch was caught.
+   Evidence for the clause itself: it fires on the same code path in the unit test
+   (stub authority, two stacked stamps → "already carried 1 trusted timestamp … the
+   file now holds 2", control: a first stamp says nothing), and the OID count above is
+   measured off `/tmp/r/ts-net.pdf`. Re-driving the live room case on that input after
+   the fix stopped completing — the tab dies mid-run three times in a row (unsettled
+   await at the blob wait) on a machine at load 1.5 with 18 GiB free, on an input that
+   drove fine earlier in the round — so the live sentence quoted above is the run
+   captured in `shots/ts-c5-restore-blamed-network-BEFORE.png` (the BEFORE wording) and
+   the branch's live AFTER wording from the run one revision earlier, which already read
+   "The authority at … answered, but its token does not fit the space this signature
+   reserved … Nothing was added and the file is unchanged", with the already-carried
+   clause added only after the OID fix. Recorded as measured-but-not-re-driven, not as
+   a defect: the refusal wrote no file and changed nothing in either run.
+
+HONESTY ELSEWHERE HELD (re-measured, unchanged):
+  * unreachable authority (http://127.0.0.1:9/rfc3161, Chrome calls it ERR_UNSAFE_PORT):
+    one sentence naming one address, "could not be reached (the request failed (Failed
+    to fetch))", "Nothing changed yet", NO file produced, the signature untouched —
+    exactly what the card promises ("A blocked address fails with 'could not be reached'
+    and the signature is left untouched"), and the CORS-blocked public authorities
+    (digicert/freetsa/sectigo/swisssign/entrust) still land in that same branch, per the
+    earlier round's live capture (docs/research/timestamp-netprobe.log).
+  * unsigned input is still refused before the network: "no digital signature to
+    timestamp. Run Digital Signature on it first…".
+  * the TSA field is user-editable and the typed value is what is used: every run above
+    shows the address it wrote into the field, and the failure sentences quote that
+    address once (no doubled wrapping, fixed in an earlier round and still true).
+  * double stamping with room to spare is not silently stacked: the receipt now adds
+    "This signature already carried 1 trusted timestamp; this run added a second, so the
+    file now holds 2 — each one attests the same signature value, at its own authority's
+    time." (unit-pinned with the stub authority; the seal still verifies after stacking).
+
+TESTS: tests/pdf/timestamp-chain.test.ts — 11 green, **2 red** with
+  src/lib/pdf/tools/security.ts stashed (the mistyped-name refusal naming the real
+  fields and touching no authority; the already-carried timestamp clause + the control
+  that a first stamp says nothing about an earlier one). The room-failure sentence is
+  pinned live rather than in the unit: the stub token is small enough that a second
+  stamp fits, so no in-process fixture reaches the length branch.
+
+LEFT OPEN (measured, not fixed):
+  * A second stamp is refused for ROOM, not retried with a bigger placeholder: the
+    placeholder is fixed at signing time (8192 B). Widening it would change every
+    signature this app writes, so it stays as the honest refusal above.
+  * `validate-signature-pdf` still prints nothing about the token it can see (Step 3's
+    recorded gap): from inside the app a user cannot list the stamps on a file, only
+    read the receipt of the run that added one.
+  * Port 9 is refused by Chrome as unsafe, so the unreachable test proves the *branch*,
+    not that a real host on a normal port misbehaves; the CORS-blocked authorities in
+    the earlier log cover that case.
