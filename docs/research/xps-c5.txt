@@ -1,0 +1,46 @@
+xps-to-pdf real-producer battery — measurement log (lane office, 2026-11-26, dev :5297, CDP 9857)
+
+CORPUS (Microsoft’s own SampleXpsDocuments 1.0 set — files the Windows XPS print
+path and WPF produced, never this repo):
+  Office2007_24COLOR.xps  sha 43fffa126324517f  Word 2007 print-to-XPS, 2 fixed pages, UTF-16 LE BOM XML
+  Office2007_Excel_digit_formats.xps  Excel 2007 print-to-XPS, 1 page, UTF-16 — same class (measured below)
+  WPF_GlyphsLinGradScaleTransfTemplate.xps  WPF XPS writer, UTF-8, spec-cased <Glyphs UnicodeString="…">
+  Vendored: Office2007_24COLOR.xps + WPF_…xps under tests/fixtures/office/.
+
+BEFORE (build b14b4ec, jsdom + the same probes): two distinct producer-shape blindnesses,
+  exactly the class the odp lesson predicts:
+  * Word/Excel pages are XML, but XML in UTF-16 with a BOM. zipTexts decoded every part as
+    UTF-8 — every real character became U+FFFD — and parseXml then blamed the file:
+    “That XPS page is not readable XML.” A package that opens in the Windows viewer is
+    refused with the WRONG CAUSE named (bar 2).
+  * ECMA-388 spells the text element <Glyphs> — capital G — and Word/WPF write it so.
+    The reader compared localName against lowercase 'glyphs', a shape only this repo’s own
+    fixture invents. The WPF file, UTF-8 and parsing fine, came back
+    “no text runs this reader can recover, so every page would come out blank” — its words
+    in the package, the denial on the card, in the same breath.
+  Both halves of the corpus pre-fix: nothing converted.
+FIXES (core/office-in.ts, cause-local, not the rowText spine):
+  * decodeXmlBytes — BOM picks the decoding (UTF-16LE/BE/UTF-8; ECMA-388/OPC allow all
+    three); zipTexts uses it for every OPC reader, strictly better where producers are
+    already UTF-8 (EPUB/ODF/OOXML unchanged — the whole suite holds).
+  * glyphs compare case-insensitively: real <Glyphs>/<t:Glyphs> recovered, the lowercase
+    fixture shape keeps working.
+  Page-order pin re-settled with producer provenance: the package’s own
+  <PageContent Source="Pages/1.fpage"> then 2.fpage sequence is the numeric file order the
+  reader walks — Word’s spine and the reader agree (asserted on the real file: page 1’s
+  “Black” runs before page 2’s “Shading 5%”).
+AFTER: Word 24COLOR → “Converted the XPS document with selectable text into 7 page(s)”
+  (7 sheets: each fixed page’s runs re-flow, the card says re-flowed not traced); live
+  download 13 899 B, “Font color selection” + “Black” present, order as above.
+  WPF → 1 page, text “absdfasdfsadfasdfasdfc” recovered — was a refusal.
+  Excel digit_formats → 8 pages, “Bold, Itallic, Underline” + the number ladder recovered.
+  console errors []; network 3 requests, 0 off-origin.
+PINS: convert-to-bytes ‘recovers a Word-printed UTF-16 package…’ + ‘recovers the
+  capital-G Glyphs…’ — RED 2 without the fix; edit-bytes ‘reads a Windows-printed
+  package, capital G and all’ — this used to pin the REFUSAL of <t:Glyphs> (the bug
+  codified); flipped to recovery, RED 1 without the fix. The lowercase fixture pin and
+  edge order/artwork-loss pins hold unchanged.
+LEFT (recorded): strokes, gradients, images, exact glyph positions still not reproduced —
+  card says so, measured true (text-only output). .fdseq documents with multiple FixedDocs
+  or non-sequential PageNumbers would need the fdoc spine rather than file sort — no real
+  producer in the corpus writes one out of order; hardening, not a bug.

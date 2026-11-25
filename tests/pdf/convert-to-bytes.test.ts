@@ -2674,6 +2674,55 @@ describe('excel-to-pdf prints the cells it was shown', () => {
   });
 });
 
+describe('xps-to-pdf and fb2-to-pdf read the files producers actually write', () => {
+  it('recovers a Word-printed UTF-16 package in its own page order', async () => {
+    // `Office2007_24COLOR.xps`: Word 2007 print-to-XPS — fixed pages written
+    // UTF-16 with a BOM. Pre-fix the reader decoded them as UTF-8, every
+    // character came out replacement marks, and the parse blamed the file:
+    // “That XPS page is not readable XML.” The two `PageContent Source=`
+    // entries list 1.fpage before 2.fpage — the file-name order the reader
+    // walks — so reading order is re-settled against the package’s own spine.
+    const outcome = await run('xps-to-pdf', {}, [
+      fileFrom(fixture('Office2007_24COLOR.xps'), 'colors.xps'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(outcome.message).toMatch(/Converted the XPS document/, 'a Word package is readable XML after all');
+    expect(text).toContain('Font color selection');
+    expect(text.indexOf('Black'), 'page 1’s colors run before page 2’s shading').toBeLessThan(text.indexOf('Shading 5%'));
+  });
+
+  it('recovers the capital-G Glyphs a WPF export carries', async () => {
+    // `WPF_GlyphsLinGradScaleTransfTemplate.xps`: the XPS writer WPF ships,
+    // UTF-8 and spec-cased `<Glyphs UnicodeString="…">`. Pre-fix the reader
+    // matched only the lower-case `glyphs` its own fixture invented, so this
+    // deck was refused — “no text runs this reader can recover” — with its
+    // words in the file and the denial on the card in the same breath.
+    const outcome = await run('xps-to-pdf', {}, [
+      fileFrom(fixture('WPF_GlyphsLinGradScaleTransfTemplate.xps'), 'wpf.xps'),
+    ]);
+    expect(squash(await extractText(await firstPdf(outcome)))).toContain('absdfasdfsadfasdfasdfc');
+  });
+
+  it('typesets an FB2 book as chapters, without its metadata preamble', async () => {
+    // `source_test_book_fb2.fb2`: hand-authored FictionBook 2.0 with 18
+    // sections. Pre-fix every `<p>` in the file was collected: the
+    // `<description>` block’s history notes and src-url opened the book as if
+    // they were prose (“1.1 TODO review…”, a GitHub link), and every chapter
+    // `<title>` printed the same size as its body.
+    const outcome = await run('fb2-to-pdf', {}, [fileFrom(fixture('source_test_book_fb2.fb2'), 'sample.fb2')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const size = (needle: string) => runs.find((run) => run.text.includes(needle))?.size ?? 0;
+    expect(size('This is a title'), 'the body title is a heading').toBeGreaterThan(size('A test paragraph.'));
+    // The nested section titles print as headings too — the heading renderer
+    // emits “A Test Header” and “h2” as separate runs, so match the leading run.
+    expect(size('A Test Header'), 'a nested section title is a heading too').toBeGreaterThan(size('A test paragraph.'));
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text, 'the history notes are not the book').not.toContain('1.1 TODO review');
+    expect(text).not.toContain('Initial version, written by hand');
+    expect(text).toContain('Another test paragraph.');
+  });
+});
+
 describe('powerpoint-to-pdf keeps every slide, even an empty one', () => {
   it('gives a blank slide its own page rather than dropping it', async () => {
     const outcome = await run('powerpoint-to-pdf', {}, [

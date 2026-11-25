@@ -2369,12 +2369,16 @@ describe('office converters put the source text into selectable PDF text', () =>
     expect(await pageText(doc.getPages()[0])).toContain('XPS page one text');
   });
 
-  it('xps-to-pdf refuses a package whose runs it cannot see instead of shipping blanks', async () => {
-    // Real Windows output writes `<t:Glyphs>`; the reader compares lower-case
-    // names, so the honest behaviour is a refusal, not blank pages.
-    await expect(
-      run('xps-to-pdf', {}, [anyFile(await xpsPackage(['Hidden here'], 't:Glyphs'), 'real.xps', 'application/vnd.ms-xpsdocument')]),
-    ).rejects.toThrow(/no text runs this reader can recover/iu);
+  it('xps-to-pdf reads a Windows-printed package, capital G and all', async () => {
+    // This used to pin the refusal — “real Windows output writes `<t:Glyphs>`
+    // and the reader compares lower-case names” — the same blindness odp-c5
+    // un-pinned for Impress frames. The case-insensitive compare is the fix;
+    // the lower-case fixture above stays green beside it.
+    const outcome = await run('xps-to-pdf', {}, [
+      anyFile(await xpsPackage(['Hidden here'], 't:Glyphs'), 'real.xps', 'application/vnd.ms-xpsdocument'),
+    ]);
+    const doc = await reopen(outcome);
+    expect(await pageText(doc.getPages()[0])).toContain('Hidden here');
   });
 
   it('odp-to-pdf reads a deck whose text sits in frames, as Impress writes it', async () => {
