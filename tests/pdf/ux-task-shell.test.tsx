@@ -193,6 +193,20 @@ const STANDS: Record<string, PdfToolDefinition> = {
     outputSuffix: '_trimmed.pdf',
     run: async () => ({ kind: 'pdf', bytes: bytes(300), message: 'Half the file.', pages: 8 }),
   },
+  /** A run that answers with a report only: text on the screen, no file to hang. */
+  'shell-report': {
+    id: 'shell-report',
+    name: 'Audit Shell',
+    description: 'Answer questions about the file',
+    icon: '📋',
+    category: 'optimize',
+    actionLabel: 'Audit',
+    run: async () => ({
+      kind: 'report' as const,
+      sections: [{ title: 'Sheets', rows: [{ label: 'Pages', value: '4' }] }],
+      message: 'Four sheets, two fonts.',
+    }),
+  },
   /** Three files out; only the first one's count is on the card. */
   'shell-split': {
     id: 'shell-split',
@@ -1068,6 +1082,21 @@ describe('the run', () => {
     // Two quiet ways onward, and the drop zone is gone: nobody wonders if it worked.
     expect(within(pane).getByRole('button', { name: 'Do another' })).toBeInTheDocument();
     expect(within(pane).getByRole('link', { name: 'Back to all tools' })).toHaveAttribute('href', '#/pdf');
+  });
+
+  it('names a report what it is — a report-only run promised no file', async () => {
+    // The success screen crowned every finished run "Your file is ready",
+    // including the ones whose whole answer is a report on the screen: there is
+    // no file to be ready. The receipt has to name what the run produced.
+    loadFiles([await realPdf('shell.pdf')]);
+    render(<PdfToolPanel toolId="shell-report" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Audit' }));
+    await waitFor(() => expect(surface()).toHaveAttribute('data-surface', 'result'));
+    const pane = document.querySelector('[data-result]') as HTMLElement;
+    expect(within(pane).getByRole('heading', { level: 1 })).toHaveTextContent('Your report is ready');
+    // The report itself is on the screen, and nothing pretends to be a file.
+    expect(pane.textContent).toContain('Four sheets, two fonts.');
+    expect(pane.querySelector('[data-output-name]')).toBeNull();
   });
 
   it('prints the whole output name on the success screen', async () => {

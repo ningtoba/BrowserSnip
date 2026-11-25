@@ -635,6 +635,28 @@ function markedPixels(raster: Raster): number {
   return n;
 }
 
+/**
+ * The words a produced sheet actually prints: every `Tj`/`TJ` literal decoded,
+ * the WinAnsi punctuation (`–` `—` `·`) mapped back to what the pane spells.
+ */
+function sheetText(page: PDFPage): string {
+  const raw = contentText(page.doc, page);
+  const decode = (bytes: string, hex: boolean) => {
+    let out = '';
+    if (hex) {
+      for (let i = 0; i + 1 < bytes.length; i += 2) out += String.fromCharCode(parseInt(bytes.slice(i, i + 2), 16));
+    } else {
+      out = bytes.replace(/\\([nrtbf()\\])/g, (_, c) => ({ n: '\n', r: '\r', t: '\t', b: '', f: '', '(': '(', ')': ')', '\\': '\\' })[c as string] ?? c);
+    }
+    return out
+      .replace(/\u0096/g, '–')
+      .replace(/\u0097/g, '—')
+      .replace(/\u00b7/g, '·');
+  };
+  const runs = [...raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj|\(((?:[^()\\]|\\.)*)\)\s*Tj/g)];
+  return runs.map((m) => decode(m[1] ?? m[2], m[1] != null)).join('\n');
+}
+
 /* ── driving the shipped tools ─────────────────────────────────────────────── */
 
 function fileOf(name: string, bytes: Uint8Array): ToolFile {
@@ -815,6 +837,25 @@ describe('the exported comparison', () => {
     expect(out.pages).toHaveLength(1);
     expect(out.message).toMatch(/Compared 1 page/);
     expect(out.warnings.join(' ')).toMatch(/2 more pages? the other does not|extra page/i);
+  });
+
+  it('names each changed area on the sheet, in the numbers the pane prints', async () => {
+    // The pane spells a changed area `x 40–380 · y 60–100 pt` from the sheet's
+    // top-left (`diffAreaWords`); the exported sheets said only
+    // “Page N — comparison”, so the file carried none of the coordinates the
+    // user had just read beside the pages. Both halves run the same pixels
+    // through `diffAreasOf` at the same density, so the sentences match to the
+    // point — which is what this pins.
+    const out = await runCompare('compare', [bytesA, bytesB]);
+    const first = sheetText(out.pages[0]);
+    expect(first).toMatch(/Page 1 — comparison/);
+    expect(first).toMatch(/1 changed area/);
+    expect(first).toContain('x 20–100 · y 40–80 pt');
+    expect(sheetText(out.pages[1])).toContain('x 15–60 · y 20–45 pt');
+    // A sheet with no marked pixel keeps its plain header: no invented areas.
+    const third = sheetText(out.pages[2]);
+    expect(third).toMatch(/Page 3 — comparison/);
+    expect(third).not.toMatch(/x \d+–\d+/);
   });
 });
 
