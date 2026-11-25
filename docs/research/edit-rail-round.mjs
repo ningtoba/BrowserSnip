@@ -183,6 +183,17 @@ async function setField(label, raw) {
     await ev(`(()=>{const t=${at};
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,${JSON.stringify(String(raw))});
       t.dispatchEvent(new Event('input',{bubbles:true})); t.dispatchEvent(new Event('change',{bubbles:true})); return 1;})()`);
+  } else if (before.kind === 'input' && before.type === 'file') {
+    // DOM.setFileInputFiles sets `files` but — measured on this Chromium build —
+    // its event never reaches React here, so the field stays "Still needed" while
+    // `files.length` reads 1. The reliable shape is what a drop does: assign
+    // `DataTransfer.files` in-page and dispatch a bubbling `change`.
+    const { readFileSync } = await import('node:fs');
+    const b64 = readFileSync(String(raw)).toString('base64');
+    const name = String(raw).split('/').pop();
+    const kind = await ev(`(async()=>{const bin=atob(${JSON.stringify(b64)});const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);const el=${AT(label)};if(!el)return 'NO CONTROL';const dt=new DataTransfer();dt.items.add(new File([u],${JSON.stringify(name)},{type:/\\.png$/i.test(${JSON.stringify(name)})?'image/png':/\\.jpe?g$/i.test(${JSON.stringify(name)})?'image/jpeg':'application/octet-stream'}));el.files=dt.files;el.dispatchEvent(new Event('change',{bubbles:true}));return 'set'})()`);
+    await sleep(500);
+    return { label, want: raw, before: 'file input', after: kind };
   } else {
     const numeric = before.type === 'range' || before.type === 'number';
     const written = numeric ? JSON.stringify(Number(raw)) : JSON.stringify(String(raw));
@@ -229,8 +240,12 @@ for (const c of CASES) {
 
   const beforeCount = await ev('window.__blobs.length');
   const srcSize = statSync(c.pdf).size;
-  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>new RegExp(${JSON.stringify(c.label)},'i').test((x.innerText||'').trim())&&!x.disabled);if(b){b.click();return b.innerText.trim()}return null})()`);
-  const gotOut = await wait(`window.__blobs.length>${beforeCount} && window.__blobs.slice(${beforeCount}).some(b=>/^application\\/(pdf|zip)$/.test(b.type)&&b.size!==${srcSize})`, 120000);
+  const clicked = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>new RegExp(${JSON.stringify(c.label)},'i').test((x.innerText||'').trim())&&!x.disabled);if(b){b.click();return b.innerText.trim()}return null})()`);
+  let gotOut = false;
+  if (clicked !== null) {
+    await wait(`window.__blobs.length>${beforeCount} && window.__blobs.slice(${beforeCount}).some(b=>/^application\\/(pdf|zip)$/.test(b.type)&&b.size!==${srcSize})`, 60000);
+    gotOut = await ev(`window.__blobs.slice(${beforeCount}).some(b=>/^application\\/(pdf|zip)$/.test(b.type)&&b.size!==${srcSize})`);
+  }
   await sleep(800);
   if (c.shotForm) {
     const s = await send('Page.captureScreenshot', { format: 'png' });

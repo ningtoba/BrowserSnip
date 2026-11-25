@@ -675,6 +675,30 @@ describe('watermark (E9, E11, E13, E15, E18)', () => {
     expect(joined).toMatch(/Pattern spacing must be between 0.2 and 5: 0.01 became 0.2/i);
   });
 
+  it('writes the asked alpha into the file, not only the model', async () => {
+    // Every other watermark pin drives `opacity: 1`; the clamp test proves the
+    // number is READ. The live tab measured it blended into the produced pixels
+    // (grey 225 rendered where 0.25 of #888888 on paper predicts 225.2) — the
+    // byte seam behind that is the non-stroking fill alpha of the graphics
+    // state the run references. Two different asks, two different files.
+    const alphaOf = async (opacity: number): Promise<number | null> => {
+      const outcome = await run('watermark', { type: 'text', text: 'X', opacity, rotation: 0 });
+      const doc = await openPDF(await outputBytes(outcome));
+      const page = doc.getPage(0);
+      const stream = pageContentStreams(page).map(({ bytes: raw }) => Buffer.from(raw).toString('latin1')).join('\n');
+      const gsName = /\/([\w.-]+)\s+gs/.exec(stream)?.[1];
+      expect(gsName, 'the mark referenced no graphics state').toBeTruthy();
+      const res = doc.context.lookup(page.node.get(PDFName.of('Resources'))) as PDFDict | undefined;
+      const states = res ? (doc.context.lookup(res.get(PDFName.of('ExtGState'))) as PDFDict | undefined) : undefined;
+      const state = states ? (doc.context.lookup(states.get(PDFName.of(gsName!))) as PDFDict | undefined) : undefined;
+      const ca = state?.get(PDFName.of('ca'));
+      return ca instanceof PDFNumber ? ca.asNumber() : null;
+    };
+    expect(await alphaOf(0.4)).toBeCloseTo(0.4, 5);
+    // Control: a different ask is a different number in the file, not a constant.
+    expect(await alphaOf(0.02)).toBeCloseTo(0.02, 5);
+  });
+
   it('caps a pattern that would repeat forever on a big sheet (E7)', async () => {
     const bytes = await fixture([{ size: A4 }], 'tile');
     const outcome = await run('watermark', { type: 'text', text: 'AB', fontSize: 6, tile: true, tileGap: 0.2 }, [bytes]);
