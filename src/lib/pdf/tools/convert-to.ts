@@ -934,6 +934,31 @@ function jsonParseProblem(source: string, error: unknown, base = 0): string {
   return `${reason} at line ${at.line}, column ${at.column} of the file.`;
 }
 
+/**
+ * The tree's indentation, paid once and kept on the sheet.
+ *
+ * `xmlToBlocks` indents twice: two literal spaces per level inside the tag's own text
+ * *and* a `depth × 12` paragraph indent under the block. Measured on a 60-level
+ * document the leaf's words were placed at x 788 on a 595.28 pt sheet — inside the
+ * file, off the page, which is the one thing "a tree you can read and search" cannot
+ * afford. The paragraph indent is what the reader sees, so the duplicated spaces go
+ * and the indent stops at half the text column; the levels past that share the deepest
+ * edge that still fits.
+ */
+function treeInsideSheet(blocks: Block[], columnWidth: number): Block[] {
+  const cap = Math.max(48, columnWidth * 0.5);
+  return blocks.map((block) => {
+    if (block.kind !== 'paragraph' || !block.indent) return block;
+    const [tag, ...rest] = block.inlines;
+    if (!tag) return block;
+    return {
+      ...block,
+      indent: Math.min(block.indent, cap),
+      inlines: [{ ...tag, text: tag.text.replace(/^ +/, '') }, ...rest],
+    };
+  });
+}
+
 /** The number each ordered list in the source began with, in document order, */
 function orderedListStarts(source: string): number[] {
   const starts: number[] = [];
@@ -1798,13 +1823,19 @@ export const convertToTools: PdfToolDefinition[] = [
     keywords: ['markup', 'gpx', 'svg source', 'data interchange'],
     inputKind: 'text',
     accept: SOURCE_ACCEPT.xml,
+    multiFile: true,
     surface: 'none',
     outputSuffix: '_from_xml.pdf',
     actionLabel: 'Print tree',
     promise: 'Elements, attributes and text as an indented tree you can read and search.',
     notes: [
       ...TEXT_NOTES,
-      'The tree is printed as text: no stylesheet is applied, so XSLT, namespaces and entity resolution do not change what you see.',
+      'The tree is printed, not rendered: no stylesheet runs, prefixed names keep their prefix, and each namespace declaration arrives as the attribute it is (`xmlns:media="…"`).',
+      'An element gets a line only when it has attributes or text of its own, so a pure container — the `<channel>` wrapped around your items, an empty `<skip/>` — prints nothing while its children keep their depth.',
+      'The XML declaration, any DOCTYPE or processing instruction, and every comment are left out; a tab inside a text node stops at the next eighth column, which is what the parser put there.',
+      'Character references resolve as an XML parser resolves them — `&amp;` prints `&` and `&#8212;` prints an em dash — so a document that uses an entity it never declared (`&nbsp;`, straight out of an HTML editor) is not well-formed XML: it prints as plain text, and the run says so.',
+      'Text that sits between two children prints on the parent’s own line: `<p>one<b>two</b>three</p>` reads `<p> one three` above `<b> two`.',
+      'The indent stops at half the text column, so a tree deeper than about twenty levels shares one left edge rather than marching off the sheet.',
       'A GPX or KML file therefore reads as a structure dump, not as a map.',
     ],
     fields: sourceFields(SOURCE_ACCEPT.xml, '<?xml version="1.0"?><root/>', 'Source'),
@@ -1823,17 +1854,27 @@ export const convertToTools: PdfToolDefinition[] = [
           });
         }
       }
-      const blocks: Block[] = sources.flatMap((source) => {
-        const built = xmlToBlocks(source.text);
+      const options = layoutOptions(context);
+      const [sheetWidth] = Array.isArray(options.pageSize) ? options.pageSize : pageSize(String(options.pageSize));
+      const column = sheetWidth - 2 * (options.margin ?? 56);
+      const blocks: Block[] = [];
+      for (const [index, source] of sources.entries()) {
+        // The file control promises "one after another in a single PDF", so a second
+        // document starts on a sheet of its own instead of continuing the first tree
+        // under a root the reader cannot see any more.
+        if (index > 0 && blocks.length > 0) blocks.push({ kind: 'pagebreak' });
+        const drawable = blocksToDrawable(xmlToBlocks(source.text));
+        if (drawable.dropped > 0) warnings.push(undrawableWarning(source.name, '', drawable.dropped));
+        const built = treeInsideSheet(drawable.blocks, column);
         if (built.length === 1 && built[0]?.kind === 'code') {
           warnings.push(`"${source.name}" is not well-formed XML, so it was printed as plain text instead of a tag tree.`);
         }
-        return built;
-      });
+        blocks.push(...built);
+      }
       if (sources.some((source) => /<svg[\s>]/i.test(source.text))) {
         warnings.push('This is an SVG document printed as a tag tree; SVG to PDF paints it as artwork instead.');
       }
-      return blocksResult(blocks, layoutOptions(context), `Printed ${sources.length} XML file(s) into`, warnings);
+      return blocksResult(blocks, options, `Printed ${sources.length} XML file(s) into`, warnings);
     },
   },
 

@@ -1891,6 +1891,140 @@ describe('json-to-pdf prints what JSON files are actually made of', () => {
   });
 });
 
+/**
+ * The XML tree as the page actually holds it.
+ *
+ * Three things about this route were measured wrong before the round: a literal tab in
+ * an element's text — which XML allows anywhere and `&#9;` writes on purpose — ended the
+ * run with the writer's own sentence and no file, the leaf of a deep document was placed
+ * off the sheet, and the card's promise about entity resolution was simply false. The
+ * block pins below also hold down two limits the shared walker owns and this route only
+ * discloses: an element with neither attributes nor text prints nothing, and text
+ * between two children prints on the parent's line.
+ */
+describe('xml-to-pdf prints the tree it promises', () => {
+  const xml = (text: string, name = 'doc.xml') => fileFrom(text, name, 'application/xml');
+
+  it('keeps a tab in an element’s text at its column instead of losing the file', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml('<root><item>MKSTART a\tb</item><item>MKEND c\td</item></root>'),
+    ]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // Pre-fix: `REFUSED: WinAnsi cannot encode "\t" (0x0009)` and no file, for a tab the
+    // parser put there legitimately. Now it stops at the next eighth column of the text
+    // it sits in: ` MKSTART a` is ten characters deep so six spaces follow, ` MKEND c` is
+    // eight so eight more do — and no raw tab reaches the writer anywhere on the sheet.
+    expect(runs.filter((run) => run.text === ' MKSTART a      b').length, 'the tabbed first item').toBe(1);
+    expect(runs.filter((run) => run.text === ' MKEND c        d').length, 'the tabbed second item').toBe(1);
+    expect(runs.some((run) => run.text.includes('\t')), 'a tab survived to the page').toBe(false);
+    expect(outcome.message).toMatch(/Printed 1 XML file\(s\)/);
+  });
+
+  it('treats a character reference for a tab as the tab it names', async () => {
+    const outcome = await run('xml-to-pdf', {}, [xml('<root><a>x&#9;y</a></root>')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    // `x&#9;y` is the same text written portably: ` x` is two characters deep, so the
+    // tab stops at column 8 with six spaces and `y` opens it.
+    expect(runs.filter((run) => run.text === ' x      y').length, '&#9; stops at column 8').toBe(1);
+    expect(outcome.warnings.join(' ')).not.toMatch(/not well-formed|control character/);
+  });
+
+  it('indents one step per level, paid once', async () => {
+    const outcome = await run('xml-to-pdf', {}, [xml('<root><a><b><c>deep word</c></b></a></root>')]);
+    const runs = await textRuns(await firstPdf(outcome));
+    const at = (needle: string) => find(runs, needle)[0]!;
+    // `xmlToBlocks` used to buy each level twice — a 12 pt paragraph indent *and* two
+    // literal spaces inside the tag text — so the visible step was ~18 pt and the tag a
+    // reader searched for began with whitespace. One 12 pt step now, from the margin.
+    // `<a>` and `<b>` are pure containers, so the walker gives them no line (pinned
+    // below); `<c>`, three levels down, is the one that speaks — and it now sits at
+    // exactly `margin + 3 × 12`, not the `+18/level` the doubled spaces produced.
+    expect(at('<c>').x).toBeCloseTo(92, 1);
+    expect(at('deep word').x).toBeCloseTo(110.35, 1);
+    expect(runs.some((run) => /^ {2,}</.test(run.text)), 'a tag still carries its spaces').toBe(false);
+  });
+
+  it('keeps the leaf of a sixty-level tree on the sheet', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml(`<root>${'<a>'.repeat(60)}<leaf>DEEPEND</leaf>${'</a>'.repeat(60)}</root>`),
+    ]);
+    const bytes = await firstPdf(outcome);
+    const runs = await textRuns(bytes);
+    const [[width]] = await pageSizes(bytes);
+    // Measured pre-fix at x 788 on a 595.28 pt sheet: in the text layer, off the page.
+    expect(Math.max(...runs.map((run) => run.x)), 'the deepest indent').toBeLessThan(width - 56);
+    expect(squash(await extractText(bytes))).toContain('DEEPEND');
+    expect(String(getPdfTool('xml-to-pdf')?.notes)).toMatch(/stops at half the text column/);
+  });
+
+  it('prints an element with nothing of its own as nothing, and says so', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml('<rss><channel><item><t>one</t></item></channel><skip/></rss>'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    // Measured state, filed to the seam (`xmlToBlocks` only emits a line for an element
+    // with attributes or text): the containers vanish and the leaf keeps its depth.
+    expect(text).toContain('<t> one');
+    expect(text).not.toContain('channel');
+    expect(text).not.toContain('skip');
+    expect(String(getPdfTool('xml-to-pdf')?.notes)).toMatch(/An element gets a line only when/);
+  });
+
+  it('resolves the references XML defines and prints the file that does not', async () => {
+    const good = await run('xml-to-pdf', {}, [xml('<root><a>&#8212; &#65; &#x41; &amp; &lt;tag&gt;</a></root>')]);
+    const text = squash(await extractText(await firstPdf(good)));
+    // 0x97 is the em dash's WinAnsi byte in a standard face, what a viewer decodes back
+    // as `—`; MuPDF reads it as the dash itself on the same bytes (live half).
+    expect(text).toContain('\u0097 A A & <tag>');
+    // `&nbsp;` is an HTML entity, undefined in XML: the document is not well-formed, so
+    // the whole file reaches the page as text and the run says which happened.
+    const nbsp = await run('xml-to-pdf', {}, [xml('<root><a>a&nbsp;b</a></root>')]);
+    expect(nbsp.warnings.join(' ')).toMatch(/"doc\.xml" is not well-formed XML, so it was printed as plain text/);
+    expect(squash(await extractText(await firstPdf(nbsp)))).toContain('a&nbsp;b');
+    // The fallback is a code page, and a code page that paints nothing is no page at all.
+    const doc = await PDFDocument.load(await firstPdf(nbsp), { updateMetadata: false });
+    expectPaintedCode(doc.getPage(0), 1);
+  });
+
+  it('keeps CDATA literal, markup characters and all', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml('<root><c><![CDATA[if (a < b && c > d) {\n  keep &amp; literal\n}]]></c><d>after MKEND</d></root>'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('if (a < b && c > d)');
+    // A CDATA section is not parsed, so the entity it holds stays written out — the one
+    // place where this route must not resolve a reference.
+    expect(text).toContain('keep &amp; literal');
+    expect(text).not.toContain('CDATA');
+    expect(text).toContain('after MKEND');
+  });
+
+  it('prints a namespace declaration as the attribute it is and keeps the prefix', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml('<rss xmlns:media="http://m"><channel><media:title>Named title</media:title></channel></rss>'),
+    ]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('xmlns:media="http://m"');
+    expect(text).toContain('<media:title>');
+    expect(text).toContain('Named title');
+  });
+
+  it('lays several files out one after another, each on its own sheet', async () => {
+    const outcome = await run('xml-to-pdf', {}, [
+      xml('<feed><f>ONEFILE</f></feed>', 'one.xml'),
+      xml('<feed><f>TWOSITE</f></feed>', 'two.xml'),
+    ]);
+    const bytes = await firstPdf(outcome);
+    expect((await pageSizes(bytes)).length).toBe(2);
+    const runs = await textRuns(bytes);
+    expect(runsOn(runs, 0).some((run) => run.text.includes('ONEFILE'))).toBe(true);
+    expect(runsOn(runs, 0).some((run) => run.text.includes('TWOSITE'))).toBe(false);
+    expect(runsOn(runs, 1).some((run) => run.text.includes('TWOSITE'))).toBe(true);
+    expect(outcome.message).toMatch(/Printed 2 XML file\(s\) into 2 page\(s\)/);
+    expect(outcome.outputs[0]!.name).toBe('one_from_xml.pdf');
+  });
+});
+
 describe('rtf-to-pdf recovers text, size and order', () => {
   const rtf = String.raw`{\rtf1\ansi\ansicpg1252\deff0
 {\colortbl ;\red255\green0\blue0;}
