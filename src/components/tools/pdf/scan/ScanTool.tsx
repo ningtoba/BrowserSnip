@@ -102,7 +102,7 @@ export function ScanTool() {
         {hasCamera ? (
           <div className="mt-3 flex items-center gap-2 text-[10px] text-ink-muted">
             <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-            Camera ready — tap the button below the preview to capture
+            The live scanner runs below once the camera is ready; photos already on this device work either way.
           </div>
         ) : (
           <motion.div variants={scaleIn} className="mt-2 space-y-2 rounded-[12px] border border-warn/25 bg-warn/[0.07] p-3">

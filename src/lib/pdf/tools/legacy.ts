@@ -272,7 +272,7 @@ export const legacyTools: PdfToolDefinition[] = [
     actionLabel: 'Generate PDF',
     promise: 'One PDF from the pages you capture, each page a picture of the paper.',
     notes: [
-      'Camera access is requested only when you start a scan; frames never leave the tab.',
+      'Opening the scanner asks the browser for camera access right away; captured frames never leave the tab. Photos already on this device work without any camera.',
       'Captures are photographs: each page is an image with no text layer, so the result cannot be searched or selected until you run OCR on it.',
       'This pane does not find the edges of the paper or correct perspective. It straightens tones (greyscale plus contrast) when enhancement is on; crop the page or re-shoot if the document fills too little of the frame.',
     ],
