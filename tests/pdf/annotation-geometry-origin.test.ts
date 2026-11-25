@@ -26,6 +26,7 @@
  */
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PDFDocument, degrees } from '@maxwbh/pdf-lib';
@@ -163,7 +164,7 @@ describe('geometry.ts maps user space through the page box origin (#8)', () => {
   });
 
   it('reads the census fixture itself: crop offset survives to pdf.js', async () => {
-    const bytes = new Uint8Array(readFileSync('/tmp/triage/in/annot.pdf'));
+    const bytes = new Uint8Array(readFileSync(join(import.meta.dirname, '../fixtures/annot-crop-rot.pdf')));
     const doc = (await getDocument({ data: bytes, isEvalSupported: false }).promise) as unknown as {
       getPage: (n: number) => Promise<{
         rotate: number;
