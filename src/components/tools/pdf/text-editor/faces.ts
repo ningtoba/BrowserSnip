@@ -23,7 +23,15 @@
 import { StandardFonts, rgb } from '@/lib/pdf/core/doc';
 import type { PDFDocument, PDFFont } from '@/lib/pdf/core/doc';
 import type { SourceFont } from '@/lib/pdf/core/content';
-import { SCRIPT_FONTS, detectScript, getFont, isWinAnsiSafe, embedUnicodeFace } from '@/lib/pdf/core/fonts';
+import {
+  SCRIPT_FONTS,
+  announceFaceFetch,
+  detectScript,
+  embedUnicodeFace,
+  fontFetchFailure,
+  getFont,
+  isWinAnsiSafe,
+} from '@/lib/pdf/core/fonts';
 import {
   AUTO_FAMILY_ID,
   BUNDLED_FAMILY_ID,
@@ -444,17 +452,38 @@ function findDeviceFace(
 
 // ── resolution ──────────────────────────────────────────────────────────────
 
+/** The host a face URL names, for sentences that must say where it failed. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'the font host';
+  }
+}
+
 const fetchedBytes = new Map<string, Promise<Uint8Array>>();
 const perDocFonts = new WeakMap<PDFDocument, Map<string, Promise<PDFFont>>>();
 
 async function fetchBytes(url: string): Promise<Uint8Array> {
   let pending = fetchedBytes.get(url);
   if (!pending) {
+    announceFaceFetch(url);
     pending = (async () => {
-      const response = await fetch(url);
+      let response: Response;
+      try {
+        response = await fetch(url);
+      } catch (err) {
+        // Offline / unreachable CDN throws before any status exists: name the
+        // host, say one internet connection is needed, and that Latin works
+        // offline — rather than a bare "Failed to fetch" mid-run.
+        throw new Error(
+          fontFetchFailure(url, err instanceof Error ? err.message : String(err)),
+        );
+      }
       if (!response.ok) {
         throw new Error(
-          `Could not download the ${url.split('/').pop()} font file (HTTP ${response.status}). Open the tool again while online, or pick a bundled font.`,
+          `Could not download the ${url.split('/').pop()} font file from ${hostOf(url)} (HTTP ${response.status}). ` +
+            'Open the tool again while online, or pick a bundled font.',
         );
       }
       return new Uint8Array(await response.arrayBuffer());

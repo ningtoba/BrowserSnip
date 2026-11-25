@@ -583,14 +583,72 @@ function assetUrl(path: string): string {
   }
 }
 
+/**
+ * Why a face file did not arrive, in words the export surface can show as-is:
+ * which file, from where, and what the user can actually do. A script face is
+ * a one-time CDN download — the sentence says so, and says Latin text never
+ * needs it, instead of leaving "Failed to fetch" as the whole diagnosis.
+ */
+export function fontFetchFailure(url: string, reason: string): string {
+  const file = url.split('/').pop() || 'font file';
+  let host = '';
+  try {
+    host = new URL(assetUrl(url)).host;
+  } catch {
+    host = '';
+  }
+  const remote = /^https?:/.test(url);
+  return (
+    `Could not load the ${file} font file${host ? ` from ${host}` : ''} (${reason}). ` +
+    (remote
+      ? 'This writing system needs one internet connection to fetch its face — once, then the browser caches it; ' +
+        'Latin text is written from faces bundled with the app and works offline.'
+      : 'The bundled face is missing from the app files; reload the page.')
+  );
+}
+
+let faceFetchNotice: ((line: string) => void) | null = null;
+
+/**
+ * Say what is about to be downloaded, before the wait — the engine path has
+ * `engineFetchLine` for exactly this, and a script rewrite that must fetch a
+ * multi-megabyte CDN face must not look like a hung tab. The UI installs the
+ * sink around an export; `null` takes it away. The document itself never
+ * leaves the device, and the line says which direction the bytes go.
+ */
+export function setFaceFetchNotice(fn: ((line: string) => void) | null): void {
+  faceFetchNotice = fn;
+}
+
+/** The notice for one fetch attempt of `url`, in the words the log shows. */
+export function announceFaceFetch(url: string): void {
+  if (!faceFetchNotice) return;
+  const label = SCRIPT_FONTS.find((script) => script.url === url)?.label ?? url.split('/').pop() ?? 'font';
+  let host = 'the font host';
+  try {
+    host = new URL(assetUrl(url)).host;
+  } catch {
+    /* the sentence keeps a generic host when the URL has none */
+  }
+  faceFetchNotice(
+    `Downloading the ${label} face from ${host} — once, then your browser caches it. Your PDF stays on this device.`,
+  );
+}
+
 async function fetchFontBytes(url: string): Promise<Uint8Array> {
   const key = url;
   let pending = fontCache.get(key);
   if (!pending) {
+    announceFaceFetch(url);
     pending = (async () => {
-      const res = await fetch(assetUrl(url));
+      let res: Response;
+      try {
+        res = await fetch(assetUrl(url));
+      } catch (err) {
+        throw new Error(fontFetchFailure(url, err instanceof Error ? err.message : String(err)));
+      }
       if (!res.ok) {
-        throw new Error(`Could not load the ${url} font file (HTTP ${res.status}).`);
+        throw new Error(fontFetchFailure(url, `HTTP ${res.status}`));
       }
       // See `alignTrueTypeGlyphs`: the faces this module ships are not aligned the
       // way fontkit's subsetter assumes, and the bytes it is handed are the only

@@ -75,6 +75,7 @@ import {
   supportsLocalFonts,
   type FontFamilyOption,
 } from './faces';
+import { setFaceFetchNotice } from '@/lib/pdf/core/fonts';
 import {
   FindReplacePanel,
   FormatPanel,
@@ -1420,6 +1421,19 @@ export function TextEditor({ active = true }: TextEditorProps = {}) {
     if (!source) throw new Error('Open a PDF first.');
     process.startProcessing('Rewriting text', '_edited.pdf');
     process.setPercent(10, 'Opening the document');
+    // A script rewrite fetches a CDN face mid-export; say so on the log the
+    // moment it is about to happen, the way the engine path announces its own
+    // download, instead of letting a multi-megabyte wait look like a hang.
+    setFaceFetchNotice((line) => process.appendLog(line));
+    try {
+      return await writeOutput(list);
+    } finally {
+      setFaceFetchNotice(null);
+    }
+  }
+
+  async function writeOutput(list: EditObject[]): Promise<{ bytes: Uint8Array; report: ExportReport }> {
+    if (!source) throw new Error('Open a PDF first.');
     const doc = await openPDF(source.bytes, { password: password || undefined, ignoreEncryption: true });
     if (signed) {
       // Append-only revision keeps the signed byte range verifiable.
