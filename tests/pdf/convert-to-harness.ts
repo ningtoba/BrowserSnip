@@ -997,6 +997,98 @@ export function pptxBytes(slides: string[]): Promise<Uint8Array> {
   );
 }
 
+const ODF_STYLE_NS = 'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"';
+
+/**
+ * An ODT written the way LibreOffice writes one.
+ *
+ * The `odtBytes` helper carries plain paragraphs; this carries everything the
+ * dedicated reader is judged against: two heading levels, a paragraph whose
+ * bare words sit *around* a styled span, a numbered list whose order lives in
+ * the automatic-styles rule (`text:list-level-style-number`, style name "L1" —
+ * nothing in the name says "number"), a nested item under a parent that has
+ * text, a bullet list, a review comment anchored inside a sentence, a section,
+ * and a table with a header row.
+ */
+export function odtRichBytes(): Promise<Uint8Array> {
+  return zipBytes([
+    {
+      name: 'content.xml',
+      data:
+        `${XML}<office:document-content ${ODF_NS} ${ODF_STYLE_NS}><office:automatic-styles>` +
+        '<text:list-style style:name="L1"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style>' +
+        '<text:list-style style:name="L2"><text:list-level-style-bullet text:level="1" text:bullet-char="•"/></text:list-style>' +
+        '</office:automatic-styles><office:body><office:text>' +
+        '<text:h text:style-name="Heading_20_1" text:outline-level="1">Quarterly ODT Title</text:h>' +
+        '<text:h text:outline-level="2">Second Level</text:h>' +
+        '<text:p>Body with <text:span text:style-name="T1">emphasis</text:span> and plain words after.</text:p>' +
+        '<text:list text:style-name="L1"><text:list-item><text:p>step one</text:p></text:list-item>' +
+        '<text:list-item><text:p>step two</text:p><text:list><text:list-item><text:p>sub of two</text:p></text:list-item></text:list></text:list-item></text:list>' +
+        '<text:list text:style-name="L2"><text:list-item><text:p>bullet point</text:p></text:list-item></text:list>' +
+        '<text:p>Reviewed sentence<office:annotation><text:p>Reviewer note words</text:p></office:annotation> continues here.</text:p>' +
+        '<text:section name="s1"><text:p>Section body text survives</text:p></text:section>' +
+        '<text:table><text:table-header-rows><text:table-row>' +
+        '<text:table-cell><text:p>Item</text:p></text:table-cell><text:table-cell><text:p>Qty</text:p></text:table-cell>' +
+        '</text:table-row></text:table-header-rows><text:table-row>' +
+        '<text:table-cell><text:p>Widget</text:p></text:table-cell><text:table-cell><text:p>3</text:p></text:table-cell>' +
+        '</text:table-row></text:table>' +
+        '</office:text></office:body></office:document-content>',
+    },
+  ]);
+}
+
+/**
+ * An ODS whose first sheet has a merged run of columns, a cached formula and a
+ * `covered-table-cell` for every column the merge swallows, plus a second sheet
+ * that sorts before the first alphabetically and a third that holds no values.
+ */
+export function odsGridBytes(): Promise<Uint8Array> {
+  return zipBytes([
+    {
+      name: 'content.xml',
+      data:
+        `${XML}<office:document-content ${ODF_NS}><office:body><office:spreadsheet>` +
+        '<table:table table:name="Zeta">' +
+        '<table:table-row><table:table-cell table:number-columns-repeated="2"><text:p>Merged</text:p></table:table-cell><table:covered-table-cell/><table:table-cell><text:p>Right</text:p></table:table-cell></table:table-row>' +
+        '<table:table-row><table:table-cell><text:p>a</text:p></table:table-cell><table:covered-table-cell/><table:covered-table-cell/><table:table-cell office:value-type="float" office:value="4"><text:p>4</text:p></table:table-cell></table:table-row>' +
+        '</table:table>' +
+        '<table:table table:name="Alpha"><table:table-row><table:table-cell><text:p>alpha-first-cell</text:p></table:table-cell></table:table-row></table:table>' +
+        '<table:table table:name="Empty"><table:table-row><table:table-cell table:number-columns-repeated="3"/></table:table-row></table:table>' +
+        '</office:spreadsheet></office:body></office:document-content>',
+    },
+  ]);
+}
+
+export type OdpPage = { title?: string; body?: string; notes?: string } | 'blank';
+
+/**
+ * An ODP written the way LibreOffice saves one: text inside
+ * `draw:frame > draw:text-box`, the title frame marked `presentation:class`,
+ * speaker notes under `presentation:notes`. `odpBytes` predates this and nests
+ * a `draw:shape` the real suites never write — the reader used to walk only
+ * shapes, so a real deck converted to nothing.
+ */
+export function odpFramesBytes(pages: OdpPage[]): Promise<Uint8Array> {
+  const frame = (name: string, kind: string | null, text: string) =>
+    `<draw:frame draw:name="${name}"${kind ? ` presentation:class="${kind}"` : ''}><draw:text-box><text:p>${text}</text:p></draw:text-box></draw:frame>`;
+  return zipBytes([
+    {
+      name: 'content.xml',
+      data:
+        `${XML}<office:document-content ${ODF_NS}><office:body><office:presentation>` +
+        pages.map((page, index) => {
+          if (page === 'blank') return `<draw:page draw:name="blank${index}"/>`;
+          return `<draw:page draw:name="p${index}">`
+            + (page.title ? frame(`Title${index}`, 'title', page.title) : '')
+            + (page.body ? frame(`Body${index}`, null, page.body) : '')
+            + (page.notes ? `<presentation:notes>${frame(`Notes${index}`, null, page.notes)}</presentation:notes>` : '')
+            + '</draw:page>';
+        }).join('') +
+        '</office:presentation></office:body></office:document-content>',
+    },
+  ]);
+}
+
 export function epubBytes(chapters: string[]): Promise<Uint8Array> {
   return zipBytes([
     {

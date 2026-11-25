@@ -1,0 +1,26 @@
+odt-to-pdf (c5 audit item 1) — measurement log
+
+fixture: /tmp/lane-convert5b/fx/odt-rich.odt (harness mirror: odtRichBytes) — h1 + h2,
+"Body with <span>emphasis</span> and plain words after.", numbered list via
+automatic-styles L1 (text:list-level-style-number) with a nested item under a parent
+that has text, bullet list L2, paragraph carrying an office:annotation, a text:section,
+a table whose header row sits in text:table-header-rows.
+
+BEFORE (build b8db422, live :5271 pre-port-move + MuPDF, docs/research/colour-rail.mjs, port 9846):
+  page text: "Quarterly ODT Title / Second Level / emphasis / • step one /
+  • step two sub of two / • bullet point / Reviewer note words / Widget / 3"
+  -> the paragraph printed only the styled span (sentence words lost);
+     the numbered list was all bullets; the nested item merged into its parent;
+     the annotation's words printed and the annotated sentence vanished;
+     the section was gone; the wrapped header row (Item/Qty) was dropped.
+  4 ODT fidelity probes: odtToBlocks dump matched the above exactly (zz-scratch, folded).
+AFTER (same fixture, same dpi 100, drive on :5296):
+  page text: "… Body with emphasis and plain words after. 1. step one 2. step two
+  1. sub of two • bullet point Reviewed sentence continues here.
+  Section body text survives Item Qty Widget 3"; ink 27,785 px; span sizes
+  23.1 > 18.7 > 11.0 (heading levels survive as sizes); nested item x=84 > parent x=70;
+  reviewer words absent; network 3 requests, 0 off-origin; console errors [].
+shots: odt-c5-before.png (sparse), odt-c5-after.png (full document on the sheet,
+  honest note now true), odt-c5-dark.png (dark tokens).
+pins: edge-convert-to.test.ts 4 new tests — RED without the fix: 4 failed | 288 passed
+  (stash of src/lib/pdf/core/office-in.ts, full 3-file convert-to suite).

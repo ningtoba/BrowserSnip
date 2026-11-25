@@ -47,6 +47,7 @@ import {
   odpBytes,
   odsBytes,
   odtBytes,
+  odtRichBytes,
   palmBytes,
   pdfBytes,
   pptxBytes,
@@ -714,6 +715,59 @@ describe('OpenDocument and XPS routes', () => {
     expect(heading && body).toBeTruthy();
     expect(heading!.size).toBeGreaterThan(body!.size);
     expect(heading!.y).toBeGreaterThan(body!.y);
+  });
+
+  it('keeps the words around a styled span, not just the span', async () => {
+    // Before: the run walk read element children only, so a paragraph with a
+    // styled word printed the styled word and lost the sentence — "emphasis".
+    const outcome = await run('odt-to-pdf', {}, [fileFrom(await odtRichBytes(), 'report.odt')]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).toContain('Body with emphasis and plain words after.');
+  });
+
+  it('numbers the list whose order lives in the style, not the name', async () => {
+    const outcome = await run('odt-to-pdf', {}, [fileFrom(await odtRichBytes(), 'report.odt')]);
+    const doc = await PDFDocument.load(await firstPdf(outcome), { updateMetadata: false });
+    const runs = textRunsOf(doc);
+    const markers = runs.filter((run) => /^\d+\.$/.test(run.text.trim())).map((run) => run.text.trim());
+    // The nested list restarts at 1: `sub of two` is its own numbered entry at
+    // the next level, not a second clause of its parent.
+    expect(markers, 'L1 resolves to text:list-level-style-number').toEqual(['1.', '2.', '1.']);
+    const bulletItem = runs.find((run) => run.text.includes('bullet point'))!;
+    const bulletMarker = runs.find((run) => Math.abs(run.x - 58) < 0.5 && Math.abs(run.y - (bulletItem.y + 5)) < 2);
+    expect(bulletMarker, 'L2 is a bullet list: a marker sits in the marker column beside the item').toBeTruthy();
+    // The nested item is its own entry, indented past the parent it hangs under.
+    const parent = runs.find((run) => run.text.includes('step two'))!;
+    const child = runs.find((run) => run.text.includes('sub of two'))!;
+    expect(child, 'sub-item survives its parent having text').toBeTruthy();
+    expect(child.x).toBeGreaterThan(parent.x);
+    expect(child.y).toBeLessThan(parent.y);
+    // Before the fix the merge printed one bullet "step two sub of two".
+    expect(runs.some((run) => run.text.includes('step two sub of two'))).toBe(false);
+  });
+
+  it('keeps a review comment out of the sentence it annotates', async () => {
+    // Before: the annotation's words were printed as their own paragraph and
+    // the body of the annotated paragraph vanished with them, while the card
+    // said comments are not preserved.
+    const outcome = await run('odt-to-pdf', {}, [fileFrom(await odtRichBytes(), 'report.odt')]);
+    const text = squash(await extractText(await firstPdf(outcome)));
+    expect(text).not.toContain('Reviewer note words');
+    expect(text).toContain('Reviewed sentence continues here.');
+  });
+
+  it('reads section text and the wrapped table header row', async () => {
+    const outcome = await run('odt-to-pdf', {}, [fileFrom(await odtRichBytes(), 'report.odt')]);
+    const bytes = await firstPdf(outcome);
+    const text = squash(await extractText(bytes));
+    expect(text, 'section is body text').toContain('Section body text survives');
+    expect(text, 'the header row under text:table-header-rows is read').toMatch(/Item Qty Widget 3/);
+    const runs = textRunsOf(await PDFDocument.load(bytes, { updateMetadata: false }));
+    // Second heading level smaller than the first: levels survive as sizes.
+    // The title wraps in the run stream, so compare the first fragment.
+    const h1 = runs.find((run) => run.text.includes('Quarterly ODT'))!;
+    const h2 = runs.find((run) => run.text.includes('Second Level'))!;
+    expect(h1.size).toBeGreaterThan(h2.size);
   });
 
   it('gives every XPS page its own sheet, in order', async () => {

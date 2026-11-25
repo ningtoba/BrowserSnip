@@ -25,9 +25,29 @@ export async function odtToBlocks(bytes: Uint8Array): Promise<Block[]> {
   const document = await openDocumentXml(bytes, 'content.xml');
   const blocks: Block[] = [];
   const body = byLocalName(document, 'body')[0];
-  if (body) walkOdt(body, blocks);
+  if (body) walkOdt(body, blocks, 0, listStyleKinds(document));
   if (blocks.length === 0) throw new Error('That ODT had no readable paragraphs.');
   return blocks;
+}
+
+/**
+ * Which named list styles order, from `text:list-level-style-number`.
+ *
+ * An ODT list says only `text:style-name="L1"`; whether its items are numbered
+ * lives in the automatic styles, on the level's rule element. Reading the name
+ * for the word "number" instead — which is what used to happen — printed real
+ * Word-97-style ordered lists (names like "ListNumber…") and silently turned
+ * LibreOffice's "L1/L2" ones into bullets.
+ */
+function listStyleKinds(document: Document): Map<string, boolean> {
+  const kinds = new Map<string, boolean>();
+  for (const style of byLocalName(document as unknown as Element, 'list-style')) {
+    const name = style.getAttribute('style:name');
+    if (!name) continue;
+    const ordered = byLocalName(style, 'list-level-style-number').length > 0;
+    kinds.set(name, ordered);
+  }
+  return kinds;
 }
 
 /** The elements `walkOdt` reads as a block of their own. */
@@ -48,7 +68,7 @@ function odfName(element: Element): string {
   return ODF_BLOCK_NAMES.has(prefix) ? prefix : local;
 }
 
-function walkOdt(element: Element, blocks: Block[], depth = 0): void {
+function walkOdt(element: Element, blocks: Block[], depth = 0, listKinds: Map<string, boolean> = new Map()): void {
   for (const child of Array.from(element.children ?? [])) {
     if (blocks.length > BLOCK_LIMIT) return;
     const name = odfName(child);
@@ -58,7 +78,7 @@ function walkOdt(element: Element, blocks: Block[], depth = 0): void {
       continue;
     }
     if (name === 'p') {
-      const text = plainText(child);
+      const text = bodyText(child);
       if (!text) continue;
       const bullet = child.getAttribute('text:style-name') ?? '';
       if (/ListNumber|Number/i.test(bullet)) {
@@ -71,7 +91,8 @@ function walkOdt(element: Element, blocks: Block[], depth = 0): void {
       continue;
     }
     if (name === 'list') {
-      const ordered = /number/i.test(child.getAttribute('text:style-name') ?? '');
+      const style = child.getAttribute('text:style-name') ?? '';
+      const ordered = listKinds.get(style) ?? /number/i.test(style);
       blocks.push(listBlock(listItems(child), ordered));
       continue;
     }
@@ -79,9 +100,28 @@ function walkOdt(element: Element, blocks: Block[], depth = 0): void {
       blocks.push(odtTableBlock(child));
       continue;
     }
-    if (name === 'frame' || name === 'section' || name === 'soft-page-break') continue;
-    walkOdt(child, blocks, name === 'list' ? depth + 1 : depth);
+    // A section is a container inside the text body — its paragraphs are the
+    // document's own words, not page furniture — while frames carry the
+    // drawings this reader does not reproduce (and the card says so).
+    if (name === 'frame' || name === 'soft-page-break') continue;
+    walkOdt(child, blocks, name === 'list' ? depth + 1 : depth, listKinds);
   }
+}
+
+/**
+ * The paragraph's own text: markup flattened, review comments excluded.
+ *
+ * An `office:annotation` is a sticky note anchored in the sentence — its words
+ * are not the sentence. `plainText` reads it like any other child, which printed
+ * "Reviewer said this" into the converted body while the card promised comments
+ * were not preserved; every reader of the document body goes through here.
+ */
+function bodyText(element: Element): string {
+  const clone = element.cloneNode(true) as Element;
+  for (const note of Array.from(clone.querySelectorAll('*'))) {
+    if (localName(note) === 'annotation') note.remove();
+  }
+  return plainText(clone);
 }
 
 function listItems(element: Element): { text: string; level: number; marker: 'bullet' | 'ordered' }[] {
@@ -89,12 +129,20 @@ function listItems(element: Element): { text: string; level: number; marker: 'bu
   const visit = (node: Element, level: number) => {
     for (const child of Array.from(node.children ?? [])) {
       if (localName(child) === 'list-item') {
+        // The item's own paragraphs first — joined the way ODF means them, one
+        // item per entry — then any list nested *inside* the item, at the next
+        // level. Reading the nested list only when the parent had no text lost
+        // every sub-item of a real outline: "step two" kept its own words and
+        // swallowed "sub of two" into them.
         const text = Array.from(child.children ?? [])
-          .map(plainText)
+          .filter((part) => localName(part) !== 'list')
+          .map(bodyText)
           .filter(Boolean)
           .join(' ');
         if (text) out.push({ text, level, marker: 'bullet' });
-        else visit(child, level);
+        // Always descend: a nested list hangs inside the item that owns it,
+        // whether or not that item has words of its own.
+        visit(child, level);
       } else if (localName(child) === 'list') {
         visit(child, level + 1);
       } else {
@@ -108,11 +156,14 @@ function listItems(element: Element): { text: string; level: number; marker: 'bu
 
 function odtTableBlock(table: Element): Extract<Block, { kind: 'table' }> {
   const rows: Inline[][][] = [];
-  for (const row of childrenNamed(table, 'table-row')) {
+  // `byLocalName`, not direct children: LibreOffice wraps heading rows in
+  // `text:table-header-rows`, and a direct-children walk silently dropped every
+  // row so wrapped — tables lost their header while the card promised tables.
+  for (const row of byLocalName(table, 'table-row')) {
     const cells: Inline[][] = [];
     for (const cell of childrenNamed(row, 'table-cell')) {
       const repeat = Math.min(Number(cell.getAttribute('table:number-columns-repeated') ?? '1'), 32);
-      const text = Array.from(cell.children ?? []).map(plainText).filter(Boolean).join(' ');
+      const text = Array.from(cell.children ?? []).map(bodyText).filter(Boolean).join(' ');
       for (let i = 0; i < repeat; i++) cells.push([{ text }]);
     }
     if (cells.some((cell) => (cell[0]?.text ?? '') !== '')) rows.push(cells);
@@ -486,7 +537,14 @@ function plainText(element: Element): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-/** Keep bold/italic emphasis, drop the rest — OOXML has no inline styling. */
+/**
+ * Keep bold/italic emphasis, drop the rest — OOXML has no inline styling.
+ *
+ * Children are walked as `childNodes`, in order, because the words between the
+ * styled parts are the sentence: an element-only walk handed `<text:span>` its
+ * style and left every bare text node unread, so “Body with *emphasis*.”
+ * converted to “emphasis” — the card promised the document's text.
+ */
 function inlineRuns(element: Element): Inline[] {
   const runs: Inline[] = [];
   const push = (text: string, style: Partial<Inline>) => {
@@ -496,22 +554,31 @@ function inlineRuns(element: Element): Inline[] {
     else runs.push({ ...style, text });
   };
   const visit = (node: Element, style: Partial<Inline>) => {
-    for (const child of Array.from(node.children ?? [])) {
-      const name = localName(child);
-      const bold = name === 'b' || (child.getAttribute('fo:font-weight') ?? '') === 'bold';
-      const italic = name === 'i' || (child.getAttribute('fo:font-style') ?? '') === 'italic';
-      if (child.children && child.children.length > 0 && !['span', 's', 'tab', 'number', 'metric', 'c'].includes(name)) {
-        visit(child, { ...style, bold: bold || style.bold, italic: italic || style.italic });
-      } else {
-        push(plainText(child), { ...style, bold: bold || style.bold, italic: italic || style.italic });
+    for (const child of Array.from(node.childNodes ?? [])) {
+      if (child.nodeType === 3) {
+        push((child.textContent ?? '').replace(/\s+/g, ' '), style);
+        continue;
       }
-    }
-    if ((!node.children || node.children.length === 0) && node.textContent) {
-      push(node.textContent.replace(/\s+/g, ' ').trim(), style);
+      if (child.nodeType !== 1) continue;
+      const name = localName(child as Element);
+      // A review comment is anchored in the sentence, not part of it.
+      if (name === 'annotation') continue;
+      const el = child as Element;
+      const bold = name === 'b' || (el.getAttribute('fo:font-weight') ?? '') === 'bold';
+      const italic = name === 'i' || (el.getAttribute('fo:font-style') ?? '') === 'italic';
+      if (el.children && el.children.length > 0 && !['span', 's', 'tab', 'number', 'metric', 'c'].includes(name)) {
+        visit(el, { ...style, bold: bold || style.bold, italic: italic || style.italic });
+      } else {
+        push(plainText(el), { ...style, bold: bold || style.bold, italic: italic || style.italic });
+      }
     }
   };
   visit(element, {});
-  return runs.length > 0 ? runs : [{ text: plainText(element) }].filter((run) => run.text);
+  const text = runs.map((run) => run.text).join('').trim();
+  if (!text) return [];
+  runs[0]!.text = runs[0]!.text.replace(/^\s+/, '');
+  runs[runs.length - 1]!.text = runs[runs.length - 1]!.text.replace(/\s+$/, '');
+  return runs;
 }
 
 function listBlock(
