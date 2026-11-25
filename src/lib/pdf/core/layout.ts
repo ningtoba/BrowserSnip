@@ -280,26 +280,41 @@ export async function renderBlocks(
       const lineHeight = fontSize * 1.35;
       const height = wrapped.length * lineHeight + 16;
       if (needs(Math.min(height, lineHeight * 8))) await turn();
-      const background = await monoFont(doc);
-      const startTop = surface.y;
-      let drawn = 0;
-      for (const line of wrapped) {
-        if (needs(lineHeight + 4)) {
-          paintCodeBox(surface, startTop, settings);
-          await turn();
+      const mono = await monoFont(doc);
+      // The band is an opaque fill, so it must be painted *before* the text run.
+      // Painting it afterwards (the old shape of this block) laid a grey
+      // rectangle over every glyph, so a code page — Monospaced text-to-PDF,
+      // fenced Markdown, HTML `<pre>`, JSON — downloaded as an empty band with
+      // the words still in the text layer. Count the lines that fit on this
+      // page, paint exactly that rectangle, then draw the glyphs on top of it;
+      // the rectangle (same `paintCodeBox`, same top/bottom) is unchanged.
+      let index = 0;
+      while (index < wrapped.length) {
+        const startTop = surface.y;
+        let fits = 0;
+        while (index + fits < wrapped.length) {
+          const cursor = startTop - fits * lineHeight;
+          if (cursor - (lineHeight + 4) < surface.limitY) break;
+          fits += 1;
         }
-        surface.y -= lineHeight;
-        surface.page.drawText(line.slice(0, 4000), {
-          x: surface.columnX + 10,
-          y: surface.y + (lineHeight - fontSize) / 2,
-          size: fontSize,
-          font: background,
-          color: rgb(0.15, 0.15, 0.13),
-        });
-        drawn += 1;
+        if (fits === 0) fits = 1;
+        const restY = surface.y;
+        surface.y = startTop - fits * lineHeight;
+        paintCodeBox(surface, startTop, settings);
+        surface.y = restY;
+        for (let line = 0; line < fits; line += 1) {
+          surface.y -= lineHeight;
+          surface.page.drawText(wrapped[index + line].slice(0, 4000), {
+            x: surface.columnX + 10,
+            y: surface.y + (lineHeight - fontSize) / 2,
+            size: fontSize,
+            font: mono,
+            color: rgb(0.15, 0.15, 0.13),
+          });
+        }
+        index += fits;
+        if (index < wrapped.length) await turn();
       }
-      void drawn;
-      paintCodeBox(surface, startTop, settings);
       surface.y -= 8;
       continue;
     }
