@@ -1,5 +1,14 @@
 # Ticket — the text editor reports a written block and writes nothing
 
+> **RESOLVED 2026‑11‑25** (`41d88a1`): two things were behind it. The recorded capture was a
+> commit‑without‑caret artifact — double‑clicking a block *commits* it, so the typed
+> `ZZEDITEDZZ` never entered the model and the block was honestly rewritten with unchanged
+> text. The count itself was a real lie and is fixed: "Wrote N text block(s)" now counts only
+> blocks whose bytes moved (per‑block pre‑deletion match + actual emissions), zero‑byte blocks
+> are reported skipped, deleted‑but‑undrawn blocks are named. 13/13 deterministic writes on a
+> clean server, big and small blocks, byte‑proved by `tests/pdf/text-written-count.test.ts`
+> (red 1 ghost‑count without the fix).
+
 **Found:** 2026‑11‑18, while re-driving the `edit-pdf-text` surface for the font /
 white‑box reports. Reproduces on the **dev server**, not only deployed, and with the
 campaign's own CV fixture (`python3 docs/research/text-edit-fixture.py /tmp/tbcv` →
