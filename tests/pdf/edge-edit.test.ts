@@ -1637,6 +1637,45 @@ describe('layers, forms and OCR options (E10, E13, E18, E20)', () => {
     expect(ocrCalls()[1]!.options).toMatchObject({ force: true });
   });
 
+  it('keeps the page-count sentences plural where the count is plural', async () => {
+    const bytes = await fixture([{ size: A4 }, { size: A4 }, { size: A4 }], 'scanned');
+    const word = { text: 'PLAINWORD', rect: { x: 20, y: 20, width: 90, height: 12 }, confidence: 0.9 };
+    // A successful layer run with two pages left alone: the note counts them
+    // two, and the sentence has to agree with the count, not with the idiom.
+    giveOcrPages([
+      { page: 1, text: 'own words', width: 10, height: 10, blocks: [], words: [], alreadySearchable: true },
+      { page: 2, text: 'own words', width: 10, height: 10, blocks: [], words: [], alreadySearchable: true },
+      { page: 3, text: 'PLAINWORD', width: 100, height: 40, blocks: [], words: [word], alreadySearchable: false },
+    ]);
+    const layered = await run('ocr-pdf', { mode: 'searchable', pages: 'all', skipSearchable: true }, [bytes]);
+    expect(layered.warnings.join('\n')).toMatch(/2 pages already had a text layer and were left as they were/i);
+    expect(layered.warnings.join('\n')).not.toMatch(/2 pages already had a text layer and was left as it was/i);
+
+    // Pages read but yielded wordless, as two.
+    giveOcrPages([
+      { page: 1, text: 'PLAINWORD', width: 100, height: 40, blocks: [], words: [word], alreadySearchable: false },
+      { page: 2, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+        ink: { sampled: 1000, ratio: 0.5, blank: false } },
+      { page: 3, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+        ink: { sampled: 1000, ratio: 0, blank: true } },
+    ]);
+    const partial = await run('ocr-pdf', { mode: 'searchable', pages: 'all' }, [bytes]);
+    expect(partial.warnings.join('\n')).toMatch(/2 pages had no recognised words to place and were left as they were/i);
+
+    // And nothing layered at all: the refusal names the two skipped pages inside
+    // the report the reader actually sees.
+    giveOcrPages([
+      { page: 1, text: 'own words', width: 10, height: 10, blocks: [], words: [], alreadySearchable: true },
+      { page: 2, text: 'own words', width: 10, height: 10, blocks: [], words: [], alreadySearchable: true },
+      { page: 3, text: '', width: 10, height: 10, blocks: [], words: [], alreadySearchable: false,
+        ink: { sampled: 1000, ratio: 0.02, blank: false } },
+    ]);
+    const refused = await run('ocr-pdf', { mode: 'searchable', pages: 'all', skipSearchable: true }, [bytes]);
+    expect(refused.outputs).toHaveLength(0);
+    expect(JSON.stringify(refused.report ?? refused))
+      .toMatch(/2 pages already had their own text layers and were left alone/i);
+  });
+
   it('writes a real text layer when the recogniser finds words', async () => {
     ocrCalls().length = 0;
     giveOcrPages([{

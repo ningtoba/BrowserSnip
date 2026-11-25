@@ -1933,7 +1933,7 @@ export const editTools: PdfToolDefinition[] = [
         const mode = stringValue(context.values, 'mode', 'searchable');
         const skipped = results.filter((page) => page.alreadySearchable);
         if (skipped.length > 0) {
-          note(notes, `${countLabel(skipped.length, 'page')} already had a text layer and was left as it was.${booleanValue(context.values, 'skipSearchable', true) ? ' Turn off "skip pages that already have text" to read them again.' : ''}`);
+          note(notes, `${countLabel(skipped.length, 'page')} already had a text layer and ${skipped.length === 1 ? 'was left as it was' : 'were left as they were'}.${booleanValue(context.values, 'skipSearchable', true) ? ' Turn off "skip pages that already have text" to read them again.' : ''}`);
         }
         // E10: "no text" is three different findings — never read, blank sheet,
         // sheet with ink that is not letters — and the ink measured off the
@@ -1972,7 +1972,7 @@ export const editTools: PdfToolDefinition[] = [
                 [
                   {
                     title: 'No layer was added',
-                    text: `No text was recognised on the ${countLabel(examined, 'page')} the recogniser read${skipped.length > 0 ? `, and ${countLabel(skipped.length, 'page')} already had its own text layer and was left alone` : ''}, so the document was not changed.`,
+                    text: `No text was recognised on the ${countLabel(examined, 'page')} the recogniser read${skipped.length > 0 ? `, and ${countLabel(skipped.length, 'page')} already had ${skipped.length === 1 ? 'its own text layer and was left alone' : 'their own text layers and were left alone'}` : ''}, so the document was not changed.`,
                   },
                   ...quiet.blocks,
                 ],
@@ -1986,7 +1986,7 @@ export const editTools: PdfToolDefinition[] = [
             );
           }
           if (added.skipped > 0) {
-            note(notes, `${countLabel(added.skipped, 'page')} had no recognised words to place and was left as it was.`);
+            note(notes, `${countLabel(added.skipped, 'page')} had no recognised words to place and ${added.skipped === 1 ? 'was left as it was' : 'were left as they were'}.`);
           }
           return pdfOutput(
             input.doc,
