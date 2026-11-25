@@ -752,8 +752,9 @@ export const convertFromTools: PdfToolDefinition[] = [
       const extra = stringValue(context.values, 'extra').trim();
       let parsed: Record<string, unknown> | undefined;
       if (extra) {
+        let raw: unknown;
         try {
-          parsed = JSON.parse(extra) as unknown;
+          raw = JSON.parse(extra);
         } catch {
           throw new ToolInputError(
             'OUT_OF_RANGE',
@@ -761,7 +762,7 @@ export const convertFromTools: PdfToolDefinition[] = [
             { hint: 'One flat object of strings and numbers, which is what an index stores.' },
           );
         }
-        parsed = flatMetadata(parsed);
+        parsed = flatMetadata(raw);
       }
       const doc = jsonToLlamaIndex(json, {
         title: stringValue(context.values, 'title') || input.name,
