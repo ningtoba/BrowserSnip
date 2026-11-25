@@ -3027,6 +3027,37 @@ export const organizeTools: PdfToolDefinition[] = [
             `${pageCountLabel(whiteOnly.length)} (${formatPages(whiteOnly.map((profile) => profile.page - 1))}) painted white on white, so nothing showed on ${it ? 'it' : 'them'} and ${it ? 'it was' : 'they were'} removed — any text ${it ? 'it holds is' : 'they hold is'} selectable but was never visible.`,
           );
         }
+        // The rescue the toggle promises ("kept even when nothing prints on
+        // it") was invisible in the receipt: measured, blankfix ran "kept 10
+        // pages" while six of them were paper. A sheet with no ink that
+        // stayed is named with the marks that hold it — link, form field or
+        // mark — because the promise only says *which ones went*, and these
+        // stayed for a reason the user should hear.
+        const rescued = found.profiles.filter(
+          (profile) =>
+            !blankSet.has(profile.page) && profile.inkOps === 0 && profile.annotationRects > 0,
+        );
+        const rescuePhrases = new Map<string, number[]>();
+        for (const profile of rescued) {
+          const counts = new Map<string, number>();
+          for (const kind of profile.annotationKinds ?? []) {
+            const word = kind === 'Link' ? 'link' : kind === 'Widget' ? 'form field' : 'mark';
+            counts.set(word, (counts.get(word) ?? 0) + 1);
+          }
+          const phrase =
+            [...counts]
+              .map(([word, n]) => (n === 1 ? `a ${word}` : `${n} ${word}s`))
+              .join(' and ') || 'annotations';
+          const list = rescuePhrases.get(phrase) ?? [];
+          list.push(profile.page - 1);
+          rescuePhrases.set(phrase, list);
+        }
+        for (const [phrase, pages] of rescuePhrases) {
+          const one = pages.length === 1;
+          notes.add(
+            `${pageCountLabel(pages.length)} (${formatPages(pages)}) ${one ? 'paints' : 'paint'} nothing but ${one ? 'holds' : 'hold'} ${phrase} you asked to keep, so ${one ? 'it stayed' : 'they stayed'}.`,
+          );
+        }
         if (blank.length === 0) {
           const doc = await savable(input, notes);
           return pdfOut(

@@ -3125,6 +3125,69 @@ describe('each tool is checked against its own output file', () => {
     }
   });
 
+  /**
+   * F-RB-2: the rescue the card promises but the receipt hid. Measured on
+   * blankfix, the run said "kept 10 pages" while six of them were paper;
+   * pages 13 and 17 — a link and a field — had stayed by the toggle's grace
+   * and nothing on the card said so. Now every no-ink survivor is named
+   * with the marks holding it.
+   */
+  it('remove-blank-pages names what rescued each no-ink page that stayed (F-RB-2)', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const first = doc.addPage([200, 100]);
+    first.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: font.ref } }));
+    first.node.set(PDFName.of('Contents'), doc.context.stream(readable));
+    doc.addPage([200, 100]); // a link, and only the link
+    doc.addPage([200, 100]); // two links — the plural of the same sentence
+    doc.addPage([200, 100]); // a form field
+    doc.addPage([200, 100]); // plain paper: this one goes
+    type MarkLiteral =
+      | string
+      | number
+      | boolean
+      | null
+      | undefined
+      | MarkLiteral[]
+      | { [key: string]: MarkLiteral };
+    const annots = (page: number, marks: { [key: string]: MarkLiteral }[]) => {
+      doc
+        .getPage(page)
+        .node.set(
+          PDFName.of('Annots'),
+          doc.context.obj(marks.map((mark) => doc.context.register(doc.context.obj(mark)))),
+        );
+    };
+    annots(1, [{ Type: 'Annot', Subtype: 'Link', Rect: [60, 40, 140, 55], A: { S: 'URI', URI: 'https://example.com' } }]);
+    annots(2, [
+      { Type: 'Annot', Subtype: 'Link', Rect: [10, 10, 80, 24], A: { S: 'URI', URI: 'https://a.example' } },
+      { Type: 'Annot', Subtype: 'Link', Rect: [10, 30, 80, 44], A: { S: 'URI', URI: 'https://b.example' } },
+    ]);
+    annots(3, [{ Type: 'Annot', Subtype: 'Widget', Rect: [20, 20, 90, 36], FT: 'Tx', T: 'name' }]);
+    const source = fileOf(await doc.save({ useObjectStreams: false }), 'rescued.pdf');
+
+    const outcome = await run('remove-blank-pages', { keepAnnotated: true }, [source]);
+    expect(outcome.message).toMatch(/Removed 1 page \(5\), kept 4 pages/i);
+    const said = warn(outcome);
+    expect(said, 'the link sheet is named with its rescuer').toMatch(
+      /1 page \(2\) paints nothing but holds a link you asked to keep, so it stayed/i,
+    );
+    expect(said, 'the counts are per sheet, not per phrase').toMatch(
+      /1 page \(3\) paints nothing but holds 2 links you asked to keep, so it stayed/i,
+    );
+    expect(said).toMatch(
+      /1 page \(4\) paints nothing but holds a form field you asked to keep, so it stayed/i,
+    );
+
+    // Toggle off and the held sheets go — the removal list already tells
+    // their story, so no rescue sentence joins it.
+    const dropped = await run('remove-blank-pages', { keepAnnotated: false }, [source]);
+    expect(dropped.message).toMatch(/Removed 4 pages \(2-5\), kept 1 page/i);
+    expect(warn(dropped), 'they went; nothing is held out of the count').not.toMatch(
+      /you asked to keep/i,
+    );
+  });
+
   it('remove-blank-pages keeps a document whose pages all have content', async () => {
     const outcome = await run('remove-blank-pages', { keepAnnotated: true });
     expect(outcome.message).toMatch(/No blank pages were found in 4 pages — nothing was removed/i);
