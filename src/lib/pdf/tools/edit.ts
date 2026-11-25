@@ -627,6 +627,7 @@ export const editTools: PdfToolDefinition[] = [
     notes: [
       'Numbers are drawn into the page, not stored as metadata, so they print and appear in every viewer.',
       'Each page is measured on its own: a mixed-size or rotated document keeps its folios inside the visible edge.',
+      'A prefix or suffix written in a non-Latin script needs one font fetched from the CDN — once per script, then your browser caches it. The document itself never leaves this tab.',
     ],
     async run(context) {
       const notes: string[] = [];
@@ -636,6 +637,18 @@ export const editTools: PdfToolDefinition[] = [
       const step = readNumber(context, notes, { key: 'step', label: 'Count every', fallback: 1, min: 1, max: 10, integer: true });
       const skip = bounded(notes, 'Skip first N pages', numberValue(context.values, 'skip', 0), { min: 0, max: all.length, integer: true });
       const style = stringValue(context.values, 'style', 'decimal');
+      // Roman and letter folios have no zero. Measured on the shipped build,
+      // `First number: 0` stamped "Page 0 of IV" next to "Page I", and the letter
+      // run gave two pages the same folio "A". Those two styles floor at 1, in the
+      // same admitted-clamp voice every other numeric field uses.
+      let firstNumber = startAt;
+      if (firstNumber < 1 && (style === 'roman-upper' || style === 'roman-lower')) {
+        note(notes, `First number must be 1 or more for roman numerals, which have no zero: ${firstNumber} became 1.`);
+        firstNumber = 1;
+      } else if (firstNumber < 1 && style === 'letters') {
+        note(notes, `First number must be 1 or more for letter folios, which start at A: ${firstNumber} became 1.`);
+        firstNumber = 1;
+      }
       const size = readNumber(context, notes, { key: 'fontSize', label: 'Font size', fallback: 11, min: 5, max: 72, unit: 'pt' });
       // The family, weight, slant and colour come from the shared model; the size is
       // read through the tool's own clamp so a `fontSize: 0` is still reported
@@ -645,13 +658,13 @@ export const editTools: PdfToolDefinition[] = [
       const margin = readNumber(context, notes, { key: 'margin', label: 'Margin', fallback: 24, min: 0, max: 200, unit: 'pt' });
       const anchor = stringValue(context.values, 'position', 'bottom-center');
       const pages = input.doc.getPages();
-      // Numbering restarts at `startAt` on the first page that is actually
-      // numbered, and the step counts from there — previously the step was
-      // measured from page 1, so "skip 2, every 2nd" began mid-count and the
-      // `First number` the user typed never appeared.
+      // Numbering restarts at the (style-floored) first number on the first page
+      // that is actually numbered, and the step counts from there — previously the
+      // step was measured from page 1, so "skip 2, every 2nd" began mid-count and
+      // the `First number` the user typed never appeared.
       const targets: { page: number; number: number }[] = [];
       for (let i = skip; i < all.length; i += step) {
-        targets.push({ page: all[i], number: startAt + targets.length });
+        targets.push({ page: all[i], number: firstNumber + targets.length });
       }
       if (targets.length === 0) {
         return admit(

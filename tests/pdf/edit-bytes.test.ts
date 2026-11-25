@@ -454,6 +454,39 @@ describe('page-numbers writes real folios', () => {
     expect(runFonts(doc.getPages()[0])).toContain('Times-Roman');
   });
 
+  it('floors roman and letter folios at one and admits it', async () => {
+    // Measured on the shipped build: `First number: 0` with Roman numerals drew
+    // "Page 0 of IV" next to "Page I", and the letter run stamped two pages "A".
+    // Those styles carry no zero, so the floor is 1 — said in the same admitted-
+    // clamp voice as every other numeric field, and proven in the bytes.
+    const letters = await runPdf('page-numbers', { pages: 'all', style: 'letters', prefix: '', suffix: '', startAt: 0 }, [
+      { text: 'a' },
+      { text: 'b' },
+      { text: 'c' },
+    ]);
+    expect(letters.warnings.join(' ')).toMatch(/First number must be 1 or more for letter folios, which start at A: 0 became 1\./);
+    const ldoc = await reopen(letters);
+    const ltexts = (await Promise.all(ldoc.getPages().map(pageText))).map((t, i) => t.replace('abc'[i], '').trim());
+    expect(ltexts).toEqual(['A', 'B', 'C']);
+    const roman = await runPdf('page-numbers', { pages: 'all', style: 'roman-upper', prefix: 'Page ', suffix: '', startAt: 0 }, [
+      { text: 'a' },
+      { text: 'b' },
+    ]);
+    expect(roman.warnings.join(' ')).toMatch(/roman numerals, which have no zero: 0 became 1/);
+    const rdoc = await reopen(roman);
+    const rtexts = (await Promise.all(rdoc.getPages().map(pageText))).map((t, i) => t.replace('ab'[i], '').trim());
+    expect(rtexts).toEqual(['Page I', 'Page II']);
+    // Control: decimal genuinely may start at zero — no clamp, no warning there.
+    const dec = await runPdf('page-numbers', { pages: 'all', prefix: '', suffix: '', startAt: 0 }, [
+      { text: 'a' },
+      { text: 'b' },
+    ]);
+    expect(dec.warnings).toEqual([]);
+    const ddoc = await reopen(dec);
+    const dtexts = (await Promise.all(ddoc.getPages().map(pageText))).map((t, i) => t.replace('ab'[i], '').trim());
+    expect(dtexts).toEqual(['0', '1']);
+  });
+
   it('keeps CJK folios as embedded glyphs instead of blanks', async () => {
     const outcome = await runPdf('page-numbers', { pages: '1', prefix: '第 ', suffix: ' 頁', font: 'std:helvetica' });
     const doc = await reopen(outcome);
